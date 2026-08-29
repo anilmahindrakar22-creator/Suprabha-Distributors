@@ -1,0 +1,10 @@
+{
+  "name": "Suprabha StockFlow",
+  "short_name": "StockFlow",
+  "description": "Mobile stock reorder intelligence from TallyPrime",
+  "start_url": "/",
+  "display": "standalone",
+  "background_color": "#f7f6f1",
+  "theme_color": "#092f36",
+  "icons": [{"src":"/app-icon.svg","sizes":"any","type":"image/svg+xml","purpose":"any maskable"}]
+}
