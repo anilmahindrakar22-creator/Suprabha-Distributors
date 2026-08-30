@@ -20,7 +20,7 @@ pnpm install --frozen-lockfile
 pnpm run ci
 ```
 
-`pnpm run ci` runs linting, strict type checks, automated tests, the production build, and a production-dependency audit. Critical and high vulnerabilities block release. Never commit secrets or local `.env` files.
+`pnpm run ci` runs linting, strict type checks, white-box tests with coverage, the production build, desktop and mobile black-box tests, and a production-dependency audit. Critical and high vulnerabilities block release. Never commit secrets or local `.env` files. See `TESTING.md` for the testing philosophy and release evidence.
 
 ## Review and merge
 

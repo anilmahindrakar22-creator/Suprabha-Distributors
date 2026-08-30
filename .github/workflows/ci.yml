@@ -37,6 +37,9 @@ jobs:
       - name: Install locked dependencies
         run: pnpm install --frozen-lockfile
 
+      - name: Install black-box test browser
+        run: pnpm exec playwright install --with-deps chromium
+
       - name: Run quality and security gates
         run: pnpm run ci
 
@@ -46,4 +49,15 @@ jobs:
           name: stockflow-build-${{ github.sha }}
           path: dist/
           if-no-files-found: error
+          retention-days: 14
+
+      - name: Store black-box failure evidence
+        if: failure()
+        uses: actions/upload-artifact@v4
+        with:
+          name: playwright-evidence-${{ github.sha }}
+          path: |
+            playwright-report/
+            test-results/
+          if-no-files-found: ignore
           retention-days: 14
