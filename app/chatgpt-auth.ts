@@ -1,4 +1,11 @@
 import { headers } from 'next/headers';
+import {
+  chatGPTSignInPath,
+  hasAllowedEmail,
+  normalizeEmail,
+} from '@/lib/access-control.mjs';
+
+export { chatGPTSignInPath };
 
 export type ChatGPTUser = {
   userId: string;
@@ -6,18 +13,12 @@ export type ChatGPTUser = {
   displayName: string;
 };
 
-const allowedEmails = new Set([
-  'anil.mahindrakar22@gmail.com',
-  'nikitesh.am@gmail.com',
-]);
-
 export async function getChatGPTUser(): Promise<ChatGPTUser | null> {
   const requestHeaders = await headers();
   const userId = requestHeaders.get('oai-authenticated-user-id');
-  const email = requestHeaders
-    .get('oai-authenticated-user-email')
-    ?.trim()
-    .toLowerCase();
+  const email = normalizeEmail(
+    requestHeaders.get('oai-authenticated-user-email'),
+  );
 
   if (!userId || !email) return null;
 
@@ -25,11 +26,5 @@ export async function getChatGPTUser(): Promise<ChatGPTUser | null> {
 }
 
 export function hasStockFlowAccess(user: ChatGPTUser | null): boolean {
-  return Boolean(user && allowedEmails.has(user.email));
-}
-
-export function chatGPTSignInPath(returnTo = '/'): string {
-  const safeReturnTo =
-    returnTo.startsWith('/') && !returnTo.startsWith('//') ? returnTo : '/';
-  return `/signin-with-chatgpt?return_to=${encodeURIComponent(safeReturnTo)}`;
+  return Boolean(user && hasAllowedEmail(user.email));
 }

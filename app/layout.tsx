@@ -1,4 +1,4 @@
-import type { Metadata } from 'next';
+import type { Metadata, Viewport } from 'next';
 import { Geist, Geist_Mono } from 'next/font/google';
 import './globals.css';
 
@@ -17,8 +17,9 @@ export const metadata: Metadata = {
   description:
     'A mobile stock reorder dashboard for Suprabha Distributors with secure cloud sync and offline snapshots.',
   manifest: '/manifest.webmanifest',
-  themeColor: '#092f36',
 };
+
+export const viewport: Viewport = { themeColor: '#092f36' };
 
 export default function RootLayout({
   children,
