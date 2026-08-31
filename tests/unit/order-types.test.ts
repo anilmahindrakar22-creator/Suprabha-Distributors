@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { searchCustomers, validateOrderCommand } from '../../lib/order-types';
+import { searchCatalog, searchCustomers, validateOrderCommand } from '../../lib/order-types';
 
 describe('order command validation', () => {
   it('accepts a complete phone order', () => {
@@ -65,5 +65,20 @@ describe('Tally customer search', () => {
   it('does not open suggestions for an empty value and respects the result limit', () => {
     expect(searchCustomers(customers, '  ')).toEqual([]);
     expect(searchCustomers(customers, 'i', 1)).toHaveLength(1);
+  });
+});
+
+describe('Tally product search', () => {
+  const catalog = [
+    { tallyKey: 'SYS-FT3', item: 'Sys FT3', group: 'SYS Aurora', baseUnit: 'qty', closing: 1, active: true },
+    { tallyKey: 'SYS-OLD', item: 'Old reagent', group: 'SYS Aurora', baseUnit: 'qty', closing: 2, active: false },
+  ];
+
+  it('returns active products from the first typed character', () => {
+    expect(searchCatalog(catalog, 's')[0]?.tallyKey).toBe('SYS-FT3');
+  });
+
+  it('excludes products already added to the order', () => {
+    expect(searchCatalog(catalog, 'sys', new Set(['SYS-FT3']))).toEqual([]);
   });
 });

@@ -8,7 +8,7 @@ import type {
   OrderCommand,
   OrderSummary,
 } from '@/lib/order-types';
-import { searchCustomers } from '@/lib/order-types';
+import { searchCatalog, searchCustomers } from '@/lib/order-types';
 
 type DraftLine = { item: CatalogItem; quantity: number };
 
@@ -173,7 +173,7 @@ export function OrderWorkspace() {
               Orders
             </h1>
             <p className="mt-2 text-sm text-[#667b7e]">
-              Capture phone orders, reserve stock, and hand confirmed work to Tally.
+              Capture orders, reserve stock, and hand confirmed work to Tally.
             </p>
           </div>
           <button
@@ -182,7 +182,7 @@ export function OrderWorkspace() {
             disabled={!data}
             className="min-h-12 rounded-xl bg-[#092f36] px-5 font-bold text-white shadow-sm transition hover:bg-[#0d4549] disabled:opacity-50"
           >
-            + New phone order
+            + Order
           </button>
         </header>
 
@@ -193,14 +193,17 @@ export function OrderWorkspace() {
         </section>
 
         <div className="mt-5 flex flex-col gap-3 rounded-2xl border border-[#dce7e5] bg-white p-3 sm:flex-row sm:items-center">
-          <label className="sr-only" htmlFor="order-search">Search orders</label>
-          <input
-            id="order-search"
-            value={query}
-            onChange={(event) => setQuery(event.target.value)}
-            placeholder="Search customer, phone, or order number"
-            className="min-h-11 flex-1 rounded-xl border border-[#cedfdd] px-4 outline-none focus:border-[#64d4ad] focus:ring-3 focus:ring-[#64d4ad]/20"
-          />
+          <div className="relative flex-1">
+            <label className="mb-1 block text-xs font-bold text-[#587275]" htmlFor="order-search">Find existing order</label>
+            <input
+              id="order-search"
+              value={query}
+              onChange={(event) => setQuery(event.target.value)}
+              placeholder="Type customer, phone, or order number"
+              className="min-h-11 w-full rounded-xl border border-[#cedfdd] px-4 pr-16 outline-none focus:border-[#64d4ad] focus:ring-3 focus:ring-[#64d4ad]/20"
+            />
+            {query ? <button type="button" onClick={() => setQuery('')} className="absolute bottom-1 right-1 min-h-9 rounded-lg px-3 text-xs font-bold text-[#456367] hover:bg-[#edf3f1]">Clear</button> : null}
+          </div>
           <label className="sr-only" htmlFor="order-status">Filter by status</label>
           <select
             id="order-status"
@@ -238,7 +241,7 @@ export function OrderWorkspace() {
           ) : visibleOrders.length === 0 ? (
             <div className="p-10 text-center">
               <p className="font-bold text-[#31585d]">No matching orders</p>
-              <p className="mt-2 text-sm text-[#708386]">New phone orders will appear here immediately.</p>
+              <p className="mt-2 text-sm text-[#708386]">{query ? `No orders match “${query}”. Clear the filter to see all open orders.` : 'New orders will appear here immediately.'}</p>
             </div>
           ) : (
             <div className="divide-y divide-[#e8efed]">
@@ -322,12 +325,8 @@ function NewOrderPanel({ data, onClose, onCreated }: { data: OrderBootstrap; onC
   const [idempotencyKey] = useState(() => crypto.randomUUID());
 
   const matches = useMemo(() => {
-    const query = productQuery.trim().toLowerCase();
-    if (query.length < 2) return [];
     const selected = new Set(lines.map((line) => line.item.tallyKey));
-    return data.snapshot.catalog
-      .filter((item) => item.active && !selected.has(item.tallyKey) && `${item.item} ${item.group}`.toLowerCase().includes(query))
-      .slice(0, 8);
+    return searchCatalog(data.snapshot.catalog, productQuery, selected);
   }, [data.snapshot.catalog, lines, productQuery]);
 
   const customerMatches = useMemo(
@@ -382,7 +381,7 @@ function NewOrderPanel({ data, onClose, onCreated }: { data: OrderBootstrap; onC
       <dialog open aria-labelledby="new-order-title" className="ml-auto mr-0 h-full max-h-none w-full max-w-2xl overflow-y-auto bg-[#f7f6f1] p-0 shadow-2xl">
         <form onSubmit={submit}>
           <header className="sticky top-0 z-10 flex items-center justify-between border-b border-[#dce7e5] bg-white/95 px-5 py-4 backdrop-blur">
-            <div><p className="text-xs font-extrabold uppercase tracking-[0.12em] text-[#277b69]">Phone order</p><h2 id="new-order-title" className="mt-1 text-xl font-black text-[#092f36]">New order</h2></div>
+            <div><p className="text-xs font-extrabold uppercase tracking-[0.12em] text-[#277b69]">Order</p><h2 id="new-order-title" className="mt-1 text-xl font-black text-[#092f36]">New order</h2></div>
             <button type="button" onClick={onClose} className="min-h-10 rounded-xl border border-[#d1dfdd] px-3 font-bold text-[#557174]">Close</button>
           </header>
           <div className="space-y-5 p-5 sm:p-7">
@@ -426,23 +425,33 @@ function NewOrderPanel({ data, onClose, onCreated }: { data: OrderBootstrap; onC
                     </ul>
                   ) : null}
                 </label>
-                <label className="text-sm font-bold text-[#456367]">Phone<input value={customerPhone} onChange={(event) => setCustomerPhone(event.target.value)} className="mt-2 min-h-11 w-full rounded-xl border border-[#cedfdd] px-3 font-normal outline-none focus:border-[#64d4ad]" inputMode="tel" /></label>
-                <label className="text-sm font-bold text-[#456367]">City<input value={customerCity} onChange={(event) => setCustomerCity(event.target.value)} className="mt-2 min-h-11 w-full rounded-xl border border-[#cedfdd] px-3 font-normal outline-none focus:border-[#64d4ad]" /></label>
+                <details className="sm:col-span-2 rounded-xl bg-[#f6f8f7] px-3 py-2 text-sm">
+                  <summary className="cursor-pointer font-bold text-[#456367]">Contact details <span className="font-normal text-[#718487]">(optional)</span></summary>
+                  <div className="mt-3 grid gap-3 sm:grid-cols-2">
+                    <label className="text-sm font-bold text-[#456367]">Phone<input value={customerPhone} onChange={(event) => setCustomerPhone(event.target.value)} className="mt-2 min-h-11 w-full rounded-xl border border-[#cedfdd] bg-white px-3 font-normal outline-none focus:border-[#64d4ad]" inputMode="tel" /></label>
+                    <label className="text-sm font-bold text-[#456367]">City<input value={customerCity} onChange={(event) => setCustomerCity(event.target.value)} className="mt-2 min-h-11 w-full rounded-xl border border-[#cedfdd] bg-white px-3 font-normal outline-none focus:border-[#64d4ad]" /></label>
+                  </div>
+                </details>
               </div>
             </fieldset>
 
             <fieldset className="rounded-2xl border border-[#dce7e5] bg-white p-5">
               <legend className="px-2 text-sm font-extrabold text-[#274b50]">Products</legend>
-              <label className="text-sm font-bold text-[#456367]">Search Tally catalog<input value={productQuery} onChange={(event) => setProductQuery(event.target.value)} className="mt-2 min-h-11 w-full rounded-xl border border-[#cedfdd] px-3 font-normal outline-none focus:border-[#64d4ad]" placeholder="Type at least 2 letters" /></label>
+              <label className="text-sm font-bold text-[#456367]">Find product<input value={productQuery} onChange={(event) => setProductQuery(event.target.value)} className="mt-2 min-h-11 w-full rounded-xl border border-[#cedfdd] px-3 font-normal outline-none focus:border-[#64d4ad]" placeholder="Type a product name" /></label>
               {matches.length ? <div className="mt-2 overflow-hidden rounded-xl border border-[#dce7e5]">{matches.map((item) => <button key={item.tallyKey} type="button" onClick={() => { setLines((current) => [...current, { item, quantity: 1 }]); setProductQuery(''); }} className="flex min-h-12 w-full items-center justify-between gap-4 border-b border-[#edf2f0] px-3 text-left last:border-0 hover:bg-[#f2faf7]"><span><strong className="block text-sm text-[#173239]">{item.item}</strong><small className="text-[#718487]">{item.group}</small></span><span className="shrink-0 text-xs font-bold text-[#277b69]">Available {formatQuantity(item.closing)} {item.baseUnit}</span></button>)}</div> : null}
+              {productQuery.trim() && matches.length === 0 ? <p className="mt-2 rounded-xl bg-[#fff7e8] px-3 py-2 text-sm text-[#805b20]">No Tally products match “{productQuery.trim()}”.</p> : null}
               <div className="mt-4 space-y-2">{lines.map((line) => <div key={line.item.tallyKey} className="grid grid-cols-[1fr_90px_auto] items-center gap-3 rounded-xl bg-[#f2f7f5] p-3"><div className="min-w-0"><strong className="block truncate text-sm text-[#173239]">{line.item.item}</strong><small className="text-[#718487]">Closing {formatQuantity(line.item.closing)} {line.item.baseUnit}</small></div><label className="sr-only" htmlFor={`qty-${line.item.tallyKey}`}>Quantity for {line.item.item}</label><input id={`qty-${line.item.tallyKey}`} type="number" min="0.001" step="0.001" required value={line.quantity} onChange={(event) => setLines((current) => current.map((entry) => entry.item.tallyKey === line.item.tallyKey ? { ...entry, quantity: Number(event.target.value) } : entry))} className="min-h-10 rounded-lg border border-[#cedfdd] px-2 text-right" /><button type="button" onClick={() => setLines((current) => current.filter((entry) => entry.item.tallyKey !== line.item.tallyKey))} aria-label={`Remove ${line.item.item}`} className="size-10 rounded-lg text-xl text-[#9a4e47] hover:bg-[#ffeae8]">×</button></div>)}</div>
               {lines.length === 0 ? <p className="mt-4 rounded-xl bg-[#f6f8f7] p-4 text-center text-sm text-[#718487]">Search and add the products requested on the call.</p> : null}
             </fieldset>
 
-            <label className="block text-sm font-bold text-[#456367]">Order notes<textarea value={notes} onChange={(event) => setNotes(event.target.value)} maxLength={2000} rows={3} className="mt-2 w-full rounded-xl border border-[#cedfdd] p-3 font-normal outline-none focus:border-[#64d4ad]" placeholder="Delivery instructions, contact person, or urgency" /></label>
+            <details className="rounded-2xl border border-[#dce7e5] bg-white p-4">
+              <summary className="cursor-pointer text-sm font-bold text-[#456367]">Add order notes <span className="font-normal text-[#718487]">(optional)</span></summary>
+              <label className="sr-only" htmlFor="order-notes">Order notes</label>
+              <textarea id="order-notes" value={notes} onChange={(event) => setNotes(event.target.value)} maxLength={2000} rows={3} className="mt-3 w-full rounded-xl border border-[#cedfdd] p-3 font-normal outline-none focus:border-[#64d4ad]" placeholder="Delivery instructions, contact person, or urgency" />
+            </details>
             {error ? <p role="alert" className="rounded-xl border border-[#efbbb6] bg-[#fff0ef] px-4 py-3 text-sm text-[#8d3a34]">{error}</p> : null}
           </div>
-          <footer className="sticky bottom-0 flex items-center justify-between gap-4 border-t border-[#dce7e5] bg-white/95 px-5 py-4 backdrop-blur"><p className="text-xs text-[#718487]">{lines.length} product{lines.length === 1 ? '' : 's'} · saved atomically</p><button type="submit" disabled={submitting || lines.length === 0} className="min-h-12 rounded-xl bg-[#092f36] px-6 font-extrabold text-white hover:bg-[#0d4549] disabled:opacity-50">{submitting ? 'Saving…' : 'Save phone order'}</button></footer>
+          <footer className="sticky bottom-0 flex items-center justify-between gap-4 border-t border-[#dce7e5] bg-white/95 px-5 py-4 backdrop-blur"><p className="text-xs text-[#718487]">{lines.length} product{lines.length === 1 ? '' : 's'} · saved together</p><button type="submit" disabled={submitting || lines.length === 0} className="min-h-12 rounded-xl bg-[#092f36] px-6 font-extrabold text-white hover:bg-[#0d4549] disabled:opacity-50">{submitting ? 'Saving…' : 'Save order'}</button></footer>
         </form>
       </dialog>
     </div>

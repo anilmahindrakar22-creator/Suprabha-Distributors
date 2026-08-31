@@ -55,6 +55,24 @@ export function searchCustomers(
     .slice(0, limit);
 }
 
+export function searchCatalog(
+  catalog: CatalogItem[],
+  input: string,
+  excludedTallyKeys: ReadonlySet<string> = new Set(),
+  limit = 8,
+) {
+  const query = input.trim().toLocaleLowerCase('en-IN');
+  if (!query) return [];
+  return catalog
+    .filter(
+      (item) =>
+        item.active &&
+        !excludedTallyKeys.has(item.tallyKey) &&
+        `${item.item} ${item.group}`.toLocaleLowerCase('en-IN').includes(query),
+    )
+    .slice(0, limit);
+}
+
 export type OrderCommand =
   | {
       action: 'create_order';
