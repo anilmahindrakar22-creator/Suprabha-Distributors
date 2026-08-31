@@ -162,8 +162,10 @@ function Get-ReorderData {
     $catalog = foreach ($item in $stockDoc.SelectNodes('//STOCKITEM')) {
         $itemName = ([string]$item.GetAttribute('NAME')).Trim()
         if (-not $itemName) { continue }
-        $group = Resolve-TrackedGroup $groupMap[$itemName]
-        if ($null -eq $group) { continue }
+        # Orders must use the complete Tally stock-item ledger. Reorder rows
+        # remain restricted to the explicitly tracked diagnostic groups above.
+        $group = ([string]$groupMap[$itemName]).Trim()
+        if (-not $group) { $group = 'Uncategorised' }
         $orderState = $reportByItem[$itemName]
         [ordered]@{
             tallyKey = $itemName

@@ -29,6 +29,17 @@ export type OrderSummary = {
   lineCount: number;
   totalQuantity: number;
   reservedQuantity: number;
+  tallyInvoiceNumber: string | null;
+  lines: OrderLineSummary[];
+};
+
+export type OrderLineSummary = {
+  tallyKey: string;
+  itemName: string;
+  itemGroup: string | null;
+  baseUnit: string | null;
+  quantity: number;
+  reservedQuantity: number;
 };
 
 export type OrderBootstrap = {
@@ -71,6 +82,39 @@ export function searchCatalog(
         `${item.item} ${item.group}`.toLocaleLowerCase('en-IN').includes(query),
     )
     .slice(0, limit);
+}
+
+export function orderStage(status: string) {
+  if (['phone_order_received', 'awaiting_confirmation', 'awaiting_approval'].includes(status)) return 'Confirmation';
+  if (['confirmed', 'partially_reserved', 'fully_reserved'].includes(status)) return 'Stock allocation';
+  if (['ready_for_picking', 'picked', 'packed'].includes(status)) return 'Pick & pack';
+  if (['awaiting_tally_billing', 'billed_in_tally'].includes(status)) return 'Tally billing';
+  if (['ready_for_dispatch', 'dispatched'].includes(status)) return 'Dispatch';
+  if (status === 'delivered') return 'Delivered';
+  if (status === 'cancelled') return 'Cancelled';
+  return status.replaceAll('_', ' ');
+}
+
+export function filterOrders(orders: OrderSummary[], query: string, status: string) {
+  const normalized = query.trim().toLocaleLowerCase('en-IN');
+  return orders.filter((order) => {
+    const searchable = [
+      order.orderNumber,
+      order.customerName,
+      order.customerPhone,
+      order.tallyInvoiceNumber,
+      ...(order.lines || []).map((line) => line.itemName),
+    ]
+      .filter(Boolean)
+      .join(' ')
+      .toLocaleLowerCase('en-IN');
+    const matchesStatus =
+      status === 'all' ||
+      (status === 'open' && !['delivered', 'cancelled'].includes(order.status)) ||
+      (status === 'history' && ['delivered', 'cancelled'].includes(order.status)) ||
+      order.status === status;
+    return matchesStatus && (!normalized || searchable.includes(normalized));
+  });
 }
 
 export type OrderCommand =

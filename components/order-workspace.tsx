@@ -8,7 +8,7 @@ import type {
   OrderCommand,
   OrderSummary,
 } from '@/lib/order-types';
-import { searchCatalog, searchCustomers } from '@/lib/order-types';
+import { filterOrders, orderStage, searchCatalog, searchCustomers } from '@/lib/order-types';
 
 type DraftLine = { item: CatalogItem; quantity: number };
 
@@ -36,10 +36,14 @@ const nextStatus: Record<string, { label: string; status?: string; reserve?: boo
   awaiting_approval: { label: 'Approve order', status: 'confirmed' },
   confirmed: { label: 'Reserve available stock', reserve: true },
   partially_reserved: { label: 'Retry reservation', reserve: true },
-  fully_reserved: { label: 'Ready for picking', status: 'ready_for_picking' },
-  ready_for_picking: { label: 'Mark picked', status: 'picked' },
-  picked: { label: 'Mark packed', status: 'packed' },
+  fully_reserved: { label: 'Pick & pack complete', status: 'packed' },
+  ready_for_picking: { label: 'Pick & pack complete', status: 'packed' },
+  picked: { label: 'Pick & pack complete', status: 'packed' },
   packed: { label: 'Send to Tally billing', status: 'awaiting_tally_billing' },
+  awaiting_tally_billing: { label: 'Mark billed', status: 'billed_in_tally' },
+  billed_in_tally: { label: 'Ready for dispatch', status: 'ready_for_dispatch' },
+  ready_for_dispatch: { label: 'Mark dispatched', status: 'dispatched' },
+  dispatched: { label: 'Mark delivered', status: 'delivered' },
 };
 
 function formatQuantity(value: number) {
@@ -98,20 +102,7 @@ export function OrderWorkspace() {
   }, []);
 
   const visibleOrders = useMemo(() => {
-    const normalized = query.trim().toLowerCase();
-    return (data?.orders || []).filter((order) => {
-      const matchesQuery =
-        !normalized ||
-        order.orderNumber.toLowerCase().includes(normalized) ||
-        order.customerName.toLowerCase().includes(normalized) ||
-        String(order.customerPhone || '').includes(normalized);
-      const matchesStatus =
-        status === 'all' ||
-        (status === 'open'
-          ? !['delivered', 'cancelled'].includes(order.status)
-          : order.status === status);
-      return matchesQuery && matchesStatus;
-    });
+    return filterOrders(data?.orders || [], query, status);
   }, [data?.orders, query, status]);
 
   async function runCommand(command: OrderCommand, success: string) {
@@ -132,7 +123,7 @@ export function OrderWorkspace() {
     }
   }
 
-  async function advance(order: OrderSummary) {
+  async function advance(order: OrderSummary, tallyInvoiceNumber?: string) {
     const action = nextStatus[order.status];
     if (!action) return;
     if (action.reserve) {
@@ -152,6 +143,7 @@ export function OrderWorkspace() {
           orderId: order.id,
           expectedVersion: order.version,
           toStatus: action.status || '',
+          tallyInvoiceNumber: tallyInvoiceNumber?.trim() || undefined,
         },
       },
       `${order.orderNumber} moved to ${statusLabel(action.status || '')}.`,
@@ -199,7 +191,7 @@ export function OrderWorkspace() {
               id="order-search"
               value={query}
               onChange={(event) => setQuery(event.target.value)}
-              placeholder="Type customer, phone, or order number"
+              placeholder="Customer, product, invoice, phone, or order"
               className="min-h-11 w-full rounded-xl border border-[#cedfdd] px-4 pr-16 outline-none focus:border-[#64d4ad] focus:ring-3 focus:ring-[#64d4ad]/20"
             />
             {query ? <button type="button" onClick={() => setQuery('')} className="absolute bottom-1 right-1 min-h-9 rounded-lg px-3 text-xs font-bold text-[#456367] hover:bg-[#edf3f1]">Clear</button> : null}
@@ -211,7 +203,8 @@ export function OrderWorkspace() {
             onChange={(event) => setStatus(event.target.value)}
             className="min-h-11 rounded-xl border border-[#cedfdd] bg-white px-3 outline-none focus:border-[#64d4ad]"
           >
-            <option value="open">Open orders</option>
+            <option value="open">Active orders</option>
+            <option value="history">Old orders</option>
             <option value="all">All orders</option>
             <option value="awaiting_confirmation">Awaiting confirmation</option>
             <option value="confirmed">Confirmed</option>
@@ -230,7 +223,7 @@ export function OrderWorkspace() {
         <section className="mt-4 overflow-hidden rounded-2xl border border-[#dce7e5] bg-white shadow-[0_8px_24px_rgba(9,47,54,0.05)]">
           <div className="flex items-center justify-between border-b border-[#e3ecea] px-5 py-4">
             <div>
-              <h2 className="font-extrabold text-[#173239]">Order inbox</h2>
+              <h2 className="font-extrabold text-[#173239]">{status === 'history' ? 'Old orders' : 'Order inbox'}</h2>
               <p className="mt-1 text-xs text-[#6b7e81]">Tally stock snapshot: {staleText}</p>
             </div>
             <span className="rounded-full bg-[#e2f8ef] px-3 py-1 text-xs font-extrabold text-[#136146]">{visibleOrders.length} orders</span>
@@ -241,7 +234,7 @@ export function OrderWorkspace() {
           ) : visibleOrders.length === 0 ? (
             <div className="p-10 text-center">
               <p className="font-bold text-[#31585d]">No matching orders</p>
-              <p className="mt-2 text-sm text-[#708386]">{query ? `No orders match “${query}”. Clear the filter to see all open orders.` : 'New orders will appear here immediately.'}</p>
+              <p className="mt-2 text-sm text-[#708386]">{query ? `No orders match “${query}”. Clear the search to see the full list.` : status === 'history' ? 'Completed and cancelled orders will remain available here.' : 'New orders will appear here immediately.'}</p>
             </div>
           ) : (
             <div className="divide-y divide-[#e8efed]">
@@ -277,17 +270,20 @@ function SummaryCard({ label, value, tone = 'normal' }: { label: string; value?:
   );
 }
 
-function OrderRow({ order, onAdvance }: { order: OrderSummary; onAdvance: (order: OrderSummary) => Promise<void> }) {
+function OrderRow({ order, onAdvance }: { order: OrderSummary; onAdvance: (order: OrderSummary, tallyInvoiceNumber?: string) => Promise<void> }) {
   const [busy, setBusy] = useState(false);
+  const [invoiceNumber, setInvoiceNumber] = useState(order.tallyInvoiceNumber || '');
   const action = nextStatus[order.status];
   const reserved = Number(order.reservedQuantity || 0);
   const total = Number(order.totalQuantity || 0);
+  const requiresInvoice = order.status === 'awaiting_tally_billing';
   return (
-    <article className="grid gap-4 p-5 lg:grid-cols-[1.5fr_1fr_auto] lg:items-center">
+    <article className="p-5">
+      <div className="grid gap-4 lg:grid-cols-[1.5fr_1fr_auto] lg:items-center">
       <div>
         <div className="flex flex-wrap items-center gap-2">
           <strong className="text-[#092f36]">{order.orderNumber}</strong>
-          <span className="rounded-full bg-[#edf3f1] px-2.5 py-1 text-[11px] font-extrabold text-[#46686c]">{statusLabel(order.status)}</span>
+          <span className="rounded-full bg-[#edf3f1] px-2.5 py-1 text-[11px] font-extrabold text-[#46686c]">{orderStage(order.status)}</span>
         </div>
         <p className="mt-2 font-bold text-[#274b50]">{order.customerName}</p>
         <p className="mt-1 text-xs text-[#718487]">{order.customerPhone || 'No phone recorded'} · {order.lineCount} line{order.lineCount === 1 ? '' : 's'}</p>
@@ -298,15 +294,36 @@ function OrderRow({ order, onAdvance }: { order: OrderSummary; onAdvance: (order
         <div className="mt-2 h-1.5 overflow-hidden rounded-full bg-[#edf2f0]"><div className="h-full rounded-full bg-[#64d4ad]" style={{ width: `${total ? Math.min(100, (reserved / total) * 100) : 0}%` }} /></div>
       </div>
       {action ? (
-        <button
+        <div className="flex min-w-48 flex-col gap-2">
+          {requiresInvoice ? <label className="text-xs font-bold text-[#587275]">Tally invoice number<input value={invoiceNumber} onChange={(event) => setInvoiceNumber(event.target.value)} placeholder="Required" className="mt-1 min-h-10 w-full rounded-lg border border-[#cedfdd] px-3 font-normal text-[#173239] outline-none focus:border-[#64d4ad]" /></label> : null}
+          <button
           type="button"
-          disabled={busy}
-          onClick={async () => { setBusy(true); try { await onAdvance(order); } finally { setBusy(false); } }}
+          disabled={busy || (requiresInvoice && !invoiceNumber.trim())}
+          onClick={async () => { setBusy(true); try { await onAdvance(order, invoiceNumber); } finally { setBusy(false); } }}
           className="min-h-11 rounded-xl border border-[#badfd4] bg-[#effbf6] px-4 text-sm font-extrabold text-[#126044] hover:bg-[#e2f8ef] disabled:opacity-50"
         >
           {busy ? 'Updating…' : action.label}
         </button>
+        </div>
       ) : <span className="text-xs font-bold text-[#7d8f91]">No action due</span>}
+      </div>
+      <details className="mt-4 rounded-xl bg-[#f6f8f7] px-4 py-3 text-sm">
+        <summary className="cursor-pointer font-bold text-[#456367]">View order details</summary>
+        <div className="mt-3 grid gap-4 border-t border-[#dfe9e7] pt-3 sm:grid-cols-2">
+          <div>
+            <p className="text-xs font-bold uppercase tracking-wide text-[#708386]">Products</p>
+            <ul className="mt-2 space-y-2">{(order.lines || []).map((line) => <li key={line.tallyKey} className="flex justify-between gap-4"><span><strong className="block text-[#274b50]">{line.itemName}</strong><small className="text-[#718487]">{line.itemGroup || 'Tally stock item'}</small></span><span className="shrink-0 font-bold text-[#274b50]">{formatQuantity(line.quantity)} {line.baseUnit || ''}</span></li>)}</ul>
+          </div>
+          <dl className="grid grid-cols-[auto_1fr] content-start gap-x-3 gap-y-2 text-xs">
+            <dt className="font-bold text-[#708386]">Internal status</dt><dd>{statusLabel(order.status)}</dd>
+            <dt className="font-bold text-[#708386]">Order date</dt><dd>{new Date(order.createdAt).toLocaleString('en-IN')}</dd>
+            <dt className="font-bold text-[#708386]">Last updated</dt><dd>{new Date(order.updatedAt).toLocaleString('en-IN')}</dd>
+            <dt className="font-bold text-[#708386]">Source</dt><dd className="capitalize">{order.source.replaceAll('_', ' ')}</dd>
+            <dt className="font-bold text-[#708386]">Tally invoice</dt><dd>{order.tallyInvoiceNumber || 'Not billed yet'}</dd>
+            <dt className="font-bold text-[#708386]">Notes</dt><dd>{order.notes || 'No notes'}</dd>
+          </dl>
+        </div>
+      </details>
     </article>
   );
 }
