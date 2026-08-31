@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { searchCatalog, searchCustomers, validateOrderCommand } from '../../lib/order-types';
+import { filterOrders, orderStage, searchCatalog, searchCustomers, validateOrderCommand } from '../../lib/order-types';
 
 describe('order command validation', () => {
   it('accepts a complete phone order', () => {
@@ -80,5 +80,32 @@ describe('Tally product search', () => {
 
   it('excludes products already added to the order', () => {
     expect(searchCatalog(catalog, 'sys', new Set(['SYS-FT3']))).toEqual([]);
+  });
+});
+
+describe('order workflow and history', () => {
+  const baseOrder = {
+    id: '1', orderNumber: 'SF-001', customerName: 'City Hospital', customerPhone: '9876543210',
+    status: 'awaiting_confirmation', source: 'phone', notes: null, version: 1,
+    createdAt: '2026-08-31T10:00:00Z', updatedAt: '2026-08-31T10:00:00Z',
+    lineCount: 1, totalQuantity: 2, reservedQuantity: 0, tallyInvoiceNumber: null,
+    lines: [{ tallyKey: 'ITEM-1', itemName: 'Glucose Reagent', itemGroup: 'Reagents', baseUnit: 'box', quantity: 2, reservedQuantity: 0 }],
+  };
+
+  it('presents detailed statuses as six simple operational stages', () => {
+    expect(orderStage('awaiting_confirmation')).toBe('Confirmation');
+    expect(orderStage('fully_reserved')).toBe('Stock allocation');
+    expect(orderStage('picked')).toBe('Pick & pack');
+    expect(orderStage('awaiting_tally_billing')).toBe('Tally billing');
+    expect(orderStage('dispatched')).toBe('Dispatch');
+    expect(orderStage('delivered')).toBe('Delivered');
+  });
+
+  it('separates active and old orders and searches product and invoice details', () => {
+    const delivered = { ...baseOrder, id: '2', orderNumber: 'SF-002', status: 'delivered', tallyInvoiceNumber: 'INV-88' };
+    expect(filterOrders([baseOrder, delivered], '', 'open')).toEqual([baseOrder]);
+    expect(filterOrders([baseOrder, delivered], '', 'history')).toEqual([delivered]);
+    expect(filterOrders([baseOrder, delivered], 'glucose', 'all')).toHaveLength(2);
+    expect(filterOrders([baseOrder, delivered], 'INV-88', 'all')).toEqual([delivered]);
   });
 });
