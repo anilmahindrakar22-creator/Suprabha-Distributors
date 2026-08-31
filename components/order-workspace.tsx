@@ -3,10 +3,12 @@
 import { useCallback, useEffect, useMemo, useState } from 'react';
 import type {
   CatalogItem,
+  CustomerDirectoryEntry,
   OrderBootstrap,
   OrderCommand,
   OrderSummary,
 } from '@/lib/order-types';
+import { searchCustomers } from '@/lib/order-types';
 
 type DraftLine = { item: CatalogItem; quantity: number };
 
@@ -310,6 +312,8 @@ function NewOrderPanel({ data, onClose, onCreated }: { data: OrderBootstrap; onC
   const [customerName, setCustomerName] = useState('');
   const [customerPhone, setCustomerPhone] = useState('');
   const [customerCity, setCustomerCity] = useState('');
+  const [selectedCustomerId, setSelectedCustomerId] = useState<string>();
+  const [customerSuggestionsOpen, setCustomerSuggestionsOpen] = useState(false);
   const [notes, setNotes] = useState('');
   const [productQuery, setProductQuery] = useState('');
   const [lines, setLines] = useState<DraftLine[]>([]);
@@ -326,13 +330,17 @@ function NewOrderPanel({ data, onClose, onCreated }: { data: OrderBootstrap; onC
       .slice(0, 8);
   }, [data.snapshot.catalog, lines, productQuery]);
 
-  function chooseCustomer(name: string) {
-    setCustomerName(name);
-    const customer = data.customers.find((item) => item.name === name);
-    if (customer) {
-      setCustomerPhone(customer.phone || '');
-      setCustomerCity(customer.city || '');
-    }
+  const customerMatches = useMemo(
+    () => searchCustomers(data.customers, customerName),
+    [customerName, data.customers],
+  );
+
+  function chooseCustomer(customer: CustomerDirectoryEntry) {
+    setSelectedCustomerId(customer.id);
+    setCustomerName(customer.name);
+    setCustomerPhone(customer.phone || '');
+    setCustomerCity(customer.city || '');
+    setCustomerSuggestionsOpen(false);
   }
 
   async function submit(event: React.SyntheticEvent<HTMLFormElement>) {
@@ -344,7 +352,9 @@ function NewOrderPanel({ data, onClose, onCreated }: { data: OrderBootstrap; onC
     setSubmitting(true);
     setError('');
     try {
-      const existing = data.customers.find((item) => item.name === customerName.trim());
+      const existing = data.customers.find(
+        (item) => item.id === selectedCustomerId || item.name === customerName.trim(),
+      );
       const body: OrderCommand = {
         action: 'create_order',
         payload: {
@@ -379,8 +389,43 @@ function NewOrderPanel({ data, onClose, onCreated }: { data: OrderBootstrap; onC
             <fieldset className="rounded-2xl border border-[#dce7e5] bg-white p-5">
               <legend className="px-2 text-sm font-extrabold text-[#274b50]">Customer</legend>
               <div className="grid gap-4 sm:grid-cols-2">
-                <label className="sm:col-span-2 text-sm font-bold text-[#456367]">Name<input list="customer-list" required value={customerName} onChange={(event) => chooseCustomer(event.target.value)} className="mt-2 min-h-11 w-full rounded-xl border border-[#cedfdd] px-3 font-normal outline-none focus:border-[#64d4ad]" placeholder="Hospital, laboratory, or customer" /></label>
-                <datalist id="customer-list">{data.customers.map((customer) => <option key={customer.id} value={customer.name}>{customer.name}</option>)}</datalist>
+                <label className="relative sm:col-span-2 text-sm font-bold text-[#456367]">Name
+                  <input
+                    required
+                    value={customerName}
+                    onChange={(event) => {
+                      setCustomerName(event.target.value);
+                      setSelectedCustomerId(undefined);
+                      setCustomerSuggestionsOpen(true);
+                    }}
+                    onFocus={() => setCustomerSuggestionsOpen(true)}
+                    onBlur={() => window.setTimeout(() => setCustomerSuggestionsOpen(false), 120)}
+                    role="combobox"
+                    aria-autocomplete="list"
+                    aria-expanded={customerSuggestionsOpen && customerMatches.length > 0}
+                    aria-controls="customer-suggestions"
+                    autoComplete="off"
+                    className="mt-2 min-h-11 w-full rounded-xl border border-[#cedfdd] px-3 font-normal outline-none focus:border-[#64d4ad]"
+                    placeholder="Type a Tally ledger name"
+                  />
+                  {customerSuggestionsOpen && customerMatches.length > 0 ? (
+                    <ul id="customer-suggestions" aria-label="Matching Tally customer ledgers" className="absolute left-0 right-0 top-full z-20 mt-1 max-h-64 overflow-y-auto rounded-xl border border-[#cfe0dd] bg-white py-1 shadow-xl">
+                      {customerMatches.map((customer) => (
+                        <li key={customer.id}>
+                          <button
+                            type="button"
+                            onMouseDown={(event) => event.preventDefault()}
+                            onClick={() => chooseCustomer(customer)}
+                            className="block min-h-12 w-full px-3 py-2 text-left font-normal hover:bg-[#f2faf7] focus:bg-[#f2faf7] focus:outline-none"
+                          >
+                            <strong className="block text-sm text-[#173239]">{customer.name}</strong>
+                            <small className="block text-[#718487]">{[customer.city, customer.phone].filter(Boolean).join(' · ') || 'Tally customer ledger'}</small>
+                          </button>
+                        </li>
+                      ))}
+                    </ul>
+                  ) : null}
+                </label>
                 <label className="text-sm font-bold text-[#456367]">Phone<input value={customerPhone} onChange={(event) => setCustomerPhone(event.target.value)} className="mt-2 min-h-11 w-full rounded-xl border border-[#cedfdd] px-3 font-normal outline-none focus:border-[#64d4ad]" inputMode="tel" /></label>
                 <label className="text-sm font-bold text-[#456367]">City<input value={customerCity} onChange={(event) => setCustomerCity(event.target.value)} className="mt-2 min-h-11 w-full rounded-xl border border-[#cedfdd] px-3 font-normal outline-none focus:border-[#64d4ad]" /></label>
               </div>

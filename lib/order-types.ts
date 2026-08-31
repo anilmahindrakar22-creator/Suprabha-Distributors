@@ -7,6 +7,14 @@ export type CatalogItem = {
   active: boolean;
 };
 
+export type CustomerDirectoryEntry = {
+  id: string;
+  name: string;
+  phone: string | null;
+  city: string | null;
+  tallyKey: string | null;
+};
+
 export type OrderSummary = {
   id: string;
   orderNumber: string;
@@ -26,16 +34,26 @@ export type OrderSummary = {
 export type OrderBootstrap = {
   actor: { email: string; role: string };
   snapshot: { company: string; fetchedAt: string; catalog: CatalogItem[] };
-  customers: Array<{
-    id: string;
-    name: string;
-    phone: string | null;
-    city: string | null;
-    tallyKey: string | null;
-  }>;
+  customers: CustomerDirectoryEntry[];
   orders: OrderSummary[];
   operations: Record<string, number>;
 };
+
+export function searchCustomers(
+  customers: CustomerDirectoryEntry[],
+  input: string,
+  limit = 8,
+) {
+  const query = input.trim().toLocaleLowerCase('en-IN');
+  if (!query) return [];
+  return customers
+    .filter((customer) =>
+      [customer.name, customer.phone, customer.city, customer.tallyKey]
+        .filter(Boolean)
+        .some((value) => String(value).toLocaleLowerCase('en-IN').includes(query)),
+    )
+    .slice(0, limit);
+}
 
 export type OrderCommand =
   | {
