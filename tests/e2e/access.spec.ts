@@ -23,3 +23,13 @@ test('stock data endpoint fails closed for an unapproved visitor', async ({
     error: expect.stringMatching(/Sign in required|Access denied/),
   });
 });
+
+test('order endpoint fails closed for an unapproved visitor', async ({ request }) => {
+  const response = await request.get('/api/orders');
+
+  expect([401, 403]).toContain(response.status());
+  expect(response.headers()['cache-control']).toBe('private, no-store');
+  expect(await response.json()).toMatchObject({
+    error: expect.stringMatching(/Sign in required|Access denied/),
+  });
+});

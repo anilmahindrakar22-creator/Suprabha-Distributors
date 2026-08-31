@@ -5,7 +5,12 @@ export default defineConfig({
     include: ['tests/unit/**/*.{test,spec}.{js,mjs,ts,tsx}'],
     coverage: {
       provider: 'v8',
-      include: ['lib/access-control.mjs', 'lib/stock-handler.ts'],
+      include: [
+        'lib/access-control.mjs',
+        'lib/stock-handler.ts',
+        'lib/order-types.ts',
+        'lib/order-gateway.ts',
+      ],
       reporter: ['text', 'json-summary', 'html'],
       thresholds: {
         branches: 80,
