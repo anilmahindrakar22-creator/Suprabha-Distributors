@@ -130,6 +130,45 @@ export function billingHandoffText(order: OrderSummary) {
   ].filter(Boolean).join('\n');
 }
 
+function localDateKey(date: Date) {
+  const year = date.getFullYear();
+  const month = String(date.getMonth() + 1).padStart(2, '0');
+  const day = String(date.getDate()).padStart(2, '0');
+  return `${year}-${month}-${day}`;
+}
+
+export function isOrderDeliveryOverdue(order: OrderSummary, today = new Date()) {
+  return Boolean(
+    order.expectedDeliveryDate &&
+    !['cancelled', 'delivered'].includes(order.status) &&
+    order.expectedDeliveryDate < localDateKey(today),
+  );
+}
+
+function csvCell(value: string | number | null | undefined) {
+  let text = String(value ?? '');
+  if (/^[=+\-@]/.test(text)) text = `'${text}`;
+  return `"${text.replaceAll('"', '""')}"`;
+}
+
+export function ordersCsv(orders: OrderSummary[]) {
+  const headings = ['Order', 'Customer', 'Phone', 'Stage', 'Products', 'Quantity', 'Tally invoice', 'Expected delivery', 'Courier', 'Tracking', 'Last updated'];
+  const rows = orders.map((order) => [
+    order.orderNumber,
+    order.customerName,
+    order.customerPhone,
+    orderStage(order.status),
+    order.lines.map((line) => `${line.itemName} (${line.quantity} ${line.baseUnit || ''})`.trim()).join('; '),
+    order.totalQuantity,
+    order.tallyInvoiceNumber,
+    order.expectedDeliveryDate,
+    order.courierName,
+    order.trackingNumber,
+    order.updatedAt,
+  ]);
+  return [headings, ...rows].map((row) => row.map(csvCell).join(',')).join('\r\n');
+}
+
 export function filterOrders(orders: OrderSummary[], query: string, status: string) {
   const normalized = query.trim().toLocaleLowerCase('en-IN');
   return orders.filter((order) => {
@@ -150,6 +189,7 @@ export function filterOrders(orders: OrderSummary[], query: string, status: stri
       (status === 'billing' && order.status === 'awaiting_tally_billing') ||
       (status === 'picking' && ['confirmed', 'partially_reserved', 'fully_reserved', 'ready_for_picking', 'picked'].includes(order.status)) ||
       (status === 'dispatch_ready' && ['billed_in_tally', 'ready_for_dispatch'].includes(order.status)) ||
+      (status === 'overdue' && isOrderDeliveryOverdue(order)) ||
       (status === 'attention' && orderAttentionReasons(order).length > 0) ||
       order.status === status;
     return matchesStatus && (!normalized || searchable.includes(normalized));
@@ -162,6 +202,7 @@ export function orderAttentionReasons(order: OrderSummary, now = new Date()) {
   const ageHours = (now.getTime() - new Date(order.updatedAt).getTime()) / 3_600_000;
   const limit = ['phone_order_received', 'awaiting_confirmation', 'awaiting_approval'].includes(order.status) ? 4 : ['confirmed', 'packed'].includes(order.status) ? 24 : 48;
   if (ageHours > limit) reasons.push(`No progress for over ${limit} hours`);
+  if (isOrderDeliveryOverdue(order, now)) reasons.push('Delivery overdue');
   const fulfilmentStarted = order.lines.some((line) => Number(line.fulfilledQuantity || 0) > 0);
   const fulfilmentDue = ['packed', 'awaiting_tally_billing', 'billed_in_tally', 'ready_for_dispatch', 'dispatched'].includes(order.status);
   if ((fulfilmentStarted || fulfilmentDue) && order.lines.some((line) => Number(line.fulfilledQuantity || 0) < Number(line.quantity))) reasons.push('Partial fulfilment or back-order');
