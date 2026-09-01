@@ -29,24 +29,19 @@ describe('order command validation', () => {
         lines: [{ tallyKey: 'ITEM-1', quantity: 0 }],
       },
     },
-    { action: 'reserve_order', payload: { orderId: 'id' } },
+    { action: 'reserve_order', payload: { orderId: 'id', expectedVersion: 1 } },
   ])('rejects malformed command %#', (command) => {
     expect(validateOrderCommand(command)).toBeNull();
   });
 
-  it('accepts versioned transition and reservation commands', () => {
+  it('accepts versioned transition commands and rejects removed reservations', () => {
     expect(
       validateOrderCommand({
         action: 'transition_order',
         payload: { orderId: 'order-id', expectedVersion: 2, toStatus: 'confirmed' },
       }),
     ).not.toBeNull();
-    expect(
-      validateOrderCommand({
-        action: 'reserve_order',
-        payload: { orderId: 'order-id', expectedVersion: 2 },
-      }),
-    ).not.toBeNull();
+    expect(validateOrderCommand({ action: 'reserve_order', payload: { orderId: 'order-id', expectedVersion: 2 } })).toBeNull();
   });
 });
 
@@ -94,7 +89,8 @@ describe('order workflow and history', () => {
 
   it('presents detailed statuses as six simple operational stages', () => {
     expect(orderStage('awaiting_confirmation')).toBe('Confirmation');
-    expect(orderStage('fully_reserved')).toBe('Stock allocation');
+    expect(orderStage('confirmed')).toBe('Pick & pack');
+    expect(orderStage('fully_reserved')).toBe('Pick & pack');
     expect(orderStage('picked')).toBe('Pick & pack');
     expect(orderStage('awaiting_tally_billing')).toBe('Tally billing');
     expect(orderStage('dispatched')).toBe('Dispatch');

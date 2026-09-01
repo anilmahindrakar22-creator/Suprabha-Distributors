@@ -30,12 +30,12 @@ const statusNames: Record<string, string> = {
   cancelled: 'Cancelled',
 };
 
-const nextStatus: Record<string, { label: string; status?: string; reserve?: boolean }> = {
+const nextStatus: Record<string, { label: string; status: string }> = {
   phone_order_received: { label: 'Send for confirmation', status: 'awaiting_confirmation' },
   awaiting_confirmation: { label: 'Confirm order', status: 'confirmed' },
   awaiting_approval: { label: 'Approve order', status: 'confirmed' },
-  confirmed: { label: 'Reserve available stock', reserve: true },
-  partially_reserved: { label: 'Retry reservation', reserve: true },
+  confirmed: { label: 'Pick & pack complete', status: 'packed' },
+  partially_reserved: { label: 'Pick & pack complete', status: 'packed' },
   fully_reserved: { label: 'Pick & pack complete', status: 'packed' },
   ready_for_picking: { label: 'Pick & pack complete', status: 'packed' },
   picked: { label: 'Pick & pack complete', status: 'packed' },
@@ -126,27 +126,17 @@ export function OrderWorkspace() {
   async function advance(order: OrderSummary, tallyInvoiceNumber?: string) {
     const action = nextStatus[order.status];
     if (!action) return;
-    if (action.reserve) {
-      await runCommand(
-        {
-          action: 'reserve_order',
-          payload: { orderId: order.id, expectedVersion: order.version },
-        },
-        `${order.orderNumber} stock reservation updated.`,
-      );
-      return;
-    }
     await runCommand(
       {
         action: 'transition_order',
         payload: {
           orderId: order.id,
           expectedVersion: order.version,
-          toStatus: action.status || '',
+          toStatus: action.status,
           tallyInvoiceNumber: tallyInvoiceNumber?.trim() || undefined,
         },
       },
-      `${order.orderNumber} moved to ${statusLabel(action.status || '')}.`,
+      `${order.orderNumber} moved to ${statusLabel(action.status)}.`,
     );
   }
 
@@ -165,7 +155,7 @@ export function OrderWorkspace() {
               Orders
             </h1>
             <p className="mt-2 text-sm text-[#667b7e]">
-              Capture orders, reserve stock, and hand confirmed work to Tally.
+              Capture orders, pick and pack them, then hand billing to Tally.
             </p>
           </div>
           <button
@@ -208,7 +198,6 @@ export function OrderWorkspace() {
             <option value="all">All orders</option>
             <option value="awaiting_confirmation">Awaiting confirmation</option>
             <option value="confirmed">Confirmed</option>
-            <option value="partially_reserved">Awaiting stock</option>
             <option value="awaiting_tally_billing">Awaiting Tally billing</option>
             <option value="cancelled">Cancelled</option>
           </select>
@@ -274,7 +263,6 @@ function OrderRow({ order, onAdvance }: { order: OrderSummary; onAdvance: (order
   const [busy, setBusy] = useState(false);
   const [invoiceNumber, setInvoiceNumber] = useState(order.tallyInvoiceNumber || '');
   const action = nextStatus[order.status];
-  const reserved = Number(order.reservedQuantity || 0);
   const total = Number(order.totalQuantity || 0);
   const requiresInvoice = order.status === 'awaiting_tally_billing';
   return (
@@ -289,9 +277,8 @@ function OrderRow({ order, onAdvance }: { order: OrderSummary; onAdvance: (order
         <p className="mt-1 text-xs text-[#718487]">{order.customerPhone || 'No phone recorded'} · {order.lineCount} line{order.lineCount === 1 ? '' : 's'}</p>
       </div>
       <div>
-        <p className="text-xs font-bold text-[#708386]">Reserved quantity</p>
-        <p className="mt-1 font-extrabold text-[#274b50]">{formatQuantity(reserved)} / {formatQuantity(total)}</p>
-        <div className="mt-2 h-1.5 overflow-hidden rounded-full bg-[#edf2f0]"><div className="h-full rounded-full bg-[#64d4ad]" style={{ width: `${total ? Math.min(100, (reserved / total) * 100) : 0}%` }} /></div>
+        <p className="text-xs font-bold text-[#708386]">Ordered quantity</p>
+        <p className="mt-1 font-extrabold text-[#274b50]">{formatQuantity(total)}</p>
       </div>
       {action ? (
         <div className="flex min-w-48 flex-col gap-2">

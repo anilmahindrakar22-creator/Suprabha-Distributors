@@ -86,8 +86,7 @@ export function searchCatalog(
 
 export function orderStage(status: string) {
   if (['phone_order_received', 'awaiting_confirmation', 'awaiting_approval'].includes(status)) return 'Confirmation';
-  if (['confirmed', 'partially_reserved', 'fully_reserved'].includes(status)) return 'Stock allocation';
-  if (['ready_for_picking', 'picked', 'packed'].includes(status)) return 'Pick & pack';
+  if (['confirmed', 'partially_reserved', 'fully_reserved', 'ready_for_picking', 'picked', 'packed'].includes(status)) return 'Pick & pack';
   if (['awaiting_tally_billing', 'billed_in_tally'].includes(status)) return 'Tally billing';
   if (['ready_for_dispatch', 'dispatched'].includes(status)) return 'Dispatch';
   if (status === 'delivered') return 'Delivered';
@@ -140,17 +139,13 @@ export type OrderCommand =
         reason?: string;
         tallyInvoiceNumber?: string;
       };
-    }
-  | {
-      action: 'reserve_order';
-      payload: { orderId: string; expectedVersion: number };
     };
 
 export function validateOrderCommand(value: unknown): OrderCommand | null {
   if (!value || typeof value !== 'object') return null;
   const command = value as { action?: unknown; payload?: unknown };
   if (
-    !['create_order', 'transition_order', 'reserve_order'].includes(
+    !['create_order', 'transition_order'].includes(
       String(command.action),
     ) ||
     !command.payload ||
@@ -185,8 +180,7 @@ export function validateOrderCommand(value: unknown): OrderCommand | null {
   } else if (
     typeof payload.orderId !== 'string' ||
     !Number.isInteger(Number(payload.expectedVersion)) ||
-    (command.action === 'transition_order' &&
-      typeof payload.toStatus !== 'string')
+    typeof payload.toStatus !== 'string'
   ) {
     return null;
   }
