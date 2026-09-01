@@ -148,6 +148,8 @@ export function filterOrders(orders: OrderSummary[], query: string, status: stri
       (status === 'open' && !['delivered', 'cancelled'].includes(order.status)) ||
       (status === 'history' && ['delivered', 'cancelled'].includes(order.status)) ||
       (status === 'billing' && order.status === 'awaiting_tally_billing') ||
+      (status === 'picking' && ['confirmed', 'partially_reserved', 'fully_reserved', 'ready_for_picking', 'picked'].includes(order.status)) ||
+      (status === 'dispatch_ready' && ['billed_in_tally', 'ready_for_dispatch'].includes(order.status)) ||
       (status === 'attention' && orderAttentionReasons(order).length > 0) ||
       order.status === status;
     return matchesStatus && (!normalized || searchable.includes(normalized));

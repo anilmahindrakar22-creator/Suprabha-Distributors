@@ -131,6 +131,13 @@ describe('order workflow and history', () => {
     ].join('\n'));
   });
 
+  it('maps dashboard drill-downs to combined operational queues', () => {
+    const picking = { ...baseOrder, id: '2', status: 'ready_for_picking' };
+    const dispatchReady = { ...baseOrder, id: '3', status: 'billed_in_tally' };
+    expect(filterOrders([baseOrder, picking, dispatchReady], '', 'picking')).toEqual([picking]);
+    expect(filterOrders([baseOrder, picking, dispatchReady], '', 'dispatch_ready')).toEqual([dispatchReady]);
+  });
+
   it('identifies operational exceptions for the attention queue', () => {
     const delayed = { ...baseOrder, updatedAt: '2026-08-31T01:00:00Z' };
     expect(orderAttentionReasons(delayed, new Date('2026-08-31T10:00:00Z'))).toContain('No progress for over 4 hours');
