@@ -8,7 +8,7 @@ import type {
   OrderCommand,
   OrderSummary,
 } from '@/lib/order-types';
-import { filterOrders, orderAttentionReasons, orderStage, searchCatalog, searchCustomers } from '@/lib/order-types';
+import { billingHandoffText, filterOrders, orderAttentionReasons, orderStage, searchCatalog, searchCustomers } from '@/lib/order-types';
 
 type DraftLine = { item: CatalogItem; quantity: number };
 
@@ -217,6 +217,7 @@ export function OrderWorkspace() {
           >
             <option value="open">Active orders</option>
             <option value="attention">Needs attention</option>
+            <option value="billing">Tally billing queue</option>
             <option value="history">Old orders</option>
             <option value="all">All orders</option>
             <option value="awaiting_confirmation">Awaiting confirmation</option>
@@ -364,6 +365,7 @@ function OrderRow({
         </div>
         {!['cancelled', 'delivered'].includes(order.status) ? <FulfilmentEditor order={order} onSave={onSaveFulfilment} /> : null}
         {['phone_order_received','awaiting_confirmation','awaiting_approval','confirmed','partially_reserved','fully_reserved','ready_for_picking','picked','packed'].includes(order.status) ? <OrderEditPanel order={order} onSave={onEdit} /> : null}
+        {order.status === 'awaiting_tally_billing' ? <BillingHandoff order={order} /> : null}
         <div className="mt-5 border-t border-[#dfe9e7] pt-4">
           <p className="text-xs font-bold uppercase tracking-wide text-[#708386]">Activity log</p>
           {(order.events || []).length ? <ol className="mt-3 space-y-3">{order.events.map((event) => <li key={event.id} className="grid grid-cols-[10px_1fr] gap-3"><span className="mt-1.5 size-2.5 rounded-full bg-[#64d4ad]" /><div><p className="font-bold text-[#274b50]">{event.toStatus ? `${statusLabel(event.fromStatus || 'new')} → ${statusLabel(event.toStatus)}` : event.eventType.replaceAll('_', ' ')}</p><p className="mt-0.5 text-xs text-[#718487]">{event.actorEmail} ({event.actorRole}) · {new Date(event.createdAt).toLocaleString('en-IN')}</p>{event.reason ? <p className="mt-1 text-xs text-[#80524d]">Reason: {event.reason}</p> : null}</div></li>)}</ol> : <p className="mt-2 text-xs text-[#718487]">No recorded activity yet.</p>}
@@ -371,6 +373,19 @@ function OrderRow({
       </details>
     </article>
   );
+}
+
+function BillingHandoff({ order }: { order: OrderSummary }) {
+  const [state, setState] = useState<'idle' | 'copied' | 'error'>('idle');
+  async function copy() {
+    try {
+      await navigator.clipboard.writeText(billingHandoffText(order));
+      setState('copied');
+    } catch {
+      setState('error');
+    }
+  }
+  return <div className="mt-5 flex flex-col gap-2 border-t border-[#dfe9e7] pt-4 sm:flex-row sm:items-center sm:justify-between"><div><p className="font-bold text-[#31585d]">Tally billing handoff</p><p className="text-xs text-[#718487]">Copies the customer, products, quantities, delivery details, and notes.</p>{state === 'error' ? <p className="mt-1 text-xs font-bold text-[#9a4e47]">Copy was blocked. Please allow clipboard access and try again.</p> : null}</div><button type="button" onClick={() => void copy()} className="min-h-10 shrink-0 rounded-xl border border-[#badfd4] bg-white px-4 text-sm font-bold text-[#126044] hover:bg-[#effbf6]">{state === 'copied' ? 'Copied' : 'Copy for Tally'}</button></div>;
 }
 
 function OrderEditPanel({ order, onSave }: { order: OrderSummary; onSave: (order: OrderSummary, payload: Extract<OrderCommand, { action: 'edit_order' }>['payload']) => Promise<void> }) {

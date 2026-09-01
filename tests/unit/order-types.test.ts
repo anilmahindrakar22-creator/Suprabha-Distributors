@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { filterOrders, orderAttentionReasons, orderStage, searchCatalog, searchCustomers, validateOrderCommand } from '../../lib/order-types';
+import { billingHandoffText, filterOrders, orderAttentionReasons, orderStage, searchCatalog, searchCustomers, validateOrderCommand } from '../../lib/order-types';
 
 describe('order command validation', () => {
   it('accepts a complete phone order', () => {
@@ -115,6 +115,20 @@ describe('order workflow and history', () => {
     expect(filterOrders([baseOrder, delivered], '', 'history')).toEqual([delivered]);
     expect(filterOrders([baseOrder, delivered], 'glucose', 'all')).toHaveLength(2);
     expect(filterOrders([baseOrder, delivered], 'INV-88', 'all')).toEqual([delivered]);
+  });
+
+  it('builds a concise Tally billing handoff and isolates the billing queue', () => {
+    const billing = { ...baseOrder, status: 'awaiting_tally_billing', deliveryAddress: 'Market Road', notes: 'Call before delivery' };
+    expect(filterOrders([baseOrder, billing], '', 'billing')).toEqual([billing]);
+    expect(billingHandoffText(billing)).toBe([
+      'Order: SF-001',
+      'Customer: City Hospital',
+      'Phone: 9876543210',
+      'Products:',
+      '- Glucose Reagent: 2 box',
+      'Delivery: Market Road',
+      'Notes: Call before delivery',
+    ].join('\n'));
   });
 
   it('identifies operational exceptions for the attention queue', () => {
