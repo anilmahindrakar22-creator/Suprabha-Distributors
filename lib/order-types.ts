@@ -131,9 +131,24 @@ export function filterOrders(orders: OrderSummary[], query: string, status: stri
       status === 'all' ||
       (status === 'open' && !['delivered', 'cancelled'].includes(order.status)) ||
       (status === 'history' && ['delivered', 'cancelled'].includes(order.status)) ||
+      (status === 'attention' && orderAttentionReasons(order).length > 0) ||
       order.status === status;
     return matchesStatus && (!normalized || searchable.includes(normalized));
   });
+}
+
+export function orderAttentionReasons(order: OrderSummary, now = new Date()) {
+  if (['cancelled', 'delivered'].includes(order.status)) return [];
+  const reasons: string[] = [];
+  const ageHours = (now.getTime() - new Date(order.updatedAt).getTime()) / 3_600_000;
+  const limit = ['phone_order_received', 'awaiting_confirmation', 'awaiting_approval'].includes(order.status) ? 4 : ['confirmed', 'packed'].includes(order.status) ? 24 : 48;
+  if (ageHours > limit) reasons.push(`No progress for over ${limit} hours`);
+  const fulfilmentStarted = order.lines.some((line) => Number(line.fulfilledQuantity || 0) > 0);
+  const fulfilmentDue = ['packed', 'awaiting_tally_billing', 'billed_in_tally', 'ready_for_dispatch', 'dispatched'].includes(order.status);
+  if ((fulfilmentStarted || fulfilmentDue) && order.lines.some((line) => Number(line.fulfilledQuantity || 0) < Number(line.quantity))) reasons.push('Partial fulfilment or back-order');
+  if (['packed', 'awaiting_tally_billing', 'billed_in_tally', 'ready_for_dispatch'].includes(order.status) && order.lines.some((line) => !line.batchNumber || !line.expiryDate)) reasons.push('Batch or expiry details missing');
+  if (order.status === 'ready_for_dispatch' && !order.trackingNumber) reasons.push('Dispatch tracking missing');
+  return reasons;
 }
 
 export type OrderCommand =
@@ -171,13 +186,17 @@ export type OrderCommand =
         trackingNumber?: string;
         lines: Array<{ tallyKey: string; fulfilledQuantity: number; batchNumber?: string; expiryDate?: string }>;
       };
+    }
+  | {
+      action: 'edit_order';
+      payload: { orderId: string; expectedVersion: number; customerName: string; customerPhone?: string; notes?: string; reason?: string; lines: Array<{ tallyKey: string; quantity: number }> };
     };
 
 export function validateOrderCommand(value: unknown): OrderCommand | null {
   if (!value || typeof value !== 'object') return null;
   const command = value as { action?: unknown; payload?: unknown };
   if (
-    !['create_order', 'transition_order', 'save_fulfilment'].includes(
+    !['create_order', 'transition_order', 'save_fulfilment', 'edit_order'].includes(
       String(command.action),
     ) ||
     !command.payload ||
@@ -218,6 +237,9 @@ export function validateOrderCommand(value: unknown): OrderCommand | null {
   } else if (command.action === 'save_fulfilment') {
     const lines = Array.isArray(payload.lines) ? payload.lines : [];
     if (typeof payload.orderId !== 'string' || !Number.isInteger(Number(payload.expectedVersion)) || lines.some((line) => !line || typeof line !== 'object' || typeof (line as Record<string, unknown>).tallyKey !== 'string' || Number((line as Record<string, unknown>).fulfilledQuantity) < 0)) return null;
+  } else if (command.action === 'edit_order') {
+    const lines = Array.isArray(payload.lines) ? payload.lines : [];
+    if (typeof payload.orderId !== 'string' || !Number.isInteger(Number(payload.expectedVersion)) || typeof payload.customerName !== 'string' || payload.customerName.trim().length < 2 || lines.length < 1 || lines.some((line) => !line || typeof line !== 'object' || typeof (line as Record<string, unknown>).tallyKey !== 'string' || Number((line as Record<string, unknown>).quantity) <= 0)) return null;
   }
 
   return command as OrderCommand;
