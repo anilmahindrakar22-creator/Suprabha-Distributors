@@ -5,6 +5,7 @@ export type GatewayAction =
   | 'bootstrap'
   | 'list_users'
   | 'upsert_user'
+  | 'save_fulfilment'
   | OrderCommand['action'];
 
 export class OrderGatewayError extends Error {

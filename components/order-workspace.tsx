@@ -155,6 +155,10 @@ export function OrderWorkspace() {
     );
   }
 
+  async function saveFulfilment(order: OrderSummary, payload: Extract<OrderCommand, { action: 'save_fulfilment' }>['payload']) {
+    await runCommand({ action: 'save_fulfilment', payload }, `${order.orderNumber} fulfilment details saved.`);
+  }
+
   const operations = data?.operations || {};
   const staleText = data?.snapshot.fetchedAt || 'No Tally snapshot';
 
@@ -249,6 +253,7 @@ export function OrderWorkspace() {
                   actorRole={data?.actor.role || ''}
                   onAdvance={advance}
                   onCancel={cancelOrder}
+                  onSaveFulfilment={saveFulfilment}
                 />
               ))}
             </div>
@@ -285,11 +290,13 @@ function OrderRow({
   actorRole,
   onAdvance,
   onCancel,
+  onSaveFulfilment,
 }: {
   order: OrderSummary;
   actorRole: string;
   onAdvance: (order: OrderSummary, tallyInvoiceNumber?: string) => Promise<void>;
   onCancel: (order: OrderSummary, reason: string) => Promise<void>;
+  onSaveFulfilment: (order: OrderSummary, payload: Extract<OrderCommand, { action: 'save_fulfilment' }>['payload']) => Promise<void>;
 }) {
   const [busy, setBusy] = useState(false);
   const [invoiceNumber, setInvoiceNumber] = useState(order.tallyInvoiceNumber || '');
@@ -346,6 +353,7 @@ function OrderRow({
             <dt className="font-bold text-[#708386]">Notes</dt><dd>{order.notes || 'No notes'}</dd>
           </dl>
         </div>
+        {!['cancelled', 'delivered'].includes(order.status) ? <FulfilmentEditor order={order} onSave={onSaveFulfilment} /> : null}
         <div className="mt-5 border-t border-[#dfe9e7] pt-4">
           <p className="text-xs font-bold uppercase tracking-wide text-[#708386]">Activity log</p>
           {(order.events || []).length ? <ol className="mt-3 space-y-3">{order.events.map((event) => <li key={event.id} className="grid grid-cols-[10px_1fr] gap-3"><span className="mt-1.5 size-2.5 rounded-full bg-[#64d4ad]" /><div><p className="font-bold text-[#274b50]">{event.toStatus ? `${statusLabel(event.fromStatus || 'new')} → ${statusLabel(event.toStatus)}` : event.eventType.replaceAll('_', ' ')}</p><p className="mt-0.5 text-xs text-[#718487]">{event.actorEmail} ({event.actorRole}) · {new Date(event.createdAt).toLocaleString('en-IN')}</p>{event.reason ? <p className="mt-1 text-xs text-[#80524d]">Reason: {event.reason}</p> : null}</div></li>)}</ol> : <p className="mt-2 text-xs text-[#718487]">No recorded activity yet.</p>}
@@ -353,6 +361,18 @@ function OrderRow({
       </details>
     </article>
   );
+}
+
+function FulfilmentEditor({ order, onSave }: { order: OrderSummary; onSave: (order: OrderSummary, payload: Extract<OrderCommand, { action: 'save_fulfilment' }>['payload']) => Promise<void> }) {
+  const [open, setOpen] = useState(false);
+  const [busy, setBusy] = useState(false);
+  const [deliveryAddress, setDeliveryAddress] = useState(order.deliveryAddress || '');
+  const [expectedDeliveryDate, setExpectedDeliveryDate] = useState(order.expectedDeliveryDate || '');
+  const [courierName, setCourierName] = useState(order.courierName || '');
+  const [trackingNumber, setTrackingNumber] = useState(order.trackingNumber || '');
+  const [lines, setLines] = useState(() => order.lines.map((line) => ({ tallyKey: line.tallyKey, itemName: line.itemName, quantity: line.quantity, fulfilledQuantity: Number(line.fulfilledQuantity || 0), batchNumber: line.batchNumber || '', expiryDate: line.expiryDate || '' })));
+  const backOrdered = lines.reduce((sum, line) => sum + Math.max(line.quantity - line.fulfilledQuantity, 0), 0);
+  return <div className="mt-5 border-t border-[#dfe9e7] pt-4"><button type="button" onClick={() => setOpen((value) => !value)} className="font-bold text-[#31585d]">{open ? '−' : '+'} Fulfilment details</button>{open ? <div className="mt-3 space-y-4 rounded-xl bg-white p-4"><div className="grid gap-3 sm:grid-cols-2"><label className="text-xs font-bold text-[#587275]">Expected delivery<input type="date" value={expectedDeliveryDate} onChange={(event) => setExpectedDeliveryDate(event.target.value)} className="mt-1 min-h-10 w-full rounded-lg border border-[#cedfdd] px-3 font-normal" /></label><label className="text-xs font-bold text-[#587275]">Delivery address<input value={deliveryAddress} onChange={(event) => setDeliveryAddress(event.target.value)} className="mt-1 min-h-10 w-full rounded-lg border border-[#cedfdd] px-3 font-normal" /></label><label className="text-xs font-bold text-[#587275]">Courier / transporter<input value={courierName} onChange={(event) => setCourierName(event.target.value)} className="mt-1 min-h-10 w-full rounded-lg border border-[#cedfdd] px-3 font-normal" /></label><label className="text-xs font-bold text-[#587275]">Tracking / docket number<input value={trackingNumber} onChange={(event) => setTrackingNumber(event.target.value)} className="mt-1 min-h-10 w-full rounded-lg border border-[#cedfdd] px-3 font-normal" /></label></div><div className="space-y-2">{lines.map((line, index) => <div key={line.tallyKey} className="grid gap-2 rounded-lg bg-[#f6f8f7] p-3 sm:grid-cols-[1fr_100px_140px_140px]"><strong className="text-xs text-[#274b50]">{line.itemName}<small className="block font-normal text-[#718487]">Ordered {formatQuantity(line.quantity)}</small></strong><label className="text-[11px] font-bold">Fulfilled<input type="number" min="0" max={line.quantity} step="0.001" value={line.fulfilledQuantity} onChange={(event) => setLines((current) => current.map((item, position) => position === index ? { ...item, fulfilledQuantity: Number(event.target.value) } : item))} className="mt-1 min-h-9 w-full rounded-lg border px-2 font-normal" /></label><label className="text-[11px] font-bold">Batch / lot<input value={line.batchNumber} onChange={(event) => setLines((current) => current.map((item, position) => position === index ? { ...item, batchNumber: event.target.value } : item))} className="mt-1 min-h-9 w-full rounded-lg border px-2 font-normal" /></label><label className="text-[11px] font-bold">Expiry<input type="date" value={line.expiryDate} onChange={(event) => setLines((current) => current.map((item, position) => position === index ? { ...item, expiryDate: event.target.value } : item))} className="mt-1 min-h-9 w-full rounded-lg border px-2 font-normal" /></label></div>)}</div><div className="flex items-center justify-between gap-3"><p className={`text-xs font-bold ${backOrdered > 0 ? 'text-[#9a6412]' : 'text-[#277b69]'}`}>{backOrdered > 0 ? `${formatQuantity(backOrdered)} back-ordered` : 'Fully fulfilled'}</p><button type="button" disabled={busy} onClick={async () => { setBusy(true); try { await onSave(order, { orderId: order.id, expectedVersion: order.version, deliveryAddress, expectedDeliveryDate, courierName, trackingNumber, lines: lines.map(({ tallyKey, fulfilledQuantity, batchNumber, expiryDate }) => ({ tallyKey, fulfilledQuantity, batchNumber, expiryDate })) }); } finally { setBusy(false); } }} className="min-h-10 rounded-xl bg-[#092f36] px-4 font-bold text-white disabled:opacity-50">{busy ? 'Saving…' : 'Save fulfilment'}</button></div></div> : null}</div>;
 }
 
 function NewOrderPanel({ data, onClose, onCreated }: { data: OrderBootstrap; onClose: () => void; onCreated: (number: string) => void }) {

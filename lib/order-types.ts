@@ -30,6 +30,10 @@ export type OrderSummary = {
   totalQuantity: number;
   reservedQuantity: number;
   tallyInvoiceNumber: string | null;
+  deliveryAddress?: string | null;
+  expectedDeliveryDate?: string | null;
+  courierName?: string | null;
+  trackingNumber?: string | null;
   lines: OrderLineSummary[];
   events: OrderEvent[];
 };
@@ -53,6 +57,9 @@ export type OrderLineSummary = {
   baseUnit: string | null;
   quantity: number;
   reservedQuantity: number;
+  fulfilledQuantity?: number;
+  batchNumber?: string | null;
+  expiryDate?: string | null;
 };
 
 export type OrderBootstrap = {
@@ -152,13 +159,25 @@ export type OrderCommand =
         reason?: string;
         tallyInvoiceNumber?: string;
       };
+    }
+  | {
+      action: 'save_fulfilment';
+      payload: {
+        orderId: string;
+        expectedVersion: number;
+        deliveryAddress?: string;
+        expectedDeliveryDate?: string;
+        courierName?: string;
+        trackingNumber?: string;
+        lines: Array<{ tallyKey: string; fulfilledQuantity: number; batchNumber?: string; expiryDate?: string }>;
+      };
     };
 
 export function validateOrderCommand(value: unknown): OrderCommand | null {
   if (!value || typeof value !== 'object') return null;
   const command = value as { action?: unknown; payload?: unknown };
   if (
-    !['create_order', 'transition_order'].includes(
+    !['create_order', 'transition_order', 'save_fulfilment'].includes(
       String(command.action),
     ) ||
     !command.payload ||
@@ -190,12 +209,15 @@ export function validateOrderCommand(value: unknown): OrderCommand | null {
     ) {
       return null;
     }
-  } else if (
+  } else if (command.action === 'transition_order' && (
     typeof payload.orderId !== 'string' ||
     !Number.isInteger(Number(payload.expectedVersion)) ||
     typeof payload.toStatus !== 'string'
-  ) {
+  )) {
     return null;
+  } else if (command.action === 'save_fulfilment') {
+    const lines = Array.isArray(payload.lines) ? payload.lines : [];
+    if (typeof payload.orderId !== 'string' || !Number.isInteger(Number(payload.expectedVersion)) || lines.some((line) => !line || typeof line !== 'object' || typeof (line as Record<string, unknown>).tallyKey !== 'string' || Number((line as Record<string, unknown>).fulfilledQuantity) < 0)) return null;
   }
 
   return command as OrderCommand;
