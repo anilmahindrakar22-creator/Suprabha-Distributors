@@ -140,6 +140,21 @@ export function OrderWorkspace() {
     );
   }
 
+  async function cancelOrder(order: OrderSummary, reason: string) {
+    await runCommand(
+      {
+        action: 'transition_order',
+        payload: {
+          orderId: order.id,
+          expectedVersion: order.version,
+          toStatus: 'cancelled',
+          reason: reason.trim(),
+        },
+      },
+      `${order.orderNumber} cancelled.`,
+    );
+  }
+
   const operations = data?.operations || {};
   const staleText = data?.snapshot.fetchedAt || 'No Tally snapshot';
 
@@ -228,7 +243,13 @@ export function OrderWorkspace() {
           ) : (
             <div className="divide-y divide-[#e8efed]">
               {visibleOrders.map((order) => (
-                <OrderRow key={order.id} order={order} onAdvance={advance} />
+                <OrderRow
+                  key={order.id}
+                  order={order}
+                  actorRole={data?.actor.role || ''}
+                  onAdvance={advance}
+                  onCancel={cancelOrder}
+                />
               ))}
             </div>
           )}
@@ -259,12 +280,25 @@ function SummaryCard({ label, value, tone = 'normal' }: { label: string; value?:
   );
 }
 
-function OrderRow({ order, onAdvance }: { order: OrderSummary; onAdvance: (order: OrderSummary, tallyInvoiceNumber?: string) => Promise<void> }) {
+function OrderRow({
+  order,
+  actorRole,
+  onAdvance,
+  onCancel,
+}: {
+  order: OrderSummary;
+  actorRole: string;
+  onAdvance: (order: OrderSummary, tallyInvoiceNumber?: string) => Promise<void>;
+  onCancel: (order: OrderSummary, reason: string) => Promise<void>;
+}) {
   const [busy, setBusy] = useState(false);
   const [invoiceNumber, setInvoiceNumber] = useState(order.tallyInvoiceNumber || '');
+  const [cancelling, setCancelling] = useState(false);
+  const [cancelReason, setCancelReason] = useState('');
   const action = nextStatus[order.status];
   const total = Number(order.totalQuantity || 0);
   const requiresInvoice = order.status === 'awaiting_tally_billing';
+  const canCancel = actorRole === 'administrator' && !['cancelled', 'delivered'].includes(order.status);
   return (
     <article className="p-5">
       <div className="grid gap-4 lg:grid-cols-[1.5fr_1fr_auto] lg:items-center">
@@ -291,9 +325,11 @@ function OrderRow({ order, onAdvance }: { order: OrderSummary; onAdvance: (order
         >
           {busy ? 'Updating…' : action.label}
         </button>
+        {canCancel ? <button type="button" disabled={busy} onClick={() => setCancelling(true)} className="min-h-10 rounded-xl px-4 text-sm font-bold text-[#9a4e47] hover:bg-[#fff0ef] disabled:opacity-50">Cancel order</button> : null}
         </div>
-      ) : <span className="text-xs font-bold text-[#7d8f91]">No action due</span>}
+      ) : canCancel ? <button type="button" disabled={busy} onClick={() => setCancelling(true)} className="min-h-10 rounded-xl px-4 text-sm font-bold text-[#9a4e47] hover:bg-[#fff0ef] disabled:opacity-50">Cancel order</button> : <span className="text-xs font-bold text-[#7d8f91]">No action due</span>}
       </div>
+      {cancelling ? <div className="mt-4 rounded-xl border border-[#efbbb6] bg-[#fff8f7] p-4"><label className="text-sm font-bold text-[#7d413c]">Why is this order being cancelled?<textarea value={cancelReason} onChange={(event) => setCancelReason(event.target.value)} rows={2} maxLength={500} className="mt-2 w-full rounded-xl border border-[#dfbbb7] bg-white p-3 font-normal text-[#173239] outline-none focus:border-[#d06a61]" placeholder="Cancellation reason is required" /></label><div className="mt-3 flex justify-end gap-2"><button type="button" onClick={() => { setCancelling(false); setCancelReason(''); }} className="min-h-10 rounded-xl px-4 font-bold text-[#557174]">Keep order</button><button type="button" disabled={busy || !cancelReason.trim()} onClick={async () => { setBusy(true); try { await onCancel(order, cancelReason); setCancelling(false); } finally { setBusy(false); } }} className="min-h-10 rounded-xl bg-[#a54c44] px-4 font-bold text-white disabled:opacity-50">{busy ? 'Cancelling…' : 'Confirm cancellation'}</button></div></div> : null}
       <details className="mt-4 rounded-xl bg-[#f6f8f7] px-4 py-3 text-sm">
         <summary className="cursor-pointer font-bold text-[#456367]">View order details</summary>
         <div className="mt-3 grid gap-4 border-t border-[#dfe9e7] pt-3 sm:grid-cols-2">
@@ -309,6 +345,10 @@ function OrderRow({ order, onAdvance }: { order: OrderSummary; onAdvance: (order
             <dt className="font-bold text-[#708386]">Tally invoice</dt><dd>{order.tallyInvoiceNumber || 'Not billed yet'}</dd>
             <dt className="font-bold text-[#708386]">Notes</dt><dd>{order.notes || 'No notes'}</dd>
           </dl>
+        </div>
+        <div className="mt-5 border-t border-[#dfe9e7] pt-4">
+          <p className="text-xs font-bold uppercase tracking-wide text-[#708386]">Activity log</p>
+          {(order.events || []).length ? <ol className="mt-3 space-y-3">{order.events.map((event) => <li key={event.id} className="grid grid-cols-[10px_1fr] gap-3"><span className="mt-1.5 size-2.5 rounded-full bg-[#64d4ad]" /><div><p className="font-bold text-[#274b50]">{event.toStatus ? `${statusLabel(event.fromStatus || 'new')} → ${statusLabel(event.toStatus)}` : event.eventType.replaceAll('_', ' ')}</p><p className="mt-0.5 text-xs text-[#718487]">{event.actorEmail} ({event.actorRole}) · {new Date(event.createdAt).toLocaleString('en-IN')}</p>{event.reason ? <p className="mt-1 text-xs text-[#80524d]">Reason: {event.reason}</p> : null}</div></li>)}</ol> : <p className="mt-2 text-xs text-[#718487]">No recorded activity yet.</p>}
         </div>
       </details>
     </article>
