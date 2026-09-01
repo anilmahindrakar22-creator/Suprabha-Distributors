@@ -2,8 +2,8 @@ import { StockFlowFrame } from '@/components/stockflow-frame';
 import {
   chatGPTSignInPath,
   getChatGPTUser,
-  hasStockFlowAccess,
 } from './chatgpt-auth';
+import { getStockFlowSession } from '@/lib/stockflow-session';
 
 export const dynamic = 'force-dynamic';
 
@@ -40,7 +40,8 @@ export default async function Home() {
     );
   }
 
-  if (!hasStockFlowAccess(user)) {
+  const session = await getStockFlowSession(user.email);
+  if (!session) {
     return (
       <main className="grid min-h-dvh place-items-center bg-[#f7f6f1] px-5 text-[#173239]">
         <section className="w-full max-w-md rounded-3xl border border-[#efd6a5] bg-white p-8 shadow-[0_18px_55px_rgba(9,47,54,0.1)]">
@@ -66,5 +67,5 @@ export default async function Home() {
     );
   }
 
-  return <StockFlowFrame />;
+  return <StockFlowFrame actorRole={session.role} />;
 }

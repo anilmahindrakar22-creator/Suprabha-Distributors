@@ -2,9 +2,10 @@
 
 import { useEffect, useState } from 'react';
 import { OrderWorkspace } from './order-workspace';
+import { UserManagement } from './user-management';
 
-export function StockFlowFrame() {
-  const [surface, setSurface] = useState<'stock' | 'orders'>('stock');
+export function StockFlowFrame({ actorRole }: { actorRole: string }) {
+  const [surface, setSurface] = useState<'stock' | 'orders' | 'users'>('stock');
 
   useEffect(() => {
     if ('serviceWorker' in navigator) {
@@ -25,7 +26,7 @@ export function StockFlowFrame() {
           </div>
         </div>
         <nav aria-label="Application sections" className="flex rounded-xl bg-[#edf3f1] p-1">
-          {(['stock', 'orders'] as const).map((item) => (
+          {(['stock', 'orders', ...(actorRole === 'administrator' ? ['users' as const] : [])] as const).map((item) => (
             <button
               key={item}
               type="button"
@@ -50,9 +51,9 @@ export function StockFlowFrame() {
             className="h-full w-full border-0"
             allow="clipboard-write"
           />
-        ) : (
+        ) : surface === 'orders' ? (
           <OrderWorkspace />
-        )}
+        ) : <UserManagement />}
       </section>
     </main>
   );

@@ -2,7 +2,7 @@ type StockHandlerDependencies<User> = {
   endpoint: string;
   fetchFn: typeof fetch;
   getUser: () => Promise<User | null>;
-  hasAccess: (user: User | null) => boolean;
+  hasAccess: (user: User) => boolean | Promise<boolean>;
   readKey: () => string | undefined;
 };
 
@@ -28,7 +28,7 @@ export function createStockHandler<User>({
   return async function getStock(): Promise<Response> {
     const user = await getUser();
     if (!user) return errorResponse('Sign in required', 401);
-    if (!hasAccess(user)) return errorResponse('Access denied', 403);
+    if (!(await hasAccess(user))) return errorResponse('Access denied', 403);
 
     const key = readKey();
     if (!key) return errorResponse('Stock service is not configured', 503);

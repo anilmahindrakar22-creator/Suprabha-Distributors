@@ -34,6 +34,11 @@ describe('stock API handler', () => {
     expect(await response.json()).toEqual({ error: 'Access denied' });
   });
 
+  it('supports database-backed asynchronous membership checks', async () => {
+    const response = await makeHandler({ hasAccess: vi.fn(async () => true) })();
+    expect(response.status).toBe(200);
+  });
+
   it('fails safely when the server credential is absent', async () => {
     const response = await makeHandler({ readKey: vi.fn(() => undefined) })();
     expect(response.status).toBe(503);

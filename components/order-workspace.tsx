@@ -260,10 +260,10 @@ export function OrderWorkspace() {
         <NewOrderPanel
           data={data}
           onClose={() => setCreating(false)}
-          onCreated={async (number) => {
+          onCreated={(number) => {
             setCreating(false);
             setNotice(`${number} captured successfully.`);
-            await load();
+            void load();
           }}
         />
       ) : null}
@@ -355,7 +355,7 @@ function OrderRow({
   );
 }
 
-function NewOrderPanel({ data, onClose, onCreated }: { data: OrderBootstrap; onClose: () => void; onCreated: (number: string) => Promise<void> }) {
+function NewOrderPanel({ data, onClose, onCreated }: { data: OrderBootstrap; onClose: () => void; onCreated: (number: string) => void }) {
   const [customerName, setCustomerName] = useState('');
   const [customerPhone, setCustomerPhone] = useState('');
   const [customerCity, setCustomerCity] = useState('');
@@ -412,7 +412,7 @@ function NewOrderPanel({ data, onClose, onCreated }: { data: OrderBootstrap; onC
         },
       };
       const result = await readResponse<{ orderNumber?: string }>(await fetch('/api/orders', { method: 'POST', headers: { 'content-type': 'application/json' }, body: JSON.stringify(body) }));
-      await onCreated(result.orderNumber || 'Order');
+      onCreated(result.orderNumber || 'Order');
     } catch (cause) {
       setError(cause instanceof Error ? cause.message : 'Unable to create order');
     } finally {
