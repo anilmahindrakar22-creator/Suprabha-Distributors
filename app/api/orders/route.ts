@@ -1,7 +1,7 @@
 import { getChatGPTUser } from '@/app/chatgpt-auth';
 import { callOrderGateway, OrderGatewayError } from '@/lib/order-gateway';
 import type { OrderBootstrap } from '@/lib/order-types';
-import { validateOrderCommand } from '@/lib/order-types';
+import { isOrderDeliveryOverdue, validateOrderCommand } from '@/lib/order-types';
 
 const privateHeaders = { 'cache-control': 'private, no-store' };
 
@@ -19,7 +19,11 @@ export async function GET() {
   try {
     const user = await authorizedUser();
     const result = await callOrderGateway<OrderBootstrap>(user.email, 'bootstrap');
-    return Response.json(result, { headers: privateHeaders });
+    const delayedFailedDeliveries = result.orders.filter((order) => isOrderDeliveryOverdue(order)).length;
+    return Response.json(
+      { ...result, operations: { ...result.operations, delayedFailedDeliveries } },
+      { headers: privateHeaders },
+    );
   } catch (error) {
     if (error instanceof OrderGatewayError) {
       return failure(error.message, error.status);

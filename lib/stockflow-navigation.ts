@@ -13,6 +13,7 @@ const allowedOrderFilters = new Set([
   'packed',
   'picking',
   'dispatched',
+  'overdue',
 ]);
 
 export function readOrderDashboardMessage(value: unknown): OrderDashboardMessage | null {

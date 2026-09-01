@@ -8,7 +8,7 @@ import type {
   OrderCommand,
   OrderSummary,
 } from '@/lib/order-types';
-import { billingHandoffText, filterOrders, orderAttentionReasons, orderStage, searchCatalog, searchCustomers } from '@/lib/order-types';
+import { billingHandoffText, filterOrders, orderAttentionReasons, ordersCsv, orderStage, searchCatalog, searchCustomers } from '@/lib/order-types';
 
 type DraftLine = { item: CatalogItem; quantity: number };
 
@@ -104,6 +104,17 @@ export function OrderWorkspace({ initialStatus = 'open' }: { initialStatus?: str
   const visibleOrders = useMemo(() => {
     return filterOrders(data?.orders || [], query, status);
   }, [data?.orders, query, status]);
+
+  function exportVisibleOrders() {
+    if (!visibleOrders.length) return;
+    const blob = new Blob([`\uFEFF${ordersCsv(visibleOrders)}`], { type: 'text/csv;charset=utf-8' });
+    const url = URL.createObjectURL(blob);
+    const link = document.createElement('a');
+    link.href = url;
+    link.download = `stockflow-orders-${new Date().toISOString().slice(0, 10)}.csv`;
+    link.click();
+    URL.revokeObjectURL(url);
+  }
 
   async function runCommand(command: OrderCommand, success: string) {
     setError('');
@@ -228,8 +239,12 @@ export function OrderWorkspace({ initialStatus = 'open' }: { initialStatus?: str
             <option value="awaiting_tally_billing">Awaiting Tally billing</option>
             <option value="dispatch_ready">Ready for dispatch</option>
             <option value="dispatched">Dispatched</option>
+            <option value="overdue">Overdue deliveries</option>
             <option value="cancelled">Cancelled</option>
           </select>
+          <button type="button" onClick={exportVisibleOrders} disabled={!visibleOrders.length} className="min-h-11 rounded-xl border border-[#cedfdd] px-4 font-bold text-[#31585d] hover:bg-[#f1f6f4] disabled:opacity-50">
+            Export
+          </button>
           <button type="button" onClick={() => void load()} className="min-h-11 rounded-xl border border-[#cedfdd] px-4 font-bold text-[#31585d] hover:bg-[#f1f6f4]">
             Refresh
           </button>

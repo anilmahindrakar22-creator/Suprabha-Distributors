@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { billingHandoffText, filterOrders, orderAttentionReasons, orderStage, searchCatalog, searchCustomers, validateOrderCommand } from '../../lib/order-types';
+import { billingHandoffText, filterOrders, isOrderDeliveryOverdue, orderAttentionReasons, ordersCsv, orderStage, searchCatalog, searchCustomers, validateOrderCommand } from '../../lib/order-types';
 
 describe('order command validation', () => {
   it('accepts a complete phone order', () => {
@@ -147,5 +147,22 @@ describe('order workflow and history', () => {
   it('does not treat a newly received untouched order as a back-order', () => {
     const fresh = { ...baseOrder, updatedAt: '2026-08-31T09:00:00Z' };
     expect(orderAttentionReasons(fresh, new Date('2026-08-31T10:00:00Z'))).toEqual([]);
+  });
+
+  it('flags only active orders whose expected delivery date has passed', () => {
+    const overdue = { ...baseOrder, expectedDeliveryDate: '2026-08-30' };
+    const delivered = { ...overdue, status: 'delivered' };
+    const today = new Date(2026, 7, 31, 10, 0, 0);
+    expect(isOrderDeliveryOverdue(overdue, today)).toBe(true);
+    expect(isOrderDeliveryOverdue(delivered, today)).toBe(false);
+    expect(orderAttentionReasons(overdue, today)).toContain('Delivery overdue');
+  });
+
+  it('exports operational orders as spreadsheet-safe CSV', () => {
+    const order = { ...baseOrder, customerName: '=Unsafe formula', expectedDeliveryDate: '2026-09-02' };
+    const csv = ordersCsv([order]);
+    expect(csv).toContain('"\'=Unsafe formula"');
+    expect(csv).toContain('"Glucose Reagent (2 box)"');
+    expect(csv.split('\r\n')).toHaveLength(2);
   });
 });
