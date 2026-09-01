@@ -60,13 +60,13 @@ async function readResponse<T>(response: Response): Promise<T> {
   return body;
 }
 
-export function OrderWorkspace() {
+export function OrderWorkspace({ initialStatus = 'open' }: { initialStatus?: string }) {
   const [data, setData] = useState<OrderBootstrap | null>(null);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState('');
   const [notice, setNotice] = useState('');
   const [query, setQuery] = useState('');
-  const [status, setStatus] = useState('open');
+  const [status, setStatus] = useState(initialStatus);
   const [creating, setCreating] = useState(false);
 
   const load = useCallback(async () => {
@@ -221,8 +221,13 @@ export function OrderWorkspace() {
             <option value="history">Old orders</option>
             <option value="all">All orders</option>
             <option value="awaiting_confirmation">Awaiting confirmation</option>
+            <option value="awaiting_approval">Awaiting approval</option>
             <option value="confirmed">Confirmed</option>
+            <option value="picking">Pick &amp; pack</option>
+            <option value="packed">Packed</option>
             <option value="awaiting_tally_billing">Awaiting Tally billing</option>
+            <option value="dispatch_ready">Ready for dispatch</option>
+            <option value="dispatched">Dispatched</option>
             <option value="cancelled">Cancelled</option>
           </select>
           <button type="button" onClick={() => void load()} className="min-h-11 rounded-xl border border-[#cedfdd] px-4 font-bold text-[#31585d] hover:bg-[#f1f6f4]">

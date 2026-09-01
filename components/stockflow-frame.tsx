@@ -3,15 +3,34 @@
 import { useEffect, useState } from 'react';
 import { OrderWorkspace } from './order-workspace';
 import { UserManagement } from './user-management';
+import { readOrderDashboardMessage } from '@/lib/stockflow-navigation';
 
 export function StockFlowFrame({ actorRole }: { actorRole: string }) {
   const [surface, setSurface] = useState<'stock' | 'orders' | 'users'>('stock');
+  const [orderFilter, setOrderFilter] = useState('open');
 
   useEffect(() => {
     if ('serviceWorker' in navigator) {
       navigator.serviceWorker.register('/sw.js').catch(() => undefined);
     }
   }, []);
+
+  useEffect(() => {
+    function receiveDashboardNavigation(event: MessageEvent) {
+      if (event.origin !== window.location.origin) return;
+      const message = readOrderDashboardMessage(event.data);
+      if (!message) return;
+      setOrderFilter(message.status);
+      setSurface('orders');
+    }
+    window.addEventListener('message', receiveDashboardNavigation);
+    return () => window.removeEventListener('message', receiveDashboardNavigation);
+  }, []);
+
+  function openSurface(item: 'stock' | 'orders' | 'users') {
+    if (item === 'orders') setOrderFilter('open');
+    setSurface(item);
+  }
 
   return (
     <main className="flex h-dvh w-full flex-col overflow-hidden bg-[#f7f6f1] text-[#173239]">
@@ -30,7 +49,7 @@ export function StockFlowFrame({ actorRole }: { actorRole: string }) {
             <button
               key={item}
               type="button"
-              onClick={() => setSurface(item)}
+              onClick={() => openSurface(item)}
               aria-pressed={surface === item}
               className={`min-h-10 rounded-lg px-4 text-sm font-bold capitalize transition ${
                 surface === item
@@ -52,7 +71,7 @@ export function StockFlowFrame({ actorRole }: { actorRole: string }) {
             allow="clipboard-write"
           />
         ) : surface === 'orders' ? (
-          <OrderWorkspace />
+          <OrderWorkspace key={orderFilter} initialStatus={orderFilter} />
         ) : <UserManagement />}
       </section>
     </main>
