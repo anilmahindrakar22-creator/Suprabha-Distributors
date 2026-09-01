@@ -85,6 +85,7 @@ describe('order workflow and history', () => {
     createdAt: '2026-08-31T10:00:00Z', updatedAt: '2026-08-31T10:00:00Z',
     lineCount: 1, totalQuantity: 2, reservedQuantity: 0, tallyInvoiceNumber: null,
     lines: [{ tallyKey: 'ITEM-1', itemName: 'Glucose Reagent', itemGroup: 'Reagents', baseUnit: 'box', quantity: 2, reservedQuantity: 0 }],
+    events: [],
   };
 
   it('presents detailed statuses as six simple operational stages', () => {

@@ -31,6 +31,19 @@ export type OrderSummary = {
   reservedQuantity: number;
   tallyInvoiceNumber: string | null;
   lines: OrderLineSummary[];
+  events: OrderEvent[];
+};
+
+export type OrderEvent = {
+  id: number;
+  eventType: string;
+  fromStatus: string | null;
+  toStatus: string | null;
+  reason: string | null;
+  actorEmail: string;
+  actorRole: string;
+  metadata: Record<string, unknown>;
+  createdAt: string;
 };
 
 export type OrderLineSummary = {
