@@ -1,4 +1,4 @@
-import { getChatGPTUser, hasStockFlowAccess } from '@/app/chatgpt-auth';
+import { getChatGPTUser } from '@/app/chatgpt-auth';
 import { callOrderGateway, OrderGatewayError } from '@/lib/order-gateway';
 import type { OrderBootstrap } from '@/lib/order-types';
 import { validateOrderCommand } from '@/lib/order-types';
@@ -12,7 +12,6 @@ function failure(message: string, status: number) {
 async function authorizedUser() {
   const user = await getChatGPTUser();
   if (!user) throw new OrderGatewayError('Sign in required', 401);
-  if (!hasStockFlowAccess(user)) throw new OrderGatewayError('Access denied', 403);
   return user;
 }
 

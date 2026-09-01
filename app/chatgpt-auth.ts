@@ -1,9 +1,5 @@
 import { headers } from 'next/headers';
-import {
-  chatGPTSignInPath,
-  hasAllowedEmail,
-  normalizeEmail,
-} from '@/lib/access-control.mjs';
+import { chatGPTSignInPath, normalizeEmail } from '@/lib/access-control.mjs';
 
 export { chatGPTSignInPath };
 
@@ -25,6 +21,3 @@ export async function getChatGPTUser(): Promise<ChatGPTUser | null> {
   return { userId, email, displayName: email.split('@')[0] };
 }
 
-export function hasStockFlowAccess(user: ChatGPTUser | null): boolean {
-  return Boolean(user && hasAllowedEmail(user.email));
-}

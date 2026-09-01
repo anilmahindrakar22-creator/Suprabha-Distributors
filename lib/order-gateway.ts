@@ -1,6 +1,11 @@
 import type { OrderCommand } from './order-types';
 
-type GatewayAction = 'bootstrap' | OrderCommand['action'];
+export type GatewayAction =
+  | 'session'
+  | 'bootstrap'
+  | 'list_users'
+  | 'upsert_user'
+  | OrderCommand['action'];
 
 export class OrderGatewayError extends Error {
   constructor(

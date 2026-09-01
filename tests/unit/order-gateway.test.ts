@@ -34,6 +34,16 @@ describe('order gateway client', () => {
     });
   });
 
+  it('supports the lightweight session action used for dynamic membership', async () => {
+    configureEnvironment();
+    vi.spyOn(globalThis, 'fetch').mockResolvedValue(
+      Response.json({ email: 'user@example.com', role: 'sales' }),
+    );
+    await expect(callOrderGateway('user@example.com', 'session')).resolves.toEqual({
+      email: 'user@example.com', role: 'sales',
+    });
+  });
+
   it('fails safely when hosting configuration is absent', async () => {
     delete process.env.SUPABASE_URL;
     delete process.env.STOCKFLOW_ORDER_GATEWAY_KEY;
