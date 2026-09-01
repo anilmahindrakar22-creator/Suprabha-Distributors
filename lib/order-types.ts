@@ -114,6 +114,22 @@ export function orderStage(status: string) {
   return status.replaceAll('_', ' ');
 }
 
+export function billingHandoffText(order: OrderSummary) {
+  const lines = order.lines.map((line) => {
+    const unit = line.baseUnit ? ` ${line.baseUnit}` : '';
+    return `- ${line.itemName}: ${Number(line.quantity).toLocaleString('en-IN', { maximumFractionDigits: 3 })}${unit}`;
+  });
+  return [
+    `Order: ${order.orderNumber}`,
+    `Customer: ${order.customerName}`,
+    order.customerPhone ? `Phone: ${order.customerPhone}` : '',
+    'Products:',
+    ...lines,
+    order.deliveryAddress ? `Delivery: ${order.deliveryAddress}` : '',
+    order.notes ? `Notes: ${order.notes}` : '',
+  ].filter(Boolean).join('\n');
+}
+
 export function filterOrders(orders: OrderSummary[], query: string, status: string) {
   const normalized = query.trim().toLocaleLowerCase('en-IN');
   return orders.filter((order) => {
@@ -131,6 +147,7 @@ export function filterOrders(orders: OrderSummary[], query: string, status: stri
       status === 'all' ||
       (status === 'open' && !['delivered', 'cancelled'].includes(order.status)) ||
       (status === 'history' && ['delivered', 'cancelled'].includes(order.status)) ||
+      (status === 'billing' && order.status === 'awaiting_tally_billing') ||
       (status === 'attention' && orderAttentionReasons(order).length > 0) ||
       order.status === status;
     return matchesStatus && (!normalized || searchable.includes(normalized));
