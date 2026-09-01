@@ -43,6 +43,12 @@ describe('order command validation', () => {
     ).not.toBeNull();
     expect(validateOrderCommand({ action: 'reserve_order', payload: { orderId: 'order-id', expectedVersion: 2 } })).toBeNull();
   });
+
+  it('validates atomic fulfilment updates and rejects negative quantities', () => {
+    const command = { action: 'save_fulfilment', payload: { orderId: 'order-id', expectedVersion: 3, lines: [{ tallyKey: 'ITEM-1', fulfilledQuantity: 2, batchNumber: 'LOT-24', expiryDate: '2027-06-30' }] } };
+    expect(validateOrderCommand(command)).not.toBeNull();
+    expect(validateOrderCommand({ ...command, payload: { ...command.payload, lines: [{ tallyKey: 'ITEM-1', fulfilledQuantity: -1 }] } })).toBeNull();
+  });
 });
 
 describe('Tally customer search', () => {
