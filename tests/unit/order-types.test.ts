@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { filterOrders, orderStage, searchCatalog, searchCustomers, validateOrderCommand } from '../../lib/order-types';
+import { filterOrders, orderAttentionReasons, orderStage, searchCatalog, searchCustomers, validateOrderCommand } from '../../lib/order-types';
 
 describe('order command validation', () => {
   it('accepts a complete phone order', () => {
@@ -48,6 +48,11 @@ describe('order command validation', () => {
     const command = { action: 'save_fulfilment', payload: { orderId: 'order-id', expectedVersion: 3, lines: [{ tallyKey: 'ITEM-1', fulfilledQuantity: 2, batchNumber: 'LOT-24', expiryDate: '2027-06-30' }] } };
     expect(validateOrderCommand(command)).not.toBeNull();
     expect(validateOrderCommand({ ...command, payload: { ...command.payload, lines: [{ tallyKey: 'ITEM-1', fulfilledQuantity: -1 }] } })).toBeNull();
+  });
+
+  it('validates safe order edits', () => {
+    expect(validateOrderCommand({ action: 'edit_order', payload: { orderId: 'order-id', expectedVersion: 2, customerName: 'City Lab', reason: 'Corrected call entry', lines: [{ tallyKey: 'ITEM-1', quantity: 3 }] } })).not.toBeNull();
+    expect(validateOrderCommand({ action: 'edit_order', payload: { orderId: 'order-id', expectedVersion: 2, customerName: 'A', lines: [] } })).toBeNull();
   });
 });
 
@@ -110,5 +115,16 @@ describe('order workflow and history', () => {
     expect(filterOrders([baseOrder, delivered], '', 'history')).toEqual([delivered]);
     expect(filterOrders([baseOrder, delivered], 'glucose', 'all')).toHaveLength(2);
     expect(filterOrders([baseOrder, delivered], 'INV-88', 'all')).toEqual([delivered]);
+  });
+
+  it('identifies operational exceptions for the attention queue', () => {
+    const delayed = { ...baseOrder, updatedAt: '2026-08-31T01:00:00Z' };
+    expect(orderAttentionReasons(delayed, new Date('2026-08-31T10:00:00Z'))).toContain('No progress for over 4 hours');
+    expect(filterOrders([delayed], '', 'attention')).toEqual([delayed]);
+  });
+
+  it('does not treat a newly received untouched order as a back-order', () => {
+    const fresh = { ...baseOrder, updatedAt: '2026-08-31T09:00:00Z' };
+    expect(orderAttentionReasons(fresh, new Date('2026-08-31T10:00:00Z'))).toEqual([]);
   });
 });

@@ -8,7 +8,7 @@ import type {
   OrderCommand,
   OrderSummary,
 } from '@/lib/order-types';
-import { filterOrders, orderStage, searchCatalog, searchCustomers } from '@/lib/order-types';
+import { filterOrders, orderAttentionReasons, orderStage, searchCatalog, searchCustomers } from '@/lib/order-types';
 
 type DraftLine = { item: CatalogItem; quantity: number };
 
@@ -158,6 +158,9 @@ export function OrderWorkspace() {
   async function saveFulfilment(order: OrderSummary, payload: Extract<OrderCommand, { action: 'save_fulfilment' }>['payload']) {
     await runCommand({ action: 'save_fulfilment', payload }, `${order.orderNumber} fulfilment details saved.`);
   }
+  async function editOrder(order: OrderSummary, payload: Extract<OrderCommand, { action: 'edit_order' }>['payload']) {
+    await runCommand({ action: 'edit_order', payload }, `${order.orderNumber} updated.`);
+  }
 
   const operations = data?.operations || {};
   const staleText = data?.snapshot.fetchedAt || 'No Tally snapshot';
@@ -213,6 +216,7 @@ export function OrderWorkspace() {
             className="min-h-11 rounded-xl border border-[#cedfdd] bg-white px-3 outline-none focus:border-[#64d4ad]"
           >
             <option value="open">Active orders</option>
+            <option value="attention">Needs attention</option>
             <option value="history">Old orders</option>
             <option value="all">All orders</option>
             <option value="awaiting_confirmation">Awaiting confirmation</option>
@@ -254,6 +258,7 @@ export function OrderWorkspace() {
                   onAdvance={advance}
                   onCancel={cancelOrder}
                   onSaveFulfilment={saveFulfilment}
+                  onEdit={editOrder}
                 />
               ))}
             </div>
@@ -291,12 +296,14 @@ function OrderRow({
   onAdvance,
   onCancel,
   onSaveFulfilment,
+  onEdit,
 }: {
   order: OrderSummary;
   actorRole: string;
   onAdvance: (order: OrderSummary, tallyInvoiceNumber?: string) => Promise<void>;
   onCancel: (order: OrderSummary, reason: string) => Promise<void>;
   onSaveFulfilment: (order: OrderSummary, payload: Extract<OrderCommand, { action: 'save_fulfilment' }>['payload']) => Promise<void>;
+  onEdit: (order: OrderSummary, payload: Extract<OrderCommand, { action: 'edit_order' }>['payload']) => Promise<void>;
 }) {
   const [busy, setBusy] = useState(false);
   const [invoiceNumber, setInvoiceNumber] = useState(order.tallyInvoiceNumber || '');
@@ -306,6 +313,7 @@ function OrderRow({
   const total = Number(order.totalQuantity || 0);
   const requiresInvoice = order.status === 'awaiting_tally_billing';
   const canCancel = actorRole === 'administrator' && !['cancelled', 'delivered'].includes(order.status);
+  const attention = orderAttentionReasons(order);
   return (
     <article className="p-5">
       <div className="grid gap-4 lg:grid-cols-[1.5fr_1fr_auto] lg:items-center">
@@ -316,6 +324,7 @@ function OrderRow({
         </div>
         <p className="mt-2 font-bold text-[#274b50]">{order.customerName}</p>
         <p className="mt-1 text-xs text-[#718487]">{order.customerPhone || 'No phone recorded'} · {order.lineCount} line{order.lineCount === 1 ? '' : 's'}</p>
+        {attention.length ? <p className="mt-2 text-xs font-bold text-[#9a6412]">Needs attention: {attention.join(' · ')}</p> : null}
       </div>
       <div>
         <p className="text-xs font-bold text-[#708386]">Ordered quantity</p>
@@ -354,6 +363,7 @@ function OrderRow({
           </dl>
         </div>
         {!['cancelled', 'delivered'].includes(order.status) ? <FulfilmentEditor order={order} onSave={onSaveFulfilment} /> : null}
+        {['phone_order_received','awaiting_confirmation','awaiting_approval','confirmed','partially_reserved','fully_reserved','ready_for_picking','picked','packed'].includes(order.status) ? <OrderEditPanel order={order} onSave={onEdit} /> : null}
         <div className="mt-5 border-t border-[#dfe9e7] pt-4">
           <p className="text-xs font-bold uppercase tracking-wide text-[#708386]">Activity log</p>
           {(order.events || []).length ? <ol className="mt-3 space-y-3">{order.events.map((event) => <li key={event.id} className="grid grid-cols-[10px_1fr] gap-3"><span className="mt-1.5 size-2.5 rounded-full bg-[#64d4ad]" /><div><p className="font-bold text-[#274b50]">{event.toStatus ? `${statusLabel(event.fromStatus || 'new')} → ${statusLabel(event.toStatus)}` : event.eventType.replaceAll('_', ' ')}</p><p className="mt-0.5 text-xs text-[#718487]">{event.actorEmail} ({event.actorRole}) · {new Date(event.createdAt).toLocaleString('en-IN')}</p>{event.reason ? <p className="mt-1 text-xs text-[#80524d]">Reason: {event.reason}</p> : null}</div></li>)}</ol> : <p className="mt-2 text-xs text-[#718487]">No recorded activity yet.</p>}
@@ -361,6 +371,12 @@ function OrderRow({
       </details>
     </article>
   );
+}
+
+function OrderEditPanel({ order, onSave }: { order: OrderSummary; onSave: (order: OrderSummary, payload: Extract<OrderCommand, { action: 'edit_order' }>['payload']) => Promise<void> }) {
+  const [open,setOpen]=useState(false); const [busy,setBusy]=useState(false); const [customerName,setCustomerName]=useState(order.customerName); const [customerPhone,setCustomerPhone]=useState(order.customerPhone||''); const [notes,setNotes]=useState(order.notes||''); const [reason,setReason]=useState(''); const [lines,setLines]=useState(()=>order.lines.map(line=>({tallyKey:line.tallyKey,itemName:line.itemName,quantity:line.quantity,fulfilled:Number(line.fulfilledQuantity||0)})));
+  const reasonRequired=!['phone_order_received','awaiting_confirmation','awaiting_approval'].includes(order.status);
+  return <div className="mt-5 border-t border-[#dfe9e7] pt-4"><button type="button" onClick={()=>setOpen(v=>!v)} className="font-bold text-[#31585d]">{open?'−':'+'} Edit order</button>{open?<div className="mt-3 space-y-3 rounded-xl bg-white p-4"><div className="grid gap-3 sm:grid-cols-2"><label className="text-xs font-bold">Customer name<input value={customerName} onChange={e=>setCustomerName(e.target.value)} className="mt-1 min-h-10 w-full rounded-lg border px-3 font-normal" /></label><label className="text-xs font-bold">Phone<input value={customerPhone} onChange={e=>setCustomerPhone(e.target.value)} className="mt-1 min-h-10 w-full rounded-lg border px-3 font-normal" /></label></div>{lines.map((line,index)=><label key={line.tallyKey} className="grid grid-cols-[1fr_110px] items-center gap-3 text-xs font-bold">{line.itemName}<input type="number" min={Math.max(line.fulfilled,0.001)} step="0.001" value={line.quantity} onChange={e=>setLines(current=>current.map((item,i)=>i===index?{...item,quantity:Number(e.target.value)}:item))} className="min-h-10 rounded-lg border px-2 text-right font-normal" /></label>)}<label className="text-xs font-bold">Notes<textarea value={notes} onChange={e=>setNotes(e.target.value)} rows={2} className="mt-1 w-full rounded-lg border p-2 font-normal" /></label>{reasonRequired?<label className="text-xs font-bold text-[#80524d]">Reason for change<textarea required value={reason} onChange={e=>setReason(e.target.value)} rows={2} className="mt-1 w-full rounded-lg border p-2 font-normal" /></label>:null}<div className="flex justify-end"><button type="button" disabled={busy||customerName.trim().length<2||(reasonRequired&&!reason.trim())} onClick={async()=>{setBusy(true);try{await onSave(order,{orderId:order.id,expectedVersion:order.version,customerName:customerName.trim(),customerPhone:customerPhone.trim(),notes:notes.trim(),reason:reason.trim(),lines:lines.map(({tallyKey,quantity})=>({tallyKey,quantity}))});}finally{setBusy(false)}}} className="min-h-10 rounded-xl bg-[#092f36] px-4 font-bold text-white disabled:opacity-50">{busy?'Saving…':'Save changes'}</button></div></div>:null}</div>;
 }
 
 function FulfilmentEditor({ order, onSave }: { order: OrderSummary; onSave: (order: OrderSummary, payload: Extract<OrderCommand, { action: 'save_fulfilment' }>['payload']) => Promise<void> }) {
