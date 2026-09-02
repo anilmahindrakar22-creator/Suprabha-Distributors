@@ -124,7 +124,13 @@ export function OrderWorkspace({ initialStatus = 'open' }: { initialStatus?: str
         await fetch('/api/orders', {
           method: 'POST',
           headers: { 'content-type': 'application/json' },
-          body: JSON.stringify(command),
+          body: JSON.stringify({
+            ...command,
+            payload: {
+              ...command.payload,
+              idempotencyKey: command.payload.idempotencyKey || crypto.randomUUID(),
+            },
+          }),
         }),
       );
       setNotice(success);
@@ -141,6 +147,7 @@ export function OrderWorkspace({ initialStatus = 'open' }: { initialStatus?: str
       {
         action: 'transition_order',
         payload: {
+          idempotencyKey: crypto.randomUUID(),
           orderId: order.id,
           expectedVersion: order.version,
           toStatus: action.status,
@@ -156,6 +163,7 @@ export function OrderWorkspace({ initialStatus = 'open' }: { initialStatus?: str
       {
         action: 'transition_order',
         payload: {
+          idempotencyKey: crypto.randomUUID(),
           orderId: order.id,
           expectedVersion: order.version,
           toStatus: 'cancelled',

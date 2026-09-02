@@ -27,7 +27,7 @@ export function UserManagement() {
   async function saveUser(nextEmail: string, nextRole: string, status: string) {
     setBusy(true); setMessage('');
     try {
-      await read(await fetch('/api/users', { method: 'POST', headers: { 'content-type': 'application/json' }, body: JSON.stringify({ email: nextEmail, role: nextRole, status }) }));
+      await read(await fetch('/api/users', { method: 'POST', headers: { 'content-type': 'application/json' }, body: JSON.stringify({ idempotencyKey: crypto.randomUUID(), email: nextEmail, role: nextRole, status }) }));
       setEmail(''); setMessage('User access updated.'); await load();
     } catch (error) { setMessage(error instanceof Error ? error.message : 'Unable to update user'); }
     finally { setBusy(false); }

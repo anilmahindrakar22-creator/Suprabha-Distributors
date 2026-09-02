@@ -20,8 +20,8 @@ export async function GET() {
 
 export async function POST(request: Request) {
   try {
-    const payload = await request.json() as { email?: unknown; role?: unknown; status?: unknown };
-    if (typeof payload.email !== 'string' || typeof payload.role !== 'string' || typeof payload.status !== 'string') return fail('Email, role, and status are required', 400);
+    const payload = await request.json() as { idempotencyKey?: unknown; email?: unknown; role?: unknown; status?: unknown };
+    if (typeof payload.idempotencyKey !== 'string' || payload.idempotencyKey.length < 16 || typeof payload.email !== 'string' || typeof payload.role !== 'string' || typeof payload.status !== 'string') return fail('Request ID, email, role, and status are required', 400);
     return Response.json(await callOrderGateway(await actorEmail(), 'upsert_user', payload as Record<string, unknown>), { headers });
   } catch (error) {
     if (error instanceof SyntaxError) return fail('Invalid JSON', 400);

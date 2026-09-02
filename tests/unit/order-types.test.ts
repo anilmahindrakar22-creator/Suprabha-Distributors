@@ -38,34 +38,35 @@ describe('order command validation', () => {
     expect(
       validateOrderCommand({
         action: 'transition_order',
-        payload: { orderId: 'order-id', expectedVersion: 2, toStatus: 'confirmed' },
+        payload: { orderId: 'order-id', expectedVersion: 2, toStatus: 'confirmed', idempotencyKey: '1234567890abcdef' },
       }),
     ).not.toBeNull();
+    expect(validateOrderCommand({ action: 'transition_order', payload: { orderId: 'order-id', expectedVersion: 2, toStatus: 'confirmed' } })).toBeNull();
     expect(validateOrderCommand({ action: 'reserve_order', payload: { orderId: 'order-id', expectedVersion: 2 } })).toBeNull();
   });
 
   it('validates atomic fulfilment updates and rejects negative quantities', () => {
-    const command = { action: 'save_fulfilment', payload: { orderId: 'order-id', expectedVersion: 3, lines: [{ tallyKey: 'ITEM-1', fulfilledQuantity: 2, batchNumber: 'LOT-24', expiryDate: '2027-06-30' }] } };
+    const command = { action: 'save_fulfilment', payload: { idempotencyKey: '1234567890abcdef', orderId: 'order-id', expectedVersion: 3, lines: [{ tallyKey: 'ITEM-1', fulfilledQuantity: 2, batchNumber: 'LOT-24', expiryDate: '2027-06-30' }] } };
     expect(validateOrderCommand(command)).not.toBeNull();
     expect(validateOrderCommand({ ...command, payload: { ...command.payload, lines: [{ tallyKey: 'ITEM-1', fulfilledQuantity: -1 }] } })).toBeNull();
   });
 
   it('validates safe order edits', () => {
-    expect(validateOrderCommand({ action: 'edit_order', payload: { orderId: 'order-id', expectedVersion: 2, customerName: 'City Lab', reason: 'Corrected call entry', lines: [{ tallyKey: 'ITEM-1', quantity: 3 }] } })).not.toBeNull();
+    expect(validateOrderCommand({ action: 'edit_order', payload: { idempotencyKey: '1234567890abcdef', orderId: 'order-id', expectedVersion: 2, customerName: 'City Lab', reason: 'Corrected call entry', lines: [{ tallyKey: 'ITEM-1', quantity: 3 }] } })).not.toBeNull();
     expect(validateOrderCommand({ action: 'edit_order', payload: { orderId: 'order-id', expectedVersion: 2, customerName: 'A', lines: [] } })).toBeNull();
   });
 
   it('validates delivery exception creation and resolution', () => {
-    expect(validateOrderCommand({ action: 'create_exception', payload: { orderId: 'order-id', expectedVersion: 2, category: 'delayed', summary: 'Courier missed the route' } })).not.toBeNull();
+    expect(validateOrderCommand({ action: 'create_exception', payload: { idempotencyKey: '1234567890abcdef', orderId: 'order-id', expectedVersion: 2, category: 'delayed', summary: 'Courier missed the route' } })).not.toBeNull();
     expect(validateOrderCommand({ action: 'create_exception', payload: { orderId: 'order-id', expectedVersion: 2, category: 'return', summary: 'Not supported' } })).toBeNull();
-    expect(validateOrderCommand({ action: 'resolve_exception', payload: { orderId: 'order-id', expectedVersion: 3, exceptionId: 'exception-id', resolution: 'Delivered on the next route' } })).not.toBeNull();
+    expect(validateOrderCommand({ action: 'resolve_exception', payload: { idempotencyKey: '1234567890abcdef', orderId: 'order-id', expectedVersion: 3, exceptionId: 'exception-id', resolution: 'Delivered on the next route' } })).not.toBeNull();
     expect(validateOrderCommand({ action: 'resolve_exception', payload: { orderId: 'order-id', expectedVersion: 3, exceptionId: 'exception-id', resolution: '' } })).toBeNull();
   });
 
   it('validates installation scheduling and commissioning', () => {
-    expect(validateOrderCommand({ action: 'schedule_installation', payload: { orderId: 'order-id', expectedVersion: 4, tallyKey: 'EQUIPMENT-1', scheduledDate: '2026-09-10' } })).not.toBeNull();
+    expect(validateOrderCommand({ action: 'schedule_installation', payload: { idempotencyKey: '1234567890abcdef', orderId: 'order-id', expectedVersion: 4, tallyKey: 'EQUIPMENT-1', scheduledDate: '2026-09-10' } })).not.toBeNull();
     expect(validateOrderCommand({ action: 'schedule_installation', payload: { orderId: 'order-id', expectedVersion: 4, tallyKey: '', scheduledDate: '10/09/2026' } })).toBeNull();
-    expect(validateOrderCommand({ action: 'complete_installation', payload: { orderId: 'order-id', expectedVersion: 5, installationId: 'installation-id', serialNumber: 'SN-1002', commissioningNotes: 'Installed and quality checks passed' } })).not.toBeNull();
+    expect(validateOrderCommand({ action: 'complete_installation', payload: { idempotencyKey: '1234567890abcdef', orderId: 'order-id', expectedVersion: 5, installationId: 'installation-id', serialNumber: 'SN-1002', commissioningNotes: 'Installed and quality checks passed' } })).not.toBeNull();
   });
 });
 
