@@ -2,6 +2,8 @@
 
 StockFlow uses a lightweight trunk-based workflow. `main` must always be safe to release.
 
+All changes must follow [Suprabha OS engineering principles](ENGINEERING_PRINCIPLES.md), the [architecture](docs/SUPRABHA_OS_ARCHITECTURE.md), and the phased [roadmap](docs/ROADMAP.md). StockFlow is the first operational module of Suprabha OS, not a disposable or separate application.
+
 ## Branches
 
 - `feature/<short-name>` for planned capabilities
