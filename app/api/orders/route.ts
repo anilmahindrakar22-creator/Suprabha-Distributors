@@ -19,7 +19,10 @@ export async function GET() {
   try {
     const user = await authorizedUser();
     const result = await callOrderGateway<OrderBootstrap>(user.email, 'bootstrap');
-    const delayedFailedDeliveries = result.orders.filter((order) => isOrderDeliveryOverdue(order)).length;
+    const delayedFailedDeliveries = result.orders.filter((order) =>
+      isOrderDeliveryOverdue(order) ||
+      (order.exceptions || []).some((item) => item.status === 'open' && ['delayed', 'failed_delivery'].includes(item.category)),
+    ).length;
     return Response.json(
       { ...result, operations: { ...result.operations, delayedFailedDeliveries } },
       { headers: privateHeaders },

@@ -172,6 +172,9 @@ export function OrderWorkspace({ initialStatus = 'open' }: { initialStatus?: str
   async function editOrder(order: OrderSummary, payload: Extract<OrderCommand, { action: 'edit_order' }>['payload']) {
     await runCommand({ action: 'edit_order', payload }, `${order.orderNumber} updated.`);
   }
+  async function updateException(order: OrderSummary, command: Extract<OrderCommand, { action: 'create_exception' | 'resolve_exception' }>) {
+    await runCommand(command, `${order.orderNumber} delivery exception updated.`);
+  }
 
   const operations = data?.operations || {};
   const staleText = data?.snapshot.fetchedAt || 'No Tally snapshot';
@@ -280,6 +283,7 @@ export function OrderWorkspace({ initialStatus = 'open' }: { initialStatus?: str
                   onCancel={cancelOrder}
                   onSaveFulfilment={saveFulfilment}
                   onEdit={editOrder}
+                  onException={updateException}
                 />
               ))}
             </div>
@@ -318,6 +322,7 @@ function OrderRow({
   onCancel,
   onSaveFulfilment,
   onEdit,
+  onException,
 }: {
   order: OrderSummary;
   actorRole: string;
@@ -325,6 +330,7 @@ function OrderRow({
   onCancel: (order: OrderSummary, reason: string) => Promise<void>;
   onSaveFulfilment: (order: OrderSummary, payload: Extract<OrderCommand, { action: 'save_fulfilment' }>['payload']) => Promise<void>;
   onEdit: (order: OrderSummary, payload: Extract<OrderCommand, { action: 'edit_order' }>['payload']) => Promise<void>;
+  onException: (order: OrderSummary, command: Extract<OrderCommand, { action: 'create_exception' | 'resolve_exception' }>) => Promise<void>;
 }) {
   const [busy, setBusy] = useState(false);
   const [invoiceNumber, setInvoiceNumber] = useState(order.tallyInvoiceNumber || '');
@@ -385,6 +391,7 @@ function OrderRow({
         </div>
         {!['cancelled', 'delivered'].includes(order.status) ? <FulfilmentEditor order={order} onSave={onSaveFulfilment} /> : null}
         {['phone_order_received','awaiting_confirmation','awaiting_approval','confirmed','partially_reserved','fully_reserved','ready_for_picking','picked','packed'].includes(order.status) ? <OrderEditPanel order={order} onSave={onEdit} /> : null}
+        <DeliveryExceptionPanel order={order} onSave={onException} />
         {order.status === 'awaiting_tally_billing' ? <BillingHandoff order={order} /> : null}
         <div className="mt-5 border-t border-[#dfe9e7] pt-4">
           <p className="text-xs font-bold uppercase tracking-wide text-[#708386]">Activity log</p>
@@ -393,6 +400,17 @@ function OrderRow({
       </details>
     </article>
   );
+}
+
+function DeliveryExceptionPanel({ order, onSave }: { order: OrderSummary; onSave: (order: OrderSummary, command: Extract<OrderCommand, { action: 'create_exception' | 'resolve_exception' }>) => Promise<void> }) {
+  const [open, setOpen] = useState(false);
+  const [busy, setBusy] = useState(false);
+  const [category, setCategory] = useState<'delayed' | 'failed_delivery' | 'damaged' | 'wrong_item' | 'other'>('delayed');
+  const [summary, setSummary] = useState('');
+  const [resolutions, setResolutions] = useState<Record<string, string>>({});
+  const exceptions = order.exceptions || [];
+  const openCount = exceptions.filter((item) => item.status === 'open').length;
+  return <div className="mt-5 border-t border-[#dfe9e7] pt-4"><button type="button" onClick={() => setOpen((value) => !value)} className="font-bold text-[#31585d]">{open ? '−' : '+'} Delivery exceptions{openCount ? ` (${openCount} open)` : ''}</button>{open ? <div className="mt-3 space-y-3 rounded-xl bg-white p-4">{exceptions.map((item) => <div key={item.id} className="rounded-lg border border-[#dce7e5] p-3"><div className="flex flex-wrap justify-between gap-2"><strong className="capitalize text-[#274b50]">{item.category.replaceAll('_', ' ')}</strong><span className={`rounded-full px-2 py-1 text-[11px] font-bold ${item.status === 'open' ? 'bg-[#fff1d6] text-[#8a5a0a]' : 'bg-[#eaf8f1] text-[#176246]'}`}>{item.status}</span></div><p className="mt-1 text-xs text-[#587275]">{item.summary}</p>{item.status === 'resolved' ? <p className="mt-2 text-xs text-[#176246]">Resolution: {item.resolution}</p> : <div className="mt-3 flex flex-col gap-2 sm:flex-row"><input value={resolutions[item.id] || ''} onChange={(event) => setResolutions((current) => ({ ...current, [item.id]: event.target.value }))} placeholder="How was it resolved?" maxLength={500} className="min-h-10 flex-1 rounded-lg border px-3 text-xs" /><button type="button" disabled={busy || (resolutions[item.id] || '').trim().length < 3} onClick={async () => { setBusy(true); try { await onSave(order, { action: 'resolve_exception', payload: { orderId: order.id, expectedVersion: order.version, exceptionId: item.id, resolution: resolutions[item.id].trim() } }); } finally { setBusy(false); } }} className="min-h-10 rounded-lg border border-[#badfd4] px-3 text-xs font-bold text-[#126044] disabled:opacity-50">Resolve</button></div>}</div>)}<div className="grid gap-2 border-t border-[#e3ecea] pt-3 sm:grid-cols-[170px_1fr_auto]"><select value={category} onChange={(event) => setCategory(event.target.value as typeof category)} className="min-h-10 rounded-lg border px-2 text-xs"><option value="delayed">Delayed</option><option value="failed_delivery">Failed delivery</option><option value="damaged">Damaged</option><option value="wrong_item">Wrong item</option><option value="other">Other</option></select><input value={summary} onChange={(event) => setSummary(event.target.value)} maxLength={500} placeholder="What happened?" className="min-h-10 rounded-lg border px-3 text-xs" /><button type="button" disabled={busy || summary.trim().length < 3 || ['cancelled', 'delivered'].includes(order.status)} onClick={async () => { setBusy(true); try { await onSave(order, { action: 'create_exception', payload: { orderId: order.id, expectedVersion: order.version, category, summary: summary.trim() } }); setSummary(''); } finally { setBusy(false); } }} className="min-h-10 rounded-lg bg-[#092f36] px-3 text-xs font-bold text-white disabled:opacity-50">Add exception</button></div>{['cancelled', 'delivered'].includes(order.status) ? <p className="text-xs text-[#718487]">Closed orders cannot receive new exceptions.</p> : null}</div> : null}</div>;
 }
 
 function BillingHandoff({ order }: { order: OrderSummary }) {

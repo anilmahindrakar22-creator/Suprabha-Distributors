@@ -54,6 +54,13 @@ describe('order command validation', () => {
     expect(validateOrderCommand({ action: 'edit_order', payload: { orderId: 'order-id', expectedVersion: 2, customerName: 'City Lab', reason: 'Corrected call entry', lines: [{ tallyKey: 'ITEM-1', quantity: 3 }] } })).not.toBeNull();
     expect(validateOrderCommand({ action: 'edit_order', payload: { orderId: 'order-id', expectedVersion: 2, customerName: 'A', lines: [] } })).toBeNull();
   });
+
+  it('validates delivery exception creation and resolution', () => {
+    expect(validateOrderCommand({ action: 'create_exception', payload: { orderId: 'order-id', expectedVersion: 2, category: 'delayed', summary: 'Courier missed the route' } })).not.toBeNull();
+    expect(validateOrderCommand({ action: 'create_exception', payload: { orderId: 'order-id', expectedVersion: 2, category: 'return', summary: 'Not supported' } })).toBeNull();
+    expect(validateOrderCommand({ action: 'resolve_exception', payload: { orderId: 'order-id', expectedVersion: 3, exceptionId: 'exception-id', resolution: 'Delivered on the next route' } })).not.toBeNull();
+    expect(validateOrderCommand({ action: 'resolve_exception', payload: { orderId: 'order-id', expectedVersion: 3, exceptionId: 'exception-id', resolution: '' } })).toBeNull();
+  });
 });
 
 describe('Tally customer search', () => {
@@ -96,7 +103,7 @@ describe('order workflow and history', () => {
     createdAt: '2026-08-31T10:00:00Z', updatedAt: '2026-08-31T10:00:00Z',
     lineCount: 1, totalQuantity: 2, reservedQuantity: 0, tallyInvoiceNumber: null,
     lines: [{ tallyKey: 'ITEM-1', itemName: 'Glucose Reagent', itemGroup: 'Reagents', baseUnit: 'box', quantity: 2, reservedQuantity: 0 }],
-    events: [],
+    events: [], exceptions: [],
   };
 
   it('presents detailed statuses as six simple operational stages', () => {
@@ -142,6 +149,12 @@ describe('order workflow and history', () => {
     const delayed = { ...baseOrder, updatedAt: '2026-08-31T01:00:00Z' };
     expect(orderAttentionReasons(delayed, new Date('2026-08-31T10:00:00Z'))).toContain('No progress for over 4 hours');
     expect(filterOrders([delayed], '', 'attention')).toEqual([delayed]);
+  });
+
+  it('puts orders with an open delivery exception in the attention queue', () => {
+    const exceptionOrder = { ...baseOrder, exceptions: [{ id: 'x1', category: 'damaged' as const, status: 'open' as const, summary: 'Outer carton damaged', ownerEmail: null, resolution: null, createdBy: 'ops@example.com', createdAt: '2026-08-31T09:00:00Z', resolvedBy: null, resolvedAt: null }] };
+    expect(orderAttentionReasons(exceptionOrder, new Date('2026-08-31T10:00:00Z'))).toContain('Open delivery exception');
+    expect(filterOrders([exceptionOrder], '', 'attention')).toEqual([exceptionOrder]);
   });
 
   it('does not treat a newly received untouched order as a back-order', () => {

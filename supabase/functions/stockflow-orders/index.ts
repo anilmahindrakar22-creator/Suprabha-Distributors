@@ -3,7 +3,7 @@ import { createClient } from "npm:@supabase/supabase-js@2";
 
 const headers = { "content-type": "application/json; charset=utf-8", "cache-control": "private, no-store" };
 const reply = (body: unknown, status = 200) => new Response(JSON.stringify(body), { status, headers });
-const actions = ["session", "bootstrap", "create_order", "transition_order", "save_fulfilment", "edit_order", "list_users", "upsert_user"];
+const actions = ["session", "bootstrap", "create_order", "transition_order", "save_fulfilment", "edit_order", "create_exception", "resolve_exception", "list_users", "upsert_user"];
 
 Deno.serve(async (request: Request) => {
   if (request.method !== "POST") return reply({ error: "Method not allowed" }, 405);
@@ -16,7 +16,7 @@ Deno.serve(async (request: Request) => {
   if (typeof body.actorEmail !== "string" || typeof body.action !== "string" || !actions.includes(body.action)) return reply({ error: "Invalid request" }, 400);
 
   const database = createClient(Deno.env.get("SUPABASE_URL") ?? "", Deno.env.get("SUPABASE_SERVICE_ROLE_KEY") ?? "", { auth: { persistSession: false, autoRefreshToken: false } });
-  const gateway = ["session", "list_users", "upsert_user"].includes(body.action) ? "stockflow_user_gateway" : body.action === "save_fulfilment" ? "stockflow_fulfilment_gateway" : body.action === "edit_order" ? "stockflow_edit_gateway" : "stockflow_order_gateway";
+  const gateway = ["session", "list_users", "upsert_user"].includes(body.action) ? "stockflow_user_gateway" : body.action === "save_fulfilment" ? "stockflow_fulfilment_gateway" : body.action === "edit_order" ? "stockflow_edit_gateway" : ["create_exception", "resolve_exception"].includes(body.action) ? "stockflow_exception_gateway" : "stockflow_order_gateway";
   const { data, error } = await database.rpc(gateway, {
     p_gateway_key: gatewayKey, p_actor_email: body.actorEmail, p_action: body.action, p_payload: body.payload ?? {},
   });

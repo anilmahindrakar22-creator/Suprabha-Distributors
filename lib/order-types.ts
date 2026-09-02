@@ -36,6 +36,20 @@ export type OrderSummary = {
   trackingNumber?: string | null;
   lines: OrderLineSummary[];
   events: OrderEvent[];
+  exceptions: DeliveryException[];
+};
+
+export type DeliveryException = {
+  id: string;
+  category: 'delayed' | 'failed_delivery' | 'damaged' | 'wrong_item' | 'other';
+  status: 'open' | 'resolved';
+  summary: string;
+  ownerEmail: string | null;
+  resolution: string | null;
+  createdBy: string;
+  createdAt: string;
+  resolvedBy: string | null;
+  resolvedAt: string | null;
 };
 
 export type OrderEvent = {
@@ -203,6 +217,7 @@ export function orderAttentionReasons(order: OrderSummary, now = new Date()) {
   const limit = ['phone_order_received', 'awaiting_confirmation', 'awaiting_approval'].includes(order.status) ? 4 : ['confirmed', 'packed'].includes(order.status) ? 24 : 48;
   if (ageHours > limit) reasons.push(`No progress for over ${limit} hours`);
   if (isOrderDeliveryOverdue(order, now)) reasons.push('Delivery overdue');
+  if ((order.exceptions || []).some((item) => item.status === 'open')) reasons.push('Open delivery exception');
   const fulfilmentStarted = order.lines.some((line) => Number(line.fulfilledQuantity || 0) > 0);
   const fulfilmentDue = ['packed', 'awaiting_tally_billing', 'billed_in_tally', 'ready_for_dispatch', 'dispatched'].includes(order.status);
   if ((fulfilmentStarted || fulfilmentDue) && order.lines.some((line) => Number(line.fulfilledQuantity || 0) < Number(line.quantity))) reasons.push('Partial fulfilment or back-order');
@@ -250,13 +265,21 @@ export type OrderCommand =
   | {
       action: 'edit_order';
       payload: { orderId: string; expectedVersion: number; customerName: string; customerPhone?: string; notes?: string; reason?: string; lines: Array<{ tallyKey: string; quantity: number }> };
+    }
+  | {
+      action: 'create_exception';
+      payload: { orderId: string; expectedVersion: number; category: DeliveryException['category']; summary: string; ownerEmail?: string };
+    }
+  | {
+      action: 'resolve_exception';
+      payload: { orderId: string; expectedVersion: number; exceptionId: string; resolution: string };
     };
 
 export function validateOrderCommand(value: unknown): OrderCommand | null {
   if (!value || typeof value !== 'object') return null;
   const command = value as { action?: unknown; payload?: unknown };
   if (
-    !['create_order', 'transition_order', 'save_fulfilment', 'edit_order'].includes(
+    !['create_order', 'transition_order', 'save_fulfilment', 'edit_order', 'create_exception', 'resolve_exception'].includes(
       String(command.action),
     ) ||
     !command.payload ||
@@ -300,6 +323,10 @@ export function validateOrderCommand(value: unknown): OrderCommand | null {
   } else if (command.action === 'edit_order') {
     const lines = Array.isArray(payload.lines) ? payload.lines : [];
     if (typeof payload.orderId !== 'string' || !Number.isInteger(Number(payload.expectedVersion)) || typeof payload.customerName !== 'string' || payload.customerName.trim().length < 2 || lines.length < 1 || lines.some((line) => !line || typeof line !== 'object' || typeof (line as Record<string, unknown>).tallyKey !== 'string' || Number((line as Record<string, unknown>).quantity) <= 0)) return null;
+  } else if (command.action === 'create_exception') {
+    if (typeof payload.orderId !== 'string' || !Number.isInteger(Number(payload.expectedVersion)) || !['delayed', 'failed_delivery', 'damaged', 'wrong_item', 'other'].includes(String(payload.category)) || typeof payload.summary !== 'string' || payload.summary.trim().length < 3 || payload.summary.length > 500) return null;
+  } else if (command.action === 'resolve_exception') {
+    if (typeof payload.orderId !== 'string' || !Number.isInteger(Number(payload.expectedVersion)) || typeof payload.exceptionId !== 'string' || typeof payload.resolution !== 'string' || payload.resolution.trim().length < 3 || payload.resolution.length > 500) return null;
   }
 
   return command as OrderCommand;
