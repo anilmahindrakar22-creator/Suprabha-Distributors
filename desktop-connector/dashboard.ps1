@@ -183,6 +183,7 @@ function Get-ReorderData {
         company = $companyName
         fetchedAt = (Get-Date).ToString('dd MMM yyyy, hh:mm:ss tt')
         fetchedAtShort = (Get-Date).ToString('dd MMM, hh:mm tt')
+        fetchedAtIso = (Get-Date).ToUniversalTime().ToString('o')
         supplyHistoryFrom = $historyFrom.ToString('dd MMM yyyy')
         supplyHistoryTo = $today.ToString('dd MMM yyyy')
         supplyHistoryRange = "$($historyFrom.ToString('dd MMM yyyy')) to $($today.ToString('dd MMM yyyy'))"

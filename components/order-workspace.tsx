@@ -180,6 +180,18 @@ export function OrderWorkspace({ initialStatus = 'open' }: { initialStatus?: str
   async function editOrder(order: OrderSummary, payload: Extract<OrderCommand, { action: 'edit_order' }>['payload']) {
     await runCommand({ action: 'edit_order', payload }, `${order.orderNumber} updated.`);
   }
+
+  async function allocateOrder(order: OrderSummary) {
+    setError(''); setNotice('');
+    try {
+      await readResponse(await fetch('/api/inventory', {
+        method: 'POST', headers: { 'content-type': 'application/json' },
+        body: JSON.stringify({ action: 'allocate_order', payload: { idempotencyKey: crypto.randomUUID(), orderId: order.id, expectedVersion: order.version } }),
+      }));
+      setNotice(`${order.orderNumber} stock allocated by earliest expiry.`);
+      await load();
+    } catch (cause) { setError(cause instanceof Error ? cause.message : 'Unable to allocate stock'); }
+  }
   async function updateException(order: OrderSummary, command: Extract<OrderCommand, { action: 'create_exception' | 'resolve_exception' }>) {
     await runCommand(command, `${order.orderNumber} delivery exception updated.`);
   }
@@ -292,6 +304,7 @@ export function OrderWorkspace({ initialStatus = 'open' }: { initialStatus?: str
                   actorRole={data?.actor.role || ''}
                   onAdvance={advance}
                   onCancel={cancelOrder}
+                  onAllocate={allocateOrder}
                   onSaveFulfilment={saveFulfilment}
                   onEdit={editOrder}
                   onException={updateException}
@@ -332,6 +345,7 @@ function OrderRow({
   actorRole,
   onAdvance,
   onCancel,
+  onAllocate,
   onSaveFulfilment,
   onEdit,
   onException,
@@ -341,6 +355,7 @@ function OrderRow({
   actorRole: string;
   onAdvance: (order: OrderSummary, tallyInvoiceNumber?: string) => Promise<void>;
   onCancel: (order: OrderSummary, reason: string) => Promise<void>;
+  onAllocate: (order: OrderSummary) => Promise<void>;
   onSaveFulfilment: (order: OrderSummary, payload: Extract<OrderCommand, { action: 'save_fulfilment' }>['payload']) => Promise<void>;
   onEdit: (order: OrderSummary, payload: Extract<OrderCommand, { action: 'edit_order' }>['payload']) => Promise<void>;
   onException: (order: OrderSummary, command: Extract<OrderCommand, { action: 'create_exception' | 'resolve_exception' }>) => Promise<void>;
@@ -354,6 +369,7 @@ function OrderRow({
   const total = Number(order.totalQuantity || 0);
   const requiresInvoice = order.status === 'awaiting_tally_billing';
   const canCancel = actorRole === 'administrator' && !['cancelled', 'delivered'].includes(order.status);
+  const allocationDue = ['confirmed','partially_reserved'].includes(order.status) && ['administrator','operations','warehouse'].includes(actorRole);
   const attention = orderAttentionReasons(order);
   return (
     <article className="p-5">
@@ -371,7 +387,7 @@ function OrderRow({
         <p className="text-xs font-bold text-[#708386]">Ordered quantity</p>
         <p className="mt-1 font-extrabold text-[#274b50]">{formatQuantity(total)}</p>
       </div>
-      {action ? (
+      {allocationDue ? <div className="flex min-w-48 flex-col gap-2"><button type="button" disabled={busy} onClick={async () => { setBusy(true); try { await onAllocate(order); } finally { setBusy(false); } }} className="min-h-11 rounded-xl border border-[#badfd4] bg-[#effbf6] px-4 text-sm font-extrabold text-[#126044] disabled:opacity-50">{busy ? 'Allocating…' : order.status === 'partially_reserved' ? 'Retry stock allocation' : 'Allocate stock'}</button>{canCancel ? <button type="button" disabled={busy} onClick={() => setCancelling(true)} className="min-h-10 rounded-xl px-4 text-sm font-bold text-[#9a4e47] hover:bg-[#fff0ef] disabled:opacity-50">Cancel order</button> : null}</div> : action ? (
         <div className="flex min-w-48 flex-col gap-2">
           {requiresInvoice ? <label className="text-xs font-bold text-[#587275]">Tally invoice number<input value={invoiceNumber} onChange={(event) => setInvoiceNumber(event.target.value)} placeholder="Required" className="mt-1 min-h-10 w-full rounded-lg border border-[#cedfdd] px-3 font-normal text-[#173239] outline-none focus:border-[#64d4ad]" /></label> : null}
           <button
