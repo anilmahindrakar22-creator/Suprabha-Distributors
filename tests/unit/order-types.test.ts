@@ -61,6 +61,12 @@ describe('order command validation', () => {
     expect(validateOrderCommand({ action: 'resolve_exception', payload: { orderId: 'order-id', expectedVersion: 3, exceptionId: 'exception-id', resolution: 'Delivered on the next route' } })).not.toBeNull();
     expect(validateOrderCommand({ action: 'resolve_exception', payload: { orderId: 'order-id', expectedVersion: 3, exceptionId: 'exception-id', resolution: '' } })).toBeNull();
   });
+
+  it('validates installation scheduling and commissioning', () => {
+    expect(validateOrderCommand({ action: 'schedule_installation', payload: { orderId: 'order-id', expectedVersion: 4, tallyKey: 'EQUIPMENT-1', scheduledDate: '2026-09-10' } })).not.toBeNull();
+    expect(validateOrderCommand({ action: 'schedule_installation', payload: { orderId: 'order-id', expectedVersion: 4, tallyKey: '', scheduledDate: '10/09/2026' } })).toBeNull();
+    expect(validateOrderCommand({ action: 'complete_installation', payload: { orderId: 'order-id', expectedVersion: 5, installationId: 'installation-id', serialNumber: 'SN-1002', commissioningNotes: 'Installed and quality checks passed' } })).not.toBeNull();
+  });
 });
 
 describe('Tally customer search', () => {
@@ -103,7 +109,7 @@ describe('order workflow and history', () => {
     createdAt: '2026-08-31T10:00:00Z', updatedAt: '2026-08-31T10:00:00Z',
     lineCount: 1, totalQuantity: 2, reservedQuantity: 0, tallyInvoiceNumber: null,
     lines: [{ tallyKey: 'ITEM-1', itemName: 'Glucose Reagent', itemGroup: 'Reagents', baseUnit: 'box', quantity: 2, reservedQuantity: 0 }],
-    events: [], exceptions: [],
+    events: [], exceptions: [], installations: [],
   };
 
   it('presents detailed statuses as six simple operational stages', () => {
@@ -155,6 +161,11 @@ describe('order workflow and history', () => {
     const exceptionOrder = { ...baseOrder, exceptions: [{ id: 'x1', category: 'damaged' as const, status: 'open' as const, summary: 'Outer carton damaged', ownerEmail: null, resolution: null, createdBy: 'ops@example.com', createdAt: '2026-08-31T09:00:00Z', resolvedBy: null, resolvedAt: null }] };
     expect(orderAttentionReasons(exceptionOrder, new Date('2026-08-31T10:00:00Z'))).toContain('Open delivery exception');
     expect(filterOrders([exceptionOrder], '', 'attention')).toEqual([exceptionOrder]);
+  });
+
+  it('flags overdue equipment installations', () => {
+    const installationOrder = { ...baseOrder, installations: [{ id: 'i1', tallyKey: 'EQUIPMENT-1', itemName: 'Analyzer', status: 'scheduled' as const, scheduledDate: '2026-08-30', engineerEmail: null, siteContact: null, serialNumber: null, commissioningNotes: null, createdBy: 'ops@example.com', createdAt: '2026-08-29T09:00:00Z', completedBy: null, completedAt: null }] };
+    expect(orderAttentionReasons(installationOrder, new Date(2026, 7, 31, 10))).toContain('Installation overdue');
   });
 
   it('does not treat a newly received untouched order as a back-order', () => {

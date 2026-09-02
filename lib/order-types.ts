@@ -37,6 +37,23 @@ export type OrderSummary = {
   lines: OrderLineSummary[];
   events: OrderEvent[];
   exceptions: DeliveryException[];
+  installations: EquipmentInstallation[];
+};
+
+export type EquipmentInstallation = {
+  id: string;
+  tallyKey: string;
+  itemName: string;
+  status: 'scheduled' | 'completed';
+  scheduledDate: string;
+  engineerEmail: string | null;
+  siteContact: string | null;
+  serialNumber: string | null;
+  commissioningNotes: string | null;
+  createdBy: string;
+  createdAt: string;
+  completedBy: string | null;
+  completedAt: string | null;
 };
 
 export type DeliveryException = {
@@ -218,6 +235,7 @@ export function orderAttentionReasons(order: OrderSummary, now = new Date()) {
   if (ageHours > limit) reasons.push(`No progress for over ${limit} hours`);
   if (isOrderDeliveryOverdue(order, now)) reasons.push('Delivery overdue');
   if ((order.exceptions || []).some((item) => item.status === 'open')) reasons.push('Open delivery exception');
+  if ((order.installations || []).some((item) => item.status === 'scheduled' && item.scheduledDate < localDateKey(now))) reasons.push('Installation overdue');
   const fulfilmentStarted = order.lines.some((line) => Number(line.fulfilledQuantity || 0) > 0);
   const fulfilmentDue = ['packed', 'awaiting_tally_billing', 'billed_in_tally', 'ready_for_dispatch', 'dispatched'].includes(order.status);
   if ((fulfilmentStarted || fulfilmentDue) && order.lines.some((line) => Number(line.fulfilledQuantity || 0) < Number(line.quantity))) reasons.push('Partial fulfilment or back-order');
@@ -273,13 +291,21 @@ export type OrderCommand =
   | {
       action: 'resolve_exception';
       payload: { orderId: string; expectedVersion: number; exceptionId: string; resolution: string };
+    }
+  | {
+      action: 'schedule_installation';
+      payload: { orderId: string; expectedVersion: number; tallyKey: string; scheduledDate: string; engineerEmail?: string; siteContact?: string };
+    }
+  | {
+      action: 'complete_installation';
+      payload: { orderId: string; expectedVersion: number; installationId: string; serialNumber: string; commissioningNotes: string };
     };
 
 export function validateOrderCommand(value: unknown): OrderCommand | null {
   if (!value || typeof value !== 'object') return null;
   const command = value as { action?: unknown; payload?: unknown };
   if (
-    !['create_order', 'transition_order', 'save_fulfilment', 'edit_order', 'create_exception', 'resolve_exception'].includes(
+    !['create_order', 'transition_order', 'save_fulfilment', 'edit_order', 'create_exception', 'resolve_exception', 'schedule_installation', 'complete_installation'].includes(
       String(command.action),
     ) ||
     !command.payload ||
@@ -327,6 +353,10 @@ export function validateOrderCommand(value: unknown): OrderCommand | null {
     if (typeof payload.orderId !== 'string' || !Number.isInteger(Number(payload.expectedVersion)) || !['delayed', 'failed_delivery', 'damaged', 'wrong_item', 'other'].includes(String(payload.category)) || typeof payload.summary !== 'string' || payload.summary.trim().length < 3 || payload.summary.length > 500) return null;
   } else if (command.action === 'resolve_exception') {
     if (typeof payload.orderId !== 'string' || !Number.isInteger(Number(payload.expectedVersion)) || typeof payload.exceptionId !== 'string' || typeof payload.resolution !== 'string' || payload.resolution.trim().length < 3 || payload.resolution.length > 500) return null;
+  } else if (command.action === 'schedule_installation') {
+    if (typeof payload.orderId !== 'string' || !Number.isInteger(Number(payload.expectedVersion)) || typeof payload.tallyKey !== 'string' || payload.tallyKey.length < 1 || typeof payload.scheduledDate !== 'string' || !/^\d{4}-\d{2}-\d{2}$/.test(payload.scheduledDate)) return null;
+  } else if (command.action === 'complete_installation') {
+    if (typeof payload.orderId !== 'string' || !Number.isInteger(Number(payload.expectedVersion)) || typeof payload.installationId !== 'string' || typeof payload.serialNumber !== 'string' || payload.serialNumber.trim().length < 2 || payload.serialNumber.length > 100 || typeof payload.commissioningNotes !== 'string' || payload.commissioningNotes.trim().length < 3 || payload.commissioningNotes.length > 1000) return null;
   }
 
   return command as OrderCommand;

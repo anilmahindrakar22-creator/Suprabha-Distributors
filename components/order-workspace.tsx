@@ -175,6 +175,9 @@ export function OrderWorkspace({ initialStatus = 'open' }: { initialStatus?: str
   async function updateException(order: OrderSummary, command: Extract<OrderCommand, { action: 'create_exception' | 'resolve_exception' }>) {
     await runCommand(command, `${order.orderNumber} delivery exception updated.`);
   }
+  async function updateInstallation(order: OrderSummary, command: Extract<OrderCommand, { action: 'schedule_installation' | 'complete_installation' }>) {
+    await runCommand(command, `${order.orderNumber} installation record updated.`);
+  }
 
   const operations = data?.operations || {};
   const staleText = data?.snapshot.fetchedAt || 'No Tally snapshot';
@@ -284,6 +287,7 @@ export function OrderWorkspace({ initialStatus = 'open' }: { initialStatus?: str
                   onSaveFulfilment={saveFulfilment}
                   onEdit={editOrder}
                   onException={updateException}
+                  onInstallation={updateInstallation}
                 />
               ))}
             </div>
@@ -323,6 +327,7 @@ function OrderRow({
   onSaveFulfilment,
   onEdit,
   onException,
+  onInstallation,
 }: {
   order: OrderSummary;
   actorRole: string;
@@ -331,6 +336,7 @@ function OrderRow({
   onSaveFulfilment: (order: OrderSummary, payload: Extract<OrderCommand, { action: 'save_fulfilment' }>['payload']) => Promise<void>;
   onEdit: (order: OrderSummary, payload: Extract<OrderCommand, { action: 'edit_order' }>['payload']) => Promise<void>;
   onException: (order: OrderSummary, command: Extract<OrderCommand, { action: 'create_exception' | 'resolve_exception' }>) => Promise<void>;
+  onInstallation: (order: OrderSummary, command: Extract<OrderCommand, { action: 'schedule_installation' | 'complete_installation' }>) => Promise<void>;
 }) {
   const [busy, setBusy] = useState(false);
   const [invoiceNumber, setInvoiceNumber] = useState(order.tallyInvoiceNumber || '');
@@ -392,6 +398,7 @@ function OrderRow({
         {!['cancelled', 'delivered'].includes(order.status) ? <FulfilmentEditor order={order} onSave={onSaveFulfilment} /> : null}
         {['phone_order_received','awaiting_confirmation','awaiting_approval','confirmed','partially_reserved','fully_reserved','ready_for_picking','picked','packed'].includes(order.status) ? <OrderEditPanel order={order} onSave={onEdit} /> : null}
         <DeliveryExceptionPanel order={order} onSave={onException} />
+        <InstallationPanel order={order} onSave={onInstallation} />
         {order.status === 'awaiting_tally_billing' ? <BillingHandoff order={order} /> : null}
         <div className="mt-5 border-t border-[#dfe9e7] pt-4">
           <p className="text-xs font-bold uppercase tracking-wide text-[#708386]">Activity log</p>
@@ -400,6 +407,15 @@ function OrderRow({
       </details>
     </article>
   );
+}
+
+function InstallationPanel({ order, onSave }: { order: OrderSummary; onSave: (order: OrderSummary, command: Extract<OrderCommand, { action: 'schedule_installation' | 'complete_installation' }>) => Promise<void> }) {
+  const [open, setOpen] = useState(false); const [busy, setBusy] = useState(false);
+  const [tallyKey, setTallyKey] = useState(order.lines[0]?.tallyKey || ''); const [scheduledDate, setScheduledDate] = useState('');
+  const [siteContact, setSiteContact] = useState(''); const [engineerEmail, setEngineerEmail] = useState('');
+  const [completion, setCompletion] = useState<Record<string, { serial: string; notes: string }>>({});
+  const installations = order.installations || []; const scheduled = installations.filter((item) => item.status === 'scheduled').length;
+  return <div className="mt-5 border-t border-[#dfe9e7] pt-4"><button type="button" onClick={() => setOpen((value) => !value)} className="font-bold text-[#31585d]">{open ? '−' : '+'} Equipment installation{scheduled ? ` (${scheduled} scheduled)` : ''}</button>{open ? <div className="mt-3 space-y-3 rounded-xl bg-white p-4">{installations.map((item) => { const current = completion[item.id] || { serial: '', notes: '' }; return <div key={item.id} className="rounded-lg border border-[#dce7e5] p-3"><div className="flex flex-wrap justify-between gap-2"><strong className="text-[#274b50]">{item.itemName}</strong><span className="text-xs font-bold capitalize text-[#587275]">{item.status}</span></div><p className="mt-1 text-xs text-[#718487]">Scheduled {new Date(`${item.scheduledDate}T00:00:00`).toLocaleDateString('en-IN')}{item.engineerEmail ? ` · ${item.engineerEmail}` : ''}</p>{item.status === 'completed' ? <p className="mt-2 text-xs text-[#176246]">Serial {item.serialNumber} · {item.commissioningNotes}</p> : <div className="mt-3 grid gap-2 sm:grid-cols-[160px_1fr_auto]"><input value={current.serial} onChange={(event) => setCompletion((value) => ({ ...value, [item.id]: { ...current, serial: event.target.value } }))} placeholder="Serial number" maxLength={100} className="min-h-10 rounded-lg border px-3 text-xs" /><input value={current.notes} onChange={(event) => setCompletion((value) => ({ ...value, [item.id]: { ...current, notes: event.target.value } }))} placeholder="Commissioning checks / notes" maxLength={1000} className="min-h-10 rounded-lg border px-3 text-xs" /><button type="button" disabled={busy || current.serial.trim().length < 2 || current.notes.trim().length < 3} onClick={async () => { setBusy(true); try { await onSave(order, { action: 'complete_installation', payload: { orderId: order.id, expectedVersion: order.version, installationId: item.id, serialNumber: current.serial.trim(), commissioningNotes: current.notes.trim() } }); } finally { setBusy(false); } }} className="min-h-10 rounded-lg border border-[#badfd4] px-3 text-xs font-bold text-[#126044] disabled:opacity-50">Complete</button></div>}</div>; })}<div className="grid gap-2 border-t border-[#e3ecea] pt-3 sm:grid-cols-2"><select value={tallyKey} onChange={(event) => setTallyKey(event.target.value)} className="min-h-10 rounded-lg border px-2 text-xs">{order.lines.map((line) => <option key={line.tallyKey} value={line.tallyKey}>{line.itemName}</option>)}</select><input type="date" value={scheduledDate} onChange={(event) => setScheduledDate(event.target.value)} className="min-h-10 rounded-lg border px-3 text-xs" /><input value={siteContact} onChange={(event) => setSiteContact(event.target.value)} placeholder="Site contact (optional)" maxLength={200} className="min-h-10 rounded-lg border px-3 text-xs" /><input type="email" value={engineerEmail} onChange={(event) => setEngineerEmail(event.target.value)} placeholder="Engineer email (optional)" className="min-h-10 rounded-lg border px-3 text-xs" /></div><div className="flex justify-end"><button type="button" disabled={busy || !tallyKey || !scheduledDate || order.status === 'cancelled'} onClick={async () => { setBusy(true); try { await onSave(order, { action: 'schedule_installation', payload: { orderId: order.id, expectedVersion: order.version, tallyKey, scheduledDate, siteContact: siteContact.trim(), engineerEmail: engineerEmail.trim() } }); } finally { setBusy(false); } }} className="min-h-10 rounded-lg bg-[#092f36] px-4 text-xs font-bold text-white disabled:opacity-50">Schedule installation</button></div><p className="text-xs text-[#718487]">Use this only for equipment lines. Reagents need no installation record.</p></div> : null}</div>;
 }
 
 function DeliveryExceptionPanel({ order, onSave }: { order: OrderSummary; onSave: (order: OrderSummary, command: Extract<OrderCommand, { action: 'create_exception' | 'resolve_exception' }>) => Promise<void> }) {
