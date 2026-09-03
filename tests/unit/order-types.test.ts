@@ -29,6 +29,14 @@ describe('order command validation', () => {
         lines: [{ tallyKey: 'ITEM-1', quantity: 0 }],
       },
     },
+    {
+      action: 'create_order',
+      payload: {
+        idempotencyKey: '1234567890abcdef',
+        customerName: 'Valid Customer',
+        lines: [{ tallyKey: 'ITEM-1', quantity: 1.5 }],
+      },
+    },
     { action: 'reserve_order', payload: { orderId: 'id', expectedVersion: 1 } },
   ])('rejects malformed command %#', (command) => {
     expect(validateOrderCommand(command)).toBeNull();
@@ -49,6 +57,7 @@ describe('order command validation', () => {
     const command = { action: 'save_fulfilment', payload: { idempotencyKey: '1234567890abcdef', orderId: 'order-id', expectedVersion: 3, lines: [{ tallyKey: 'ITEM-1', fulfilledQuantity: 2 }] } };
     expect(validateOrderCommand(command)).not.toBeNull();
     expect(validateOrderCommand({ ...command, payload: { ...command.payload, lines: [{ tallyKey: 'ITEM-1', fulfilledQuantity: -1 }] } })).toBeNull();
+    expect(validateOrderCommand({ ...command, payload: { ...command.payload, lines: [{ tallyKey: 'ITEM-1', fulfilledQuantity: 1.5 }] } })).toBeNull();
   });
 
   it('validates dispatch and delivery evidence', () => {
@@ -64,6 +73,7 @@ describe('order command validation', () => {
   it('validates safe order edits', () => {
     expect(validateOrderCommand({ action: 'edit_order', payload: { idempotencyKey: '1234567890abcdef', orderId: 'order-id', expectedVersion: 2, customerName: 'City Lab', reason: 'Corrected call entry', lines: [{ tallyKey: 'ITEM-1', quantity: 3 }] } })).not.toBeNull();
     expect(validateOrderCommand({ action: 'edit_order', payload: { orderId: 'order-id', expectedVersion: 2, customerName: 'A', lines: [] } })).toBeNull();
+    expect(validateOrderCommand({ action: 'edit_order', payload: { idempotencyKey: '1234567890abcdef', orderId: 'order-id', expectedVersion: 2, customerName: 'City Lab', lines: [{ tallyKey: 'ITEM-1', quantity: 2.5 }] } })).toBeNull();
   });
 
   it('validates delivery exception creation and resolution', () => {

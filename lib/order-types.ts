@@ -189,7 +189,7 @@ export function orderStage(status: string) {
 export function billingHandoffText(order: OrderSummary) {
   const lines = order.lines.map((line) => {
     const unit = line.baseUnit ? ` ${line.baseUnit}` : '';
-    return `- ${line.itemName}: ${Number(line.quantity).toLocaleString('en-IN', { maximumFractionDigits: 3 })}${unit}`;
+    return `- ${line.itemName}: ${Math.round(Number(line.quantity)).toLocaleString('en-IN', { maximumFractionDigits: 0 })}${unit}`;
   });
   return [
     `Order: ${order.orderNumber}`,
@@ -374,7 +374,7 @@ export function validateOrderCommand(value: unknown): OrderCommand | null {
           Boolean(line) &&
           typeof line === 'object' &&
           typeof (line as Record<string, unknown>).tallyKey === 'string' &&
-          Number.isFinite(Number((line as Record<string, unknown>).quantity)) &&
+          Number.isInteger(Number((line as Record<string, unknown>).quantity)) &&
           Number((line as Record<string, unknown>).quantity) > 0,
       );
     if (
@@ -396,14 +396,14 @@ export function validateOrderCommand(value: unknown): OrderCommand | null {
     return null;
   } else if (command.action === 'save_fulfilment') {
     const lines = Array.isArray(payload.lines) ? payload.lines : [];
-    if (typeof payload.idempotencyKey !== 'string' || payload.idempotencyKey.length < 16 || typeof payload.orderId !== 'string' || !Number.isInteger(Number(payload.expectedVersion)) || lines.some((line) => !line || typeof line !== 'object' || typeof (line as Record<string, unknown>).tallyKey !== 'string' || Number((line as Record<string, unknown>).fulfilledQuantity) < 0)) return null;
+    if (typeof payload.idempotencyKey !== 'string' || payload.idempotencyKey.length < 16 || typeof payload.orderId !== 'string' || !Number.isInteger(Number(payload.expectedVersion)) || lines.some((line) => !line || typeof line !== 'object' || typeof (line as Record<string, unknown>).tallyKey !== 'string' || !Number.isInteger(Number((line as Record<string, unknown>).fulfilledQuantity)) || Number((line as Record<string, unknown>).fulfilledQuantity) < 0)) return null;
   } else if (command.action === 'save_dispatch') {
     if (typeof payload.idempotencyKey !== 'string' || payload.idempotencyKey.length < 16 || typeof payload.orderId !== 'string' || !Number.isInteger(Number(payload.expectedVersion)) || typeof payload.courierName !== 'string' || payload.courierName.trim().length < 2 || typeof payload.trackingNumber !== 'string' || payload.trackingNumber.trim().length < 2 || typeof payload.dispatchDate !== 'string' || !/^\d{4}-\d{2}-\d{2}$/.test(payload.dispatchDate)) return null;
   } else if (command.action === 'confirm_delivery') {
     if (typeof payload.idempotencyKey !== 'string' || payload.idempotencyKey.length < 16 || typeof payload.orderId !== 'string' || !Number.isInteger(Number(payload.expectedVersion)) || typeof payload.receivedBy !== 'string' || payload.receivedBy.trim().length < 2 || typeof payload.deliveredAt !== 'string' || Number.isNaN(Date.parse(payload.deliveredAt))) return null;
   } else if (command.action === 'edit_order') {
     const lines = Array.isArray(payload.lines) ? payload.lines : [];
-    if (typeof payload.idempotencyKey !== 'string' || payload.idempotencyKey.length < 16 || typeof payload.orderId !== 'string' || !Number.isInteger(Number(payload.expectedVersion)) || typeof payload.customerName !== 'string' || payload.customerName.trim().length < 2 || lines.length < 1 || lines.some((line) => !line || typeof line !== 'object' || typeof (line as Record<string, unknown>).tallyKey !== 'string' || Number((line as Record<string, unknown>).quantity) <= 0)) return null;
+    if (typeof payload.idempotencyKey !== 'string' || payload.idempotencyKey.length < 16 || typeof payload.orderId !== 'string' || !Number.isInteger(Number(payload.expectedVersion)) || typeof payload.customerName !== 'string' || payload.customerName.trim().length < 2 || lines.length < 1 || lines.some((line) => !line || typeof line !== 'object' || typeof (line as Record<string, unknown>).tallyKey !== 'string' || !Number.isInteger(Number((line as Record<string, unknown>).quantity)) || Number((line as Record<string, unknown>).quantity) <= 0)) return null;
   } else if (command.action === 'create_exception') {
     if (typeof payload.idempotencyKey !== 'string' || payload.idempotencyKey.length < 16 || typeof payload.orderId !== 'string' || !Number.isInteger(Number(payload.expectedVersion)) || !['delayed', 'failed_delivery', 'damaged', 'wrong_item', 'other'].includes(String(payload.category)) || typeof payload.summary !== 'string' || payload.summary.trim().length < 3 || payload.summary.length > 500) return null;
   } else if (command.action === 'resolve_exception') {
