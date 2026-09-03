@@ -10,7 +10,7 @@
     "dev": "vinext dev",
     "build": "vinext build",
     "start": "wrangler dev --config dist/server/wrangler.json",
-    "lint": "oxlint app components/stockflow-frame.tsx components/order-workspace.tsx components/inventory-workspace.tsx lib",
+    "lint": "oxlint app components/stockflow-frame.tsx components/order-workspace.tsx components/service-workspace.tsx lib",
     "typecheck": "tsc --noEmit",
     "test": "vitest run --coverage",
     "test:watch": "vitest",

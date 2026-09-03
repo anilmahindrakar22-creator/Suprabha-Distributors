@@ -8,7 +8,7 @@ import type {
   OrderCommand,
   OrderSummary,
 } from '@/lib/order-types';
-import { billingHandoffText, filterOrders, orderAttentionReasons, ordersCsv, orderStage, searchCatalog, searchCustomers } from '@/lib/order-types';
+import { billingHandoffText, filterOrders, orderAttentionReasons, ordersCsv, orderStage, searchCatalog, searchCustomers, tallyInvoiceReconciliation } from '@/lib/order-types';
 
 type DraftLine = { item: CatalogItem; quantity: number };
 
@@ -42,8 +42,6 @@ const nextStatus: Record<string, { label: string; status: string }> = {
   packed: { label: 'Send to Tally billing', status: 'awaiting_tally_billing' },
   awaiting_tally_billing: { label: 'Mark billed', status: 'billed_in_tally' },
   billed_in_tally: { label: 'Ready for dispatch', status: 'ready_for_dispatch' },
-  ready_for_dispatch: { label: 'Mark dispatched', status: 'dispatched' },
-  dispatched: { label: 'Mark delivered', status: 'delivered' },
 };
 
 function formatQuantity(value: number) {
@@ -181,16 +179,8 @@ export function OrderWorkspace({ initialStatus = 'open' }: { initialStatus?: str
     await runCommand({ action: 'edit_order', payload }, `${order.orderNumber} updated.`);
   }
 
-  async function allocateOrder(order: OrderSummary) {
-    setError(''); setNotice('');
-    try {
-      await readResponse(await fetch('/api/inventory', {
-        method: 'POST', headers: { 'content-type': 'application/json' },
-        body: JSON.stringify({ action: 'allocate_order', payload: { idempotencyKey: crypto.randomUUID(), orderId: order.id, expectedVersion: order.version } }),
-      }));
-      setNotice(`${order.orderNumber} stock allocated by earliest expiry.`);
-      await load();
-    } catch (cause) { setError(cause instanceof Error ? cause.message : 'Unable to allocate stock'); }
+  async function updateDelivery(order: OrderSummary, command: Extract<OrderCommand, { action: 'save_dispatch' | 'confirm_delivery' }>) {
+    await runCommand(command, command.action === 'save_dispatch' ? `${order.orderNumber} marked dispatched.` : `${order.orderNumber} delivery confirmed.`);
   }
   async function updateException(order: OrderSummary, command: Extract<OrderCommand, { action: 'create_exception' | 'resolve_exception' }>) {
     await runCommand(command, `${order.orderNumber} delivery exception updated.`);
@@ -302,10 +292,11 @@ export function OrderWorkspace({ initialStatus = 'open' }: { initialStatus?: str
                   key={order.id}
                   order={order}
                   actorRole={data?.actor.role || ''}
+                  tallyInvoices={data?.snapshot.tallyInvoices}
                   onAdvance={advance}
                   onCancel={cancelOrder}
-                  onAllocate={allocateOrder}
                   onSaveFulfilment={saveFulfilment}
+                  onDelivery={updateDelivery}
                   onEdit={editOrder}
                   onException={updateException}
                   onInstallation={updateInstallation}
@@ -343,20 +334,22 @@ function SummaryCard({ label, value, tone = 'normal' }: { label: string; value?:
 function OrderRow({
   order,
   actorRole,
+  tallyInvoices,
   onAdvance,
   onCancel,
-  onAllocate,
   onSaveFulfilment,
+  onDelivery,
   onEdit,
   onException,
   onInstallation,
 }: {
   order: OrderSummary;
   actorRole: string;
+  tallyInvoices: OrderBootstrap['snapshot']['tallyInvoices'];
   onAdvance: (order: OrderSummary, tallyInvoiceNumber?: string) => Promise<void>;
   onCancel: (order: OrderSummary, reason: string) => Promise<void>;
-  onAllocate: (order: OrderSummary) => Promise<void>;
   onSaveFulfilment: (order: OrderSummary, payload: Extract<OrderCommand, { action: 'save_fulfilment' }>['payload']) => Promise<void>;
+  onDelivery: (order: OrderSummary, command: Extract<OrderCommand, { action: 'save_dispatch' | 'confirm_delivery' }>) => Promise<void>;
   onEdit: (order: OrderSummary, payload: Extract<OrderCommand, { action: 'edit_order' }>['payload']) => Promise<void>;
   onException: (order: OrderSummary, command: Extract<OrderCommand, { action: 'create_exception' | 'resolve_exception' }>) => Promise<void>;
   onInstallation: (order: OrderSummary, command: Extract<OrderCommand, { action: 'schedule_installation' | 'complete_installation' }>) => Promise<void>;
@@ -369,8 +362,8 @@ function OrderRow({
   const total = Number(order.totalQuantity || 0);
   const requiresInvoice = order.status === 'awaiting_tally_billing';
   const canCancel = actorRole === 'administrator' && !['cancelled', 'delivered'].includes(order.status);
-  const allocationDue = ['confirmed','partially_reserved'].includes(order.status) && ['administrator','operations','warehouse'].includes(actorRole);
   const attention = orderAttentionReasons(order);
+  const invoiceState = tallyInvoiceReconciliation(order, tallyInvoices);
   return (
     <article className="p-5">
       <div className="grid gap-4 lg:grid-cols-[1.5fr_1fr_auto] lg:items-center">
@@ -387,7 +380,7 @@ function OrderRow({
         <p className="text-xs font-bold text-[#708386]">Ordered quantity</p>
         <p className="mt-1 font-extrabold text-[#274b50]">{formatQuantity(total)}</p>
       </div>
-      {allocationDue ? <div className="flex min-w-48 flex-col gap-2"><button type="button" disabled={busy} onClick={async () => { setBusy(true); try { await onAllocate(order); } finally { setBusy(false); } }} className="min-h-11 rounded-xl border border-[#badfd4] bg-[#effbf6] px-4 text-sm font-extrabold text-[#126044] disabled:opacity-50">{busy ? 'Allocating…' : order.status === 'partially_reserved' ? 'Retry stock allocation' : 'Allocate stock'}</button>{canCancel ? <button type="button" disabled={busy} onClick={() => setCancelling(true)} className="min-h-10 rounded-xl px-4 text-sm font-bold text-[#9a4e47] hover:bg-[#fff0ef] disabled:opacity-50">Cancel order</button> : null}</div> : action ? (
+      {action ? (
         <div className="flex min-w-48 flex-col gap-2">
           {requiresInvoice ? <label className="text-xs font-bold text-[#587275]">Tally invoice number<input value={invoiceNumber} onChange={(event) => setInvoiceNumber(event.target.value)} placeholder="Required" className="mt-1 min-h-10 w-full rounded-lg border border-[#cedfdd] px-3 font-normal text-[#173239] outline-none focus:border-[#64d4ad]" /></label> : null}
           <button
@@ -415,11 +408,12 @@ function OrderRow({
             <dt className="font-bold text-[#708386]">Order date</dt><dd>{new Date(order.createdAt).toLocaleString('en-IN')}</dd>
             <dt className="font-bold text-[#708386]">Last updated</dt><dd>{new Date(order.updatedAt).toLocaleString('en-IN')}</dd>
             <dt className="font-bold text-[#708386]">Source</dt><dd className="capitalize">{order.source.replaceAll('_', ' ')}</dd>
-            <dt className="font-bold text-[#708386]">Tally invoice</dt><dd>{order.tallyInvoiceNumber || 'Not billed yet'}</dd>
+            <dt className="font-bold text-[#708386]">Tally invoice</dt><dd>{order.tallyInvoiceNumber || 'Not billed yet'}{invoiceState === 'verified' ? <span className="ml-2 rounded-full bg-[#eaf8f1] px-2 py-0.5 font-bold text-[#176246]">Verified</span> : invoiceState === 'unmatched' ? <span className="ml-2 rounded-full bg-[#fff1d6] px-2 py-0.5 font-bold text-[#8a5a0a]">Not found in latest sync</span> : invoiceState === 'awaiting_sync' ? <span className="ml-2 text-[#708386]">Awaiting connector update</span> : null}</dd>
             <dt className="font-bold text-[#708386]">Notes</dt><dd>{order.notes || 'No notes'}</dd>
           </dl>
         </div>
         {!['cancelled', 'delivered'].includes(order.status) ? <FulfilmentEditor order={order} onSave={onSaveFulfilment} /> : null}
+        {['ready_for_dispatch', 'dispatched', 'delivered'].includes(order.status) ? <DispatchPanel order={order} actorRole={actorRole} onSave={onDelivery} /> : null}
         {['phone_order_received','awaiting_confirmation','awaiting_approval','confirmed','partially_reserved','fully_reserved','ready_for_picking','picked','packed'].includes(order.status) ? <OrderEditPanel order={order} onSave={onEdit} /> : null}
         <DeliveryExceptionPanel order={order} onSave={onException} />
         <InstallationPanel order={order} onSave={onInstallation} />
@@ -477,11 +471,28 @@ function FulfilmentEditor({ order, onSave }: { order: OrderSummary; onSave: (ord
   const [busy, setBusy] = useState(false);
   const [deliveryAddress, setDeliveryAddress] = useState(order.deliveryAddress || '');
   const [expectedDeliveryDate, setExpectedDeliveryDate] = useState(order.expectedDeliveryDate || '');
+  const [lines, setLines] = useState(() => order.lines.map((line) => ({ tallyKey: line.tallyKey, itemName: line.itemName, quantity: line.quantity, fulfilledQuantity: Number(line.fulfilledQuantity || 0) })));
+  const backOrdered = lines.reduce((sum, line) => sum + Math.max(line.quantity - line.fulfilledQuantity, 0), 0);
+  return <div className="mt-5 border-t border-[#dfe9e7] pt-4"><button type="button" onClick={() => setOpen((value) => !value)} className="font-bold text-[#31585d]">{open ? '−' : '+'} Fulfilment details</button>{open ? <div className="mt-3 space-y-4 rounded-xl bg-white p-4"><div className="grid gap-3 sm:grid-cols-2"><label className="text-xs font-bold text-[#587275]">Expected delivery<input type="date" value={expectedDeliveryDate} onChange={(event) => setExpectedDeliveryDate(event.target.value)} className="mt-1 min-h-10 w-full rounded-lg border border-[#cedfdd] px-3 font-normal" /></label><label className="text-xs font-bold text-[#587275]">Delivery address<input value={deliveryAddress} onChange={(event) => setDeliveryAddress(event.target.value)} className="mt-1 min-h-10 w-full rounded-lg border border-[#cedfdd] px-3 font-normal" /></label></div><div className="space-y-2">{lines.map((line, index) => <div key={line.tallyKey} className="grid gap-2 rounded-lg bg-[#f6f8f7] p-3 sm:grid-cols-[1fr_120px]"><strong className="text-sm text-[#274b50]">{line.itemName}<small className="block font-normal text-[#718487]">Ordered {formatQuantity(line.quantity)}</small></strong><label className="text-xs font-bold">Fulfilled<input type="number" min="0" max={line.quantity} step="0.001" value={line.fulfilledQuantity} onChange={(event) => setLines((current) => current.map((item, position) => position === index ? { ...item, fulfilledQuantity: Number(event.target.value) } : item))} className="mt-1 min-h-10 w-full rounded-lg border px-2 font-normal" /></label></div>)}</div><p className="text-xs text-[#718487]">Batch, expiry and stock adjustments continue to be recorded only in Tally Prime.</p><div className="flex items-center justify-between gap-3"><p className={`text-xs font-bold ${backOrdered > 0 ? 'text-[#9a6412]' : 'text-[#277b69]'}`}>{backOrdered > 0 ? `${formatQuantity(backOrdered)} back-ordered` : 'Fully fulfilled'}</p><button type="button" disabled={busy} onClick={async () => { setBusy(true); try { await onSave(order, { orderId: order.id, expectedVersion: order.version, deliveryAddress, expectedDeliveryDate, lines: lines.map(({ tallyKey, fulfilledQuantity }) => ({ tallyKey, fulfilledQuantity })) }); } finally { setBusy(false); } }} className="min-h-10 rounded-xl bg-[#092f36] px-4 font-bold text-white disabled:opacity-50">{busy ? 'Saving…' : 'Save fulfilment'}</button></div></div> : null}</div>;
+}
+
+function localDateTimeValue(date = new Date()) {
+  const offset = date.getTimezoneOffset() * 60_000;
+  return new Date(date.getTime() - offset).toISOString().slice(0, 16);
+}
+
+function DispatchPanel({ order, actorRole, onSave }: { order: OrderSummary; actorRole: string; onSave: (order: OrderSummary, command: Extract<OrderCommand, { action: 'save_dispatch' | 'confirm_delivery' }>) => Promise<void> }) {
+  const [busy, setBusy] = useState(false);
   const [courierName, setCourierName] = useState(order.courierName || '');
   const [trackingNumber, setTrackingNumber] = useState(order.trackingNumber || '');
-  const [lines, setLines] = useState(() => order.lines.map((line) => ({ tallyKey: line.tallyKey, itemName: line.itemName, quantity: line.quantity, fulfilledQuantity: Number(line.fulfilledQuantity || 0), batchNumber: line.batchNumber || '', expiryDate: line.expiryDate || '' })));
-  const backOrdered = lines.reduce((sum, line) => sum + Math.max(line.quantity - line.fulfilledQuantity, 0), 0);
-  return <div className="mt-5 border-t border-[#dfe9e7] pt-4"><button type="button" onClick={() => setOpen((value) => !value)} className="font-bold text-[#31585d]">{open ? '−' : '+'} Fulfilment details</button>{open ? <div className="mt-3 space-y-4 rounded-xl bg-white p-4"><div className="grid gap-3 sm:grid-cols-2"><label className="text-xs font-bold text-[#587275]">Expected delivery<input type="date" value={expectedDeliveryDate} onChange={(event) => setExpectedDeliveryDate(event.target.value)} className="mt-1 min-h-10 w-full rounded-lg border border-[#cedfdd] px-3 font-normal" /></label><label className="text-xs font-bold text-[#587275]">Delivery address<input value={deliveryAddress} onChange={(event) => setDeliveryAddress(event.target.value)} className="mt-1 min-h-10 w-full rounded-lg border border-[#cedfdd] px-3 font-normal" /></label><label className="text-xs font-bold text-[#587275]">Courier / transporter<input value={courierName} onChange={(event) => setCourierName(event.target.value)} className="mt-1 min-h-10 w-full rounded-lg border border-[#cedfdd] px-3 font-normal" /></label><label className="text-xs font-bold text-[#587275]">Tracking / docket number<input value={trackingNumber} onChange={(event) => setTrackingNumber(event.target.value)} className="mt-1 min-h-10 w-full rounded-lg border border-[#cedfdd] px-3 font-normal" /></label></div><div className="space-y-2">{lines.map((line, index) => <div key={line.tallyKey} className="grid gap-2 rounded-lg bg-[#f6f8f7] p-3 sm:grid-cols-[1fr_100px_140px_140px]"><strong className="text-xs text-[#274b50]">{line.itemName}<small className="block font-normal text-[#718487]">Ordered {formatQuantity(line.quantity)}</small></strong><label className="text-[11px] font-bold">Fulfilled<input type="number" min="0" max={line.quantity} step="0.001" value={line.fulfilledQuantity} onChange={(event) => setLines((current) => current.map((item, position) => position === index ? { ...item, fulfilledQuantity: Number(event.target.value) } : item))} className="mt-1 min-h-9 w-full rounded-lg border px-2 font-normal" /></label><label className="text-[11px] font-bold">Batch / lot<input value={line.batchNumber} onChange={(event) => setLines((current) => current.map((item, position) => position === index ? { ...item, batchNumber: event.target.value } : item))} className="mt-1 min-h-9 w-full rounded-lg border px-2 font-normal" /></label><label className="text-[11px] font-bold">Expiry<input type="date" value={line.expiryDate} onChange={(event) => setLines((current) => current.map((item, position) => position === index ? { ...item, expiryDate: event.target.value } : item))} className="mt-1 min-h-9 w-full rounded-lg border px-2 font-normal" /></label></div>)}</div><div className="flex items-center justify-between gap-3"><p className={`text-xs font-bold ${backOrdered > 0 ? 'text-[#9a6412]' : 'text-[#277b69]'}`}>{backOrdered > 0 ? `${formatQuantity(backOrdered)} back-ordered` : 'Fully fulfilled'}</p><button type="button" disabled={busy} onClick={async () => { setBusy(true); try { await onSave(order, { orderId: order.id, expectedVersion: order.version, deliveryAddress, expectedDeliveryDate, courierName, trackingNumber, lines: lines.map(({ tallyKey, fulfilledQuantity, batchNumber, expiryDate }) => ({ tallyKey, fulfilledQuantity, batchNumber, expiryDate })) }); } finally { setBusy(false); } }} className="min-h-10 rounded-xl bg-[#092f36] px-4 font-bold text-white disabled:opacity-50">{busy ? 'Saving…' : 'Save fulfilment'}</button></div></div> : null}</div>;
+  const [dispatchDate, setDispatchDate] = useState(order.dispatchDate || new Date().toISOString().slice(0, 10));
+  const [vehicleNumber, setVehicleNumber] = useState(order.vehicleNumber || '');
+  const [deliveredAt, setDeliveredAt] = useState(order.deliveredAt ? localDateTimeValue(new Date(order.deliveredAt)) : localDateTimeValue());
+  const [receivedBy, setReceivedBy] = useState(order.receivedBy || '');
+  const [podReference, setPodReference] = useState(order.podReference || '');
+  const canUpdate = ['administrator', 'operations'].includes(actorRole);
+  if (order.status === 'delivered') return <div className="mt-5 border-t border-[#dfe9e7] pt-4"><p className="font-bold text-[#31585d]">Delivery confirmation</p><p className="mt-2 text-sm text-[#587275]">Received by {order.receivedBy} on {order.deliveredAt ? new Date(order.deliveredAt).toLocaleString('en-IN') : '—'}{order.podReference ? ` · POD ${order.podReference}` : ''}</p></div>;
+  return <div className="mt-5 border-t border-[#dfe9e7] pt-4"><p className="font-bold text-[#31585d]">{order.status === 'ready_for_dispatch' ? 'Dispatch details' : 'Delivery confirmation'}</p>{order.status === 'ready_for_dispatch' ? <div className="mt-3 grid gap-3 rounded-xl bg-white p-4 sm:grid-cols-2"><label className="text-sm font-bold">Courier / transporter<input value={courierName} onChange={(event) => setCourierName(event.target.value)} className="mt-1 min-h-11 w-full rounded-lg border px-3 font-normal" /></label><label className="text-sm font-bold">Tracking / docket number<input value={trackingNumber} onChange={(event) => setTrackingNumber(event.target.value)} className="mt-1 min-h-11 w-full rounded-lg border px-3 font-normal" /></label><label className="text-sm font-bold">Dispatch date<input type="date" value={dispatchDate} onChange={(event) => setDispatchDate(event.target.value)} className="mt-1 min-h-11 w-full rounded-lg border px-3 font-normal" /></label><label className="text-sm font-bold">Vehicle number <span className="font-normal text-[#718487]">(optional)</span><input value={vehicleNumber} onChange={(event) => setVehicleNumber(event.target.value)} maxLength={40} className="mt-1 min-h-11 w-full rounded-lg border px-3 font-normal" /></label><div className="sm:col-span-2 flex justify-end"><button type="button" disabled={!canUpdate || busy || courierName.trim().length < 2 || trackingNumber.trim().length < 2 || !dispatchDate} onClick={async () => { setBusy(true); try { await onSave(order, { action: 'save_dispatch', payload: { orderId: order.id, expectedVersion: order.version, courierName: courierName.trim(), trackingNumber: trackingNumber.trim(), dispatchDate, vehicleNumber: vehicleNumber.trim() } }); } finally { setBusy(false); } }} className="min-h-11 rounded-xl bg-[#092f36] px-5 font-bold text-white disabled:opacity-50">{busy ? 'Saving…' : 'Mark dispatched'}</button></div></div> : <div className="mt-3 grid gap-3 rounded-xl bg-white p-4 sm:grid-cols-2"><p className="sm:col-span-2 text-sm text-[#587275]">{order.courierName} · {order.trackingNumber}{order.vehicleNumber ? ` · ${order.vehicleNumber}` : ''}</p><label className="text-sm font-bold">Delivered at<input type="datetime-local" value={deliveredAt} onChange={(event) => setDeliveredAt(event.target.value)} className="mt-1 min-h-11 w-full rounded-lg border px-3 font-normal" /></label><label className="text-sm font-bold">Received by<input value={receivedBy} onChange={(event) => setReceivedBy(event.target.value)} maxLength={160} className="mt-1 min-h-11 w-full rounded-lg border px-3 font-normal" /></label><label className="text-sm font-bold sm:col-span-2">Proof of delivery reference <span className="font-normal text-[#718487]">(optional)</span><input value={podReference} onChange={(event) => setPodReference(event.target.value)} maxLength={160} className="mt-1 min-h-11 w-full rounded-lg border px-3 font-normal" /></label><div className="sm:col-span-2 flex justify-end"><button type="button" disabled={!canUpdate || busy || receivedBy.trim().length < 2 || !deliveredAt} onClick={async () => { setBusy(true); try { await onSave(order, { action: 'confirm_delivery', payload: { orderId: order.id, expectedVersion: order.version, deliveredAt: new Date(deliveredAt).toISOString(), receivedBy: receivedBy.trim(), podReference: podReference.trim() } }); } finally { setBusy(false); } }} className="min-h-11 rounded-xl bg-[#092f36] px-5 font-bold text-white disabled:opacity-50">{busy ? 'Saving…' : 'Confirm delivery'}</button></div></div>}</div>;
 }
 
 function NewOrderPanel({ data, onClose, onCreated }: { data: OrderBootstrap; onClose: () => void; onCreated: (number: string) => void }) {

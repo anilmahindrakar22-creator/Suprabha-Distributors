@@ -2,12 +2,12 @@
 
 import { useEffect, useState } from 'react';
 import { OrderWorkspace } from './order-workspace';
+import { ServiceWorkspace } from './service-workspace';
 import { UserManagement } from './user-management';
-import { InventoryWorkspace } from './inventory-workspace';
 import { readOrderDashboardMessage } from '@/lib/stockflow-navigation';
 
 export function StockFlowFrame({ actorRole }: { actorRole: string }) {
-  const [surface, setSurface] = useState<'stock' | 'orders' | 'inventory' | 'users'>('stock');
+  const [surface, setSurface] = useState<'stock' | 'orders' | 'service' | 'users'>('stock');
   const [orderFilter, setOrderFilter] = useState('open');
 
   useEffect(() => {
@@ -28,7 +28,7 @@ export function StockFlowFrame({ actorRole }: { actorRole: string }) {
     return () => window.removeEventListener('message', receiveDashboardNavigation);
   }, []);
 
-  function openSurface(item: 'stock' | 'orders' | 'inventory' | 'users') {
+  function openSurface(item: 'stock' | 'orders' | 'service' | 'users') {
     if (item === 'orders') setOrderFilter('open');
     setSurface(item);
   }
@@ -46,7 +46,7 @@ export function StockFlowFrame({ actorRole }: { actorRole: string }) {
           </div>
         </div>
         <nav aria-label="Application sections" className="flex rounded-xl bg-[#edf3f1] p-1">
-          {(['stock', 'orders', ...(['administrator','operations','warehouse','management'].includes(actorRole) ? ['inventory' as const] : []), ...(actorRole === 'administrator' ? ['users' as const] : [])] as const).map((item) => (
+          {(['stock', 'orders', ...(['administrator', 'operations', 'sales', 'management'].includes(actorRole) ? ['service' as const] : []), ...(actorRole === 'administrator' ? ['users' as const] : [])] as const).map((item) => (
             <button
               key={item}
               type="button"
@@ -73,8 +73,8 @@ export function StockFlowFrame({ actorRole }: { actorRole: string }) {
           />
         ) : surface === 'orders' ? (
           <OrderWorkspace key={orderFilter} initialStatus={orderFilter} />
-        ) : surface === 'inventory' ? (
-          <InventoryWorkspace actorRole={actorRole} />
+        ) : surface === 'service' ? (
+          <ServiceWorkspace />
         ) : <UserManagement />}
       </section>
     </main>

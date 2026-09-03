@@ -43,7 +43,7 @@ Application code uses configuration such as `DATABASE_URL`; it must not depend o
 | Customer | canonical customer, contacts, addresses, credit configuration | Tally-ledger identity and duplicate prevention |
 | Catalog | products, brands, tax, pack size, tracking requirements | canonical Tally SKU mapping |
 | Orders | capture, validation, approval and state machine | current StockFlow OMS |
-| Inventory | batches, locations, movements, reservations | next transactional vertical slice |
+| Inventory boundary | Tally catalog and stock snapshot | read-only; Tally Prime is the sole inventory authority |
 | Dispatch | pick, quality check, packing, cold chain, delivery | extend existing fulfilment flow |
 | Procurement | suppliers, purchase orders and receipts | later operational phase |
 | Finance integration | Tally invoices, receipts, outstanding and reconciliation | outbox-driven acknowledgement |
@@ -53,35 +53,23 @@ Application code uses configuration such as `DATABASE_URL`; it must not depend o
 
 Domains own their rules and tables. Cross-domain mutation occurs through an application command inside one database transaction or through an outbox event after commit. UI components do not bypass domain commands.
 
-## Transactional inventory model
+## Inventory authority
 
-Inventory is an append-only movement ledger, not a mutable `stock_quantity` field.
-
-```text
-Product -> Batch -> Warehouse -> Location
-                         |
-                 Inventory movement
-```
-
-Movement types initially include goods receipt, reservation, reservation release, dispatch, damage, quarantine, expiry and authorised adjustment. Every movement records quantity, product, batch, location, source document, actor, request ID and timestamp.
-
-Balances are derived projections:
+Tally Prime is the only system that records stock, batches, expiry, receipts, allocations and adjustments. StockFlow consumes a read-only Tally snapshot for product selection and operational visibility. It must not present an internal reservation as booked stock or create a parallel stock balance.
 
 ```text
-available = on_hand - reserved - quarantine - damaged - expired
+Tally Prime -> office connector -> read-only StockFlow snapshot
 ```
 
-Negative available or physical stock is rejected by default. Batch allocation uses FEFO where the product requires expiry tracking.
-
-StockFlow reservation is an **internal operational hold**. It does not create or alter a Tally voucher. Reservation must lock inventory deterministically and commit the reservation, order transition and audit event atomically. Failure rolls back the entire command.
+Historical experimental inventory tables may remain dormant for migration safety, but they are not exposed through application routes, navigation or write commands. Removing them later requires a separately reviewed archival migration.
 
 ## Order state machine
 
 The current lightweight OMS remains usable while its internal states converge on these business stages:
 
 ```text
-Captured -> Validated -> Approved -> Stock allocated
--> Ready for billing -> Invoiced -> Pick/pack -> Dispatched -> Delivered/closed
+Captured -> Confirmed -> Pick/pack -> Ready for billing
+-> Invoiced in Tally -> Dispatched -> Delivered/closed
 ```
 
 Cancellation and hold are explicit exception outcomes. Returns remain deferred by current product decision. No arbitrary backward transition is allowed. Each command declares allowed source states, target state, role, required evidence and audit event.
@@ -122,4 +110,3 @@ The current role names may be migrated without breaking active accounts. Sensiti
 ## Architecture decision rule
 
 A new service, database, queue or proprietary platform is adopted only when a documented problem cannot be met safely by the modular monolith and PostgreSQL. The decision records operational benefit, cost, failure modes, migration and rollback.
-

@@ -54,14 +54,15 @@ function Get-TallyCustomers {
     return @($customers | Sort-Object name)
 }
 
-function Get-LastSupplyMap {
+function Get-TallySalesData {
     $result = @{}
+    $invoices = @()
     try {
         $today = (Get-Date).Date
         $financialYear = if ($today.Month -ge 4) { $today.Year } else { $today.Year - 1 }
         $fromDate = [datetime]::new($financialYear - 5, 4, 1).ToString('yyyyMMdd')
         $toDate = $today.ToString('yyyyMMdd')
-        $salesXml = '<ENVELOPE><HEADER><VERSION>1</VERSION><TALLYREQUEST>Export</TALLYREQUEST><TYPE>COLLECTION</TYPE><ID>DashboardSalesVouchers</ID></HEADER><BODY><DESC><STATICVARIABLES><SVEXPORTFORMAT>$$SysName:XML</SVEXPORTFORMAT><SVCURRENTCOMPANY>SUPRABHA DISTRIBUTORS</SVCURRENTCOMPANY><SVFROMDATE>__FROM_DATE__</SVFROMDATE><SVTODATE>__TO_DATE__</SVTODATE></STATICVARIABLES><TDL><TDLMESSAGE><COLLECTION NAME="DashboardSalesVouchers" ISINITIALIZE="Yes"><TYPE>Voucher</TYPE><CHILDOF>Sales</CHILDOF><BELONGSTO>Yes</BELONGSTO><FETCH>Date,PartyLedgerName,PartyName,BasicBuyerName,IsCancelled,IsOptional,AllInventoryEntries.StockItemName,AllInventoryEntries.BilledQty,AllInventoryEntries.ActualQty</FETCH></COLLECTION></TDLMESSAGE></TDL></DESC></BODY></ENVELOPE>'
+        $salesXml = '<ENVELOPE><HEADER><VERSION>1</VERSION><TALLYREQUEST>Export</TALLYREQUEST><TYPE>COLLECTION</TYPE><ID>DashboardSalesVouchers</ID></HEADER><BODY><DESC><STATICVARIABLES><SVEXPORTFORMAT>$$SysName:XML</SVEXPORTFORMAT><SVCURRENTCOMPANY>SUPRABHA DISTRIBUTORS</SVCURRENTCOMPANY><SVFROMDATE>__FROM_DATE__</SVFROMDATE><SVTODATE>__TO_DATE__</SVTODATE></STATICVARIABLES><TDL><TDLMESSAGE><COLLECTION NAME="DashboardSalesVouchers" ISINITIALIZE="Yes"><TYPE>Voucher</TYPE><CHILDOF>Sales</CHILDOF><BELONGSTO>Yes</BELONGSTO><FETCH>Date,VoucherNumber,Reference,MasterID,PartyLedgerName,PartyName,BasicBuyerName,IsCancelled,IsOptional,AllInventoryEntries.StockItemName,AllInventoryEntries.BilledQty,AllInventoryEntries.ActualQty</FETCH></COLLECTION></TDLMESSAGE></TDL></DESC></BODY></ENVELOPE>'
         $salesXml = $salesXml.Replace('__FROM_DATE__', $fromDate).Replace('__TO_DATE__', $toDate)
         $salesContent = Invoke-Tally $salesXml
         # Some Tally releases emit UDF-prefixed nodes without declaring the XML
@@ -79,6 +80,13 @@ function Get-LastSupplyMap {
             if ($dateKey.Length -ne 8) { continue }
             $partyNode = $voucher.SelectSingleNode('./PARTYLEDGERNAME | ./PARTYNAME | ./BASICBUYERNAME')
             $party = if ($partyNode) { $partyNode.InnerText.Trim() } else { '' }
+            $voucherNumberNode = $voucher.SelectSingleNode('./VOUCHERNUMBER')
+            $voucherNumber = if ($voucherNumberNode) { $voucherNumberNode.InnerText.Trim() } else { '' }
+            if ($voucherNumber) {
+                $referenceNode = $voucher.SelectSingleNode('./REFERENCE')
+                $masterIdNode = $voucher.SelectSingleNode('./MASTERID')
+                $invoices += [ordered]@{ voucherNumber = $voucherNumber; reference = if ($referenceNode) { $referenceNode.InnerText.Trim() } else { $null }; party = $party; date = $dateKey; masterId = if ($masterIdNode) { $masterIdNode.InnerText.Trim() } else { $null } }
+            }
             foreach ($entry in $voucher.SelectNodes('.//ALLINVENTORYENTRIES.LIST | .//INVENTORYENTRIES.LIST')) {
                 $itemNode = $entry.SelectSingleNode('./STOCKITEMNAME')
                 if (-not $itemNode) { continue }
@@ -96,7 +104,7 @@ function Get-LastSupplyMap {
     } catch {
         Write-Host "Last supplied details were not available in this refresh: $($_.Exception.Message)" -ForegroundColor DarkYellow
     }
-    return $result
+    return [ordered]@{ lastSupply = $result; invoices = @($invoices) }
 }
 
 function Get-ReorderData {
@@ -107,7 +115,8 @@ function Get-ReorderData {
     $reportXml = '<ENVELOPE><HEADER><VERSION>1</VERSION><TALLYREQUEST>Export</TALLYREQUEST><TYPE>DATA</TYPE><ID>Reorder Status</ID></HEADER><BODY><DESC><STATICVARIABLES><SVEXPORTFORMAT>$$SysName:XML</SVEXPORTFORMAT><SVCURRENTCOMPANY>SUPRABHA DISTRIBUTORS</SVCURRENTCOMPANY></STATICVARIABLES></DESC></BODY></ENVELOPE>'
     [xml]$stockDoc = Invoke-Tally $stockXml
     [xml]$reportDoc = Invoke-Tally $reportXml
-    $lastSupplyMap = Get-LastSupplyMap
+    $salesData = Get-TallySalesData
+    $lastSupplyMap = $salesData.lastSupply
     $customers = Get-TallyCustomers
     $groupMap = @{}
     foreach ($item in $stockDoc.SelectNodes('//STOCKITEM')) { $groupMap[$item.GetAttribute('NAME')] = [string]$item.PARENT.'#text' }
@@ -209,6 +218,7 @@ function Get-ReorderData {
         rows = $sorted
         catalog = $catalog
         customers = $customers
+        tallyInvoices = @($salesData.invoices)
     }
 }
 

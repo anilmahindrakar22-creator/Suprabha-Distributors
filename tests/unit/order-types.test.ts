@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { billingHandoffText, filterOrders, isOrderDeliveryOverdue, orderAttentionReasons, ordersCsv, orderStage, searchCatalog, searchCustomers, validateOrderCommand } from '../../lib/order-types';
+import { billingHandoffText, filterOrders, isOrderDeliveryOverdue, orderAttentionReasons, ordersCsv, orderStage, searchCatalog, searchCustomers, tallyInvoiceReconciliation, validateOrderCommand } from '../../lib/order-types';
 
 describe('order command validation', () => {
   it('accepts a complete phone order', () => {
@@ -46,9 +46,19 @@ describe('order command validation', () => {
   });
 
   it('validates atomic fulfilment updates and rejects negative quantities', () => {
-    const command = { action: 'save_fulfilment', payload: { idempotencyKey: '1234567890abcdef', orderId: 'order-id', expectedVersion: 3, lines: [{ tallyKey: 'ITEM-1', fulfilledQuantity: 2, batchNumber: 'LOT-24', expiryDate: '2027-06-30' }] } };
+    const command = { action: 'save_fulfilment', payload: { idempotencyKey: '1234567890abcdef', orderId: 'order-id', expectedVersion: 3, lines: [{ tallyKey: 'ITEM-1', fulfilledQuantity: 2 }] } };
     expect(validateOrderCommand(command)).not.toBeNull();
     expect(validateOrderCommand({ ...command, payload: { ...command.payload, lines: [{ tallyKey: 'ITEM-1', fulfilledQuantity: -1 }] } })).toBeNull();
+  });
+
+  it('validates dispatch and delivery evidence', () => {
+    const dispatch = { action: 'save_dispatch', payload: { idempotencyKey: '1234567890abcdef', orderId: 'order-id', expectedVersion: 3, courierName: 'Local courier', trackingNumber: 'LR-100', dispatchDate: '2026-09-03' } };
+    expect(validateOrderCommand(dispatch)).not.toBeNull();
+    expect(validateOrderCommand({ ...dispatch, payload: { ...dispatch.payload, trackingNumber: '' } })).toBeNull();
+
+    const delivery = { action: 'confirm_delivery', payload: { idempotencyKey: '1234567890abcdef', orderId: 'order-id', expectedVersion: 4, deliveredAt: '2026-09-03T10:30:00.000Z', receivedBy: 'Dr Rao' } };
+    expect(validateOrderCommand(delivery)).not.toBeNull();
+    expect(validateOrderCommand({ ...delivery, payload: { ...delivery.payload, deliveredAt: 'not-a-date' } })).toBeNull();
   });
 
   it('validates safe order edits', () => {
@@ -156,6 +166,23 @@ describe('order workflow and history', () => {
     const delayed = { ...baseOrder, updatedAt: '2026-08-31T01:00:00Z' };
     expect(orderAttentionReasons(delayed, new Date('2026-08-31T10:00:00Z'))).toContain('No progress for over 4 hours');
     expect(filterOrders([delayed], '', 'attention')).toEqual([delayed]);
+  });
+
+  it('reconciles invoice numbers with Tally voucher numbers and references', () => {
+    const billed = { ...baseOrder, tallyInvoiceNumber: ' INV-88 ' };
+    const invoices = [{ voucherNumber: 'INV-88', reference: 'SF-001', party: 'City Hospital', date: '20260903', masterId: '44' }];
+    expect(tallyInvoiceReconciliation(billed, invoices)).toBe('verified');
+    expect(tallyInvoiceReconciliation({ ...billed, tallyInvoiceNumber: 'SF-001' }, invoices)).toBe('verified');
+    expect(tallyInvoiceReconciliation({ ...billed, tallyInvoiceNumber: 'INV-99' }, invoices)).toBe('unmatched');
+    expect(tallyInvoiceReconciliation(billed)).toBe('awaiting_sync');
+  });
+
+  it('tracks missing dispatch and delivery confirmation without requiring batch data', () => {
+    const ready = { ...baseOrder, status: 'ready_for_dispatch', updatedAt: '2026-08-31T09:00:00Z' };
+    const dispatched = { ...baseOrder, status: 'dispatched', courierName: 'Local courier', trackingNumber: 'LR-100', dispatchDate: '2026-08-31', updatedAt: '2026-08-31T09:00:00Z' };
+    expect(orderAttentionReasons(ready, new Date('2026-08-31T10:00:00Z'))).toContain('Dispatch details missing');
+    expect(orderAttentionReasons(dispatched, new Date('2026-08-31T10:00:00Z'))).toContain('Delivery confirmation pending');
+    expect(orderAttentionReasons(ready, new Date('2026-08-31T10:00:00Z')).join(' ')).not.toMatch(/batch|expiry/i);
   });
 
   it('puts orders with an open delivery exception in the attention queue', () => {

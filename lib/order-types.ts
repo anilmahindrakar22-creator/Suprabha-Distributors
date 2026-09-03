@@ -34,10 +34,23 @@ export type OrderSummary = {
   expectedDeliveryDate?: string | null;
   courierName?: string | null;
   trackingNumber?: string | null;
+  dispatchDate?: string | null;
+  vehicleNumber?: string | null;
+  deliveredAt?: string | null;
+  receivedBy?: string | null;
+  podReference?: string | null;
   lines: OrderLineSummary[];
   events: OrderEvent[];
   exceptions: DeliveryException[];
   installations: EquipmentInstallation[];
+};
+
+export type TallyInvoice = {
+  voucherNumber: string;
+  reference: string | null;
+  party: string;
+  date: string;
+  masterId: string | null;
 };
 
 export type EquipmentInstallation = {
@@ -95,11 +108,20 @@ export type OrderLineSummary = {
 
 export type OrderBootstrap = {
   actor: { email: string; role: string };
-  snapshot: { company: string; fetchedAt: string; catalog: CatalogItem[] };
+  snapshot: { company: string; fetchedAt: string; catalog: CatalogItem[]; tallyInvoices?: TallyInvoice[] };
   customers: CustomerDirectoryEntry[];
   orders: OrderSummary[];
   operations: Record<string, number>;
 };
+
+export function tallyInvoiceReconciliation(order: OrderSummary, invoices?: TallyInvoice[]) {
+  if (!order.tallyInvoiceNumber) return 'not_billed' as const;
+  if (!invoices) return 'awaiting_sync' as const;
+  const expected = order.tallyInvoiceNumber.trim().toLocaleLowerCase('en-IN');
+  return invoices.some((item) => [item.voucherNumber, item.reference].filter(Boolean).some((value) => String(value).trim().toLocaleLowerCase('en-IN') === expected))
+    ? 'verified' as const
+    : 'unmatched' as const;
+}
 
 export function searchCustomers(
   customers: CustomerDirectoryEntry[],
@@ -239,8 +261,8 @@ export function orderAttentionReasons(order: OrderSummary, now = new Date()) {
   const fulfilmentStarted = order.lines.some((line) => Number(line.fulfilledQuantity || 0) > 0);
   const fulfilmentDue = ['packed', 'awaiting_tally_billing', 'billed_in_tally', 'ready_for_dispatch', 'dispatched'].includes(order.status);
   if ((fulfilmentStarted || fulfilmentDue) && order.lines.some((line) => Number(line.fulfilledQuantity || 0) < Number(line.quantity))) reasons.push('Partial fulfilment or back-order');
-  if (['packed', 'awaiting_tally_billing', 'billed_in_tally', 'ready_for_dispatch'].includes(order.status) && order.lines.some((line) => !line.batchNumber || !line.expiryDate)) reasons.push('Batch or expiry details missing');
-  if (order.status === 'ready_for_dispatch' && !order.trackingNumber) reasons.push('Dispatch tracking missing');
+  if (order.status === 'ready_for_dispatch' && (!order.courierName || !order.trackingNumber || !order.dispatchDate)) reasons.push('Dispatch details missing');
+  if (order.status === 'dispatched' && (!order.receivedBy || !order.deliveredAt)) reasons.push('Delivery confirmation pending');
   return reasons;
 }
 
@@ -277,10 +299,16 @@ export type OrderCommand =
         expectedVersion: number;
         deliveryAddress?: string;
         expectedDeliveryDate?: string;
-        courierName?: string;
-        trackingNumber?: string;
-        lines: Array<{ tallyKey: string; fulfilledQuantity: number; batchNumber?: string; expiryDate?: string }>;
+        lines: Array<{ tallyKey: string; fulfilledQuantity: number }>;
       };
+    }
+  | {
+      action: 'save_dispatch';
+      payload: { idempotencyKey?: string; orderId: string; expectedVersion: number; courierName: string; trackingNumber: string; dispatchDate: string; vehicleNumber?: string };
+    }
+  | {
+      action: 'confirm_delivery';
+      payload: { idempotencyKey?: string; orderId: string; expectedVersion: number; deliveredAt: string; receivedBy: string; podReference?: string };
     }
   | {
       action: 'edit_order';
@@ -307,7 +335,7 @@ export function validateOrderCommand(value: unknown): OrderCommand | null {
   if (!value || typeof value !== 'object') return null;
   const command = value as { action?: unknown; payload?: unknown };
   if (
-    !['create_order', 'transition_order', 'save_fulfilment', 'edit_order', 'create_exception', 'resolve_exception', 'schedule_installation', 'complete_installation'].includes(
+    !['create_order', 'transition_order', 'save_fulfilment', 'save_dispatch', 'confirm_delivery', 'edit_order', 'create_exception', 'resolve_exception', 'schedule_installation', 'complete_installation'].includes(
       String(command.action),
     ) ||
     !command.payload ||
@@ -350,6 +378,10 @@ export function validateOrderCommand(value: unknown): OrderCommand | null {
   } else if (command.action === 'save_fulfilment') {
     const lines = Array.isArray(payload.lines) ? payload.lines : [];
     if (typeof payload.idempotencyKey !== 'string' || payload.idempotencyKey.length < 16 || typeof payload.orderId !== 'string' || !Number.isInteger(Number(payload.expectedVersion)) || lines.some((line) => !line || typeof line !== 'object' || typeof (line as Record<string, unknown>).tallyKey !== 'string' || Number((line as Record<string, unknown>).fulfilledQuantity) < 0)) return null;
+  } else if (command.action === 'save_dispatch') {
+    if (typeof payload.idempotencyKey !== 'string' || payload.idempotencyKey.length < 16 || typeof payload.orderId !== 'string' || !Number.isInteger(Number(payload.expectedVersion)) || typeof payload.courierName !== 'string' || payload.courierName.trim().length < 2 || typeof payload.trackingNumber !== 'string' || payload.trackingNumber.trim().length < 2 || typeof payload.dispatchDate !== 'string' || !/^\d{4}-\d{2}-\d{2}$/.test(payload.dispatchDate)) return null;
+  } else if (command.action === 'confirm_delivery') {
+    if (typeof payload.idempotencyKey !== 'string' || payload.idempotencyKey.length < 16 || typeof payload.orderId !== 'string' || !Number.isInteger(Number(payload.expectedVersion)) || typeof payload.receivedBy !== 'string' || payload.receivedBy.trim().length < 2 || typeof payload.deliveredAt !== 'string' || Number.isNaN(Date.parse(payload.deliveredAt))) return null;
   } else if (command.action === 'edit_order') {
     const lines = Array.isArray(payload.lines) ? payload.lines : [];
     if (typeof payload.idempotencyKey !== 'string' || payload.idempotencyKey.length < 16 || typeof payload.orderId !== 'string' || !Number.isInteger(Number(payload.expectedVersion)) || typeof payload.customerName !== 'string' || payload.customerName.trim().length < 2 || lines.length < 1 || lines.some((line) => !line || typeof line !== 'object' || typeof (line as Record<string, unknown>).tallyKey !== 'string' || Number((line as Record<string, unknown>).quantity) <= 0)) return null;

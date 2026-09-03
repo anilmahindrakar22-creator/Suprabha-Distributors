@@ -19,34 +19,34 @@ Preserve and release the existing order flow, Tally catalog/customer lookup, ful
 
 **Exit gate:** two simultaneous users cannot overwrite an order; repeated commands cannot duplicate work; every critical change is attributable.
 
-## Milestone 2 — Minimal inventory vertical slice
+## Milestone 2 — Tally inventory boundary and delivery integrity
 
-**Goal:** one batch-aware ledger flow without replacing Tally.
+**Goal:** keep Tally Prime as the only inventory authority while StockFlow controls the order-to-delivery workflow.
 
-- Canonical product mapping and tracking requirements.
-- Warehouse/location and batch/expiry model.
-- Append-only inventory movement ledger.
-- Goods receipt and authorised adjustment.
-- Derived on-hand, reserved and available balances.
-- FEFO allocation for expiry-tracked reagents.
-- Atomic internal reservation and release.
-- Reconciliation view against the latest Tally snapshot.
+- Read the complete product catalog and stock snapshot from Tally.
+- Do not enter, reserve, allocate or adjust stock in StockFlow.
+- Record fulfilment quantities without claiming that Tally stock is booked.
+- Capture dispatch docket, transporter, date and optional vehicle.
+- Capture delivery time, receiver and optional proof-of-delivery reference.
+- Preserve idempotency, database constraints and audit history for every OMS step.
 
-**Exit gate:** a phone order can reserve the correct batches under concurrent use without negative availability, while Tally remains untouched.
+**Exit gate:** an order reaches delivery with evidence and a complete user log, while every inventory transaction remains in Tally.
 
-## Milestone 3 — Billing and dispatch integrity
+## Milestone 3 — Tally billing reconciliation
 
 - Transactional outbox worker with acknowledgement, retry and dead-letter visibility.
 - Idempotent Tally invoice handoff and external voucher ID.
-- Pick list from allocated batches.
-- Batch/expiry verification and partial fulfilment.
-- Cold-chain checklist and packing evidence.
-- Dispatch, delivery and closure audit.
+- Match OMS orders to Tally sales vouchers without writing stock from StockFlow.
+- Surface unmatched or conflicting invoice references for accounts.
+- Retain partial fulfilment and dispatch/delivery closure audit.
+
+**Current slice:** the connector exports read-only voucher identity and billed orders show verified, unmatched or awaiting-sync status.
 
 **Exit gate:** an order reaches billing and dispatch once, with traceable batches and recoverable integration failures.
 
 ## Milestone 4 — Installed-base and service operations
 
+- Installed-equipment register derived from completed order installations.
 - Promote installation records into canonical instruments/assets.
 - Ownership, placement, warranty and contract.
 - Service tickets, visits, parts, downtime and resolution.
@@ -71,6 +71,7 @@ Preserve and release the existing order flow, Tally catalog/customer lookup, ful
 ## Explicitly deferred
 
 - Returns, until the product decision changes.
+- Stock entry, reservation, batch allocation and adjustment in StockFlow.
 - Native mobile applications.
 - AI decision automation.
 - Advanced forecasting and market-share algorithms.
@@ -83,4 +84,3 @@ Preserve and release the existing order flow, Tally catalog/customer lookup, ful
 - Keep the application deployable locally or on managed infrastructure through configuration.
 - Add paid infrastructure only for a measured reliability, security or capacity need.
 - Never make a daily-use Tally workstation the only database or only backup location.
-
