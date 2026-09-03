@@ -114,7 +114,15 @@ export type OrderBootstrap = {
   operations: Record<string, number>;
 };
 
-export function tallyInvoiceReconciliation(order: OrderSummary, invoices?: TallyInvoice[]) {
+export function currentTallyFinancialYear(now = new Date()) {
+  const parts = new Intl.DateTimeFormat('en-US', { timeZone: 'Asia/Kolkata', year: 'numeric', month: 'numeric' }).formatToParts(now);
+  const year = Number(parts.find((part) => part.type === 'year')?.value);
+  const month = Number(parts.find((part) => part.type === 'month')?.value);
+  const start = month >= 4 ? year : year - 1;
+  return `${String(start).slice(-2)}-${String(start + 1).slice(-2)}`;
+}
+
+export function tallyInvoiceReconciliation(order: OrderSummary, invoices?: TallyInvoice[], now = new Date()) {
   if (!order.tallyInvoiceNumber) return 'not_billed' as const;
   if (!invoices) return 'awaiting_sync' as const;
   const expected = order.tallyInvoiceNumber.trim().toLocaleLowerCase('en-IN');
@@ -122,8 +130,8 @@ export function tallyInvoiceReconciliation(order: OrderSummary, invoices?: Tally
   return invoices.some((item) => {
     if ([item.voucherNumber, item.reference].filter(Boolean).some((value) => String(value).trim().toLocaleLowerCase('en-IN') === expected)) return true;
     if (!numericExpected) return false;
-    const suffix = item.voucherNumber.match(/(\d+)\s*$/)?.[1]?.replace(/^0+(?=\d)/, '');
-    return suffix === numericExpected;
+    const currentYearVoucher = item.voucherNumber.trim().toUpperCase().match(/^SD\/(\d{2}-\d{2})\/0*(\d+)$/);
+    return currentYearVoucher?.[1] === currentTallyFinancialYear(now) && currentYearVoucher[2].replace(/^0+(?=\d)/, '') === numericExpected;
   })
     ? 'verified' as const
     : 'unmatched' as const;
