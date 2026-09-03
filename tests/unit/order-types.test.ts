@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { billingHandoffText, filterOrders, isOrderDeliveryOverdue, orderAttentionReasons, ordersCsv, orderStage, searchCatalog, searchCustomers, tallyInvoiceReconciliation, validateOrderCommand } from '../../lib/order-types';
+import { billingHandoffText, filterOrders, isOrderDeliveryOverdue, orderAttentionReasons, orderMatchesCaptureDate, ordersCsv, orderStage, searchCatalog, searchCustomers, tallyInvoiceReconciliation, validateOrderCommand } from '../../lib/order-types';
 
 describe('order command validation', () => {
   it('accepts a complete phone order', () => {
@@ -175,6 +175,13 @@ describe('order workflow and history', () => {
     expect(tallyInvoiceReconciliation({ ...billed, tallyInvoiceNumber: 'SF-001' }, invoices)).toBe('verified');
     expect(tallyInvoiceReconciliation({ ...billed, tallyInvoiceNumber: 'INV-99' }, invoices)).toBe('unmatched');
     expect(tallyInvoiceReconciliation(billed)).toBe('awaiting_sync');
+    expect(tallyInvoiceReconciliation({ ...billed, tallyInvoiceNumber: '552' }, [{ ...invoices[0], voucherNumber: 'SD/26-27/0552' }])).toBe('verified');
+    expect(tallyInvoiceReconciliation({ ...billed, tallyInvoiceNumber: 'SD/25-26/0552' }, [{ ...invoices[0], voucherNumber: 'SD/26-27/0552' }])).toBe('unmatched');
+  });
+
+  it('filters capture dates using the India business date', () => {
+    expect(orderMatchesCaptureDate({ ...baseOrder, createdAt: '2026-09-02T20:00:00Z' }, '2026-09-03')).toBe(true);
+    expect(orderMatchesCaptureDate(baseOrder, '')).toBe(true);
   });
 
   it('tracks missing dispatch and delivery confirmation without requiring batch data', () => {

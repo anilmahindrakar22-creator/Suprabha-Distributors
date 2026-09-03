@@ -8,7 +8,7 @@ import type {
   OrderCommand,
   OrderSummary,
 } from '@/lib/order-types';
-import { billingHandoffText, filterOrders, orderAttentionReasons, ordersCsv, orderStage, searchCatalog, searchCustomers, tallyInvoiceReconciliation } from '@/lib/order-types';
+import { billingHandoffText, filterOrders, orderAttentionReasons, orderMatchesCaptureDate, ordersCsv, orderStage, searchCatalog, searchCustomers, tallyInvoiceReconciliation } from '@/lib/order-types';
 
 type DraftLine = { item: CatalogItem; quantity: number };
 
@@ -64,6 +64,7 @@ export function OrderWorkspace({ initialStatus = 'open' }: { initialStatus?: str
   const [error, setError] = useState('');
   const [notice, setNotice] = useState('');
   const [query, setQuery] = useState('');
+  const [captureDate, setCaptureDate] = useState('');
   const [status, setStatus] = useState(initialStatus);
   const [creating, setCreating] = useState(false);
 
@@ -100,8 +101,8 @@ export function OrderWorkspace({ initialStatus = 'open' }: { initialStatus?: str
   }, []);
 
   const visibleOrders = useMemo(() => {
-    return filterOrders(data?.orders || [], query, status);
-  }, [data?.orders, query, status]);
+    return filterOrders(data?.orders || [], query, status).filter((order) => orderMatchesCaptureDate(order, captureDate));
+  }, [captureDate, data?.orders, query, status]);
 
   function exportVisibleOrders() {
     if (!visibleOrders.length) return;
@@ -235,6 +236,7 @@ export function OrderWorkspace({ initialStatus = 'open' }: { initialStatus?: str
             />
             {query ? <button type="button" onClick={() => setQuery('')} className="absolute bottom-1 right-1 min-h-9 rounded-lg px-3 text-xs font-bold text-[#456367] hover:bg-[#edf3f1]">Clear</button> : null}
           </div>
+          <label className="text-xs font-bold text-[#587275]">Order date<input type="date" value={captureDate} onChange={(event) => setCaptureDate(event.target.value)} className="mt-1 block min-h-11 rounded-xl border border-[#cedfdd] bg-white px-3 font-normal outline-none focus:border-[#64d4ad]" /></label>
           <label className="sr-only" htmlFor="order-status">Filter by status</label>
           <select
             id="order-status"

@@ -118,9 +118,20 @@ export function tallyInvoiceReconciliation(order: OrderSummary, invoices?: Tally
   if (!order.tallyInvoiceNumber) return 'not_billed' as const;
   if (!invoices) return 'awaiting_sync' as const;
   const expected = order.tallyInvoiceNumber.trim().toLocaleLowerCase('en-IN');
-  return invoices.some((item) => [item.voucherNumber, item.reference].filter(Boolean).some((value) => String(value).trim().toLocaleLowerCase('en-IN') === expected))
+  const numericExpected = /^\d+$/.test(expected) ? expected.replace(/^0+(?=\d)/, '') : null;
+  return invoices.some((item) => {
+    if ([item.voucherNumber, item.reference].filter(Boolean).some((value) => String(value).trim().toLocaleLowerCase('en-IN') === expected)) return true;
+    if (!numericExpected) return false;
+    const suffix = item.voucherNumber.match(/(\d+)\s*$/)?.[1]?.replace(/^0+(?=\d)/, '');
+    return suffix === numericExpected;
+  })
     ? 'verified' as const
     : 'unmatched' as const;
+}
+
+export function orderMatchesCaptureDate(order: OrderSummary, date: string) {
+  if (!date) return true;
+  return new Intl.DateTimeFormat('en-CA', { timeZone: 'Asia/Kolkata', year: 'numeric', month: '2-digit', day: '2-digit' }).format(new Date(order.createdAt)) === date;
 }
 
 export function searchCustomers(
