@@ -4,6 +4,7 @@ import { describe, expect, it } from 'vitest';
 
 const frame = readFileSync(fileURLToPath(new URL('../../components/stockflow-frame.tsx', import.meta.url)), 'utf8');
 const edge = readFileSync(fileURLToPath(new URL('../../supabase/functions/stockflow-orders/index.ts', import.meta.url)), 'utf8');
+const boundaryMigration = readFileSync(fileURLToPath(new URL('../../supabase/migrations/20260903121500_disable_dormant_inventory_sync.sql', import.meta.url)), 'utf8');
 
 describe('Tally-only inventory boundary', () => {
   it('does not expose a second inventory workspace or inventory mutation actions', () => {
@@ -12,5 +13,9 @@ describe('Tally-only inventory boundary', () => {
     for (const action of ['bootstrap_inventory', 'receive_stock', 'adjust_stock', 'allocate_order', 'release_order']) {
       expect(edge).not.toContain(`\"${action}\"`);
     }
+  });
+
+  it('keeps snapshot uploads independent from the dormant inventory projection', () => {
+    expect(boundaryMigration).toContain('drop trigger if exists stockflow_sync_inventory_products');
   });
 });
