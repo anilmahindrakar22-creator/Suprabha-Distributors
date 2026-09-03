@@ -9,6 +9,8 @@ describe('Tally invoice reconciliation connector', () => {
     expect(connector).toContain('Date,VoucherNumber,Reference,MasterID');
     expect(connector).toContain('tallyInvoices = @($salesData.invoices)');
     expect(connector).toContain("SelectSingleNode('./VOUCHERNUMBER')");
+    expect(connector).toContain("$today.AddDays(-180)");
+    expect(connector).toContain('$dateKey -ge $invoiceFromDate');
     expect(connector).toContain("$cancelled.InnerText -eq 'Yes'");
     expect(connector).not.toMatch(/Invoke-Tally[^\n]*(Import|Create|Alter)/i);
   });

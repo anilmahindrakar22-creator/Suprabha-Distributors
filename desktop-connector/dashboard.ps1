@@ -59,6 +59,7 @@ function Get-TallySalesData {
     $invoices = @()
     try {
         $today = (Get-Date).Date
+        $invoiceFromDate = $today.AddDays(-180).ToString('yyyyMMdd')
         $financialYear = if ($today.Month -ge 4) { $today.Year } else { $today.Year - 1 }
         $fromDate = [datetime]::new($financialYear - 5, 4, 1).ToString('yyyyMMdd')
         $toDate = $today.ToString('yyyyMMdd')
@@ -82,7 +83,7 @@ function Get-TallySalesData {
             $party = if ($partyNode) { $partyNode.InnerText.Trim() } else { '' }
             $voucherNumberNode = $voucher.SelectSingleNode('./VOUCHERNUMBER')
             $voucherNumber = if ($voucherNumberNode) { $voucherNumberNode.InnerText.Trim() } else { '' }
-            if ($voucherNumber) {
+            if ($voucherNumber -and $dateKey -ge $invoiceFromDate) {
                 $referenceNode = $voucher.SelectSingleNode('./REFERENCE')
                 $masterIdNode = $voucher.SelectSingleNode('./MASTERID')
                 $invoices += [ordered]@{ voucherNumber = $voucherNumber; reference = if ($referenceNode) { $referenceNode.InnerText.Trim() } else { $null }; party = $party; date = $dateKey; masterId = if ($masterIdNode) { $masterIdNode.InnerText.Trim() } else { $null } }
