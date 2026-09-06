@@ -127,8 +127,10 @@ export function tallyInvoiceReconciliation(order: OrderSummary, invoices?: Tally
   if (!invoices) return 'awaiting_sync' as const;
   const expected = order.tallyInvoiceNumber.trim().toLocaleLowerCase('en-IN');
   const numericExpected = /^\d+$/.test(expected) ? expected.replace(/^0+(?=\d)/, '') : null;
+  const ledger = (value: string) => value.normalize('NFKC').trim().replace(/\s+/g, ' ').toLocaleLowerCase('en-IN');
   return invoices.some((item) => {
-    if ([item.voucherNumber, item.reference].filter(Boolean).some((value) => String(value).trim().toLocaleLowerCase('en-IN') === expected)) return true;
+    if (!ledger(order.customerName) || ledger(item.party || '') !== ledger(order.customerName)) return false;
+    if (!numericExpected && item.voucherNumber.trim().toLocaleLowerCase('en-IN') === expected) return true;
     if (!numericExpected) return false;
     const currentYearVoucher = item.voucherNumber.trim().toUpperCase().match(/^SD\/(\d{2}-\d{2})\/0*(\d+)$/);
     return currentYearVoucher?.[1] === currentTallyFinancialYear(now) && currentYearVoucher[2].replace(/^0+(?=\d)/, '') === numericExpected;

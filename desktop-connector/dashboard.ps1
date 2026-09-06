@@ -1,9 +1,33 @@
-param([int]$Port = 8765, [switch]$NoBrowser)
+param([int]$Port = 8765, [switch]$NoBrowser, [ValidateRange(5, 120)][int]$SyncMinutes = 15, [switch]$RebuildSalesHistory)
 
 $ErrorActionPreference = 'Stop'
 $dashboardRoot = Split-Path -Parent $MyInvocation.MyCommand.Path
 $indexPath = Join-Path $dashboardRoot 'index.html'
 $companyName = 'SUPRABHA DISTRIBUTORS'
+. (Join-Path $dashboardRoot 'recovery.ps1')
+$stateDirectory = Join-Path ([Environment]::GetFolderPath('LocalApplicationData')) 'SuprabhaStockFlow'
+[IO.Directory]::CreateDirectory($stateDirectory) | Out-Null
+$snapshotPath = Join-Path $stateDirectory 'snapshot-v1.json'
+$salesPath = Join-Path $stateDirectory 'sales-history-v1.json'
+$healthLogPath = Join-Path $stateDirectory 'connector-health.log'
+# A held file handle prevents duplicate extraction across launches and ports.
+try {
+    $instanceLock = [IO.File]::Open((Join-Path $stateDirectory 'connector.lock'), [IO.FileMode]::OpenOrCreate, [IO.FileAccess]::ReadWrite, [IO.FileShare]::None)
+} catch {
+    Write-Host 'StockFlow connector is already running.'
+    exit 0
+}
+$script:lastReorderData = Read-ConnectorSnapshot $snapshotPath $companyName
+$script:nextReorderRead = Get-Date
+if ($script:lastReorderData) {
+    $script:nextReorderRead = ([datetimeoffset]::Parse($script:lastReorderData.fetchedAtIso)).LocalDateTime.AddMinutes($SyncMinutes)
+}
+if ($RebuildSalesHistory) {
+    # An administrator-requested repair must not be suppressed by a fresh operational snapshot.
+    $script:nextReorderRead = Get-Date
+}
+$script:pendingUpload = $script:lastReorderData
+$script:nextUpload = Get-Date
 $diasysGroup = 'Diasys Diagnostic India Pvt Ltd'
 $allowedGroups = @($diasysGroup, 'SYS 480', 'SYS Aurora', 'Sysmex')
 $cloudSyncUrl = 'https://aormuidjbdqruglmyseh.supabase.co/functions/v1/stockflow-sync'
@@ -16,9 +40,11 @@ function Publish-CloudSnapshot([string]$Json) {
     try {
         Invoke-WebRequest -Uri $cloudSyncUrl -Method Post -ContentType 'application/json' -Headers @{ 'x-upload-key' = $cloudUploadKey } -Body $Json -UseBasicParsing -TimeoutSec 15 | Out-Null
         Write-Host "Cloud snapshot updated." -ForegroundColor DarkGreen
+        return $true
     } catch {
         # The local dashboard must remain usable even when the internet is down.
-        Write-Host "Cloud sync will retry on the next refresh: $($_.Exception.Message)" -ForegroundColor DarkYellow
+        Write-Host 'Cloud upload pending; the saved snapshot will be retried.' -ForegroundColor DarkYellow
+        return $false
     }
 }
 
@@ -27,8 +53,19 @@ function Get-Number([string]$Text) {
     return 0
 }
 
-function Invoke-Tally([string]$Body) {
-    return (Invoke-WebRequest -Uri 'http://127.0.0.1:9000' -Method Post -ContentType 'application/xml' -Body $Body -UseBasicParsing -TimeoutSec 15).Content
+function Invoke-Tally([string]$Body, [int]$TimeoutSeconds = 15) {
+    $requestName = if ($Body -match 'DashboardSalesVouchers') { 'sales' } elseif ($Body -match 'DashboardCustomerLedgers') { 'customers' } elseif ($Body -match 'DashboardItems') { 'catalog' } else { 'reorder' }
+    $watch = [Diagnostics.Stopwatch]::StartNew()
+    try {
+        $response = Invoke-WebRequest -Uri 'http://127.0.0.1:9000' -Method Post -ContentType 'application/xml' -Body $Body -UseBasicParsing -TimeoutSec $TimeoutSeconds
+        $watch.Stop()
+        Add-Content -LiteralPath $healthLogPath -Value "$([datetimeoffset]::Now.ToString('o')) request=$requestName durationMs=$($watch.ElapsedMilliseconds) bytes=$($response.RawContentLength) status=ok"
+        return $response.Content
+    } catch {
+        $watch.Stop()
+        Add-Content -LiteralPath $healthLogPath -Value "$([datetimeoffset]::Now.ToString('o')) request=$requestName durationMs=$($watch.ElapsedMilliseconds) bytes=0 status=failed"
+        throw
+    }
 }
 
 function Get-TallyCustomers {
@@ -62,41 +99,76 @@ function Get-TallySalesData {
         $invoiceFromDate = $today.AddDays(-180).ToString('yyyyMMdd')
         $financialYear = if ($today.Month -ge 4) { $today.Year } else { $today.Year - 1 }
         $fromDate = [datetime]::new($financialYear - 5, 4, 1).ToString('yyyyMMdd')
+        $cachedSales = Read-ConnectorSnapshot $salesPath $companyName
+        if ($cachedSales -and $null -eq $cachedSales.records -and $cachedSales.document) {
+            $cachedSales = @{
+                company = $companyName; fetchedAtIso = [string]$cachedSales.fetchedAtIso
+                catalog = @(); tallyInvoices = @(); records = @(Convert-LegacySalesRecords ([string]$cachedSales.document))
+                fullScannedAt = [string]$cachedSales.fullScannedAt
+            }
+            Save-ConnectorSnapshot $salesPath $cachedSales
+        }
+        $fullScan = [bool]$RebuildSalesHistory
+        if (-not $cachedSales) {
+            $cachedSales = @{ company = $companyName; records = @(); fullScannedAt = $null }
+        }
+        $baseline = @{}
+        if ($cachedSales.baselineLastSupply) {
+            foreach ($property in $cachedSales.baselineLastSupply.psobject.Properties) { $baseline[$property.Name] = $property.Value }
+        } else {
+            $sourceSnapshot = $script:lastReorderData
+            try {
+                $backupSnapshot = Read-ConnectorSnapshot "$snapshotPath.bak" $companyName
+                if ($backupSnapshot -and @($backupSnapshot.rows | Where-Object { $_.lastSuppliedDate }).Count -gt @($sourceSnapshot.rows | Where-Object { $_.lastSuppliedDate }).Count) {
+                    $sourceSnapshot = $backupSnapshot
+                }
+            } catch { }
+            $baseline = Convert-RowsToLastSupplyBaseline $sourceSnapshot.rows
+        }
+        if (-not $fullScan) { $fromDate = $today.AddDays(-30).ToString('yyyyMMdd') }
+        foreach ($item in $baseline.Keys) {
+            if ([string]$baseline[$item].dateKey -lt $fromDate) { $result[$item] = $baseline[$item] }
+        }
         $toDate = $today.ToString('yyyyMMdd')
         $salesXml = '<ENVELOPE><HEADER><VERSION>1</VERSION><TALLYREQUEST>Export</TALLYREQUEST><TYPE>COLLECTION</TYPE><ID>DashboardSalesVouchers</ID></HEADER><BODY><DESC><STATICVARIABLES><SVEXPORTFORMAT>$$SysName:XML</SVEXPORTFORMAT><SVCURRENTCOMPANY>SUPRABHA DISTRIBUTORS</SVCURRENTCOMPANY><SVFROMDATE>__FROM_DATE__</SVFROMDATE><SVTODATE>__TO_DATE__</SVTODATE></STATICVARIABLES><TDL><TDLMESSAGE><COLLECTION NAME="DashboardSalesVouchers" ISINITIALIZE="Yes"><TYPE>Voucher</TYPE><CHILDOF>Sales</CHILDOF><BELONGSTO>Yes</BELONGSTO><FETCH>Date,VoucherNumber,Reference,MasterID,PartyLedgerName,PartyName,BasicBuyerName,IsCancelled,IsOptional,AllInventoryEntries.StockItemName,AllInventoryEntries.BilledQty,AllInventoryEntries.ActualQty</FETCH></COLLECTION></TDLMESSAGE></TDL></DESC></BODY></ENVELOPE>'
         $salesXml = $salesXml.Replace('__FROM_DATE__', $fromDate).Replace('__TO_DATE__', $toDate)
-        $salesContent = Invoke-Tally $salesXml
+        $salesXml = $salesXml.Replace('<SVFROMDATE>', '<SVFROMDATE TYPE="Date">').Replace('<SVTODATE>', '<SVTODATE TYPE="Date">')
+        $salesXml = $salesXml.Replace('</COLLECTION>', '<FILTER>StockFlowSalesPeriod</FILTER></COLLECTION><SYSTEM TYPE="Formulae" NAME="StockFlowSalesPeriod">$Date &gt;= ##SVFromDate AND $Date &lt;= ##SVToDate</SYSTEM>')
+        $salesContent = Invoke-Tally $salesXml -TimeoutSeconds $(if ($fullScan) { 60 } else { 15 })
         # Some Tally releases emit UDF-prefixed nodes without declaring the XML
         # namespace. Rename only that prefix so the voucher payload remains valid XML.
         $salesContent = [regex]::Replace($salesContent, '(<\/?)(?i:UDF):', '$1UDF_')
         $salesContent = [regex]::Replace($salesContent, '(\s)(?i:UDF):([A-Za-z0-9_.-]+)=', '$1UDF_$2=')
         [xml]$salesDoc = $salesContent
-        foreach ($voucher in $salesDoc.SelectNodes('//VOUCHER')) {
-            $cancelled = $voucher.SelectSingleNode('./ISCANCELLED')
-            $optional = $voucher.SelectSingleNode('./ISOPTIONAL')
-            if (($cancelled -and $cancelled.InnerText -eq 'Yes') -or ($optional -and $optional.InnerText -eq 'Yes')) { continue }
-            $dateNode = $voucher.SelectSingleNode('./DATE')
-            if (-not $dateNode) { continue }
-            $dateKey = ($dateNode.InnerText -replace '[^0-9]', '')
-            if ($dateKey.Length -ne 8) { continue }
-            $partyNode = $voucher.SelectSingleNode('./PARTYLEDGERNAME | ./PARTYNAME | ./BASICBUYERNAME')
-            $party = if ($partyNode) { $partyNode.InnerText.Trim() } else { '' }
-            $voucherNumberNode = $voucher.SelectSingleNode('./VOUCHERNUMBER')
-            $voucherNumber = if ($voucherNumberNode) { $voucherNumberNode.InnerText.Trim() } else { '' }
-            if ($voucherNumber -and $dateKey -ge $invoiceFromDate) {
-                $referenceNode = $voucher.SelectSingleNode('./REFERENCE')
-                $masterIdNode = $voucher.SelectSingleNode('./MASTERID')
-                $invoices += [ordered]@{ voucherNumber = $voucherNumber; reference = if ($referenceNode) { $referenceNode.InnerText.Trim() } else { $null }; party = $party; date = $dateKey; masterId = if ($masterIdNode) { $masterIdNode.InnerText.Trim() } else { $null } }
+        if ($salesDoc.SelectSingleNode('//LINEERROR') -or -not $salesDoc.SelectSingleNode('//COLLECTION')) {
+            throw 'Sales export did not contain a successful collection.'
+        }
+        foreach ($dateNode in $salesDoc.SelectNodes('//VOUCHER/DATE')) {
+            if ($dateNode.InnerText -lt $fromDate -or $dateNode.InnerText -gt $toDate) {
+                throw 'Tally ignored the sales date window; refusing to merge an unbounded export.'
             }
-            foreach ($entry in $voucher.SelectNodes('.//ALLINVENTORYENTRIES.LIST | .//INVENTORYENTRIES.LIST')) {
-                $itemNode = $entry.SelectSingleNode('./STOCKITEMNAME')
-                if (-not $itemNode) { continue }
-                $itemName = $itemNode.InnerText.Trim()
+        }
+        $incomingRecords = @(Convert-LegacySalesRecords $salesDoc.OuterXml)
+        $skippedIdentity = $salesDoc.SelectNodes('//VOUCHER').Count - $incomingRecords.Count
+        if ($skippedIdentity) {
+            Add-Content -LiteralPath $healthLogPath -Value "$([datetimeoffset]::Now.ToString('o')) request=sales_identity skipped=$skippedIdentity status=warning"
+        }
+        $salesRecords = if ($fullScan) { @($incomingRecords) } else { @(Merge-SalesRecords $cachedSales.records $incomingRecords $fromDate) }
+        foreach ($voucher in $salesRecords) {
+            if ($voucher.cancelled -or $voucher.optional) { continue }
+            $dateKey = ([string]$voucher.date -replace '[^0-9]', '')
+            if ($dateKey.Length -ne 8) { continue }
+            $party = [string]$voucher.party
+            $voucherNumber = [string]$voucher.voucherNumber
+            if ($voucherNumber -and $dateKey -ge $invoiceFromDate) {
+                $invoices += [ordered]@{ voucherNumber = $voucherNumber; reference = $voucher.reference; party = $party; date = $dateKey; masterId = $voucher.masterId }
+            }
+            foreach ($entry in @($voucher.lineItems)) {
+                $itemName = [string]$entry.itemName
                 if (-not $itemName) { continue }
                 $existing = $result[$itemName]
                 if ($existing -and $existing.dateKey -gt $dateKey) { continue }
-                $quantityNode = $entry.SelectSingleNode('./BILLEDQTY | ./ACTUALQTY')
-                $quantity = if ($quantityNode) { [Math]::Abs((Get-Number $quantityNode.InnerText)) } else { 0 }
+                $quantity = [double]$entry.quantity
                 $displayDate = $dateKey
                 try { $displayDate = [datetime]::ParseExact($dateKey, 'yyyyMMdd', $null).ToString('dd MMM yyyy') } catch { }
                 $result[$itemName] = [ordered]@{ dateKey = $dateKey; party = $party; quantity = $quantity; date = $displayDate }
@@ -104,11 +176,40 @@ function Get-TallySalesData {
         }
     } catch {
         Write-Host "Last supplied details were not available in this refresh: $($_.Exception.Message)" -ForegroundColor DarkYellow
+        throw # Do not replace a complete snapshot with empty invoice history.
     }
+    Save-ConnectorSnapshot $salesPath @{
+        company = $companyName; fetchedAtIso = [datetimeoffset]::UtcNow.ToString('o')
+        catalog = @(); tallyInvoices = @(); records = @($salesRecords); baselineLastSupply = $baseline
+        fullScannedAt = if ($fullScan) { [datetimeoffset]::UtcNow.ToString('o') } else { $cachedSales.fullScannedAt }
+    }
+    $script:RebuildSalesHistory = $false
     return [ordered]@{ lastSupply = $result; invoices = @($invoices) }
 }
 
 function Get-ReorderData {
+    # Share the same snapshot across automatic and browser refresh requests.
+    # Never advance fetchedAt when returning cached data.
+    if ($script:lastReorderData -and (Get-Date) -lt $script:nextReorderRead) {
+        return $script:lastReorderData
+    }
+    $script:nextReorderRead = (Get-Date).AddMinutes($SyncMinutes)
+    try {
+        $fresh = Read-ReorderData
+        Save-ConnectorSnapshot $snapshotPath $fresh
+        $script:lastReorderData = $fresh
+        $script:pendingUpload = $fresh
+        return $fresh
+    } catch {
+        if ($script:lastReorderData) {
+            Write-Host 'Tally refresh failed; retaining the last successful snapshot and its timestamp.' -ForegroundColor DarkYellow
+            return $script:lastReorderData
+        }
+        throw
+    }
+}
+
+function Read-ReorderData {
     $today = (Get-Date).Date
     $financialYear = if ($today.Month -ge 4) { $today.Year } else { $today.Year - 1 }
     $historyFrom = [datetime]::new($financialYear - 5, 4, 1)
@@ -271,11 +372,16 @@ try {
             if ((Get-Date) -ge $nextCloudSync) {
                 try {
                     $cloudJson = (Get-ReorderData | ConvertTo-Json -Depth 6 -Compress)
-                    Publish-CloudSnapshot $cloudJson
                 } catch {
-                    Write-Host "Automatic sync will retry in five minutes." -ForegroundColor DarkYellow
+                    Write-Host "Automatic sync will retry in $SyncMinutes minutes." -ForegroundColor DarkYellow
                 }
-                $nextCloudSync = (Get-Date).AddMinutes(5)
+                $nextCloudSync = (Get-Date).AddMinutes($SyncMinutes)
+            }
+            if ($script:pendingUpload -and (Get-Date) -ge $script:nextUpload) {
+                if (Publish-CloudSnapshot ($script:pendingUpload | ConvertTo-Json -Depth 6 -Compress)) {
+                    $script:pendingUpload = $null
+                }
+                $script:nextUpload = (Get-Date).AddMinutes(5)
             }
             Start-Sleep -Milliseconds 250
             continue
@@ -300,8 +406,8 @@ try {
             $path = if ($requestLine -match '^GET\s+([^\s]+)') { $matches[1] } else { '/' }
             if ($path -like '/api/reorder*') {
                 try {
-                    $json = (Get-ReorderData | ConvertTo-Json -Depth 6 -Compress)
-                    Publish-CloudSnapshot $json
+                    if (-not $script:lastReorderData) { throw 'First stock snapshot is not ready.' }
+                    $json = ($script:lastReorderData | ConvertTo-Json -Depth 6 -Compress)
                     Send-Response $client 200 'application/json; charset=utf-8' ([Text.Encoding]::UTF8.GetBytes($json))
                 } catch {
                     $json = @{ error = 'TallyPrime is not reachable. Open TallyPrime, load SUPRABHA DISTRIBUTORS, and try Refresh.'; detail = $_.Exception.Message } | ConvertTo-Json -Compress
@@ -318,4 +424,4 @@ try {
             }
         } finally { $client.Close() }
     }
-} finally { $listener.Stop() }
+} finally { $listener.Stop(); $instanceLock.Dispose() }

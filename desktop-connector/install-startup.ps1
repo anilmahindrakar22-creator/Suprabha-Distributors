@@ -15,11 +15,11 @@ $trigger = New-ScheduledTaskTrigger -AtLogOn -User $currentUser
 $settings = New-ScheduledTaskSettingsSet -AllowStartIfOnBatteries -DontStopIfGoingOnBatteries -StartWhenAvailable -ExecutionTimeLimit ([TimeSpan]::Zero)
 $principal = New-ScheduledTaskPrincipal -UserId $currentUser -LogonType Interactive -RunLevel Limited
 
-Register-ScheduledTask -TaskName $taskName -Action $action -Trigger $trigger -Settings $settings -Principal $principal -Description 'Keeps the Suprabha StockFlow cloud snapshot synchronized with TallyPrime every five minutes.' -Force | Out-Null
+Register-ScheduledTask -TaskName $taskName -Action $action -Trigger $trigger -Settings $settings -Principal $principal -Description 'Refreshes Tally every 15 minutes; retries saved cloud uploads independently.' -Force | Out-Null
 
 if (-not $DoNotStartNow) {
     Start-ScheduledTask -TaskName $taskName
 }
 
 Write-Host "StockFlow automatic Tally sync is installed for $currentUser." -ForegroundColor Green
-Write-Host 'It starts at Windows sign-in and retries every five minutes while running.' -ForegroundColor Cyan
+Write-Host 'It starts at Windows sign-in, reads Tally every 15 minutes and retries saved uploads every five minutes.' -ForegroundColor Cyan

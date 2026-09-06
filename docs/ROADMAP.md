@@ -2,6 +2,8 @@
 
 The roadmap grows one transactional spine. It is not authorization to build every listed domain simultaneously.
 
+The current detailed requirements, acceptance gates and ordered recovery slices are in [Requirements and delivery plan](REQUIREMENTS-AND-DELIVERY-PLAN.md). That plan takes precedence over conflicting historical milestone wording below. Next implementation: durable connector recovery (R1), after the R0 deployment and measurement audit.
+
 ## Current baseline — StockFlow OMS Phase 3
 
 Preserve and release the existing order flow, Tally catalog/customer lookup, fulfilment data, audit history, user management, delivery exceptions, installation/commissioning and operations dashboard. Phase 3 is complete only after the feature branch passes CI, review and an explicitly approved production release.
@@ -42,7 +44,11 @@ Preserve and release the existing order flow, Tally catalog/customer lookup, ful
 
 **Current slice:** the connector exports read-only voucher identity and billed orders show verified, unmatched or awaiting-sync status.
 
-**Exit gate:** an order reaches billing and dispatch once, with traceable batches and recoverable integration failures.
+**Exit gate:** an order reaches billing and dispatch once, with verified customer/invoice identity and recoverable integration failures. Batch records remain in Tally.
+
+## Immediate priority — lightweight recovery
+
+The [lightweight recovery phase](LIGHTWEIGHT-RECOVERY.md) takes priority over further expansion: correct ledger-and-invoice matching, reduce repeated Tally reads, measure connector load, then deliver smaller OMS responses and offline drafts. Existing modules remain available. Do not describe the OMS as fully offline-capable until reconnect and account-isolation tests pass.
 
 ## Milestone 4 — Installed-base and service operations
 

@@ -80,7 +80,7 @@ Authorization is evaluated server-side using named permissions and row scope. In
 
 - Management/owner: global operational and financial oversight.
 - Order desk: customers, order capture and permitted pre-billing edits.
-- Warehouse: receipts, batches, allocation, picking, packing and dispatch.
+- Warehouse: permitted preparation and dispatch actions; receipts, batches and allocation remain in Tally.
 - Sales: assigned customers, quotations and orders within permitted commercial scope.
 - Accounts: Tally reconciliation, credit and receivables.
 - Service: installed instruments and service operations.
