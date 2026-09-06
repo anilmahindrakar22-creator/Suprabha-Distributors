@@ -26,7 +26,9 @@ Implemented locally in the next increments: the browser renders at most 20 match
 
 Implemented locally: routine order bootstrap now carries only the Tally catalogue version. Opening New Order retrieves the full catalogue through a separate read-only gateway and reuses an account-scoped, version-matched browser-session copy. A newer Tally snapshot invalidates that copy automatically. This adds no dependency, background polling or new service.
 
-Still outstanding in this slice: move pagination to the server when measured order volume requires it; measure the initial OMS transfer budget and audit-log/catalogue reduction after migration deployment; add authenticated browser coverage for restart/reconnect, scroll retention and lazy data once the Sites test harness can provide an approved session.
+Successful OMS reads now expose their uncompressed JSON size and server duration through response headers. This records no customer payloads or credentials and adds no database write. Browser/network inspection can therefore compare bootstrap, catalogue and activity costs using representative approved accounts before setting a hard production threshold.
+
+Still outstanding in this slice: record representative deployed measurements; move pagination to the server when measured order volume requires it; add authenticated browser coverage for restart/reconnect, scroll retention and lazy data once the Sites test harness can provide an approved session.
 
 Gate: documented initial payload and transfer budget, no full history on each save, successful offline draft recovery and exactly one order after reconnect. Offline OMS is not complete until these gates pass.
 
