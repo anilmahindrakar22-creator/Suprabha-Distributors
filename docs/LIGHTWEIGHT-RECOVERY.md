@@ -24,7 +24,9 @@ Implemented locally: one account-scoped order draft is stored in the existing br
 
 Implemented locally in the next increments: the browser renders at most 20 matching order cards at once, and background action refreshes preserve the internal scroll position instead of collapsing the list and jumping to the top. Routine bootstrap no longer includes every audit event. Opening an order's Activity log calls a dedicated read-only gateway that validates the gateway secret, active membership and order row scope before returning immutable events.
 
-Still outstanding in this slice: cache the catalog independently with a version identifier; move pagination to the server when measured order volume requires it; measure the initial OMS transfer budget and audit-log reduction after migration deployment; add authenticated browser coverage for restart/reconnect, scroll retention and lazy activity once the Sites test harness can provide an approved session.
+Implemented locally: routine order bootstrap now carries only the Tally catalogue version. Opening New Order retrieves the full catalogue through a separate read-only gateway and reuses an account-scoped, version-matched browser-session copy. A newer Tally snapshot invalidates that copy automatically. This adds no dependency, background polling or new service.
+
+Still outstanding in this slice: move pagination to the server when measured order volume requires it; measure the initial OMS transfer budget and audit-log/catalogue reduction after migration deployment; add authenticated browser coverage for restart/reconnect, scroll retention and lazy data once the Sites test harness can provide an approved session.
 
 Gate: documented initial payload and transfer budget, no full history on each save, successful offline draft recovery and exactly one order after reconnect. Offline OMS is not complete until these gates pass.
 

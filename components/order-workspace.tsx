@@ -11,6 +11,7 @@ import type {
 } from '@/lib/order-types';
 import { billingHandoffText, filterOrders, orderAttentionReasons, orderMatchesCaptureDate, ordersCsv, orderStage, pageItems, searchCatalog, searchCustomers, tallyInvoiceReconciliation } from '@/lib/order-types';
 import { readOfflineOrderDraft, removeOfflineOrderDraft, updateOfflineDraftState, writeOfflineOrderDraft, type OfflineDraftState } from '@/lib/offline-order-drafts';
+import { readCatalogCache, writeCatalogCache } from '@/lib/catalog-cache';
 
 type DraftLine = { item: CatalogItem; quantity: number };
 const ordersPerPage = 20;
@@ -70,6 +71,7 @@ export function OrderWorkspace({ initialStatus = 'open' }: { initialStatus?: str
   const [captureDate, setCaptureDate] = useState('');
   const [status, setStatus] = useState(initialStatus);
   const [creating, setCreating] = useState(false);
+  const [catalogLoading, setCatalogLoading] = useState(false);
   const [page, setPage] = useState(1);
   const workspaceRef = useRef<HTMLDivElement>(null);
 
@@ -119,6 +121,33 @@ export function OrderWorkspace({ initialStatus = 'open' }: { initialStatus?: str
     link.download = `stockflow-orders-${new Date().toISOString().slice(0, 10)}.csv`;
     link.click();
     URL.revokeObjectURL(url);
+  }
+
+  async function openNewOrder() {
+    if (!data || catalogLoading) return;
+    setError('');
+    if (data.snapshot.catalog.length > 0) {
+      setCreating(true);
+      return;
+    }
+    const version = data.snapshot.catalogVersion || data.snapshot.fetchedAt;
+    const cached = readCatalogCache(sessionStorage, data.actor.email, version);
+    if (cached) {
+      setData((current) => current ? { ...current, snapshot: { ...current.snapshot, catalog: cached } } : current);
+      setCreating(true);
+      return;
+    }
+    setCatalogLoading(true);
+    try {
+      const result = await readResponse<{ catalogVersion: string; catalog: CatalogItem[] }>(await fetch('/api/orders?catalog=1', { cache: 'no-store' }));
+      writeCatalogCache(sessionStorage, data.actor.email, result.catalogVersion, result.catalog);
+      setData((current) => current ? { ...current, snapshot: { ...current.snapshot, catalogVersion: result.catalogVersion, catalog: result.catalog } } : current);
+      setCreating(true);
+    } catch (cause) {
+      setError(cause instanceof Error ? cause.message : 'Unable to load Tally products');
+    } finally {
+      setCatalogLoading(false);
+    }
   }
 
   async function runCommand(command: OrderCommand, success: string) {
@@ -220,11 +249,11 @@ export function OrderWorkspace({ initialStatus = 'open' }: { initialStatus?: str
           </div>
           <button
             type="button"
-            onClick={() => setCreating(true)}
-            disabled={!data}
+            onClick={() => void openNewOrder()}
+            disabled={!data || catalogLoading}
             className="min-h-12 rounded-xl bg-[#092f36] px-5 font-bold text-white shadow-sm transition hover:bg-[#0d4549] disabled:opacity-50"
           >
-            + Order
+            {catalogLoading ? 'Loading products…' : '+ Order'}
           </button>
         </header>
 

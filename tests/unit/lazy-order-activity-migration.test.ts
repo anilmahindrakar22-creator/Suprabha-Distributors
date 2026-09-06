@@ -21,7 +21,7 @@ describe('lazy order activity contract', () => {
     expect(migration).toContain("p_action <> 'get_order_events'");
     expect(edge).toContain('"get_order_events"');
     expect(edge).toContain('"stockflow_order_activity_gateway"');
-    expect(api).toContain("new URL(request.url).searchParams.get('eventsFor')");
+    expect(api).toContain("parameters.get('eventsFor')");
     expect(api).toContain("'get_order_events'");
   });
 });
