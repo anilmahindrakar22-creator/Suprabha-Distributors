@@ -22,7 +22,9 @@ Gate: repeated browser refresh causes no extra Tally queries; failed upload caus
 
 Implemented locally: one account-scoped order draft is stored in the existing browser with visible saved, waiting and error states. A user action is required before it becomes pending; reconnect retries only that pending command and preserves its original server idempotency key. Successful server acknowledgement removes the local copy. Drafts never appear as confirmed or billed, cannot be read by another signed-in account through the application, and expire after seven days. The host owns sign-out, so explicit sign-out cleanup cannot yet be observed directly; account isolation and short retention are the current boundary.
 
-Still outstanding in this slice: paginate orders and load audit history only when expanded; cache the catalog independently with a version identifier; measure the initial OMS transfer budget; add authenticated browser coverage for restart/reconnect once the Sites test harness can provide an approved session.
+Implemented locally in the next increment: the browser renders at most 20 matching order cards at once, and background action refreshes preserve the internal scroll position instead of collapsing the list and jumping to the top.
+
+Still outstanding in this slice: load audit history only when expanded; cache the catalog independently with a version identifier; move pagination to the server when measured order volume requires it; measure the initial OMS transfer budget; add authenticated browser coverage for restart/reconnect and scroll retention once the Sites test harness can provide an approved session.
 
 Gate: documented initial payload and transfer budget, no full history on each save, successful offline draft recovery and exactly one order after reconnect. Offline OMS is not complete until these gates pass.
 

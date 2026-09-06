@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { billingHandoffText, currentTallyFinancialYear, filterOrders, isOrderDeliveryOverdue, orderAttentionReasons, orderMatchesCaptureDate, ordersCsv, orderStage, searchCatalog, searchCustomers, tallyInvoiceReconciliation, validateOrderCommand } from '../../lib/order-types';
+import { billingHandoffText, currentTallyFinancialYear, filterOrders, isOrderDeliveryOverdue, orderAttentionReasons, orderMatchesCaptureDate, ordersCsv, orderStage, pageItems, searchCatalog, searchCustomers, tallyInvoiceReconciliation, validateOrderCommand } from '../../lib/order-types';
 
 describe('order command validation', () => {
   it('accepts a complete phone order', () => {
@@ -87,6 +87,20 @@ describe('order command validation', () => {
     expect(validateOrderCommand({ action: 'schedule_installation', payload: { idempotencyKey: '1234567890abcdef', orderId: 'order-id', expectedVersion: 4, tallyKey: 'EQUIPMENT-1', scheduledDate: '2026-09-10' } })).not.toBeNull();
     expect(validateOrderCommand({ action: 'schedule_installation', payload: { orderId: 'order-id', expectedVersion: 4, tallyKey: '', scheduledDate: '10/09/2026' } })).toBeNull();
     expect(validateOrderCommand({ action: 'complete_installation', payload: { idempotencyKey: '1234567890abcdef', orderId: 'order-id', expectedVersion: 5, installationId: 'installation-id', serialNumber: 'SN-1002', commissioningNotes: 'Installed and quality checks passed' } })).not.toBeNull();
+  });
+});
+
+describe('order list pagination', () => {
+  it('returns the requested page without rendering the full collection', () => {
+    expect(pageItems(Array.from({ length: 45 }, (_, index) => index + 1), 2, 20)).toEqual({
+      page: 2,
+      pageCount: 3,
+      items: Array.from({ length: 20 }, (_, index) => index + 21),
+    });
+  });
+
+  it('clamps a page that disappeared after an order transition', () => {
+    expect(pageItems(['remaining'], 4, 20)).toEqual({ page: 1, pageCount: 1, items: ['remaining'] });
   });
 });
 

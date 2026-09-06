@@ -270,6 +270,12 @@ export function filterOrders(orders: OrderSummary[], query: string, status: stri
   });
 }
 
+export function pageItems<T>(items: T[], requestedPage: number, pageSize: number) {
+  const pageCount = Math.max(1, Math.ceil(items.length / pageSize));
+  const page = Math.min(Math.max(1, Math.trunc(requestedPage) || 1), pageCount);
+  return { page, pageCount, items: items.slice((page - 1) * pageSize, page * pageSize) };
+}
+
 export function orderAttentionReasons(order: OrderSummary, now = new Date()) {
   if (['cancelled', 'delivered'].includes(order.status)) return [];
   const reasons: string[] = [];

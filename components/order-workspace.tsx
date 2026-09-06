@@ -1,6 +1,6 @@
 'use client';
 
-import { useCallback, useEffect, useMemo, useState, useSyncExternalStore } from 'react';
+import { useCallback, useEffect, useMemo, useRef, useState, useSyncExternalStore } from 'react';
 import type {
   CatalogItem,
   CustomerDirectoryEntry,
@@ -8,10 +8,11 @@ import type {
   OrderCommand,
   OrderSummary,
 } from '@/lib/order-types';
-import { billingHandoffText, filterOrders, orderAttentionReasons, orderMatchesCaptureDate, ordersCsv, orderStage, searchCatalog, searchCustomers, tallyInvoiceReconciliation } from '@/lib/order-types';
+import { billingHandoffText, filterOrders, orderAttentionReasons, orderMatchesCaptureDate, ordersCsv, orderStage, pageItems, searchCatalog, searchCustomers, tallyInvoiceReconciliation } from '@/lib/order-types';
 import { readOfflineOrderDraft, removeOfflineOrderDraft, updateOfflineDraftState, writeOfflineOrderDraft, type OfflineDraftState } from '@/lib/offline-order-drafts';
 
 type DraftLine = { item: CatalogItem; quantity: number };
+const ordersPerPage = 20;
 
 const statusNames: Record<string, string> = {
   phone_order_received: 'Phone order received',
@@ -68,16 +69,18 @@ export function OrderWorkspace({ initialStatus = 'open' }: { initialStatus?: str
   const [captureDate, setCaptureDate] = useState('');
   const [status, setStatus] = useState(initialStatus);
   const [creating, setCreating] = useState(false);
+  const [page, setPage] = useState(1);
+  const workspaceRef = useRef<HTMLDivElement>(null);
 
-  const load = useCallback(async () => {
-    setLoading(true);
+  const load = useCallback(async (showLoading = false) => {
+    if (showLoading) setLoading(true);
     setError('');
     try {
       setData(await readResponse<OrderBootstrap>(await fetch('/api/orders', { cache: 'no-store' })));
     } catch (cause) {
       setError(cause instanceof Error ? cause.message : 'Unable to load orders');
     } finally {
-      setLoading(false);
+      if (showLoading) setLoading(false);
     }
   }, []);
 
@@ -104,6 +107,7 @@ export function OrderWorkspace({ initialStatus = 'open' }: { initialStatus?: str
   const visibleOrders = useMemo(() => {
     return filterOrders(data?.orders || [], query, status).filter((order) => orderMatchesCaptureDate(order, captureDate));
   }, [captureDate, data?.orders, query, status]);
+  const { page: currentPage, pageCount, items: displayedOrders } = pageItems(visibleOrders, page, ordersPerPage);
 
   function exportVisibleOrders() {
     if (!visibleOrders.length) return;
@@ -117,6 +121,7 @@ export function OrderWorkspace({ initialStatus = 'open' }: { initialStatus?: str
   }
 
   async function runCommand(command: OrderCommand, success: string) {
+    const scrollTop = workspaceRef.current?.scrollTop;
     setError('');
     setNotice('');
     try {
@@ -135,6 +140,9 @@ export function OrderWorkspace({ initialStatus = 'open' }: { initialStatus?: str
       );
       setNotice(success);
       await load();
+      window.requestAnimationFrame(() => {
+        if (workspaceRef.current && scrollTop !== undefined) workspaceRef.current.scrollTop = scrollTop;
+      });
     } catch (cause) {
       setError(cause instanceof Error ? cause.message : 'Unable to update order');
     }
@@ -195,7 +203,7 @@ export function OrderWorkspace({ initialStatus = 'open' }: { initialStatus?: str
   const staleText = data?.snapshot.fetchedAt || 'No Tally snapshot';
 
   return (
-    <div className="h-full overflow-y-auto bg-[#f7f6f1]">
+    <div ref={workspaceRef} className="h-full overflow-y-auto bg-[#f7f6f1]">
       <div className="mx-auto max-w-7xl px-4 py-6 sm:px-6 lg:px-8">
         <header className="flex flex-col gap-4 sm:flex-row sm:items-end sm:justify-between">
           <div>
@@ -231,18 +239,18 @@ export function OrderWorkspace({ initialStatus = 'open' }: { initialStatus?: str
             <input
               id="order-search"
               value={query}
-              onChange={(event) => setQuery(event.target.value)}
+              onChange={(event) => { setQuery(event.target.value); setPage(1); }}
               placeholder="Customer, product, invoice, phone, or order"
               className="min-h-11 w-full rounded-xl border border-[#cedfdd] px-4 pr-16 outline-none focus:border-[#64d4ad] focus:ring-3 focus:ring-[#64d4ad]/20"
             />
-            {query ? <button type="button" onClick={() => setQuery('')} className="absolute bottom-1 right-1 min-h-9 rounded-lg px-3 text-xs font-bold text-[#456367] hover:bg-[#edf3f1]">Clear</button> : null}
+            {query ? <button type="button" onClick={() => { setQuery(''); setPage(1); }} className="absolute bottom-1 right-1 min-h-9 rounded-lg px-3 text-xs font-bold text-[#456367] hover:bg-[#edf3f1]">Clear</button> : null}
           </div>
-          <label className="text-xs font-bold text-[#587275]">Order date<input type="date" value={captureDate} onChange={(event) => setCaptureDate(event.target.value)} className="mt-1 block min-h-11 rounded-xl border border-[#cedfdd] bg-white px-3 font-normal outline-none focus:border-[#64d4ad]" /></label>
+          <label className="text-xs font-bold text-[#587275]">Order date<input type="date" value={captureDate} onChange={(event) => { setCaptureDate(event.target.value); setPage(1); }} className="mt-1 block min-h-11 rounded-xl border border-[#cedfdd] bg-white px-3 font-normal outline-none focus:border-[#64d4ad]" /></label>
           <label className="sr-only" htmlFor="order-status">Filter by status</label>
           <select
             id="order-status"
             value={status}
-            onChange={(event) => setStatus(event.target.value)}
+            onChange={(event) => { setStatus(event.target.value); setPage(1); }}
             className="min-h-11 rounded-xl border border-[#cedfdd] bg-white px-3 outline-none focus:border-[#64d4ad]"
           >
             <option value="open">Active orders</option>
@@ -290,7 +298,7 @@ export function OrderWorkspace({ initialStatus = 'open' }: { initialStatus?: str
             </div>
           ) : (
             <div className="divide-y divide-[#e8efed]">
-              {visibleOrders.map((order) => (
+              {displayedOrders.map((order) => (
                 <OrderRow
                   key={order.id}
                   order={order}
@@ -307,6 +315,7 @@ export function OrderWorkspace({ initialStatus = 'open' }: { initialStatus?: str
               ))}
             </div>
           )}
+          {!loading && visibleOrders.length > ordersPerPage ? <nav aria-label="Order pages" className="flex items-center justify-between gap-3 border-t border-[#e3ecea] px-5 py-4"><button type="button" disabled={currentPage === 1} onClick={() => setPage((value) => Math.max(1, value - 1))} className="min-h-10 rounded-xl border border-[#cedfdd] px-4 font-bold text-[#31585d] disabled:opacity-40">Previous</button><span className="text-xs font-bold text-[#6b7e81]">Page {currentPage} of {pageCount}</span><button type="button" disabled={currentPage === pageCount} onClick={() => setPage((value) => Math.min(pageCount, value + 1))} className="min-h-10 rounded-xl border border-[#cedfdd] px-4 font-bold text-[#31585d] disabled:opacity-40">Next</button></nav> : null}
         </section>
       </div>
 
