@@ -10,7 +10,7 @@ import type {
   OrderSummary,
 } from '@/lib/order-types';
 import { billingHandoffText, filterOrders, orderAttentionReasons, orderMatchesCaptureDate, ordersCsv, orderStage, pageItems, searchCatalog, searchCustomers, tallyInvoiceReconciliation } from '@/lib/order-types';
-import { readOfflineOrderDraft, removeOfflineOrderDraft, updateOfflineDraftState, writeOfflineOrderDraft, type OfflineDraftState } from '@/lib/offline-order-drafts';
+import { readOfflineDraftConsent, readOfflineOrderDraft, removeOfflineOrderDraft, updateOfflineDraftState, writeOfflineDraftConsent, writeOfflineOrderDraft, type OfflineDraftState } from '@/lib/offline-order-drafts';
 import { readCatalogCache, writeCatalogCache } from '@/lib/catalog-cache';
 import { applyOrderAcknowledgement } from '@/lib/order-acknowledgement';
 
@@ -607,20 +607,22 @@ function HydratedNewOrderPanel({ data, onClose, onCreated }: { data: OrderBootst
   const [error, setError] = useState('');
   const [idempotencyKey] = useState(() => initialPayload?.idempotencyKey || crypto.randomUUID());
   const [draftState, setDraftState] = useState<OfflineDraftState>(initialDraft?.state || 'draft');
+  const [saveOnDevice, setSaveOnDevice] = useState(() => Boolean(initialDraft) || readOfflineDraftConsent(localStorage, data.actor.email));
 
   useEffect(() => {
-    if (draftState === 'pending' || (!customerName.trim() && lines.length === 0 && !notes.trim())) return;
+    if (!saveOnDevice || draftState === 'pending' || (!customerName.trim() && lines.length === 0 && !notes.trim())) return;
     const timer = window.setTimeout(() => {
-      writeOfflineOrderDraft(localStorage, {
+      const saved = writeOfflineOrderDraft(localStorage, {
         schemaVersion: 1,
         actorEmail: data.actor.email,
         state: draftState,
         updatedAt: new Date().toISOString(),
         command: { action: 'create_order', payload: { idempotencyKey, customerId: selectedCustomerId, customerName: customerName.trim(), customerPhone: customerPhone.trim(), customerCity: customerCity.trim(), source: 'phone', notes: notes.trim(), lines: lines.map((line) => ({ tallyKey: line.item.tallyKey, quantity: line.quantity })) } },
       });
+      if (!saved) setError('This browser could not save the draft. Free device storage or turn off device saving.');
     }, 400);
     return () => window.clearTimeout(timer);
-  }, [customerCity, customerName, customerPhone, data.actor.email, draftState, idempotencyKey, lines, notes, selectedCustomerId]);
+  }, [customerCity, customerName, customerPhone, data.actor.email, draftState, idempotencyKey, lines, notes, saveOnDevice, selectedCustomerId]);
 
   useEffect(() => {
     let active = true;
@@ -691,7 +693,7 @@ function HydratedNewOrderPanel({ data, onClose, onCreated }: { data: OrderBootst
           lines: lines.map((line) => ({ tallyKey: line.item.tallyKey, quantity: line.quantity })),
         },
       };
-      writeOfflineOrderDraft(localStorage, { schemaVersion: 1, actorEmail: data.actor.email, state: 'pending', command: body, updatedAt: new Date().toISOString() });
+      if (saveOnDevice && !writeOfflineOrderDraft(localStorage, { schemaVersion: 1, actorEmail: data.actor.email, state: 'pending', command: body, updatedAt: new Date().toISOString() })) throw new Error('This browser could not save the pending order. Free device storage and retry.');
       setDraftState('pending');
       const response = await fetch('/api/orders', { method: 'POST', headers: { 'content-type': 'application/json' }, body: JSON.stringify(body) });
       const result = await readOrderSubmission(response);
@@ -700,9 +702,10 @@ function HydratedNewOrderPanel({ data, onClose, onCreated }: { data: OrderBootst
     } catch (cause) {
       const message = cause instanceof Error ? cause.message : 'Unable to create order';
       const waiting = !navigator.onLine || cause instanceof TypeError || cause instanceof RetryableOrderSubmissionError;
-      updateOfflineDraftState(localStorage, data.actor.email, waiting ? 'pending' : 'error', waiting ? undefined : message);
-      setDraftState(waiting ? 'pending' : 'error');
-      setError(waiting ? 'Order saved on this device. Retry when the connection returns.' : message);
+      const savedForRetry = waiting && saveOnDevice && Boolean(updateOfflineDraftState(localStorage, data.actor.email, 'pending'));
+      if (!waiting && saveOnDevice) updateOfflineDraftState(localStorage, data.actor.email, 'error', message);
+      setDraftState(savedForRetry ? 'pending' : 'error');
+      setError(savedForRetry ? 'Order saved on this device. Retry when the connection returns.' : waiting ? 'Connection lost. This order was not stored because device saving is off.' : message);
     } finally {
       setSubmitting(false);
     }
@@ -781,10 +784,11 @@ function HydratedNewOrderPanel({ data, onClose, onCreated }: { data: OrderBootst
               <label className="sr-only" htmlFor="order-notes">Order notes</label>
               <textarea id="order-notes" value={notes} onChange={(event) => setNotes(event.target.value)} maxLength={2000} rows={3} className="mt-3 w-full rounded-xl border border-[#cedfdd] p-3 font-normal outline-none focus:border-[#64d4ad]" placeholder="Delivery instructions, contact person, or urgency" />
             </details>
-            {customerName.trim() || lines.length > 0 ? <p aria-live="polite" className={`rounded-xl px-4 py-3 text-sm font-semibold ${draftState === 'error' ? 'bg-[#fff0ef] text-[#8d3a34]' : draftState === 'pending' ? 'bg-[#fff7e8] text-[#805b20]' : 'bg-[#edf7f4] text-[#456367]'}`}>{draftState === 'pending' ? 'Waiting to send. Your order is safe on this device.' : draftState === 'error' ? 'Draft needs attention before it can be sent.' : 'Draft saved on this device.'}</p> : null}
+            <label className="flex items-start gap-3 rounded-2xl border border-[#dce7e5] bg-white p-4 text-sm text-[#456367]"><input type="checkbox" checked={saveOnDevice} disabled={draftState === 'pending'} onChange={(event) => { const allowed = event.target.checked; if (!writeOfflineDraftConsent(localStorage, data.actor.email, allowed)) { setError('This browser could not update device-saving permission.'); return; } setSaveOnDevice(allowed); if (!allowed) removeOfflineOrderDraft(localStorage, data.actor.email); }} className="mt-1 size-4 accent-[#277b69]" /><span><strong className="block text-[#274b50]">Save this draft on this device</strong>Use this only on a trusted device. Drafts expire after seven days. Pending orders stay saved until sent.</span></label>
+            {customerName.trim() || lines.length > 0 ? <p aria-live="polite" className={`rounded-xl px-4 py-3 text-sm font-semibold ${draftState === 'error' ? 'bg-[#fff0ef] text-[#8d3a34]' : draftState === 'pending' ? 'bg-[#fff7e8] text-[#805b20]' : 'bg-[#edf7f4] text-[#456367]'}`}>{draftState === 'pending' ? 'Waiting to send. Your order is safe on this device.' : draftState === 'error' ? 'Draft needs attention before it can be sent.' : saveOnDevice ? 'Draft saved on this device.' : 'Draft is kept only while this form remains open.'}</p> : null}
             {error ? <p role="alert" className="rounded-xl border border-[#efbbb6] bg-[#fff0ef] px-4 py-3 text-sm text-[#8d3a34]">{error}</p> : null}
           </div>
-          <footer className="sticky bottom-0 flex items-center justify-between gap-4 border-t border-[#dce7e5] bg-white/95 px-5 py-4 backdrop-blur"><p className="text-xs text-[#718487]">{lines.length} product{lines.length === 1 ? '' : 's'} · {draftState === 'pending' ? 'waiting to send' : 'saved together'}</p><button type="submit" disabled={submitting || lines.length === 0} className="min-h-12 rounded-xl bg-[#092f36] px-6 font-extrabold text-white hover:bg-[#0d4549] disabled:opacity-50">{submitting ? 'Saving…' : draftState === 'pending' || draftState === 'error' ? 'Retry order' : 'Save order'}</button></footer>
+          <footer className="sticky bottom-0 flex items-center justify-between gap-4 border-t border-[#dce7e5] bg-white/95 px-5 py-4 backdrop-blur"><p className="text-xs text-[#718487]">{lines.length} product{lines.length === 1 ? '' : 's'} · {draftState === 'pending' ? 'waiting to send' : saveOnDevice ? 'draft protected' : 'ready to save'}</p><button type="submit" disabled={submitting || lines.length === 0} className="min-h-12 rounded-xl bg-[#092f36] px-6 font-extrabold text-white hover:bg-[#0d4549] disabled:opacity-50">{submitting ? 'Saving…' : draftState === 'pending' || draftState === 'error' ? 'Retry order' : 'Save order'}</button></footer>
         </form>
       </dialog>
     </div>

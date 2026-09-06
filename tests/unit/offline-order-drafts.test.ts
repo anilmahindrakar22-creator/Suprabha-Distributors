@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { readOfflineOrderDraft, removeOfflineOrderDraft, updateOfflineDraftState, writeOfflineOrderDraft, type OfflineOrderDraft } from '../../lib/offline-order-drafts';
+import { readOfflineDraftConsent, readOfflineOrderDraft, removeOfflineOrderDraft, updateOfflineDraftState, writeOfflineDraftConsent, writeOfflineOrderDraft, type OfflineOrderDraft } from '../../lib/offline-order-drafts';
 
 function memoryStorage() {
   const values = new Map<string, string>();
@@ -44,5 +44,21 @@ describe('offline order drafts', () => {
     const storage = memoryStorage();
     writeOfflineOrderDraft(storage, { ...draft, updatedAt: new Date(Date.now() - 8 * 86_400_000).toISOString() });
     expect(readOfflineOrderDraft(storage, draft.actorEmail)).toBeNull();
+  });
+
+  it('stores explicit device consent per account', () => {
+    const storage = memoryStorage();
+    expect(readOfflineDraftConsent(storage, draft.actorEmail)).toBe(false);
+    expect(writeOfflineDraftConsent(storage, draft.actorEmail, true)).toBe(true);
+    expect(readOfflineDraftConsent(storage, ' SALES@example.com ')).toBe(true);
+    writeOfflineDraftConsent(storage, draft.actorEmail, false);
+    expect(readOfflineDraftConsent(storage, draft.actorEmail)).toBe(false);
+  });
+
+  it('reports storage quota failures without losing control of the screen', () => {
+    const storage = { getItem: () => null, removeItem: () => {}, setItem: () => { throw new DOMException('Quota exceeded', 'QuotaExceededError'); } };
+    expect(writeOfflineOrderDraft(storage, draft)).toBe(false);
+    expect(writeOfflineDraftConsent(storage, draft.actorEmail, true)).toBe(false);
+    expect(removeOfflineOrderDraft({ ...storage, removeItem: () => { throw new DOMException('Storage denied', 'SecurityError'); } }, draft.actorEmail)).toBe(false);
   });
 });

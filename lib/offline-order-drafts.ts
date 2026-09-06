@@ -12,6 +12,7 @@ export type OfflineOrderDraft = {
 
 type DraftStorage = Pick<Storage, 'getItem' | 'setItem' | 'removeItem'>;
 const prefix = 'stockflow:order-draft:v1:';
+const consentPrefix = 'stockflow:order-draft-consent:v1:';
 const retentionMs = 7 * 24 * 60 * 60 * 1000;
 
 function key(email: string) {
@@ -35,17 +36,45 @@ export function readOfflineOrderDraft(storage: DraftStorage, actorEmail: string)
 }
 
 export function writeOfflineOrderDraft(storage: DraftStorage, draft: OfflineOrderDraft) {
-  storage.setItem(key(draft.actorEmail), JSON.stringify(draft));
+  try {
+    storage.setItem(key(draft.actorEmail), JSON.stringify(draft));
+    return true;
+  } catch {
+    return false;
+  }
 }
 
 export function removeOfflineOrderDraft(storage: DraftStorage, actorEmail: string) {
-  storage.removeItem(key(actorEmail));
+  try {
+    storage.removeItem(key(actorEmail));
+    return true;
+  } catch {
+    return false;
+  }
 }
 
 export function updateOfflineDraftState(storage: DraftStorage, actorEmail: string, state: OfflineDraftState, error?: string) {
   const current = readOfflineOrderDraft(storage, actorEmail);
   if (!current) return null;
   const updated: OfflineOrderDraft = { ...current, state, updatedAt: new Date().toISOString(), ...(error ? { error } : { error: undefined }) };
-  writeOfflineOrderDraft(storage, updated);
-  return updated;
+  return writeOfflineOrderDraft(storage, updated) ? updated : null;
+}
+
+export function readOfflineDraftConsent(storage: DraftStorage, actorEmail: string) {
+  try {
+    return storage.getItem(`${consentPrefix}${actorEmail.trim().toLocaleLowerCase('en-IN')}`) === 'yes';
+  } catch {
+    return false;
+  }
+}
+
+export function writeOfflineDraftConsent(storage: DraftStorage, actorEmail: string, allowed: boolean) {
+  try {
+    const consentKey = `${consentPrefix}${actorEmail.trim().toLocaleLowerCase('en-IN')}`;
+    if (allowed) storage.setItem(consentKey, 'yes');
+    else storage.removeItem(consentKey);
+    return true;
+  } catch {
+    return false;
+  }
 }
