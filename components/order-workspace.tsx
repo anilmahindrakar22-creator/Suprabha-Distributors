@@ -12,6 +12,7 @@ import type {
 import { billingHandoffText, filterOrders, orderAttentionReasons, orderMatchesCaptureDate, ordersCsv, orderStage, pageItems, searchCatalog, searchCustomers, tallyInvoiceReconciliation } from '@/lib/order-types';
 import { readOfflineOrderDraft, removeOfflineOrderDraft, updateOfflineDraftState, writeOfflineOrderDraft, type OfflineDraftState } from '@/lib/offline-order-drafts';
 import { readCatalogCache, writeCatalogCache } from '@/lib/catalog-cache';
+import { applyOrderAcknowledgement } from '@/lib/order-acknowledgement';
 
 type DraftLine = { item: CatalogItem; quantity: number };
 const ordersPerPage = 20;
@@ -74,6 +75,11 @@ export function OrderWorkspace({ initialStatus = 'open' }: { initialStatus?: str
   const [catalogLoading, setCatalogLoading] = useState(false);
   const [page, setPage] = useState(1);
   const workspaceRef = useRef<HTMLDivElement>(null);
+  const dataRef = useRef<OrderBootstrap | null>(null);
+
+  useEffect(() => {
+    dataRef.current = data;
+  }, [data]);
 
   const load = useCallback(async (showLoading = false) => {
     if (showLoading) setLoading(true);
@@ -155,7 +161,7 @@ export function OrderWorkspace({ initialStatus = 'open' }: { initialStatus?: str
     setError('');
     setNotice('');
     try {
-      await readResponse(
+      const result = await readResponse<{ orderId?: string; status?: string; version?: number }>(
         await fetch('/api/orders', {
           method: 'POST',
           headers: { 'content-type': 'application/json' },
@@ -169,7 +175,12 @@ export function OrderWorkspace({ initialStatus = 'open' }: { initialStatus?: str
         }),
       );
       setNotice(success);
-      await load();
+      const patched = dataRef.current ? applyOrderAcknowledgement(dataRef.current, command, result) : null;
+      if (patched) {
+        dataRef.current = patched;
+        setData(patched);
+      }
+      else await load();
       window.requestAnimationFrame(() => {
         if (workspaceRef.current && scrollTop !== undefined) workspaceRef.current.scrollTop = scrollTop;
       });
