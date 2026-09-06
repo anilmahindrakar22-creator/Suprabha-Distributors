@@ -28,7 +28,7 @@ Implemented locally: routine order bootstrap now carries only the Tally catalogu
 
 Successful OMS reads now expose their uncompressed JSON size and server duration through response headers. This records no customer payloads or credentials and adds no database write. Browser/network inspection can therefore compare bootstrap, catalogue and activity costs using representative approved accounts before setting a hard production threshold.
 
-Routine status, fulfilment, order-edit, dispatch and delivery commands now apply the successful server acknowledgement to the affected order and counters instead of downloading the entire workspace again. If an older or incomplete server response cannot safely identify the row and version, the client falls back to the existing full refresh.
+Routine status, fulfilment, order-edit, dispatch, delivery-exception and equipment-installation commands now apply the successful server acknowledgement to the affected order and counters instead of downloading the entire workspace again. Server-issued exception and installation IDs remain authoritative. If an older or incomplete server response cannot safely identify the row and version, the client falls back to the existing full refresh.
 
 Still outstanding in this slice: record representative deployed measurements; move pagination to the server when measured order volume requires it; add authenticated browser coverage for restart/reconnect, scroll retention and lazy data once the Sites test harness can provide an approved session.
 

@@ -161,7 +161,7 @@ export function OrderWorkspace({ initialStatus = 'open' }: { initialStatus?: str
     setError('');
     setNotice('');
     try {
-      const result = await readResponse<{ orderId?: string; status?: string; version?: number }>(
+      const result = await readResponse<{ orderId?: string; status?: string; version?: number; exceptionId?: string; installationId?: string }>(
         await fetch('/api/orders', {
           method: 'POST',
           headers: { 'content-type': 'application/json' },

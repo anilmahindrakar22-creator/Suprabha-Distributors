@@ -20,4 +20,18 @@ describe('targeted order acknowledgement', () => {
   it('falls back when the acknowledgement cannot safely identify the changed row', () => {
     expect(applyOrderAcknowledgement(data, { action: 'transition_order', payload: { idempotencyKey: '1234567890abcdef', orderId: order.id, expectedVersion: 1, toStatus: 'confirmed' } }, { orderId: 'other', version: 2 })).toBeNull();
   });
+
+  it('adds and resolves delivery exceptions from authoritative IDs', () => {
+    const opened = applyOrderAcknowledgement(data, { action: 'create_exception', payload: { idempotencyKey: '1234567890abcdef', orderId: order.id, expectedVersion: 1, category: 'delayed', summary: 'Courier delayed' } }, { orderId: order.id, exceptionId: 'issue-1', version: 2 }, '2026-09-06T11:00:00Z');
+    expect(opened?.orders[0].exceptions[0]).toMatchObject({ id: 'issue-1', status: 'open', createdBy: 'sales@example.com' });
+    const resolved = opened && applyOrderAcknowledgement(opened, { action: 'resolve_exception', payload: { idempotencyKey: '2234567890abcdef', orderId: order.id, expectedVersion: 2, exceptionId: 'issue-1', resolution: 'Delivered next run' } }, { orderId: order.id, exceptionId: 'issue-1', version: 3 }, '2026-09-06T12:00:00Z');
+    expect(resolved?.orders[0].exceptions[0]).toMatchObject({ status: 'resolved', resolution: 'Delivered next run', resolvedBy: 'sales@example.com' });
+  });
+
+  it('adds and completes equipment installations from authoritative IDs', () => {
+    const scheduled = applyOrderAcknowledgement(data, { action: 'schedule_installation', payload: { idempotencyKey: '1234567890abcdef', orderId: order.id, expectedVersion: 1, tallyKey: 'KIT-1', scheduledDate: '2026-09-10', engineerEmail: 'engineer@example.com' } }, { orderId: order.id, installationId: 'install-1', version: 2 }, '2026-09-06T11:00:00Z');
+    expect(scheduled?.orders[0].installations[0]).toMatchObject({ id: 'install-1', itemName: 'Kit', status: 'scheduled' });
+    const completed = scheduled && applyOrderAcknowledgement(scheduled, { action: 'complete_installation', payload: { idempotencyKey: '2234567890abcdef', orderId: order.id, expectedVersion: 2, installationId: 'install-1', serialNumber: 'SN-1', commissioningNotes: 'Commissioned successfully' } }, { orderId: order.id, installationId: 'install-1', version: 3 }, '2026-09-11T11:00:00Z');
+    expect(completed?.orders[0].installations[0]).toMatchObject({ status: 'completed', serialNumber: 'SN-1', completedBy: 'sales@example.com' });
+  });
 });
