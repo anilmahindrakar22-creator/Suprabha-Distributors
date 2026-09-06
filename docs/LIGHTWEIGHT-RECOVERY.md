@@ -20,7 +20,9 @@ Gate: repeated browser refresh causes no extra Tally queries; failed upload caus
 
 ## Slice 3: smaller OMS and offline drafts
 
-Paginate orders and load audit history only when expanded. Cache catalog separately using a version identifier. Retain the existing stock offline view. Add opt-in, account-scoped offline order drafts with visible saved/pending/error states, logout cleanup and idempotent submission after sign-in and permission checks. Do not mark offline drafts as confirmed or billed. Test reconnect, duplicate submission, account switching and browser restart.
+Implemented locally: one account-scoped order draft is stored in the existing browser with visible saved, waiting and error states. A user action is required before it becomes pending; reconnect retries only that pending command and preserves its original server idempotency key. Successful server acknowledgement removes the local copy. Drafts never appear as confirmed or billed, cannot be read by another signed-in account through the application, and expire after seven days. The host owns sign-out, so explicit sign-out cleanup cannot yet be observed directly; account isolation and short retention are the current boundary.
+
+Still outstanding in this slice: paginate orders and load audit history only when expanded; cache the catalog independently with a version identifier; measure the initial OMS transfer budget; add authenticated browser coverage for restart/reconnect once the Sites test harness can provide an approved session.
 
 Gate: documented initial payload and transfer budget, no full history on each save, successful offline draft recovery and exactly one order after reconnect. Offline OMS is not complete until these gates pass.
 

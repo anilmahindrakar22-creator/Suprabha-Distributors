@@ -1,6 +1,6 @@
 'use client';
 
-import { useCallback, useEffect, useMemo, useState } from 'react';
+import { useCallback, useEffect, useMemo, useState, useSyncExternalStore } from 'react';
 import type {
   CatalogItem,
   CustomerDirectoryEntry,
@@ -9,6 +9,7 @@ import type {
   OrderSummary,
 } from '@/lib/order-types';
 import { billingHandoffText, filterOrders, orderAttentionReasons, orderMatchesCaptureDate, ordersCsv, orderStage, searchCatalog, searchCustomers, tallyInvoiceReconciliation } from '@/lib/order-types';
+import { readOfflineOrderDraft, removeOfflineOrderDraft, updateOfflineDraftState, writeOfflineOrderDraft, type OfflineDraftState } from '@/lib/offline-order-drafts';
 
 type DraftLine = { item: CatalogItem; quantity: number };
 
@@ -429,6 +430,16 @@ function OrderRow({
   );
 }
 
+class RetryableOrderSubmissionError extends Error {}
+
+async function readOrderSubmission(response: Response) {
+  if (response.status >= 500 || response.status === 429) {
+    const body = (await response.json().catch(() => ({}))) as { error?: string };
+    throw new RetryableOrderSubmissionError(body.error || 'Order service is temporarily unavailable');
+  }
+  return readResponse<{ orderNumber?: string }>(response);
+}
+
 function InstallationPanel({ order, onSave }: { order: OrderSummary; onSave: (order: OrderSummary, command: Extract<OrderCommand, { action: 'schedule_installation' | 'complete_installation' }>) => Promise<void> }) {
   const [open, setOpen] = useState(false); const [busy, setBusy] = useState(false);
   const [tallyKey, setTallyKey] = useState(order.lines[0]?.tallyKey || ''); const [scheduledDate, setScheduledDate] = useState('');
@@ -498,17 +509,69 @@ function DispatchPanel({ order, actorRole, onSave }: { order: OrderSummary; acto
 }
 
 function NewOrderPanel({ data, onClose, onCreated }: { data: OrderBootstrap; onClose: () => void; onCreated: (number: string) => void }) {
-  const [customerName, setCustomerName] = useState('');
-  const [customerPhone, setCustomerPhone] = useState('');
-  const [customerCity, setCustomerCity] = useState('');
-  const [selectedCustomerId, setSelectedCustomerId] = useState<string>();
+  const hydrated = useSyncExternalStore(() => () => {}, () => true, () => false);
+  if (!hydrated) return null;
+  return <HydratedNewOrderPanel data={data} onClose={onClose} onCreated={onCreated} />;
+}
+
+function HydratedNewOrderPanel({ data, onClose, onCreated }: { data: OrderBootstrap; onClose: () => void; onCreated: (number: string) => void }) {
+  const [initialDraft] = useState(() => readOfflineOrderDraft(localStorage, data.actor.email));
+  const initialPayload = initialDraft?.command.payload;
+  const [customerName, setCustomerName] = useState(initialPayload?.customerName || '');
+  const [customerPhone, setCustomerPhone] = useState(initialPayload?.customerPhone || '');
+  const [customerCity, setCustomerCity] = useState(initialPayload?.customerCity || '');
+  const [selectedCustomerId, setSelectedCustomerId] = useState<string | undefined>(initialPayload?.customerId);
   const [customerSuggestionsOpen, setCustomerSuggestionsOpen] = useState(false);
-  const [notes, setNotes] = useState('');
+  const [notes, setNotes] = useState(initialPayload?.notes || '');
   const [productQuery, setProductQuery] = useState('');
-  const [lines, setLines] = useState<DraftLine[]>([]);
+  const [lines, setLines] = useState<DraftLine[]>(() => (initialPayload?.lines || []).flatMap((line) => {
+    const item = data.snapshot.catalog.find((entry) => entry.tallyKey === line.tallyKey);
+    return item ? [{ item, quantity: line.quantity }] : [];
+  }));
   const [submitting, setSubmitting] = useState(false);
   const [error, setError] = useState('');
-  const [idempotencyKey] = useState(() => crypto.randomUUID());
+  const [idempotencyKey] = useState(() => initialPayload?.idempotencyKey || crypto.randomUUID());
+  const [draftState, setDraftState] = useState<OfflineDraftState>(initialDraft?.state || 'draft');
+
+  useEffect(() => {
+    if (draftState === 'pending' || (!customerName.trim() && lines.length === 0 && !notes.trim())) return;
+    const timer = window.setTimeout(() => {
+      writeOfflineOrderDraft(localStorage, {
+        schemaVersion: 1,
+        actorEmail: data.actor.email,
+        state: draftState,
+        updatedAt: new Date().toISOString(),
+        command: { action: 'create_order', payload: { idempotencyKey, customerId: selectedCustomerId, customerName: customerName.trim(), customerPhone: customerPhone.trim(), customerCity: customerCity.trim(), source: 'phone', notes: notes.trim(), lines: lines.map((line) => ({ tallyKey: line.item.tallyKey, quantity: line.quantity })) } },
+      });
+    }, 400);
+    return () => window.clearTimeout(timer);
+  }, [customerCity, customerName, customerPhone, data.actor.email, draftState, idempotencyKey, lines, notes, selectedCustomerId]);
+
+  useEffect(() => {
+    let active = true;
+    async function retryPending() {
+      const saved = readOfflineOrderDraft(localStorage, data.actor.email);
+      if (!saved || saved.state !== 'pending' || !navigator.onLine) return;
+      setSubmitting(true);
+      try {
+        const response = await fetch('/api/orders', { method: 'POST', headers: { 'content-type': 'application/json' }, body: JSON.stringify(saved.command) });
+        const result = await readOrderSubmission(response);
+        removeOfflineOrderDraft(localStorage, data.actor.email);
+        if (active) onCreated(result.orderNumber || 'Order');
+      } catch (cause) {
+        if (!(cause instanceof TypeError) && !(cause instanceof RetryableOrderSubmissionError) && navigator.onLine) {
+          const message = cause instanceof Error ? cause.message : 'Unable to create order';
+          updateOfflineDraftState(localStorage, data.actor.email, 'error', message);
+          if (active) { setDraftState('error'); setError(message); }
+        }
+      } finally {
+        if (active) setSubmitting(false);
+      }
+    }
+    window.addEventListener('online', retryPending);
+    const initialRetry = window.setTimeout(retryPending, 0);
+    return () => { active = false; window.clearTimeout(initialRetry); window.removeEventListener('online', retryPending); };
+  }, [data.actor.email, onCreated]);
 
   const matches = useMemo(() => {
     const selected = new Set(lines.map((line) => line.item.tallyKey));
@@ -540,7 +603,7 @@ function NewOrderPanel({ data, onClose, onCreated }: { data: OrderBootstrap; onC
       const existing = data.customers.find(
         (item) => item.id === selectedCustomerId || item.name === customerName.trim(),
       );
-      const body: OrderCommand = {
+      const body: Extract<OrderCommand, { action: 'create_order' }> = {
         action: 'create_order',
         payload: {
           idempotencyKey,
@@ -553,10 +616,18 @@ function NewOrderPanel({ data, onClose, onCreated }: { data: OrderBootstrap; onC
           lines: lines.map((line) => ({ tallyKey: line.item.tallyKey, quantity: line.quantity })),
         },
       };
-      const result = await readResponse<{ orderNumber?: string }>(await fetch('/api/orders', { method: 'POST', headers: { 'content-type': 'application/json' }, body: JSON.stringify(body) }));
+      writeOfflineOrderDraft(localStorage, { schemaVersion: 1, actorEmail: data.actor.email, state: 'pending', command: body, updatedAt: new Date().toISOString() });
+      setDraftState('pending');
+      const response = await fetch('/api/orders', { method: 'POST', headers: { 'content-type': 'application/json' }, body: JSON.stringify(body) });
+      const result = await readOrderSubmission(response);
+      removeOfflineOrderDraft(localStorage, data.actor.email);
       onCreated(result.orderNumber || 'Order');
     } catch (cause) {
-      setError(cause instanceof Error ? cause.message : 'Unable to create order');
+      const message = cause instanceof Error ? cause.message : 'Unable to create order';
+      const waiting = !navigator.onLine || cause instanceof TypeError || cause instanceof RetryableOrderSubmissionError;
+      updateOfflineDraftState(localStorage, data.actor.email, waiting ? 'pending' : 'error', waiting ? undefined : message);
+      setDraftState(waiting ? 'pending' : 'error');
+      setError(waiting ? 'Order saved on this device. Retry when the connection returns.' : message);
     } finally {
       setSubmitting(false);
     }
@@ -635,9 +706,10 @@ function NewOrderPanel({ data, onClose, onCreated }: { data: OrderBootstrap; onC
               <label className="sr-only" htmlFor="order-notes">Order notes</label>
               <textarea id="order-notes" value={notes} onChange={(event) => setNotes(event.target.value)} maxLength={2000} rows={3} className="mt-3 w-full rounded-xl border border-[#cedfdd] p-3 font-normal outline-none focus:border-[#64d4ad]" placeholder="Delivery instructions, contact person, or urgency" />
             </details>
+            {customerName.trim() || lines.length > 0 ? <p aria-live="polite" className={`rounded-xl px-4 py-3 text-sm font-semibold ${draftState === 'error' ? 'bg-[#fff0ef] text-[#8d3a34]' : draftState === 'pending' ? 'bg-[#fff7e8] text-[#805b20]' : 'bg-[#edf7f4] text-[#456367]'}`}>{draftState === 'pending' ? 'Waiting to send. Your order is safe on this device.' : draftState === 'error' ? 'Draft needs attention before it can be sent.' : 'Draft saved on this device.'}</p> : null}
             {error ? <p role="alert" className="rounded-xl border border-[#efbbb6] bg-[#fff0ef] px-4 py-3 text-sm text-[#8d3a34]">{error}</p> : null}
           </div>
-          <footer className="sticky bottom-0 flex items-center justify-between gap-4 border-t border-[#dce7e5] bg-white/95 px-5 py-4 backdrop-blur"><p className="text-xs text-[#718487]">{lines.length} product{lines.length === 1 ? '' : 's'} · saved together</p><button type="submit" disabled={submitting || lines.length === 0} className="min-h-12 rounded-xl bg-[#092f36] px-6 font-extrabold text-white hover:bg-[#0d4549] disabled:opacity-50">{submitting ? 'Saving…' : 'Save order'}</button></footer>
+          <footer className="sticky bottom-0 flex items-center justify-between gap-4 border-t border-[#dce7e5] bg-white/95 px-5 py-4 backdrop-blur"><p className="text-xs text-[#718487]">{lines.length} product{lines.length === 1 ? '' : 's'} · {draftState === 'pending' ? 'waiting to send' : 'saved together'}</p><button type="submit" disabled={submitting || lines.length === 0} className="min-h-12 rounded-xl bg-[#092f36] px-6 font-extrabold text-white hover:bg-[#0d4549] disabled:opacity-50">{submitting ? 'Saving…' : draftState === 'pending' || draftState === 'error' ? 'Retry order' : 'Save order'}</button></footer>
         </form>
       </dialog>
     </div>
