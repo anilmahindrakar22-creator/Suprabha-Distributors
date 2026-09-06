@@ -1,6 +1,6 @@
 import { getChatGPTUser } from '@/app/chatgpt-auth';
 import { callOrderGateway, OrderGatewayError } from '@/lib/order-gateway';
-import type { OrderBootstrap } from '@/lib/order-types';
+import type { OrderBootstrap, OrderEvent } from '@/lib/order-types';
 import { isOrderDeliveryOverdue, validateOrderCommand } from '@/lib/order-types';
 
 const privateHeaders = { 'cache-control': 'private, no-store' };
@@ -15,9 +15,17 @@ async function authorizedUser() {
   return user;
 }
 
-export async function GET() {
+export async function GET(request: Request) {
   try {
     const user = await authorizedUser();
+    const eventsFor = new URL(request.url).searchParams.get('eventsFor');
+    if (eventsFor) {
+      if (!/^[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i.test(eventsFor)) return failure('Valid order ID is required', 400);
+      return Response.json(
+        await callOrderGateway<{ events: OrderEvent[] }>(user.email, 'get_order_events', { orderId: eventsFor }),
+        { headers: privateHeaders },
+      );
+    }
     const result = await callOrderGateway<OrderBootstrap>(user.email, 'bootstrap');
     const delayedFailedDeliveries = result.orders.filter((order) =>
       isOrderDeliveryOverdue(order) ||

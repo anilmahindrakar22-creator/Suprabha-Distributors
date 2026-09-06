@@ -3,6 +3,7 @@ import type { OrderCommand } from './order-types';
 export type GatewayAction =
   | 'session'
   | 'bootstrap'
+  | 'get_order_events'
   | 'list_users'
   | 'upsert_user'
   | 'save_fulfilment'

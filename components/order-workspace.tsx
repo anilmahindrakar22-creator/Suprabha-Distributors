@@ -6,6 +6,7 @@ import type {
   CustomerDirectoryEntry,
   OrderBootstrap,
   OrderCommand,
+  OrderEvent,
   OrderSummary,
 } from '@/lib/order-types';
 import { billingHandoffText, filterOrders, orderAttentionReasons, orderMatchesCaptureDate, ordersCsv, orderStage, pageItems, searchCatalog, searchCustomers, tallyInvoiceReconciliation } from '@/lib/order-types';
@@ -430,13 +431,38 @@ function OrderRow({
         <DeliveryExceptionPanel order={order} onSave={onException} />
         <InstallationPanel order={order} onSave={onInstallation} />
         {order.status === 'awaiting_tally_billing' ? <BillingHandoff order={order} /> : null}
-        <div className="mt-5 border-t border-[#dfe9e7] pt-4">
-          <p className="text-xs font-bold uppercase tracking-wide text-[#708386]">Activity log</p>
-          {(order.events || []).length ? <ol className="mt-3 space-y-3">{order.events.map((event) => <li key={event.id} className="grid grid-cols-[10px_1fr] gap-3"><span className="mt-1.5 size-2.5 rounded-full bg-[#64d4ad]" /><div><p className="font-bold text-[#274b50]">{event.toStatus ? `${statusLabel(event.fromStatus || 'new')} → ${statusLabel(event.toStatus)}` : event.eventType.replaceAll('_', ' ')}</p><p className="mt-0.5 text-xs text-[#718487]">{event.actorEmail} ({event.actorRole}) · {new Date(event.createdAt).toLocaleString('en-IN')}</p>{event.reason ? <p className="mt-1 text-xs text-[#80524d]">Reason: {event.reason}</p> : null}</div></li>)}</ol> : <p className="mt-2 text-xs text-[#718487]">No recorded activity yet.</p>}
-        </div>
+        <OrderActivityLog orderId={order.id} initialEvents={order.events || []} />
       </details>
     </article>
   );
+}
+
+function OrderActivityLog({ orderId, initialEvents }: { orderId: string; initialEvents: OrderEvent[] }) {
+  const [open, setOpen] = useState(false);
+  const [events, setEvents] = useState(initialEvents);
+  const [loaded, setLoaded] = useState(initialEvents.length > 0);
+  const [loading, setLoading] = useState(false);
+  const [error, setError] = useState('');
+  async function loadEvents() {
+    if (loading) return;
+    setLoading(true);
+    setError('');
+    try {
+      const result = await readResponse<{ events: OrderEvent[] }>(await fetch(`/api/orders?eventsFor=${encodeURIComponent(orderId)}`, { cache: 'no-store' }));
+      setEvents(result.events || []);
+      setLoaded(true);
+    } catch (cause) {
+      setError(cause instanceof Error ? cause.message : 'Unable to load activity');
+    } finally {
+      setLoading(false);
+    }
+  }
+  function toggle() {
+    const nextOpen = !open;
+    setOpen(nextOpen);
+    if (nextOpen && !loaded) void loadEvents();
+  }
+  return <div className="mt-5 border-t border-[#dfe9e7] pt-4"><button type="button" onClick={toggle} aria-expanded={open} className="text-xs font-bold uppercase tracking-wide text-[#456367]">{open ? '−' : '+'} Activity log</button>{open ? loading ? <p className="mt-2 text-xs text-[#718487]">Loading activity…</p> : error ? <div className="mt-2 flex items-center gap-3"><p role="alert" className="text-xs text-[#8d3a34]">{error}</p><button type="button" onClick={() => void loadEvents()} className="text-xs font-bold text-[#31585d]">Retry</button></div> : events.length ? <ol className="mt-3 space-y-3">{events.map((event) => <li key={event.id} className="grid grid-cols-[10px_1fr] gap-3"><span className="mt-1.5 size-2.5 rounded-full bg-[#64d4ad]" /><div><p className="font-bold text-[#274b50]">{event.toStatus ? `${statusLabel(event.fromStatus || 'new')} → ${statusLabel(event.toStatus)}` : event.eventType.replaceAll('_', ' ')}</p><p className="mt-0.5 text-xs text-[#718487]">{event.actorEmail} ({event.actorRole}) · {new Date(event.createdAt).toLocaleString('en-IN')}</p>{event.reason ? <p className="mt-1 text-xs text-[#80524d]">Reason: {event.reason}</p> : null}</div></li>)}</ol> : <p className="mt-2 text-xs text-[#718487]">No recorded activity yet.</p> : null}</div>;
 }
 
 class RetryableOrderSubmissionError extends Error {}
