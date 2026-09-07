@@ -1,7 +1,7 @@
 const CACHE_PREFIX = 'suprabha-stockflow-static-';
-const CACHE = `${CACHE_PREFIX}v3`;
+const CACHE = `${CACHE_PREFIX}v4`;
 const OWNED_CACHE_PREFIXES = [CACHE_PREFIX, 'suprabha-stockflow-v'];
-const PUBLIC_ASSETS = ['/stockflow.html', '/manifest.webmanifest', '/app-icon.svg', '/favicon.svg'];
+const PUBLIC_ASSETS = ['/stockflow.html', '/manifest.webmanifest', '/suprabha-logo.png', '/app-icon.svg', '/favicon.svg'];
 
 async function cachePublicAsset(cache, path) {
   const response = await fetch(new Request(path, { cache: 'reload', credentials: 'omit' }));

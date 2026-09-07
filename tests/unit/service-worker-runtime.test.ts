@@ -46,12 +46,12 @@ describe('service worker runtime boundary', () => {
     expect(dispatchFetch(runtime.listeners, new Request('https://stockflow.example/app-icon.svg?v=2'))).toBeUndefined();
   });
 
-  it('serves an explicitly approved public asset from the static cache', async () => {
+  it.each(['/stockflow.html', '/suprabha-logo.png'])('serves approved public asset %s from the static cache', async (path) => {
     const cached = new Response('<html>offline</html>');
     const runtime = workerRuntime(cached);
-    const response = dispatchFetch(runtime.listeners, new Request('https://stockflow.example/stockflow.html'));
+    const response = dispatchFetch(runtime.listeners, new Request(`https://stockflow.example${path}`));
     expect(await response).toBe(cached);
-    expect(runtime.cache.match).toHaveBeenCalledWith('/stockflow.html');
+    expect(runtime.cache.match).toHaveBeenCalledWith(path);
   });
 
   it('removes old StockFlow caches while preserving unrelated origin storage', async () => {

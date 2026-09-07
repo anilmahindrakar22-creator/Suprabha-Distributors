@@ -9,6 +9,7 @@ describe('service worker cache boundary', () => {
     const allowlist = worker.match(/const PUBLIC_ASSETS = (\[[\s\S]*?\])/i)?.[1] || '';
     expect(allowlist).not.toContain("'/'");
     expect(allowlist).toContain("'/stockflow.html'");
+    expect(allowlist).toContain("'/suprabha-logo.png'");
   });
 
   it('handles only explicit same-origin public GET assets without query strings', () => {
