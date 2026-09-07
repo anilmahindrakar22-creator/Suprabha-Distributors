@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { readCatalogCache, writeCatalogCache } from '../../lib/catalog-cache';
+import { readCatalogCache, removeCatalogCache, writeCatalogCache } from '../../lib/catalog-cache';
 
 function memoryStorage() {
   const values = new Map<string, string>();
@@ -44,5 +44,13 @@ describe('account-scoped Tally catalog cache', () => {
     expect(readCatalogCache(storage, 'sales@example.com', 'new')).toBeNull();
     storage.setItem('stockflow:catalog:v1:sales@example.com', '{broken');
     expect(readCatalogCache(storage, 'sales@example.com', 'new')).toBeNull();
+  });
+
+  it('handles storage limits and explicit trusted-device cleanup', () => {
+    const storage = memoryStorage();
+    expect(writeCatalogCache(storage, 'sales@example.com', 'v1', catalog)).toBe(true);
+    expect(removeCatalogCache(storage, 'sales@example.com')).toBe(true);
+    expect(readCatalogCache(storage, 'sales@example.com', 'v1')).toBeNull();
+    expect(writeCatalogCache({ ...storage, setItem: () => { throw new DOMException('full', 'QuotaExceededError'); } }, 'sales@example.com', 'v1', catalog)).toBe(false);
   });
 });

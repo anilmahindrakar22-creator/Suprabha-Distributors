@@ -12,8 +12,8 @@ import type {
 import { billingHandoffText, orderAttentionReasons, orderStage, searchCatalog, searchCustomers, tallyInvoiceReconciliation } from '@/lib/order-types';
 import { orderListUrl } from '@/lib/order-list-query';
 import { readOfflineDraftConsent, readOfflineOrderDraft, removeOfflineOrderDraft, updateOfflineDraftState, writeOfflineDraftConsent, writeOfflineOrderDraft, type OfflineDraftState } from '@/lib/offline-order-drafts';
-import { readCatalogCache, writeCatalogCache } from '@/lib/catalog-cache';
-import { readCustomerCache, writeCustomerCache } from '@/lib/customer-cache';
+import { readCatalogCache, removeCatalogCache, writeCatalogCache } from '@/lib/catalog-cache';
+import { readCustomerCache, removeCustomerCache, writeCustomerCache } from '@/lib/customer-cache';
 import { applyOrderAcknowledgement } from '@/lib/order-acknowledgement';
 import { OrderSubmissionError, orderSubmissionError } from '@/lib/order-submission';
 import { loadOrderBootstrap } from '@/lib/order-bootstrap-cache';
@@ -223,8 +223,9 @@ export function OrderWorkspace({ actorEmail, initialStatus = 'open' }: { actorEm
     try {
       const catalogVersion = current.snapshot.catalogVersion || current.snapshot.fetchedAt;
       const customerVersion = current.customerVersion || '';
-      let catalog = current.snapshot.catalog.length > 0 ? current.snapshot.catalog : readCatalogCache(sessionStorage, current.actor.email, catalogVersion);
-      let customers = current.customers.length > 0 ? current.customers : readCustomerCache(sessionStorage, current.actor.email, customerVersion);
+      const trustedDevice = readOfflineDraftConsent(localStorage, current.actor.email);
+      let catalog = current.snapshot.catalog.length > 0 ? current.snapshot.catalog : readCatalogCache(sessionStorage, current.actor.email, catalogVersion) || (trustedDevice ? readCatalogCache(localStorage, current.actor.email, catalogVersion) : null);
+      let customers = current.customers.length > 0 ? current.customers : readCustomerCache(sessionStorage, current.actor.email, customerVersion) || (trustedDevice ? readCustomerCache(localStorage, current.actor.email, customerVersion) : null);
       const catalogRequest = catalog
         ? Promise.resolve(null)
         : fetch('/api/orders?catalog=1', { cache: 'no-store' }).then((response) => readResponse<{ catalogVersion: string; catalog: CatalogItem[] }>(response));
@@ -234,11 +235,17 @@ export function OrderWorkspace({ actorEmail, initialStatus = 'open' }: { actorEm
       const [catalogResult, customerResult] = await Promise.all([catalogRequest, customerRequest]);
       if (catalogResult) {
         catalog = catalogResult.catalog;
-        writeCatalogCache(sessionStorage, current.actor.email, catalogResult.catalogVersion, catalog);
       }
       if (customerResult) {
         customers = customerResult.customers;
-        writeCustomerCache(sessionStorage, current.actor.email, customerResult.customerVersion, customers);
+      }
+      const resolvedCatalogVersion = catalogResult?.catalogVersion || catalogVersion;
+      const resolvedCustomerVersion = customerResult?.customerVersion || customerVersion;
+      writeCatalogCache(sessionStorage, current.actor.email, resolvedCatalogVersion, catalog || []);
+      writeCustomerCache(sessionStorage, current.actor.email, resolvedCustomerVersion, customers || []);
+      if (trustedDevice) {
+        writeCatalogCache(localStorage, current.actor.email, resolvedCatalogVersion, catalog || []);
+        writeCustomerCache(localStorage, current.actor.email, resolvedCustomerVersion, customers || []);
       }
       setData((value) => value ? {
         ...value,
@@ -710,6 +717,25 @@ function HydratedNewOrderPanel({ data, onClose, onCreated }: { data: OrderBootst
   const [draftState, setDraftState] = useState<OfflineDraftState>(initialDraft?.state || 'draft');
   const [saveOnDevice, setSaveOnDevice] = useState(() => Boolean(initialDraft) || readOfflineDraftConsent(localStorage, data.actor.email));
 
+  function changeTrustedDevice(allowed: boolean) {
+    if (!writeOfflineDraftConsent(localStorage, data.actor.email, allowed)) {
+      setError('This browser could not update device-saving permission.');
+      return;
+    }
+    setSaveOnDevice(allowed);
+    if (allowed) {
+      const catalogVersion = data.snapshot.catalogVersion || data.snapshot.fetchedAt;
+      const catalogSaved = writeCatalogCache(localStorage, data.actor.email, catalogVersion, data.snapshot.catalog);
+      const customersSaved = writeCustomerCache(localStorage, data.actor.email, data.customerVersion || '', data.customers);
+      if (!catalogSaved || !customersSaved) setError('Device storage is full. The draft can stay open, but product or customer search may not survive a restart.');
+      void navigator.storage?.persist?.().catch(() => false);
+    } else {
+      removeOfflineOrderDraft(localStorage, data.actor.email);
+      removeCatalogCache(localStorage, data.actor.email);
+      removeCustomerCache(localStorage, data.actor.email);
+    }
+  }
+
   useEffect(() => {
     if (!saveOnDevice || draftState === 'pending' || (!customerName.trim() && lines.length === 0 && !notes.trim())) return;
     const timer = window.setTimeout(() => {
@@ -885,7 +911,7 @@ function HydratedNewOrderPanel({ data, onClose, onCreated }: { data: OrderBootst
               <label className="sr-only" htmlFor="order-notes">Order notes</label>
               <textarea id="order-notes" value={notes} onChange={(event) => setNotes(event.target.value)} maxLength={2000} rows={3} className="mt-3 w-full rounded-xl border border-[#cedfdd] p-3 font-normal outline-none focus:border-[#64d4ad]" placeholder="Delivery instructions, contact person, or urgency" />
             </details>
-            <label className="flex items-start gap-3 rounded-2xl border border-[#dce7e5] bg-white p-4 text-sm text-[#456367]"><input type="checkbox" checked={saveOnDevice} disabled={draftState === 'pending'} onChange={(event) => { const allowed = event.target.checked; if (!writeOfflineDraftConsent(localStorage, data.actor.email, allowed)) { setError('This browser could not update device-saving permission.'); return; } setSaveOnDevice(allowed); if (!allowed) removeOfflineOrderDraft(localStorage, data.actor.email); }} className="mt-1 size-4 accent-[#277b69]" /><span><strong className="block text-[#274b50]">Save this draft on this device</strong>Use this only on a trusted device. Drafts expire after seven days. Pending orders stay saved until sent.</span></label>
+            <label className="flex items-start gap-3 rounded-2xl border border-[#dce7e5] bg-white p-4 text-sm text-[#456367]"><input type="checkbox" checked={saveOnDevice} disabled={draftState === 'pending'} onChange={(event) => changeTrustedDevice(event.target.checked)} className="mt-1 size-4 accent-[#277b69]" /><span><strong className="block text-[#274b50]">Save this draft on this device</strong>Use this only on a trusted device. Drafts expire after seven days. Pending orders stay saved until sent. Product and customer search is also retained for restart recovery.</span></label>
             {customerName.trim() || lines.length > 0 ? <p aria-live="polite" className={`rounded-xl px-4 py-3 text-sm font-semibold ${draftState === 'error' ? 'bg-[#fff0ef] text-[#8d3a34]' : draftState === 'pending' ? 'bg-[#fff7e8] text-[#805b20]' : 'bg-[#edf7f4] text-[#456367]'}`}>{draftState === 'pending' ? 'Waiting to send. Your order is safe on this device.' : draftState === 'error' ? 'Draft needs attention before it can be sent.' : saveOnDevice ? 'Draft saved on this device.' : 'Draft is kept only while this form remains open.'}</p> : null}
             {error ? <p role="alert" className="rounded-xl border border-[#efbbb6] bg-[#fff0ef] px-4 py-3 text-sm text-[#8d3a34]">{error}</p> : null}
           </div>

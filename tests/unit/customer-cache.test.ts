@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { readCustomerCache, writeCustomerCache } from '../../lib/customer-cache';
+import { readCustomerCache, removeCustomerCache, writeCustomerCache } from '../../lib/customer-cache';
 
 function memoryStorage() {
   const values = new Map<string, string>();
@@ -25,5 +25,13 @@ describe('account-scoped customer directory cache', () => {
     const storage = memoryStorage();
     storage.setItem('stockflow:customers:v1:sales@example.com', '{broken');
     expect(readCustomerCache(storage, 'sales@example.com', 'v1')).toBeNull();
+  });
+
+  it('handles storage limits and explicit trusted-device cleanup', () => {
+    const storage = memoryStorage();
+    expect(writeCustomerCache(storage, 'sales@example.com', 'v1', customers)).toBe(true);
+    expect(removeCustomerCache(storage, 'sales@example.com')).toBe(true);
+    expect(readCustomerCache(storage, 'sales@example.com', 'v1')).toBeNull();
+    expect(writeCustomerCache({ ...storage, setItem: () => { throw new DOMException('full', 'QuotaExceededError'); } }, 'sales@example.com', 'v1', customers)).toBe(false);
   });
 });

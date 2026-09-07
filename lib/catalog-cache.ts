@@ -50,11 +50,25 @@ export function writeCatalogCache(
   catalogVersion: string,
   catalog: CatalogItem[],
 ) {
-  const cached: CachedCatalog = {
-    schemaVersion: 1,
-    actorEmail: actorEmail.trim().toLocaleLowerCase('en-IN'),
-    catalogVersion,
-    catalog,
-  };
-  storage.setItem(key(actorEmail), JSON.stringify(cached));
+  try {
+    const cached: CachedCatalog = {
+      schemaVersion: 1,
+      actorEmail: actorEmail.trim().toLocaleLowerCase('en-IN'),
+      catalogVersion,
+      catalog,
+    };
+    storage.setItem(key(actorEmail), JSON.stringify(cached));
+    return true;
+  } catch {
+    return false;
+  }
+}
+
+export function removeCatalogCache(storage: CatalogStorage, actorEmail: string) {
+  try {
+    storage.removeItem(key(actorEmail));
+    return true;
+  } catch {
+    return false;
+  }
 }

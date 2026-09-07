@@ -31,6 +31,20 @@ export function readCustomerCache(storage: CustomerStorage, actorEmail: string, 
 }
 
 export function writeCustomerCache(storage: CustomerStorage, actorEmail: string, customerVersion: string, customers: CustomerDirectoryEntry[]) {
-  const cached: CachedCustomers = { schemaVersion: 1, actorEmail: actorEmail.trim().toLocaleLowerCase('en-IN'), customerVersion, customers };
-  storage.setItem(key(actorEmail), JSON.stringify(cached));
+  try {
+    const cached: CachedCustomers = { schemaVersion: 1, actorEmail: actorEmail.trim().toLocaleLowerCase('en-IN'), customerVersion, customers };
+    storage.setItem(key(actorEmail), JSON.stringify(cached));
+    return true;
+  } catch {
+    return false;
+  }
+}
+
+export function removeCustomerCache(storage: CustomerStorage, actorEmail: string) {
+  try {
+    storage.removeItem(key(actorEmail));
+    return true;
+  } catch {
+    return false;
+  }
 }
