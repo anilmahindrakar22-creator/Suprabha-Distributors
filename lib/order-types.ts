@@ -109,6 +109,7 @@ export type OrderLineSummary = {
 export type OrderBootstrap = {
   actor: { email: string; role: string };
   snapshot: { company: string; fetchedAt: string; catalogVersion?: string; catalog: CatalogItem[]; tallyInvoices?: TallyInvoice[] };
+  customerVersion?: string;
   customers: CustomerDirectoryEntry[];
   orders: OrderSummary[];
   operations: Record<string, number>;

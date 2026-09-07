@@ -1,6 +1,6 @@
 import { getChatGPTUser } from '@/app/chatgpt-auth';
 import { callOrderGateway, OrderGatewayError } from '@/lib/order-gateway';
-import type { CatalogItem, OrderBootstrap, OrderEvent } from '@/lib/order-types';
+import type { CatalogItem, CustomerDirectoryEntry, OrderBootstrap, OrderEvent } from '@/lib/order-types';
 import { isOrderDeliveryOverdue, validateOrderCommand } from '@/lib/order-types';
 import { measuredJsonResponse } from '@/lib/measured-json-response';
 
@@ -32,6 +32,12 @@ export async function GET(request: Request) {
     if (parameters.get('catalog') === '1') {
       return measuredJsonResponse(
         await callOrderGateway<{ catalogVersion: string; catalog: CatalogItem[] }>(user.email, 'get_catalog'),
+        startedAt,
+      );
+    }
+    if (parameters.get('customers') === '1') {
+      return measuredJsonResponse(
+        await callOrderGateway<{ customerVersion: string; customers: CustomerDirectoryEntry[] }>(user.email, 'get_customers'),
         startedAt,
       );
     }

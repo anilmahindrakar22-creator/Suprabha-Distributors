@@ -4,6 +4,7 @@ export type GatewayAction =
   | 'session'
   | 'bootstrap'
   | 'get_catalog'
+  | 'get_customers'
   | 'get_order_events'
   | 'list_users'
   | 'upsert_user'

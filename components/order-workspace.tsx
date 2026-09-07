@@ -12,6 +12,7 @@ import type {
 import { billingHandoffText, filterOrders, orderAttentionReasons, orderMatchesCaptureDate, ordersCsv, orderStage, pageItems, searchCatalog, searchCustomers, tallyInvoiceReconciliation } from '@/lib/order-types';
 import { readOfflineDraftConsent, readOfflineOrderDraft, removeOfflineOrderDraft, updateOfflineDraftState, writeOfflineDraftConsent, writeOfflineOrderDraft, type OfflineDraftState } from '@/lib/offline-order-drafts';
 import { readCatalogCache, writeCatalogCache } from '@/lib/catalog-cache';
+import { readCustomerCache, writeCustomerCache } from '@/lib/customer-cache';
 import { applyOrderAcknowledgement } from '@/lib/order-acknowledgement';
 import { OrderSubmissionError, orderSubmissionError } from '@/lib/order-submission';
 import { loadOrderBootstrap } from '@/lib/order-bootstrap-cache';
@@ -153,26 +154,35 @@ export function OrderWorkspace({ actorEmail, initialStatus = 'open' }: { actorEm
       setCatalogLoading(false);
       return;
     }
-    if (current.snapshot.catalog.length > 0) {
-      setCreating(true);
-      setCatalogLoading(false);
-      return;
-    }
-    const version = current.snapshot.catalogVersion || current.snapshot.fetchedAt;
-    const cached = readCatalogCache(sessionStorage, current.actor.email, version);
-    if (cached) {
-      setData((current) => current ? { ...current, snapshot: { ...current.snapshot, catalog: cached } } : current);
-      setCreating(true);
-      setCatalogLoading(false);
-      return;
-    }
     try {
-      const result = await readResponse<{ catalogVersion: string; catalog: CatalogItem[] }>(await fetch('/api/orders?catalog=1', { cache: 'no-store' }));
-      writeCatalogCache(sessionStorage, current.actor.email, result.catalogVersion, result.catalog);
-      setData((current) => current ? { ...current, snapshot: { ...current.snapshot, catalogVersion: result.catalogVersion, catalog: result.catalog } } : current);
+      const catalogVersion = current.snapshot.catalogVersion || current.snapshot.fetchedAt;
+      const customerVersion = current.customerVersion || '';
+      let catalog = current.snapshot.catalog.length > 0 ? current.snapshot.catalog : readCatalogCache(sessionStorage, current.actor.email, catalogVersion);
+      let customers = current.customers.length > 0 ? current.customers : readCustomerCache(sessionStorage, current.actor.email, customerVersion);
+      const catalogRequest = catalog
+        ? Promise.resolve(null)
+        : fetch('/api/orders?catalog=1', { cache: 'no-store' }).then((response) => readResponse<{ catalogVersion: string; catalog: CatalogItem[] }>(response));
+      const customerRequest = customers
+        ? Promise.resolve(null)
+        : fetch('/api/orders?customers=1', { cache: 'no-store' }).then((response) => readResponse<{ customerVersion: string; customers: CustomerDirectoryEntry[] }>(response));
+      const [catalogResult, customerResult] = await Promise.all([catalogRequest, customerRequest]);
+      if (catalogResult) {
+        catalog = catalogResult.catalog;
+        writeCatalogCache(sessionStorage, current.actor.email, catalogResult.catalogVersion, catalog);
+      }
+      if (customerResult) {
+        customers = customerResult.customers;
+        writeCustomerCache(sessionStorage, current.actor.email, customerResult.customerVersion, customers);
+      }
+      setData((value) => value ? {
+        ...value,
+        customerVersion: customerResult?.customerVersion || value.customerVersion,
+        customers: customers || [],
+        snapshot: { ...value.snapshot, catalogVersion: catalogResult?.catalogVersion || value.snapshot.catalogVersion, catalog: catalog || [] },
+      } : value);
       setCreating(true);
     } catch (cause) {
-      setError(cause instanceof Error ? cause.message : 'Unable to load Tally products');
+      setError(cause instanceof Error ? cause.message : 'Unable to load Tally customers and products');
     } finally {
       setCatalogLoading(false);
     }
