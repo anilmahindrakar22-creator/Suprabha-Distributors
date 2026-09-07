@@ -18,8 +18,8 @@ describe('Tally stock sync health', () => {
     expect(dashboard).toContain("window.addEventListener('pageshow'");
   });
 
-  it('warns when the latest Tally snapshot is more than ten minutes old', () => {
-    expect(dashboard).toContain('const TALLY_STALE_AFTER_MS=10*60*1000');
+  it('allows the normal fifteen-minute connector cycle before warning at twenty minutes', () => {
+    expect(dashboard).toContain('const TALLY_STALE_AFTER_MS=20*60*1000');
     expect(dashboard).toContain("$('liveText').textContent='Tally sync overdue'");
     expect(dashboard).toContain('Latest Tally upload is overdue');
   });
