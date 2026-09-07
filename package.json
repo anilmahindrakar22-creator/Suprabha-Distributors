@@ -13,9 +13,10 @@
     "lint": "oxlint app components/stockflow-frame.tsx components/order-workspace.tsx components/service-workspace.tsx lib",
     "typecheck": "tsc --noEmit",
     "test": "vitest run --coverage",
+    "test:connector": "pwsh -NoProfile -File tests/connector-recovery.ps1 && pwsh -NoProfile -File tests/connector-sales-window.ps1",
     "test:watch": "vitest",
     "test:e2e": "playwright test",
-    "test:ci": "pnpm lint && pnpm typecheck && pnpm test && pnpm build",
+    "test:ci": "pnpm lint && pnpm typecheck && pnpm test:connector && pnpm test && pnpm build",
     "security:audit": "pnpm audit --prod --audit-level=high",
     "ci": "pnpm test:ci && pnpm test:e2e && pnpm security:audit",
     "format": "oxfmt"

@@ -1,4 +1,4 @@
-param([int]$Port = 8765, [switch]$NoBrowser, [ValidateRange(5, 120)][int]$SyncMinutes = 15, [switch]$RebuildSalesHistory)
+param([int]$Port = 8765, [switch]$NoBrowser, [ValidateRange(5, 120)][int]$SyncMinutes = 15, [ValidateRange(15, 1440)][int]$CustomerSyncMinutes = 240, [switch]$RebuildSalesHistory)
 
 $ErrorActionPreference = 'Stop'
 $dashboardRoot = Split-Path -Parent $MyInvocation.MyCommand.Path
@@ -9,6 +9,7 @@ $stateDirectory = Join-Path ([Environment]::GetFolderPath('LocalApplicationData'
 [IO.Directory]::CreateDirectory($stateDirectory) | Out-Null
 $snapshotPath = Join-Path $stateDirectory 'snapshot-v1.json'
 $salesPath = Join-Path $stateDirectory 'sales-history-v1.json'
+$customerPath = Join-Path $stateDirectory 'customer-master-v1.json'
 $healthLogPath = Join-Path $stateDirectory 'connector-health.log'
 # A held file handle prevents duplicate extraction across launches and ports.
 try {
@@ -18,6 +19,12 @@ try {
     exit 0
 }
 $script:lastReorderData = Read-ConnectorSnapshot $snapshotPath $companyName
+$script:lastCustomerData = Read-CustomerSnapshot $customerPath $companyName
+if (-not $script:lastCustomerData) { $script:lastCustomerData = Read-CustomerSnapshot "$customerPath.bak" $companyName }
+$script:nextCustomerRead = Get-Date
+if ($script:lastCustomerData) {
+    $script:nextCustomerRead = ([datetimeoffset]::Parse($script:lastCustomerData.fetchedAtIso)).LocalDateTime.AddMinutes($CustomerSyncMinutes)
+}
 $script:nextReorderRead = Get-Date
 if ($script:lastReorderData) {
     $script:nextReorderRead = ([datetimeoffset]::Parse($script:lastReorderData.fetchedAtIso)).LocalDateTime.AddMinutes($SyncMinutes)
@@ -69,26 +76,47 @@ function Invoke-Tally([string]$Body, [int]$TimeoutSeconds = 15) {
 }
 
 function Get-TallyCustomers {
-    $ledgerXml = '<ENVELOPE><HEADER><VERSION>1</VERSION><TALLYREQUEST>Export</TALLYREQUEST><TYPE>COLLECTION</TYPE><ID>DashboardCustomerLedgers</ID></HEADER><BODY><DESC><STATICVARIABLES><SVEXPORTFORMAT>$$SysName:XML</SVEXPORTFORMAT><SVCURRENTCOMPANY>SUPRABHA DISTRIBUTORS</SVCURRENTCOMPANY></STATICVARIABLES><TDL><TDLMESSAGE><COLLECTION NAME="DashboardCustomerLedgers"><TYPE>Ledger</TYPE><CHILDOF>Sundry Debtors</CHILDOF><BELONGSTO>Yes</BELONGSTO><FETCH>Name,MailingName,LedgerPhone,LedgerMobile,Address,StateName,PinCode</FETCH></COLLECTION></TDLMESSAGE></TDL></DESC></BODY></ENVELOPE>'
-    [xml]$ledgerDoc = Invoke-Tally $ledgerXml
-    $customers = foreach ($ledger in $ledgerDoc.SelectNodes('//LEDGER')) {
-        $name = ([string]$ledger.GetAttribute('NAME')).Trim()
-        if (-not $name) { continue }
-        $phone = ([string]$ledger.LEDGERMOBILE.'#text').Trim()
-        if (-not $phone) { $phone = ([string]$ledger.LEDGERPHONE.'#text').Trim() }
-        $addressLines = @($ledger.SelectNodes('./ADDRESS.LIST/ADDRESS') | ForEach-Object { $_.InnerText.Trim() } | Where-Object { $_ })
-        $city = if ($addressLines.Count) { $addressLines[$addressLines.Count - 1] } else { '' }
-        [ordered]@{
-            tallyKey = $name
-            name = $name
-            phone = if ($phone) { $phone } else { $null }
-            city = if ($city) { $city } else { $null }
-            state = ([string]$ledger.STATENAME.'#text').Trim()
-            pinCode = ([string]$ledger.PINCODE.'#text').Trim()
-            active = $true
-        }
+    if ($script:lastCustomerData -and (Get-Date) -lt $script:nextCustomerRead) {
+        return @($script:lastCustomerData.customers)
     }
-    return @($customers | Sort-Object name)
+    $script:nextCustomerRead = (Get-Date).AddMinutes($CustomerSyncMinutes)
+    $ledgerXml = '<ENVELOPE><HEADER><VERSION>1</VERSION><TALLYREQUEST>Export</TALLYREQUEST><TYPE>COLLECTION</TYPE><ID>DashboardCustomerLedgers</ID></HEADER><BODY><DESC><STATICVARIABLES><SVEXPORTFORMAT>$$SysName:XML</SVEXPORTFORMAT><SVCURRENTCOMPANY>SUPRABHA DISTRIBUTORS</SVCURRENTCOMPANY></STATICVARIABLES><TDL><TDLMESSAGE><COLLECTION NAME="DashboardCustomerLedgers"><TYPE>Ledger</TYPE><CHILDOF>Sundry Debtors</CHILDOF><BELONGSTO>Yes</BELONGSTO><FETCH>Name,MailingName,LedgerPhone,LedgerMobile,Address,StateName,PinCode</FETCH></COLLECTION></TDLMESSAGE></TDL></DESC></BODY></ENVELOPE>'
+    try {
+        [xml]$ledgerDoc = Invoke-Tally $ledgerXml
+        if ($ledgerDoc.SelectSingleNode('//LINEERROR') -or -not $ledgerDoc.SelectSingleNode('//COLLECTION')) {
+            throw 'Customer export did not contain a successful collection.'
+        }
+        $customers = @(foreach ($ledger in $ledgerDoc.SelectNodes('//LEDGER')) {
+            $name = ([string]$ledger.GetAttribute('NAME')).Trim()
+            if (-not $name) { continue }
+            $phone = ([string]$ledger.LEDGERMOBILE.'#text').Trim()
+            if (-not $phone) { $phone = ([string]$ledger.LEDGERPHONE.'#text').Trim() }
+            $addressLines = @($ledger.SelectNodes('./ADDRESS.LIST/ADDRESS') | ForEach-Object { $_.InnerText.Trim() } | Where-Object { $_ })
+            $city = if ($addressLines.Count) { $addressLines[$addressLines.Count - 1] } else { '' }
+            [ordered]@{
+                tallyKey = $name
+                name = $name
+                phone = if ($phone) { $phone } else { $null }
+                city = if ($city) { $city } else { $null }
+                state = ([string]$ledger.STATENAME.'#text').Trim()
+                pinCode = ([string]$ledger.PINCODE.'#text').Trim()
+                active = $true
+            }
+        })
+        $customers = @($customers | Sort-Object name)
+        if (-not $customers.Count) { throw 'Customer export was empty; retaining the last successful customer directory.' }
+        $fresh = @{ company = $companyName; fetchedAtIso = [datetimeoffset]::UtcNow.ToString('o'); customers = $customers }
+        Save-ConnectorSnapshot $customerPath $fresh
+        $script:lastCustomerData = $fresh
+        return $customers
+    } catch {
+        $script:nextCustomerRead = (Get-Date).AddMinutes($SyncMinutes)
+        if ($script:lastCustomerData) {
+            Write-Host 'Customer refresh failed; retaining the saved customer directory.' -ForegroundColor DarkYellow
+            return @($script:lastCustomerData.customers)
+        }
+        throw
+    }
 }
 
 function Get-TallySalesData {
