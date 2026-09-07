@@ -11,7 +11,11 @@ const startupInstaller = readFileSync(
 describe('Tally stock sync health', () => {
   it('automatically checks the cloud snapshot every five minutes', () => {
     expect(dashboard).toContain('const CLOUD_REFRESH_INTERVAL_MS=5*60*1000');
-    expect(dashboard).toContain('setInterval(()=>void load(),CLOUD_REFRESH_INTERVAL_MS)');
+    expect(dashboard).toContain('setInterval(()=>void refreshData(),CLOUD_REFRESH_INTERVAL_MS)');
+    expect(dashboard).toContain("document.addEventListener('visibilitychange'");
+    expect(dashboard).toContain("window.addEventListener('focus'");
+    expect(dashboard).toContain("window.addEventListener('online'");
+    expect(dashboard).toContain("window.addEventListener('pageshow'");
   });
 
   it('warns when the latest Tally snapshot is more than ten minutes old', () => {
@@ -28,5 +32,12 @@ describe('Tally stock sync health', () => {
     expect(startupInstaller).toContain("$taskName = 'Suprabha StockFlow Tally Sync'");
     expect(startupInstaller).toContain('New-ScheduledTaskTrigger -AtLogOn');
     expect(startupInstaller).toContain("-NoBrowser");
+    expect(startupInstaller).toContain('-RestartCount 10');
+    expect(startupInstaller).toContain('-MultipleInstances IgnoreNew');
+  });
+
+  it('records cloud upload outcomes without logging credentials or payloads', () => {
+    expect(connector).toContain('request=cloud_upload');
+    expect(connector).not.toContain("x-upload-key=$cloudUploadKey");
   });
 });

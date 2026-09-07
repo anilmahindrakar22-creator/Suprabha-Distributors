@@ -51,11 +51,16 @@ if ([string]::IsNullOrWhiteSpace($cloudUploadKey)) {
 }
 
 function Publish-CloudSnapshot([string]$Json) {
+    $watch = [Diagnostics.Stopwatch]::StartNew()
     try {
         Invoke-WebRequest -Uri $cloudSyncUrl -Method Post -ContentType 'application/json' -Headers @{ 'x-upload-key' = $cloudUploadKey } -Body $Json -UseBasicParsing -TimeoutSec 15 | Out-Null
+        $watch.Stop()
+        Add-Content -LiteralPath $healthLogPath -Value "$([datetimeoffset]::Now.ToString('o')) request=cloud_upload durationMs=$($watch.ElapsedMilliseconds) status=ok"
         Write-Host "Cloud snapshot updated." -ForegroundColor DarkGreen
         return $true
     } catch {
+        $watch.Stop()
+        Add-Content -LiteralPath $healthLogPath -Value "$([datetimeoffset]::Now.ToString('o')) request=cloud_upload durationMs=$($watch.ElapsedMilliseconds) status=failed"
         # The local dashboard must remain usable even when the internet is down.
         Write-Host 'Cloud upload pending; the saved snapshot will be retried.' -ForegroundColor DarkYellow
         return $false

@@ -1,6 +1,7 @@
 'use client';
 
 import { useEffect, useState } from 'react';
+import Image from 'next/image';
 import { OrderWorkspace } from './order-workspace';
 import { ServiceWorkspace } from './service-workspace';
 import { UserManagement } from './user-management';
@@ -42,9 +43,7 @@ export function StockFlowFrame({ actorEmail, actorRole }: { actorEmail: string; 
     <main className="flex h-dvh w-full flex-col overflow-hidden bg-[#f7f6f1] text-[#173239]">
       <header className="flex h-16 shrink-0 items-center justify-between border-b border-[#dce7e5] bg-white px-4 sm:px-6">
         <div className="flex min-w-0 items-center gap-3">
-          <span className="grid size-9 shrink-0 place-items-center rounded-xl bg-[#64d4ad] font-black text-[#092f36]">
-            S
-          </span>
+          <Image src="/suprabha-logo.png" alt="" width={36} height={36} priority className="size-9 shrink-0 object-contain" />
           <div className="min-w-0">
             <p className="truncate text-sm font-extrabold text-[#092f36]">StockFlow</p>
             <p className="hidden text-xs text-[#6b7e81] sm:block">Suprabha Distributors</p>

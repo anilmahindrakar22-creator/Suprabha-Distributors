@@ -1,4 +1,5 @@
 import { StockFlowFrame } from '@/components/stockflow-frame';
+import Image from 'next/image';
 import {
   chatGPTSignInPath,
   getChatGPTUser,
@@ -14,9 +15,7 @@ export default async function Home() {
     return (
       <main className="grid min-h-dvh place-items-center bg-[#f7f6f1] px-5 text-[#173239]">
         <section className="w-full max-w-md rounded-3xl border border-[#dce7e5] bg-white p-8 shadow-[0_18px_55px_rgba(9,47,54,0.12)]">
-          <div className="mb-6 grid size-12 place-items-center rounded-2xl bg-[#64d4ad] text-xl font-black text-[#092f36]">
-            S
-          </div>
+          <Image src="/suprabha-logo.png" alt="Suprabha Distributors" width={56} height={56} priority className="mb-6 size-14 object-contain" />
           <p className="mb-2 text-xs font-extrabold uppercase tracking-[0.14em] text-[#277b69]">
             Suprabha Distributors
           </p>
@@ -45,6 +44,7 @@ export default async function Home() {
     return (
       <main className="grid min-h-dvh place-items-center bg-[#f7f6f1] px-5 text-[#173239]">
         <section className="w-full max-w-md rounded-3xl border border-[#efd6a5] bg-white p-8 shadow-[0_18px_55px_rgba(9,47,54,0.1)]">
+          <Image src="/suprabha-logo.png" alt="Suprabha Distributors" width={48} height={48} priority className="mb-5 size-12 object-contain" />
           <p className="text-xs font-extrabold uppercase tracking-[0.14em] text-[#9a6412]">
             Access restricted
           </p>

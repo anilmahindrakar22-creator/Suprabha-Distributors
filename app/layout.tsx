@@ -17,6 +17,7 @@ export const metadata: Metadata = {
   description:
     'A mobile stock reorder dashboard for Suprabha Distributors with secure cloud sync and offline snapshots.',
   manifest: '/manifest.webmanifest',
+  icons: { icon: '/suprabha-logo.png', apple: '/suprabha-logo.png' },
 };
 
 export const viewport: Viewport = { themeColor: '#092f36' };
