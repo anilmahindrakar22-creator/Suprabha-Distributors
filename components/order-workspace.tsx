@@ -14,6 +14,7 @@ import { readOfflineDraftConsent, readOfflineOrderDraft, removeOfflineOrderDraft
 import { readCatalogCache, writeCatalogCache } from '@/lib/catalog-cache';
 import { applyOrderAcknowledgement } from '@/lib/order-acknowledgement';
 import { OrderSubmissionError, orderSubmissionError } from '@/lib/order-submission';
+import { loadOrderBootstrap } from '@/lib/order-bootstrap-cache';
 
 type DraftLine = { item: CatalogItem; quantity: number };
 const ordersPerPage = 20;
@@ -64,7 +65,7 @@ async function readResponse<T>(response: Response): Promise<T> {
   return body;
 }
 
-export function OrderWorkspace({ initialStatus = 'open' }: { initialStatus?: string }) {
+export function OrderWorkspace({ actorEmail, initialStatus = 'open' }: { actorEmail: string; initialStatus?: string }) {
   const [data, setData] = useState<OrderBootstrap | null>(null);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState('');
@@ -87,7 +88,7 @@ export function OrderWorkspace({ initialStatus = 'open' }: { initialStatus?: str
     if (showLoading) setLoading(true);
     setError('');
     try {
-      const result = await readResponse<OrderBootstrap>(await fetch('/api/orders', { cache: 'no-store' }));
+      const result = await loadOrderBootstrap(actorEmail, true);
       setData(result);
       setDeviceDraftState(readOfflineOrderDraft(localStorage, result.actor.email)?.state || null);
     } catch (cause) {
@@ -95,12 +96,11 @@ export function OrderWorkspace({ initialStatus = 'open' }: { initialStatus?: str
     } finally {
       if (showLoading) setLoading(false);
     }
-  }, []);
+  }, [actorEmail]);
 
   useEffect(() => {
     let active = true;
-    fetch('/api/orders', { cache: 'no-store' })
-      .then((response) => readResponse<OrderBootstrap>(response))
+    loadOrderBootstrap(actorEmail)
       .then((result) => {
         if (active) {
           setData(result);
@@ -118,7 +118,7 @@ export function OrderWorkspace({ initialStatus = 'open' }: { initialStatus?: str
     return () => {
       active = false;
     };
-  }, []);
+  }, [actorEmail]);
 
   const visibleOrders = useMemo(() => {
     return filterOrders(data?.orders || [], query, status).filter((order) => orderMatchesCaptureDate(order, captureDate));
@@ -137,23 +137,38 @@ export function OrderWorkspace({ initialStatus = 'open' }: { initialStatus?: str
   }
 
   async function openNewOrder() {
-    if (!data || catalogLoading) return;
+    if (catalogLoading) return;
     setError('');
-    if (data.snapshot.catalog.length > 0) {
-      setCreating(true);
+    setCatalogLoading(true);
+    let current = dataRef.current;
+    try {
+      if (!current) {
+        current = await loadOrderBootstrap(actorEmail);
+        dataRef.current = current;
+        setData(current);
+        setDeviceDraftState(readOfflineOrderDraft(localStorage, current.actor.email)?.state || null);
+      }
+    } catch (cause) {
+      setError(cause instanceof Error ? cause.message : 'Unable to load order capture');
+      setCatalogLoading(false);
       return;
     }
-    const version = data.snapshot.catalogVersion || data.snapshot.fetchedAt;
-    const cached = readCatalogCache(sessionStorage, data.actor.email, version);
+    if (current.snapshot.catalog.length > 0) {
+      setCreating(true);
+      setCatalogLoading(false);
+      return;
+    }
+    const version = current.snapshot.catalogVersion || current.snapshot.fetchedAt;
+    const cached = readCatalogCache(sessionStorage, current.actor.email, version);
     if (cached) {
       setData((current) => current ? { ...current, snapshot: { ...current.snapshot, catalog: cached } } : current);
       setCreating(true);
+      setCatalogLoading(false);
       return;
     }
-    setCatalogLoading(true);
     try {
       const result = await readResponse<{ catalogVersion: string; catalog: CatalogItem[] }>(await fetch('/api/orders?catalog=1', { cache: 'no-store' }));
-      writeCatalogCache(sessionStorage, data.actor.email, result.catalogVersion, result.catalog);
+      writeCatalogCache(sessionStorage, current.actor.email, result.catalogVersion, result.catalog);
       setData((current) => current ? { ...current, snapshot: { ...current.snapshot, catalogVersion: result.catalogVersion, catalog: result.catalog } } : current);
       setCreating(true);
     } catch (cause) {
@@ -269,7 +284,7 @@ export function OrderWorkspace({ initialStatus = 'open' }: { initialStatus?: str
             <button
               type="button"
               onClick={() => void openNewOrder()}
-              disabled={!data || catalogLoading}
+              disabled={catalogLoading}
               className="min-h-12 rounded-xl bg-[#092f36] px-5 font-bold text-white shadow-sm transition hover:bg-[#0d4549] disabled:opacity-50"
             >
               {catalogLoading ? 'Loading products…' : deviceDraftState ? 'Continue order' : '+ Order'}

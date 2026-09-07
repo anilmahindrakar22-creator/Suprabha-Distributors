@@ -127,10 +127,10 @@ function Get-TallySalesData {
         $invoiceFromDate = $today.AddDays(-180).ToString('yyyyMMdd')
         $financialYear = if ($today.Month -ge 4) { $today.Year } else { $today.Year - 1 }
         $fromDate = [datetime]::new($financialYear - 5, 4, 1).ToString('yyyyMMdd')
-        $cachedSales = Read-ConnectorSnapshot $salesPath $companyName
+        $cachedSales = Get-TrustedSalesSnapshot (Read-ConnectorSnapshot $salesPath $companyName) $companyName
         if ($cachedSales -and $null -eq $cachedSales.records -and $cachedSales.document) {
             $cachedSales = @{
-                company = $companyName; fetchedAtIso = [string]$cachedSales.fetchedAtIso
+                company = $companyName; fetchedAtIso = [string]$cachedSales.fetchedAtIso; sourceScope = 'sales_vouchers_v1'
                 catalog = @(); tallyInvoices = @(); records = @(Convert-LegacySalesRecords ([string]$cachedSales.document))
                 fullScannedAt = [string]$cachedSales.fullScannedAt
             }
@@ -138,27 +138,18 @@ function Get-TallySalesData {
         }
         $fullScan = [bool]$RebuildSalesHistory
         if (-not $cachedSales) {
-            $cachedSales = @{ company = $companyName; records = @(); fullScannedAt = $null }
+            $cachedSales = @{ company = $companyName; sourceScope = 'sales_vouchers_v1'; records = @(); fullScannedAt = $null }
         }
         $baseline = @{}
         if ($cachedSales.baselineLastSupply) {
             foreach ($property in $cachedSales.baselineLastSupply.psobject.Properties) { $baseline[$property.Name] = $property.Value }
-        } else {
-            $sourceSnapshot = $script:lastReorderData
-            try {
-                $backupSnapshot = Read-ConnectorSnapshot "$snapshotPath.bak" $companyName
-                if ($backupSnapshot -and @($backupSnapshot.rows | Where-Object { $_.lastSuppliedDate }).Count -gt @($sourceSnapshot.rows | Where-Object { $_.lastSuppliedDate }).Count) {
-                    $sourceSnapshot = $backupSnapshot
-                }
-            } catch { }
-            $baseline = Convert-RowsToLastSupplyBaseline $sourceSnapshot.rows
         }
         if (-not $fullScan) { $fromDate = $today.AddDays(-30).ToString('yyyyMMdd') }
         foreach ($item in $baseline.Keys) {
             if ([string]$baseline[$item].dateKey -lt $fromDate) { $result[$item] = $baseline[$item] }
         }
         $toDate = $today.ToString('yyyyMMdd')
-        $salesXml = '<ENVELOPE><HEADER><VERSION>1</VERSION><TALLYREQUEST>Export</TALLYREQUEST><TYPE>COLLECTION</TYPE><ID>DashboardSalesVouchers</ID></HEADER><BODY><DESC><STATICVARIABLES><SVEXPORTFORMAT>$$SysName:XML</SVEXPORTFORMAT><SVCURRENTCOMPANY>SUPRABHA DISTRIBUTORS</SVCURRENTCOMPANY><SVFROMDATE>__FROM_DATE__</SVFROMDATE><SVTODATE>__TO_DATE__</SVTODATE></STATICVARIABLES><TDL><TDLMESSAGE><COLLECTION NAME="DashboardSalesVouchers" ISINITIALIZE="Yes"><TYPE>Voucher</TYPE><CHILDOF>Sales</CHILDOF><BELONGSTO>Yes</BELONGSTO><FETCH>Date,VoucherNumber,Reference,MasterID,PartyLedgerName,PartyName,BasicBuyerName,IsCancelled,IsOptional,AllInventoryEntries.StockItemName,AllInventoryEntries.BilledQty,AllInventoryEntries.ActualQty</FETCH></COLLECTION></TDLMESSAGE></TDL></DESC></BODY></ENVELOPE>'
+        $salesXml = '<ENVELOPE><HEADER><VERSION>1</VERSION><TALLYREQUEST>Export</TALLYREQUEST><TYPE>COLLECTION</TYPE><ID>DashboardSalesVouchers</ID></HEADER><BODY><DESC><STATICVARIABLES><SVEXPORTFORMAT>$$SysName:XML</SVEXPORTFORMAT><SVCURRENTCOMPANY>SUPRABHA DISTRIBUTORS</SVCURRENTCOMPANY><SVFROMDATE>__FROM_DATE__</SVFROMDATE><SVTODATE>__TO_DATE__</SVTODATE></STATICVARIABLES><TDL><TDLMESSAGE><COLLECTION NAME="DashboardSalesVouchers" ISINITIALIZE="Yes"><TYPE>Voucher</TYPE><CHILDOF>Sales</CHILDOF><BELONGSTO>Yes</BELONGSTO><FETCH>Date,VoucherNumber,VoucherTypeName,Reference,MasterID,PartyLedgerName,PartyName,BasicBuyerName,IsCancelled,IsOptional,AllInventoryEntries.StockItemName,AllInventoryEntries.BilledQty,AllInventoryEntries.ActualQty</FETCH></COLLECTION></TDLMESSAGE></TDL></DESC></BODY></ENVELOPE>'
         $salesXml = $salesXml.Replace('__FROM_DATE__', $fromDate).Replace('__TO_DATE__', $toDate)
         $salesXml = $salesXml.Replace('<SVFROMDATE>', '<SVFROMDATE TYPE="Date">').Replace('<SVTODATE>', '<SVTODATE TYPE="Date">')
         $salesXml = $salesXml.Replace('</COLLECTION>', '<FILTER>StockFlowSalesPeriod</FILTER></COLLECTION><SYSTEM TYPE="Formulae" NAME="StockFlowSalesPeriod">$Date &gt;= ##SVFromDate AND $Date &lt;= ##SVToDate</SYSTEM>')
@@ -207,7 +198,7 @@ function Get-TallySalesData {
         throw # Do not replace a complete snapshot with empty invoice history.
     }
     Save-ConnectorSnapshot $salesPath @{
-        company = $companyName; fetchedAtIso = [datetimeoffset]::UtcNow.ToString('o')
+        company = $companyName; fetchedAtIso = [datetimeoffset]::UtcNow.ToString('o'); sourceScope = 'sales_vouchers_v1'
         catalog = @(); tallyInvoices = @(); records = @($salesRecords); baselineLastSupply = $baseline
         fullScannedAt = if ($fullScan) { [datetimeoffset]::UtcNow.ToString('o') } else { $cachedSales.fullScannedAt }
     }

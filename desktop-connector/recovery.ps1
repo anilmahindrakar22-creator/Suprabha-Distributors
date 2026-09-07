@@ -32,6 +32,7 @@ function Convert-LegacySalesRecords([string]$Document) {
         $masterIdNode = $voucher.SelectSingleNode('./MASTERID')
         $dateNode = $voucher.SelectSingleNode('./DATE')
         $voucherNumberNode = $voucher.SelectSingleNode('./VOUCHERNUMBER')
+        $voucherTypeNode = $voucher.SelectSingleNode('./VOUCHERTYPENAME')
         $partyNode = $voucher.SelectSingleNode('./PARTYLEDGERNAME | ./PARTYNAME | ./BASICBUYERNAME')
         $id = Get-SalesRecordIdentity $(if ($masterIdNode) { $masterIdNode.InnerText } else { '' }) $(if ($dateNode) { $dateNode.InnerText } else { '' }) $(if ($voucherNumberNode) { $voucherNumberNode.InnerText } else { '' }) $(if ($partyNode) { $partyNode.InnerText } else { '' })
         if (-not $id) { return }
@@ -45,12 +46,19 @@ function Convert-LegacySalesRecords([string]$Document) {
         })
         [ordered]@{
             masterId = $id; date = if ($dateNode) { $dateNode.InnerText.Trim() } else { '' }; voucherNumber = if ($voucherNumberNode) { $voucherNumberNode.InnerText.Trim() } else { '' }
+            voucherType = if ($voucherTypeNode) { $voucherTypeNode.InnerText.Trim() } else { '' }
             reference = if ($voucher.REFERENCE) { $voucher.REFERENCE.InnerText.Trim() } else { $null }
             party = if ($partyNode) { $partyNode.InnerText.Trim() } else { '' }
             cancelled = $voucher.ISCANCELLED.InnerText -eq 'Yes'; optional = $voucher.ISOPTIONAL.InnerText -eq 'Yes'
             lineItems = $lines
         }
     })
+}
+
+function Get-TrustedSalesSnapshot($Snapshot, [string]$Company) {
+    if ($null -eq $Snapshot -or $Snapshot.company -ne $Company -or $Snapshot.sourceScope -ne 'sales_vouchers_v1') { return $null }
+    if ($null -eq $Snapshot.records) { return $null }
+    return $Snapshot
 }
 
 function Convert-RowsToLastSupplyBaseline($Rows) {

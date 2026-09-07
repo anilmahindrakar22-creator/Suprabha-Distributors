@@ -5,8 +5,9 @@ import { OrderWorkspace } from './order-workspace';
 import { ServiceWorkspace } from './service-workspace';
 import { UserManagement } from './user-management';
 import { readOrderDashboardMessage } from '@/lib/stockflow-navigation';
+import { loadOrderBootstrap } from '@/lib/order-bootstrap-cache';
 
-export function StockFlowFrame({ actorRole }: { actorRole: string }) {
+export function StockFlowFrame({ actorEmail, actorRole }: { actorEmail: string; actorRole: string }) {
   const [surface, setSurface] = useState<'stock' | 'orders' | 'service' | 'users'>('stock');
   const [orderFilter, setOrderFilter] = useState('open');
 
@@ -15,6 +16,10 @@ export function StockFlowFrame({ actorRole }: { actorRole: string }) {
       navigator.serviceWorker.register('/sw.js').catch(() => undefined);
     }
   }, []);
+
+  useEffect(() => {
+    void loadOrderBootstrap(actorEmail).catch(() => undefined);
+  }, [actorEmail]);
 
   useEffect(() => {
     function receiveDashboardNavigation(event: MessageEvent) {
@@ -72,7 +77,7 @@ export function StockFlowFrame({ actorRole }: { actorRole: string }) {
             allow="clipboard-write"
           />
         ) : surface === 'orders' ? (
-          <OrderWorkspace key={orderFilter} initialStatus={orderFilter} />
+          <OrderWorkspace key={orderFilter} actorEmail={actorEmail} initialStatus={orderFilter} />
         ) : surface === 'service' ? (
           <ServiceWorkspace />
         ) : <UserManagement />}

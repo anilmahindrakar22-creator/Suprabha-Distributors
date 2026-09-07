@@ -67,5 +67,5 @@ export default async function Home() {
     );
   }
 
-  return <StockFlowFrame actorRole={session.role} />;
+  return <StockFlowFrame actorEmail={session.email} actorRole={session.role} />;
 }

@@ -7,7 +7,8 @@ const recovery = readFileSync(fileURLToPath(new URL('../../desktop-connector/rec
 
 describe('Tally invoice reconciliation connector', () => {
   it('exports read-only sales voucher identity and excludes cancelled vouchers', () => {
-    expect(connector).toContain('Date,VoucherNumber,Reference,MasterID');
+    expect(connector).toContain('Date,VoucherNumber,VoucherTypeName,Reference,MasterID');
+    expect(connector).toContain("sourceScope = 'sales_vouchers_v1'");
     expect(connector).toContain('tallyInvoices = @($salesData.invoices)');
     expect(recovery).toContain("SelectSingleNode('./VOUCHERNUMBER')");
     expect(connector).toContain("$today.AddDays(-180)");
