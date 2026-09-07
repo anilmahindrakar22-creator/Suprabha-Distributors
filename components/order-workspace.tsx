@@ -73,6 +73,7 @@ export function OrderWorkspace({ initialStatus = 'open' }: { initialStatus?: str
   const [status, setStatus] = useState(initialStatus);
   const [creating, setCreating] = useState(false);
   const [catalogLoading, setCatalogLoading] = useState(false);
+  const [deviceDraftState, setDeviceDraftState] = useState<OfflineDraftState | null>(null);
   const [page, setPage] = useState(1);
   const workspaceRef = useRef<HTMLDivElement>(null);
   const dataRef = useRef<OrderBootstrap | null>(null);
@@ -85,7 +86,9 @@ export function OrderWorkspace({ initialStatus = 'open' }: { initialStatus?: str
     if (showLoading) setLoading(true);
     setError('');
     try {
-      setData(await readResponse<OrderBootstrap>(await fetch('/api/orders', { cache: 'no-store' })));
+      const result = await readResponse<OrderBootstrap>(await fetch('/api/orders', { cache: 'no-store' }));
+      setData(result);
+      setDeviceDraftState(readOfflineOrderDraft(localStorage, result.actor.email)?.state || null);
     } catch (cause) {
       setError(cause instanceof Error ? cause.message : 'Unable to load orders');
     } finally {
@@ -98,7 +101,10 @@ export function OrderWorkspace({ initialStatus = 'open' }: { initialStatus?: str
     fetch('/api/orders', { cache: 'no-store' })
       .then((response) => readResponse<OrderBootstrap>(response))
       .then((result) => {
-        if (active) setData(result);
+        if (active) {
+          setData(result);
+          setDeviceDraftState(readOfflineOrderDraft(localStorage, result.actor.email)?.state || null);
+        }
       })
       .catch((cause: unknown) => {
         if (active) {
@@ -258,14 +264,17 @@ export function OrderWorkspace({ initialStatus = 'open' }: { initialStatus?: str
               Capture orders, pick and pack them, then hand billing to Tally.
             </p>
           </div>
-          <button
-            type="button"
-            onClick={() => void openNewOrder()}
-            disabled={!data || catalogLoading}
-            className="min-h-12 rounded-xl bg-[#092f36] px-5 font-bold text-white shadow-sm transition hover:bg-[#0d4549] disabled:opacity-50"
-          >
-            {catalogLoading ? 'Loading products…' : '+ Order'}
-          </button>
+          <div className="flex flex-col items-stretch gap-2 sm:items-end">
+            <button
+              type="button"
+              onClick={() => void openNewOrder()}
+              disabled={!data || catalogLoading}
+              className="min-h-12 rounded-xl bg-[#092f36] px-5 font-bold text-white shadow-sm transition hover:bg-[#0d4549] disabled:opacity-50"
+            >
+              {catalogLoading ? 'Loading products…' : deviceDraftState ? 'Continue order' : '+ Order'}
+            </button>
+            {deviceDraftState ? <span aria-live="polite" className={`text-xs font-bold ${deviceDraftState === 'pending' ? 'text-[#9a6412]' : deviceDraftState === 'error' ? 'text-[#a0443b]' : 'text-[#587275]'}`}>{deviceDraftState === 'pending' ? '1 pending order on this device' : deviceDraftState === 'error' ? '1 device draft needs attention' : '1 draft on this device'}</span> : null}
+          </div>
         </header>
 
         <section aria-label="Order summary" className="mt-6 grid gap-3 sm:grid-cols-3">
@@ -363,8 +372,12 @@ export function OrderWorkspace({ initialStatus = 'open' }: { initialStatus?: str
       {creating && data ? (
         <NewOrderPanel
           data={data}
-          onClose={() => setCreating(false)}
+          onClose={() => {
+            setDeviceDraftState(readOfflineOrderDraft(localStorage, data.actor.email)?.state || null);
+            setCreating(false);
+          }}
           onCreated={(number) => {
+            setDeviceDraftState(null);
             setCreating(false);
             setNotice(`${number} captured successfully.`);
             void load();
