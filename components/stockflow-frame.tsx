@@ -6,7 +6,8 @@ import { OrderWorkspace } from './order-workspace';
 import { ServiceWorkspace } from './service-workspace';
 import { UserManagement } from './user-management';
 import { readOrderDashboardMessage } from '@/lib/stockflow-navigation';
-import { loadOrderBootstrap } from '@/lib/order-bootstrap-cache';
+import { clearOrderBootstrapCache, loadOrderBootstrap } from '@/lib/order-bootstrap-cache';
+import { prepareDeviceForAccount } from '@/lib/device-account-privacy';
 
 export function StockFlowFrame({ actorEmail, actorRole }: { actorEmail: string; actorRole: string }) {
   const [surface, setSurface] = useState<'stock' | 'orders' | 'service' | 'users'>('stock');
@@ -19,6 +20,8 @@ export function StockFlowFrame({ actorEmail, actorRole }: { actorEmail: string; 
   }, []);
 
   useEffect(() => {
+    const account = prepareDeviceForAccount(localStorage, sessionStorage, actorEmail);
+    if (account.switched) clearOrderBootstrapCache();
     void loadOrderBootstrap(actorEmail).catch(() => undefined);
   }, [actorEmail]);
 
