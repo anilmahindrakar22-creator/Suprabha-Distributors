@@ -16,4 +16,14 @@ describe('Tally invoice reconciliation connector', () => {
     expect(recovery).toContain("$voucher.ISCANCELLED.InnerText -eq 'Yes'");
     expect(connector).not.toMatch(/Invoke-Tally[^\n]*(Import|Create|Alter)/i);
   });
+
+  it('separates large catalog reads from the operational refresh cadence', () => {
+    expect(connector).toContain('[int]$CatalogSyncMinutes = 240');
+    expect(connector).toContain("'catalog-master-v1.json'");
+    expect(connector).toContain('function Get-TallyCatalogDocument');
+    expect(connector).toContain("Read-CatalogSnapshot \"$catalogPath.bak\"");
+    expect(connector).toContain('[xml]$companyDoc = Invoke-Tally $companyXml');
+    expect(connector).toContain('[xml]$stockDoc = Get-TallyCatalogDocument');
+    expect(recovery).toContain('function Read-CatalogSnapshot');
+  });
 });

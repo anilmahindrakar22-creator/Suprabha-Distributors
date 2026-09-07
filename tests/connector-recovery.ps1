@@ -18,6 +18,15 @@ $customerSnapshot.customers = @()
 Save-ConnectorSnapshot $customerPath $customerSnapshot
 if ($null -ne (Read-CustomerSnapshot $customerPath 'TEST')) { throw 'Empty customer master cache accepted' }
 if ((Read-CustomerSnapshot "$customerPath.bak" 'TEST').customers[0].tallyKey -ne 'CITY LAB') { throw 'Last good customer master backup was not retained' }
+$catalogPath = Join-Path $directory 'catalog.json'
+$catalogSnapshot = @{ company = 'TEST'; fetchedAtIso = [datetimeoffset]::UtcNow.ToString('o'); document = '<ENVELOPE><COLLECTION><STOCKITEM NAME="KIT" /></COLLECTION></ENVELOPE>' }
+Save-ConnectorSnapshot $catalogPath $catalogSnapshot
+if (-not (Read-CatalogSnapshot $catalogPath 'TEST').document.Contains('STOCKITEM')) { throw 'Catalog master cache was not restored' }
+if ($null -ne (Read-CatalogSnapshot $catalogPath 'OTHER')) { throw 'Wrong-company catalog master cache accepted' }
+$catalogSnapshot.document = '<ENVELOPE><COLLECTION /></ENVELOPE>'
+Save-ConnectorSnapshot $catalogPath $catalogSnapshot
+if ($null -ne (Read-CatalogSnapshot $catalogPath 'TEST')) { throw 'Empty catalog master cache accepted' }
+if (-not (Read-CatalogSnapshot "$catalogPath.bak" 'TEST')) { throw 'Last good catalog master backup was not retained' }
 [xml]$correctCompany = '<ENVELOPE><COLLECTION><COMPANY NAME="SUPRABHA DISTRIBUTORS" /></COLLECTION></ENVELOPE>'
 Assert-TallyCompanyIdentity $correctCompany 'suprabha distributors'
 [xml]$correctCompanyNode = '<ENVELOPE><COLLECTION><COMPANY><NAME>SUPRABHA DISTRIBUTORS</NAME></COMPANY></COLLECTION></ENVELOPE>'
@@ -53,5 +62,7 @@ if ($baseline['Kit'].dateKey -ne '20260905' -or $baseline['Kit'].quantity -ne 2)
 [IO.File]::Delete($lockPath)
 [IO.File]::Delete($customerPath)
 [IO.File]::Delete("$customerPath.bak")
+[IO.File]::Delete($catalogPath)
+[IO.File]::Delete("$catalogPath.bak")
 [IO.Directory]::Delete($directory)
-Write-Output 'PASS: restart recovery, timestamp preservation, durable customer cache, saved/live company validation, atomic replacement, corrupt cache, exclusive lock, compact baseline'
+Write-Output 'PASS: restart recovery, timestamp preservation, durable customer/catalog caches, saved/live company validation, atomic replacement, corrupt cache, exclusive lock, compact baseline'

@@ -114,6 +114,18 @@ function Read-CustomerSnapshot([string]$Path, [string]$Company) {
     } catch { return $null }
 }
 
+function Read-CatalogSnapshot([string]$Path, [string]$Company) {
+    try {
+        $saved = [IO.File]::ReadAllText($Path) | ConvertFrom-Json
+        if ($saved.schemaVersion -ne 1 -or $saved.snapshot.company -ne $Company -or [string]::IsNullOrWhiteSpace([string]$saved.snapshot.document)) { return $null }
+        $stamp = [datetimeoffset]::Parse($saved.snapshot.fetchedAtIso)
+        if ($stamp -gt [datetimeoffset]::UtcNow.AddMinutes(5)) { return $null }
+        [xml]$document = [string]$saved.snapshot.document
+        if (-not $document.SelectSingleNode('//STOCKITEM')) { return $null }
+        return $saved.snapshot
+    } catch { return $null }
+}
+
 function Assert-TallyCompanyIdentity([xml]$Document, [string]$ExpectedCompany) {
     $expected = $ExpectedCompany.Trim()
     if (-not $expected) { throw 'Expected Tally company is not configured.' }

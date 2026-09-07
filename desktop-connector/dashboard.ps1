@@ -1,4 +1,4 @@
-param([int]$Port = 8765, [switch]$NoBrowser, [ValidateRange(5, 120)][int]$SyncMinutes = 15, [ValidateRange(15, 1440)][int]$CustomerSyncMinutes = 240, [switch]$RebuildSalesHistory)
+param([int]$Port = 8765, [switch]$NoBrowser, [ValidateRange(5, 120)][int]$SyncMinutes = 15, [ValidateRange(15, 1440)][int]$CustomerSyncMinutes = 240, [ValidateRange(15, 1440)][int]$CatalogSyncMinutes = 240, [switch]$RebuildSalesHistory)
 
 $ErrorActionPreference = 'Stop'
 $dashboardRoot = Split-Path -Parent $MyInvocation.MyCommand.Path
@@ -10,6 +10,7 @@ $stateDirectory = Join-Path ([Environment]::GetFolderPath('LocalApplicationData'
 $snapshotPath = Join-Path $stateDirectory 'snapshot-v1.json'
 $salesPath = Join-Path $stateDirectory 'sales-history-v1.json'
 $customerPath = Join-Path $stateDirectory 'customer-master-v1.json'
+$catalogPath = Join-Path $stateDirectory 'catalog-master-v1.json'
 $healthLogPath = Join-Path $stateDirectory 'connector-health.log'
 # A held file handle prevents duplicate extraction across launches and ports.
 try {
@@ -24,6 +25,12 @@ if (-not $script:lastCustomerData) { $script:lastCustomerData = Read-CustomerSna
 $script:nextCustomerRead = Get-Date
 if ($script:lastCustomerData) {
     $script:nextCustomerRead = ([datetimeoffset]::Parse($script:lastCustomerData.fetchedAtIso)).LocalDateTime.AddMinutes($CustomerSyncMinutes)
+}
+$script:lastCatalogData = Read-CatalogSnapshot $catalogPath $companyName
+if (-not $script:lastCatalogData) { $script:lastCatalogData = Read-CatalogSnapshot "$catalogPath.bak" $companyName }
+$script:nextCatalogRead = Get-Date
+if ($script:lastCatalogData) {
+    $script:nextCatalogRead = ([datetimeoffset]::Parse($script:lastCatalogData.fetchedAtIso)).LocalDateTime.AddMinutes($CatalogSyncMinutes)
 }
 $script:nextReorderRead = Get-Date
 if ($script:lastReorderData) {
@@ -61,7 +68,7 @@ function Get-Number([string]$Text) {
 }
 
 function Invoke-Tally([string]$Body, [int]$TimeoutSeconds = 15) {
-    $requestName = if ($Body -match 'DashboardSalesVouchers') { 'sales' } elseif ($Body -match 'DashboardCustomerLedgers') { 'customers' } elseif ($Body -match 'DashboardItems') { 'catalog' } else { 'reorder' }
+    $requestName = if ($Body -match 'DashboardSalesVouchers') { 'sales' } elseif ($Body -match 'DashboardCustomerLedgers') { 'customers' } elseif ($Body -match 'DashboardItems') { 'catalog' } elseif ($Body -match 'StockFlowCompanyIdentity') { 'company' } else { 'reorder' }
     $watch = [Diagnostics.Stopwatch]::StartNew()
     try {
         $response = Invoke-WebRequest -Uri 'http://127.0.0.1:9000' -Method Post -ContentType 'application/xml' -Body $Body -UseBasicParsing -TimeoutSec $TimeoutSeconds
@@ -71,6 +78,32 @@ function Invoke-Tally([string]$Body, [int]$TimeoutSeconds = 15) {
     } catch {
         $watch.Stop()
         Add-Content -LiteralPath $healthLogPath -Value "$([datetimeoffset]::Now.ToString('o')) request=$requestName durationMs=$($watch.ElapsedMilliseconds) bytes=0 status=failed"
+        throw
+    }
+}
+
+function Get-TallyCatalogDocument {
+    if ($script:lastCatalogData -and (Get-Date) -lt $script:nextCatalogRead) {
+        return [string]$script:lastCatalogData.document
+    }
+    $script:nextCatalogRead = (Get-Date).AddMinutes($CatalogSyncMinutes)
+    $catalogXml = '<ENVELOPE><HEADER><VERSION>1</VERSION><TALLYREQUEST>Export</TALLYREQUEST><TYPE>COLLECTION</TYPE><ID>DashboardItems</ID></HEADER><BODY><DESC><STATICVARIABLES><SVEXPORTFORMAT>$$SysName:XML</SVEXPORTFORMAT><SVCURRENTCOMPANY>SUPRABHA DISTRIBUTORS</SVCURRENTCOMPANY></STATICVARIABLES><TDL><TDLMESSAGE><COLLECTION NAME="DashboardItems"><TYPE>StockItem</TYPE><FETCH>Name,Parent,BaseUnits,ClosingBalance</FETCH></COLLECTION><COLLECTION NAME="DashboardGroups"><TYPE>StockGroup</TYPE><FETCH>Name,Parent</FETCH></COLLECTION></TDLMESSAGE></TDL></DESC></BODY></ENVELOPE>'
+    try {
+        $document = Invoke-Tally $catalogXml
+        [xml]$catalogDoc = $document
+        if ($catalogDoc.SelectSingleNode('//LINEERROR') -or -not $catalogDoc.SelectSingleNode('//COLLECTION') -or -not $catalogDoc.SelectSingleNode('//STOCKITEM')) {
+            throw 'Catalog export did not contain stock items.'
+        }
+        $fresh = @{ company = $companyName; fetchedAtIso = [datetimeoffset]::UtcNow.ToString('o'); document = $document }
+        Save-ConnectorSnapshot $catalogPath $fresh
+        $script:lastCatalogData = $fresh
+        return $document
+    } catch {
+        $script:nextCatalogRead = (Get-Date).AddMinutes($SyncMinutes)
+        if ($script:lastCatalogData) {
+            Write-Host 'Catalog refresh failed; retaining the saved product directory.' -ForegroundColor DarkYellow
+            return [string]$script:lastCatalogData.document
+        }
         throw
     }
 }
@@ -232,10 +265,11 @@ function Read-ReorderData {
     $today = (Get-Date).Date
     $financialYear = if ($today.Month -ge 4) { $today.Year } else { $today.Year - 1 }
     $historyFrom = [datetime]::new($financialYear - 5, 4, 1)
-    $stockXml = '<ENVELOPE><HEADER><VERSION>1</VERSION><TALLYREQUEST>Export</TALLYREQUEST><TYPE>COLLECTION</TYPE><ID>DashboardItems</ID></HEADER><BODY><DESC><STATICVARIABLES><SVEXPORTFORMAT>$$SysName:XML</SVEXPORTFORMAT><SVCURRENTCOMPANY>SUPRABHA DISTRIBUTORS</SVCURRENTCOMPANY></STATICVARIABLES><TDL><TDLMESSAGE><COLLECTION NAME="StockFlowCompanyIdentity"><TYPE>Company</TYPE><FETCH>Name</FETCH><FILTER>StockFlowTargetCompany</FILTER></COLLECTION><COLLECTION NAME="DashboardItems"><TYPE>StockItem</TYPE><FETCH>Name,Parent,BaseUnits,ClosingBalance</FETCH></COLLECTION><COLLECTION NAME="DashboardGroups"><TYPE>StockGroup</TYPE><FETCH>Name,Parent</FETCH></COLLECTION><SYSTEM TYPE="Formulae" NAME="StockFlowTargetCompany">$Name = ##SVCurrentCompany</SYSTEM></TDLMESSAGE></TDL></DESC></BODY></ENVELOPE>'
+    $companyXml = '<ENVELOPE><HEADER><VERSION>1</VERSION><TALLYREQUEST>Export</TALLYREQUEST><TYPE>COLLECTION</TYPE><ID>StockFlowCompanyIdentity</ID></HEADER><BODY><DESC><STATICVARIABLES><SVEXPORTFORMAT>$$SysName:XML</SVEXPORTFORMAT><SVCURRENTCOMPANY>SUPRABHA DISTRIBUTORS</SVCURRENTCOMPANY></STATICVARIABLES><TDL><TDLMESSAGE><COLLECTION NAME="StockFlowCompanyIdentity"><TYPE>Company</TYPE><FETCH>Name</FETCH><FILTER>StockFlowTargetCompany</FILTER></COLLECTION><SYSTEM TYPE="Formulae" NAME="StockFlowTargetCompany">$Name = ##SVCurrentCompany</SYSTEM></TDLMESSAGE></TDL></DESC></BODY></ENVELOPE>'
     $reportXml = '<ENVELOPE><HEADER><VERSION>1</VERSION><TALLYREQUEST>Export</TALLYREQUEST><TYPE>DATA</TYPE><ID>Reorder Status</ID></HEADER><BODY><DESC><STATICVARIABLES><SVEXPORTFORMAT>$$SysName:XML</SVEXPORTFORMAT><SVCURRENTCOMPANY>SUPRABHA DISTRIBUTORS</SVCURRENTCOMPANY></STATICVARIABLES></DESC></BODY></ENVELOPE>'
-    [xml]$stockDoc = Invoke-Tally $stockXml
-    Assert-TallyCompanyIdentity $stockDoc $companyName
+    [xml]$companyDoc = Invoke-Tally $companyXml
+    Assert-TallyCompanyIdentity $companyDoc $companyName
+    [xml]$stockDoc = Get-TallyCatalogDocument
     [xml]$reportDoc = Invoke-Tally $reportXml
     $salesData = Get-TallySalesData
     $lastSupplyMap = $salesData.lastSupply
