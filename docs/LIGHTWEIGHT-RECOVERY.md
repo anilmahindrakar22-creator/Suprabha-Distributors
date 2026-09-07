@@ -24,6 +24,8 @@ Implemented locally: one account-scoped order draft can be stored in the existin
 
 Expired authentication, revoked membership and invalid order/catalogue data now stop automatic retry, retain the draft in a needs-attention state and show distinct corrective guidance. Only network, rate-limit and temporary server failures remain eligible for reconnect retry.
 
+The service worker now caches only four explicit public static assets. Authenticated application navigation, APIs, non-GET requests, cross-origin resources, query variants, redirects and error responses are never handled or cached. Upgrades remove only obsolete StockFlow static caches and immediately control existing tabs; unrelated origin caches are preserved.
+
 Implemented locally in the next increments: the browser renders at most 20 matching order cards at once, and background action refreshes preserve the internal scroll position instead of collapsing the list and jumping to the top. Routine bootstrap no longer includes every audit event. Opening an order's Activity log calls a dedicated read-only gateway that validates the gateway secret, active membership and order row scope before returning immutable events.
 
 Implemented locally: routine order bootstrap now carries only the Tally catalogue version. Opening New Order retrieves the full catalogue through a separate read-only gateway and reuses an account-scoped, version-matched browser-session copy. A newer Tally snapshot invalidates that copy automatically. This adds no dependency, background polling or new service.
