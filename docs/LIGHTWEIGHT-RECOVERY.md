@@ -26,6 +26,8 @@ Expired authentication, revoked membership and invalid order/catalogue data now 
 
 The service worker now caches only four explicit public static assets. Authenticated application navigation, APIs, non-GET requests, cross-origin resources, query variants, redirects and error responses are never handled or cached. Upgrades remove only obsolete StockFlow static caches and immediately control existing tabs; unrelated origin caches are preserved.
 
+Runtime-boundary tests execute the service worker and dispatch browser-style fetch and activation events. They verify protected requests pass through untouched, allowlisted assets resolve from static cache, and an upgrade cleans legacy StockFlow caches without deleting unrelated storage. An authenticated production-browser upgrade remains a deployment check rather than a local claim.
+
 Implemented locally in the next increments: the browser renders at most 20 matching order cards at once, and background action refreshes preserve the internal scroll position instead of collapsing the list and jumping to the top. Routine bootstrap no longer includes every audit event. Opening an order's Activity log calls a dedicated read-only gateway that validates the gateway secret, active membership and order row scope before returning immutable events.
 
 Implemented locally: routine order bootstrap now carries only the Tally catalogue version. Opening New Order retrieves the full catalogue through a separate read-only gateway and reuses an account-scoped, version-matched browser-session copy. A newer Tally snapshot invalidates that copy automatically. This adds no dependency, background polling or new service.
