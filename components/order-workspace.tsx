@@ -17,6 +17,7 @@ import { readCustomerCache, writeCustomerCache } from '@/lib/customer-cache';
 import { applyOrderAcknowledgement } from '@/lib/order-acknowledgement';
 import { OrderSubmissionError, orderSubmissionError } from '@/lib/order-submission';
 import { loadOrderBootstrap } from '@/lib/order-bootstrap-cache';
+import { retryPendingOfflineOrder } from '@/lib/offline-order-retry';
 
 type DraftLine = { item: CatalogItem; quantity: number };
 const statusNames: Record<string, string> = {
@@ -79,6 +80,7 @@ export function OrderWorkspace({ actorEmail, initialStatus = 'open' }: { actorEm
   const [page, setPage] = useState(1);
   const workspaceRef = useRef<HTMLDivElement>(null);
   const dataRef = useRef<OrderBootstrap | null>(null);
+  const retryingDraftRef = useRef(false);
 
   useEffect(() => {
     dataRef.current = data;
@@ -97,6 +99,44 @@ export function OrderWorkspace({ actorEmail, initialStatus = 'open' }: { actorEm
       if (showLoading) setLoading(false);
     }
   }, [captureDate, page, query, status]);
+
+  useEffect(() => {
+    if (creating || deviceDraftState !== 'pending') return;
+    let active = true;
+    async function retryPendingDraft() {
+      if (retryingDraftRef.current || !navigator.onLine || document.hidden) return;
+      retryingDraftRef.current = true;
+      try {
+        const result = await retryPendingOfflineOrder(localStorage, actorEmail);
+        if (!active) return;
+        if (result.status === 'sent') {
+          setDeviceDraftState(null);
+          setNotice(`${result.orderNumber} sent successfully after reconnecting.`);
+          await load();
+        } else if (result.status === 'needs_attention') {
+          setDeviceDraftState('error');
+          setError(result.message);
+        }
+      } finally {
+        retryingDraftRef.current = false;
+      }
+    }
+    const retryWhenVisible = () => { if (!document.hidden) void retryPendingDraft(); };
+    const timer = window.setInterval(() => void retryPendingDraft(), 60_000);
+    window.addEventListener('online', retryPendingDraft);
+    window.addEventListener('focus', retryPendingDraft);
+    window.addEventListener('pageshow', retryPendingDraft);
+    document.addEventListener('visibilitychange', retryWhenVisible);
+    void retryPendingDraft();
+    return () => {
+      active = false;
+      window.clearInterval(timer);
+      window.removeEventListener('online', retryPendingDraft);
+      window.removeEventListener('focus', retryPendingDraft);
+      window.removeEventListener('pageshow', retryPendingDraft);
+      document.removeEventListener('visibilitychange', retryWhenVisible);
+    };
+  }, [actorEmail, creating, deviceDraftState, load]);
 
   useEffect(() => {
     if (initialStatus !== 'open') return;
