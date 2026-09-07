@@ -1,6 +1,6 @@
 # StockFlow Tally connector
 
-`dashboard.ps1` runs beside TallyPrime on the office Windows computer. It exports the tracked stock catalog, reorder information, recent supply history, and active `Sundry Debtors` customer ledgers to the secured StockFlow snapshot every five minutes.
+`dashboard.ps1` runs beside TallyPrime on the office Windows computer. It exports the tracked stock catalog, reorder information, recent supply history, and active `Sundry Debtors` customer ledgers to the secured StockFlow snapshot every 15 minutes by default. Before accepting an extraction, it verifies that Tally reports `SUPRABHA DISTRIBUTORS`; a missing or different company leaves the last good snapshot untouched and prevents upload.
 
 The upload credential must be stored in the Windows user environment as `STOCKFLOW_UPLOAD_KEY`. It must never be committed to source control. After updating this script on the office computer, restart the connector while TallyPrime is open with `SUPRABHA DISTRIBUTORS` loaded.
 
@@ -12,4 +12,4 @@ Run the following once in PowerShell from this folder while signed in as the Win
 .\install-startup.ps1
 ```
 
-This creates or updates the per-user **Suprabha StockFlow Tally Sync** task, starts it immediately, and restarts it at every Windows sign-in. The connector remains lightweight and retries Tally/cloud synchronization every five minutes.
+This creates or updates the per-user **Suprabha StockFlow Tally Sync** task, starts it immediately, and restarts it at every Windows sign-in. The connector remains lightweight, extracts every 15 minutes by default, and retries a pending cloud upload every five minutes without rereading Tally.

@@ -95,3 +95,20 @@ function Read-ConnectorSnapshot([string]$Path, [string]$Company) {
         return $saved.snapshot
     } catch { return $null }
 }
+
+function Assert-TallyCompanyIdentity([xml]$Document, [string]$ExpectedCompany) {
+    $expected = $ExpectedCompany.Trim()
+    if (-not $expected) { throw 'Expected Tally company is not configured.' }
+    $companies = @($Document.SelectNodes('//COMPANY') | ForEach-Object {
+        $name = ([string]$_.GetAttribute('NAME')).Trim()
+        if (-not $name) {
+            $nameNode = $_.SelectSingleNode('./NAME')
+            if ($nameNode) { $name = $nameNode.InnerText.Trim() }
+        }
+        if ($name) { $name }
+    })
+    if ($companies.Count -ne 1 -or -not [string]::Equals($companies[0], $expected, [StringComparison]::OrdinalIgnoreCase)) {
+        $actual = if ($companies.Count) { $companies -join ', ' } else { 'not reported' }
+        throw "Tally company check failed. Expected '$expected'; received '$actual'. No data was merged or uploaded."
+    }
+}

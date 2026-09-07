@@ -129,7 +129,7 @@ Effort below is provisional focused engineering time, including testing but excl
 |---|---|---|---|
 | R0: baseline and release audit | Verify deployed/local versions, running connector path, current schedules, payload sizes and office billing baseline; finish ledger mismatch regression | Record what is live; reproduce wrong-ledger rejection and correct match | 1–2 days |
 | R1: connector recovery | Single instance, durable snapshot, independent upload retry, cooldown/backoff and domain freshness | Restart/offline/failure tests; repeated refresh adds no extraction | 2–4 days |
-| R2: incremental Tally reads | Separate masters/stock/invoices; baseline outside billing hours; change/cancellation reconciliation | No regular five-year scan; compare office latency; prove missed-change recovery | 3–5 days |
+| R2: incremental Tally reads | Separate masters/stock/invoices; baseline outside billing hours; change/cancellation reconciliation; source-company guard implemented locally | Confirm company guard on office Tally; no regular five-year scan; compare office latency; prove missed-change recovery | 3–5 days |
 | R3: lean OMS API | Pagination, detail on demand, versioned catalog, targeted post-save updates | Full-dataset search/counts/export correct; meet payload budgets | 2–4 days |
 | R4: offline drafts | Account-scoped local drafts, explicit device consent, reconnect handling and safe cache rules | Restart, quota, expired login, switch-account and duplicate-retry tests pass | 3–5 days |
 | R5: pilot and release | Staff walkthrough, real DB security/concurrency tests, backup restoration and measured pilot | Five working days of representative usage; no unresolved critical defects | 1–2 engineering days plus pilot |

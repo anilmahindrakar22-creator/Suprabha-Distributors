@@ -213,9 +213,10 @@ function Read-ReorderData {
     $today = (Get-Date).Date
     $financialYear = if ($today.Month -ge 4) { $today.Year } else { $today.Year - 1 }
     $historyFrom = [datetime]::new($financialYear - 5, 4, 1)
-    $stockXml = '<ENVELOPE><HEADER><VERSION>1</VERSION><TALLYREQUEST>Export</TALLYREQUEST><TYPE>COLLECTION</TYPE><ID>DashboardItems</ID></HEADER><BODY><DESC><STATICVARIABLES><SVEXPORTFORMAT>$$SysName:XML</SVEXPORTFORMAT><SVCURRENTCOMPANY>SUPRABHA DISTRIBUTORS</SVCURRENTCOMPANY></STATICVARIABLES><TDL><TDLMESSAGE><COLLECTION NAME="DashboardItems"><TYPE>StockItem</TYPE><FETCH>Name,Parent,BaseUnits,ClosingBalance</FETCH></COLLECTION><COLLECTION NAME="DashboardGroups"><TYPE>StockGroup</TYPE><FETCH>Name,Parent</FETCH></COLLECTION></TDLMESSAGE></TDL></DESC></BODY></ENVELOPE>'
+    $stockXml = '<ENVELOPE><HEADER><VERSION>1</VERSION><TALLYREQUEST>Export</TALLYREQUEST><TYPE>COLLECTION</TYPE><ID>DashboardItems</ID></HEADER><BODY><DESC><STATICVARIABLES><SVEXPORTFORMAT>$$SysName:XML</SVEXPORTFORMAT><SVCURRENTCOMPANY>SUPRABHA DISTRIBUTORS</SVCURRENTCOMPANY></STATICVARIABLES><TDL><TDLMESSAGE><COLLECTION NAME="StockFlowCompanyIdentity"><TYPE>Company</TYPE><FETCH>Name</FETCH><FILTER>StockFlowTargetCompany</FILTER></COLLECTION><COLLECTION NAME="DashboardItems"><TYPE>StockItem</TYPE><FETCH>Name,Parent,BaseUnits,ClosingBalance</FETCH></COLLECTION><COLLECTION NAME="DashboardGroups"><TYPE>StockGroup</TYPE><FETCH>Name,Parent</FETCH></COLLECTION><SYSTEM TYPE="Formulae" NAME="StockFlowTargetCompany">$Name = ##SVCurrentCompany</SYSTEM></TDLMESSAGE></TDL></DESC></BODY></ENVELOPE>'
     $reportXml = '<ENVELOPE><HEADER><VERSION>1</VERSION><TALLYREQUEST>Export</TALLYREQUEST><TYPE>DATA</TYPE><ID>Reorder Status</ID></HEADER><BODY><DESC><STATICVARIABLES><SVEXPORTFORMAT>$$SysName:XML</SVEXPORTFORMAT><SVCURRENTCOMPANY>SUPRABHA DISTRIBUTORS</SVCURRENTCOMPANY></STATICVARIABLES></DESC></BODY></ENVELOPE>'
     [xml]$stockDoc = Invoke-Tally $stockXml
+    Assert-TallyCompanyIdentity $stockDoc $companyName
     [xml]$reportDoc = Invoke-Tally $reportXml
     $salesData = Get-TallySalesData
     $lastSupplyMap = $salesData.lastSupply
