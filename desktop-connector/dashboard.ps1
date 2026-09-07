@@ -42,6 +42,7 @@ if ($RebuildSalesHistory) {
 }
 $script:pendingUpload = $script:lastReorderData
 $script:nextUpload = Get-Date
+$script:cloudUploadFailures = 0
 $diasysGroup = 'Diasys Diagnostic India Pvt Ltd'
 $allowedGroups = @($diasysGroup, 'SYS 480', 'SYS Aurora', 'Sysmex')
 $cloudSyncUrl = 'https://aormuidjbdqruglmyseh.supabase.co/functions/v1/stockflow-sync'
@@ -55,12 +56,14 @@ function Publish-CloudSnapshot([string]$Json) {
     try {
         Invoke-WebRequest -Uri $cloudSyncUrl -Method Post -ContentType 'application/json' -Headers @{ 'x-upload-key' = $cloudUploadKey } -Body $Json -UseBasicParsing -TimeoutSec 15 | Out-Null
         $watch.Stop()
-        Add-Content -LiteralPath $healthLogPath -Value "$([datetimeoffset]::Now.ToString('o')) request=cloud_upload durationMs=$($watch.ElapsedMilliseconds) status=ok"
+        $script:cloudUploadFailures = 0
+        Add-Content -LiteralPath $healthLogPath -Value "$([datetimeoffset]::Now.ToString('o')) request=cloud_upload durationMs=$($watch.ElapsedMilliseconds) consecutiveFailures=0 status=ok"
         Write-Host "Cloud snapshot updated." -ForegroundColor DarkGreen
         return $true
     } catch {
         $watch.Stop()
-        Add-Content -LiteralPath $healthLogPath -Value "$([datetimeoffset]::Now.ToString('o')) request=cloud_upload durationMs=$($watch.ElapsedMilliseconds) status=failed"
+        $script:cloudUploadFailures++
+        Add-Content -LiteralPath $healthLogPath -Value "$([datetimeoffset]::Now.ToString('o')) request=cloud_upload durationMs=$($watch.ElapsedMilliseconds) consecutiveFailures=$($script:cloudUploadFailures) status=failed"
         # The local dashboard must remain usable even when the internet is down.
         Write-Host 'Cloud upload pending; the saved snapshot will be retried.' -ForegroundColor DarkYellow
         return $false
@@ -446,7 +449,10 @@ try {
                 if (Publish-CloudSnapshot ($script:pendingUpload | ConvertTo-Json -Depth 6 -Compress)) {
                     $script:pendingUpload = $null
                 }
-                $script:nextUpload = (Get-Date).AddMinutes(5)
+                # Back off during an outage so retries stay lightweight. A successful
+                # upload resets the counter and the next new snapshot uploads immediately.
+                $retryMinutes = [Math]::Min(30, 5 * [Math]::Pow(2, [Math]::Max(0, $script:cloudUploadFailures - 1)))
+                $script:nextUpload = (Get-Date).AddMinutes($retryMinutes)
             }
             Start-Sleep -Milliseconds 250
             continue

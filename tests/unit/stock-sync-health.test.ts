@@ -38,6 +38,13 @@ describe('Tally stock sync health', () => {
 
   it('records cloud upload outcomes without logging credentials or payloads', () => {
     expect(connector).toContain('request=cloud_upload');
+    expect(connector).toContain('consecutiveFailures=$($script:cloudUploadFailures)');
     expect(connector).not.toContain("x-upload-key=$cloudUploadKey");
+  });
+
+  it('backs off cloud retries during an outage and resets after recovery', () => {
+    expect(connector).toContain('$script:cloudUploadFailures = 0');
+    expect(connector).toContain('[Math]::Min(30, 5 * [Math]::Pow(2');
+    expect(connector).toContain('$script:nextUpload = (Get-Date).AddMinutes($retryMinutes)');
   });
 });
