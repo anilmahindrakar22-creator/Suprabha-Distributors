@@ -3,6 +3,7 @@ import { callOrderGateway, OrderGatewayError } from '@/lib/order-gateway';
 import type { CatalogItem, CustomerDirectoryEntry, OrderBootstrap, OrderEvent } from '@/lib/order-types';
 import { isOrderDeliveryOverdue, validateOrderCommand } from '@/lib/order-types';
 import { measuredJsonResponse } from '@/lib/measured-json-response';
+import { parseOrderListQuery, queryOrderList } from '@/lib/order-list-query';
 
 const privateHeaders = { 'cache-control': 'private, no-store' };
 
@@ -46,10 +47,13 @@ export async function GET(request: Request) {
       isOrderDeliveryOverdue(order) ||
       (order.exceptions || []).some((item) => item.status === 'open' && ['delayed', 'failed_delivery'].includes(item.category)),
     ).length;
-    return measuredJsonResponse(
-      { ...result, operations: { ...result.operations, delayedFailedDeliveries } },
-      startedAt,
-    );
+    const enriched = { ...result, operations: { ...result.operations, delayedFailedDeliveries } };
+    if (parameters.get('list') === '1') {
+      const listQuery = parseOrderListQuery(parameters);
+      if (!listQuery) return failure('Invalid order list filters', 400);
+      return measuredJsonResponse({ ...enriched, ...queryOrderList(result.orders, listQuery) }, startedAt);
+    }
+    return measuredJsonResponse(enriched, startedAt);
   } catch (error) {
     if (error instanceof OrderGatewayError) {
       return failure(error.message, error.status);
