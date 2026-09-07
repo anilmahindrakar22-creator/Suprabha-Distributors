@@ -113,6 +113,7 @@ export type OrderBootstrap = {
   customers: CustomerDirectoryEntry[];
   orders: OrderSummary[];
   operations: Record<string, number>;
+  pagination?: { page: number; pageCount: number; pageSize: number; total: number };
 };
 
 export function currentTallyFinancialYear(now = new Date()) {

@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { orderListPageSize, parseOrderListQuery, queryOrderList } from '../../lib/order-list-query';
+import { orderListPageSize, orderListUrl, parseOrderListQuery, queryOrderList } from '../../lib/order-list-query';
 import type { OrderSummary } from '../../lib/order-types';
 
 function order(index: number, overrides: Partial<OrderSummary> = {}): OrderSummary {
@@ -34,5 +34,11 @@ describe('bounded order list query', () => {
     const orders = [order(1), order(2, { tallyInvoiceNumber: 'SD/26-27/0552' }), order(3, { lines: [{ tallyKey: 'P', itemName: 'Penicillin Kit', itemGroup: null, baseUnit: 'Nos', quantity: 1, reservedQuantity: 0 }] })];
     expect(queryOrderList(orders, { page: 1, query: '0552', status: 'all', captureDate: '' }).pagination.total).toBe(1);
     expect(queryOrderList(orders, { page: 1, query: 'penicillin', status: 'all', captureDate: '' }).orders[0]?.orderNumber).toBe('SF-3');
+  });
+
+  it('builds encoded list and full-export URLs from the same filters', () => {
+    const query = { page: 3, query: 'A&B Lab', status: 'history', captureDate: '2026-09-07' };
+    expect(orderListUrl(query)).toBe('/api/orders?list=1&page=3&status=history&query=A%26B+Lab&date=2026-09-07');
+    expect(orderListUrl(query, true)).toBe('/api/orders?export=1&page=3&status=history&query=A%26B+Lab&date=2026-09-07');
   });
 });

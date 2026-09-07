@@ -3,7 +3,8 @@ import { callOrderGateway, OrderGatewayError } from '@/lib/order-gateway';
 import type { CatalogItem, CustomerDirectoryEntry, OrderBootstrap, OrderEvent } from '@/lib/order-types';
 import { isOrderDeliveryOverdue, validateOrderCommand } from '@/lib/order-types';
 import { measuredJsonResponse } from '@/lib/measured-json-response';
-import { parseOrderListQuery, queryOrderList } from '@/lib/order-list-query';
+import { matchingOrderList, parseOrderListQuery, queryOrderList } from '@/lib/order-list-query';
+import { ordersCsv } from '@/lib/order-types';
 
 const privateHeaders = { 'cache-control': 'private, no-store' };
 
@@ -48,9 +49,14 @@ export async function GET(request: Request) {
       (order.exceptions || []).some((item) => item.status === 'open' && ['delayed', 'failed_delivery'].includes(item.category)),
     ).length;
     const enriched = { ...result, operations: { ...result.operations, delayedFailedDeliveries } };
-    if (parameters.get('list') === '1') {
+    if (parameters.get('list') === '1' || parameters.get('export') === '1') {
       const listQuery = parseOrderListQuery(parameters);
       if (!listQuery) return failure('Invalid order list filters', 400);
+      if (parameters.get('export') === '1') {
+        return new Response(`\uFEFF${ordersCsv(matchingOrderList(result.orders, listQuery))}`, {
+          headers: { ...privateHeaders, 'content-type': 'text/csv; charset=utf-8', 'content-disposition': `attachment; filename="stockflow-orders-${new Date().toISOString().slice(0, 10)}.csv"` },
+        });
+      }
       return measuredJsonResponse({ ...enriched, ...queryOrderList(result.orders, listQuery) }, startedAt);
     }
     return measuredJsonResponse(enriched, startedAt);

@@ -9,7 +9,8 @@ import type {
   OrderEvent,
   OrderSummary,
 } from '@/lib/order-types';
-import { billingHandoffText, filterOrders, orderAttentionReasons, orderMatchesCaptureDate, ordersCsv, orderStage, pageItems, searchCatalog, searchCustomers, tallyInvoiceReconciliation } from '@/lib/order-types';
+import { billingHandoffText, orderAttentionReasons, orderStage, searchCatalog, searchCustomers, tallyInvoiceReconciliation } from '@/lib/order-types';
+import { orderListUrl } from '@/lib/order-list-query';
 import { readOfflineDraftConsent, readOfflineOrderDraft, removeOfflineOrderDraft, updateOfflineDraftState, writeOfflineDraftConsent, writeOfflineOrderDraft, type OfflineDraftState } from '@/lib/offline-order-drafts';
 import { readCatalogCache, writeCatalogCache } from '@/lib/catalog-cache';
 import { readCustomerCache, writeCustomerCache } from '@/lib/customer-cache';
@@ -18,8 +19,6 @@ import { OrderSubmissionError, orderSubmissionError } from '@/lib/order-submissi
 import { loadOrderBootstrap } from '@/lib/order-bootstrap-cache';
 
 type DraftLine = { item: CatalogItem; quantity: number };
-const ordersPerPage = 20;
-
 const statusNames: Record<string, string> = {
   phone_order_received: 'Phone order received',
   awaiting_confirmation: 'Awaiting confirmation',
@@ -89,7 +88,7 @@ export function OrderWorkspace({ actorEmail, initialStatus = 'open' }: { actorEm
     if (showLoading) setLoading(true);
     setError('');
     try {
-      const result = await loadOrderBootstrap(actorEmail, true);
+      const result = await readResponse<OrderBootstrap>(await fetch(orderListUrl({ page, query, status, captureDate }), { cache: 'no-store' }));
       setData(result);
       setDeviceDraftState(readOfflineOrderDraft(localStorage, result.actor.email)?.state || null);
     } catch (cause) {
@@ -97,9 +96,10 @@ export function OrderWorkspace({ actorEmail, initialStatus = 'open' }: { actorEm
     } finally {
       if (showLoading) setLoading(false);
     }
-  }, [actorEmail]);
+  }, [captureDate, page, query, status]);
 
   useEffect(() => {
+    if (initialStatus !== 'open') return;
     let active = true;
     loadOrderBootstrap(actorEmail)
       .then((result) => {
@@ -119,22 +119,48 @@ export function OrderWorkspace({ actorEmail, initialStatus = 'open' }: { actorEm
     return () => {
       active = false;
     };
-  }, [actorEmail]);
+  }, [actorEmail, initialStatus]);
 
-  const visibleOrders = useMemo(() => {
-    return filterOrders(data?.orders || [], query, status).filter((order) => orderMatchesCaptureDate(order, captureDate));
-  }, [captureDate, data?.orders, query, status]);
-  const { page: currentPage, pageCount, items: displayedOrders } = pageItems(visibleOrders, page, ordersPerPage);
+  const firstFilterRun = useRef(true);
+  useEffect(() => {
+    if (firstFilterRun.current) {
+      firstFilterRun.current = false;
+      if (page === 1 && !query && !captureDate && status === 'open') return;
+    }
+    const controller = new AbortController();
+    const timer = window.setTimeout(() => {
+      setLoading(true);
+      setError('');
+      fetch(orderListUrl({ page, query, status, captureDate }), { cache: 'no-store', signal: controller.signal })
+        .then((response) => readResponse<OrderBootstrap>(response))
+        .then((result) => {
+          setData(result);
+          setDeviceDraftState(readOfflineOrderDraft(localStorage, result.actor.email)?.state || null);
+        })
+        .catch((cause: unknown) => {
+          if (!controller.signal.aborted) setError(cause instanceof Error ? cause.message : 'Unable to load orders');
+        })
+        .finally(() => {
+          if (!controller.signal.aborted) setLoading(false);
+        });
+    }, query ? 250 : 0);
+    return () => {
+      window.clearTimeout(timer);
+      controller.abort();
+    };
+  }, [actorEmail, captureDate, page, query, status]);
+
+  const visibleOrders = data?.orders || [];
+  const displayedOrders = visibleOrders;
+  const currentPage = data?.pagination?.page || page;
+  const pageCount = data?.pagination?.pageCount || 1;
+  const totalOrders = data?.pagination?.total ?? visibleOrders.length;
 
   function exportVisibleOrders() {
-    if (!visibleOrders.length) return;
-    const blob = new Blob([`\uFEFF${ordersCsv(visibleOrders)}`], { type: 'text/csv;charset=utf-8' });
-    const url = URL.createObjectURL(blob);
+    if (!totalOrders) return;
     const link = document.createElement('a');
-    link.href = url;
-    link.download = `stockflow-orders-${new Date().toISOString().slice(0, 10)}.csv`;
+    link.href = orderListUrl({ page: 1, query, status, captureDate }, true);
     link.click();
-    URL.revokeObjectURL(url);
   }
 
   async function openNewOrder() {
@@ -345,7 +371,7 @@ export function OrderWorkspace({ actorEmail, initialStatus = 'open' }: { actorEm
             <option value="overdue">Overdue deliveries</option>
             <option value="cancelled">Cancelled</option>
           </select>
-          <button type="button" onClick={exportVisibleOrders} disabled={!visibleOrders.length} className="min-h-11 rounded-xl border border-[#cedfdd] px-4 font-bold text-[#31585d] hover:bg-[#f1f6f4] disabled:opacity-50">
+          <button type="button" onClick={exportVisibleOrders} disabled={!totalOrders} className="min-h-11 rounded-xl border border-[#cedfdd] px-4 font-bold text-[#31585d] hover:bg-[#f1f6f4] disabled:opacity-50">
             Export
           </button>
           <button type="button" onClick={() => void load()} className="min-h-11 rounded-xl border border-[#cedfdd] px-4 font-bold text-[#31585d] hover:bg-[#f1f6f4]">
@@ -362,7 +388,7 @@ export function OrderWorkspace({ actorEmail, initialStatus = 'open' }: { actorEm
               <h2 className="font-extrabold text-[#173239]">{status === 'history' ? 'Old orders' : 'Order inbox'}</h2>
               <p className="mt-1 text-xs text-[#6b7e81]">Tally stock snapshot: {staleText}</p>
             </div>
-            <span className="rounded-full bg-[#e2f8ef] px-3 py-1 text-xs font-extrabold text-[#136146]">{visibleOrders.length} orders</span>
+            <span className="rounded-full bg-[#e2f8ef] px-3 py-1 text-xs font-extrabold text-[#136146]">{totalOrders} orders</span>
           </div>
 
           {loading ? (
@@ -391,7 +417,7 @@ export function OrderWorkspace({ actorEmail, initialStatus = 'open' }: { actorEm
               ))}
             </div>
           )}
-          {!loading && visibleOrders.length > ordersPerPage ? <nav aria-label="Order pages" className="flex items-center justify-between gap-3 border-t border-[#e3ecea] px-5 py-4"><button type="button" disabled={currentPage === 1} onClick={() => setPage((value) => Math.max(1, value - 1))} className="min-h-10 rounded-xl border border-[#cedfdd] px-4 font-bold text-[#31585d] disabled:opacity-40">Previous</button><span className="text-xs font-bold text-[#6b7e81]">Page {currentPage} of {pageCount}</span><button type="button" disabled={currentPage === pageCount} onClick={() => setPage((value) => Math.min(pageCount, value + 1))} className="min-h-10 rounded-xl border border-[#cedfdd] px-4 font-bold text-[#31585d] disabled:opacity-40">Next</button></nav> : null}
+          {!loading && pageCount > 1 ? <nav aria-label="Order pages" className="flex items-center justify-between gap-3 border-t border-[#e3ecea] px-5 py-4"><button type="button" disabled={currentPage === 1} onClick={() => setPage((value) => Math.max(1, value - 1))} className="min-h-10 rounded-xl border border-[#cedfdd] px-4 font-bold text-[#31585d] disabled:opacity-40">Previous</button><span className="text-xs font-bold text-[#6b7e81]">Page {currentPage} of {pageCount}</span><button type="button" disabled={currentPage === pageCount} onClick={() => setPage((value) => Math.min(pageCount, value + 1))} className="min-h-10 rounded-xl border border-[#cedfdd] px-4 font-bold text-[#31585d] disabled:opacity-40">Next</button></nav> : null}
         </section>
       </div>
 

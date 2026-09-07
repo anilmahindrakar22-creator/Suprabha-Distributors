@@ -11,7 +11,7 @@ export function loadOrderBootstrap(
   const existing = requests.get(key);
   if (!force && existing) return existing;
 
-  const request = fetchFn('/api/orders', { cache: 'no-store' })
+  const request = fetchFn('/api/orders?list=1', { cache: 'no-store' })
     .then(async (response) => {
       const body = (await response.json()) as OrderBootstrap & { error?: string };
       if (!response.ok) throw new Error(body.error || 'Unable to load orders');

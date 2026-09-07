@@ -10,6 +10,17 @@ export type OrderListQuery = {
   captureDate: string;
 };
 
+export function orderListUrl(query: OrderListQuery, exportAll = false) {
+  const parameters = new URLSearchParams({
+    [exportAll ? 'export' : 'list']: '1',
+    page: String(query.page),
+    status: query.status,
+  });
+  if (query.query) parameters.set('query', query.query);
+  if (query.captureDate) parameters.set('date', query.captureDate);
+  return `/api/orders?${parameters.toString()}`;
+}
+
 const allowedStatuses = new Set([
   'all', 'open', 'history', 'billing', 'picking', 'dispatch_ready', 'overdue', 'attention',
   'phone_order_received', 'awaiting_confirmation', 'confirmed', 'packed',
@@ -30,8 +41,7 @@ export function parseOrderListQuery(parameters: URLSearchParams): OrderListQuery
 }
 
 export function queryOrderList(orders: OrderSummary[], query: OrderListQuery) {
-  const matching = filterOrders(orders, query.query, query.status)
-    .filter((order) => orderMatchesCaptureDate(order, query.captureDate));
+  const matching = matchingOrderList(orders, query);
   const result = pageItems(matching, query.page, orderListPageSize);
   return {
     orders: result.items,
@@ -42,4 +52,9 @@ export function queryOrderList(orders: OrderSummary[], query: OrderListQuery) {
       total: matching.length,
     },
   };
+}
+
+export function matchingOrderList(orders: OrderSummary[], query: OrderListQuery) {
+  return filterOrders(orders, query.query, query.status)
+    .filter((order) => orderMatchesCaptureDate(order, query.captureDate));
 }

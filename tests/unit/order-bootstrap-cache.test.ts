@@ -19,6 +19,7 @@ describe('order bootstrap cache', () => {
     expect(await first).toEqual(bootstrap);
     expect(await second).toEqual(bootstrap);
     expect(fetchFn).toHaveBeenCalledTimes(1);
+    expect(fetchFn).toHaveBeenCalledWith('/api/orders?list=1', { cache: 'no-store' });
   });
 
   it('allows an explicit refresh and retries after a failed preload', async () => {
