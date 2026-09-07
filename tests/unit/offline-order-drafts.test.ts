@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { readOfflineDraftConsent, readOfflineOrderDraft, removeOfflineOrderDraft, updateOfflineDraftState, writeOfflineDraftConsent, writeOfflineOrderDraft, type OfflineOrderDraft } from '../../lib/offline-order-drafts';
+import { readOfflineDraftConsent, readOfflineOrderDraft, removeOfflineOrderDraft, restoreOfflineDraftLines, updateOfflineDraftState, writeOfflineDraftConsent, writeOfflineOrderDraft, type OfflineOrderDraft } from '../../lib/offline-order-drafts';
 
 function memoryStorage() {
   const values = new Map<string, string>();
@@ -60,5 +60,14 @@ describe('offline order drafts', () => {
     expect(writeOfflineOrderDraft(storage, draft)).toBe(false);
     expect(writeOfflineDraftConsent(storage, draft.actorEmail, true)).toBe(false);
     expect(removeOfflineOrderDraft({ ...storage, removeItem: () => { throw new DOMException('Storage denied', 'SecurityError'); } }, draft.actorEmail)).toBe(false);
+  });
+
+  it('preserves unavailable Tally lines for visible correction instead of dropping them', () => {
+    const restored = restoreOfflineDraftLines(
+      [{ tallyKey: 'KIT-1', item: 'Current kit', group: 'Kits', baseUnit: 'Nos', closing: 4, active: true }],
+      [{ tallyKey: 'KIT-1', quantity: 2 }, { tallyKey: 'OLD-1', quantity: 3 }],
+    );
+    expect(restored[0]?.item?.item).toBe('Current kit');
+    expect(restored[1]).toEqual({ tallyKey: 'OLD-1', quantity: 3, item: null });
   });
 });

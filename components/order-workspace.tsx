@@ -11,7 +11,7 @@ import type {
 } from '@/lib/order-types';
 import { billingHandoffText, orderAttentionReasons, orderStage, searchCatalog, searchCustomers, tallyInvoiceReconciliation } from '@/lib/order-types';
 import { orderListUrl } from '@/lib/order-list-query';
-import { readOfflineDraftConsent, readOfflineOrderDraft, removeOfflineOrderDraft, updateOfflineDraftState, writeOfflineDraftConsent, writeOfflineOrderDraft, type OfflineDraftState } from '@/lib/offline-order-drafts';
+import { readOfflineDraftConsent, readOfflineOrderDraft, removeOfflineOrderDraft, restoreOfflineDraftLines, updateOfflineDraftState, writeOfflineDraftConsent, writeOfflineOrderDraft, type OfflineDraftState } from '@/lib/offline-order-drafts';
 import { readCatalogCache, removeCatalogCache, writeCatalogCache } from '@/lib/catalog-cache';
 import { readCustomerCache, removeCustomerCache, writeCustomerCache } from '@/lib/customer-cache';
 import { applyOrderAcknowledgement } from '@/lib/order-acknowledgement';
@@ -19,7 +19,7 @@ import { OrderSubmissionError, orderSubmissionError } from '@/lib/order-submissi
 import { loadOrderBootstrap } from '@/lib/order-bootstrap-cache';
 import { retryPendingOfflineOrder } from '@/lib/offline-order-retry';
 
-type DraftLine = { item: CatalogItem; quantity: number };
+type DraftLine = { tallyKey: string; item: CatalogItem | null; quantity: number };
 const statusNames: Record<string, string> = {
   phone_order_received: 'Phone order received',
   awaiting_confirmation: 'Awaiting confirmation',
@@ -707,12 +707,10 @@ function HydratedNewOrderPanel({ data, onClose, onCreated }: { data: OrderBootst
   const [customerSuggestionsOpen, setCustomerSuggestionsOpen] = useState(false);
   const [notes, setNotes] = useState(initialPayload?.notes || '');
   const [productQuery, setProductQuery] = useState('');
-  const [lines, setLines] = useState<DraftLine[]>(() => (initialPayload?.lines || []).flatMap((line) => {
-    const item = data.snapshot.catalog.find((entry) => entry.tallyKey === line.tallyKey);
-    return item ? [{ item, quantity: line.quantity }] : [];
-  }));
+  const [restoredLines] = useState(() => restoreOfflineDraftLines(data.snapshot.catalog, initialPayload?.lines || []));
+  const [lines, setLines] = useState<DraftLine[]>(restoredLines);
   const [submitting, setSubmitting] = useState(false);
-  const [error, setError] = useState('');
+  const [error, setError] = useState(() => restoredLines.some((line) => !line.item) ? 'A saved product is no longer in the current Tally catalogue. Remove it and select the correct product before saving.' : '');
   const [idempotencyKey] = useState(() => initialPayload?.idempotencyKey || crypto.randomUUID());
   const [draftState, setDraftState] = useState<OfflineDraftState>(initialDraft?.state || 'draft');
   const [saveOnDevice, setSaveOnDevice] = useState(() => Boolean(initialDraft) || readOfflineDraftConsent(localStorage, data.actor.email));
@@ -744,7 +742,7 @@ function HydratedNewOrderPanel({ data, onClose, onCreated }: { data: OrderBootst
         actorEmail: data.actor.email,
         state: draftState,
         updatedAt: new Date().toISOString(),
-        command: { action: 'create_order', payload: { idempotencyKey, customerId: selectedCustomerId, customerName: customerName.trim(), customerPhone: customerPhone.trim(), customerCity: customerCity.trim(), source: 'phone', notes: notes.trim(), lines: lines.map((line) => ({ tallyKey: line.item.tallyKey, quantity: line.quantity })) } },
+        command: { action: 'create_order', payload: { idempotencyKey, customerId: selectedCustomerId, customerName: customerName.trim(), customerPhone: customerPhone.trim(), customerCity: customerCity.trim(), source: 'phone', notes: notes.trim(), lines: lines.map((line) => ({ tallyKey: line.tallyKey, quantity: line.quantity })) } },
       });
       if (!saved) setError('This browser could not save the draft. Free device storage or turn off device saving.');
     }, 400);
@@ -778,7 +776,7 @@ function HydratedNewOrderPanel({ data, onClose, onCreated }: { data: OrderBootst
   }, [data.actor.email, onCreated]);
 
   const matches = useMemo(() => {
-    const selected = new Set(lines.map((line) => line.item.tallyKey));
+    const selected = new Set(lines.map((line) => line.tallyKey));
     return searchCatalog(data.snapshot.catalog, productQuery, selected);
   }, [data.snapshot.catalog, lines, productQuery]);
 
@@ -801,6 +799,10 @@ function HydratedNewOrderPanel({ data, onClose, onCreated }: { data: OrderBootst
       setError('Add a customer and at least one product.');
       return;
     }
+    if (lines.some((line) => !line.item)) {
+      setError('Remove unavailable products and select their current Tally catalogue replacements before saving.');
+      return;
+    }
     setSubmitting(true);
     setError('');
     try {
@@ -817,7 +819,7 @@ function HydratedNewOrderPanel({ data, onClose, onCreated }: { data: OrderBootst
           customerCity: customerCity.trim(),
           source: 'phone',
           notes: notes.trim(),
-          lines: lines.map((line) => ({ tallyKey: line.item.tallyKey, quantity: line.quantity })),
+          lines: lines.map((line) => ({ tallyKey: line.tallyKey, quantity: line.quantity })),
         },
       };
       if (saveOnDevice && !writeOfflineOrderDraft(localStorage, { schemaVersion: 1, actorEmail: data.actor.email, state: 'pending', command: body, updatedAt: new Date().toISOString() })) throw new Error('This browser could not save the pending order. Free device storage and retry.');
@@ -900,9 +902,9 @@ function HydratedNewOrderPanel({ data, onClose, onCreated }: { data: OrderBootst
             <fieldset className="rounded-2xl border border-[#dce7e5] bg-white p-5">
               <legend className="px-2 text-sm font-extrabold text-[#274b50]">Products</legend>
               <label className="text-sm font-bold text-[#456367]">Find product<input value={productQuery} onChange={(event) => setProductQuery(event.target.value)} className="mt-2 min-h-11 w-full rounded-xl border border-[#cedfdd] px-3 font-normal outline-none focus:border-[#64d4ad]" placeholder="Type a product name" /></label>
-              {matches.length ? <div className="mt-2 overflow-hidden rounded-xl border border-[#dce7e5]">{matches.map((item) => <button key={item.tallyKey} type="button" onClick={() => { setLines((current) => [...current, { item, quantity: 1 }]); setProductQuery(''); }} className="flex min-h-12 w-full items-center justify-between gap-4 border-b border-[#edf2f0] px-3 text-left last:border-0 hover:bg-[#f2faf7]"><span><strong className="block text-sm text-[#173239]">{item.item}</strong><small className="text-[#718487]">{item.group}</small></span><span className="shrink-0 text-xs font-bold text-[#277b69]">Available {formatQuantity(item.closing)} {item.baseUnit}</span></button>)}</div> : null}
+              {matches.length ? <div className="mt-2 overflow-hidden rounded-xl border border-[#dce7e5]">{matches.map((item) => <button key={item.tallyKey} type="button" onClick={() => { setLines((current) => [...current, { tallyKey: item.tallyKey, item, quantity: 1 }]); setProductQuery(''); }} className="flex min-h-12 w-full items-center justify-between gap-4 border-b border-[#edf2f0] px-3 text-left last:border-0 hover:bg-[#f2faf7]"><span><strong className="block text-sm text-[#173239]">{item.item}</strong><small className="text-[#718487]">{item.group}</small></span><span className="shrink-0 text-xs font-bold text-[#277b69]">Available {formatQuantity(item.closing)} {item.baseUnit}</span></button>)}</div> : null}
               {productQuery.trim() && matches.length === 0 ? <p className="mt-2 rounded-xl bg-[#fff7e8] px-3 py-2 text-sm text-[#805b20]">No Tally products match “{productQuery.trim()}”.</p> : null}
-              <div className="mt-4 space-y-2">{lines.map((line) => <div key={line.item.tallyKey} className="grid grid-cols-[1fr_90px_auto] items-center gap-3 rounded-xl bg-[#f2f7f5] p-3"><div className="min-w-0"><strong className="block truncate text-sm text-[#173239]">{line.item.item}</strong><small className="text-[#718487]">Closing {formatQuantity(line.item.closing)} {line.item.baseUnit}</small></div><label className="sr-only" htmlFor={`qty-${line.item.tallyKey}`}>Quantity for {line.item.item}</label><input id={`qty-${line.item.tallyKey}`} type="number" min="1" step="1" required value={line.quantity} onChange={(event) => setLines((current) => current.map((entry) => entry.item.tallyKey === line.item.tallyKey ? { ...entry, quantity: Number(event.target.value) } : entry))} className="min-h-10 rounded-lg border border-[#cedfdd] px-2 text-right" /><button type="button" onClick={() => setLines((current) => current.filter((entry) => entry.item.tallyKey !== line.item.tallyKey))} aria-label={`Remove ${line.item.item}`} className="size-10 rounded-lg text-xl text-[#9a4e47] hover:bg-[#ffeae8]">×</button></div>)}</div>
+              <div className="mt-4 space-y-2">{lines.map((line) => <div key={line.tallyKey} className={`grid grid-cols-[1fr_90px_auto] items-center gap-3 rounded-xl p-3 ${line.item ? 'bg-[#f2f7f5]' : 'border border-[#efbbb6] bg-[#fff0ef]'}`}><div className="min-w-0"><strong className="block truncate text-sm text-[#173239]">{line.item?.item || `Unavailable Tally item (${line.tallyKey})`}</strong><small className={line.item ? 'text-[#718487]' : 'font-bold text-[#8d3a34]'}>{line.item ? `Closing ${formatQuantity(line.item.closing)} ${line.item.baseUnit}` : 'Remove and select its current catalogue replacement'}</small></div><label className="sr-only" htmlFor={`qty-${line.tallyKey}`}>Quantity for {line.item?.item || line.tallyKey}</label><input id={`qty-${line.tallyKey}`} type="number" min="1" step="1" required value={line.quantity} onChange={(event) => setLines((current) => current.map((entry) => entry.tallyKey === line.tallyKey ? { ...entry, quantity: Number(event.target.value) } : entry))} className="min-h-10 rounded-lg border border-[#cedfdd] px-2 text-right" /><button type="button" onClick={() => setLines((current) => current.filter((entry) => entry.tallyKey !== line.tallyKey))} aria-label={`Remove ${line.item?.item || line.tallyKey}`} className="size-10 rounded-lg text-xl text-[#9a4e47] hover:bg-[#ffeae8]">×</button></div>)}</div>
               {lines.length === 0 ? <p className="mt-4 rounded-xl bg-[#f6f8f7] p-4 text-center text-sm text-[#718487]">Search and add the products requested on the call.</p> : null}
             </fieldset>
 
@@ -915,7 +917,7 @@ function HydratedNewOrderPanel({ data, onClose, onCreated }: { data: OrderBootst
             {customerName.trim() || lines.length > 0 ? <p aria-live="polite" className={`rounded-xl px-4 py-3 text-sm font-semibold ${draftState === 'error' ? 'bg-[#fff0ef] text-[#8d3a34]' : draftState === 'pending' ? 'bg-[#fff7e8] text-[#805b20]' : 'bg-[#edf7f4] text-[#456367]'}`}>{draftState === 'pending' ? 'Waiting to send. Your order is safe on this device.' : draftState === 'error' ? 'Draft needs attention before it can be sent.' : saveOnDevice ? 'Draft saved on this device.' : 'Draft is kept only while this form remains open.'}</p> : null}
             {error ? <p role="alert" className="rounded-xl border border-[#efbbb6] bg-[#fff0ef] px-4 py-3 text-sm text-[#8d3a34]">{error}</p> : null}
           </div>
-          <footer className="sticky bottom-0 flex items-center justify-between gap-4 border-t border-[#dce7e5] bg-white/95 px-5 py-4 backdrop-blur"><p className="text-xs text-[#718487]">{lines.length} product{lines.length === 1 ? '' : 's'} · {draftState === 'pending' ? 'waiting to send' : saveOnDevice ? 'draft protected' : 'ready to save'}</p><button type="submit" disabled={submitting || lines.length === 0} className="min-h-12 rounded-xl bg-[#092f36] px-6 font-extrabold text-white hover:bg-[#0d4549] disabled:opacity-50">{submitting ? 'Saving…' : draftState === 'pending' || draftState === 'error' ? 'Retry order' : 'Save order'}</button></footer>
+          <footer className="sticky bottom-0 flex items-center justify-between gap-4 border-t border-[#dce7e5] bg-white/95 px-5 py-4 backdrop-blur"><p className="text-xs text-[#718487]">{lines.length} product{lines.length === 1 ? '' : 's'} · {lines.some((line) => !line.item) ? 'product needs replacement' : draftState === 'pending' ? 'waiting to send' : saveOnDevice ? 'draft protected' : 'ready to save'}</p><button type="submit" disabled={submitting || lines.length === 0 || lines.some((line) => !line.item)} className="min-h-12 rounded-xl bg-[#092f36] px-6 font-extrabold text-white hover:bg-[#0d4549] disabled:opacity-50">{submitting ? 'Saving…' : draftState === 'pending' || draftState === 'error' ? 'Retry order' : 'Save order'}</button></footer>
         </form>
       </dialog>
     </div>

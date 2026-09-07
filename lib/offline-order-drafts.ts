@@ -1,4 +1,4 @@
-import type { OrderCommand } from './order-types';
+import type { CatalogItem, OrderCommand } from './order-types';
 
 export type OfflineDraftState = 'draft' | 'pending' | 'error';
 export type OfflineOrderDraft = {
@@ -14,6 +14,18 @@ type DraftStorage = Pick<Storage, 'getItem' | 'setItem' | 'removeItem'>;
 const prefix = 'stockflow:order-draft:v1:';
 const consentPrefix = 'stockflow:order-draft-consent:v1:';
 const retentionMs = 7 * 24 * 60 * 60 * 1000;
+
+export function restoreOfflineDraftLines(
+  catalog: CatalogItem[],
+  lines: Array<{ tallyKey: string; quantity: number }>,
+) {
+  const byKey = new Map(catalog.map((item) => [item.tallyKey, item]));
+  return lines.map((line) => ({
+    tallyKey: line.tallyKey,
+    quantity: line.quantity,
+    item: byKey.get(line.tallyKey) || null,
+  }));
+}
 
 function key(email: string) {
   return `${prefix}${email.trim().toLocaleLowerCase('en-IN')}`;
