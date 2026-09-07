@@ -19,6 +19,13 @@ $unscoped = [pscustomobject]@{ company='TEST'; records=@([pscustomobject]@{ part
 if ($null -ne (Get-TrustedSalesSnapshot $unscoped 'TEST')) { throw 'Unscoped historical supply cache accepted' }
 $salesScoped = [pscustomobject]@{ company='TEST'; sourceScope='sales_vouchers_v1'; records=@() }
 if ($null -eq (Get-TrustedSalesSnapshot $salesScoped 'TEST')) { throw 'Sales-only cache was rejected' }
+$today = [datetime]'2026-09-07'
+$firstWindow = Get-SalesWindow $today '' 7 30 24
+if ($firstWindow.fromDate -ne '20260808' -or -not $firstWindow.reconciliation) { throw 'Initial sales reconciliation window is incorrect' }
+$freshWindow = Get-SalesWindow $today ([datetimeoffset]::UtcNow.AddHours(-1).ToString('o')) 7 30 24
+if ($freshWindow.fromDate -ne '20260831' -or $freshWindow.reconciliation) { throw 'Frequent sales window is incorrect' }
+$staleWindow = Get-SalesWindow $today ([datetimeoffset]::UtcNow.AddHours(-25).ToString('o')) 7 30 24
+if ($staleWindow.fromDate -ne '20260808' -or -not $staleWindow.reconciliation) { throw 'Daily sales reconciliation was not scheduled' }
 $fallback = Get-SalesRecordIdentity '' '20260905' 'SD/26-27/0099' 'City Lab'
 if (-not $fallback.StartsWith('fallback:') -or $fallback -ne (Get-SalesRecordIdentity '' '20260905' 'SD/26-27/0099' 'City Lab')) { throw 'Fallback identity is not deterministic' }
 if ($null -ne (Get-SalesRecordIdentity '' '20260905' '' 'City Lab')) { throw 'Incomplete fallback identity accepted' }

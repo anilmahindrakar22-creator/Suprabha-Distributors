@@ -1,4 +1,4 @@
-param([int]$Port = 8765, [switch]$NoBrowser, [ValidateRange(5, 120)][int]$SyncMinutes = 15, [ValidateRange(15, 1440)][int]$CustomerSyncMinutes = 240, [ValidateRange(15, 1440)][int]$CatalogSyncMinutes = 240, [switch]$RebuildSalesHistory)
+param([int]$Port = 8765, [switch]$NoBrowser, [ValidateRange(5, 120)][int]$SyncMinutes = 15, [ValidateRange(15, 1440)][int]$CustomerSyncMinutes = 240, [ValidateRange(15, 1440)][int]$CatalogSyncMinutes = 240, [ValidateRange(1, 14)][int]$SalesRecentDays = 7, [ValidateRange(4, 168)][int]$SalesReconcileHours = 24, [switch]$RebuildSalesHistory)
 
 $ErrorActionPreference = 'Stop'
 $dashboardRoot = Split-Path -Parent $MyInvocation.MyCommand.Path
@@ -67,8 +67,8 @@ function Get-Number([string]$Text) {
     return 0
 }
 
-function Invoke-Tally([string]$Body, [int]$TimeoutSeconds = 15) {
-    $requestName = if ($Body -match 'DashboardSalesVouchers') { 'sales' } elseif ($Body -match 'DashboardCustomerLedgers') { 'customers' } elseif ($Body -match 'DashboardItems') { 'catalog' } elseif ($Body -match 'StockFlowCompanyIdentity') { 'company' } else { 'reorder' }
+function Invoke-Tally([string]$Body, [int]$TimeoutSeconds = 15, [string]$MetricName = '') {
+    $requestName = if ($MetricName) { $MetricName } elseif ($Body -match 'DashboardSalesVouchers') { 'sales' } elseif ($Body -match 'DashboardCustomerLedgers') { 'customers' } elseif ($Body -match 'DashboardItems') { 'catalog' } elseif ($Body -match 'StockFlowCompanyIdentity') { 'company' } else { 'reorder' }
     $watch = [Diagnostics.Stopwatch]::StartNew()
     try {
         $response = Invoke-WebRequest -Uri 'http://127.0.0.1:9000' -Method Post -ContentType 'application/xml' -Body $Body -UseBasicParsing -TimeoutSec $TimeoutSeconds
@@ -177,7 +177,11 @@ function Get-TallySalesData {
         if ($cachedSales.baselineLastSupply) {
             foreach ($property in $cachedSales.baselineLastSupply.psobject.Properties) { $baseline[$property.Name] = $property.Value }
         }
-        if (-not $fullScan) { $fromDate = $today.AddDays(-30).ToString('yyyyMMdd') }
+        $salesWindow = $null
+        if (-not $fullScan) {
+            $salesWindow = Get-SalesWindow $today ([string]$cachedSales.reconciledAt) $SalesRecentDays 30 $SalesReconcileHours
+            $fromDate = $salesWindow.fromDate
+        }
         foreach ($item in $baseline.Keys) {
             if ([string]$baseline[$item].dateKey -lt $fromDate) { $result[$item] = $baseline[$item] }
         }
@@ -186,7 +190,8 @@ function Get-TallySalesData {
         $salesXml = $salesXml.Replace('__FROM_DATE__', $fromDate).Replace('__TO_DATE__', $toDate)
         $salesXml = $salesXml.Replace('<SVFROMDATE>', '<SVFROMDATE TYPE="Date">').Replace('<SVTODATE>', '<SVTODATE TYPE="Date">')
         $salesXml = $salesXml.Replace('</COLLECTION>', '<FILTER>StockFlowSalesPeriod</FILTER></COLLECTION><SYSTEM TYPE="Formulae" NAME="StockFlowSalesPeriod">$Date &gt;= ##SVFromDate AND $Date &lt;= ##SVToDate</SYSTEM>')
-        $salesContent = Invoke-Tally $salesXml -TimeoutSeconds $(if ($fullScan) { 60 } else { 15 })
+        $salesMetric = if ($fullScan) { 'sales_full' } elseif ($salesWindow.reconciliation) { 'sales_reconcile' } else { 'sales_recent' }
+        $salesContent = Invoke-Tally $salesXml -TimeoutSeconds $(if ($fullScan) { 60 } else { 15 }) -MetricName $salesMetric
         # Some Tally releases emit UDF-prefixed nodes without declaring the XML
         # namespace. Rename only that prefix so the voucher payload remains valid XML.
         $salesContent = [regex]::Replace($salesContent, '(<\/?)(?i:UDF):', '$1UDF_')
@@ -234,6 +239,7 @@ function Get-TallySalesData {
         company = $companyName; fetchedAtIso = [datetimeoffset]::UtcNow.ToString('o'); sourceScope = 'sales_vouchers_v1'
         catalog = @(); tallyInvoices = @(); records = @($salesRecords); baselineLastSupply = $baseline
         fullScannedAt = if ($fullScan) { [datetimeoffset]::UtcNow.ToString('o') } else { $cachedSales.fullScannedAt }
+        reconciledAt = if ($fullScan -or ($salesWindow -and $salesWindow.reconciliation)) { [datetimeoffset]::UtcNow.ToString('o') } else { $cachedSales.reconciledAt }
     }
     $script:RebuildSalesHistory = $false
     return [ordered]@{ lastSupply = $result; invoices = @($invoices) }

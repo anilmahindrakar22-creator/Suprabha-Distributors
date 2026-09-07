@@ -61,6 +61,18 @@ function Get-TrustedSalesSnapshot($Snapshot, [string]$Company) {
     return $Snapshot
 }
 
+function Get-SalesWindow([datetime]$Today, [string]$ReconciledAt, [int]$RecentDays = 7, [int]$ReconcileDays = 30, [int]$ReconcileHours = 24) {
+    $requiresReconciliation = $true
+    if (-not [string]::IsNullOrWhiteSpace($ReconciledAt)) {
+        try {
+            $stamp = [datetimeoffset]::Parse($ReconciledAt)
+            $requiresReconciliation = $stamp -gt [datetimeoffset]::UtcNow.AddMinutes(5) -or $stamp -le [datetimeoffset]::UtcNow.AddHours(-$ReconcileHours)
+        } catch { $requiresReconciliation = $true }
+    }
+    $days = if ($requiresReconciliation) { $ReconcileDays } else { $RecentDays }
+    return [pscustomobject]@{ fromDate = $Today.AddDays(-$days).ToString('yyyyMMdd'); reconciliation = $requiresReconciliation }
+}
+
 function Convert-RowsToLastSupplyBaseline($Rows) {
     $baseline = @{}
     foreach ($row in @($Rows)) {
