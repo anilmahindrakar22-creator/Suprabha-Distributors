@@ -43,6 +43,36 @@ export async function GET(request: Request) {
         startedAt,
       );
     }
+    if (parameters.get('list') === '1' || parameters.get('export') === '1') {
+      const listQuery = parseOrderListQuery(parameters);
+      if (!listQuery) return failure('Invalid order list filters', 400);
+      const exporting = parameters.get('export') === '1';
+      const pageSize = exporting ? 200 : 20;
+      try {
+        const first = await callOrderGateway<OrderBootstrap>(user.email, 'list_orders', {
+          page: exporting ? 1 : listQuery.page,
+          pageSize,
+          query: listQuery.query,
+          status: listQuery.status,
+          date: listQuery.captureDate,
+        });
+        if (!exporting) return measuredJsonResponse(first, startedAt);
+        const orders = [...first.orders];
+        const pageCount = first.pagination?.pageCount || 1;
+        for (let page = 2; page <= pageCount; page += 1) {
+          const next = await callOrderGateway<OrderBootstrap>(user.email, 'list_orders', {
+            page, pageSize, query: listQuery.query, status: listQuery.status, date: listQuery.captureDate,
+          });
+          orders.push(...next.orders);
+        }
+        return new Response(`\uFEFF${ordersCsv(orders)}`, {
+          headers: { ...privateHeaders, 'content-type': 'text/csv; charset=utf-8', 'content-disposition': `attachment; filename="stockflow-orders-${new Date().toISOString().slice(0, 10)}.csv"` },
+        });
+      } catch (error) {
+        if (!(error instanceof OrderGatewayError) || ![400, 502].includes(error.status)) throw error;
+        // Compatibility path while the database migration and edge function roll out.
+      }
+    }
     const result = await callOrderGateway<OrderBootstrap>(user.email, 'bootstrap');
     const delayedFailedDeliveries = result.orders.filter((order) =>
       isOrderDeliveryOverdue(order) ||

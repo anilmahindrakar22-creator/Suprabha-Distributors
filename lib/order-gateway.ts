@@ -5,6 +5,7 @@ export type GatewayAction =
   | 'bootstrap'
   | 'get_catalog'
   | 'get_customers'
+  | 'list_orders'
   | 'get_order_events'
   | 'list_users'
   | 'upsert_user'
