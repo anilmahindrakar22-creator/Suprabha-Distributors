@@ -13,6 +13,7 @@ import { billingHandoffText, filterOrders, orderAttentionReasons, orderMatchesCa
 import { readOfflineDraftConsent, readOfflineOrderDraft, removeOfflineOrderDraft, updateOfflineDraftState, writeOfflineDraftConsent, writeOfflineOrderDraft, type OfflineDraftState } from '@/lib/offline-order-drafts';
 import { readCatalogCache, writeCatalogCache } from '@/lib/catalog-cache';
 import { applyOrderAcknowledgement } from '@/lib/order-acknowledgement';
+import { OrderSubmissionError, orderSubmissionError } from '@/lib/order-submission';
 
 type DraftLine = { item: CatalogItem; quantity: number };
 const ordersPerPage = 20;
@@ -518,14 +519,10 @@ function OrderActivityLog({ orderId, initialEvents }: { orderId: string; initial
   return <div className="mt-5 border-t border-[#dfe9e7] pt-4"><button type="button" onClick={toggle} aria-expanded={open} className="text-xs font-bold uppercase tracking-wide text-[#456367]">{open ? '−' : '+'} Activity log</button>{open ? loading ? <p className="mt-2 text-xs text-[#718487]">Loading activity…</p> : error ? <div className="mt-2 flex items-center gap-3"><p role="alert" className="text-xs text-[#8d3a34]">{error}</p><button type="button" onClick={() => void loadEvents()} className="text-xs font-bold text-[#31585d]">Retry</button></div> : events.length ? <ol className="mt-3 space-y-3">{events.map((event) => <li key={event.id} className="grid grid-cols-[10px_1fr] gap-3"><span className="mt-1.5 size-2.5 rounded-full bg-[#64d4ad]" /><div><p className="font-bold text-[#274b50]">{event.toStatus ? `${statusLabel(event.fromStatus || 'new')} → ${statusLabel(event.toStatus)}` : event.eventType.replaceAll('_', ' ')}</p><p className="mt-0.5 text-xs text-[#718487]">{event.actorEmail} ({event.actorRole}) · {new Date(event.createdAt).toLocaleString('en-IN')}</p>{event.reason ? <p className="mt-1 text-xs text-[#80524d]">Reason: {event.reason}</p> : null}</div></li>)}</ol> : <p className="mt-2 text-xs text-[#718487]">No recorded activity yet.</p> : null}</div>;
 }
 
-class RetryableOrderSubmissionError extends Error {}
-
 async function readOrderSubmission(response: Response) {
-  if (response.status >= 500 || response.status === 429) {
-    const body = (await response.json().catch(() => ({}))) as { error?: string };
-    throw new RetryableOrderSubmissionError(body.error || 'Order service is temporarily unavailable');
-  }
-  return readResponse<{ orderNumber?: string }>(response);
+  const body = (await response.json().catch(() => ({}))) as { error?: string; orderNumber?: string };
+  if (!response.ok) throw orderSubmissionError(response.status, body.error);
+  return body;
 }
 
 function InstallationPanel({ order, onSave }: { order: OrderSummary; onSave: (order: OrderSummary, command: Extract<OrderCommand, { action: 'schedule_installation' | 'complete_installation' }>) => Promise<void> }) {
@@ -649,7 +646,7 @@ function HydratedNewOrderPanel({ data, onClose, onCreated }: { data: OrderBootst
         removeOfflineOrderDraft(localStorage, data.actor.email);
         if (active) onCreated(result.orderNumber || 'Order');
       } catch (cause) {
-        if (!(cause instanceof TypeError) && !(cause instanceof RetryableOrderSubmissionError) && navigator.onLine) {
+        if (!(cause instanceof TypeError) && !(cause instanceof OrderSubmissionError && cause.retryable) && navigator.onLine) {
           const message = cause instanceof Error ? cause.message : 'Unable to create order';
           updateOfflineDraftState(localStorage, data.actor.email, 'error', message);
           if (active) { setDraftState('error'); setError(message); }
@@ -714,7 +711,7 @@ function HydratedNewOrderPanel({ data, onClose, onCreated }: { data: OrderBootst
       onCreated(result.orderNumber || 'Order');
     } catch (cause) {
       const message = cause instanceof Error ? cause.message : 'Unable to create order';
-      const waiting = !navigator.onLine || cause instanceof TypeError || cause instanceof RetryableOrderSubmissionError;
+      const waiting = !navigator.onLine || cause instanceof TypeError || cause instanceof OrderSubmissionError && cause.retryable;
       const savedForRetry = waiting && saveOnDevice && Boolean(updateOfflineDraftState(localStorage, data.actor.email, 'pending'));
       if (!waiting && saveOnDevice) updateOfflineDraftState(localStorage, data.actor.email, 'error', message);
       setDraftState(savedForRetry ? 'pending' : 'error');
