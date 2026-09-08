@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { installedAssetsFromOrders, searchInstalledAssets } from '../../lib/service-types';
+import { installedAssetsFromOrders, searchInstalledAssets, searchServiceWorkspace, validateServiceCommand } from '../../lib/service-types';
 
 const order = {
   id: 'order-1', orderNumber: 'SF-101', customerName: 'City Hospital', customerPhone: '9876543210', status: 'delivered', source: 'phone', notes: null, version: 1,
@@ -21,5 +21,26 @@ describe('installed equipment register', () => {
     const assets = installedAssetsFromOrders([order]);
     for (const query of ['city', 'analyzer', 'sn-100', 'dr rao', 'sf-101', '9876']) expect(searchInstalledAssets(assets, query)).toHaveLength(1);
     expect(searchInstalledAssets(assets, 'missing')).toEqual([]);
+  });
+});
+
+describe('service ticket commands', () => {
+  const id = '11111111-1111-4111-8111-111111111111';
+  it('accepts bounded create and resolve commands', () => {
+    expect(validateServiceCommand({ action: 'create_service_ticket', payload: { installationId: id, category: 'breakdown', priority: 'urgent', summary: 'Analyzer will not start', idempotencyKey: '1234567890abcdef' } })?.action).toBe('create_service_ticket');
+    expect(validateServiceCommand({ action: 'resolve_service_ticket', payload: { ticketId: id, expectedVersion: 1, resolution: 'Power supply replaced', idempotencyKey: 'abcdef1234567890' } })?.action).toBe('resolve_service_ticket');
+  });
+
+  it('rejects invalid identity, choices, bounds, and versions', () => {
+    expect(validateServiceCommand({ action: 'create_service_ticket', payload: { installationId: 'bad', category: 'sale', priority: 'urgent', summary: 'x', idempotencyKey: 'short' } })).toBeNull();
+    expect(validateServiceCommand({ action: 'resolve_service_ticket', payload: { ticketId: id, expectedVersion: 0, resolution: 'ok', idempotencyKey: 'abcdef1234567890' } })).toBeNull();
+  });
+
+  it('searches tickets and keeps their linked equipment visible', () => {
+    const assets = installedAssetsFromOrders([order]);
+    const ticket = { id, ticketNumber: 'ST-001', installationId: 'install-1', category: 'breakdown' as const, priority: 'urgent' as const, status: 'open' as const, summary: 'Display error', resolution: null, createdBy: 'ops@example.com', createdAt: '2026-09-03T00:00:00Z', resolvedBy: null, resolvedAt: null, version: 1, events: [] };
+    const result = searchServiceWorkspace({ assets, tickets: [ticket] }, 'display');
+    expect(result.tickets).toHaveLength(1);
+    expect(result.assets).toHaveLength(1);
   });
 });

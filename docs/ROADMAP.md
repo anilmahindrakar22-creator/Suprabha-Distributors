@@ -48,14 +48,14 @@ Preserve and release the existing order flow, Tally catalog/customer lookup, ful
 
 ## Immediate priority — lightweight recovery
 
-The [lightweight recovery phase](LIGHTWEIGHT-RECOVERY.md) takes priority over further expansion: correct ledger-and-invoice matching, reduce repeated Tally reads, measure connector load, then deliver smaller OMS responses and offline drafts. Existing modules remain available. Do not describe the OMS as fully offline-capable until reconnect and account-isolation tests pass.
+Feature delivery now proceeds before the remaining [lightweight recovery work](LIGHTWEIGHT-RECOVERY.md), while every new slice must preserve the same-app, Tally-source-of-truth boundary. Performance improvements remain the next dedicated stream after the agreed features. Do not describe the OMS as fully offline-capable until reconnect and account-isolation tests pass.
 
 ## Milestone 4 — Installed-base and service operations
 
 - Installed-equipment register derived from completed order installations.
 - Promote installation records into canonical instruments/assets.
 - Ownership, placement, warranty and contract.
-- Service tickets, visits, parts, downtime and resolution.
+- Service ticket logging and resolution linked to installed equipment, with priority, server-side permissions and immutable activity history (foundation delivered locally; visits, parts and downtime remain).
 - Preventive-maintenance queue.
 - Estimated reagent consumption gap, clearly labelled as an estimate.
 
