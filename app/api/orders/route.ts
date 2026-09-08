@@ -66,7 +66,7 @@ export async function GET(request: Request) {
           });
           orders.push(...next.orders);
         }
-        return new Response(`\uFEFF${ordersCsv(orders)}`, {
+        return new Response(`\uFEFF${ordersCsv(orders, { invoices: first.snapshot.tallyInvoices, fetchedAt: first.snapshot.fetchedAt })}`, {
           headers: { ...privateHeaders, 'content-type': 'text/csv; charset=utf-8', 'content-disposition': `attachment; filename="stockflow-orders-${new Date().toISOString().slice(0, 10)}.csv"` },
         });
       } catch (error) {
@@ -84,7 +84,7 @@ export async function GET(request: Request) {
       const listQuery = parseOrderListQuery(parameters);
       if (!listQuery) return failure('Invalid order list filters', 400);
       if (parameters.get('export') === '1') {
-        return new Response(`\uFEFF${ordersCsv(matchingOrderList(result.orders, listQuery))}`, {
+        return new Response(`\uFEFF${ordersCsv(matchingOrderList(result.orders, listQuery), { invoices: result.snapshot.tallyInvoices, fetchedAt: result.snapshot.fetchedAt })}`, {
           headers: { ...privateHeaders, 'content-type': 'text/csv; charset=utf-8', 'content-disposition': `attachment; filename="stockflow-orders-${new Date().toISOString().slice(0, 10)}.csv"` },
         });
       }

@@ -309,4 +309,14 @@ describe('order workflow and history', () => {
     expect(csv).toContain('"Glucose Reagent (2 box)"');
     expect(csv.split('\r\n')).toHaveLength(2);
   });
+
+  it('exports invoice identity and exact line differences for Accounts', () => {
+    const order = { ...baseOrder, tallyInvoiceNumber: 'INV-88' };
+    const invoice = { voucherNumber: 'INV-88', reference: null, party: 'City Hospital', date: '20260903', masterId: '44', lineItems: [{ itemName: 'Glucose Reagent', quantity: 1 }] };
+    const csv = ordersCsv([order], { invoices: [invoice] });
+    expect(csv).toContain('"Invoice identity"');
+    expect(csv).toContain('"verified"');
+    expect(csv).toContain('"mismatch"');
+    expect(csv).toContain('"Glucose Reagent: ordered 2; invoiced 1"');
+  });
 });

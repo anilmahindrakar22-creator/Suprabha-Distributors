@@ -287,21 +287,28 @@ function csvCell(value: string | number | null | undefined) {
   return `"${text.replaceAll('"', '""')}"`;
 }
 
-export function ordersCsv(orders: OrderSummary[]) {
-  const headings = ['Order', 'Customer', 'Phone', 'Stage', 'Products', 'Quantity', 'Tally invoice', 'Expected delivery', 'Courier', 'Tracking', 'Last updated'];
-  const rows = orders.map((order) => [
-    order.orderNumber,
-    order.customerName,
-    order.customerPhone,
-    orderStage(order.status),
-    order.lines.map((line) => `${line.itemName} (${line.quantity} ${line.baseUnit || ''})`.trim()).join('; '),
-    order.totalQuantity,
-    order.tallyInvoiceNumber,
-    order.expectedDeliveryDate,
-    order.courierName,
-    order.trackingNumber,
-    order.updatedAt,
-  ]);
+export function ordersCsv(orders: OrderSummary[], reconciliation?: { invoices?: TallyInvoice[]; fetchedAt?: string; now?: Date }) {
+  const headings = ['Order', 'Customer', 'Phone', 'Stage', 'Products', 'Quantity', 'Tally invoice', 'Invoice identity', 'Product and quantity check', 'Invoice differences', 'Expected delivery', 'Courier', 'Tracking', 'Last updated'];
+  const rows = orders.map((order) => {
+    const identity = reconciliation ? tallyInvoiceReconciliation(order, reconciliation.invoices, reconciliation.now, reconciliation.fetchedAt) : '';
+    const lines = reconciliation ? tallyInvoiceLineReconciliation(order, reconciliation.invoices, reconciliation.now, reconciliation.fetchedAt) : null;
+    return [
+      order.orderNumber,
+      order.customerName,
+      order.customerPhone,
+      orderStage(order.status),
+      order.lines.map((line) => `${line.itemName} (${line.quantity} ${line.baseUnit || ''})`.trim()).join('; '),
+      order.totalQuantity,
+      order.tallyInvoiceNumber,
+      identity.replaceAll('_', ' '),
+      lines?.state.replaceAll('_', ' ') || '',
+      lines?.differences.map((item) => `${item.itemName}: ordered ${item.orderedQuantity}; invoiced ${item.invoicedQuantity}`).join(' | ') || '',
+      order.expectedDeliveryDate,
+      order.courierName,
+      order.trackingNumber,
+      order.updatedAt,
+    ];
+  });
   return [headings, ...rows].map((row) => row.map(csvCell).join(',')).join('\r\n');
 }
 
