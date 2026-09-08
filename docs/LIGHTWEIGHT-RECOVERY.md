@@ -10,6 +10,8 @@ The OMS now withdraws the matched badge when the supporting Tally snapshot is in
 
 Invoice reconciliation also reports distinct not-found, customer-ledger-mismatch and duplicate-match outcomes. Ambiguous voucher identities fail closed instead of selecting one record arbitrarily.
 
+For a successful match, order details show the exact normalized Tally voucher number as evidence. A short operator entry such as `346` can therefore be checked visibly against `SD/26-27/0346` without replacing the original order entry.
+
 Connector refreshes share an in-memory snapshot for 15 minutes by default, retaining its original timestamp. This reduces scheduled full reads from 12 to 4 per hour; it does not prove a reduction in Tally response latency. Manual refresh serves the same cache during the cooldown. Restarting the connector resets its cache.
 
 ## Slice 2: incremental connector, with recovery

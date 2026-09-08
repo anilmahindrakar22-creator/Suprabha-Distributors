@@ -9,7 +9,7 @@ import type {
   OrderEvent,
   OrderSummary,
 } from '@/lib/order-types';
-import { billingHandoffText, orderAttentionReasons, orderStage, searchCatalog, searchCustomers, tallyInvoiceReconciliation } from '@/lib/order-types';
+import { billingHandoffText, orderAttentionReasons, orderStage, searchCatalog, searchCustomers, tallyInvoiceReconciliationDetail } from '@/lib/order-types';
 import { orderListUrl } from '@/lib/order-list-query';
 import { readOfflineDraftConsent, readOfflineOrderDraft, removeOfflineOrderDraft, restoreOfflineDraftLines, updateOfflineDraftState, writeOfflineDraftConsent, writeOfflineOrderDraft, type OfflineDraftState } from '@/lib/offline-order-drafts';
 import { readCatalogCache, removeCatalogCache, writeCatalogCache } from '@/lib/catalog-cache';
@@ -531,7 +531,8 @@ function OrderRow({
   const requiresInvoice = order.status === 'awaiting_tally_billing';
   const canCancel = actorRole === 'administrator' && !['cancelled', 'delivered'].includes(order.status);
   const attention = orderAttentionReasons(order);
-  const invoiceState = tallyInvoiceReconciliation(order, tallyInvoices, new Date(), tallySnapshotFetchedAt);
+  const invoiceMatch = tallyInvoiceReconciliationDetail(order, tallyInvoices, new Date(), tallySnapshotFetchedAt);
+  const invoiceState = invoiceMatch.state;
   return (
     <article className="p-5">
       <div className="grid gap-4 lg:grid-cols-[1.5fr_1fr_auto] lg:items-center">
@@ -577,6 +578,7 @@ function OrderRow({
             <dt className="font-bold text-[#708386]">Last updated</dt><dd>{new Date(order.updatedAt).toLocaleString('en-IN')}</dd>
             <dt className="font-bold text-[#708386]">Source</dt><dd className="capitalize">{order.source.replaceAll('_', ' ')}</dd>
             <dt className="font-bold text-[#708386]">Tally invoice</dt><dd>{order.tallyInvoiceNumber || 'Not billed yet'}{invoiceState === 'verified' ? <span title="Invoice number, financial year, and customer ledger matched" className="ml-2 rounded-full bg-[#eaf8f1] px-2 py-0.5 font-bold text-[#176246]">Invoice matched</span> : invoiceState === 'unmatched' ? <span className="ml-2 rounded-full bg-[#fff1d6] px-2 py-0.5 font-bold text-[#8a5a0a]">Invoice not found</span> : invoiceState === 'customer_mismatch' ? <span title="The invoice exists under a different Tally customer ledger" className="ml-2 rounded-full bg-[#fff0ef] px-2 py-0.5 font-bold text-[#8d3a34]">Customer ledger differs</span> : invoiceState === 'ambiguous' ? <span title="More than one Tally voucher has this invoice identity" className="ml-2 rounded-full bg-[#fff0ef] px-2 py-0.5 font-bold text-[#8d3a34]">Duplicate invoice match</span> : invoiceState === 'verification_stale' ? <span title="The latest Tally data is over 20 minutes old" className="ml-2 rounded-full bg-[#fff1d6] px-2 py-0.5 font-bold text-[#8a5a0a]">Match needs fresh sync</span> : invoiceState === 'awaiting_sync' ? <span className="ml-2 text-[#708386]">Awaiting connector update</span> : null}</dd>
+            {invoiceMatch.matchedVoucherNumber ? <><dt className="font-bold text-[#708386]">Matched Tally voucher</dt><dd className="font-bold text-[#176246]">{invoiceMatch.matchedVoucherNumber}</dd></> : null}
             {order.tallyInvoiceNumber ? <><dt className="font-bold text-[#708386]">Product & quantity check</dt><dd className="text-[#708386]">Not compared with Tally</dd></> : null}
             <dt className="font-bold text-[#708386]">Notes</dt><dd>{order.notes || 'No notes'}</dd>
           </dl>

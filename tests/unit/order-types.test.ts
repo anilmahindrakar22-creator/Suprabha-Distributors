@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { billingHandoffText, currentTallyFinancialYear, filterOrders, isOrderDeliveryOverdue, orderAttentionReasons, orderMatchesCaptureDate, ordersCsv, orderStage, pageItems, searchCatalog, searchCustomers, tallyInvoiceReconciliation, validateOrderCommand } from '../../lib/order-types';
+import { billingHandoffText, currentTallyFinancialYear, filterOrders, isOrderDeliveryOverdue, orderAttentionReasons, orderMatchesCaptureDate, ordersCsv, orderStage, pageItems, searchCatalog, searchCustomers, tallyInvoiceReconciliation, tallyInvoiceReconciliationDetail, validateOrderCommand } from '../../lib/order-types';
 
 describe('order command validation', () => {
   it('accepts a complete phone order', () => {
@@ -225,6 +225,7 @@ describe('order workflow and history', () => {
     const currentDate = new Date('2026-09-03T06:00:00Z');
     expect(currentTallyFinancialYear(currentDate)).toBe('26-27');
     expect(tallyInvoiceReconciliation({ ...billed, tallyInvoiceNumber: '552' }, [{ ...invoices[0], voucherNumber: 'SD/26-27/0552' }], currentDate)).toBe('verified');
+    expect(tallyInvoiceReconciliationDetail({ ...billed, tallyInvoiceNumber: '552' }, [{ ...invoices[0], voucherNumber: ' SD/26-27/0552 ' }], currentDate)).toEqual({ state: 'verified', matchedVoucherNumber: 'SD/26-27/0552' });
     expect(tallyInvoiceReconciliation({ ...billed, tallyInvoiceNumber: '552' }, [{ ...invoices[0], voucherNumber: 'SD/25-26/0552' }], currentDate)).toBe('unmatched');
     expect(tallyInvoiceReconciliation({ ...billed, tallyInvoiceNumber: 'SD/25-26/0552' }, [{ ...invoices[0], voucherNumber: 'SD/26-27/0552' }])).toBe('unmatched');
     expect(tallyInvoiceReconciliation(billed, invoices, new Date('2026-09-03T06:21:00Z'), '2026-09-03T06:00:00Z')).toBe('verification_stale');

@@ -124,13 +124,13 @@ export function currentTallyFinancialYear(now = new Date()) {
   return `${String(start).slice(-2)}-${String(start + 1).slice(-2)}`;
 }
 
-export function tallyInvoiceReconciliation(order: OrderSummary, invoices?: TallyInvoice[], now = new Date(), snapshotFetchedAt?: string) {
-  if (!order.tallyInvoiceNumber) return 'not_billed' as const;
-  if (!invoices) return 'awaiting_sync' as const;
+export function tallyInvoiceReconciliationDetail(order: OrderSummary, invoices?: TallyInvoice[], now = new Date(), snapshotFetchedAt?: string) {
+  if (!order.tallyInvoiceNumber) return { state: 'not_billed' as const, matchedVoucherNumber: null };
+  if (!invoices) return { state: 'awaiting_sync' as const, matchedVoucherNumber: null };
   if (snapshotFetchedAt) {
     const snapshotTime = Date.parse(snapshotFetchedAt);
     const snapshotAge = now.getTime() - snapshotTime;
-    if (!Number.isFinite(snapshotTime) || snapshotAge > 20 * 60_000 || snapshotAge < -5 * 60_000) return 'verification_stale' as const;
+    if (!Number.isFinite(snapshotTime) || snapshotAge > 20 * 60_000 || snapshotAge < -5 * 60_000) return { state: 'verification_stale' as const, matchedVoucherNumber: null };
   }
   const expected = order.tallyInvoiceNumber.trim().toLocaleLowerCase('en-IN');
   const numericExpected = /^\d+$/.test(expected) ? expected.replace(/^0+(?=\d)/, '') : null;
@@ -141,10 +141,14 @@ export function tallyInvoiceReconciliation(order: OrderSummary, invoices?: Tally
     const currentYearVoucher = item.voucherNumber.trim().toUpperCase().match(/^SD\/(\d{2}-\d{2})\/0*(\d+)$/);
     return currentYearVoucher?.[1] === currentTallyFinancialYear(now) && currentYearVoucher[2].replace(/^0+(?=\d)/, '') === numericExpected;
   });
-  if (invoiceMatches.length === 0) return 'unmatched' as const;
-  if (invoiceMatches.length > 1) return 'ambiguous' as const;
-  if (!ledger(order.customerName) || ledger(invoiceMatches[0].party || '') !== ledger(order.customerName)) return 'customer_mismatch' as const;
-  return 'verified' as const;
+  if (invoiceMatches.length === 0) return { state: 'unmatched' as const, matchedVoucherNumber: null };
+  if (invoiceMatches.length > 1) return { state: 'ambiguous' as const, matchedVoucherNumber: null };
+  if (!ledger(order.customerName) || ledger(invoiceMatches[0].party || '') !== ledger(order.customerName)) return { state: 'customer_mismatch' as const, matchedVoucherNumber: null };
+  return { state: 'verified' as const, matchedVoucherNumber: invoiceMatches[0].voucherNumber.trim() };
+}
+
+export function tallyInvoiceReconciliation(order: OrderSummary, invoices?: TallyInvoice[], now = new Date(), snapshotFetchedAt?: string) {
+  return tallyInvoiceReconciliationDetail(order, invoices, now, snapshotFetchedAt).state;
 }
 
 export function orderMatchesCaptureDate(order: OrderSummary, date: string) {
