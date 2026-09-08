@@ -211,6 +211,7 @@ describe('order workflow and history', () => {
     expect(tallyInvoiceReconciliation(billed, invoices, new Date('2026-09-03T06:21:00Z'), '2026-09-03T06:00:00Z')).toBe('verification_stale');
     expect(tallyInvoiceReconciliation(billed, invoices, new Date('2026-09-03T06:19:59Z'), '2026-09-03T06:00:00Z')).toBe('verified');
     expect(tallyInvoiceReconciliation(billed, invoices, new Date('2026-09-03T06:01:00Z'), 'invalid')).toBe('verification_stale');
+    expect(tallyInvoiceReconciliation(billed, invoices, new Date('2026-09-03T06:00:00Z'), '2026-09-03T06:06:00Z')).toBe('verification_stale');
   });
 
   it('filters capture dates using the India business date', () => {

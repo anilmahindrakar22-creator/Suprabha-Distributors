@@ -129,7 +129,8 @@ export function tallyInvoiceReconciliation(order: OrderSummary, invoices?: Tally
   if (!invoices) return 'awaiting_sync' as const;
   if (snapshotFetchedAt) {
     const snapshotTime = Date.parse(snapshotFetchedAt);
-    if (!Number.isFinite(snapshotTime) || now.getTime() - snapshotTime > 20 * 60_000) return 'verification_stale' as const;
+    const snapshotAge = now.getTime() - snapshotTime;
+    if (!Number.isFinite(snapshotTime) || snapshotAge > 20 * 60_000 || snapshotAge < -5 * 60_000) return 'verification_stale' as const;
   }
   const expected = order.tallyInvoiceNumber.trim().toLocaleLowerCase('en-IN');
   const numericExpected = /^\d+$/.test(expected) ? expected.replace(/^0+(?=\d)/, '') : null;

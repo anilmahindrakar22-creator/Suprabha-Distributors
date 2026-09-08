@@ -6,7 +6,7 @@ Tally remains the inventory and accounting authority. Pause new service, CRM and
 
 Invoice verification requires customer ledger name plus voucher number. A bare number requires the current financial year in the SD voucher number. References alone cannot verify an invoice. Quantity comparison remains unimplemented.
 
-The OMS now withdraws the matched badge when the supporting Tally snapshot is invalid or more than 20 minutes old. The order remains billed, but the screen asks for a fresh sync before presenting the invoice identity as matched.
+The OMS now withdraws the matched badge when the supporting Tally snapshot is invalid, more than 20 minutes old or over five minutes ahead of the browser clock. The order remains billed, but the screen asks for a fresh sync before presenting the invoice identity as matched.
 
 Invoice reconciliation also reports distinct not-found, customer-ledger-mismatch and duplicate-match outcomes. Ambiguous voucher identities fail closed instead of selecting one record arbitrarily.
 
