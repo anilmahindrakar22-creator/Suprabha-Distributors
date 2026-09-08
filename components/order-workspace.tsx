@@ -18,6 +18,7 @@ import { applyOrderAcknowledgement } from '@/lib/order-acknowledgement';
 import { OrderSubmissionError, orderSubmissionError } from '@/lib/order-submission';
 import { loadOrderBootstrap } from '@/lib/order-bootstrap-cache';
 import { retryPendingOfflineOrder } from '@/lib/offline-order-retry';
+import { acknowledgeOrderCommand, prepareOrderCommandRetry } from '@/lib/order-command-idempotency';
 
 type DraftLine = { tallyKey: string; item: CatalogItem | null; quantity: number };
 const statusNames: Record<string, string> = {
@@ -81,6 +82,7 @@ export function OrderWorkspace({ actorEmail, initialStatus = 'open' }: { actorEm
   const workspaceRef = useRef<HTMLDivElement>(null);
   const dataRef = useRef<OrderBootstrap | null>(null);
   const retryingDraftRef = useRef(false);
+  const pendingCommandKeysRef = useRef(new Map<string, string>());
 
   useEffect(() => {
     dataRef.current = data;
@@ -263,6 +265,7 @@ export function OrderWorkspace({ actorEmail, initialStatus = 'open' }: { actorEm
 
   async function runCommand(command: OrderCommand, success: string) {
     const scrollTop = workspaceRef.current?.scrollTop;
+    const prepared = prepareOrderCommandRetry(command, pendingCommandKeysRef.current);
     setError('');
     setNotice('');
     try {
@@ -270,17 +273,12 @@ export function OrderWorkspace({ actorEmail, initialStatus = 'open' }: { actorEm
         await fetch('/api/orders', {
           method: 'POST',
           headers: { 'content-type': 'application/json' },
-          body: JSON.stringify({
-            ...command,
-            payload: {
-              ...command.payload,
-              idempotencyKey: command.payload.idempotencyKey || crypto.randomUUID(),
-            },
-          }),
+          body: JSON.stringify(prepared.command),
         }),
       );
+      acknowledgeOrderCommand(prepared.identity, pendingCommandKeysRef.current);
       setNotice(success);
-      const patched = dataRef.current ? applyOrderAcknowledgement(dataRef.current, command, result) : null;
+      const patched = dataRef.current ? applyOrderAcknowledgement(dataRef.current, prepared.command, result) : null;
       if (patched) {
         dataRef.current = patched;
         setData(patched);

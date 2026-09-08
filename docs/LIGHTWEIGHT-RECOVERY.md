@@ -54,6 +54,8 @@ Implemented locally: the authenticated shell begins one account-scoped OMS boots
 
 Routine status, fulfilment, order-edit, dispatch, delivery-exception and equipment-installation commands now apply the successful server acknowledgement to the affected order and counters instead of downloading the entire workspace again. Server-issued exception and installation IDs remain authoritative. If an older or incomplete server response cannot safely identify the row and version, the client falls back to the existing full refresh.
 
+If an order mutation loses its response, a manual retry of the unchanged action now reuses the original idempotency key until the server acknowledges it. Changing the intended mutation creates a different identity; successful acknowledgement clears the pending key.
+
 Transition requests now reject unknown workflow states, invalid versions and oversized identifiers, cancellation reasons or invoice numbers at the API boundary before invoking database logic. Database transition policy remains the authoritative permission and state-machine check.
 
 The same bounded-input policy now covers order capture, fulfilment, edits, dispatch, delivery, exceptions and installations. It limits line counts, whole-unit quantities, identifiers and free-text fields without adding a validation dependency; database constraints and policies remain authoritative.
