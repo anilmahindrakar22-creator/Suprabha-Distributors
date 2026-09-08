@@ -573,7 +573,8 @@ function OrderRow({
             <dt className="font-bold text-[#708386]">Order date</dt><dd>{new Date(order.createdAt).toLocaleString('en-IN')}</dd>
             <dt className="font-bold text-[#708386]">Last updated</dt><dd>{new Date(order.updatedAt).toLocaleString('en-IN')}</dd>
             <dt className="font-bold text-[#708386]">Source</dt><dd className="capitalize">{order.source.replaceAll('_', ' ')}</dd>
-            <dt className="font-bold text-[#708386]">Tally invoice</dt><dd>{order.tallyInvoiceNumber || 'Not billed yet'}{invoiceState === 'verified' ? <span title="Invoice number verified; product quantities are not compared with Tally" className="ml-2 rounded-full bg-[#eaf8f1] px-2 py-0.5 font-bold text-[#176246]">Invoice verified</span> : invoiceState === 'unmatched' ? <span className="ml-2 rounded-full bg-[#fff1d6] px-2 py-0.5 font-bold text-[#8a5a0a]">Not found in latest sync</span> : invoiceState === 'awaiting_sync' ? <span className="ml-2 text-[#708386]">Awaiting connector update</span> : null}</dd>
+            <dt className="font-bold text-[#708386]">Tally invoice</dt><dd>{order.tallyInvoiceNumber || 'Not billed yet'}{invoiceState === 'verified' ? <span title="Invoice number, financial year, and customer ledger matched" className="ml-2 rounded-full bg-[#eaf8f1] px-2 py-0.5 font-bold text-[#176246]">Invoice matched</span> : invoiceState === 'unmatched' ? <span className="ml-2 rounded-full bg-[#fff1d6] px-2 py-0.5 font-bold text-[#8a5a0a]">Not found in latest sync</span> : invoiceState === 'awaiting_sync' ? <span className="ml-2 text-[#708386]">Awaiting connector update</span> : null}</dd>
+            {order.tallyInvoiceNumber ? <><dt className="font-bold text-[#708386]">Product & quantity check</dt><dd className="text-[#708386]">Not compared with Tally</dd></> : null}
             <dt className="font-bold text-[#708386]">Notes</dt><dd>{order.notes || 'No notes'}</dd>
           </dl>
         </div>
