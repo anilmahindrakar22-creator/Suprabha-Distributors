@@ -13,3 +13,17 @@ Run the following once in PowerShell from this folder while signed in as the Win
 ```
 
 This creates or updates the per-user **Suprabha StockFlow Tally Sync** task, starts it immediately, and restarts it at every Windows sign-in. Windows also retries the connector after an unexpected failure. The connector remains lightweight, extracts operational data every 15 minutes, refreshes product and customer masters every four hours, and retries a pending cloud upload without rereading Tally. Failed uploads use a bounded 5, 10, 20 and then 30-minute backoff; the next fresh snapshot uploads immediately after recovery. Successful and failed cloud uploads, including consecutive failure counts, are recorded in `%LOCALAPPDATA%\SuprabhaStockFlow\connector-health.log` without storing the credential or business payload.
+
+## Office administrator controls
+
+These controls run only on the Tally computer and do not add anything to the everyday web app:
+
+```powershell
+.\connector-control.ps1 -Action Status
+.\connector-control.ps1 -Action Pause
+.\connector-control.ps1 -Action Resume
+.\connector-control.ps1 -Action Restart
+.\connector-control.ps1 -Action SetSchedule -SyncMinutes 20
+```
+
+The supported schedule is 5–120 minutes. Pausing stops Tally reads until an administrator resumes the task. Status shows the Windows task state and the latest cloud-upload result without exposing its credential or business payload.

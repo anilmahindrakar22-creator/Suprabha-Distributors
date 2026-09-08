@@ -7,6 +7,10 @@ const startupInstaller = readFileSync(
   new URL('../../desktop-connector/install-startup.ps1', import.meta.url),
   'utf8',
 );
+const connectorControl = readFileSync(
+  new URL('../../desktop-connector/connector-control.ps1', import.meta.url),
+  'utf8',
+);
 
 describe('Tally stock sync health', () => {
   it('automatically checks the cloud snapshot every five minutes', () => {
@@ -34,6 +38,8 @@ describe('Tally stock sync health', () => {
     expect(startupInstaller).toContain("-NoBrowser");
     expect(startupInstaller).toContain('-RestartCount 10');
     expect(startupInstaller).toContain('-MultipleInstances IgnoreNew');
+    expect(startupInstaller).toContain('[ValidateRange(5, 120)][int]$SyncMinutes = 15');
+    expect(startupInstaller).toContain('-SyncMinutes $SyncMinutes');
   });
 
   it('records cloud upload outcomes without logging credentials or payloads', () => {
@@ -46,5 +52,13 @@ describe('Tally stock sync health', () => {
     expect(connector).toContain('$script:cloudUploadFailures = 0');
     expect(connector).toContain('[Math]::Min(30, 5 * [Math]::Pow(2');
     expect(connector).toContain('$script:nextUpload = (Get-Date).AddMinutes($retryMinutes)');
+  });
+
+  it('provides office-only status, pause, resume, restart, and schedule controls', () => {
+    expect(connectorControl).toContain("[ValidateSet('Status', 'Pause', 'Resume', 'Restart', 'SetSchedule')]");
+    expect(connectorControl).toContain('Stop-ScheduledTask -TaskName $taskName');
+    expect(connectorControl).toContain('Start-ScheduledTask -TaskName $taskName');
+    expect(connectorControl).toContain('& $installer -DoNotStartNow -SyncMinutes $SyncMinutes');
+    expect(connectorControl).not.toContain('STOCKFLOW_UPLOAD_KEY');
   });
 });
