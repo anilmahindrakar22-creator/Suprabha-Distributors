@@ -12,6 +12,7 @@ export type GatewayAction =
   | 'get_service_workspace'
   | 'create_service_ticket'
   | 'resolve_service_ticket'
+  | 'record_billing_review'
   | 'save_fulfilment'
   | 'edit_order'
   | 'save_dispatch'

@@ -35,6 +35,7 @@ function patchedOrder(order: OrderSummary, command: OrderCommand, result: Comman
     if (!result.installationId || result.installationId !== command.payload.installationId) return null;
     return { ...base, installations: base.installations.map((item) => item.id === result.installationId ? { ...item, status: 'completed', serialNumber: command.payload.serialNumber, commissioningNotes: command.payload.commissioningNotes, completedBy: actor.email, completedAt: updatedAt } : item) };
   }
+  if (command.action === 'record_billing_review') return base;
   return null;
 }
 

@@ -34,4 +34,9 @@ describe('targeted order acknowledgement', () => {
     const completed = scheduled && applyOrderAcknowledgement(scheduled, { action: 'complete_installation', payload: { idempotencyKey: '2234567890abcdef', orderId: order.id, expectedVersion: 2, installationId: 'install-1', serialNumber: 'SN-1', commissioningNotes: 'Commissioned successfully' } }, { orderId: order.id, installationId: 'install-1', version: 3 }, '2026-09-11T11:00:00Z');
     expect(completed?.orders[0].installations[0]).toMatchObject({ status: 'completed', serialNumber: 'SN-1', completedBy: 'sales@example.com' });
   });
+
+  it('advances the local version after recording a billing review', () => {
+    const next = applyOrderAcknowledgement(data, { action: 'record_billing_review', payload: { idempotencyKey: '1234567890abcdef', orderId: order.id, expectedVersion: 1, outcome: 'investigating', note: 'Checking invoice line' } }, { orderId: order.id, status: order.status, version: 2 });
+    expect(next?.orders[0].version).toBe(2);
+  });
 });

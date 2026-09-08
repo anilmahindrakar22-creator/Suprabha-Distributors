@@ -107,6 +107,13 @@ describe('order command validation', () => {
     expect(validateOrderCommand({ action: 'schedule_installation', payload: { idempotencyKey: '1234567890abcdef', orderId: 'order-id', expectedVersion: 4, tallyKey: 'EQUIPMENT-1', scheduledDate: '2026-02-30' } })).toBeNull();
     expect(validateOrderCommand({ action: 'complete_installation', payload: { idempotencyKey: '1234567890abcdef', orderId: 'order-id', expectedVersion: 5, installationId: 'installation-id', serialNumber: 'SN-1002', commissioningNotes: 'Installed and quality checks passed' } })).not.toBeNull();
   });
+
+  it('validates bounded billing reconciliation reviews', () => {
+    const valid = { action: 'record_billing_review', payload: { idempotencyKey: '1234567890abcdef', orderId: 'order-id', expectedVersion: 2, outcome: 'tally_corrected', note: 'Corrected billed quantity in Tally' } };
+    expect(validateOrderCommand(valid)).not.toBeNull();
+    expect(validateOrderCommand({ ...valid, payload: { ...valid.payload, outcome: 'ignored' } })).toBeNull();
+    expect(validateOrderCommand({ ...valid, payload: { ...valid.payload, note: 'x' } })).toBeNull();
+  });
 });
 
 describe('order list pagination', () => {

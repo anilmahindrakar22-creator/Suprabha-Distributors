@@ -342,6 +342,9 @@ export function OrderWorkspace({ actorEmail, initialStatus = 'open' }: { actorEm
   async function updateInstallation(order: OrderSummary, command: Extract<OrderCommand, { action: 'schedule_installation' | 'complete_installation' }>) {
     await runCommand(command, `${order.orderNumber} installation record updated.`);
   }
+  async function recordBillingReview(order: OrderSummary, command: Extract<OrderCommand, { action: 'record_billing_review' }>) {
+    await runCommand(command, `${order.orderNumber} billing review recorded.`);
+  }
 
   const operations = data?.operations || {};
   const staleText = data?.snapshot.fetchedAt || 'No Tally snapshot';
@@ -459,6 +462,7 @@ export function OrderWorkspace({ actorEmail, initialStatus = 'open' }: { actorEm
                   onEdit={editOrder}
                   onException={updateException}
                   onInstallation={updateInstallation}
+                  onBillingReview={recordBillingReview}
                 />
               ))}
             </div>
@@ -507,6 +511,7 @@ function OrderRow({
   onEdit,
   onException,
   onInstallation,
+  onBillingReview,
 }: {
   order: OrderSummary;
   actorRole: string;
@@ -519,6 +524,7 @@ function OrderRow({
   onEdit: (order: OrderSummary, payload: Extract<OrderCommand, { action: 'edit_order' }>['payload']) => Promise<void>;
   onException: (order: OrderSummary, command: Extract<OrderCommand, { action: 'create_exception' | 'resolve_exception' }>) => Promise<void>;
   onInstallation: (order: OrderSummary, command: Extract<OrderCommand, { action: 'schedule_installation' | 'complete_installation' }>) => Promise<void>;
+  onBillingReview: (order: OrderSummary, command: Extract<OrderCommand, { action: 'record_billing_review' }>) => Promise<void>;
 }) {
   const [busy, setBusy] = useState(false);
   const [invoiceNumber, setInvoiceNumber] = useState(order.tallyInvoiceNumber || '');
@@ -582,17 +588,24 @@ function OrderRow({
             <dt className="font-bold text-[#708386]">Notes</dt><dd>{order.notes || 'No notes'}</dd>
           </dl>
         </div>
-        {lineMatch.state === 'mismatch' ? <div className="mt-3 rounded-xl border border-[#efc6c2] bg-[#fff8f7] p-3"><p className="text-xs font-extrabold uppercase tracking-wide text-[#8d3a34]">Tally invoice differences</p><ul className="mt-2 space-y-1 text-sm text-[#6f3f3b]">{lineMatch.differences.map((difference) => <li key={difference.itemName}>{difference.itemName}: ordered {formatQuantity(difference.orderedQuantity)}, invoiced {formatQuantity(difference.invoicedQuantity)}</li>)}</ul></div> : null}
+        {lineMatch.state === 'mismatch' ? <div className="mt-3 rounded-xl border border-[#efc6c2] bg-[#fff8f7] p-3"><p className="text-xs font-extrabold uppercase tracking-wide text-[#8d3a34]">Tally invoice differences</p><ul className="mt-2 space-y-1 text-sm text-[#6f3f3b]">{lineMatch.differences.map((difference) => <li key={difference.itemName}>{difference.itemName}: ordered {formatQuantity(difference.orderedQuantity)}, invoiced {formatQuantity(difference.invoicedQuantity)}</li>)}</ul><BillingReviewPanel order={order} actorRole={actorRole} onSave={onBillingReview} /></div> : null}
         {!['cancelled', 'delivered'].includes(order.status) ? <FulfilmentEditor order={order} onSave={onSaveFulfilment} /> : null}
         {['ready_for_dispatch', 'dispatched', 'delivered'].includes(order.status) ? <DispatchPanel order={order} actorRole={actorRole} onSave={onDelivery} /> : null}
         {['phone_order_received','awaiting_confirmation','awaiting_approval','confirmed','partially_reserved','fully_reserved','ready_for_picking','picked','packed'].includes(order.status) ? <OrderEditPanel order={order} onSave={onEdit} /> : null}
         <DeliveryExceptionPanel order={order} onSave={onException} />
         <InstallationPanel order={order} onSave={onInstallation} />
         {order.status === 'awaiting_tally_billing' ? <BillingHandoff order={order} /> : null}
-        <OrderActivityLog orderId={order.id} initialEvents={order.events || []} />
+        <OrderActivityLog key={`${order.id}-${order.version}`} orderId={order.id} initialEvents={order.events || []} />
       </details>
     </article>
   );
+}
+
+function BillingReviewPanel({ order, actorRole, onSave }: { order: OrderSummary; actorRole: string; onSave: (order: OrderSummary, command: Extract<OrderCommand, { action: 'record_billing_review' }>) => Promise<void> }) {
+  const [open, setOpen] = useState(false); const [busy, setBusy] = useState(false);
+  const [outcome, setOutcome] = useState<'investigating' | 'accepted_difference' | 'tally_corrected'>('investigating'); const [note, setNote] = useState('');
+  if (!['administrator', 'accounts', 'operations', 'management'].includes(actorRole)) return <p className="mt-3 text-xs text-[#718487]">Accounts or operations must review this difference.</p>;
+  return <div className="mt-3 border-t border-[#efcfcc] pt-3"><button type="button" onClick={() => setOpen((value) => !value)} className="text-xs font-extrabold text-[#7d413c]">{open ? '− Hide review' : '+ Record review'}</button>{open ? <div className="mt-2 grid gap-2 sm:grid-cols-[180px_1fr_auto]"><select value={outcome} onChange={(event) => setOutcome(event.target.value as typeof outcome)} className="min-h-10 rounded-lg border border-[#dfbbb7] bg-white px-2 text-xs"><option value="investigating">Investigating</option><option value="tally_corrected">Corrected in Tally</option><option value="accepted_difference">Accepted difference</option></select><input value={note} onChange={(event) => setNote(event.target.value)} minLength={3} maxLength={1000} placeholder="What was checked or corrected?" className="min-h-10 rounded-lg border border-[#dfbbb7] bg-white px-3 text-xs"/><button type="button" disabled={busy || note.trim().length < 3} onClick={async () => { setBusy(true); try { await onSave(order, { action: 'record_billing_review', payload: { orderId: order.id, expectedVersion: order.version, outcome, note: note.trim() } }); setNote(''); setOpen(false); } finally { setBusy(false); } }} className="min-h-10 rounded-lg bg-[#7d413c] px-3 text-xs font-bold text-white disabled:opacity-50">{busy ? 'Saving…' : 'Save review'}</button></div> : null}</div>;
 }
 
 function OrderActivityLog({ orderId, initialEvents }: { orderId: string; initialEvents: OrderEvent[] }) {

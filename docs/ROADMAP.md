@@ -44,6 +44,8 @@ Preserve and release the existing order flow, Tally catalog/customer lookup, ful
 
 **Current slice:** the connector exports read-only voucher identity and billed orders show verified, unmatched or awaiting-sync status.
 
+**Local next-release work:** reuse cached sales-voucher lines to compare exact Tally item names and aggregated quantities, display differences separately from invoice identity, and let authorised Accounts/Operations users record an immutable reconciliation review. This does not query or write Tally during browser use.
+
 **Exit gate:** an order reaches billing and dispatch once, with verified customer/invoice identity and recoverable integration failures. Batch records remain in Tally.
 
 ## Immediate priority — lightweight recovery

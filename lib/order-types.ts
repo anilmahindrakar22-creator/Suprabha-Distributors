@@ -408,6 +408,10 @@ export type OrderCommand =
   | {
       action: 'complete_installation';
       payload: { idempotencyKey?: string; orderId: string; expectedVersion: number; installationId: string; serialNumber: string; commissioningNotes: string };
+    }
+  | {
+      action: 'record_billing_review';
+      payload: { idempotencyKey?: string; orderId: string; expectedVersion: number; outcome: 'investigating' | 'accepted_difference' | 'tally_corrected'; note: string };
     };
 
 export function isValidCalendarDate(value: unknown) {
@@ -429,7 +433,7 @@ export function validateOrderCommand(value: unknown): OrderCommand | null {
   if (!value || typeof value !== 'object') return null;
   const command = value as { action?: unknown; payload?: unknown };
   if (
-    !['create_order', 'transition_order', 'save_fulfilment', 'save_dispatch', 'confirm_delivery', 'edit_order', 'create_exception', 'resolve_exception', 'schedule_installation', 'complete_installation'].includes(
+    !['create_order', 'transition_order', 'save_fulfilment', 'save_dispatch', 'confirm_delivery', 'edit_order', 'create_exception', 'resolve_exception', 'schedule_installation', 'complete_installation', 'record_billing_review'].includes(
       String(command.action),
     ) ||
     !command.payload ||
@@ -490,6 +494,8 @@ export function validateOrderCommand(value: unknown): OrderCommand | null {
     if (!validMutationIdentity() || typeof payload.customerName !== 'string' || payload.customerName.trim().length < 2 || payload.customerName.length > 200 || !boundedOptionalText('customerPhone', 40) || !boundedOptionalText('notes', 2000) || !boundedOptionalText('reason', 500) || lines.length < 1 || lines.length > 50 || !lines.every((line) => validQuantityLine(line, 'quantity'))) return null;
   } else if (command.action === 'create_exception') {
     if (!validMutationIdentity() || !['delayed', 'failed_delivery', 'damaged', 'wrong_item', 'other'].includes(String(payload.category)) || typeof payload.summary !== 'string' || payload.summary.trim().length < 3 || payload.summary.length > 500 || !boundedOptionalText('ownerEmail', 254)) return null;
+  } else if (command.action === 'record_billing_review') {
+    if (!validMutationIdentity() || !['investigating', 'accepted_difference', 'tally_corrected'].includes(String(payload.outcome)) || typeof payload.note !== 'string' || payload.note.trim().length < 3 || payload.note.length > 1000) return null;
   } else if (command.action === 'resolve_exception') {
     if (!validMutationIdentity() || typeof payload.exceptionId !== 'string' || payload.exceptionId.length < 1 || payload.exceptionId.length > 100 || typeof payload.resolution !== 'string' || payload.resolution.trim().length < 3 || payload.resolution.length > 500) return null;
   } else if (command.action === 'schedule_installation') {
