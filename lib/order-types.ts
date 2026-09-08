@@ -51,6 +51,12 @@ export type TallyInvoice = {
   party: string;
   date: string;
   masterId: string | null;
+  lineItems?: Array<{ itemName: string; quantity: number }>;
+};
+
+export type TallyLineReconciliation = {
+  state: 'not_billed' | 'identity_unverified' | 'awaiting_detail' | 'matched' | 'mismatch';
+  differences: Array<{ itemName: string; orderedQuantity: number; invoicedQuantity: number }>;
 };
 
 export type EquipmentInstallation = {
@@ -149,6 +155,40 @@ export function tallyInvoiceReconciliationDetail(order: OrderSummary, invoices?:
 
 export function tallyInvoiceReconciliation(order: OrderSummary, invoices?: TallyInvoice[], now = new Date(), snapshotFetchedAt?: string) {
   return tallyInvoiceReconciliationDetail(order, invoices, now, snapshotFetchedAt).state;
+}
+
+function normalizedTallyItem(value: string) {
+  return value.normalize('NFKC').trim().replace(/\s+/g, ' ').toLocaleLowerCase('en-IN');
+}
+
+export function tallyInvoiceLineReconciliation(order: OrderSummary, invoices?: TallyInvoice[], now = new Date(), snapshotFetchedAt?: string): TallyLineReconciliation {
+  if (!order.tallyInvoiceNumber) return { state: 'not_billed', differences: [] };
+  const identity = tallyInvoiceReconciliationDetail(order, invoices, now, snapshotFetchedAt);
+  if (identity.state !== 'verified' || !identity.matchedVoucherNumber || !invoices) return { state: 'identity_unverified', differences: [] };
+  const invoice = invoices.find((item) => item.voucherNumber.trim() === identity.matchedVoucherNumber);
+  if (!invoice?.lineItems) return { state: 'awaiting_detail', differences: [] };
+
+  const ordered = new Map<string, { itemName: string; quantity: number }>();
+  for (const line of order.lines) {
+    // Invoice exports currently carry the exact Tally stock-item name. Keep
+    // matching conservative until a stable item GUID is exported on both sides.
+    const key = normalizedTallyItem(line.itemName);
+    const current = ordered.get(key);
+    ordered.set(key, { itemName: line.itemName, quantity: (current?.quantity || 0) + Number(line.quantity) });
+  }
+  const invoiced = new Map<string, { itemName: string; quantity: number }>();
+  for (const line of invoice.lineItems) {
+    const key = normalizedTallyItem(line.itemName);
+    if (!key || !Number.isFinite(Number(line.quantity))) continue;
+    const current = invoiced.get(key);
+    invoiced.set(key, { itemName: line.itemName, quantity: (current?.quantity || 0) + Math.abs(Number(line.quantity)) });
+  }
+  const differences = [...new Set([...ordered.keys(), ...invoiced.keys()])].flatMap((key) => {
+    const orderLine = ordered.get(key); const invoiceLine = invoiced.get(key);
+    const orderedQuantity = orderLine?.quantity || 0; const invoicedQuantity = invoiceLine?.quantity || 0;
+    return orderedQuantity === invoicedQuantity ? [] : [{ itemName: orderLine?.itemName || invoiceLine?.itemName || key, orderedQuantity, invoicedQuantity }];
+  });
+  return { state: differences.length ? 'mismatch' : 'matched', differences };
 }
 
 export function orderMatchesCaptureDate(order: OrderSummary, date: string) {

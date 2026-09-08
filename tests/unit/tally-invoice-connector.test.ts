@@ -10,6 +10,7 @@ describe('Tally invoice reconciliation connector', () => {
     expect(connector).toContain('Date,VoucherNumber,VoucherTypeName,Reference,MasterID');
     expect(connector).toContain("sourceScope = 'sales_vouchers_v1'");
     expect(connector).toContain('tallyInvoices = @($salesData.invoices)');
+    expect(connector).toContain('lineItems = @($voucher.lineItems)');
     expect(recovery).toContain("SelectSingleNode('./VOUCHERNUMBER')");
     expect(connector).toContain("$today.AddDays(-180)");
     expect(connector).toContain('$dateKey -ge $invoiceFromDate');

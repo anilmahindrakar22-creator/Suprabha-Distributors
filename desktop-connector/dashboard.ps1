@@ -239,7 +239,9 @@ function Get-TallySalesData {
             $party = [string]$voucher.party
             $voucherNumber = [string]$voucher.voucherNumber
             if ($voucherNumber -and $dateKey -ge $invoiceFromDate) {
-                $invoices += [ordered]@{ voucherNumber = $voucherNumber; reference = $voucher.reference; party = $party; date = $dateKey; masterId = $voucher.masterId }
+                # Reuse line details already present in the durable sales cache.
+                # This enables OMS reconciliation without another Tally request.
+                $invoices += [ordered]@{ voucherNumber = $voucherNumber; reference = $voucher.reference; party = $party; date = $dateKey; masterId = $voucher.masterId; lineItems = @($voucher.lineItems) }
             }
             foreach ($entry in @($voucher.lineItems)) {
                 $itemName = [string]$entry.itemName

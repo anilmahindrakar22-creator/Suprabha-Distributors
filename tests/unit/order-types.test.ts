@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { billingHandoffText, currentTallyFinancialYear, filterOrders, isOrderDeliveryOverdue, orderAttentionReasons, orderMatchesCaptureDate, ordersCsv, orderStage, pageItems, searchCatalog, searchCustomers, tallyInvoiceReconciliation, tallyInvoiceReconciliationDetail, validateOrderCommand } from '../../lib/order-types';
+import { billingHandoffText, currentTallyFinancialYear, filterOrders, isOrderDeliveryOverdue, orderAttentionReasons, orderMatchesCaptureDate, ordersCsv, orderStage, pageItems, searchCatalog, searchCustomers, tallyInvoiceLineReconciliation, tallyInvoiceReconciliation, tallyInvoiceReconciliationDetail, validateOrderCommand } from '../../lib/order-types';
 
 describe('order command validation', () => {
   it('accepts a complete phone order', () => {
@@ -232,6 +232,18 @@ describe('order workflow and history', () => {
     expect(tallyInvoiceReconciliation(billed, invoices, new Date('2026-09-03T06:19:59Z'), '2026-09-03T06:00:00Z')).toBe('verified');
     expect(tallyInvoiceReconciliation(billed, invoices, new Date('2026-09-03T06:01:00Z'), 'invalid')).toBe('verification_stale');
     expect(tallyInvoiceReconciliation(billed, invoices, new Date('2026-09-03T06:00:00Z'), '2026-09-03T06:06:00Z')).toBe('verification_stale');
+  });
+
+  it('compares aggregated order lines with cached Tally invoice details', () => {
+    const billed = { ...baseOrder, tallyInvoiceNumber: 'INV-88' };
+    const invoice = { voucherNumber: 'INV-88', reference: null, party: 'City Hospital', date: '20260903', masterId: '44', lineItems: [{ itemName: ' glucose   reagent ', quantity: 1 }, { itemName: 'Glucose Reagent', quantity: 1 }] };
+    expect(tallyInvoiceLineReconciliation(billed, [invoice])).toEqual({ state: 'matched', differences: [] });
+    expect(tallyInvoiceLineReconciliation(billed, [{ ...invoice, lineItems: [{ itemName: 'Glucose Reagent', quantity: 1 }, { itemName: 'Extra item', quantity: 3 }] }])).toEqual({ state: 'mismatch', differences: [
+      { itemName: 'Glucose Reagent', orderedQuantity: 2, invoicedQuantity: 1 },
+      { itemName: 'Extra item', orderedQuantity: 0, invoicedQuantity: 3 },
+    ] });
+    expect(tallyInvoiceLineReconciliation(billed, [{ ...invoice, lineItems: undefined }]).state).toBe('awaiting_detail');
+    expect(tallyInvoiceLineReconciliation({ ...billed, customerName: 'Other Lab' }, [invoice]).state).toBe('identity_unverified');
   });
 
   it('filters capture dates using the India business date', () => {
