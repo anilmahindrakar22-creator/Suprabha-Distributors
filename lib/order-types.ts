@@ -138,19 +138,26 @@ export function tallyInvoiceReconciliationDetail(order: OrderSummary, invoices?:
     const snapshotAge = now.getTime() - snapshotTime;
     if (!Number.isFinite(snapshotTime) || snapshotAge > 20 * 60_000 || snapshotAge < -5 * 60_000) return { state: 'verification_stale' as const, matchedVoucherNumber: null };
   }
-  const expected = order.tallyInvoiceNumber.trim().toLocaleLowerCase('en-IN');
-  const numericExpected = /^\d+$/.test(expected) ? expected.replace(/^0+(?=\d)/, '') : null;
   const ledger = (value: string) => value.normalize('NFKC').trim().replace(/\s+/g, ' ').toLocaleLowerCase('en-IN');
-  const invoiceMatches = invoices.filter((item) => {
-    if (!numericExpected && item.voucherNumber.trim().toLocaleLowerCase('en-IN') === expected) return true;
-    if (!numericExpected) return false;
-    const currentYearVoucher = item.voucherNumber.trim().toUpperCase().match(/^SD\/(\d{2}-\d{2})\/0*(\d+)$/);
-    return currentYearVoucher?.[1] === currentTallyFinancialYear(now) && currentYearVoucher[2].replace(/^0+(?=\d)/, '') === numericExpected;
-  });
-  if (invoiceMatches.length === 0) return { state: 'unmatched' as const, matchedVoucherNumber: null };
-  if (invoiceMatches.length > 1) return { state: 'ambiguous' as const, matchedVoucherNumber: null };
-  if (!ledger(order.customerName) || ledger(invoiceMatches[0].party || '') !== ledger(order.customerName)) return { state: 'customer_mismatch' as const, matchedVoucherNumber: null };
-  return { state: 'verified' as const, matchedVoucherNumber: invoiceMatches[0].voucherNumber.trim() };
+  const references = order.tallyInvoiceNumber.split(',').map((value) => value.trim()).filter(Boolean);
+  if (references.length === 0 || references.length > 5) return { state: 'unmatched' as const, matchedVoucherNumber: null };
+  if (new Set(references.map((value) => value.toLocaleLowerCase('en-IN'))).size !== references.length) return { state: 'ambiguous' as const, matchedVoucherNumber: null };
+  const matched: TallyInvoice[] = [];
+  for (const reference of references) {
+    const expected = reference.toLocaleLowerCase('en-IN');
+    const numericExpected = /^\d+$/.test(expected) ? expected.replace(/^0+(?=\d)/, '') : null;
+    const candidates = invoices.filter((item) => {
+      if (!numericExpected && item.voucherNumber.trim().toLocaleLowerCase('en-IN') === expected) return true;
+      if (!numericExpected) return false;
+      const currentYearVoucher = item.voucherNumber.trim().toUpperCase().match(/^SD\/(\d{2}-\d{2})\/0*(\d+)$/);
+      return currentYearVoucher?.[1] === currentTallyFinancialYear(now) && currentYearVoucher[2].replace(/^0+(?=\d)/, '') === numericExpected;
+    });
+    if (candidates.length === 0) return { state: 'unmatched' as const, matchedVoucherNumber: null };
+    if (candidates.length > 1) return { state: 'ambiguous' as const, matchedVoucherNumber: null };
+    matched.push(candidates[0]);
+  }
+  if (!ledger(order.customerName) || matched.some((invoice) => ledger(invoice.party || '') !== ledger(order.customerName))) return { state: 'customer_mismatch' as const, matchedVoucherNumber: null };
+  return { state: 'verified' as const, matchedVoucherNumber: matched.map((invoice) => invoice.voucherNumber.trim()).join(', ') };
 }
 
 export function tallyInvoiceReconciliation(order: OrderSummary, invoices?: TallyInvoice[], now = new Date(), snapshotFetchedAt?: string) {
@@ -165,8 +172,9 @@ export function tallyInvoiceLineReconciliation(order: OrderSummary, invoices?: T
   if (!order.tallyInvoiceNumber) return { state: 'not_billed', differences: [] };
   const identity = tallyInvoiceReconciliationDetail(order, invoices, now, snapshotFetchedAt);
   if (identity.state !== 'verified' || !identity.matchedVoucherNumber || !invoices) return { state: 'identity_unverified', differences: [] };
-  const invoice = invoices.find((item) => item.voucherNumber.trim() === identity.matchedVoucherNumber);
-  if (!invoice?.lineItems) return { state: 'awaiting_detail', differences: [] };
+  const matchedNumbers = new Set(identity.matchedVoucherNumber.split(',').map((value) => value.trim()));
+  const matchedInvoices = invoices.filter((item) => matchedNumbers.has(item.voucherNumber.trim()));
+  if (matchedInvoices.length !== matchedNumbers.size || matchedInvoices.some((invoice) => !invoice.lineItems)) return { state: 'awaiting_detail', differences: [] };
 
   const ordered = new Map<string, { itemName: string; quantity: number }>();
   for (const line of order.lines) {
@@ -177,7 +185,7 @@ export function tallyInvoiceLineReconciliation(order: OrderSummary, invoices?: T
     ordered.set(key, { itemName: line.itemName, quantity: (current?.quantity || 0) + Number(line.quantity) });
   }
   const invoiced = new Map<string, { itemName: string; quantity: number }>();
-  for (const line of invoice.lineItems) {
+  for (const line of matchedInvoices.flatMap((invoice) => invoice.lineItems || [])) {
     const key = normalizedTallyItem(line.itemName);
     if (!key || !Number.isFinite(Number(line.quantity))) continue;
     const current = invoiced.get(key);
@@ -474,13 +482,14 @@ export function validateOrderCommand(value: unknown): OrderCommand | null {
     }
   } else if (command.action === 'transition_order') {
     const transitionStatuses = ['awaiting_confirmation', 'awaiting_approval', 'confirmed', 'packed', 'awaiting_tally_billing', 'billed_in_tally', 'ready_for_dispatch', 'dispatched', 'delivered', 'cancelled'];
+    const invoiceReferences = typeof payload.tallyInvoiceNumber === 'string' ? payload.tallyInvoiceNumber.split(',').map((item) => item.trim()).filter(Boolean) : [];
     if (
       typeof payload.idempotencyKey !== 'string' || payload.idempotencyKey.length < 16 || payload.idempotencyKey.length > 200 ||
       typeof payload.orderId !== 'string' || payload.orderId.length < 1 || payload.orderId.length > 100 ||
       !Number.isInteger(Number(payload.expectedVersion)) || Number(payload.expectedVersion) < 1 ||
       typeof payload.toStatus !== 'string' || !transitionStatuses.includes(payload.toStatus) ||
       (payload.reason !== undefined && (typeof payload.reason !== 'string' || payload.reason.length > 500)) ||
-      (payload.tallyInvoiceNumber !== undefined && (typeof payload.tallyInvoiceNumber !== 'string' || payload.tallyInvoiceNumber.length > 80))
+      (payload.tallyInvoiceNumber !== undefined && (typeof payload.tallyInvoiceNumber !== 'string' || payload.tallyInvoiceNumber.length > 160 || invoiceReferences.length < 1 || invoiceReferences.length > 5 || invoiceReferences.some((item) => item.length > 80)))
     ) return null;
   } else if (command.action === 'save_fulfilment') {
     const lines = Array.isArray(payload.lines) ? payload.lines : [];

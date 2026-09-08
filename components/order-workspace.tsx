@@ -556,7 +556,7 @@ function OrderRow({
       </div>
       {action ? (
         <div className="flex min-w-48 flex-col gap-2">
-          {requiresInvoice ? <label className="text-xs font-bold text-[#587275]">Tally invoice number<input maxLength={80} value={invoiceNumber} onChange={(event) => setInvoiceNumber(event.target.value)} placeholder="Required" className="mt-1 min-h-10 w-full rounded-lg border border-[#cedfdd] px-3 font-normal text-[#173239] outline-none focus:border-[#64d4ad]" /></label> : null}
+          {requiresInvoice ? <label className="text-xs font-bold text-[#587275]">Tally invoice number(s)<input maxLength={160} value={invoiceNumber} onChange={(event) => setInvoiceNumber(event.target.value)} placeholder="Use commas for split invoices" className="mt-1 min-h-10 w-full rounded-lg border border-[#cedfdd] px-3 font-normal text-[#173239] outline-none focus:border-[#64d4ad]" /></label> : null}
           <button
           type="button"
           disabled={busy || (requiresInvoice && !invoiceNumber.trim())}

@@ -60,7 +60,7 @@ describe('order command validation', () => {
     expect(validateOrderCommand({ action: 'transition_order', payload: { orderId: 'order-id', expectedVersion: 2, toStatus: 'confirmed' } })).toBeNull();
     expect(validateOrderCommand({ action: 'reserve_order', payload: { orderId: 'order-id', expectedVersion: 2 } })).toBeNull();
     expect(validateOrderCommand({ action: 'transition_order', payload: { orderId: 'order-id', expectedVersion: 2, toStatus: 'invented_state', idempotencyKey: '1234567890abcdef' } })).toBeNull();
-    expect(validateOrderCommand({ action: 'transition_order', payload: { orderId: 'order-id', expectedVersion: 2, toStatus: 'billed_in_tally', tallyInvoiceNumber: 'X'.repeat(81), idempotencyKey: '1234567890abcdef' } })).toBeNull();
+    expect(validateOrderCommand({ action: 'transition_order', payload: { orderId: 'order-id', expectedVersion: 2, toStatus: 'billed_in_tally', tallyInvoiceNumber: 'X'.repeat(161), idempotencyKey: '1234567890abcdef' } })).toBeNull();
     expect(validateOrderCommand({ action: 'transition_order', payload: { orderId: 'order-id', expectedVersion: 2, toStatus: 'cancelled', reason: 'X'.repeat(501), idempotencyKey: '1234567890abcdef' } })).toBeNull();
   });
 
@@ -251,6 +251,17 @@ describe('order workflow and history', () => {
     ] });
     expect(tallyInvoiceLineReconciliation(billed, [{ ...invoice, lineItems: undefined }]).state).toBe('awaiting_detail');
     expect(tallyInvoiceLineReconciliation({ ...billed, customerName: 'Other Lab' }, [invoice]).state).toBe('identity_unverified');
+  });
+
+  it('reconciles combined quantities across split Tally invoices', () => {
+    const billed = { ...baseOrder, tallyInvoiceNumber: '551, 552' };
+    const first = { voucherNumber: 'SD/26-27/0551', reference: null, party: 'City Hospital', date: '20260903', masterId: '51', lineItems: [{ itemName: 'Glucose Reagent', quantity: 1 }] };
+    const second = { ...first, voucherNumber: 'SD/26-27/0552', masterId: '52' };
+    const now = new Date('2026-09-03T06:00:00Z');
+    expect(tallyInvoiceReconciliationDetail(billed, [first, second], now)).toEqual({ state: 'verified', matchedVoucherNumber: 'SD/26-27/0551, SD/26-27/0552' });
+    expect(tallyInvoiceLineReconciliation(billed, [first, second], now)).toEqual({ state: 'matched', differences: [] });
+    expect(tallyInvoiceReconciliationDetail({ ...billed, tallyInvoiceNumber: '551, 551' }, [first], now).state).toBe('ambiguous');
+    expect(tallyInvoiceReconciliationDetail(billed, [first], now).state).toBe('unmatched');
   });
 
   it('filters capture dates using the India business date', () => {
