@@ -105,6 +105,18 @@ function Save-ConnectorSnapshot([string]$Path, $Snapshot) {
     }
 }
 
+function Write-BoundedConnectorLog([string]$Path, [string]$Message, [long]$MaximumBytes = 2MB) {
+    try {
+        if ([IO.File]::Exists($Path) -and ([IO.FileInfo]$Path).Length -ge $MaximumBytes) {
+            [IO.File]::Move($Path, "$Path.previous", $true)
+        }
+        Add-Content -LiteralPath $Path -Value $Message
+        return $true
+    } catch {
+        return $false
+    }
+}
+
 function Read-ConnectorSnapshot([string]$Path, [string]$Company) {
     try {
         $saved = [IO.File]::ReadAllText($Path) | ConvertFrom-Json

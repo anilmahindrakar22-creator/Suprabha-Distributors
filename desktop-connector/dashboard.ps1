@@ -52,19 +52,26 @@ if ([string]::IsNullOrWhiteSpace($cloudUploadKey)) {
     throw 'StockFlow cloud sync is not configured. Ask the administrator to set STOCKFLOW_UPLOAD_KEY for this Windows user.'
 }
 
+function Write-ConnectorHealth([string]$Message) {
+    if (-not (Write-BoundedConnectorLog $healthLogPath $Message)) {
+        # Health telemetry must never interrupt Tally extraction or cloud delivery.
+        Write-Host 'Connector health log could not be updated.' -ForegroundColor DarkYellow
+    }
+}
+
 function Publish-CloudSnapshot([string]$Json) {
     $watch = [Diagnostics.Stopwatch]::StartNew()
     try {
         Invoke-WebRequest -Uri $cloudSyncUrl -Method Post -ContentType 'application/json' -Headers @{ 'x-upload-key' = $cloudUploadKey } -Body $Json -UseBasicParsing -TimeoutSec 15 | Out-Null
         $watch.Stop()
         $script:cloudUploadFailures = 0
-        Add-Content -LiteralPath $healthLogPath -Value "$([datetimeoffset]::Now.ToString('o')) request=cloud_upload durationMs=$($watch.ElapsedMilliseconds) consecutiveFailures=0 status=ok"
+        Write-ConnectorHealth "$([datetimeoffset]::Now.ToString('o')) request=cloud_upload durationMs=$($watch.ElapsedMilliseconds) consecutiveFailures=0 status=ok"
         Write-Host "Cloud snapshot updated." -ForegroundColor DarkGreen
         return $true
     } catch {
         $watch.Stop()
         $script:cloudUploadFailures++
-        Add-Content -LiteralPath $healthLogPath -Value "$([datetimeoffset]::Now.ToString('o')) request=cloud_upload durationMs=$($watch.ElapsedMilliseconds) consecutiveFailures=$($script:cloudUploadFailures) status=failed"
+        Write-ConnectorHealth "$([datetimeoffset]::Now.ToString('o')) request=cloud_upload durationMs=$($watch.ElapsedMilliseconds) consecutiveFailures=$($script:cloudUploadFailures) status=failed"
         # The local dashboard must remain usable even when the internet is down.
         Write-Host 'Cloud upload pending; the saved snapshot will be retried.' -ForegroundColor DarkYellow
         return $false
@@ -83,13 +90,13 @@ function Invoke-Tally([string]$Body, [int]$TimeoutSeconds = 15, [string]$MetricN
         $response = Invoke-WebRequest -Uri 'http://127.0.0.1:9000' -Method Post -ContentType 'application/xml' -Body $Body -UseBasicParsing -TimeoutSec $TimeoutSeconds
         $watch.Stop()
         $script:tallyFailures[$requestName] = 0
-        Add-Content -LiteralPath $healthLogPath -Value "$([datetimeoffset]::Now.ToString('o')) request=$requestName durationMs=$($watch.ElapsedMilliseconds) bytes=$($response.RawContentLength) consecutiveFailures=0 status=ok"
+        Write-ConnectorHealth "$([datetimeoffset]::Now.ToString('o')) request=$requestName durationMs=$($watch.ElapsedMilliseconds) bytes=$($response.RawContentLength) consecutiveFailures=0 status=ok"
         return $response.Content
     } catch {
         $watch.Stop()
         $previousFailures = if ($script:tallyFailures.ContainsKey($requestName)) { [int]$script:tallyFailures[$requestName] } else { 0 }
         $script:tallyFailures[$requestName] = $previousFailures + 1
-        Add-Content -LiteralPath $healthLogPath -Value "$([datetimeoffset]::Now.ToString('o')) request=$requestName durationMs=$($watch.ElapsedMilliseconds) bytes=0 consecutiveFailures=$($script:tallyFailures[$requestName]) status=failed"
+        Write-ConnectorHealth "$([datetimeoffset]::Now.ToString('o')) request=$requestName durationMs=$($watch.ElapsedMilliseconds) bytes=0 consecutiveFailures=$($script:tallyFailures[$requestName]) status=failed"
         throw
     }
 }
@@ -106,7 +113,7 @@ function Get-TallyCatalogDocument {
         if ($catalogDoc.SelectSingleNode('//LINEERROR') -or -not $catalogDoc.SelectSingleNode('//COLLECTION') -or -not $catalogDoc.SelectSingleNode('//STOCKITEM')) {
             throw 'Catalog export did not contain stock items.'
         }
-        Add-Content -LiteralPath $healthLogPath -Value "$([datetimeoffset]::Now.ToString('o')) domain=catalog count=$($catalogDoc.SelectNodes('//STOCKITEM').Count) status=accepted"
+        Write-ConnectorHealth "$([datetimeoffset]::Now.ToString('o')) domain=catalog count=$($catalogDoc.SelectNodes('//STOCKITEM').Count) status=accepted"
         $fresh = @{ company = $companyName; fetchedAtIso = [datetimeoffset]::UtcNow.ToString('o'); document = $document }
         Save-ConnectorSnapshot $catalogPath $fresh
         $script:lastCatalogData = $fresh
@@ -151,7 +158,7 @@ function Get-TallyCustomers {
         })
         $customers = @($customers | Sort-Object name)
         if (-not $customers.Count) { throw 'Customer export was empty; retaining the last successful customer directory.' }
-        Add-Content -LiteralPath $healthLogPath -Value "$([datetimeoffset]::Now.ToString('o')) domain=customers count=$($customers.Count) status=accepted"
+        Write-ConnectorHealth "$([datetimeoffset]::Now.ToString('o')) domain=customers count=$($customers.Count) status=accepted"
         $fresh = @{ company = $companyName; fetchedAtIso = [datetimeoffset]::UtcNow.ToString('o'); customers = $customers }
         Save-ConnectorSnapshot $customerPath $fresh
         $script:lastCustomerData = $fresh
@@ -222,7 +229,7 @@ function Get-TallySalesData {
         $incomingRecords = @(Convert-LegacySalesRecords $salesDoc.OuterXml)
         $skippedIdentity = $salesDoc.SelectNodes('//VOUCHER').Count - $incomingRecords.Count
         if ($skippedIdentity) {
-            Add-Content -LiteralPath $healthLogPath -Value "$([datetimeoffset]::Now.ToString('o')) request=sales_identity skipped=$skippedIdentity status=warning"
+            Write-ConnectorHealth "$([datetimeoffset]::Now.ToString('o')) request=sales_identity skipped=$skippedIdentity status=warning"
         }
         $salesRecords = if ($fullScan) { @($incomingRecords) } else { @(Merge-SalesRecords $cachedSales.records $incomingRecords $fromDate) }
         foreach ($voucher in $salesRecords) {
@@ -255,7 +262,7 @@ function Get-TallySalesData {
         fullScannedAt = if ($fullScan) { [datetimeoffset]::UtcNow.ToString('o') } else { $cachedSales.fullScannedAt }
         reconciledAt = if ($fullScan -or ($salesWindow -and $salesWindow.reconciliation)) { [datetimeoffset]::UtcNow.ToString('o') } else { $cachedSales.reconciledAt }
     }
-    Add-Content -LiteralPath $healthLogPath -Value "$([datetimeoffset]::Now.ToString('o')) domain=sales records=$(@($salesRecords).Count) invoices=$(@($invoices).Count) status=accepted"
+    Write-ConnectorHealth "$([datetimeoffset]::Now.ToString('o')) domain=sales records=$(@($salesRecords).Count) invoices=$(@($invoices).Count) status=accepted"
     $script:RebuildSalesHistory = $false
     return [ordered]@{ lastSupply = $result; invoices = @($invoices) }
 }
@@ -365,7 +372,7 @@ function Read-ReorderData {
         }
     }
     $catalog = @($catalog | Sort-Object group, item)
-    Add-Content -LiteralPath $healthLogPath -Value "$([datetimeoffset]::Now.ToString('o')) domain=reorder rows=$($sorted.Count) catalog=$($catalog.Count) customers=$($customers.Count) status=accepted"
+    Write-ConnectorHealth "$([datetimeoffset]::Now.ToString('o')) domain=reorder rows=$($sorted.Count) catalog=$($catalog.Count) customers=$($customers.Count) status=accepted"
     return [ordered]@{
         company = $companyName
         fetchedAt = (Get-Date).ToString('dd MMM yyyy, hh:mm:ss tt')

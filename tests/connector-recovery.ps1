@@ -46,6 +46,13 @@ if (-not $missingCompanyRejected) { throw 'Missing live Tally company identity a
 $snapshot.catalog = @(@{ tallyKey = 'B' })
 Save-ConnectorSnapshot $path $snapshot
 if ((Read-ConnectorSnapshot $path 'TEST').catalog[0].tallyKey -ne 'B') { throw 'Atomic replacement failed' }
+
+$healthPath = Join-Path $directory 'health.log'
+if (-not (Write-BoundedConnectorLog $healthPath 'first-entry' 1)) { throw 'Initial health log write failed' }
+if (-not (Write-BoundedConnectorLog $healthPath 'second-entry' 1)) { throw 'Rotated health log write failed' }
+if ((Get-Content -LiteralPath "$healthPath.previous" -Raw).Trim() -ne 'first-entry') { throw 'Health log rotation did not retain the previous log' }
+if ((Get-Content -LiteralPath $healthPath -Raw).Trim() -ne 'second-entry') { throw 'Health log rotation did not write the current log' }
+if (Write-BoundedConnectorLog $directory 'ignored') { throw 'Health log failure was not contained' }
 [IO.File]::WriteAllText($path, '{broken')
 if ($null -ne (Read-ConnectorSnapshot $path 'TEST')) { throw 'Corrupt cache accepted' }
 $lockPath = Join-Path $directory 'connector.lock'
@@ -64,5 +71,7 @@ if ($baseline['Kit'].dateKey -ne '20260905' -or $baseline['Kit'].quantity -ne 2)
 [IO.File]::Delete("$customerPath.bak")
 [IO.File]::Delete($catalogPath)
 [IO.File]::Delete("$catalogPath.bak")
+[IO.File]::Delete($healthPath)
+[IO.File]::Delete("$healthPath.previous")
 [IO.Directory]::Delete($directory)
-Write-Output 'PASS: restart recovery, timestamp preservation, durable customer/catalog caches, saved/live company validation, atomic replacement, corrupt cache, exclusive lock, compact baseline'
+Write-Output 'PASS: restart recovery, timestamp preservation, durable customer/catalog caches, saved/live company validation, atomic replacement, bounded health log, corrupt cache, exclusive lock, compact baseline'

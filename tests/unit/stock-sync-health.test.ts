@@ -40,6 +40,13 @@ describe('Tally stock sync health', () => {
     expect(connector).toContain('domain=reorder rows=');
   });
 
+  it('bounds health logging without making telemetry a sync dependency', () => {
+    expect(connector).toContain('function Write-ConnectorHealth');
+    expect(connector).toContain('Write-BoundedConnectorLog $healthLogPath $Message');
+    expect(connector).toContain('Health telemetry must never interrupt Tally extraction or cloud delivery.');
+    expect(connector).not.toContain('Add-Content -LiteralPath $healthLogPath -Value "$([datetimeoffset]');
+  });
+
   it('provides a repeatable per-user Windows startup task', () => {
     expect(startupInstaller).toContain("$taskName = 'Suprabha StockFlow Tally Sync'");
     expect(startupInstaller).toContain('New-ScheduledTaskTrigger -AtLogOn');

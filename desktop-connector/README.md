@@ -26,4 +26,4 @@ These controls run only on the Tally computer and do not add anything to the eve
 .\connector-control.ps1 -Action SetSchedule -SyncMinutes 20
 ```
 
-The supported schedule is 5–120 minutes. Pausing stops Tally reads until an administrator resumes the task. Status shows the Windows task state, latest cloud-upload result, and the accepted row counts for each available data domain without exposing its credential or business payload.
+The supported schedule is 5–120 minutes. Pausing stops Tally reads until an administrator resumes the task. Status shows the Windows task state, latest cloud-upload result, and the accepted row counts for each available data domain without exposing its credential or business payload. Health logging is capped at 2 MB with one previous log retained, and a logging problem never interrupts extraction or upload.
