@@ -8,6 +8,8 @@ Invoice verification requires customer ledger name plus voucher number. A bare n
 
 The OMS now withdraws the matched badge when the supporting Tally snapshot is invalid or more than 20 minutes old. The order remains billed, but the screen asks for a fresh sync before presenting the invoice identity as matched.
 
+Invoice reconciliation also reports distinct not-found, customer-ledger-mismatch and duplicate-match outcomes. Ambiguous voucher identities fail closed instead of selecting one record arbitrarily.
+
 Connector refreshes share an in-memory snapshot for 15 minutes by default, retaining its original timestamp. This reduces scheduled full reads from 12 to 4 per hour; it does not prove a reduction in Tally response latency. Manual refresh serves the same cache during the cooldown. Restarting the connector resets its cache.
 
 ## Slice 2: incremental connector, with recovery

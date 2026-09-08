@@ -197,8 +197,9 @@ describe('order workflow and history', () => {
     const invoices = [{ voucherNumber: 'INV-88', reference: 'SF-001', party: 'City Hospital', date: '20260903', masterId: '44' }];
     expect(tallyInvoiceReconciliation(billed, invoices)).toBe('verified');
     expect(tallyInvoiceReconciliation({ ...billed, tallyInvoiceNumber: 'SF-001' }, invoices)).toBe('unmatched');
-    expect(tallyInvoiceReconciliation(billed, [{ ...invoices[0], party: 'Different Hospital' }])).toBe('unmatched');
+    expect(tallyInvoiceReconciliation(billed, [{ ...invoices[0], party: 'Different Hospital' }])).toBe('customer_mismatch');
     expect(tallyInvoiceReconciliation(billed, [{ ...invoices[0], party: ' city   hospital ' }])).toBe('verified');
+    expect(tallyInvoiceReconciliation(billed, [invoices[0], { ...invoices[0], masterId: '45' }])).toBe('ambiguous');
     expect(tallyInvoiceReconciliation({ ...billed, tallyInvoiceNumber: '552' }, [{ ...invoices[0], voucherNumber: '552' }])).toBe('unmatched');
     expect(tallyInvoiceReconciliation({ ...billed, tallyInvoiceNumber: 'INV-99' }, invoices)).toBe('unmatched');
     expect(tallyInvoiceReconciliation(billed)).toBe('awaiting_sync');
