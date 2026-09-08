@@ -16,6 +16,30 @@ function Get-ConnectorTask {
     return $task
 }
 
+function Wait-ConnectorState([string]$ExpectedState, [int]$TimeoutSeconds = 15) {
+    $deadline = (Get-Date).AddSeconds($TimeoutSeconds)
+    do {
+        $state = [string](Get-ConnectorTask).State
+        if ($state -eq $ExpectedState) { return }
+        Start-Sleep -Milliseconds 250
+    } while ((Get-Date) -lt $deadline)
+    throw "StockFlow connector did not reach $ExpectedState within $TimeoutSeconds seconds. Current state: $state"
+}
+
+function Stop-ConnectorSafely {
+    if ((Get-ConnectorTask).State -ne 'Ready') {
+        Stop-ScheduledTask -TaskName $taskName
+        Wait-ConnectorState 'Ready'
+    }
+}
+
+function Start-ConnectorSafely {
+    if ((Get-ConnectorTask).State -ne 'Running') {
+        Start-ScheduledTask -TaskName $taskName
+        Wait-ConnectorState 'Running'
+    }
+}
+
 function Show-ConnectorStatus {
     $task = Get-ConnectorTask
     $info = $task | Get-ScheduledTaskInfo
@@ -32,21 +56,22 @@ function Show-ConnectorStatus {
 
 switch ($Action) {
     'Pause' {
-        Stop-ScheduledTask -TaskName $taskName
+        Stop-ConnectorSafely
         Write-Host 'StockFlow automatic sync is paused. Tally will not be queried.' -ForegroundColor DarkYellow
     }
     'Resume' {
-        Start-ScheduledTask -TaskName $taskName
+        Start-ConnectorSafely
         Write-Host 'StockFlow automatic sync is running.' -ForegroundColor Green
     }
     'Restart' {
-        Stop-ScheduledTask -TaskName $taskName
-        Start-ScheduledTask -TaskName $taskName
+        Stop-ConnectorSafely
+        Start-ConnectorSafely
         Write-Host 'StockFlow automatic sync restarted.' -ForegroundColor Green
     }
     'SetSchedule' {
+        Stop-ConnectorSafely
         & $installer -DoNotStartNow -SyncMinutes $SyncMinutes
-        Start-ScheduledTask -TaskName $taskName
+        Start-ConnectorSafely
         Write-Host "StockFlow will now read Tally every $SyncMinutes minutes." -ForegroundColor Green
     }
     default { Show-ConnectorStatus }

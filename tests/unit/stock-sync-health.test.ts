@@ -67,6 +67,10 @@ describe('Tally stock sync health', () => {
     expect(connectorControl).toContain('Stop-ScheduledTask -TaskName $taskName');
     expect(connectorControl).toContain('Start-ScheduledTask -TaskName $taskName');
     expect(connectorControl).toContain('& $installer -DoNotStartNow -SyncMinutes $SyncMinutes');
+    expect(connectorControl).toContain("Wait-ConnectorState 'Ready'");
+    expect(connectorControl).toContain("Wait-ConnectorState 'Running'");
+    expect(connectorControl).toContain('Stop-ConnectorSafely');
+    expect(connectorControl).toContain('Start-ConnectorSafely');
     expect(connectorControl).not.toContain('STOCKFLOW_UPLOAD_KEY');
   });
 });
