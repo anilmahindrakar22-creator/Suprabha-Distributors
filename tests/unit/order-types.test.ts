@@ -16,6 +16,14 @@ describe('order command validation', () => {
     ).not.toBeNull();
   });
 
+  it('bounds order capture text, sources, identifiers and quantities', () => {
+    const base = { action: 'create_order', payload: { idempotencyKey: '1234567890abcdef', customerName: 'City Lab', source: 'phone', lines: [{ tallyKey: 'ITEM-1', quantity: 1 }] } };
+    expect(validateOrderCommand({ ...base, payload: { ...base.payload, source: 'unknown' } })).toBeNull();
+    expect(validateOrderCommand({ ...base, payload: { ...base.payload, customerName: 'X'.repeat(201) } })).toBeNull();
+    expect(validateOrderCommand({ ...base, payload: { ...base.payload, notes: 'X'.repeat(2001) } })).toBeNull();
+    expect(validateOrderCommand({ ...base, payload: { ...base.payload, lines: [{ tallyKey: 'ITEM-1', quantity: 1_000_001 }] } })).toBeNull();
+  });
+
   it.each([
     null,
     {},
@@ -61,16 +69,20 @@ describe('order command validation', () => {
     expect(validateOrderCommand(command)).not.toBeNull();
     expect(validateOrderCommand({ ...command, payload: { ...command.payload, lines: [{ tallyKey: 'ITEM-1', fulfilledQuantity: -1 }] } })).toBeNull();
     expect(validateOrderCommand({ ...command, payload: { ...command.payload, lines: [{ tallyKey: 'ITEM-1', fulfilledQuantity: 1.5 }] } })).toBeNull();
+    expect(validateOrderCommand({ ...command, payload: { ...command.payload, lines: [] } })).toBeNull();
+    expect(validateOrderCommand({ ...command, payload: { ...command.payload, deliveryAddress: 'X'.repeat(1001) } })).toBeNull();
   });
 
   it('validates dispatch and delivery evidence', () => {
     const dispatch = { action: 'save_dispatch', payload: { idempotencyKey: '1234567890abcdef', orderId: 'order-id', expectedVersion: 3, courierName: 'Local courier', trackingNumber: 'LR-100', dispatchDate: '2026-09-03' } };
     expect(validateOrderCommand(dispatch)).not.toBeNull();
     expect(validateOrderCommand({ ...dispatch, payload: { ...dispatch.payload, trackingNumber: '' } })).toBeNull();
+    expect(validateOrderCommand({ ...dispatch, payload: { ...dispatch.payload, vehicleNumber: 'X'.repeat(41) } })).toBeNull();
 
     const delivery = { action: 'confirm_delivery', payload: { idempotencyKey: '1234567890abcdef', orderId: 'order-id', expectedVersion: 4, deliveredAt: '2026-09-03T10:30:00.000Z', receivedBy: 'Dr Rao' } };
     expect(validateOrderCommand(delivery)).not.toBeNull();
     expect(validateOrderCommand({ ...delivery, payload: { ...delivery.payload, deliveredAt: 'not-a-date' } })).toBeNull();
+    expect(validateOrderCommand({ ...delivery, payload: { ...delivery.payload, podReference: 'X'.repeat(161) } })).toBeNull();
   });
 
   it('validates safe order edits', () => {

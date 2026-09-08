@@ -380,24 +380,31 @@ export function validateOrderCommand(value: unknown): OrderCommand | null {
   }
 
   const payload = command.payload as Record<string, unknown>;
+  const validRequestKey = () => typeof payload.idempotencyKey === 'string' && payload.idempotencyKey.length >= 16 && payload.idempotencyKey.length <= 200;
+  const validMutationIdentity = () => validRequestKey() && typeof payload.orderId === 'string' && payload.orderId.length >= 1 && payload.orderId.length <= 100 && Number.isInteger(Number(payload.expectedVersion)) && Number(payload.expectedVersion) >= 1;
+  const boundedOptionalText = (field: string, maximum: number) => payload[field] === undefined || (typeof payload[field] === 'string' && String(payload[field]).length <= maximum);
+  const validQuantityLine = (line: unknown, quantityField: 'quantity' | 'fulfilledQuantity', allowZero = false) => {
+    if (!line || typeof line !== 'object') return false;
+    const item = line as Record<string, unknown>;
+    const quantity = Number(item[quantityField]);
+    return typeof item.tallyKey === 'string' && item.tallyKey.length >= 1 && item.tallyKey.length <= 300 && Number.isInteger(quantity) && quantity >= (allowZero ? 0 : 1) && quantity <= 1_000_000;
+  };
   if (command.action === 'create_order') {
     const lines = Array.isArray(payload.lines) ? payload.lines : [];
     const validLines =
       lines.length >= 1 &&
       lines.length <= 50 &&
-      lines.every(
-        (line) =>
-          Boolean(line) &&
-          typeof line === 'object' &&
-          typeof (line as Record<string, unknown>).tallyKey === 'string' &&
-          Number.isInteger(Number((line as Record<string, unknown>).quantity)) &&
-          Number((line as Record<string, unknown>).quantity) > 0,
-      );
+      lines.every((line) => validQuantityLine(line, 'quantity'));
     if (
-      typeof payload.idempotencyKey !== 'string' ||
-      payload.idempotencyKey.length < 16 ||
+      !validRequestKey() ||
       typeof payload.customerName !== 'string' ||
       payload.customerName.trim().length < 2 ||
+      payload.customerName.length > 200 ||
+      !['phone', 'email', 'whatsapp', 'walk_in'].includes(String(payload.source)) ||
+      !boundedOptionalText('customerId', 100) ||
+      !boundedOptionalText('customerPhone', 40) ||
+      !boundedOptionalText('customerCity', 120) ||
+      !boundedOptionalText('notes', 2000) ||
       !validLines
     ) {
       return null;
@@ -414,22 +421,22 @@ export function validateOrderCommand(value: unknown): OrderCommand | null {
     ) return null;
   } else if (command.action === 'save_fulfilment') {
     const lines = Array.isArray(payload.lines) ? payload.lines : [];
-    if (typeof payload.idempotencyKey !== 'string' || payload.idempotencyKey.length < 16 || typeof payload.orderId !== 'string' || !Number.isInteger(Number(payload.expectedVersion)) || lines.some((line) => !line || typeof line !== 'object' || typeof (line as Record<string, unknown>).tallyKey !== 'string' || !Number.isInteger(Number((line as Record<string, unknown>).fulfilledQuantity)) || Number((line as Record<string, unknown>).fulfilledQuantity) < 0)) return null;
+    if (!validMutationIdentity() || lines.length < 1 || lines.length > 50 || !lines.every((line) => validQuantityLine(line, 'fulfilledQuantity', true)) || !boundedOptionalText('deliveryAddress', 1000) || (payload.expectedDeliveryDate !== undefined && (typeof payload.expectedDeliveryDate !== 'string' || !/^\d{4}-\d{2}-\d{2}$/.test(payload.expectedDeliveryDate)))) return null;
   } else if (command.action === 'save_dispatch') {
-    if (typeof payload.idempotencyKey !== 'string' || payload.idempotencyKey.length < 16 || typeof payload.orderId !== 'string' || !Number.isInteger(Number(payload.expectedVersion)) || typeof payload.courierName !== 'string' || payload.courierName.trim().length < 2 || typeof payload.trackingNumber !== 'string' || payload.trackingNumber.trim().length < 2 || typeof payload.dispatchDate !== 'string' || !/^\d{4}-\d{2}-\d{2}$/.test(payload.dispatchDate)) return null;
+    if (!validMutationIdentity() || typeof payload.courierName !== 'string' || payload.courierName.trim().length < 2 || payload.courierName.length > 160 || typeof payload.trackingNumber !== 'string' || payload.trackingNumber.trim().length < 2 || payload.trackingNumber.length > 160 || typeof payload.dispatchDate !== 'string' || !/^\d{4}-\d{2}-\d{2}$/.test(payload.dispatchDate) || !boundedOptionalText('vehicleNumber', 40)) return null;
   } else if (command.action === 'confirm_delivery') {
-    if (typeof payload.idempotencyKey !== 'string' || payload.idempotencyKey.length < 16 || typeof payload.orderId !== 'string' || !Number.isInteger(Number(payload.expectedVersion)) || typeof payload.receivedBy !== 'string' || payload.receivedBy.trim().length < 2 || typeof payload.deliveredAt !== 'string' || Number.isNaN(Date.parse(payload.deliveredAt))) return null;
+    if (!validMutationIdentity() || typeof payload.receivedBy !== 'string' || payload.receivedBy.trim().length < 2 || payload.receivedBy.length > 160 || typeof payload.deliveredAt !== 'string' || Number.isNaN(Date.parse(payload.deliveredAt)) || !boundedOptionalText('podReference', 160)) return null;
   } else if (command.action === 'edit_order') {
     const lines = Array.isArray(payload.lines) ? payload.lines : [];
-    if (typeof payload.idempotencyKey !== 'string' || payload.idempotencyKey.length < 16 || typeof payload.orderId !== 'string' || !Number.isInteger(Number(payload.expectedVersion)) || typeof payload.customerName !== 'string' || payload.customerName.trim().length < 2 || lines.length < 1 || lines.some((line) => !line || typeof line !== 'object' || typeof (line as Record<string, unknown>).tallyKey !== 'string' || !Number.isInteger(Number((line as Record<string, unknown>).quantity)) || Number((line as Record<string, unknown>).quantity) <= 0)) return null;
+    if (!validMutationIdentity() || typeof payload.customerName !== 'string' || payload.customerName.trim().length < 2 || payload.customerName.length > 200 || !boundedOptionalText('customerPhone', 40) || !boundedOptionalText('notes', 2000) || !boundedOptionalText('reason', 500) || lines.length < 1 || lines.length > 50 || !lines.every((line) => validQuantityLine(line, 'quantity'))) return null;
   } else if (command.action === 'create_exception') {
-    if (typeof payload.idempotencyKey !== 'string' || payload.idempotencyKey.length < 16 || typeof payload.orderId !== 'string' || !Number.isInteger(Number(payload.expectedVersion)) || !['delayed', 'failed_delivery', 'damaged', 'wrong_item', 'other'].includes(String(payload.category)) || typeof payload.summary !== 'string' || payload.summary.trim().length < 3 || payload.summary.length > 500) return null;
+    if (!validMutationIdentity() || !['delayed', 'failed_delivery', 'damaged', 'wrong_item', 'other'].includes(String(payload.category)) || typeof payload.summary !== 'string' || payload.summary.trim().length < 3 || payload.summary.length > 500 || !boundedOptionalText('ownerEmail', 254)) return null;
   } else if (command.action === 'resolve_exception') {
-    if (typeof payload.idempotencyKey !== 'string' || payload.idempotencyKey.length < 16 || typeof payload.orderId !== 'string' || !Number.isInteger(Number(payload.expectedVersion)) || typeof payload.exceptionId !== 'string' || typeof payload.resolution !== 'string' || payload.resolution.trim().length < 3 || payload.resolution.length > 500) return null;
+    if (!validMutationIdentity() || typeof payload.exceptionId !== 'string' || payload.exceptionId.length < 1 || payload.exceptionId.length > 100 || typeof payload.resolution !== 'string' || payload.resolution.trim().length < 3 || payload.resolution.length > 500) return null;
   } else if (command.action === 'schedule_installation') {
-    if (typeof payload.idempotencyKey !== 'string' || payload.idempotencyKey.length < 16 || typeof payload.orderId !== 'string' || !Number.isInteger(Number(payload.expectedVersion)) || typeof payload.tallyKey !== 'string' || payload.tallyKey.length < 1 || typeof payload.scheduledDate !== 'string' || !/^\d{4}-\d{2}-\d{2}$/.test(payload.scheduledDate)) return null;
+    if (!validMutationIdentity() || typeof payload.tallyKey !== 'string' || payload.tallyKey.length < 1 || payload.tallyKey.length > 300 || typeof payload.scheduledDate !== 'string' || !/^\d{4}-\d{2}-\d{2}$/.test(payload.scheduledDate) || !boundedOptionalText('engineerEmail', 254) || !boundedOptionalText('siteContact', 200)) return null;
   } else if (command.action === 'complete_installation') {
-    if (typeof payload.idempotencyKey !== 'string' || payload.idempotencyKey.length < 16 || typeof payload.orderId !== 'string' || !Number.isInteger(Number(payload.expectedVersion)) || typeof payload.installationId !== 'string' || typeof payload.serialNumber !== 'string' || payload.serialNumber.trim().length < 2 || payload.serialNumber.length > 100 || typeof payload.commissioningNotes !== 'string' || payload.commissioningNotes.trim().length < 3 || payload.commissioningNotes.length > 1000) return null;
+    if (!validMutationIdentity() || typeof payload.installationId !== 'string' || payload.installationId.length < 1 || payload.installationId.length > 100 || typeof payload.serialNumber !== 'string' || payload.serialNumber.trim().length < 2 || payload.serialNumber.length > 100 || typeof payload.commissioningNotes !== 'string' || payload.commissioningNotes.trim().length < 3 || payload.commissioningNotes.length > 1000) return null;
   }
 
   return command as OrderCommand;
