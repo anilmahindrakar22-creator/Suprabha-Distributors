@@ -5,6 +5,7 @@ import { isOrderDeliveryOverdue, validateOrderCommand } from '@/lib/order-types'
 import { measuredJsonResponse } from '@/lib/measured-json-response';
 import { matchingOrderList, parseOrderListQuery, queryOrderList } from '@/lib/order-list-query';
 import { ordersCsv } from '@/lib/order-types';
+import { BoundedJsonRequestError, readBoundedJsonRequest } from '@/lib/bounded-json-request';
 
 const privateHeaders = { 'cache-control': 'private, no-store' };
 
@@ -99,12 +100,9 @@ export async function GET(request: Request) {
 }
 
 export async function POST(request: Request) {
-  const length = Number(request.headers.get('content-length') || 0);
-  if (length > 65_536) return failure('Order request is too large', 413);
-
   try {
     const user = await authorizedUser();
-    const command = validateOrderCommand(await request.json());
+    const command = validateOrderCommand(await readBoundedJsonRequest(request));
     if (!command) return failure('Invalid order request', 400);
 
     const result = await callOrderGateway<Record<string, unknown>>(
@@ -114,7 +112,7 @@ export async function POST(request: Request) {
     );
     return Response.json(result, { headers: privateHeaders });
   } catch (error) {
-    if (error instanceof SyntaxError) return failure('Invalid JSON', 400);
+    if (error instanceof BoundedJsonRequestError) return failure(error.message, error.status);
     if (error instanceof OrderGatewayError) {
       return failure(error.message, error.status);
     }

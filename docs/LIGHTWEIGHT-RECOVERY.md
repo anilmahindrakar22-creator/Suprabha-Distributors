@@ -56,6 +56,8 @@ Transition requests now reject unknown workflow states, invalid versions and ove
 
 The same bounded-input policy now covers order capture, fulfilment, edits, dispatch, delivery, exceptions and installations. It limits line counts, whole-unit quantities, identifiers and free-text fields without adding a validation dependency; database constraints and policies remain authoritative.
 
+The order HTTP boundary requires JSON and enforces its 64 KiB limit against both declared and actually streamed bytes. Chunked requests can no longer bypass the size check before JSON parsing.
+
 Still outstanding in this slice: record representative deployed measurements; move pagination to the server when measured order volume requires it; add authenticated browser coverage for restart/reconnect, scroll retention and lazy data once the Sites test harness can provide an approved session.
 
 Gate: documented initial payload and transfer budget, no full history on each save, successful offline draft recovery and exactly one order after reconnect. Offline OMS is not complete until these gates pass.
