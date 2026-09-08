@@ -545,6 +545,7 @@ function OrderRow({
         <div className="flex flex-wrap items-center gap-2">
           <strong className="text-[#092f36]">{order.orderNumber}</strong>
           <span className="rounded-full bg-[#edf3f1] px-2.5 py-1 text-[11px] font-extrabold text-[#46686c]">{orderStage(order.status)}</span>
+          {lineMatch.state === 'mismatch' ? <span className="rounded-full bg-[#fff0ef] px-2.5 py-1 text-[11px] font-extrabold text-[#8d3a34]">Billing mismatch</span> : null}
         </div>
         <p className="mt-2 font-bold text-[#274b50]">{order.customerName}</p>
         <p className="mt-1 text-xs text-[#718487]">{order.customerPhone || 'No phone recorded'} · {order.lineCount} line{order.lineCount === 1 ? '' : 's'}</p>

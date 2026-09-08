@@ -14,6 +14,7 @@ describe('Tally reconciliation wording', () => {
     expect(workspace).toContain('Product & quantity check');
     expect(workspace).toContain('Products and quantities matched');
     expect(workspace).toContain('Tally invoice differences');
+    expect(workspace).toContain('Billing mismatch');
     expect(workspace).not.toContain('Invoice verified');
   });
 });
