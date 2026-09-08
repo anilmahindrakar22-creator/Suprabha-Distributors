@@ -781,7 +781,7 @@ function HydratedNewOrderPanel({ data, onClose, onCreated }: { data: OrderBootst
 
   const matches = useMemo(() => {
     const selected = new Set(lines.map((line) => line.tallyKey));
-    return searchCatalog(data.snapshot.catalog, productQuery, selected);
+    return lines.length >= 50 ? [] : searchCatalog(data.snapshot.catalog, productQuery, selected);
   }, [data.snapshot.catalog, lines, productQuery]);
 
   const customerMatches = useMemo(
@@ -859,6 +859,7 @@ function HydratedNewOrderPanel({ data, onClose, onCreated }: { data: OrderBootst
                 <label className="relative sm:col-span-2 text-sm font-bold text-[#456367]">Name
                   <input
                     required
+                    maxLength={200}
                     value={customerName}
                     onChange={(event) => {
                       setCustomerName(event.target.value);
@@ -896,8 +897,8 @@ function HydratedNewOrderPanel({ data, onClose, onCreated }: { data: OrderBootst
                 <details className="sm:col-span-2 rounded-xl bg-[#f6f8f7] px-3 py-2 text-sm">
                   <summary className="cursor-pointer font-bold text-[#456367]">Contact details <span className="font-normal text-[#718487]">(optional)</span></summary>
                   <div className="mt-3 grid gap-3 sm:grid-cols-2">
-                    <label className="text-sm font-bold text-[#456367]">Phone<input value={customerPhone} onChange={(event) => setCustomerPhone(event.target.value)} className="mt-2 min-h-11 w-full rounded-xl border border-[#cedfdd] bg-white px-3 font-normal outline-none focus:border-[#64d4ad]" inputMode="tel" /></label>
-                    <label className="text-sm font-bold text-[#456367]">City<input value={customerCity} onChange={(event) => setCustomerCity(event.target.value)} className="mt-2 min-h-11 w-full rounded-xl border border-[#cedfdd] bg-white px-3 font-normal outline-none focus:border-[#64d4ad]" /></label>
+                    <label className="text-sm font-bold text-[#456367]">Phone<input maxLength={40} value={customerPhone} onChange={(event) => setCustomerPhone(event.target.value)} className="mt-2 min-h-11 w-full rounded-xl border border-[#cedfdd] bg-white px-3 font-normal outline-none focus:border-[#64d4ad]" inputMode="tel" /></label>
+                    <label className="text-sm font-bold text-[#456367]">City<input maxLength={120} value={customerCity} onChange={(event) => setCustomerCity(event.target.value)} className="mt-2 min-h-11 w-full rounded-xl border border-[#cedfdd] bg-white px-3 font-normal outline-none focus:border-[#64d4ad]" /></label>
                   </div>
                 </details>
               </div>
@@ -905,10 +906,11 @@ function HydratedNewOrderPanel({ data, onClose, onCreated }: { data: OrderBootst
 
             <fieldset className="rounded-2xl border border-[#dce7e5] bg-white p-5">
               <legend className="px-2 text-sm font-extrabold text-[#274b50]">Products</legend>
-              <label className="text-sm font-bold text-[#456367]">Find product<input value={productQuery} onChange={(event) => setProductQuery(event.target.value)} className="mt-2 min-h-11 w-full rounded-xl border border-[#cedfdd] px-3 font-normal outline-none focus:border-[#64d4ad]" placeholder="Type a product name" /></label>
+              <label className="text-sm font-bold text-[#456367]">Find product<input maxLength={200} value={productQuery} onChange={(event) => setProductQuery(event.target.value)} className="mt-2 min-h-11 w-full rounded-xl border border-[#cedfdd] px-3 font-normal outline-none focus:border-[#64d4ad]" placeholder="Type a product name" /></label>
               {matches.length ? <div className="mt-2 overflow-hidden rounded-xl border border-[#dce7e5]">{matches.map((item) => <button key={item.tallyKey} type="button" onClick={() => { setLines((current) => [...current, { tallyKey: item.tallyKey, item, quantity: 1 }]); setProductQuery(''); }} className="flex min-h-12 w-full items-center justify-between gap-4 border-b border-[#edf2f0] px-3 text-left last:border-0 hover:bg-[#f2faf7]"><span><strong className="block text-sm text-[#173239]">{item.item}</strong><small className="text-[#718487]">{item.group}</small></span><span className="shrink-0 text-xs font-bold text-[#277b69]">Available {formatQuantity(item.closing)} {item.baseUnit}</span></button>)}</div> : null}
               {productQuery.trim() && matches.length === 0 ? <p className="mt-2 rounded-xl bg-[#fff7e8] px-3 py-2 text-sm text-[#805b20]">No Tally products match “{productQuery.trim()}”.</p> : null}
-              <div className="mt-4 space-y-2">{lines.map((line) => <div key={line.tallyKey} className={`grid grid-cols-[1fr_90px_auto] items-center gap-3 rounded-xl p-3 ${line.item ? 'bg-[#f2f7f5]' : 'border border-[#efbbb6] bg-[#fff0ef]'}`}><div className="min-w-0"><strong className="block truncate text-sm text-[#173239]">{line.item?.item || `Unavailable Tally item (${line.tallyKey})`}</strong><small className={line.item ? 'text-[#718487]' : 'font-bold text-[#8d3a34]'}>{line.item ? `Closing ${formatQuantity(line.item.closing)} ${line.item.baseUnit}` : 'Remove and select its current catalogue replacement'}</small></div><label className="sr-only" htmlFor={`qty-${line.tallyKey}`}>Quantity for {line.item?.item || line.tallyKey}</label><input id={`qty-${line.tallyKey}`} type="number" min="1" step="1" required value={line.quantity} onChange={(event) => setLines((current) => current.map((entry) => entry.tallyKey === line.tallyKey ? { ...entry, quantity: Number(event.target.value) } : entry))} className="min-h-10 rounded-lg border border-[#cedfdd] px-2 text-right" /><button type="button" onClick={() => setLines((current) => current.filter((entry) => entry.tallyKey !== line.tallyKey))} aria-label={`Remove ${line.item?.item || line.tallyKey}`} className="size-10 rounded-lg text-xl text-[#9a4e47] hover:bg-[#ffeae8]">×</button></div>)}</div>
+              <div className="mt-4 space-y-2">{lines.map((line) => <div key={line.tallyKey} className={`grid grid-cols-[1fr_90px_auto] items-center gap-3 rounded-xl p-3 ${line.item ? 'bg-[#f2f7f5]' : 'border border-[#efbbb6] bg-[#fff0ef]'}`}><div className="min-w-0"><strong className="block truncate text-sm text-[#173239]">{line.item?.item || `Unavailable Tally item (${line.tallyKey})`}</strong><small className={line.item ? 'text-[#718487]' : 'font-bold text-[#8d3a34]'}>{line.item ? `Closing ${formatQuantity(line.item.closing)} ${line.item.baseUnit}` : 'Remove and select its current catalogue replacement'}</small></div><label className="sr-only" htmlFor={`qty-${line.tallyKey}`}>Quantity for {line.item?.item || line.tallyKey}</label><input id={`qty-${line.tallyKey}`} type="number" min="1" max="1000000" step="1" required value={line.quantity} onChange={(event) => setLines((current) => current.map((entry) => entry.tallyKey === line.tallyKey ? { ...entry, quantity: Number(event.target.value) } : entry))} className="min-h-10 rounded-lg border border-[#cedfdd] px-2 text-right" /><button type="button" onClick={() => setLines((current) => current.filter((entry) => entry.tallyKey !== line.tallyKey))} aria-label={`Remove ${line.item?.item || line.tallyKey}`} className="size-10 rounded-lg text-xl text-[#9a4e47] hover:bg-[#ffeae8]">×</button></div>)}</div>
+              {lines.length >= 50 ? <p className="mt-2 text-xs font-bold text-[#805b20]">Maximum 50 products per order.</p> : null}
               {lines.length === 0 ? <p className="mt-4 rounded-xl bg-[#f6f8f7] p-4 text-center text-sm text-[#718487]">Search and add the products requested on the call.</p> : null}
             </fieldset>
 

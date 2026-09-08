@@ -64,6 +64,8 @@ Order dates are validated as real calendar dates, not just date-shaped text, and
 
 Order history and export filters reuse the same real-calendar validation and now include the existing awaiting-approval state, preventing filter behavior from drifting from the workflow model.
 
+Order capture and user administration controls mirror the server's main text, quantity and line-count limits. The user screen imports the server role vocabulary, preventing separate role lists from drifting.
+
 Still outstanding in this slice: record representative deployed measurements; move pagination to the server when measured order volume requires it; add authenticated browser coverage for restart/reconnect, scroll retention and lazy data once the Sites test harness can provide an approved session.
 
 Gate: documented initial payload and transfer budget, no full history on each save, successful offline draft recovery and exactly one order after reconnect. Offline OMS is not complete until these gates pass.
