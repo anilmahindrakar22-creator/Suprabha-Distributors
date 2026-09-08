@@ -68,6 +68,8 @@ Order history and export filters reuse the same real-calendar validation and now
 
 Order capture and user administration controls mirror the server's main text, quantity and line-count limits. The user screen imports the server role vocabulary, preventing separate role lists from drifting.
 
+Existing edit, fulfilment, billing, dispatch and delivery controls now mirror the remaining server text and quantity limits, avoiding late validation failures during routine operations.
+
 Still outstanding in this slice: record representative deployed measurements; move pagination to the server when measured order volume requires it; add authenticated browser coverage for restart/reconnect, scroll retention and lazy data once the Sites test harness can provide an approved session.
 
 Gate: documented initial payload and transfer budget, no full history on each save, successful offline draft recovery and exactly one order after reconnect. Offline OMS is not complete until these gates pass.

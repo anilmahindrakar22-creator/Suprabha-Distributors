@@ -12,6 +12,10 @@ describe('browser input bounds', () => {
     expect(orders).toContain('maxLength={120}');
     expect(orders).toContain('max="1000000"');
     expect(orders).toContain('Maximum 50 products per order.');
+    expect(orders).toContain('Tally invoice number<input maxLength={80}');
+    expect(orders).toContain('Delivery address<input maxLength={1000}');
+    expect(orders).toContain('Courier / transporter<input maxLength={160}');
+    expect(orders).toContain('Reason for change<textarea required maxLength={500}');
   });
 
   it('uses the shared role list and email limit', () => {
