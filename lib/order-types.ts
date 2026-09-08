@@ -402,14 +402,16 @@ export function validateOrderCommand(value: unknown): OrderCommand | null {
     ) {
       return null;
     }
-  } else if (command.action === 'transition_order' && (
-    typeof payload.idempotencyKey !== 'string' ||
-    payload.idempotencyKey.length < 16 ||
-    typeof payload.orderId !== 'string' ||
-    !Number.isInteger(Number(payload.expectedVersion)) ||
-    typeof payload.toStatus !== 'string'
-  )) {
-    return null;
+  } else if (command.action === 'transition_order') {
+    const transitionStatuses = ['awaiting_confirmation', 'awaiting_approval', 'confirmed', 'packed', 'awaiting_tally_billing', 'billed_in_tally', 'ready_for_dispatch', 'dispatched', 'delivered', 'cancelled'];
+    if (
+      typeof payload.idempotencyKey !== 'string' || payload.idempotencyKey.length < 16 || payload.idempotencyKey.length > 200 ||
+      typeof payload.orderId !== 'string' || payload.orderId.length < 1 || payload.orderId.length > 100 ||
+      !Number.isInteger(Number(payload.expectedVersion)) || Number(payload.expectedVersion) < 1 ||
+      typeof payload.toStatus !== 'string' || !transitionStatuses.includes(payload.toStatus) ||
+      (payload.reason !== undefined && (typeof payload.reason !== 'string' || payload.reason.length > 500)) ||
+      (payload.tallyInvoiceNumber !== undefined && (typeof payload.tallyInvoiceNumber !== 'string' || payload.tallyInvoiceNumber.length > 80))
+    ) return null;
   } else if (command.action === 'save_fulfilment') {
     const lines = Array.isArray(payload.lines) ? payload.lines : [];
     if (typeof payload.idempotencyKey !== 'string' || payload.idempotencyKey.length < 16 || typeof payload.orderId !== 'string' || !Number.isInteger(Number(payload.expectedVersion)) || lines.some((line) => !line || typeof line !== 'object' || typeof (line as Record<string, unknown>).tallyKey !== 'string' || !Number.isInteger(Number((line as Record<string, unknown>).fulfilledQuantity)) || Number((line as Record<string, unknown>).fulfilledQuantity) < 0)) return null;

@@ -51,6 +51,9 @@ describe('order command validation', () => {
     ).not.toBeNull();
     expect(validateOrderCommand({ action: 'transition_order', payload: { orderId: 'order-id', expectedVersion: 2, toStatus: 'confirmed' } })).toBeNull();
     expect(validateOrderCommand({ action: 'reserve_order', payload: { orderId: 'order-id', expectedVersion: 2 } })).toBeNull();
+    expect(validateOrderCommand({ action: 'transition_order', payload: { orderId: 'order-id', expectedVersion: 2, toStatus: 'invented_state', idempotencyKey: '1234567890abcdef' } })).toBeNull();
+    expect(validateOrderCommand({ action: 'transition_order', payload: { orderId: 'order-id', expectedVersion: 2, toStatus: 'billed_in_tally', tallyInvoiceNumber: 'X'.repeat(81), idempotencyKey: '1234567890abcdef' } })).toBeNull();
+    expect(validateOrderCommand({ action: 'transition_order', payload: { orderId: 'order-id', expectedVersion: 2, toStatus: 'cancelled', reason: 'X'.repeat(501), idempotencyKey: '1234567890abcdef' } })).toBeNull();
   });
 
   it('validates atomic fulfilment updates and rejects negative quantities', () => {
