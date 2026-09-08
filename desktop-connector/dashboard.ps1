@@ -12,6 +12,7 @@ $salesPath = Join-Path $stateDirectory 'sales-history-v1.json'
 $customerPath = Join-Path $stateDirectory 'customer-master-v1.json'
 $catalogPath = Join-Path $stateDirectory 'catalog-master-v1.json'
 $healthLogPath = Join-Path $stateDirectory 'connector-health.log'
+$script:tallyFailures = @{}
 # A held file handle prevents duplicate extraction across launches and ports.
 try {
     $instanceLock = [IO.File]::Open((Join-Path $stateDirectory 'connector.lock'), [IO.FileMode]::OpenOrCreate, [IO.FileAccess]::ReadWrite, [IO.FileShare]::None)
@@ -81,11 +82,14 @@ function Invoke-Tally([string]$Body, [int]$TimeoutSeconds = 15, [string]$MetricN
     try {
         $response = Invoke-WebRequest -Uri 'http://127.0.0.1:9000' -Method Post -ContentType 'application/xml' -Body $Body -UseBasicParsing -TimeoutSec $TimeoutSeconds
         $watch.Stop()
-        Add-Content -LiteralPath $healthLogPath -Value "$([datetimeoffset]::Now.ToString('o')) request=$requestName durationMs=$($watch.ElapsedMilliseconds) bytes=$($response.RawContentLength) status=ok"
+        $script:tallyFailures[$requestName] = 0
+        Add-Content -LiteralPath $healthLogPath -Value "$([datetimeoffset]::Now.ToString('o')) request=$requestName durationMs=$($watch.ElapsedMilliseconds) bytes=$($response.RawContentLength) consecutiveFailures=0 status=ok"
         return $response.Content
     } catch {
         $watch.Stop()
-        Add-Content -LiteralPath $healthLogPath -Value "$([datetimeoffset]::Now.ToString('o')) request=$requestName durationMs=$($watch.ElapsedMilliseconds) bytes=0 status=failed"
+        $previousFailures = if ($script:tallyFailures.ContainsKey($requestName)) { [int]$script:tallyFailures[$requestName] } else { 0 }
+        $script:tallyFailures[$requestName] = $previousFailures + 1
+        Add-Content -LiteralPath $healthLogPath -Value "$([datetimeoffset]::Now.ToString('o')) request=$requestName durationMs=$($watch.ElapsedMilliseconds) bytes=0 consecutiveFailures=$($script:tallyFailures[$requestName]) status=failed"
         throw
     }
 }
@@ -102,6 +106,7 @@ function Get-TallyCatalogDocument {
         if ($catalogDoc.SelectSingleNode('//LINEERROR') -or -not $catalogDoc.SelectSingleNode('//COLLECTION') -or -not $catalogDoc.SelectSingleNode('//STOCKITEM')) {
             throw 'Catalog export did not contain stock items.'
         }
+        Add-Content -LiteralPath $healthLogPath -Value "$([datetimeoffset]::Now.ToString('o')) domain=catalog count=$($catalogDoc.SelectNodes('//STOCKITEM').Count) status=accepted"
         $fresh = @{ company = $companyName; fetchedAtIso = [datetimeoffset]::UtcNow.ToString('o'); document = $document }
         Save-ConnectorSnapshot $catalogPath $fresh
         $script:lastCatalogData = $fresh
@@ -146,6 +151,7 @@ function Get-TallyCustomers {
         })
         $customers = @($customers | Sort-Object name)
         if (-not $customers.Count) { throw 'Customer export was empty; retaining the last successful customer directory.' }
+        Add-Content -LiteralPath $healthLogPath -Value "$([datetimeoffset]::Now.ToString('o')) domain=customers count=$($customers.Count) status=accepted"
         $fresh = @{ company = $companyName; fetchedAtIso = [datetimeoffset]::UtcNow.ToString('o'); customers = $customers }
         Save-ConnectorSnapshot $customerPath $fresh
         $script:lastCustomerData = $fresh
@@ -249,6 +255,7 @@ function Get-TallySalesData {
         fullScannedAt = if ($fullScan) { [datetimeoffset]::UtcNow.ToString('o') } else { $cachedSales.fullScannedAt }
         reconciledAt = if ($fullScan -or ($salesWindow -and $salesWindow.reconciliation)) { [datetimeoffset]::UtcNow.ToString('o') } else { $cachedSales.reconciledAt }
     }
+    Add-Content -LiteralPath $healthLogPath -Value "$([datetimeoffset]::Now.ToString('o')) domain=sales records=$(@($salesRecords).Count) invoices=$(@($invoices).Count) status=accepted"
     $script:RebuildSalesHistory = $false
     return [ordered]@{ lastSupply = $result; invoices = @($invoices) }
 }
@@ -358,6 +365,7 @@ function Read-ReorderData {
         }
     }
     $catalog = @($catalog | Sort-Object group, item)
+    Add-Content -LiteralPath $healthLogPath -Value "$([datetimeoffset]::Now.ToString('o')) domain=reorder rows=$($sorted.Count) catalog=$($catalog.Count) customers=$($customers.Count) status=accepted"
     return [ordered]@{
         company = $companyName
         fetchedAt = (Get-Date).ToString('dd MMM yyyy, hh:mm:ss tt')

@@ -19,12 +19,15 @@ function Get-ConnectorTask {
 function Show-ConnectorStatus {
     $task = Get-ConnectorTask
     $info = $task | Get-ScheduledTaskInfo
-    $latestUpload = if (Test-Path -LiteralPath $healthLog) {
-        Get-Content -LiteralPath $healthLog -Tail 200 | Where-Object { $_ -match 'request=cloud_upload' } | Select-Object -Last 1
-    }
+    $healthLines = if (Test-Path -LiteralPath $healthLog) { @(Get-Content -LiteralPath $healthLog -Tail 200) } else { @() }
+    $latestUpload = $healthLines | Where-Object { $_ -match 'request=cloud_upload' } | Select-Object -Last 1
     Write-Host "StockFlow connector: $($task.State)" -ForegroundColor $(if ($task.State -eq 'Running') { 'Green' } else { 'DarkYellow' })
     Write-Host "Last started: $($info.LastRunTime)"
     if ($latestUpload) { Write-Host "Latest cloud result: $latestUpload" }
+    foreach ($domain in @('reorder', 'sales', 'catalog', 'customers')) {
+        $latestDomain = $healthLines | Where-Object { $_ -match "domain=$domain(?: |$)" } | Select-Object -Last 1
+        if ($latestDomain) { Write-Host "Latest $domain data: $latestDomain" }
+    }
 }
 
 switch ($Action) {

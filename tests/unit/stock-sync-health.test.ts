@@ -32,6 +32,14 @@ describe('Tally stock sync health', () => {
     expect(connector).toContain("fetchedAtIso = (Get-Date).ToUniversalTime().ToString('o')");
   });
 
+  it('records per-domain counts and consecutive Tally failures', () => {
+    expect(connector).toContain('consecutiveFailures=$($script:tallyFailures[$requestName])');
+    expect(connector).toContain('domain=catalog count=');
+    expect(connector).toContain('domain=customers count=');
+    expect(connector).toContain('domain=sales records=');
+    expect(connector).toContain('domain=reorder rows=');
+  });
+
   it('provides a repeatable per-user Windows startup task', () => {
     expect(startupInstaller).toContain("$taskName = 'Suprabha StockFlow Tally Sync'");
     expect(startupInstaller).toContain('New-ScheduledTaskTrigger -AtLogOn');
