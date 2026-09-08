@@ -1,5 +1,5 @@
 import type { OrderSummary } from './order-types';
-import { filterOrders, orderMatchesCaptureDate, pageItems } from './order-types';
+import { filterOrders, isValidCalendarDate, orderMatchesCaptureDate, pageItems } from './order-types';
 
 export const orderListPageSize = 20;
 
@@ -23,7 +23,7 @@ export function orderListUrl(query: OrderListQuery, exportAll = false) {
 
 const allowedStatuses = new Set([
   'all', 'open', 'history', 'billing', 'picking', 'dispatch_ready', 'overdue', 'attention',
-  'phone_order_received', 'awaiting_confirmation', 'confirmed', 'packed',
+  'phone_order_received', 'awaiting_confirmation', 'awaiting_approval', 'confirmed', 'packed',
   'awaiting_tally_billing', 'billed_in_tally', 'ready_for_dispatch', 'dispatched',
   'delivered', 'cancelled',
 ]);
@@ -36,7 +36,7 @@ export function parseOrderListQuery(parameters: URLSearchParams): OrderListQuery
   const captureDate = parameters.get('date') || '';
   if (!Number.isInteger(page) || page < 1 || page > 10_000) return null;
   if (query.length > 120 || !allowedStatuses.has(status)) return null;
-  if (captureDate && !/^\d{4}-\d{2}-\d{2}$/.test(captureDate)) return null;
+  if (captureDate && !isValidCalendarDate(captureDate)) return null;
   return { page, query, status, captureDate };
 }
 

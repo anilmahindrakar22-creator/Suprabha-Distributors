@@ -62,6 +62,8 @@ User-administration writes now authenticate before reading the body, share the b
 
 Order dates are validated as real calendar dates, not just date-shaped text, and delivery timestamps must be complete timezone-qualified ISO instants. Impossible dates are rejected before database processing.
 
+Order history and export filters reuse the same real-calendar validation and now include the existing awaiting-approval state, preventing filter behavior from drifting from the workflow model.
+
 Still outstanding in this slice: record representative deployed measurements; move pagination to the server when measured order volume requires it; add authenticated browser coverage for restart/reconnect, scroll retention and lazy data once the Sites test harness can provide an approved session.
 
 Gate: documented initial payload and transfer budget, no full history on each save, successful offline draft recovery and exactly one order after reconnect. Offline OMS is not complete until these gates pass.

@@ -20,6 +20,8 @@ describe('bounded order list query', () => {
     expect(parseOrderListQuery(new URLSearchParams('status=unknown'))).toBeNull();
     expect(parseOrderListQuery(new URLSearchParams(`query=${'x'.repeat(121)}`))).toBeNull();
     expect(parseOrderListQuery(new URLSearchParams('date=07-09-2026'))).toBeNull();
+    expect(parseOrderListQuery(new URLSearchParams('date=2026-02-31'))).toBeNull();
+    expect(parseOrderListQuery(new URLSearchParams('status=awaiting_approval'))?.status).toBe('awaiting_approval');
   });
 
   it('returns only one page while retaining the full matching count', () => {
