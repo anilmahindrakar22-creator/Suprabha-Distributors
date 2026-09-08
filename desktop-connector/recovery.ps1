@@ -108,7 +108,9 @@ function Save-ConnectorSnapshot([string]$Path, $Snapshot) {
 function Write-BoundedConnectorLog([string]$Path, [string]$Message, [long]$MaximumBytes = 2MB) {
     try {
         if ([IO.File]::Exists($Path) -and ([IO.FileInfo]$Path).Length -ge $MaximumBytes) {
-            [IO.File]::Move($Path, "$Path.previous", $true)
+            # Windows PowerShell 5 does not provide File.Move(source,destination,overwrite).
+            if ([IO.File]::Exists("$Path.previous")) { [IO.File]::Delete("$Path.previous") }
+            [IO.File]::Move($Path, "$Path.previous")
         }
         Add-Content -LiteralPath $Path -Value $Message
         return $true

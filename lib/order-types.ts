@@ -13,6 +13,8 @@ export type CustomerDirectoryEntry = {
   phone: string | null;
   city: string | null;
   tallyKey: string | null;
+  tallyBalance?: number | null;
+  balanceAsOf?: string | null;
 };
 
 export type OrderSummary = {

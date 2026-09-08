@@ -803,6 +803,7 @@ function HydratedNewOrderPanel({ data, onClose, onCreated }: { data: OrderBootst
     () => searchCustomers(data.customers, customerName),
     [customerName, data.customers],
   );
+  const selectedCustomer = data.customers.find((customer) => customer.id === selectedCustomerId);
 
   function chooseCustomer(customer: CustomerDirectoryEntry) {
     setSelectedCustomerId(customer.id);
@@ -902,12 +903,13 @@ function HydratedNewOrderPanel({ data, onClose, onCreated }: { data: OrderBootst
                             className="block min-h-12 w-full px-3 py-2 text-left font-normal hover:bg-[#f2faf7] focus:bg-[#f2faf7] focus:outline-none"
                           >
                             <strong className="block text-sm text-[#173239]">{customer.name}</strong>
-                            <small className="block text-[#718487]">{[customer.city, customer.phone].filter(Boolean).join(' · ') || 'Tally customer ledger'}</small>
+                            <small className="block text-[#718487]">{[customer.city, customer.phone].filter(Boolean).join(' · ') || 'Tally customer ledger'}{customer.tallyBalance !== undefined && customer.tallyBalance !== null ? ` · Tally balance ₹${customer.tallyBalance.toLocaleString('en-IN', { maximumFractionDigits: 2 })}` : ''}</small>
                           </button>
                         </li>
                       ))}
                     </ul>
                   ) : null}
+                  {selectedCustomer?.tallyBalance !== undefined && selectedCustomer.tallyBalance !== null ? <p className="mt-2 rounded-lg bg-[#f2f7f6] px-3 py-2 text-xs font-normal text-[#456367]">Read-only Tally ledger balance: <strong>₹{selectedCustomer.tallyBalance.toLocaleString('en-IN', { maximumFractionDigits: 2 })}</strong>{selectedCustomer.balanceAsOf ? ` · as of ${new Date(selectedCustomer.balanceAsOf).toLocaleString('en-IN')}` : ''}</p> : null}
                 </label>
                 <details className="sm:col-span-2 rounded-xl bg-[#f6f8f7] px-3 py-2 text-sm">
                   <summary className="cursor-pointer font-bold text-[#456367]">Contact details <span className="font-normal text-[#718487]">(optional)</span></summary>

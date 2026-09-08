@@ -27,4 +27,10 @@ describe('Tally invoice reconciliation connector', () => {
     expect(connector).toContain('[xml]$stockDoc = Get-TallyCatalogDocument');
     expect(recovery).toContain('function Read-CatalogSnapshot');
   });
+
+  it('reuses the customer-master request for read-only ledger balances', () => {
+    expect(connector).toContain('PinCode,ClosingBalance');
+    expect(connector).toContain('tallyBalance = if ($balanceText) { Get-Number $balanceText }');
+    expect(connector.match(/DashboardCustomerLedgers/g)?.length).toBeGreaterThan(1);
+  });
 });
