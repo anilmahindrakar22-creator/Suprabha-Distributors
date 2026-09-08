@@ -453,6 +453,7 @@ export function OrderWorkspace({ actorEmail, initialStatus = 'open' }: { actorEm
                   order={order}
                   actorRole={data?.actor.role || ''}
                   tallyInvoices={data?.snapshot.tallyInvoices}
+                  tallySnapshotFetchedAt={data?.snapshot.fetchedAt}
                   onAdvance={advance}
                   onCancel={cancelOrder}
                   onSaveFulfilment={saveFulfilment}
@@ -500,6 +501,7 @@ function OrderRow({
   order,
   actorRole,
   tallyInvoices,
+  tallySnapshotFetchedAt,
   onAdvance,
   onCancel,
   onSaveFulfilment,
@@ -511,6 +513,7 @@ function OrderRow({
   order: OrderSummary;
   actorRole: string;
   tallyInvoices: OrderBootstrap['snapshot']['tallyInvoices'];
+  tallySnapshotFetchedAt?: string;
   onAdvance: (order: OrderSummary, tallyInvoiceNumber?: string) => Promise<void>;
   onCancel: (order: OrderSummary, reason: string) => Promise<void>;
   onSaveFulfilment: (order: OrderSummary, payload: Extract<OrderCommand, { action: 'save_fulfilment' }>['payload']) => Promise<void>;
@@ -528,7 +531,7 @@ function OrderRow({
   const requiresInvoice = order.status === 'awaiting_tally_billing';
   const canCancel = actorRole === 'administrator' && !['cancelled', 'delivered'].includes(order.status);
   const attention = orderAttentionReasons(order);
-  const invoiceState = tallyInvoiceReconciliation(order, tallyInvoices);
+  const invoiceState = tallyInvoiceReconciliation(order, tallyInvoices, new Date(), tallySnapshotFetchedAt);
   return (
     <article className="p-5">
       <div className="grid gap-4 lg:grid-cols-[1.5fr_1fr_auto] lg:items-center">
@@ -573,7 +576,7 @@ function OrderRow({
             <dt className="font-bold text-[#708386]">Order date</dt><dd>{new Date(order.createdAt).toLocaleString('en-IN')}</dd>
             <dt className="font-bold text-[#708386]">Last updated</dt><dd>{new Date(order.updatedAt).toLocaleString('en-IN')}</dd>
             <dt className="font-bold text-[#708386]">Source</dt><dd className="capitalize">{order.source.replaceAll('_', ' ')}</dd>
-            <dt className="font-bold text-[#708386]">Tally invoice</dt><dd>{order.tallyInvoiceNumber || 'Not billed yet'}{invoiceState === 'verified' ? <span title="Invoice number, financial year, and customer ledger matched" className="ml-2 rounded-full bg-[#eaf8f1] px-2 py-0.5 font-bold text-[#176246]">Invoice matched</span> : invoiceState === 'unmatched' ? <span className="ml-2 rounded-full bg-[#fff1d6] px-2 py-0.5 font-bold text-[#8a5a0a]">Not found in latest sync</span> : invoiceState === 'awaiting_sync' ? <span className="ml-2 text-[#708386]">Awaiting connector update</span> : null}</dd>
+            <dt className="font-bold text-[#708386]">Tally invoice</dt><dd>{order.tallyInvoiceNumber || 'Not billed yet'}{invoiceState === 'verified' ? <span title="Invoice number, financial year, and customer ledger matched" className="ml-2 rounded-full bg-[#eaf8f1] px-2 py-0.5 font-bold text-[#176246]">Invoice matched</span> : invoiceState === 'unmatched' ? <span className="ml-2 rounded-full bg-[#fff1d6] px-2 py-0.5 font-bold text-[#8a5a0a]">Not found in latest sync</span> : invoiceState === 'verification_stale' ? <span title="The latest Tally data is over 20 minutes old" className="ml-2 rounded-full bg-[#fff1d6] px-2 py-0.5 font-bold text-[#8a5a0a]">Match needs fresh sync</span> : invoiceState === 'awaiting_sync' ? <span className="ml-2 text-[#708386]">Awaiting connector update</span> : null}</dd>
             {order.tallyInvoiceNumber ? <><dt className="font-bold text-[#708386]">Product & quantity check</dt><dd className="text-[#708386]">Not compared with Tally</dd></> : null}
             <dt className="font-bold text-[#708386]">Notes</dt><dd>{order.notes || 'No notes'}</dd>
           </dl>

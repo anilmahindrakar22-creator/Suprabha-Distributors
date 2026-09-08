@@ -207,6 +207,9 @@ describe('order workflow and history', () => {
     expect(tallyInvoiceReconciliation({ ...billed, tallyInvoiceNumber: '552' }, [{ ...invoices[0], voucherNumber: 'SD/26-27/0552' }], currentDate)).toBe('verified');
     expect(tallyInvoiceReconciliation({ ...billed, tallyInvoiceNumber: '552' }, [{ ...invoices[0], voucherNumber: 'SD/25-26/0552' }], currentDate)).toBe('unmatched');
     expect(tallyInvoiceReconciliation({ ...billed, tallyInvoiceNumber: 'SD/25-26/0552' }, [{ ...invoices[0], voucherNumber: 'SD/26-27/0552' }])).toBe('unmatched');
+    expect(tallyInvoiceReconciliation(billed, invoices, new Date('2026-09-03T06:21:00Z'), '2026-09-03T06:00:00Z')).toBe('verification_stale');
+    expect(tallyInvoiceReconciliation(billed, invoices, new Date('2026-09-03T06:19:59Z'), '2026-09-03T06:00:00Z')).toBe('verified');
+    expect(tallyInvoiceReconciliation(billed, invoices, new Date('2026-09-03T06:01:00Z'), 'invalid')).toBe('verification_stale');
   });
 
   it('filters capture dates using the India business date', () => {

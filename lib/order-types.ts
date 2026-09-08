@@ -124,9 +124,13 @@ export function currentTallyFinancialYear(now = new Date()) {
   return `${String(start).slice(-2)}-${String(start + 1).slice(-2)}`;
 }
 
-export function tallyInvoiceReconciliation(order: OrderSummary, invoices?: TallyInvoice[], now = new Date()) {
+export function tallyInvoiceReconciliation(order: OrderSummary, invoices?: TallyInvoice[], now = new Date(), snapshotFetchedAt?: string) {
   if (!order.tallyInvoiceNumber) return 'not_billed' as const;
   if (!invoices) return 'awaiting_sync' as const;
+  if (snapshotFetchedAt) {
+    const snapshotTime = Date.parse(snapshotFetchedAt);
+    if (!Number.isFinite(snapshotTime) || now.getTime() - snapshotTime > 20 * 60_000) return 'verification_stale' as const;
+  }
   const expected = order.tallyInvoiceNumber.trim().toLocaleLowerCase('en-IN');
   const numericExpected = /^\d+$/.test(expected) ? expected.replace(/^0+(?=\d)/, '') : null;
   const ledger = (value: string) => value.normalize('NFKC').trim().replace(/\s+/g, ' ').toLocaleLowerCase('en-IN');
