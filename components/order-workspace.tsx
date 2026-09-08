@@ -265,7 +265,7 @@ export function OrderWorkspace({ actorEmail, initialStatus = 'open' }: { actorEm
 
   async function runCommand(command: OrderCommand, success: string) {
     const scrollTop = workspaceRef.current?.scrollTop;
-    const prepared = prepareOrderCommandRetry(command, pendingCommandKeysRef.current);
+    const prepared = prepareOrderCommandRetry(command, pendingCommandKeysRef.current, undefined, actorEmail);
     setError('');
     setNotice('');
     try {

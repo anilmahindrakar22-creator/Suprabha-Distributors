@@ -56,6 +56,8 @@ Routine status, fulfilment, order-edit, dispatch, delivery-exception and equipme
 
 If an order mutation loses its response, a manual retry of the unchanged action now reuses the original idempotency key until the server acknowledges it. Changing the intended mutation creates a different identity; successful acknowledgement clears the pending key.
 
+Retry identities are scoped to the normalized signed-in account. Switching accounts in the same application session cannot reuse another user's pending mutation key.
+
 Transition requests now reject unknown workflow states, invalid versions and oversized identifiers, cancellation reasons or invoice numbers at the API boundary before invoking database logic. Database transition policy remains the authoritative permission and state-machine check.
 
 The same bounded-input policy now covers order capture, fulfilment, edits, dispatch, delivery, exceptions and installations. It limits line counts, whole-unit quantities, identifiers and free-text fields without adding a validation dependency; database constraints and policies remain authoritative.

@@ -25,6 +25,16 @@ describe('order command retry identity', () => {
   it('uses a different identity when the intended mutation changes', () => {
     expect(orderIdentity(transition)).not.toBe(orderIdentity({ ...transition, payload: { ...transition.payload, toStatus: 'confirmed' } }));
   });
+
+  it('never reuses a pending request identity across signed-in accounts', () => {
+    const pending = new Map<string, string>();
+    const first = prepareOrderCommandRetry(transition, pending, () => 'first-account-key', 'first@example.com');
+    const second = prepareOrderCommandRetry(transition, pending, () => 'second-account-key', 'second@example.com');
+    const sameFirst = prepareOrderCommandRetry(transition, pending, () => 'wrong-key', ' FIRST@example.com ');
+    expect(first.command.payload.idempotencyKey).toBe('first-account-key');
+    expect(second.command.payload.idempotencyKey).toBe('second-account-key');
+    expect(sameFirst.command.payload.idempotencyKey).toBe('first-account-key');
+  });
 });
 
 function orderIdentity(command: OrderCommand) {
