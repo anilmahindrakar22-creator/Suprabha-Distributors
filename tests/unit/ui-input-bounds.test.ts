@@ -16,6 +16,7 @@ describe('browser input bounds', () => {
     expect(orders).toContain('Delivery address<input maxLength={1000}');
     expect(orders).toContain('Courier / transporter<input maxLength={160}');
     expect(orders).toContain('Reason for change<textarea required maxLength={500}');
+    expect(orders).toContain('<input type="email" maxLength={254} value={engineerEmail}');
   });
 
   it('uses the shared role list and email limit', () => {
