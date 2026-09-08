@@ -58,6 +58,8 @@ The same bounded-input policy now covers order capture, fulfilment, edits, dispa
 
 The order HTTP boundary requires JSON and enforces its 64 KiB limit against both declared and actually streamed bytes. Chunked requests can no longer bypass the size check before JSON parsing.
 
+User-administration writes now authenticate before reading the body, share the bounded JSON reader with a smaller 4 KiB budget, and accept only bounded email addresses plus known roles and active/suspended states.
+
 Still outstanding in this slice: record representative deployed measurements; move pagination to the server when measured order volume requires it; add authenticated browser coverage for restart/reconnect, scroll retention and lazy data once the Sites test harness can provide an approved session.
 
 Gate: documented initial payload and transfer budget, no full history on each save, successful offline draft recovery and exactly one order after reconnect. Offline OMS is not complete until these gates pass.

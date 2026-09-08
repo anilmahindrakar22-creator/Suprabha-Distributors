@@ -6,13 +6,13 @@ export class BoundedJsonRequestError extends Error {
 
 export async function readBoundedJsonRequest(request: Request, maximumBytes = 65_536): Promise<unknown> {
   const contentType = request.headers.get('content-type')?.split(';', 1)[0].trim().toLowerCase();
-  if (contentType !== 'application/json') throw new BoundedJsonRequestError('Order requests must use JSON', 415);
+  if (contentType !== 'application/json') throw new BoundedJsonRequestError('Requests must use JSON', 415);
 
   const declaredLength = request.headers.get('content-length');
   if (declaredLength) {
     const bytes = Number(declaredLength);
     if (!Number.isSafeInteger(bytes) || bytes < 0) throw new BoundedJsonRequestError('Invalid request length', 400);
-    if (bytes > maximumBytes) throw new BoundedJsonRequestError('Order request is too large', 413);
+    if (bytes > maximumBytes) throw new BoundedJsonRequestError('Request is too large', 413);
   }
 
   if (!request.body) throw new BoundedJsonRequestError('Invalid JSON', 400);
@@ -26,7 +26,7 @@ export async function readBoundedJsonRequest(request: Request, maximumBytes = 65
       byteLength += value.byteLength;
       if (byteLength > maximumBytes) {
         await reader.cancel();
-        throw new BoundedJsonRequestError('Order request is too large', 413);
+        throw new BoundedJsonRequestError('Request is too large', 413);
       }
       chunks.push(value);
     }

@@ -1,5 +1,7 @@
 import { getChatGPTUser } from '@/app/chatgpt-auth';
 import { callOrderGateway, OrderGatewayError } from '@/lib/order-gateway';
+import { BoundedJsonRequestError, readBoundedJsonRequest } from '@/lib/bounded-json-request';
+import { validateUserMutation } from '@/lib/user-types';
 
 const headers = { 'cache-control': 'private, no-store' };
 const fail = (message: string, status: number) => Response.json({ error: message }, { status, headers });
@@ -20,11 +22,12 @@ export async function GET() {
 
 export async function POST(request: Request) {
   try {
-    const payload = await request.json() as { idempotencyKey?: unknown; email?: unknown; role?: unknown; status?: unknown };
-    if (typeof payload.idempotencyKey !== 'string' || payload.idempotencyKey.length < 16 || typeof payload.email !== 'string' || typeof payload.role !== 'string' || typeof payload.status !== 'string') return fail('Request ID, email, role, and status are required', 400);
-    return Response.json(await callOrderGateway(await actorEmail(), 'upsert_user', payload as Record<string, unknown>), { headers });
+    const email = await actorEmail();
+    const payload = validateUserMutation(await readBoundedJsonRequest(request, 4_096));
+    if (!payload) return fail('Valid email, role, and status are required', 400);
+    return Response.json(await callOrderGateway(email, 'upsert_user', payload), { headers });
   } catch (error) {
-    if (error instanceof SyntaxError) return fail('Invalid JSON', 400);
+    if (error instanceof BoundedJsonRequestError) return fail(error.message, error.status);
     return error instanceof OrderGatewayError ? fail(error.message, error.status) : fail('User service is temporarily unavailable', 502);
   }
 }
