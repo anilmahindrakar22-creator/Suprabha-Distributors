@@ -60,6 +60,8 @@ The order HTTP boundary requires JSON and enforces its 64 KiB limit against both
 
 User-administration writes now authenticate before reading the body, share the bounded JSON reader with a smaller 4 KiB budget, and accept only bounded email addresses plus known roles and active/suspended states.
 
+Order dates are validated as real calendar dates, not just date-shaped text, and delivery timestamps must be complete timezone-qualified ISO instants. Impossible dates are rejected before database processing.
+
 Still outstanding in this slice: record representative deployed measurements; move pagination to the server when measured order volume requires it; add authenticated browser coverage for restart/reconnect, scroll retention and lazy data once the Sites test harness can provide an approved session.
 
 Gate: documented initial payload and transfer budget, no full history on each save, successful offline draft recovery and exactly one order after reconnect. Offline OMS is not complete until these gates pass.

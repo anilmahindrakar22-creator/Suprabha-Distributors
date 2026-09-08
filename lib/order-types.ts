@@ -366,6 +366,21 @@ export type OrderCommand =
       payload: { idempotencyKey?: string; orderId: string; expectedVersion: number; installationId: string; serialNumber: string; commissioningNotes: string };
     };
 
+function isCalendarDate(value: unknown) {
+  if (typeof value !== 'string') return false;
+  const match = value.match(/^(\d{4})-(\d{2})-(\d{2})$/);
+  if (!match) return false;
+  const year = Number(match[1]);
+  const month = Number(match[2]);
+  const day = Number(match[3]);
+  const date = new Date(Date.UTC(year, month - 1, day));
+  return date.getUTCFullYear() === year && date.getUTCMonth() === month - 1 && date.getUTCDate() === day;
+}
+
+function isIsoInstant(value: unknown) {
+  return typeof value === 'string' && /^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}(?:\.\d{1,3})?(?:Z|[+-]\d{2}:\d{2})$/.test(value) && Number.isFinite(Date.parse(value));
+}
+
 export function validateOrderCommand(value: unknown): OrderCommand | null {
   if (!value || typeof value !== 'object') return null;
   const command = value as { action?: unknown; payload?: unknown };
@@ -421,11 +436,11 @@ export function validateOrderCommand(value: unknown): OrderCommand | null {
     ) return null;
   } else if (command.action === 'save_fulfilment') {
     const lines = Array.isArray(payload.lines) ? payload.lines : [];
-    if (!validMutationIdentity() || lines.length < 1 || lines.length > 50 || !lines.every((line) => validQuantityLine(line, 'fulfilledQuantity', true)) || !boundedOptionalText('deliveryAddress', 1000) || (payload.expectedDeliveryDate !== undefined && (typeof payload.expectedDeliveryDate !== 'string' || !/^\d{4}-\d{2}-\d{2}$/.test(payload.expectedDeliveryDate)))) return null;
+    if (!validMutationIdentity() || lines.length < 1 || lines.length > 50 || !lines.every((line) => validQuantityLine(line, 'fulfilledQuantity', true)) || !boundedOptionalText('deliveryAddress', 1000) || (payload.expectedDeliveryDate !== undefined && !isCalendarDate(payload.expectedDeliveryDate))) return null;
   } else if (command.action === 'save_dispatch') {
-    if (!validMutationIdentity() || typeof payload.courierName !== 'string' || payload.courierName.trim().length < 2 || payload.courierName.length > 160 || typeof payload.trackingNumber !== 'string' || payload.trackingNumber.trim().length < 2 || payload.trackingNumber.length > 160 || typeof payload.dispatchDate !== 'string' || !/^\d{4}-\d{2}-\d{2}$/.test(payload.dispatchDate) || !boundedOptionalText('vehicleNumber', 40)) return null;
+    if (!validMutationIdentity() || typeof payload.courierName !== 'string' || payload.courierName.trim().length < 2 || payload.courierName.length > 160 || typeof payload.trackingNumber !== 'string' || payload.trackingNumber.trim().length < 2 || payload.trackingNumber.length > 160 || !isCalendarDate(payload.dispatchDate) || !boundedOptionalText('vehicleNumber', 40)) return null;
   } else if (command.action === 'confirm_delivery') {
-    if (!validMutationIdentity() || typeof payload.receivedBy !== 'string' || payload.receivedBy.trim().length < 2 || payload.receivedBy.length > 160 || typeof payload.deliveredAt !== 'string' || Number.isNaN(Date.parse(payload.deliveredAt)) || !boundedOptionalText('podReference', 160)) return null;
+    if (!validMutationIdentity() || typeof payload.receivedBy !== 'string' || payload.receivedBy.trim().length < 2 || payload.receivedBy.length > 160 || !isIsoInstant(payload.deliveredAt) || !boundedOptionalText('podReference', 160)) return null;
   } else if (command.action === 'edit_order') {
     const lines = Array.isArray(payload.lines) ? payload.lines : [];
     if (!validMutationIdentity() || typeof payload.customerName !== 'string' || payload.customerName.trim().length < 2 || payload.customerName.length > 200 || !boundedOptionalText('customerPhone', 40) || !boundedOptionalText('notes', 2000) || !boundedOptionalText('reason', 500) || lines.length < 1 || lines.length > 50 || !lines.every((line) => validQuantityLine(line, 'quantity'))) return null;
@@ -434,7 +449,7 @@ export function validateOrderCommand(value: unknown): OrderCommand | null {
   } else if (command.action === 'resolve_exception') {
     if (!validMutationIdentity() || typeof payload.exceptionId !== 'string' || payload.exceptionId.length < 1 || payload.exceptionId.length > 100 || typeof payload.resolution !== 'string' || payload.resolution.trim().length < 3 || payload.resolution.length > 500) return null;
   } else if (command.action === 'schedule_installation') {
-    if (!validMutationIdentity() || typeof payload.tallyKey !== 'string' || payload.tallyKey.length < 1 || payload.tallyKey.length > 300 || typeof payload.scheduledDate !== 'string' || !/^\d{4}-\d{2}-\d{2}$/.test(payload.scheduledDate) || !boundedOptionalText('engineerEmail', 254) || !boundedOptionalText('siteContact', 200)) return null;
+    if (!validMutationIdentity() || typeof payload.tallyKey !== 'string' || payload.tallyKey.length < 1 || payload.tallyKey.length > 300 || !isCalendarDate(payload.scheduledDate) || !boundedOptionalText('engineerEmail', 254) || !boundedOptionalText('siteContact', 200)) return null;
   } else if (command.action === 'complete_installation') {
     if (!validMutationIdentity() || typeof payload.installationId !== 'string' || payload.installationId.length < 1 || payload.installationId.length > 100 || typeof payload.serialNumber !== 'string' || payload.serialNumber.trim().length < 2 || payload.serialNumber.length > 100 || typeof payload.commissioningNotes !== 'string' || payload.commissioningNotes.trim().length < 3 || payload.commissioningNotes.length > 1000) return null;
   }

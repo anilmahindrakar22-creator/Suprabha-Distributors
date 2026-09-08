@@ -71,6 +71,7 @@ describe('order command validation', () => {
     expect(validateOrderCommand({ ...command, payload: { ...command.payload, lines: [{ tallyKey: 'ITEM-1', fulfilledQuantity: 1.5 }] } })).toBeNull();
     expect(validateOrderCommand({ ...command, payload: { ...command.payload, lines: [] } })).toBeNull();
     expect(validateOrderCommand({ ...command, payload: { ...command.payload, deliveryAddress: 'X'.repeat(1001) } })).toBeNull();
+    expect(validateOrderCommand({ ...command, payload: { ...command.payload, expectedDeliveryDate: '2026-02-31' } })).toBeNull();
   });
 
   it('validates dispatch and delivery evidence', () => {
@@ -78,11 +79,13 @@ describe('order command validation', () => {
     expect(validateOrderCommand(dispatch)).not.toBeNull();
     expect(validateOrderCommand({ ...dispatch, payload: { ...dispatch.payload, trackingNumber: '' } })).toBeNull();
     expect(validateOrderCommand({ ...dispatch, payload: { ...dispatch.payload, vehicleNumber: 'X'.repeat(41) } })).toBeNull();
+    expect(validateOrderCommand({ ...dispatch, payload: { ...dispatch.payload, dispatchDate: '2026-13-01' } })).toBeNull();
 
     const delivery = { action: 'confirm_delivery', payload: { idempotencyKey: '1234567890abcdef', orderId: 'order-id', expectedVersion: 4, deliveredAt: '2026-09-03T10:30:00.000Z', receivedBy: 'Dr Rao' } };
     expect(validateOrderCommand(delivery)).not.toBeNull();
     expect(validateOrderCommand({ ...delivery, payload: { ...delivery.payload, deliveredAt: 'not-a-date' } })).toBeNull();
     expect(validateOrderCommand({ ...delivery, payload: { ...delivery.payload, podReference: 'X'.repeat(161) } })).toBeNull();
+    expect(validateOrderCommand({ ...delivery, payload: { ...delivery.payload, deliveredAt: '2026-09-03' } })).toBeNull();
   });
 
   it('validates safe order edits', () => {
@@ -101,6 +104,7 @@ describe('order command validation', () => {
   it('validates installation scheduling and commissioning', () => {
     expect(validateOrderCommand({ action: 'schedule_installation', payload: { idempotencyKey: '1234567890abcdef', orderId: 'order-id', expectedVersion: 4, tallyKey: 'EQUIPMENT-1', scheduledDate: '2026-09-10' } })).not.toBeNull();
     expect(validateOrderCommand({ action: 'schedule_installation', payload: { orderId: 'order-id', expectedVersion: 4, tallyKey: '', scheduledDate: '10/09/2026' } })).toBeNull();
+    expect(validateOrderCommand({ action: 'schedule_installation', payload: { idempotencyKey: '1234567890abcdef', orderId: 'order-id', expectedVersion: 4, tallyKey: 'EQUIPMENT-1', scheduledDate: '2026-02-30' } })).toBeNull();
     expect(validateOrderCommand({ action: 'complete_installation', payload: { idempotencyKey: '1234567890abcdef', orderId: 'order-id', expectedVersion: 5, installationId: 'installation-id', serialNumber: 'SN-1002', commissioningNotes: 'Installed and quality checks passed' } })).not.toBeNull();
   });
 });
