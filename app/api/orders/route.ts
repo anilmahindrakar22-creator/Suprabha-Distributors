@@ -92,6 +92,24 @@ export async function GET(request: Request) {
             pagination: page.pagination,
           }, startedAt);
         }
+        if (listQuery.status === 'delivery_due_today' || listQuery.status === 'delivery_due_soon') {
+          const first = await callOrderGateway<OrderBootstrap>(user.email, 'list_orders', {
+            page: 1, pageSize: 200, query: listQuery.query, status: 'open', date: listQuery.captureDate,
+          });
+          const orders = [...first.orders];
+          for (let page = 2; page <= (first.pagination?.pageCount || 1); page += 1) {
+            const next = await callOrderGateway<OrderBootstrap>(user.email, 'list_orders', {
+              page, pageSize: 200, query: listQuery.query, status: 'open', date: listQuery.captureDate,
+            });
+            orders.push(...next.orders);
+          }
+          if (exporting) {
+            return new Response(`\uFEFF${ordersCsv(matchingOrderList(orders, listQuery), { invoices: first.snapshot.tallyInvoices, fetchedAt: first.snapshot.fetchedAt })}`, {
+              headers: { ...privateHeaders, 'content-type': 'text/csv; charset=utf-8', 'content-disposition': `attachment; filename="stockflow-deliveries-${new Date().toISOString().slice(0, 10)}.csv"` },
+            });
+          }
+          return measuredJsonResponse({ ...first, ...queryOrderList(orders, listQuery) }, startedAt);
+        }
         const first = await callOrderGateway<OrderBootstrap>(user.email, 'list_orders', {
           page: exporting ? 1 : listQuery.page,
           pageSize,
@@ -112,7 +130,7 @@ export async function GET(request: Request) {
           headers: { ...privateHeaders, 'content-type': 'text/csv; charset=utf-8', 'content-disposition': `attachment; filename="stockflow-orders-${new Date().toISOString().slice(0, 10)}.csv"` },
         });
       } catch (error) {
-        if (listQuery.status === 'billing_attention') throw error;
+        if (['billing_attention', 'delivery_due_today', 'delivery_due_soon'].includes(listQuery.status)) throw error;
         if (!(error instanceof OrderGatewayError) || ![400, 502].includes(error.status)) throw error;
         // Compatibility path while the database migration and edge function roll out.
       }

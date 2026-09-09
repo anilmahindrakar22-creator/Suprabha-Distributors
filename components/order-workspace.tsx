@@ -425,6 +425,8 @@ export function OrderWorkspace({ actorEmail, initialStatus = 'open' }: { actorEm
             <option value="awaiting_tally_billing">Awaiting Tally billing</option>
             <option value="dispatch_ready">Ready for dispatch</option>
             <option value="dispatched">Dispatched</option>
+            <option value="delivery_due_today">Delivery due today</option>
+            <option value="delivery_due_soon">Delivery due in 7 days</option>
             <option value="overdue">Overdue deliveries</option>
             <option value="cancelled">Cancelled</option>
           </select>
@@ -442,7 +444,7 @@ export function OrderWorkspace({ actorEmail, initialStatus = 'open' }: { actorEm
         <section className="mt-4 overflow-hidden rounded-2xl border border-[#dce7e5] bg-white shadow-[0_8px_24px_rgba(9,47,54,0.05)]">
           <div className="flex items-center justify-between border-b border-[#e3ecea] px-5 py-4">
             <div>
-              <h2 className="font-extrabold text-[#173239]">{status === 'history' ? 'Old orders' : status === 'billing_attention' ? 'Billing attention' : 'Order inbox'}</h2>
+              <h2 className="font-extrabold text-[#173239]">{status === 'history' ? 'Old orders' : status === 'billing_attention' ? 'Billing attention' : status === 'delivery_due_today' ? 'Deliveries due today' : status === 'delivery_due_soon' ? 'Deliveries due in 7 days' : 'Order inbox'}</h2>
               <p className="mt-1 text-xs text-[#6b7e81]">Tally stock snapshot: {staleText}</p>
             </div>
             <span className="rounded-full bg-[#e2f8ef] px-3 py-1 text-xs font-extrabold text-[#136146]">{totalOrders} orders</span>
@@ -453,7 +455,7 @@ export function OrderWorkspace({ actorEmail, initialStatus = 'open' }: { actorEm
           ) : visibleOrders.length === 0 ? (
             <div className="p-10 text-center">
               <p className="font-bold text-[#31585d]">No matching orders</p>
-              <p className="mt-2 text-sm text-[#708386]">{query ? `No orders match “${query}”. Clear the search to see the full list.` : status === 'history' ? 'Completed and cancelled orders will remain available here.' : status === 'billing_attention' ? 'No invoice, customer-ledger, product, quantity, or stale-verification issues need attention.' : 'New orders will appear here immediately.'}</p>
+              <p className="mt-2 text-sm text-[#708386]">{query ? `No orders match “${query}”. Clear the search to see the full list.` : status === 'history' ? 'Completed and cancelled orders will remain available here.' : status === 'billing_attention' ? 'No invoice, customer-ledger, product, quantity, or stale-verification issues need attention.' : status.startsWith('delivery_due_') ? 'No promised deliveries fall in this period.' : 'New orders will appear here immediately.'}</p>
             </div>
           ) : (
             <div className="divide-y divide-[#e8efed]">
@@ -565,6 +567,7 @@ function OrderRow({
         </div>
         <p className="mt-2 font-bold text-[#274b50]">{order.customerName}</p>
         <p className="mt-1 text-xs text-[#718487]">{order.customerPhone || 'No phone recorded'} · {order.lineCount} line{order.lineCount === 1 ? '' : 's'}</p>
+        {order.expectedDeliveryDate ? <p className="mt-1 text-xs font-bold text-[#456367]">Promised delivery: {new Date(`${order.expectedDeliveryDate}T00:00:00+05:30`).toLocaleDateString('en-IN', { timeZone: 'Asia/Kolkata', day: '2-digit', month: 'short', year: 'numeric' })}</p> : null}
         {attention.length ? <p className="mt-2 text-xs font-bold text-[#9a6412]">Needs attention: {attention.join(' · ')}</p> : null}
       </div>
       <div>

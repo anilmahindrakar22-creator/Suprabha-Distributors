@@ -274,10 +274,9 @@ export function billingHandoffText(order: OrderSummary) {
 }
 
 function localDateKey(date: Date) {
-  const year = date.getFullYear();
-  const month = String(date.getMonth() + 1).padStart(2, '0');
-  const day = String(date.getDate()).padStart(2, '0');
-  return `${year}-${month}-${day}`;
+  return new Intl.DateTimeFormat('en-CA', {
+    timeZone: 'Asia/Kolkata', year: 'numeric', month: '2-digit', day: '2-digit',
+  }).format(date);
 }
 
 export function isOrderDeliveryOverdue(order: OrderSummary, today = new Date()) {
@@ -339,6 +338,8 @@ export function filterOrders(orders: OrderSummary[], query: string, status: stri
       (status === 'billing' && order.status === 'awaiting_tally_billing') ||
       (status === 'picking' && ['confirmed', 'partially_reserved', 'fully_reserved', 'ready_for_picking', 'picked'].includes(order.status)) ||
       (status === 'dispatch_ready' && ['billed_in_tally', 'ready_for_dispatch'].includes(order.status)) ||
+      (status === 'delivery_due_today' && isOrderDeliveryDue(order)) ||
+      (status === 'delivery_due_soon' && isOrderDeliveryDue(order, 6)) ||
       (status === 'overdue' && isOrderDeliveryOverdue(order)) ||
       (status === 'attention' && orderAttentionReasons(order).length > 0) ||
       order.status === status;
@@ -447,6 +448,13 @@ export function isValidCalendarDate(value: unknown) {
   const day = Number(match[3]);
   const date = new Date(Date.UTC(year, month - 1, day));
   return date.getUTCFullYear() === year && date.getUTCMonth() === month - 1 && date.getUTCDate() === day;
+}
+
+export function isOrderDeliveryDue(order: OrderSummary, horizonDays = 0, today = new Date()) {
+  if (!order.expectedDeliveryDate || ['cancelled', 'delivered'].includes(order.status)) return false;
+  const start = localDateKey(today);
+  const end = localDateKey(new Date(today.getTime() + Math.max(0, horizonDays) * 86_400_000));
+  return order.expectedDeliveryDate >= start && order.expectedDeliveryDate <= end;
 }
 
 export function repeatOrderTemplate(order: OrderSummary) {

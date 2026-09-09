@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { billingHandoffText, currentTallyFinancialYear, filterOrders, isOrderDeliveryOverdue, orderAttentionReasons, orderMatchesCaptureDate, orderNeedsBillingAttention, ordersCsv, orderStage, pageItems, repeatOrderTemplate, searchCatalog, searchCustomers, tallyInvoiceLineReconciliation, tallyInvoiceReconciliation, tallyInvoiceReconciliationDetail, validateOrderCommand } from '../../lib/order-types';
+import { billingHandoffText, currentTallyFinancialYear, filterOrders, isOrderDeliveryDue, isOrderDeliveryOverdue, orderAttentionReasons, orderMatchesCaptureDate, orderNeedsBillingAttention, ordersCsv, orderStage, pageItems, repeatOrderTemplate, searchCatalog, searchCustomers, tallyInvoiceLineReconciliation, tallyInvoiceReconciliation, tallyInvoiceReconciliationDetail, validateOrderCommand } from '../../lib/order-types';
 
 describe('order command validation', () => {
   it('accepts a complete phone order', () => {
@@ -329,6 +329,20 @@ describe('order workflow and history', () => {
     expect(csv).toContain('"\'=Unsafe formula"');
     expect(csv).toContain('"Glucose Reagent (2 box)"');
     expect(csv.split('\r\n')).toHaveLength(2);
+  });
+
+  it('builds delivery queues from the India business date', () => {
+    const now = new Date('2026-09-08T20:00:00Z');
+    const today = { ...baseOrder, expectedDeliveryDate: '2026-09-09' };
+    const withinWeek = { ...baseOrder, id: '2', expectedDeliveryDate: '2026-09-15' };
+    const later = { ...baseOrder, id: '3', expectedDeliveryDate: '2026-09-16' };
+    const overdue = { ...baseOrder, id: '4', expectedDeliveryDate: '2026-09-08' };
+    const delivered = { ...today, id: '5', status: 'delivered' };
+    expect(isOrderDeliveryDue(today, 0, now)).toBe(true);
+    expect(isOrderDeliveryDue(withinWeek, 6, now)).toBe(true);
+    expect(isOrderDeliveryDue(later, 6, now)).toBe(false);
+    expect(isOrderDeliveryDue(overdue, 6, now)).toBe(false);
+    expect(isOrderDeliveryDue(delivered, 6, now)).toBe(false);
   });
 
   it('exports invoice identity and exact line differences for Accounts', () => {
