@@ -9,7 +9,7 @@ import type {
   OrderEvent,
   OrderSummary,
 } from '@/lib/order-types';
-import { billingHandoffText, orderAttentionReasons, orderStage, searchCatalog, searchCustomers, tallyInvoiceLineReconciliation, tallyInvoiceReconciliationDetail } from '@/lib/order-types';
+import { billingHandoffText, orderAttentionReasons, orderStage, repeatOrderTemplate, searchCatalog, searchCustomers, tallyInvoiceLineReconciliation, tallyInvoiceReconciliationDetail } from '@/lib/order-types';
 import { orderListUrl } from '@/lib/order-list-query';
 import { offlineDraftRecoveryError, readOfflineDraftConsent, readOfflineOrderDraft, removeOfflineOrderDraft, restoreOfflineDraftLines, updateOfflineDraftState, writeOfflineDraftConsent, writeOfflineOrderDraft, type OfflineDraftState } from '@/lib/offline-order-drafts';
 import { readCatalogCache, removeCatalogCache, writeCatalogCache } from '@/lib/catalog-cache';
@@ -76,6 +76,7 @@ export function OrderWorkspace({ actorEmail, initialStatus = 'open' }: { actorEm
   const [captureDate, setCaptureDate] = useState('');
   const [status, setStatus] = useState(initialStatus);
   const [creating, setCreating] = useState(false);
+  const [repeatOrder, setRepeatOrder] = useState<OrderSummary | null>(null);
   const [catalogLoading, setCatalogLoading] = useState(false);
   const [deviceDraftState, setDeviceDraftState] = useState<OfflineDraftState | null>(null);
   const [page, setPage] = useState(1);
@@ -205,7 +206,7 @@ export function OrderWorkspace({ actorEmail, initialStatus = 'open' }: { actorEm
     link.click();
   }
 
-  async function openNewOrder() {
+  async function openNewOrder(template?: OrderSummary) {
     if (catalogLoading) return;
     setError('');
     setCatalogLoading(true);
@@ -255,6 +256,13 @@ export function OrderWorkspace({ actorEmail, initialStatus = 'open' }: { actorEm
         customers: customers || [],
         snapshot: { ...value.snapshot, catalogVersion: catalogResult?.catalogVersion || value.snapshot.catalogVersion, catalog: catalog || [] },
       } : value);
+      const savedDraft = readOfflineOrderDraft(localStorage, current.actor.email);
+      if (template && savedDraft) {
+        setNotice('Finish or discard the saved order on this device before repeating another order.');
+        setRepeatOrder(null);
+      } else {
+        setRepeatOrder(template || null);
+      }
       setCreating(true);
     } catch (cause) {
       setError(cause instanceof Error ? cause.message : 'Unable to load Tally customers and products');
@@ -463,6 +471,7 @@ export function OrderWorkspace({ actorEmail, initialStatus = 'open' }: { actorEm
                   onException={updateException}
                   onInstallation={updateInstallation}
                   onBillingReview={recordBillingReview}
+                  onRepeat={(order) => void openNewOrder(order)}
                 />
               ))}
             </div>
@@ -474,9 +483,12 @@ export function OrderWorkspace({ actorEmail, initialStatus = 'open' }: { actorEm
       {creating && data ? (
         <NewOrderPanel
           data={data}
+          templateOrder={repeatOrder}
           onClose={() => {
             setDeviceDraftState(readOfflineOrderDraft(localStorage, data.actor.email)?.state || null);
+            setRepeatOrder(null);
             setCreating(false);
+            setRepeatOrder(null);
           }}
           onCreated={(number) => {
             setDeviceDraftState(null);
@@ -512,6 +524,7 @@ function OrderRow({
   onException,
   onInstallation,
   onBillingReview,
+  onRepeat,
 }: {
   order: OrderSummary;
   actorRole: string;
@@ -525,6 +538,7 @@ function OrderRow({
   onException: (order: OrderSummary, command: Extract<OrderCommand, { action: 'create_exception' | 'resolve_exception' }>) => Promise<void>;
   onInstallation: (order: OrderSummary, command: Extract<OrderCommand, { action: 'schedule_installation' | 'complete_installation' }>) => Promise<void>;
   onBillingReview: (order: OrderSummary, command: Extract<OrderCommand, { action: 'record_billing_review' }>) => Promise<void>;
+  onRepeat: (order: OrderSummary) => void;
 }) {
   const [busy, setBusy] = useState(false);
   const [invoiceNumber, setInvoiceNumber] = useState(order.tallyInvoiceNumber || '');
@@ -534,6 +548,7 @@ function OrderRow({
   const total = Number(order.totalQuantity || 0);
   const requiresInvoice = order.status === 'awaiting_tally_billing';
   const canCancel = actorRole === 'administrator' && !['cancelled', 'delivered'].includes(order.status);
+  const canRepeat = ['administrator', 'sales', 'operations', 'management'].includes(actorRole);
   const attention = orderAttentionReasons(order);
   const invoiceMatch = tallyInvoiceReconciliationDetail(order, tallyInvoices, new Date(), tallySnapshotFetchedAt);
   const lineMatch = tallyInvoiceLineReconciliation(order, tallyInvoices, new Date(), tallySnapshotFetchedAt);
@@ -571,6 +586,7 @@ function OrderRow({
       ) : canCancel ? <button type="button" disabled={busy} onClick={() => setCancelling(true)} className="min-h-10 rounded-xl px-4 text-sm font-bold text-[#9a4e47] hover:bg-[#fff0ef] disabled:opacity-50">Cancel order</button> : <span className="text-xs font-bold text-[#7d8f91]">No action due</span>}
       </div>
       {cancelling ? <div className="mt-4 rounded-xl border border-[#efbbb6] bg-[#fff8f7] p-4"><label className="text-sm font-bold text-[#7d413c]">Why is this order being cancelled?<textarea value={cancelReason} onChange={(event) => setCancelReason(event.target.value)} rows={2} maxLength={500} className="mt-2 w-full rounded-xl border border-[#dfbbb7] bg-white p-3 font-normal text-[#173239] outline-none focus:border-[#d06a61]" placeholder="Cancellation reason is required" /></label><div className="mt-3 flex justify-end gap-2"><button type="button" onClick={() => { setCancelling(false); setCancelReason(''); }} className="min-h-10 rounded-xl px-4 font-bold text-[#557174]">Keep order</button><button type="button" disabled={busy || !cancelReason.trim()} onClick={async () => { setBusy(true); try { await onCancel(order, cancelReason); setCancelling(false); } finally { setBusy(false); } }} className="min-h-10 rounded-xl bg-[#a54c44] px-4 font-bold text-white disabled:opacity-50">{busy ? 'Cancelling…' : 'Confirm cancellation'}</button></div></div> : null}
+      {canRepeat ? <button type="button" onClick={() => onRepeat(order)} className="mt-3 min-h-10 rounded-xl border border-[#cedfdd] px-4 text-sm font-bold text-[#31585d] hover:bg-[#f1f6f4]">Repeat as new order</button> : null}
       <details className="mt-4 rounded-xl bg-[#f6f8f7] px-4 py-3 text-sm">
         <summary className="cursor-pointer font-bold text-[#456367]">View order details</summary>
         <div className="mt-3 grid gap-4 border-t border-[#dfe9e7] pt-3 sm:grid-cols-2">
@@ -711,23 +727,24 @@ function DispatchPanel({ order, actorRole, onSave }: { order: OrderSummary; acto
   return <div className="mt-5 border-t border-[#dfe9e7] pt-4"><p className="font-bold text-[#31585d]">{order.status === 'ready_for_dispatch' ? 'Dispatch details' : 'Delivery confirmation'}</p>{order.status === 'ready_for_dispatch' ? <div className="mt-3 grid gap-3 rounded-xl bg-white p-4 sm:grid-cols-2"><label className="text-sm font-bold">Courier / transporter<input maxLength={160} value={courierName} onChange={(event) => setCourierName(event.target.value)} className="mt-1 min-h-11 w-full rounded-lg border px-3 font-normal" /></label><label className="text-sm font-bold">Tracking / docket number<input maxLength={160} value={trackingNumber} onChange={(event) => setTrackingNumber(event.target.value)} className="mt-1 min-h-11 w-full rounded-lg border px-3 font-normal" /></label><label className="text-sm font-bold">Dispatch date<input type="date" value={dispatchDate} onChange={(event) => setDispatchDate(event.target.value)} className="mt-1 min-h-11 w-full rounded-lg border px-3 font-normal" /></label><label className="text-sm font-bold">Vehicle number <span className="font-normal text-[#718487]">(optional)</span><input value={vehicleNumber} onChange={(event) => setVehicleNumber(event.target.value)} maxLength={40} className="mt-1 min-h-11 w-full rounded-lg border px-3 font-normal" /></label><div className="sm:col-span-2 flex justify-end"><button type="button" disabled={!canUpdate || busy || courierName.trim().length < 2 || trackingNumber.trim().length < 2 || !dispatchDate} onClick={async () => { setBusy(true); try { await onSave(order, { action: 'save_dispatch', payload: { orderId: order.id, expectedVersion: order.version, courierName: courierName.trim(), trackingNumber: trackingNumber.trim(), dispatchDate, vehicleNumber: vehicleNumber.trim() } }); } finally { setBusy(false); } }} className="min-h-11 rounded-xl bg-[#092f36] px-5 font-bold text-white disabled:opacity-50">{busy ? 'Saving…' : 'Mark dispatched'}</button></div></div> : <div className="mt-3 grid gap-3 rounded-xl bg-white p-4 sm:grid-cols-2"><p className="sm:col-span-2 text-sm text-[#587275]">{order.courierName} · {order.trackingNumber}{order.vehicleNumber ? ` · ${order.vehicleNumber}` : ''}</p><label className="text-sm font-bold">Delivered at<input type="datetime-local" value={deliveredAt} onChange={(event) => setDeliveredAt(event.target.value)} className="mt-1 min-h-11 w-full rounded-lg border px-3 font-normal" /></label><label className="text-sm font-bold">Received by<input value={receivedBy} onChange={(event) => setReceivedBy(event.target.value)} maxLength={160} className="mt-1 min-h-11 w-full rounded-lg border px-3 font-normal" /></label><label className="text-sm font-bold sm:col-span-2">Proof of delivery reference <span className="font-normal text-[#718487]">(optional)</span><input value={podReference} onChange={(event) => setPodReference(event.target.value)} maxLength={160} className="mt-1 min-h-11 w-full rounded-lg border px-3 font-normal" /></label><div className="sm:col-span-2 flex justify-end"><button type="button" disabled={!canUpdate || busy || receivedBy.trim().length < 2 || !deliveredAt} onClick={async () => { setBusy(true); try { await onSave(order, { action: 'confirm_delivery', payload: { orderId: order.id, expectedVersion: order.version, deliveredAt: new Date(deliveredAt).toISOString(), receivedBy: receivedBy.trim(), podReference: podReference.trim() } }); } finally { setBusy(false); } }} className="min-h-11 rounded-xl bg-[#092f36] px-5 font-bold text-white disabled:opacity-50">{busy ? 'Saving…' : 'Confirm delivery'}</button></div></div>}</div>;
 }
 
-function NewOrderPanel({ data, onClose, onCreated }: { data: OrderBootstrap; onClose: () => void; onCreated: (number: string) => void }) {
+function NewOrderPanel({ data, templateOrder, onClose, onCreated }: { data: OrderBootstrap; templateOrder: OrderSummary | null; onClose: () => void; onCreated: (number: string) => void }) {
   const hydrated = useSyncExternalStore(() => () => {}, () => true, () => false);
   if (!hydrated) return null;
-  return <HydratedNewOrderPanel data={data} onClose={onClose} onCreated={onCreated} />;
+  return <HydratedNewOrderPanel data={data} templateOrder={templateOrder} onClose={onClose} onCreated={onCreated} />;
 }
 
-function HydratedNewOrderPanel({ data, onClose, onCreated }: { data: OrderBootstrap; onClose: () => void; onCreated: (number: string) => void }) {
+function HydratedNewOrderPanel({ data, templateOrder, onClose, onCreated }: { data: OrderBootstrap; templateOrder: OrderSummary | null; onClose: () => void; onCreated: (number: string) => void }) {
   const [initialDraft] = useState(() => readOfflineOrderDraft(localStorage, data.actor.email));
   const initialPayload = initialDraft?.command.payload;
-  const [customerName, setCustomerName] = useState(initialPayload?.customerName || '');
-  const [customerPhone, setCustomerPhone] = useState(initialPayload?.customerPhone || '');
+  const templatePayload = templateOrder ? repeatOrderTemplate(templateOrder) : undefined;
+  const [customerName, setCustomerName] = useState(initialPayload?.customerName || templatePayload?.customerName || '');
+  const [customerPhone, setCustomerPhone] = useState(initialPayload?.customerPhone || templatePayload?.customerPhone || '');
   const [customerCity, setCustomerCity] = useState(initialPayload?.customerCity || '');
   const [selectedCustomerId, setSelectedCustomerId] = useState<string | undefined>(initialPayload?.customerId);
   const [customerSuggestionsOpen, setCustomerSuggestionsOpen] = useState(false);
   const [notes, setNotes] = useState(initialPayload?.notes || '');
   const [productQuery, setProductQuery] = useState('');
-  const [restoredLines] = useState(() => restoreOfflineDraftLines(data.snapshot.catalog, initialPayload?.lines || []));
+  const [restoredLines] = useState(() => restoreOfflineDraftLines(data.snapshot.catalog, initialPayload?.lines || templatePayload?.lines || []));
   const [lines, setLines] = useState<DraftLine[]>(restoredLines);
   const [submitting, setSubmitting] = useState(false);
   const [error, setError] = useState(() => offlineDraftRecoveryError(initialDraft, restoredLines.some((line) => !line.item)));
@@ -872,7 +889,7 @@ function HydratedNewOrderPanel({ data, onClose, onCreated }: { data: OrderBootst
       <dialog open aria-labelledby="new-order-title" className="ml-auto mr-0 h-full max-h-none w-full max-w-2xl overflow-y-auto bg-[#f7f6f1] p-0 shadow-2xl">
         <form onSubmit={submit}>
           <header className="sticky top-0 z-10 flex items-center justify-between border-b border-[#dce7e5] bg-white/95 px-5 py-4 backdrop-blur">
-            <div><p className="text-xs font-extrabold uppercase tracking-[0.12em] text-[#277b69]">Order</p><h2 id="new-order-title" className="mt-1 text-xl font-black text-[#092f36]">New order</h2></div>
+            <div><p className="text-xs font-extrabold uppercase tracking-[0.12em] text-[#277b69]">Order</p><h2 id="new-order-title" className="mt-1 text-xl font-black text-[#092f36]">{templateOrder ? 'Repeat order' : 'New order'}</h2>{templateOrder ? <p className="mt-1 text-xs text-[#6b7e81]">Based on {templateOrder.orderNumber}; saved as a separate new order.</p> : null}</div>
             <button type="button" onClick={onClose} className="min-h-10 rounded-xl border border-[#d1dfdd] px-3 font-bold text-[#557174]">Close</button>
           </header>
           <div className="space-y-5 p-5 sm:p-7">

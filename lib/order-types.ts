@@ -442,6 +442,15 @@ export function isValidCalendarDate(value: unknown) {
   return date.getUTCFullYear() === year && date.getUTCMonth() === month - 1 && date.getUTCDate() === day;
 }
 
+export function repeatOrderTemplate(order: OrderSummary) {
+  return {
+    customerName: order.customerName,
+    customerPhone: order.customerPhone || '',
+    source: 'phone' as const,
+    lines: (order.lines || []).map((line) => ({ tallyKey: line.tallyKey, quantity: line.quantity })),
+  };
+}
+
 function isIsoInstant(value: unknown) {
   return typeof value === 'string' && /^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}(?:\.\d{1,3})?(?:Z|[+-]\d{2}:\d{2})$/.test(value) && Number.isFinite(Date.parse(value));
 }

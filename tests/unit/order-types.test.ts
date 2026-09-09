@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { billingHandoffText, currentTallyFinancialYear, filterOrders, isOrderDeliveryOverdue, orderAttentionReasons, orderMatchesCaptureDate, ordersCsv, orderStage, pageItems, searchCatalog, searchCustomers, tallyInvoiceLineReconciliation, tallyInvoiceReconciliation, tallyInvoiceReconciliationDetail, validateOrderCommand } from '../../lib/order-types';
+import { billingHandoffText, currentTallyFinancialYear, filterOrders, isOrderDeliveryOverdue, orderAttentionReasons, orderMatchesCaptureDate, ordersCsv, orderStage, pageItems, repeatOrderTemplate, searchCatalog, searchCustomers, tallyInvoiceLineReconciliation, tallyInvoiceReconciliation, tallyInvoiceReconciliationDetail, validateOrderCommand } from '../../lib/order-types';
 
 describe('order command validation', () => {
   it('accepts a complete phone order', () => {
@@ -172,6 +172,15 @@ describe('order workflow and history', () => {
     lines: [{ tallyKey: 'ITEM-1', itemName: 'Glucose Reagent', itemGroup: 'Reagents', baseUnit: 'box', quantity: 2, reservedQuantity: 0 }],
     events: [], exceptions: [], installations: [],
   };
+
+  it('copies only reusable customer and product details into a new order template', () => {
+    expect(repeatOrderTemplate({ ...baseOrder, notes: 'Old urgent instruction', status: 'delivered' })).toEqual({
+      customerName: 'City Hospital',
+      customerPhone: '9876543210',
+      source: 'phone',
+      lines: [{ tallyKey: 'ITEM-1', quantity: 2 }],
+    });
+  });
 
   it('presents detailed statuses as six simple operational stages', () => {
     expect(orderStage('awaiting_confirmation')).toBe('Confirmation');
