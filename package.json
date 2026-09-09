@@ -10,6 +10,8 @@
     "dev": "vinext dev",
     "build": "vinext build",
     "start": "wrangler dev --config dist/server/wrangler.json",
+    "start:lan": "wrangler dev --config dist/server/wrangler.json --ip 0.0.0.0 --port 8787",
+    "host:pc": "pnpm build && pnpm start:lan",
     "lint": "oxlint app components/stockflow-frame.tsx components/order-workspace.tsx components/service-workspace.tsx lib",
     "typecheck": "tsc --noEmit",
     "test": "vitest run --coverage",
