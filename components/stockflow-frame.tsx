@@ -8,6 +8,7 @@ import { UserManagement } from './user-management';
 import { readOrderDashboardMessage } from '@/lib/stockflow-navigation';
 import { clearOrderBootstrapCache, loadOrderBootstrap } from '@/lib/order-bootstrap-cache';
 import { prepareDeviceForAccount } from '@/lib/device-account-privacy';
+import { clearOrderCaptureMasterCache } from '@/lib/order-capture-masters';
 
 export function StockFlowFrame({ actorEmail, actorRole }: { actorEmail: string; actorRole: string }) {
   const [surface, setSurface] = useState<'stock' | 'orders' | 'service' | 'users'>('stock');
@@ -25,6 +26,7 @@ export function StockFlowFrame({ actorEmail, actorRole }: { actorEmail: string; 
     let noticeTimer: number | undefined;
     if (account.switched) {
       clearOrderBootstrapCache();
+      clearOrderCaptureMasterCache();
       if (account.retainedPreviousDraft) noticeTimer = window.setTimeout(() => setDeviceNotice('A saved order for the previous account remains on this device. Sign back into that account to send or discard it.'), 0);
     }
     void loadOrderBootstrap(actorEmail).catch(() => undefined);

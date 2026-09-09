@@ -19,6 +19,7 @@ import { OrderSubmissionError, orderSubmissionError, recoverAcceptedOrder } from
 import { loadOrderBootstrap } from '@/lib/order-bootstrap-cache';
 import { retryPendingOfflineOrder } from '@/lib/offline-order-retry';
 import { acknowledgeOrderCommand, prepareOrderCommandRetry } from '@/lib/order-command-idempotency';
+import { loadOrderCatalog, loadOrderCustomers } from '@/lib/order-capture-masters';
 
 type DraftLine = { tallyKey: string; item: CatalogItem | null; quantity: number };
 const statusNames: Record<string, string> = {
@@ -89,6 +90,17 @@ export function OrderWorkspace({ actorEmail, initialStatus = 'open' }: { actorEm
   useEffect(() => {
     dataRef.current = data;
   }, [data]);
+
+  useEffect(() => {
+    if (!data) return;
+    const catalogVersion = data.snapshot.catalogVersion || data.snapshot.fetchedAt;
+    const customerVersion = data.customerVersion || '';
+    const timer = window.setTimeout(() => {
+      void loadOrderCatalog(actorEmail, catalogVersion).catch(() => undefined);
+      void loadOrderCustomers(actorEmail, customerVersion).catch(() => undefined);
+    }, 750);
+    return () => window.clearTimeout(timer);
+  }, [actorEmail, data]);
 
   const load = useCallback(async (showLoading = false) => {
     if (showLoading) setLoading(true);
@@ -232,10 +244,10 @@ export function OrderWorkspace({ actorEmail, initialStatus = 'open' }: { actorEm
       let customers = current.customers.length > 0 ? current.customers : readCustomerCache(sessionStorage, current.actor.email, customerVersion) || (trustedDevice ? readCustomerCache(localStorage, current.actor.email, customerVersion) : null);
       const catalogRequest = catalog
         ? Promise.resolve(null)
-        : fetch('/api/orders?catalog=1', { cache: 'no-store' }).then((response) => readResponse<{ catalogVersion: string; catalog: CatalogItem[] }>(response));
+        : loadOrderCatalog(actorEmail, catalogVersion);
       const customerRequest = customers
         ? Promise.resolve(null)
-        : fetch('/api/orders?customers=1', { cache: 'no-store' }).then((response) => readResponse<{ customerVersion: string; customers: CustomerDirectoryEntry[] }>(response));
+        : loadOrderCustomers(actorEmail, customerVersion);
       const [catalogResult, customerResult] = await Promise.all([catalogRequest, customerRequest]);
       if (catalogResult) {
         catalog = catalogResult.catalog;
