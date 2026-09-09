@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { billingHandoffText, currentTallyFinancialYear, filterOrders, isOrderDeliveryOverdue, orderAttentionReasons, orderMatchesCaptureDate, ordersCsv, orderStage, pageItems, repeatOrderTemplate, searchCatalog, searchCustomers, tallyInvoiceLineReconciliation, tallyInvoiceReconciliation, tallyInvoiceReconciliationDetail, validateOrderCommand } from '../../lib/order-types';
+import { billingHandoffText, currentTallyFinancialYear, filterOrders, isOrderDeliveryOverdue, orderAttentionReasons, orderMatchesCaptureDate, orderNeedsBillingAttention, ordersCsv, orderStage, pageItems, repeatOrderTemplate, searchCatalog, searchCustomers, tallyInvoiceLineReconciliation, tallyInvoiceReconciliation, tallyInvoiceReconciliationDetail, validateOrderCommand } from '../../lib/order-types';
 
 describe('order command validation', () => {
   it('accepts a complete phone order', () => {
@@ -271,6 +271,18 @@ describe('order workflow and history', () => {
     expect(tallyInvoiceLineReconciliation(billed, [first, second], now)).toEqual({ state: 'matched', differences: [] });
     expect(tallyInvoiceReconciliationDetail({ ...billed, tallyInvoiceNumber: '551, 551' }, [first], now).state).toBe('ambiguous');
     expect(tallyInvoiceReconciliationDetail(billed, [first], now).state).toBe('unmatched');
+  });
+
+  it('routes only actionable Tally reconciliation failures to billing attention', () => {
+    const now = new Date('2026-09-03T10:00:00+05:30');
+    const fresh = '2026-09-03T09:55:00+05:30';
+    const billed = { ...baseOrder, tallyInvoiceNumber: '552' };
+    const matching = [{ voucherNumber: 'SD/26-27/0552', reference: null, party: 'City Hospital', date: '20260903', masterId: '52', lineItems: [{ itemName: 'Glucose Reagent', quantity: 2 }] }];
+    expect(orderNeedsBillingAttention(baseOrder, matching, now, fresh)).toBe(false);
+    expect(orderNeedsBillingAttention(billed, matching, now, fresh)).toBe(false);
+    expect(orderNeedsBillingAttention(billed, [{ ...matching[0], party: 'Other Hospital' }], now, fresh)).toBe(true);
+    expect(orderNeedsBillingAttention(billed, [{ ...matching[0], lineItems: [{ itemName: 'Glucose Reagent', quantity: 1 }] }], now, fresh)).toBe(true);
+    expect(orderNeedsBillingAttention(billed, matching, now, '2026-09-03T09:00:00+05:30')).toBe(true);
   });
 
   it('filters capture dates using the India business date', () => {

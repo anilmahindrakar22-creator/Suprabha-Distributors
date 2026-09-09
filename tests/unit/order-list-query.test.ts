@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { orderListPageSize, orderListUrl, parseOrderListQuery, queryOrderList } from '../../lib/order-list-query';
+import { orderListPageSize, orderListUrl, parseOrderListQuery, queryBillingAttentionList, queryOrderList } from '../../lib/order-list-query';
 import type { OrderSummary } from '../../lib/order-types';
 
 function order(index: number, overrides: Partial<OrderSummary> = {}): OrderSummary {
@@ -22,6 +22,7 @@ describe('bounded order list query', () => {
     expect(parseOrderListQuery(new URLSearchParams('date=07-09-2026'))).toBeNull();
     expect(parseOrderListQuery(new URLSearchParams('date=2026-02-31'))).toBeNull();
     expect(parseOrderListQuery(new URLSearchParams('status=awaiting_approval'))?.status).toBe('awaiting_approval');
+    expect(parseOrderListQuery(new URLSearchParams('status=billing_attention'))?.status).toBe('billing_attention');
   });
 
   it('returns only one page while retaining the full matching count', () => {
@@ -42,5 +43,12 @@ describe('bounded order list query', () => {
     const query = { page: 3, query: 'A&B Lab', status: 'history', captureDate: '2026-09-07' };
     expect(orderListUrl(query)).toBe('/api/orders?list=1&page=3&status=history&query=A%26B+Lab&date=2026-09-07');
     expect(orderListUrl(query, true)).toBe('/api/orders?export=1&page=3&status=history&query=A%26B+Lab&date=2026-09-07');
+  });
+
+  it('paginates billing discrepancies after reconciling the complete candidate set', () => {
+    const billed = Array.from({ length: 22 }, (_, index) => order(index + 1, { status: 'billed_in_tally', tallyInvoiceNumber: String(500 + index) }));
+    const result = queryBillingAttentionList(billed, [], '2026-09-07T11:55:00+05:30', 2, new Date('2026-09-07T12:00:00+05:30'));
+    expect(result.orders).toHaveLength(2);
+    expect(result.pagination).toEqual({ page: 2, pageCount: 2, pageSize: 20, total: 22 });
   });
 });

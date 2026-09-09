@@ -414,6 +414,7 @@ export function OrderWorkspace({ actorEmail, initialStatus = 'open' }: { actorEm
             <option value="open">Active orders</option>
             <option value="attention">Needs attention</option>
             <option value="billing">Tally billing queue</option>
+            <option value="billing_attention">Billing attention</option>
             <option value="history">Old orders</option>
             <option value="all">All orders</option>
             <option value="awaiting_confirmation">Awaiting confirmation</option>
@@ -441,7 +442,7 @@ export function OrderWorkspace({ actorEmail, initialStatus = 'open' }: { actorEm
         <section className="mt-4 overflow-hidden rounded-2xl border border-[#dce7e5] bg-white shadow-[0_8px_24px_rgba(9,47,54,0.05)]">
           <div className="flex items-center justify-between border-b border-[#e3ecea] px-5 py-4">
             <div>
-              <h2 className="font-extrabold text-[#173239]">{status === 'history' ? 'Old orders' : 'Order inbox'}</h2>
+              <h2 className="font-extrabold text-[#173239]">{status === 'history' ? 'Old orders' : status === 'billing_attention' ? 'Billing attention' : 'Order inbox'}</h2>
               <p className="mt-1 text-xs text-[#6b7e81]">Tally stock snapshot: {staleText}</p>
             </div>
             <span className="rounded-full bg-[#e2f8ef] px-3 py-1 text-xs font-extrabold text-[#136146]">{totalOrders} orders</span>
@@ -452,7 +453,7 @@ export function OrderWorkspace({ actorEmail, initialStatus = 'open' }: { actorEm
           ) : visibleOrders.length === 0 ? (
             <div className="p-10 text-center">
               <p className="font-bold text-[#31585d]">No matching orders</p>
-              <p className="mt-2 text-sm text-[#708386]">{query ? `No orders match “${query}”. Clear the search to see the full list.` : status === 'history' ? 'Completed and cancelled orders will remain available here.' : 'New orders will appear here immediately.'}</p>
+              <p className="mt-2 text-sm text-[#708386]">{query ? `No orders match “${query}”. Clear the search to see the full list.` : status === 'history' ? 'Completed and cancelled orders will remain available here.' : status === 'billing_attention' ? 'No invoice, customer-ledger, product, quantity, or stale-verification issues need attention.' : 'New orders will appear here immediately.'}</p>
             </div>
           ) : (
             <div className="divide-y divide-[#e8efed]">

@@ -1,5 +1,5 @@
-import type { OrderSummary } from './order-types';
-import { filterOrders, isValidCalendarDate, orderMatchesCaptureDate, pageItems } from './order-types';
+import type { OrderSummary, TallyInvoice } from './order-types';
+import { filterOrders, isValidCalendarDate, orderMatchesCaptureDate, orderNeedsBillingAttention, pageItems } from './order-types';
 
 export const orderListPageSize = 20;
 
@@ -22,7 +22,7 @@ export function orderListUrl(query: OrderListQuery, exportAll = false) {
 }
 
 const allowedStatuses = new Set([
-  'all', 'open', 'history', 'billing', 'picking', 'dispatch_ready', 'overdue', 'attention',
+  'all', 'open', 'history', 'billing', 'billing_attention', 'picking', 'dispatch_ready', 'overdue', 'attention',
   'phone_order_received', 'awaiting_confirmation', 'awaiting_approval', 'confirmed', 'packed',
   'awaiting_tally_billing', 'billed_in_tally', 'ready_for_dispatch', 'dispatched',
   'delivered', 'cancelled',
@@ -57,4 +57,13 @@ export function queryOrderList(orders: OrderSummary[], query: OrderListQuery) {
 export function matchingOrderList(orders: OrderSummary[], query: OrderListQuery) {
   return filterOrders(orders, query.query, query.status)
     .filter((order) => orderMatchesCaptureDate(order, query.captureDate));
+}
+
+export function queryBillingAttentionList(orders: OrderSummary[], invoices: TallyInvoice[], snapshotFetchedAt: string, page: number, now = new Date()) {
+  const matching = orders.filter((order) => orderNeedsBillingAttention(order, invoices, now, snapshotFetchedAt));
+  const result = pageItems(matching, page, orderListPageSize);
+  return {
+    orders: result.items,
+    pagination: { page: result.page, pageCount: result.pageCount, pageSize: orderListPageSize, total: matching.length },
+  };
 }

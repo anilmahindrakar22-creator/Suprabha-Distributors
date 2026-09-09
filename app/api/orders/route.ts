@@ -1,10 +1,9 @@
 import { getChatGPTUser } from '@/app/chatgpt-auth';
 import { callOrderGateway, OrderGatewayError } from '@/lib/order-gateway';
 import type { CatalogItem, CustomerDirectoryEntry, OrderBootstrap, OrderEvent } from '@/lib/order-types';
-import { isOrderDeliveryOverdue, validateOrderCommand } from '@/lib/order-types';
+import { isOrderDeliveryOverdue, orderNeedsBillingAttention, ordersCsv, validateOrderCommand } from '@/lib/order-types';
 import { measuredJsonResponse } from '@/lib/measured-json-response';
-import { matchingOrderList, parseOrderListQuery, queryOrderList } from '@/lib/order-list-query';
-import { ordersCsv } from '@/lib/order-types';
+import { matchingOrderList, parseOrderListQuery, queryBillingAttentionList, queryOrderList } from '@/lib/order-list-query';
 import { BoundedJsonRequestError, readBoundedJsonRequest } from '@/lib/bounded-json-request';
 
 const privateHeaders = { 'cache-control': 'private, no-store' };
@@ -17,6 +16,33 @@ async function authorizedUser() {
   const user = await getChatGPTUser();
   if (!user) throw new OrderGatewayError('Sign in required', 401);
   return user;
+}
+
+const invoicedStatuses = ['billed_in_tally', 'ready_for_dispatch', 'dispatched', 'delivered', 'cancelled'];
+
+async function billingAttentionOrders(userEmail: string, query: string, captureDate: string) {
+  async function loadStatus(status: string) {
+    const first = await callOrderGateway<OrderBootstrap>(userEmail, 'list_orders', { page: 1, pageSize: 200, query, status, date: captureDate });
+    const orders = [...first.orders];
+    for (let page = 2; page <= (first.pagination?.pageCount || 1); page += 1) {
+      const next = await callOrderGateway<OrderBootstrap>(userEmail, 'list_orders', { page, pageSize: 200, query, status, date: captureDate });
+      orders.push(...next.orders);
+    }
+    return { first, orders };
+  }
+
+  const [groups, invoiceSnapshot] = await Promise.all([
+    Promise.all(invoicedStatuses.map(loadStatus)),
+    callOrderGateway<OrderBootstrap>(userEmail, 'bootstrap'),
+  ]);
+  const template = groups[0].first;
+  const orders = groups.flatMap((group) => group.orders).sort((left, right) => Date.parse(right.createdAt) - Date.parse(left.createdAt));
+  const invoices = invoiceSnapshot.snapshot.tallyInvoices || [];
+  return {
+    template,
+    invoices,
+    orders,
+  };
 }
 
 export async function GET(request: Request) {
@@ -50,6 +76,22 @@ export async function GET(request: Request) {
       const exporting = parameters.get('export') === '1';
       const pageSize = exporting ? 200 : 20;
       try {
+        if (listQuery.status === 'billing_attention') {
+          const attention = await billingAttentionOrders(user.email, listQuery.query, listQuery.captureDate);
+          if (exporting) {
+            const matching = attention.orders.filter((order) => orderNeedsBillingAttention(order, attention.invoices, new Date(), attention.template.snapshot.fetchedAt));
+            return new Response(`\uFEFF${ordersCsv(matching, { invoices: attention.invoices, fetchedAt: attention.template.snapshot.fetchedAt })}`, {
+              headers: { ...privateHeaders, 'content-type': 'text/csv; charset=utf-8', 'content-disposition': `attachment; filename="stockflow-billing-attention-${new Date().toISOString().slice(0, 10)}.csv"` },
+            });
+          }
+          const page = queryBillingAttentionList(attention.orders, attention.invoices, attention.template.snapshot.fetchedAt, listQuery.page);
+          return measuredJsonResponse({
+            ...attention.template,
+            snapshot: { ...attention.template.snapshot, tallyInvoices: attention.invoices },
+            orders: page.orders,
+            pagination: page.pagination,
+          }, startedAt);
+        }
         const first = await callOrderGateway<OrderBootstrap>(user.email, 'list_orders', {
           page: exporting ? 1 : listQuery.page,
           pageSize,
@@ -70,6 +112,7 @@ export async function GET(request: Request) {
           headers: { ...privateHeaders, 'content-type': 'text/csv; charset=utf-8', 'content-disposition': `attachment; filename="stockflow-orders-${new Date().toISOString().slice(0, 10)}.csv"` },
         });
       } catch (error) {
+        if (listQuery.status === 'billing_attention') throw error;
         if (!(error instanceof OrderGatewayError) || ![400, 502].includes(error.status)) throw error;
         // Compatibility path while the database migration and edge function roll out.
       }

@@ -201,6 +201,13 @@ export function tallyInvoiceLineReconciliation(order: OrderSummary, invoices?: T
   return { state: differences.length ? 'mismatch' : 'matched', differences };
 }
 
+export function orderNeedsBillingAttention(order: OrderSummary, invoices?: TallyInvoice[], now = new Date(), snapshotFetchedAt?: string) {
+  if (!order.tallyInvoiceNumber) return false;
+  const identity = tallyInvoiceReconciliation(order, invoices, now, snapshotFetchedAt);
+  if (['unmatched', 'customer_mismatch', 'ambiguous', 'verification_stale'].includes(identity)) return true;
+  return identity === 'verified' && tallyInvoiceLineReconciliation(order, invoices, now, snapshotFetchedAt).state === 'mismatch';
+}
+
 export function orderMatchesCaptureDate(order: OrderSummary, date: string) {
   if (!date) return true;
   return new Intl.DateTimeFormat('en-CA', { timeZone: 'Asia/Kolkata', year: 'numeric', month: '2-digit', day: '2-digit' }).format(new Date(order.createdAt)) === date;
