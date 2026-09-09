@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { billingHandoffText, currentTallyFinancialYear, filterOrders, isOrderBackOrdered, isOrderDeliveryDue, isOrderDeliveryOverdue, orderAttentionReasons, orderBackOrderedQuantity, orderMatchesCaptureDate, orderMatchesCaptureDateRange, orderNeedsBillingAttention, ordersCsv, orderStage, pageItems, repeatOrderTemplate, searchCatalog, searchCustomers, tallyInvoiceLineReconciliation, tallyInvoiceReconciliation, tallyInvoiceReconciliationDetail, validateOrderCommand } from '../../lib/order-types';
+import { billingHandoffText, currentTallyFinancialYear, filterOrders, isOrderBackOrdered, isOrderDeliveryDue, isOrderDeliveryOverdue, orderAttentionReasons, orderBackOrderedQuantity, orderMatchesCaptureDate, orderMatchesCaptureDateRange, orderNeedsBillingAttention, orderOperationsText, ordersCsv, orderStage, pageItems, repeatOrderTemplate, searchCatalog, searchCustomers, tallyInvoiceLineReconciliation, tallyInvoiceReconciliation, tallyInvoiceReconciliationDetail, validateOrderCommand } from '../../lib/order-types';
 
 describe('order command validation', () => {
   it('accepts a complete phone order', () => {
@@ -225,6 +225,22 @@ describe('order workflow and history', () => {
     const delayed = { ...baseOrder, updatedAt: '2026-08-31T01:00:00Z' };
     expect(orderAttentionReasons(delayed, new Date('2026-08-31T10:00:00Z'))).toContain('No progress for over 4 hours');
     expect(filterOrders([delayed], '', 'attention')).toEqual([delayed]);
+  });
+
+  it('builds a copyable operational summary from existing order evidence', () => {
+    const dispatched = { ...baseOrder, status: 'dispatched', expectedDeliveryDate: '2026-09-10', deliveryAddress: 'Market Road', tallyInvoiceNumber: 'SD/26-27/0552', courierName: 'Local delivery', trackingNumber: 'LR-22', vehicleNumber: 'KA01AB1234', notes: 'Call before delivery' };
+    expect(orderOperationsText(dispatched)).toBe([
+      'SF-001 · Dispatch',
+      'Customer: City Hospital',
+      'Phone: 9876543210',
+      'Products:',
+      '- Glucose Reagent: 2 box',
+      'Promised delivery: 2026-09-10',
+      'Delivery address: Market Road',
+      'Tally invoice: SD/26-27/0552',
+      'Dispatch: Local delivery · LR-22 · KA01AB1234',
+      'Notes: Call before delivery',
+    ].join('\n'));
   });
 
   it('finds exact customer order history without product-name collisions', () => {

@@ -9,7 +9,7 @@ import type {
   OrderEvent,
   OrderSummary,
 } from '@/lib/order-types';
-import { billingHandoffText, orderAttentionReasons, orderBackOrderedQuantity, orderStage, repeatOrderTemplate, searchCatalog, searchCustomers, tallyInvoiceLineReconciliation, tallyInvoiceReconciliationDetail } from '@/lib/order-types';
+import { billingHandoffText, orderAttentionReasons, orderBackOrderedQuantity, orderOperationsText, orderStage, repeatOrderTemplate, searchCatalog, searchCustomers, tallyInvoiceLineReconciliation, tallyInvoiceReconciliationDetail } from '@/lib/order-types';
 import { orderListUrl } from '@/lib/order-list-query';
 import { offlineDraftRecoveryError, readOfflineDraftConsent, readOfflineOrderDraft, removeOfflineOrderDraft, restoreOfflineDraftLines, updateOfflineDraftState, writeOfflineDraftConsent, writeOfflineOrderDraft, type OfflineDraftState } from '@/lib/offline-order-drafts';
 import { readCatalogCache, removeCatalogCache, writeCatalogCache } from '@/lib/catalog-cache';
@@ -600,6 +600,7 @@ function OrderRow({
       </div>
       {cancelling ? <div className="mt-4 rounded-xl border border-[#efbbb6] bg-[#fff8f7] p-4"><label className="text-sm font-bold text-[#7d413c]">Why is this order being cancelled?<textarea value={cancelReason} onChange={(event) => setCancelReason(event.target.value)} rows={2} maxLength={500} className="mt-2 w-full rounded-xl border border-[#dfbbb7] bg-white p-3 font-normal text-[#173239] outline-none focus:border-[#d06a61]" placeholder="Cancellation reason is required" /></label><div className="mt-3 flex justify-end gap-2"><button type="button" onClick={() => { setCancelling(false); setCancelReason(''); }} className="min-h-10 rounded-xl px-4 font-bold text-[#557174]">Keep order</button><button type="button" disabled={busy || !cancelReason.trim()} onClick={async () => { setBusy(true); try { await onCancel(order, cancelReason); setCancelling(false); } finally { setBusy(false); } }} className="min-h-10 rounded-xl bg-[#a54c44] px-4 font-bold text-white disabled:opacity-50">{busy ? 'Cancelling…' : 'Confirm cancellation'}</button></div></div> : null}
       <div className="mt-3 flex flex-wrap gap-2"><button type="button" onClick={() => onFindCustomer(order)} className="min-h-10 rounded-xl border border-[#cedfdd] px-4 text-sm font-bold text-[#31585d] hover:bg-[#f1f6f4]">Customer orders</button>{canRepeat ? <button type="button" onClick={() => onRepeat(order)} className="min-h-10 rounded-xl border border-[#cedfdd] px-4 text-sm font-bold text-[#31585d] hover:bg-[#f1f6f4]">Repeat as new order</button> : null}</div>
+      <OrderSummaryCopy order={order} />
       <details className="mt-4 rounded-xl bg-[#f6f8f7] px-4 py-3 text-sm">
         <summary className="cursor-pointer font-bold text-[#456367]">View order details</summary>
         <div className="mt-3 grid gap-4 border-t border-[#dfe9e7] pt-3 sm:grid-cols-2">
@@ -744,6 +745,19 @@ function NewOrderPanel({ data, templateOrder, onClose, onCreated }: { data: Orde
   const hydrated = useSyncExternalStore(() => () => {}, () => true, () => false);
   if (!hydrated) return null;
   return <HydratedNewOrderPanel data={data} templateOrder={templateOrder} onClose={onClose} onCreated={onCreated} />;
+}
+
+function OrderSummaryCopy({ order }: { order: OrderSummary }) {
+  const [state, setState] = useState<'idle' | 'copied' | 'error'>('idle');
+  async function copy() {
+    try {
+      await navigator.clipboard.writeText(orderOperationsText(order));
+      setState('copied');
+    } catch {
+      setState('error');
+    }
+  }
+  return <div className="mt-3 flex items-center gap-3"><button type="button" onClick={() => void copy()} className="min-h-10 rounded-xl border border-[#cedfdd] px-4 text-sm font-bold text-[#31585d] hover:bg-[#f1f6f4]">{state === 'copied' ? 'Summary copied' : 'Copy order summary'}</button>{state === 'error' ? <span className="text-xs font-bold text-[#9a4e47]">Clipboard access was blocked.</span> : null}</div>;
 }
 
 function HydratedNewOrderPanel({ data, templateOrder, onClose, onCreated }: { data: OrderBootstrap; templateOrder: OrderSummary | null; onClose: () => void; onCreated: (number: string) => void }) {

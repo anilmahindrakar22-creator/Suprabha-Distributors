@@ -285,6 +285,23 @@ function localDateKey(date: Date) {
   }).format(date);
 }
 
+export function orderOperationsText(order: OrderSummary) {
+  const lines = order.lines.map((line) => `- ${line.itemName}: ${line.quantity} ${line.baseUnit || ''}`.trim());
+  return [
+    `${order.orderNumber} · ${orderStage(order.status)}`,
+    `Customer: ${order.customerName}`,
+    order.customerPhone ? `Phone: ${order.customerPhone}` : '',
+    'Products:',
+    ...lines,
+    order.expectedDeliveryDate ? `Promised delivery: ${order.expectedDeliveryDate}` : '',
+    order.deliveryAddress ? `Delivery address: ${order.deliveryAddress}` : '',
+    order.tallyInvoiceNumber ? `Tally invoice: ${order.tallyInvoiceNumber}` : '',
+    order.trackingNumber ? `Dispatch: ${order.courierName || 'Courier'} · ${order.trackingNumber}${order.vehicleNumber ? ` · ${order.vehicleNumber}` : ''}` : '',
+    order.deliveredAt ? `Delivered: ${new Date(order.deliveredAt).toLocaleString('en-IN', { timeZone: 'Asia/Kolkata' })}${order.receivedBy ? ` · ${order.receivedBy}` : ''}` : '',
+    order.notes ? `Notes: ${order.notes}` : '',
+  ].filter(Boolean).join('\n');
+}
+
 export function isOrderDeliveryOverdue(order: OrderSummary, today = new Date()) {
   return Boolean(
     order.expectedDeliveryDate &&
