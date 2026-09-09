@@ -153,6 +153,120 @@ The future management Command Center should surface at minimum:
 
 The strategic operating loop is: Map Market → Identify A/B Accounts → Estimate Wallet → Measure Share → Identify Missing Divisions → Map Competitor Installed Base → Power Map Stakeholders → Identify Replacement Window → Select Commercial Action → Allocate Capital → Capture Business → Measure Actual Consumption/Revenue → Cross-sell → Reach ≥80% → Defend.
 
+### Governed KPI and management metrics framework
+
+The KPI layer must distinguish **headline management KPIs** from **diagnostic/drill-down metrics**. A metric belongs on the management Command Center only when it changes a management decision; supporting metrics remain available through drill-down. Every KPI must inherit the KPI registry definition, canonical source, formula/version, period, refresh policy, owner and drill-down path.
+
+**Management objective:** optimize four dimensions together — Wallet Share × Gross Profit × Cash Conversion × Capital Efficiency. Growth that destroys margin, cash conversion or capital returns must not be presented as success.
+
+#### Profitability and capital efficiency
+
+- Revenue, gross profit ₹ and GP % with drill-down by account, account class, diagnostic division, product, brand/principal, salesperson and territory.
+- GP per customer and GP per instrument/placement where attribution is supportable.
+- Capital Efficiency / GP Return on Capital = annualized gross profit attributable to the activity divided by governed average capital employed. The exact capital-employed definition must be versioned before operational use.
+- Placement payback and actual-versus-business-case revenue, GP and payback.
+- Margin leakage from unauthorized/exception pricing where pricing data is available.
+- Do not compare capital-return metrics across activities unless capital and GP attribution rules are consistent.
+
+#### Account Health Score
+
+A future governed Account Health Score (0–100) may combine wallet share, revenue trend, GP quality, payment behaviour, service health, relationship/engagement and verified competitor threat. Initial component weights are management policy and must remain configurable/versioned.
+
+- Suggested presentation bands: Healthy 80–100, Watch 60–79, At Risk 40–59, Critical <40; thresholds remain configurable.
+- Show the component scores and evidence behind the composite; never expose only an unexplained number.
+- Unknown inputs reduce confidence rather than silently becoming zero.
+- Account health is an attention/triage tool, not a substitute for the underlying financial, service or relationship evidence.
+
+#### Wallet capture, loss and reagent leakage
+
+- Wallet Gained ₹: governed increase in captured recurring wallet over the comparison period, separated from estimate revisions.
+- Wallet Lost ₹: governed decrease in captured recurring wallet, with drill-down to account, division/product, known competitor and recorded reason where available.
+- Net Wallet Capture ₹ = Wallet Gained ₹ - Wallet Lost ₹.
+- Reagent Consumption Gap / Wallet Leakage = governed expected reagent consumption minus actual canonical sales/consumption proxy, never below zero unless an explicit over-consumption variance is shown separately.
+- Leakage analysis should distinguish likely low test volume, purchasing outside Suprabha, downtime/service, stock availability, estimate error and unknown cause where evidence permits.
+- Expected consumption is an estimate and must carry method, confidence and verification metadata.
+
+#### Opportunity execution and pipeline velocity
+
+- Qualified pipeline value and expected incremental GP.
+- Opportunity age and days in current stage.
+- Stage conversion rate, win rate and loss rate.
+- Average/median sales cycle and expected-close versus actual-close variance.
+- Stalled opportunities using a configurable inactivity/stage-age policy.
+- Mandatory governed loss reason for lost opportunities.
+- Pipeline coverage and pipeline velocity may be added only after stage definitions and probability rules are stable enough to make the metric comparable.
+
+#### Service and installed-base performance
+
+- Installed base, active instruments, instruments under service and open service tickets.
+- Mean/median response time and resolution time.
+- First-time fix rate and repeat-failure rate where service-event data supports reliable calculation.
+- Instrument uptime % only when downtime start/end evidence is sufficiently complete; otherwise show service-event proxies rather than false precision.
+- Preventive-maintenance compliance %.
+- Service-related wallet/revenue risk: link material downtime or recurring service failures to affected strategic accounts without claiming causation unless evidence supports it.
+
+#### Receivables, collections and cash conversion
+
+- Total receivables and ageing: 0–30, 31–60, 61–90 and 90+ days.
+- Days Sales Outstanding (DSO) using a documented, versioned formula.
+- Overdue value/% and collection efficiency.
+- Credit-limit utilization and accounts/orders on credit hold.
+- 90+ day receivables as a headline attention metric.
+- Quality Revenue should be treated as a management concept combining acceptable margin and acceptable collection behaviour; any future composite formula must be explicitly governed before use.
+
+#### Inventory intelligence sourced from Tally
+
+Tally remains the inventory authority. Suprabha OS may analyze synchronized Tally inventory data but must not create a competing stock ledger.
+
+- Stock value, stock days and inventory turnover.
+- Critical SKUs and stock-out events.
+- Near-expiry, expired, slow-moving and non-moving stock value, including configurable >90/>180-day ageing views.
+- Lost Sales Due to Stock-out ₹ only when a governed demand signal exists (for example an unfulfilled order/line or recorded lost demand); never infer lost sales solely from zero stock.
+- Inventory metrics must expose Tally sync freshness so stale snapshots are not presented as current truth.
+
+#### Principal / brand scorecard
+
+Each manufacturer/principal should eventually have a comparable management scorecard where data permits:
+
+- Revenue, GP ₹, GP %, growth and wallet captured.
+- Inventory investment, turns, ageing/expiry loss and stock availability/fill-rate proxies from Tally/supplier evidence.
+- Credit terms/days and receivable exposure attributable to the portfolio where supportable.
+- Instrument capital deployed and placement economics.
+- Service/support performance using recorded service/escalation evidence rather than subjective ratings alone.
+- Principal Capital Return / Strategic Value may combine financial and strategic measures only through a transparent, versioned policy; the raw components must always remain visible.
+
+#### Headline Command Center design
+
+Keep the first management screen intentionally small. Proposed headline measures:
+
+**Market leadership**
+- A+B addressable wallet.
+- A+B weighted wallet share.
+- Net Wallet Capture ₹.
+- Untapped A+B wallet.
+
+**Profitability/capital**
+- Revenue.
+- Gross Profit ₹.
+- GP %.
+- Capital Efficiency / GP Return on Capital.
+
+**Customer/cash**
+- Count of A/B accounts at ≥80% wallet share.
+- Count of At-Risk/Critical A/B accounts.
+- Receivables ₹.
+- DSO.
+
+**Attention indicators**
+- Reagent/Wallet Leakage ₹.
+- Lost Sales Due to Stock-out ₹.
+- Near-expiry stock ₹.
+- Stalled opportunities count/value.
+- Critical service cases.
+- 90+ day receivables ₹.
+
+Every headline number should drill down to the records and causes that create it. The Command Center must never become a manually maintained parallel reporting database.
+
 ### Territory and account intelligence
 
 This is a future intelligence layer and must not expand or delay the current Phase 3 production/pilot gate.
@@ -205,7 +319,7 @@ A future CRM workflow may use ten quick observational questions rather than aski
 
 Questionnaire scoring: A = Analytical, B = Driving, C = Expressive, D = Amiable. Retain the full score distribution and use it to derive primary/secondary style and confidence rather than reducing every person to a single permanent label.
 
-**Intelligence guardrail:** Suprabha 80, Territory Maps, Power Maps and Social Styles must inherit existing authorization/row scope, auditability and one-source-of-truth principles. Observations and estimates must never be presented as verified facts without provenance/confidence metadata.
+**Intelligence guardrail:** Suprabha 80, KPI metrics, Territory Maps, Power Maps and Social Styles must inherit existing authorization/row scope, auditability and one-source-of-truth principles. Observations and estimates must never be presented as verified facts without provenance/confidence metadata.
 
 ## Explicitly deferred
 
