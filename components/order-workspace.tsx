@@ -522,6 +522,15 @@ export function OrderWorkspace({ actorEmail, initialStatus = 'open' }: { actorEm
             setNotice(`${number} captured successfully.`);
             void load();
           }}
+          onViewCustomer={(customerName) => {
+            setQuery(`customer:${customerName}`);
+            setStatus('all');
+            setCaptureDate('');
+            setCaptureDateTo('');
+            setPage(1);
+            setRepeatOrder(null);
+            setCreating(false);
+          }}
         />
       ) : null}
     </div>
@@ -765,10 +774,10 @@ function DispatchPanel({ order, actorRole, onSave }: { order: OrderSummary; acto
   return <div className="mt-5 border-t border-[#dfe9e7] pt-4"><p className="font-bold text-[#31585d]">{order.status === 'ready_for_dispatch' ? 'Dispatch details' : 'Delivery confirmation'}</p>{order.status === 'ready_for_dispatch' ? <div className="mt-3 grid gap-3 rounded-xl bg-white p-4 sm:grid-cols-2"><label className="text-sm font-bold">Courier / transporter<input maxLength={160} value={courierName} onChange={(event) => setCourierName(event.target.value)} className="mt-1 min-h-11 w-full rounded-lg border px-3 font-normal" /></label><label className="text-sm font-bold">Tracking / docket number<input maxLength={160} value={trackingNumber} onChange={(event) => setTrackingNumber(event.target.value)} className="mt-1 min-h-11 w-full rounded-lg border px-3 font-normal" /></label><label className="text-sm font-bold">Dispatch date<input type="date" value={dispatchDate} onChange={(event) => setDispatchDate(event.target.value)} className="mt-1 min-h-11 w-full rounded-lg border px-3 font-normal" /></label><label className="text-sm font-bold">Vehicle number <span className="font-normal text-[#718487]">(optional)</span><input value={vehicleNumber} onChange={(event) => setVehicleNumber(event.target.value)} maxLength={40} className="mt-1 min-h-11 w-full rounded-lg border px-3 font-normal" /></label><div className="sm:col-span-2 flex justify-end"><button type="button" disabled={!canUpdate || busy || courierName.trim().length < 2 || trackingNumber.trim().length < 2 || !dispatchDate} onClick={async () => { setBusy(true); try { await onSave(order, { action: 'save_dispatch', payload: { orderId: order.id, expectedVersion: order.version, courierName: courierName.trim(), trackingNumber: trackingNumber.trim(), dispatchDate, vehicleNumber: vehicleNumber.trim() } }); } finally { setBusy(false); } }} className="min-h-11 rounded-xl bg-[#092f36] px-5 font-bold text-white disabled:opacity-50">{busy ? 'Saving…' : 'Mark dispatched'}</button></div></div> : <div className="mt-3 grid gap-3 rounded-xl bg-white p-4 sm:grid-cols-2"><p className="sm:col-span-2 text-sm text-[#587275]">{order.courierName} · {order.trackingNumber}{order.vehicleNumber ? ` · ${order.vehicleNumber}` : ''}</p><label className="text-sm font-bold">Delivered at<input type="datetime-local" value={deliveredAt} onChange={(event) => setDeliveredAt(event.target.value)} className="mt-1 min-h-11 w-full rounded-lg border px-3 font-normal" /></label><label className="text-sm font-bold">Received by<input value={receivedBy} onChange={(event) => setReceivedBy(event.target.value)} maxLength={160} className="mt-1 min-h-11 w-full rounded-lg border px-3 font-normal" /></label><label className="text-sm font-bold sm:col-span-2">Proof of delivery reference <span className="font-normal text-[#718487]">(optional)</span><input value={podReference} onChange={(event) => setPodReference(event.target.value)} maxLength={160} className="mt-1 min-h-11 w-full rounded-lg border px-3 font-normal" /></label><div className="sm:col-span-2 flex justify-end"><button type="button" disabled={!canUpdate || busy || receivedBy.trim().length < 2 || !deliveredAt} onClick={async () => { setBusy(true); try { await onSave(order, { action: 'confirm_delivery', payload: { orderId: order.id, expectedVersion: order.version, deliveredAt: new Date(deliveredAt).toISOString(), receivedBy: receivedBy.trim(), podReference: podReference.trim() } }); } finally { setBusy(false); } }} className="min-h-11 rounded-xl bg-[#092f36] px-5 font-bold text-white disabled:opacity-50">{busy ? 'Saving…' : 'Confirm delivery'}</button></div></div>}</div>;
 }
 
-function NewOrderPanel({ data, templateOrder, onClose, onCreated }: { data: OrderBootstrap; templateOrder: OrderSummary | null; onClose: () => void; onCreated: (number: string) => void }) {
+function NewOrderPanel({ data, templateOrder, onClose, onCreated, onViewCustomer }: { data: OrderBootstrap; templateOrder: OrderSummary | null; onClose: () => void; onCreated: (number: string) => void; onViewCustomer: (customerName: string) => void }) {
   const hydrated = useSyncExternalStore(() => () => {}, () => true, () => false);
   if (!hydrated) return null;
-  return <HydratedNewOrderPanel data={data} templateOrder={templateOrder} onClose={onClose} onCreated={onCreated} />;
+  return <HydratedNewOrderPanel data={data} templateOrder={templateOrder} onClose={onClose} onCreated={onCreated} onViewCustomer={onViewCustomer} />;
 }
 
 function OrderSummaryCopy({ order }: { order: OrderSummary }) {
@@ -789,7 +798,7 @@ function PriorityControl({ order, onSave }: { order: OrderSummary; onSave: (orde
   return <label className="mt-3 inline-flex items-center gap-2 text-xs font-bold text-[#587275]">Priority<select value={order.priority || 'normal'} disabled={busy} onChange={async (event) => { setBusy(true); try { await onSave(order, event.target.value as 'normal' | 'high' | 'urgent'); } finally { setBusy(false); } }} className="min-h-10 rounded-xl border border-[#cedfdd] bg-white px-3 text-sm font-normal text-[#173239]"><option value="normal">Normal</option><option value="high">High</option><option value="urgent">Urgent</option></select></label>;
 }
 
-function HydratedNewOrderPanel({ data, templateOrder, onClose, onCreated }: { data: OrderBootstrap; templateOrder: OrderSummary | null; onClose: () => void; onCreated: (number: string) => void }) {
+function HydratedNewOrderPanel({ data, templateOrder, onClose, onCreated, onViewCustomer }: { data: OrderBootstrap; templateOrder: OrderSummary | null; onClose: () => void; onCreated: (number: string) => void; onViewCustomer: (customerName: string) => void }) {
   const [initialDraft] = useState(() => readOfflineOrderDraft(localStorage, data.actor.email));
   const initialPayload = initialDraft?.command.payload;
   const templatePayload = templateOrder ? repeatOrderTemplate(templateOrder) : undefined;
@@ -1023,8 +1032,7 @@ function HydratedNewOrderPanel({ data, templateOrder, onClose, onCreated }: { da
                       ))}
                     </ul>
                   ) : null}
-                  {selectedCustomer?.tallyBalance !== undefined && selectedCustomer.tallyBalance !== null ? <p className="mt-2 rounded-lg bg-[#f2f7f6] px-3 py-2 text-xs font-normal text-[#456367]">Read-only Tally ledger balance: <strong>₹{selectedCustomer.tallyBalance.toLocaleString('en-IN', { maximumFractionDigits: 2 })}</strong>{selectedCustomer.balanceAsOf ? ` · as of ${new Date(selectedCustomer.balanceAsOf).toLocaleString('en-IN')}` : ''}</p> : null}
-                  {selectedCustomer ? <CustomerHistoryPreview history={customerHistory} state={customerHistoryState} /> : null}
+                  {selectedCustomer ? <CustomerAccountPreview customer={selectedCustomer} history={customerHistory} state={customerHistoryState} onViewOrders={() => onViewCustomer(selectedCustomer.name)} /> : null}
                 </label>
                 <details className="sm:col-span-2 rounded-xl bg-[#f6f8f7] px-3 py-2 text-sm">
                   <summary className="cursor-pointer font-bold text-[#456367]">Contact details <span className="font-normal text-[#718487]">(optional)</span></summary>
@@ -1064,9 +1072,12 @@ function HydratedNewOrderPanel({ data, templateOrder, onClose, onCreated }: { da
   );
 }
 
-function CustomerHistoryPreview({ history, state }: { history: { orders: OrderSummary[]; total: number } | null; state: 'idle' | 'loading' | 'error' }) {
-  if (state === 'loading') return <p className="mt-2 rounded-lg bg-[#f6f8f7] px-3 py-2 text-xs font-normal text-[#718487]">Loading this customer’s order history…</p>;
-  if (state === 'error') return <p className="mt-2 rounded-lg bg-[#fff7e8] px-3 py-2 text-xs font-normal text-[#805b20]">Order history is unavailable right now. You can still save this order.</p>;
-  if (!history) return null;
-  return <details className="mt-2 rounded-lg border border-[#dce7e5] bg-[#fbfcfb] px-3 py-2 text-xs font-normal"><summary className="cursor-pointer font-bold text-[#456367]">Previous orders ({history.total})</summary>{history.orders.length ? <ul className="mt-2 divide-y divide-[#e3ecea]">{history.orders.map((order) => <li key={order.id} className="flex items-center justify-between gap-3 py-2"><span><strong className="block text-[#274b50]">{order.orderNumber}</strong><small className="text-[#718487]">{new Date(order.createdAt).toLocaleDateString('en-IN', { timeZone: 'Asia/Kolkata' })} · {orderStage(order.status)}</small></span><span className="shrink-0 font-bold text-[#456367]">{formatQuantity(order.totalQuantity)} qty</span></li>)}</ul> : <p className="mt-2 text-[#718487]">No previous orders found.</p>}{history.total > history.orders.length ? <p className="mt-2 text-[#718487]">Showing the latest {history.orders.length} orders.</p> : null}</details>;
+function CustomerAccountPreview({ customer, history, state, onViewOrders }: { customer: CustomerDirectoryEntry; history: { orders: OrderSummary[]; total: number } | null; state: 'idle' | 'loading' | 'error'; onViewOrders: () => void }) {
+  return <section aria-label="Customer account" className="mt-2 rounded-xl border border-[#dce7e5] bg-[#fbfcfb] p-3 text-xs font-normal">
+    <div className="flex items-start justify-between gap-3"><div><strong className="block text-sm text-[#274b50]">Customer account</strong><span className="mt-1 block text-[#718487]">{[customer.city, customer.phone].filter(Boolean).join(' · ') || 'Contact details unavailable in Tally'}</span></div>{history ? <button type="button" onClick={onViewOrders} className="min-h-9 shrink-0 rounded-lg border border-[#cedfdd] bg-white px-3 font-bold text-[#31585d]">View all orders</button> : null}</div>
+    {customer.tallyBalance !== undefined && customer.tallyBalance !== null ? <p className="mt-2 rounded-lg bg-[#f2f7f6] px-3 py-2 text-[#456367]">Read-only Tally ledger balance: <strong>₹{customer.tallyBalance.toLocaleString('en-IN', { maximumFractionDigits: 2 })}</strong>{customer.balanceAsOf ? ` · as of ${new Date(customer.balanceAsOf).toLocaleString('en-IN')}` : ''}</p> : null}
+    {state === 'loading' ? <p className="mt-2 text-[#718487]">Loading this customer’s order history…</p> : null}
+    {state === 'error' ? <p className="mt-2 rounded-lg bg-[#fff7e8] px-3 py-2 text-[#805b20]">Order history is unavailable right now. You can still save this order.</p> : null}
+    {history ? <details className="mt-2"><summary className="cursor-pointer font-bold text-[#456367]">Previous orders ({history.total})</summary>{history.orders.length ? <ul className="mt-2 divide-y divide-[#e3ecea]">{history.orders.map((order) => <li key={order.id} className="flex items-center justify-between gap-3 py-2"><span><strong className="block text-[#274b50]">{order.orderNumber}</strong><small className="text-[#718487]">{new Date(order.createdAt).toLocaleDateString('en-IN', { timeZone: 'Asia/Kolkata' })} · {orderStage(order.status)}</small></span><span className="shrink-0 font-bold text-[#456367]">{formatQuantity(order.totalQuantity)} qty</span></li>)}</ul> : <p className="mt-2 text-[#718487]">No previous orders found.</p>}{history.total > history.orders.length ? <p className="mt-2 text-[#718487]">Showing the latest {history.orders.length} orders.</p> : null}</details> : null}
+  </section>;
 }
