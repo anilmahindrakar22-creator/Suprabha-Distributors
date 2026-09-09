@@ -7,6 +7,7 @@ export type GatewayAction =
   | 'get_customers'
   | 'list_orders'
   | 'get_order_events'
+  | 'recover_order_submission'
   | 'list_users'
   | 'upsert_user'
   | 'get_service_workspace'

@@ -15,7 +15,7 @@ import { offlineDraftRecoveryError, readOfflineDraftConsent, readOfflineOrderDra
 import { readCatalogCache, removeCatalogCache, writeCatalogCache } from '@/lib/catalog-cache';
 import { readCustomerCache, removeCustomerCache, writeCustomerCache } from '@/lib/customer-cache';
 import { applyOrderAcknowledgement } from '@/lib/order-acknowledgement';
-import { OrderSubmissionError, orderSubmissionError } from '@/lib/order-submission';
+import { OrderSubmissionError, orderSubmissionError, recoverAcceptedOrder } from '@/lib/order-submission';
 import { loadOrderBootstrap } from '@/lib/order-bootstrap-cache';
 import { retryPendingOfflineOrder } from '@/lib/offline-order-retry';
 import { acknowledgeOrderCommand, prepareOrderCommandRetry } from '@/lib/order-command-idempotency';
@@ -851,6 +851,14 @@ function HydratedNewOrderPanel({ data, templateOrder, onClose, onCreated }: { da
         removeOfflineOrderDraft(localStorage, data.actor.email);
         if (active) onCreated(result.orderNumber || 'Order');
       } catch (cause) {
+        if (cause instanceof OrderSubmissionError && cause.kind === 'conflict') {
+          const accepted = await recoverAcceptedOrder(saved.command.payload.idempotencyKey);
+          if (accepted) {
+            removeOfflineOrderDraft(localStorage, data.actor.email);
+            if (active) onCreated(accepted);
+            return;
+          }
+        }
         if (!(cause instanceof TypeError) && !(cause instanceof OrderSubmissionError && cause.retryable) && navigator.onLine) {
           const message = cause instanceof Error ? cause.message : 'Unable to create order';
           updateOfflineDraftState(localStorage, data.actor.email, 'error', message);
@@ -933,6 +941,14 @@ function HydratedNewOrderPanel({ data, templateOrder, onClose, onCreated }: { da
       removeOfflineOrderDraft(localStorage, data.actor.email);
       onCreated(result.orderNumber || 'Order');
     } catch (cause) {
+      if (cause instanceof OrderSubmissionError && cause.kind === 'conflict') {
+        const accepted = await recoverAcceptedOrder(idempotencyKey);
+        if (accepted) {
+          removeOfflineOrderDraft(localStorage, data.actor.email);
+          onCreated(accepted);
+          return;
+        }
+      }
       const message = cause instanceof Error ? cause.message : 'Unable to create order';
       const waiting = !navigator.onLine || cause instanceof TypeError || cause instanceof OrderSubmissionError && cause.retryable;
       const savedForRetry = waiting && saveOnDevice && Boolean(updateOfflineDraftState(localStorage, data.actor.email, 'pending'));

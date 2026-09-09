@@ -47,6 +47,26 @@ describe('pending offline order recovery', () => {
     expect(readOfflineOrderDraft(storage, pending.actorEmail)).toMatchObject({ state: 'error', error: 'Product is inactive' });
   });
 
+  it('resolves a conflict by confirming the original accepted order', async () => {
+    const storage = memoryStorage();
+    writeOfflineOrderDraft(storage, pending);
+    const fetchFn: typeof fetch = vi.fn(async (input) => String(input).includes('/recovery')
+      ? Response.json({ status: 'accepted', orderNumber: 'SF-200' })
+      : Response.json({ error: 'Submission key conflict' }, { status: 409 }));
+    await expect(retryPendingOfflineOrder(storage, pending.actorEmail, fetchFn)).resolves.toEqual({ status: 'sent', orderNumber: 'SF-200' });
+    expect(readOfflineOrderDraft(storage, pending.actorEmail)).toBeNull();
+  });
+
+  it('retains a conflicting draft when the server cannot confirm an order', async () => {
+    const storage = memoryStorage();
+    writeOfflineOrderDraft(storage, pending);
+    const fetchFn: typeof fetch = vi.fn(async (input) => String(input).includes('/recovery')
+      ? Response.json({ status: 'not_found' })
+      : Response.json({ error: 'Submission key conflict' }, { status: 409 }));
+    await expect(retryPendingOfflineOrder(storage, pending.actorEmail, fetchFn)).resolves.toEqual({ status: 'needs_attention', message: 'Submission key conflict' });
+    expect(readOfflineOrderDraft(storage, pending.actorEmail)).toMatchObject({ state: 'error', error: 'Submission key conflict' });
+  });
+
   it('does nothing for a draft that was not submitted', async () => {
     const storage = memoryStorage();
     writeOfflineOrderDraft(storage, { ...pending, state: 'draft' });

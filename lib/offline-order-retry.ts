@@ -3,7 +3,7 @@ import {
   removeOfflineOrderDraft,
   updateOfflineDraftState,
 } from './offline-order-drafts';
-import { OrderSubmissionError, orderSubmissionError } from './order-submission';
+import { OrderSubmissionError, orderSubmissionError, recoverAcceptedOrder } from './order-submission';
 
 type DraftStorage = Pick<Storage, 'getItem' | 'setItem' | 'removeItem'>;
 
@@ -35,6 +35,13 @@ export async function retryPendingOfflineOrder(
     removeOfflineOrderDraft(storage, actorEmail);
     return { status: 'sent', orderNumber: body.orderNumber || 'Order' };
   } catch (cause) {
+    if (cause instanceof OrderSubmissionError && cause.kind === 'conflict') {
+      const accepted = await recoverAcceptedOrder(draft.command.payload.idempotencyKey, fetchFn);
+      if (accepted) {
+        removeOfflineOrderDraft(storage, actorEmail);
+        return { status: 'sent', orderNumber: accepted };
+      }
+    }
     const retryable =
       cause instanceof TypeError ||
       (cause instanceof OrderSubmissionError && cause.retryable);
