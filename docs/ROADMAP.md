@@ -76,6 +76,83 @@ Feature delivery now proceeds before the remaining [lightweight recovery work](L
 - Forecasting and opportunity scoring with method/confidence metadata.
 - Future customer interface using the same API, identity, customer, catalog and order engine.
 
+### Suprabha 80 — Strategic Account Dominance Framework
+
+Suprabha 80 is the future governing commercial-intelligence model for increasing wallet share across strategically important A- and B-class accounts. It defines measurement and decision rules now; it does not authorize implementation before the current Phase 3 pilot/hardening gates are complete.
+
+**North-star KPI:** A+B weighted wallet share, calculated from canonical Suprabha revenue and governed addressable-wallet estimates. The strategic destination is at least 80% wallet share across targeted A/B accounts; intermediate targets must be based on measured baseline data rather than invented assumptions.
+
+#### A/B account classification
+
+- Classify strategic accounts primarily by total addressable IVD wallet and strategic potential, not by current Suprabha sales alone.
+- Initial configurable guideline: A = approximately ₹2 lakh or more addressable IVD wallet per month; B = approximately ₹75,000 to ₹2 lakh per month. Thresholds must remain configurable by territory/market as evidence improves.
+- A accounts require a management-visible account plan, full stakeholder/Power Map and frequent account review.
+- B accounts require a structured account plan and key-stakeholder mapping, with management escalation for material opportunities.
+- Target wallet share for both strategic classes is at least 80% where commercially rational and compliant.
+
+#### Wallet measurement
+
+- Wallet Share % = canonical Suprabha revenue / governed estimated addressable IVD wallet × 100.
+- Prefer trailing-three-month average Suprabha revenue for operational wallet-share reporting so a single large invoice does not distort the account.
+- Estimated wallet must carry source/method, confidence and last-verified date.
+- Material changes to wallet estimates must be auditable so users cannot improve reported wallet share merely by reducing the denominator.
+- Untapped Wallet = max(Estimated Addressable Wallet - Suprabha Revenue, 0).
+- Revenue required at 80% = Estimated Addressable Wallet × 0.80.
+- Capture Gap to 80% = max(Revenue Required at 80% - Suprabha Revenue, 0).
+- Operational account stages: Conquest (0–<25%), Capture (25–<50%), Grow (50–<80%) and Defend (≥80%). Thresholds may later be configurable, but historical calculations must remain reproducible.
+
+#### Division-level wallet model
+
+- Break addressable wallet into governed diagnostic divisions such as Biochemistry, Hematology, Immunoassay, Molecular, Microbiology, Rapid, Coagulation, Electrolytes, HbA1c and Others as appropriate.
+- For each division show estimated wallet, Suprabha revenue/share, competitor/installed-base context when known, capture gap and next opportunity.
+- The account-level wallet must reconcile to its division-level estimates or explicitly show unallocated/unknown wallet.
+- Missing or low-confidence estimates must be shown as unknown rather than silently treated as zero.
+
+#### 80% Account Scorecard
+
+Every A/B account should eventually expose one management card containing, where available:
+
+- Account class, estimated monthly addressable wallet, Suprabha trailing revenue, current wallet share, 80% target revenue and capture gap.
+- Division-level wallet/share and largest untapped opportunities.
+- Competitor installed base, likely replacement/renewal windows and instrument/service dependencies.
+- Decision maker, champion, blocker and other relevant Power Map roles.
+- Qualified opportunities, expected conversion date and accountable salesperson/owner.
+- A single explicit next-best commercial action selected by the responsible user, with due date and outcome history.
+- Risk flags such as stock/service problems, credit issues, relationship deterioration or competitor activity.
+
+#### Capital allocation and placements
+
+Capital must be allocated by expected wallet capture and gross-profit quality rather than by brand preference or salesperson pressure alone.
+
+- Core financial measure: expected annual incremental gross profit / capital required.
+- A governed Capital Priority Score may combine: 35% financial return, 25% wallet unlocked, 15% probability of conversion, 10% strategic account importance, 10% cross-selling potential and 5% competitive displacement. These initial weights are configurable policy, not immutable database truth.
+- Every placement proposal must retain the underlying inputs, score version, expected wallet captured, expected GP, capital required, payback and approval/override history.
+- Placement economics may consider adjacent wallet unlocked by the instrument, but expected cross-sell must remain separately visible from committed/actual revenue.
+- Actual post-placement revenue and GP should later be compared with the original business case.
+
+#### Salesperson and management operating model
+
+- Sales performance should not be judged only on gross sales. A future governed scorecard may weight approximately: 35% revenue/GP achievement, 25% wallet-share growth, 15% new wallet captured, 10% A/B retention, 10% collections and 5% intelligence/data quality. Final weights remain configurable management policy.
+- A accounts receive a monthly management review; B accounts receive structured salesperson review with escalation for significant opportunities or risks.
+- Each review should answer: current share, missing wallet, current competitor owner of that wallet, reason Suprabha has not captured it, and the specific action/capital required next.
+- Accounts at ≥80% move into a Defend motion focused on availability, service uptime, relationship depth, pricing discipline, collections and early detection of competitor threats rather than unnecessary selling.
+
+#### Command Center metrics
+
+The future management Command Center should surface at minimum:
+
+- Total A+B addressable wallet.
+- Canonical Suprabha revenue captured from A+B accounts.
+- A+B weighted wallet share.
+- Untapped A+B wallet.
+- Qualified capture pipeline.
+- Capital required for qualified capture opportunities.
+- Expected incremental revenue and GP from qualified opportunities.
+- Count/value of A/B accounts in Conquest, Capture, Grow and Defend stages.
+- Wallet share movement over time, with drill-down to territory, salesperson, account and division.
+
+The strategic operating loop is: Map Market → Identify A/B Accounts → Estimate Wallet → Measure Share → Identify Missing Divisions → Map Competitor Installed Base → Power Map Stakeholders → Identify Replacement Window → Select Commercial Action → Allocate Capital → Capture Business → Measure Actual Consumption/Revenue → Cross-sell → Reach ≥80% → Defend.
+
 ### Territory and account intelligence
 
 This is a future intelligence layer and must not expand or delay the current Phase 3 production/pilot gate.
@@ -128,7 +205,7 @@ A future CRM workflow may use ten quick observational questions rather than aski
 
 Questionnaire scoring: A = Analytical, B = Driving, C = Expressive, D = Amiable. Retain the full score distribution and use it to derive primary/secondary style and confidence rather than reducing every person to a single permanent label.
 
-**Intelligence guardrail:** Territory Maps, Power Maps and Social Styles must inherit existing authorization/row scope, auditability and one-source-of-truth principles. Observations and estimates must never be presented as verified facts without provenance/confidence metadata.
+**Intelligence guardrail:** Suprabha 80, Territory Maps, Power Maps and Social Styles must inherit existing authorization/row scope, auditability and one-source-of-truth principles. Observations and estimates must never be presented as verified facts without provenance/confidence metadata.
 
 ## Explicitly deferred
 
