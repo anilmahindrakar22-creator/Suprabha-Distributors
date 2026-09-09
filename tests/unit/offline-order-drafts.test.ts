@@ -33,8 +33,10 @@ describe('offline order drafts', () => {
 
   it('ignores corrupt data and removes a completed draft', () => {
     const storage = memoryStorage();
-    storage.setItem('stockflow:order-draft:v1:sales@example.com', '{broken');
+    const storageKey = 'stockflow:order-draft:v1:sales@example.com';
+    storage.setItem(storageKey, '{broken');
     expect(readOfflineOrderDraft(storage, draft.actorEmail)).toBeNull();
+    expect(storage.getItem(storageKey)).toBeNull();
     writeOfflineOrderDraft(storage, draft);
     removeOfflineOrderDraft(storage, draft.actorEmail);
     expect(readOfflineOrderDraft(storage, draft.actorEmail)).toBeNull();

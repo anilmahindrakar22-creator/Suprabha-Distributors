@@ -43,6 +43,11 @@ export function readOfflineOrderDraft(storage: DraftStorage, actorEmail: string)
     }
     return value as OfflineOrderDraft;
   } catch {
+    try {
+      storage.removeItem(key(actorEmail));
+    } catch {
+      // Storage may be unavailable; the caller still receives a safe empty result.
+    }
     return null;
   }
 }
