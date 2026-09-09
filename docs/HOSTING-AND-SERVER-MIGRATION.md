@@ -163,6 +163,73 @@ Do not buy the GPU until an actual model/workload is selected and benchmarked. A
 
 Avoid buying expensive AI hardware merely because AI is on the roadmap. First establish the analyses to run, model family/size, data volume, latency target and acceptable cloud-vs-local economics.
 
+## Budget-first AI infrastructure policy
+
+Suprabha OS must optimize business return before hardware ambition. The default policy is to spend as little as practical until a measured workload proves the next upgrade will create operational or commercial value.
+
+### Step 0 — use existing hardware
+
+- Run the operational application and deterministic KPI/rule engine on the existing office PC where reliable enough.
+- Use CPU-based Python analytics for wallet scoring, account risk, placement ROI, reagent leakage, opportunity prioritization and simple forecasting.
+- Do not purchase a GPU merely to experiment with AI.
+- Prefer hosted/on-demand AI for occasional experiments if its total cost is lower than owning idle hardware, subject to approved data/privacy controls.
+
+### Step 1 — low-cost dedicated application server
+
+Move to a dedicated server only when uptime, backups, concurrency or background jobs justify it. Favor value hardware rather than workstation-class specifications:
+
+- 8–12 efficient CPU cores.
+- 32 GB RAM initially; choose a board/platform that can expand to 64/128 GB later.
+- 1 TB NVMe initially, with a second drive for backup/replication when affordable.
+- No discrete GPU required.
+- Reuse existing peripherals and avoid cosmetic/enthusiast components.
+
+### Step 2 — add classical ML before local LLM hardware
+
+The first intelligence stack should use inexpensive CPU-friendly models and rules:
+
+- SQL/KPI calculations and deterministic Next Best Action rules.
+- Logistic regression and tree-based models such as CatBoost/LightGBM/XGBoost for opportunity probability, churn/wallet-loss risk and ranking.
+- Statistical/time-series forecasting for demand and reagent consumption.
+- Isolation Forest/statistical anomaly detection where useful.
+
+Local GPU inference is not a prerequisite for these capabilities. Build clean historical data and measurable business outcomes first.
+
+### Step 3 — add a value GPU only after an AI use case pays for it
+
+A GPU purchase requires all of the following:
+
+1. A named production use case, such as management Q&A/RAG, document analysis or local narrative generation.
+2. A measured workload/frequency that makes local inference cheaper or operationally better than hosted inference.
+3. A selected model that has been benchmarked on representative Suprabha data.
+4. A clear privacy or latency reason for local execution, or a documented financial payback.
+5. Confirmation that the existing server PSU, cooling, motherboard and chassis can support the card safely.
+
+When that gate is met, prioritize **VRAM per rupee** rather than gaming performance or newest-generation branding. A reliable used/refurbished NVIDIA card may be appropriate if warranty, power draw, thermals and compatibility are acceptable. Do not assume a 24–32 GB GPU is required; start with the smallest VRAM capacity that meets the benchmarked model and context requirement.
+
+### Step 4 — scale memory/GPU only from evidence
+
+- Expand RAM from 32 -> 64 -> 128 GB only when measured memory pressure or larger local models require it.
+- Add or replace GPU only when model size, throughput or latency measurements justify it.
+- Keep AI workers separable so a later second-hand GPU workstation or dedicated AI box can be added without moving the transactional database.
+- Never finance premium AI hardware from hoped-for future use. Hardware should follow demonstrated value.
+
+### Budget procurement principle
+
+The preferred progression is:
+
+```text
+Existing PC
+   -> improve SSD/RAM only if needed
+   -> modest dedicated CPU server
+   -> classical ML and governed rules
+   -> hosted AI experiments
+   -> value/used local GPU after ROI proof
+   -> larger AI server only after sustained business value
+```
+
+The goal is not to own the largest model. The goal is to produce better account decisions, more wallet capture, better gross profit, faster collections and lower operational leakage at the lowest sensible total cost.
+
 ## Migration gate from PC to server
 
 Move when one or more of these is true:
