@@ -2,7 +2,7 @@
 
 The roadmap grows one transactional spine. It is not authorization to build every listed domain simultaneously.
 
-The current detailed requirements, acceptance gates and ordered recovery slices are in [Requirements and delivery plan](REQUIREMENTS-AND-DELIVERY-PLAN.md). That plan takes precedence over conflicting historical milestone wording below. Next implementation: durable connector recovery (R1), after the R0 deployment and measurement audit.
+The current detailed requirements, acceptance gates and ordered recovery slices are in [Requirements and delivery plan](REQUIREMENTS-AND-DELIVERY-PLAN.md). That plan takes precedence over conflicting historical milestone wording below. Site version 37 is the Phase 3 production baseline. The immediate gate is the [five-day production pilot](PHASE3-PILOT-ACCEPTANCE.md); further feature expansion does not substitute for that evidence.
 
 ## Current baseline — StockFlow OMS Phase 3
 
