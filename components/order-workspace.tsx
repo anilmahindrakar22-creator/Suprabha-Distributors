@@ -786,6 +786,8 @@ function HydratedNewOrderPanel({ data, templateOrder, onClose, onCreated }: { da
   const [customerCity, setCustomerCity] = useState(initialPayload?.customerCity || '');
   const [selectedCustomerId, setSelectedCustomerId] = useState<string | undefined>(initialPayload?.customerId);
   const [customerSuggestionsOpen, setCustomerSuggestionsOpen] = useState(false);
+  const [customerHistory, setCustomerHistory] = useState<{ orders: OrderSummary[]; total: number } | null>(null);
+  const [customerHistoryState, setCustomerHistoryState] = useState<'idle' | 'loading' | 'error'>('idle');
   const [notes, setNotes] = useState(initialPayload?.notes || '');
   const [priority, setPriority] = useState<'normal' | 'high' | 'urgent'>(initialPayload?.priority || 'normal');
   const [productQuery, setProductQuery] = useState('');
@@ -874,12 +876,24 @@ function HydratedNewOrderPanel({ data, templateOrder, onClose, onCreated }: { da
   );
   const selectedCustomer = data.customers.find((customer) => customer.id === selectedCustomerId);
 
+  useEffect(() => {
+    if (!selectedCustomer) return;
+    const controller = new AbortController();
+    fetch(orderListUrl({ page: 1, query: `customer:${selectedCustomer.name}`, status: 'all', captureDate: '' }), { cache: 'no-store', signal: controller.signal })
+      .then((response) => readResponse<OrderBootstrap>(response))
+      .then((result) => { setCustomerHistory({ orders: result.orders.slice(0, 5), total: result.pagination?.total || result.orders.length }); setCustomerHistoryState('idle'); })
+      .catch((cause) => { if (cause instanceof DOMException && cause.name === 'AbortError') return; setCustomerHistory(null); setCustomerHistoryState('error'); });
+    return () => controller.abort();
+  }, [selectedCustomer]);
+
   function chooseCustomer(customer: CustomerDirectoryEntry) {
     setSelectedCustomerId(customer.id);
     setCustomerName(customer.name);
     setCustomerPhone(customer.phone || '');
     setCustomerCity(customer.city || '');
     setCustomerSuggestionsOpen(false);
+    setCustomerHistory(null);
+    setCustomerHistoryState('loading');
   }
 
   async function submit(event: React.SyntheticEvent<HTMLFormElement>) {
@@ -950,6 +964,8 @@ function HydratedNewOrderPanel({ data, templateOrder, onClose, onCreated }: { da
                     onChange={(event) => {
                       setCustomerName(event.target.value);
                       setSelectedCustomerId(undefined);
+                      setCustomerHistory(null);
+                      setCustomerHistoryState('idle');
                       setCustomerSuggestionsOpen(true);
                     }}
                     onFocus={() => setCustomerSuggestionsOpen(true)}
@@ -980,6 +996,7 @@ function HydratedNewOrderPanel({ data, templateOrder, onClose, onCreated }: { da
                     </ul>
                   ) : null}
                   {selectedCustomer?.tallyBalance !== undefined && selectedCustomer.tallyBalance !== null ? <p className="mt-2 rounded-lg bg-[#f2f7f6] px-3 py-2 text-xs font-normal text-[#456367]">Read-only Tally ledger balance: <strong>₹{selectedCustomer.tallyBalance.toLocaleString('en-IN', { maximumFractionDigits: 2 })}</strong>{selectedCustomer.balanceAsOf ? ` · as of ${new Date(selectedCustomer.balanceAsOf).toLocaleString('en-IN')}` : ''}</p> : null}
+                  {selectedCustomer ? <CustomerHistoryPreview history={customerHistory} state={customerHistoryState} /> : null}
                 </label>
                 <details className="sm:col-span-2 rounded-xl bg-[#f6f8f7] px-3 py-2 text-sm">
                   <summary className="cursor-pointer font-bold text-[#456367]">Contact details <span className="font-normal text-[#718487]">(optional)</span></summary>
@@ -1017,4 +1034,11 @@ function HydratedNewOrderPanel({ data, templateOrder, onClose, onCreated }: { da
       </dialog>
     </div>
   );
+}
+
+function CustomerHistoryPreview({ history, state }: { history: { orders: OrderSummary[]; total: number } | null; state: 'idle' | 'loading' | 'error' }) {
+  if (state === 'loading') return <p className="mt-2 rounded-lg bg-[#f6f8f7] px-3 py-2 text-xs font-normal text-[#718487]">Loading this customer’s order history…</p>;
+  if (state === 'error') return <p className="mt-2 rounded-lg bg-[#fff7e8] px-3 py-2 text-xs font-normal text-[#805b20]">Order history is unavailable right now. You can still save this order.</p>;
+  if (!history) return null;
+  return <details className="mt-2 rounded-lg border border-[#dce7e5] bg-[#fbfcfb] px-3 py-2 text-xs font-normal"><summary className="cursor-pointer font-bold text-[#456367]">Previous orders ({history.total})</summary>{history.orders.length ? <ul className="mt-2 divide-y divide-[#e3ecea]">{history.orders.map((order) => <li key={order.id} className="flex items-center justify-between gap-3 py-2"><span><strong className="block text-[#274b50]">{order.orderNumber}</strong><small className="text-[#718487]">{new Date(order.createdAt).toLocaleDateString('en-IN', { timeZone: 'Asia/Kolkata' })} · {orderStage(order.status)}</small></span><span className="shrink-0 font-bold text-[#456367]">{formatQuantity(order.totalQuantity)} qty</span></li>)}</ul> : <p className="mt-2 text-[#718487]">No previous orders found.</p>}{history.total > history.orders.length ? <p className="mt-2 text-[#718487]">Showing the latest {history.orders.length} orders.</p> : null}</details>;
 }
