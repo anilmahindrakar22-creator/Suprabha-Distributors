@@ -347,6 +347,7 @@ export function filterOrders(orders: OrderSummary[], query: string, status: stri
       (status === 'delivery_due_today' && isOrderDeliveryDue(order)) ||
       (status === 'delivery_due_soon' && isOrderDeliveryDue(order, 6)) ||
       (status === 'back_ordered' && isOrderBackOrdered(order)) ||
+      (status === 'delivery_exception' && (order.exceptions || []).some((item) => item.status === 'open')) ||
       (status === 'overdue' && isOrderDeliveryOverdue(order)) ||
       (status === 'attention' && orderAttentionReasons(order).length > 0) ||
       order.status === status;

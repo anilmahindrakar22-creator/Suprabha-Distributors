@@ -304,6 +304,8 @@ describe('order workflow and history', () => {
     const exceptionOrder = { ...baseOrder, exceptions: [{ id: 'x1', category: 'damaged' as const, status: 'open' as const, summary: 'Outer carton damaged', ownerEmail: null, resolution: null, createdBy: 'ops@example.com', createdAt: '2026-08-31T09:00:00Z', resolvedBy: null, resolvedAt: null }] };
     expect(orderAttentionReasons(exceptionOrder, new Date('2026-08-31T10:00:00Z'))).toContain('Open delivery exception');
     expect(filterOrders([exceptionOrder], '', 'attention')).toEqual([exceptionOrder]);
+    expect(filterOrders([exceptionOrder], '', 'delivery_exception')).toEqual([exceptionOrder]);
+    expect(filterOrders([{ ...exceptionOrder, exceptions: [{ ...exceptionOrder.exceptions[0], status: 'resolved' as const }] }], '', 'delivery_exception')).toEqual([]);
   });
 
   it('flags overdue equipment installations', () => {

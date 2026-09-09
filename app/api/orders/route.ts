@@ -95,8 +95,8 @@ export async function GET(request: Request) {
             pagination: page.pagination,
           }, startedAt);
         }
-        if (listQuery.captureDateTo || ['delivery_due_today', 'delivery_due_soon', 'back_ordered'].includes(listQuery.status)) {
-          const gatewayStatus = ['delivery_due_today', 'delivery_due_soon', 'back_ordered'].includes(listQuery.status) ? 'open' : listQuery.status;
+        if (listQuery.captureDateTo || ['delivery_due_today', 'delivery_due_soon', 'back_ordered', 'delivery_exception'].includes(listQuery.status)) {
+          const gatewayStatus = ['delivery_due_today', 'delivery_due_soon', 'back_ordered', 'delivery_exception'].includes(listQuery.status) ? 'open' : listQuery.status;
           const first = await callOrderGateway<OrderBootstrap>(user.email, 'list_orders', {
             page: 1, pageSize: 200, query: listQuery.query, status: gatewayStatus, date: '',
           });
@@ -134,7 +134,7 @@ export async function GET(request: Request) {
           headers: { ...privateHeaders, 'content-type': 'text/csv; charset=utf-8', 'content-disposition': `attachment; filename="stockflow-orders-${new Date().toISOString().slice(0, 10)}.csv"` },
         });
       } catch (error) {
-        if (listQuery.captureDateTo || ['billing_attention', 'delivery_due_today', 'delivery_due_soon', 'back_ordered'].includes(listQuery.status)) throw error;
+        if (listQuery.captureDateTo || ['billing_attention', 'delivery_due_today', 'delivery_due_soon', 'back_ordered', 'delivery_exception'].includes(listQuery.status)) throw error;
         if (!(error instanceof OrderGatewayError) || ![400, 502].includes(error.status)) throw error;
         // Compatibility path while the database migration and edge function roll out.
       }
