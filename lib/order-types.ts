@@ -340,6 +340,7 @@ export function filterOrders(orders: OrderSummary[], query: string, status: stri
       (status === 'dispatch_ready' && ['billed_in_tally', 'ready_for_dispatch'].includes(order.status)) ||
       (status === 'delivery_due_today' && isOrderDeliveryDue(order)) ||
       (status === 'delivery_due_soon' && isOrderDeliveryDue(order, 6)) ||
+      (status === 'back_ordered' && isOrderBackOrdered(order)) ||
       (status === 'overdue' && isOrderDeliveryOverdue(order)) ||
       (status === 'attention' && orderAttentionReasons(order).length > 0) ||
       order.status === status;
@@ -362,9 +363,7 @@ export function orderAttentionReasons(order: OrderSummary, now = new Date()) {
   if (isOrderDeliveryOverdue(order, now)) reasons.push('Delivery overdue');
   if ((order.exceptions || []).some((item) => item.status === 'open')) reasons.push('Open delivery exception');
   if ((order.installations || []).some((item) => item.status === 'scheduled' && item.scheduledDate < localDateKey(now))) reasons.push('Installation overdue');
-  const fulfilmentStarted = order.lines.some((line) => Number(line.fulfilledQuantity || 0) > 0);
-  const fulfilmentDue = ['packed', 'awaiting_tally_billing', 'billed_in_tally', 'ready_for_dispatch', 'dispatched'].includes(order.status);
-  if ((fulfilmentStarted || fulfilmentDue) && order.lines.some((line) => Number(line.fulfilledQuantity || 0) < Number(line.quantity))) reasons.push('Partial fulfilment or back-order');
+  if (isOrderBackOrdered(order)) reasons.push('Partial fulfilment or back-order');
   if (order.status === 'ready_for_dispatch' && (!order.courierName || !order.trackingNumber || !order.dispatchDate)) reasons.push('Dispatch details missing');
   if (order.status === 'dispatched' && (!order.receivedBy || !order.deliveredAt)) reasons.push('Delivery confirmation pending');
   return reasons;
@@ -448,6 +447,17 @@ export function isValidCalendarDate(value: unknown) {
   const day = Number(match[3]);
   const date = new Date(Date.UTC(year, month - 1, day));
   return date.getUTCFullYear() === year && date.getUTCMonth() === month - 1 && date.getUTCDate() === day;
+}
+
+export function orderBackOrderedQuantity(order: OrderSummary) {
+  return order.lines.reduce((total, line) => total + Math.max(Number(line.quantity) - Number(line.fulfilledQuantity || 0), 0), 0);
+}
+
+export function isOrderBackOrdered(order: OrderSummary) {
+  if (['cancelled', 'delivered'].includes(order.status)) return false;
+  const fulfilmentStarted = order.lines.some((line) => Number(line.fulfilledQuantity || 0) > 0);
+  const fulfilmentDue = ['packed', 'awaiting_tally_billing', 'billed_in_tally', 'ready_for_dispatch', 'dispatched'].includes(order.status);
+  return (fulfilmentStarted || fulfilmentDue) && orderBackOrderedQuantity(order) > 0;
 }
 
 export function isOrderDeliveryDue(order: OrderSummary, horizonDays = 0, today = new Date()) {

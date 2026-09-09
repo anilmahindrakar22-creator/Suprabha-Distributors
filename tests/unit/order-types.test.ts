@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { billingHandoffText, currentTallyFinancialYear, filterOrders, isOrderDeliveryDue, isOrderDeliveryOverdue, orderAttentionReasons, orderMatchesCaptureDate, orderNeedsBillingAttention, ordersCsv, orderStage, pageItems, repeatOrderTemplate, searchCatalog, searchCustomers, tallyInvoiceLineReconciliation, tallyInvoiceReconciliation, tallyInvoiceReconciliationDetail, validateOrderCommand } from '../../lib/order-types';
+import { billingHandoffText, currentTallyFinancialYear, filterOrders, isOrderBackOrdered, isOrderDeliveryDue, isOrderDeliveryOverdue, orderAttentionReasons, orderBackOrderedQuantity, orderMatchesCaptureDate, orderNeedsBillingAttention, ordersCsv, orderStage, pageItems, repeatOrderTemplate, searchCatalog, searchCustomers, tallyInvoiceLineReconciliation, tallyInvoiceReconciliation, tallyInvoiceReconciliationDetail, validateOrderCommand } from '../../lib/order-types';
 
 describe('order command validation', () => {
   it('accepts a complete phone order', () => {
@@ -329,6 +329,19 @@ describe('order workflow and history', () => {
     expect(csv).toContain('"\'=Unsafe formula"');
     expect(csv).toContain('"Glucose Reagent (2 box)"');
     expect(csv.split('\r\n')).toHaveLength(2);
+  });
+
+  it('queues only active orders whose fulfilment has a real shortage', () => {
+    const partial = { ...baseOrder, status: 'confirmed', lines: [{ ...baseOrder.lines[0], quantity: 5, fulfilledQuantity: 3 }] };
+    const untouched = { ...baseOrder, lines: [{ ...baseOrder.lines[0], quantity: 5, fulfilledQuantity: 0 }] };
+    const complete = { ...partial, id: '3', lines: [{ ...baseOrder.lines[0], quantity: 5, fulfilledQuantity: 5 }] };
+    const cancelled = { ...partial, id: '4', status: 'cancelled' };
+    expect(orderBackOrderedQuantity(partial)).toBe(2);
+    expect(isOrderBackOrdered(partial)).toBe(true);
+    expect(isOrderBackOrdered(untouched)).toBe(false);
+    expect(isOrderBackOrdered(complete)).toBe(false);
+    expect(isOrderBackOrdered(cancelled)).toBe(false);
+    expect(filterOrders([partial, untouched, complete, cancelled], '', 'back_ordered')).toEqual([partial]);
   });
 
   it('builds delivery queues from the India business date', () => {
