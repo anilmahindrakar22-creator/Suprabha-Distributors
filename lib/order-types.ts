@@ -23,6 +23,7 @@ export type OrderSummary = {
   customerName: string;
   customerPhone: string | null;
   status: string;
+  priority?: 'normal' | 'high' | 'urgent';
   source: string;
   notes: string | null;
   version: number;
@@ -366,6 +367,8 @@ export function filterOrders(orders: OrderSummary[], query: string, status: stri
       (status === 'delivery_due_soon' && isOrderDeliveryDue(order, 6)) ||
       (status === 'back_ordered' && isOrderBackOrdered(order)) ||
       (status === 'delivery_exception' && (order.exceptions || []).some((item) => item.status === 'open')) ||
+      (status === 'priority_urgent' && order.priority === 'urgent' && !['delivered', 'cancelled'].includes(order.status)) ||
+      (status === 'priority_high' && ['high', 'urgent'].includes(order.priority || 'normal') && !['delivered', 'cancelled'].includes(order.status)) ||
       (status === 'overdue' && isOrderDeliveryOverdue(order)) ||
       (status === 'attention' && orderAttentionReasons(order).length > 0) ||
       order.status === status;
@@ -407,6 +410,7 @@ export type OrderCommand =
         customerPhone?: string;
         customerCity?: string;
         source: 'phone' | 'email' | 'whatsapp' | 'walk_in';
+        priority?: 'normal' | 'high' | 'urgent';
         notes?: string;
         lines: Array<{ tallyKey: string; quantity: number }>;
       };
@@ -462,6 +466,10 @@ export type OrderCommand =
       payload: { idempotencyKey?: string; orderId: string; expectedVersion: number; installationId: string; serialNumber: string; commissioningNotes: string };
     }
   | {
+      action: 'set_order_priority';
+      payload: { idempotencyKey?: string; orderId: string; expectedVersion: number; priority: 'normal' | 'high' | 'urgent' };
+    }
+  | {
       action: 'record_billing_review';
       payload: { idempotencyKey?: string; orderId: string; expectedVersion: number; outcome: 'investigating' | 'accepted_difference' | 'tally_corrected'; note: string };
     };
@@ -495,6 +503,13 @@ export function isOrderDeliveryDue(order: OrderSummary, horizonDays = 0, today =
   return order.expectedDeliveryDate >= start && order.expectedDeliveryDate <= end;
 }
 
+export function orderDeliveryReminder(order: OrderSummary, today = new Date()): 'overdue' | 'today' | 'soon' | null {
+  if (isOrderDeliveryOverdue(order, today)) return 'overdue';
+  if (isOrderDeliveryDue(order, 0, today)) return 'today';
+  if (isOrderDeliveryDue(order, 6, today)) return 'soon';
+  return null;
+}
+
 export function repeatOrderTemplate(order: OrderSummary) {
   return {
     customerName: order.customerName,
@@ -512,7 +527,7 @@ export function validateOrderCommand(value: unknown): OrderCommand | null {
   if (!value || typeof value !== 'object') return null;
   const command = value as { action?: unknown; payload?: unknown };
   if (
-    !['create_order', 'transition_order', 'save_fulfilment', 'save_dispatch', 'confirm_delivery', 'edit_order', 'create_exception', 'resolve_exception', 'schedule_installation', 'complete_installation', 'record_billing_review'].includes(
+    !['create_order', 'transition_order', 'save_fulfilment', 'save_dispatch', 'confirm_delivery', 'edit_order', 'create_exception', 'resolve_exception', 'schedule_installation', 'complete_installation', 'set_order_priority', 'record_billing_review'].includes(
       String(command.action),
     ) ||
     !command.payload ||
@@ -547,10 +562,13 @@ export function validateOrderCommand(value: unknown): OrderCommand | null {
       !boundedOptionalText('customerPhone', 40) ||
       !boundedOptionalText('customerCity', 120) ||
       !boundedOptionalText('notes', 2000) ||
+      (payload.priority !== undefined && (typeof payload.priority !== 'string' || !['normal', 'high', 'urgent'].includes(payload.priority))) ||
       !validLines
     ) {
       return null;
     }
+  } else if (command.action === 'set_order_priority') {
+    if (!validMutationIdentity() || typeof payload.priority !== 'string' || !['normal', 'high', 'urgent'].includes(payload.priority)) return null;
   } else if (command.action === 'transition_order') {
     const transitionStatuses = ['awaiting_confirmation', 'awaiting_approval', 'confirmed', 'packed', 'awaiting_tally_billing', 'billed_in_tally', 'ready_for_dispatch', 'dispatched', 'delivered', 'cancelled'];
     const invoiceReferences = typeof payload.tallyInvoiceNumber === 'string' ? payload.tallyInvoiceNumber.split(',').map((item) => item.trim()).filter(Boolean) : [];

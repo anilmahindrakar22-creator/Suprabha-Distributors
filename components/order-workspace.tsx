@@ -9,7 +9,7 @@ import type {
   OrderEvent,
   OrderSummary,
 } from '@/lib/order-types';
-import { billingHandoffText, orderAttentionReasons, orderBackOrderedQuantity, orderOperationsText, orderStage, repeatOrderTemplate, searchCatalog, searchCustomers, tallyInvoiceLineReconciliation, tallyInvoiceReconciliationDetail } from '@/lib/order-types';
+import { billingHandoffText, orderAttentionReasons, orderBackOrderedQuantity, orderDeliveryReminder, orderOperationsText, orderStage, repeatOrderTemplate, searchCatalog, searchCustomers, tallyInvoiceLineReconciliation, tallyInvoiceReconciliationDetail } from '@/lib/order-types';
 import { orderListUrl } from '@/lib/order-list-query';
 import { offlineDraftRecoveryError, readOfflineDraftConsent, readOfflineOrderDraft, removeOfflineOrderDraft, restoreOfflineDraftLines, updateOfflineDraftState, writeOfflineDraftConsent, writeOfflineOrderDraft, type OfflineDraftState } from '@/lib/offline-order-drafts';
 import { readCatalogCache, removeCatalogCache, writeCatalogCache } from '@/lib/catalog-cache';
@@ -354,6 +354,9 @@ export function OrderWorkspace({ actorEmail, initialStatus = 'open' }: { actorEm
   async function recordBillingReview(order: OrderSummary, command: Extract<OrderCommand, { action: 'record_billing_review' }>) {
     await runCommand(command, `${order.orderNumber} billing review recorded.`);
   }
+  async function setOrderPriority(order: OrderSummary, priority: 'normal' | 'high' | 'urgent') {
+    await runCommand({ action: 'set_order_priority', payload: { orderId: order.id, expectedVersion: order.version, priority } }, `${order.orderNumber} priority updated.`);
+  }
 
   const operations = data?.operations || {};
   const staleText = data?.snapshot.fetchedAt || 'No Tally snapshot';
@@ -431,6 +434,8 @@ export function OrderWorkspace({ actorEmail, initialStatus = 'open' }: { actorEm
             <option value="delivery_due_soon">Delivery due in 7 days</option>
             <option value="back_ordered">Partial fulfilment / back-orders</option>
             <option value="delivery_exception">Open delivery exceptions</option>
+            <option value="priority_urgent">Urgent orders</option>
+            <option value="priority_high">High &amp; urgent orders</option>
             <option value="overdue">Overdue deliveries</option>
             <option value="cancelled">Cancelled</option>
           </select>
@@ -480,6 +485,7 @@ export function OrderWorkspace({ actorEmail, initialStatus = 'open' }: { actorEm
                   onBillingReview={recordBillingReview}
                   onRepeat={(order) => void openNewOrder(order)}
                   onFindCustomer={(order) => { setQuery(`customer:${order.customerName}`); setStatus('all'); setCaptureDate(''); setCaptureDateTo(''); setPage(1); }}
+                  onSetPriority={setOrderPriority}
                 />
               ))}
             </div>
@@ -534,6 +540,7 @@ function OrderRow({
   onBillingReview,
   onRepeat,
   onFindCustomer,
+  onSetPriority,
 }: {
   order: OrderSummary;
   actorRole: string;
@@ -549,6 +556,7 @@ function OrderRow({
   onBillingReview: (order: OrderSummary, command: Extract<OrderCommand, { action: 'record_billing_review' }>) => Promise<void>;
   onRepeat: (order: OrderSummary) => void;
   onFindCustomer: (order: OrderSummary) => void;
+  onSetPriority: (order: OrderSummary, priority: 'normal' | 'high' | 'urgent') => Promise<void>;
 }) {
   const [busy, setBusy] = useState(false);
   const [invoiceNumber, setInvoiceNumber] = useState(order.tallyInvoiceNumber || '');
@@ -564,6 +572,7 @@ function OrderRow({
   const invoiceMatch = tallyInvoiceReconciliationDetail(order, tallyInvoices, new Date(), tallySnapshotFetchedAt);
   const lineMatch = tallyInvoiceLineReconciliation(order, tallyInvoices, new Date(), tallySnapshotFetchedAt);
   const invoiceState = invoiceMatch.state;
+  const deliveryReminder = orderDeliveryReminder(order);
   return (
     <article className="p-5">
       <div className="grid gap-4 lg:grid-cols-[1.5fr_1fr_auto] lg:items-center">
@@ -571,6 +580,8 @@ function OrderRow({
         <div className="flex flex-wrap items-center gap-2">
           <strong className="text-[#092f36]">{order.orderNumber}</strong>
           <span className="rounded-full bg-[#edf3f1] px-2.5 py-1 text-[11px] font-extrabold text-[#46686c]">{orderStage(order.status)}</span>
+          {order.priority && order.priority !== 'normal' ? <span className={`rounded-full px-2.5 py-1 text-[11px] font-extrabold ${order.priority === 'urgent' ? 'bg-[#fff0ef] text-[#9a3f37]' : 'bg-[#fff1d6] text-[#8a5a0a]'}`}>{order.priority === 'urgent' ? 'Urgent' : 'High priority'}</span> : null}
+          {deliveryReminder ? <span className={`rounded-full px-2.5 py-1 text-[11px] font-extrabold ${deliveryReminder === 'overdue' ? 'bg-[#fff0ef] text-[#9a3f37]' : deliveryReminder === 'today' ? 'bg-[#fff1d6] text-[#8a5a0a]' : 'bg-[#e8f4fa] text-[#315f75]'}`}>{deliveryReminder === 'overdue' ? 'Delivery overdue' : deliveryReminder === 'today' ? 'Delivery due today' : 'Delivery due soon'}</span> : null}
           {lineMatch.state === 'mismatch' ? <span className="rounded-full bg-[#fff0ef] px-2.5 py-1 text-[11px] font-extrabold text-[#8d3a34]">Billing mismatch</span> : null}
         </div>
         <p className="mt-2 font-bold text-[#274b50]">{order.customerName}</p>
@@ -600,6 +611,7 @@ function OrderRow({
       </div>
       {cancelling ? <div className="mt-4 rounded-xl border border-[#efbbb6] bg-[#fff8f7] p-4"><label className="text-sm font-bold text-[#7d413c]">Why is this order being cancelled?<textarea value={cancelReason} onChange={(event) => setCancelReason(event.target.value)} rows={2} maxLength={500} className="mt-2 w-full rounded-xl border border-[#dfbbb7] bg-white p-3 font-normal text-[#173239] outline-none focus:border-[#d06a61]" placeholder="Cancellation reason is required" /></label><div className="mt-3 flex justify-end gap-2"><button type="button" onClick={() => { setCancelling(false); setCancelReason(''); }} className="min-h-10 rounded-xl px-4 font-bold text-[#557174]">Keep order</button><button type="button" disabled={busy || !cancelReason.trim()} onClick={async () => { setBusy(true); try { await onCancel(order, cancelReason); setCancelling(false); } finally { setBusy(false); } }} className="min-h-10 rounded-xl bg-[#a54c44] px-4 font-bold text-white disabled:opacity-50">{busy ? 'Cancelling…' : 'Confirm cancellation'}</button></div></div> : null}
       <div className="mt-3 flex flex-wrap gap-2"><button type="button" onClick={() => onFindCustomer(order)} className="min-h-10 rounded-xl border border-[#cedfdd] px-4 text-sm font-bold text-[#31585d] hover:bg-[#f1f6f4]">Customer orders</button>{canRepeat ? <button type="button" onClick={() => onRepeat(order)} className="min-h-10 rounded-xl border border-[#cedfdd] px-4 text-sm font-bold text-[#31585d] hover:bg-[#f1f6f4]">Repeat as new order</button> : null}</div>
+      {!['delivered', 'cancelled'].includes(order.status) && ['administrator', 'sales', 'operations', 'management'].includes(actorRole) ? <PriorityControl order={order} onSave={onSetPriority} /> : null}
       <OrderSummaryCopy order={order} />
       <details className="mt-4 rounded-xl bg-[#f6f8f7] px-4 py-3 text-sm">
         <summary className="cursor-pointer font-bold text-[#456367]">View order details</summary>
@@ -760,6 +772,11 @@ function OrderSummaryCopy({ order }: { order: OrderSummary }) {
   return <div className="mt-3 flex items-center gap-3"><button type="button" onClick={() => void copy()} className="min-h-10 rounded-xl border border-[#cedfdd] px-4 text-sm font-bold text-[#31585d] hover:bg-[#f1f6f4]">{state === 'copied' ? 'Summary copied' : 'Copy order summary'}</button>{state === 'error' ? <span className="text-xs font-bold text-[#9a4e47]">Clipboard access was blocked.</span> : null}</div>;
 }
 
+function PriorityControl({ order, onSave }: { order: OrderSummary; onSave: (order: OrderSummary, priority: 'normal' | 'high' | 'urgent') => Promise<void> }) {
+  const [busy, setBusy] = useState(false);
+  return <label className="mt-3 inline-flex items-center gap-2 text-xs font-bold text-[#587275]">Priority<select value={order.priority || 'normal'} disabled={busy} onChange={async (event) => { setBusy(true); try { await onSave(order, event.target.value as 'normal' | 'high' | 'urgent'); } finally { setBusy(false); } }} className="min-h-10 rounded-xl border border-[#cedfdd] bg-white px-3 text-sm font-normal text-[#173239]"><option value="normal">Normal</option><option value="high">High</option><option value="urgent">Urgent</option></select></label>;
+}
+
 function HydratedNewOrderPanel({ data, templateOrder, onClose, onCreated }: { data: OrderBootstrap; templateOrder: OrderSummary | null; onClose: () => void; onCreated: (number: string) => void }) {
   const [initialDraft] = useState(() => readOfflineOrderDraft(localStorage, data.actor.email));
   const initialPayload = initialDraft?.command.payload;
@@ -770,6 +787,7 @@ function HydratedNewOrderPanel({ data, templateOrder, onClose, onCreated }: { da
   const [selectedCustomerId, setSelectedCustomerId] = useState<string | undefined>(initialPayload?.customerId);
   const [customerSuggestionsOpen, setCustomerSuggestionsOpen] = useState(false);
   const [notes, setNotes] = useState(initialPayload?.notes || '');
+  const [priority, setPriority] = useState<'normal' | 'high' | 'urgent'>(initialPayload?.priority || 'normal');
   const [productQuery, setProductQuery] = useState('');
   const [restoredLines] = useState(() => restoreOfflineDraftLines(data.snapshot.catalog, initialPayload?.lines || templatePayload?.lines || []));
   const [lines, setLines] = useState<DraftLine[]>(restoredLines);
@@ -812,12 +830,12 @@ function HydratedNewOrderPanel({ data, templateOrder, onClose, onCreated }: { da
         actorEmail: data.actor.email,
         state: draftState,
         updatedAt: new Date().toISOString(),
-        command: { action: 'create_order', payload: { idempotencyKey, customerId: selectedCustomerId, customerName: customerName.trim(), customerPhone: customerPhone.trim(), customerCity: customerCity.trim(), source: 'phone', notes: notes.trim(), lines: lines.map((line) => ({ tallyKey: line.tallyKey, quantity: line.quantity })) } },
+        command: { action: 'create_order', payload: { idempotencyKey, customerId: selectedCustomerId, customerName: customerName.trim(), customerPhone: customerPhone.trim(), customerCity: customerCity.trim(), source: 'phone', priority, notes: notes.trim(), lines: lines.map((line) => ({ tallyKey: line.tallyKey, quantity: line.quantity })) } },
       });
       if (!saved) setError('This browser could not save the draft. Free device storage or turn off device saving.');
     }, 400);
     return () => window.clearTimeout(timer);
-  }, [customerCity, customerName, customerPhone, data.actor.email, draftState, idempotencyKey, lines, notes, saveOnDevice, selectedCustomerId]);
+  }, [customerCity, customerName, customerPhone, data.actor.email, draftState, idempotencyKey, lines, notes, priority, saveOnDevice, selectedCustomerId]);
 
   useEffect(() => {
     let active = true;
@@ -889,6 +907,7 @@ function HydratedNewOrderPanel({ data, templateOrder, onClose, onCreated }: { da
           customerPhone: customerPhone.trim(),
           customerCity: customerCity.trim(),
           source: 'phone',
+          priority,
           notes: notes.trim(),
           lines: lines.map((line) => ({ tallyKey: line.tallyKey, quantity: line.quantity })),
         },
@@ -987,6 +1006,7 @@ function HydratedNewOrderPanel({ data, templateOrder, onClose, onCreated }: { da
               <label className="sr-only" htmlFor="order-notes">Order notes</label>
               <textarea id="order-notes" value={notes} onChange={(event) => setNotes(event.target.value)} maxLength={2000} rows={3} className="mt-3 w-full rounded-xl border border-[#cedfdd] p-3 font-normal outline-none focus:border-[#64d4ad]" placeholder="Delivery instructions, contact person, or urgency" />
             </details>
+            <label className="rounded-2xl border border-[#dce7e5] bg-white p-4 text-sm font-bold text-[#456367]">Order priority<select value={priority} onChange={(event) => setPriority(event.target.value as 'normal' | 'high' | 'urgent')} className="mt-2 min-h-11 w-full rounded-xl border border-[#cedfdd] bg-white px-3 font-normal text-[#173239]"><option value="normal">Normal</option><option value="high">High</option><option value="urgent">Urgent</option></select></label>
             <label className="flex items-start gap-3 rounded-2xl border border-[#dce7e5] bg-white p-4 text-sm text-[#456367]"><input type="checkbox" checked={saveOnDevice} disabled={draftState === 'pending'} onChange={(event) => changeTrustedDevice(event.target.checked)} className="mt-1 size-4 accent-[#277b69]" /><span><strong className="block text-[#274b50]">Save this draft on this device</strong>Use this only on a trusted device. Unsubmitted drafts expire after seven days. Pending orders and orders needing attention stay saved until sent or discarded. Product and customer search is also retained for restart recovery.</span></label>
             {customerName.trim() || lines.length > 0 ? <p aria-live="polite" className={`rounded-xl px-4 py-3 text-sm font-semibold ${draftState === 'error' ? 'bg-[#fff0ef] text-[#8d3a34]' : draftState === 'pending' ? 'bg-[#fff7e8] text-[#805b20]' : 'bg-[#edf7f4] text-[#456367]'}`}>{draftState === 'pending' ? 'Waiting to send. Your order is safe on this device.' : draftState === 'error' ? 'Draft needs attention before it can be sent.' : saveOnDevice ? 'Draft saved on this device.' : 'Draft is kept only while this form remains open.'}</p> : null}
             {initialDraft ? <button type="button" onClick={discardSavedOrder} className="min-h-10 rounded-xl px-4 text-sm font-bold text-[#9a4e47] hover:bg-[#fff0ef]">Discard saved order</button> : null}

@@ -17,6 +17,7 @@ function patchedOrder(order: OrderSummary, command: OrderCommand, result: Comman
   }
   if (command.action === 'save_dispatch') return { ...base, status: result.status || 'dispatched', courierName: command.payload.courierName, trackingNumber: command.payload.trackingNumber, dispatchDate: command.payload.dispatchDate, vehicleNumber: command.payload.vehicleNumber || null };
   if (command.action === 'confirm_delivery') return { ...base, status: result.status || 'delivered', deliveredAt: command.payload.deliveredAt, receivedBy: command.payload.receivedBy, podReference: command.payload.podReference || null };
+  if (command.action === 'set_order_priority') return { ...base, priority: command.payload.priority };
   if (command.action === 'create_exception') {
     if (!result.exceptionId) return null;
     return { ...base, exceptions: [...base.exceptions, { id: result.exceptionId, category: command.payload.category, status: 'open', summary: command.payload.summary, ownerEmail: command.payload.ownerEmail || null, resolution: null, createdBy: actor.email, createdAt: updatedAt, resolvedBy: null, resolvedAt: null }] };

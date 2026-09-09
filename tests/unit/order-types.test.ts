@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { billingHandoffText, currentTallyFinancialYear, filterOrders, isOrderBackOrdered, isOrderDeliveryDue, isOrderDeliveryOverdue, orderAttentionReasons, orderBackOrderedQuantity, orderMatchesCaptureDate, orderMatchesCaptureDateRange, orderNeedsBillingAttention, orderOperationsText, ordersCsv, orderStage, pageItems, repeatOrderTemplate, searchCatalog, searchCustomers, tallyInvoiceLineReconciliation, tallyInvoiceReconciliation, tallyInvoiceReconciliationDetail, validateOrderCommand } from '../../lib/order-types';
+import { billingHandoffText, currentTallyFinancialYear, filterOrders, isOrderBackOrdered, isOrderDeliveryDue, isOrderDeliveryOverdue, orderAttentionReasons, orderBackOrderedQuantity, orderDeliveryReminder, orderMatchesCaptureDate, orderMatchesCaptureDateRange, orderNeedsBillingAttention, orderOperationsText, ordersCsv, orderStage, pageItems, repeatOrderTemplate, searchCatalog, searchCustomers, tallyInvoiceLineReconciliation, tallyInvoiceReconciliation, tallyInvoiceReconciliationDetail, validateOrderCommand } from '../../lib/order-types';
 
 describe('order command validation', () => {
   it('accepts a complete phone order', () => {
@@ -21,7 +21,14 @@ describe('order command validation', () => {
     expect(validateOrderCommand({ ...base, payload: { ...base.payload, source: 'unknown' } })).toBeNull();
     expect(validateOrderCommand({ ...base, payload: { ...base.payload, customerName: 'X'.repeat(201) } })).toBeNull();
     expect(validateOrderCommand({ ...base, payload: { ...base.payload, notes: 'X'.repeat(2001) } })).toBeNull();
+    expect(validateOrderCommand({ ...base, payload: { ...base.payload, priority: 'critical' } })).toBeNull();
     expect(validateOrderCommand({ ...base, payload: { ...base.payload, lines: [{ tallyKey: 'ITEM-1', quantity: 1_000_001 }] } })).toBeNull();
+  });
+
+  it('validates versioned order priority changes', () => {
+    const command = { action: 'set_order_priority', payload: { idempotencyKey: '1234567890abcdef', orderId: 'order-id', expectedVersion: 2, priority: 'urgent' } };
+    expect(validateOrderCommand(command)).not.toBeNull();
+    expect(validateOrderCommand({ ...command, payload: { ...command.payload, priority: 'critical' } })).toBeNull();
   });
 
   it.each([
@@ -249,6 +256,14 @@ describe('order workflow and history', () => {
     expect(filterOrders([sameCustomer, productCollision], 'customer: city hospital ', 'all')).toEqual([sameCustomer]);
   });
 
+  it('filters active high and urgent orders without surfacing closed work', () => {
+    const high = { ...baseOrder, id: '2', priority: 'high' as const };
+    const urgent = { ...baseOrder, id: '3', priority: 'urgent' as const };
+    const closed = { ...urgent, id: '4', status: 'delivered' };
+    expect(filterOrders([baseOrder, high, urgent, closed], '', 'priority_high')).toEqual([high, urgent]);
+    expect(filterOrders([baseOrder, high, urgent, closed], '', 'priority_urgent')).toEqual([urgent]);
+  });
+
   it('reconciles invoice numbers with Tally voucher numbers and references', () => {
     const billed = { ...baseOrder, tallyInvoiceNumber: ' INV-88 ' };
     const invoices = [{ voucherNumber: 'INV-88', reference: 'SF-001', party: 'City Hospital', date: '20260903', masterId: '44' }];
@@ -382,6 +397,10 @@ describe('order workflow and history', () => {
     expect(isOrderDeliveryDue(later, 6, now)).toBe(false);
     expect(isOrderDeliveryDue(overdue, 6, now)).toBe(false);
     expect(isOrderDeliveryDue(delivered, 6, now)).toBe(false);
+    expect(orderDeliveryReminder(overdue, now)).toBe('overdue');
+    expect(orderDeliveryReminder(today, now)).toBe('today');
+    expect(orderDeliveryReminder(withinWeek, now)).toBe('soon');
+    expect(orderDeliveryReminder(later, now)).toBeNull();
   });
 
   it('exports invoice identity and exact line differences for Accounts', () => {

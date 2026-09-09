@@ -24,7 +24,7 @@ export function orderListUrl(query: OrderListQuery, exportAll = false) {
 }
 
 const allowedStatuses = new Set([
-  'all', 'open', 'history', 'billing', 'billing_attention', 'picking', 'dispatch_ready', 'delivery_due_today', 'delivery_due_soon', 'back_ordered', 'delivery_exception', 'overdue', 'attention',
+  'all', 'open', 'history', 'billing', 'billing_attention', 'picking', 'dispatch_ready', 'delivery_due_today', 'delivery_due_soon', 'back_ordered', 'delivery_exception', 'priority_high', 'priority_urgent', 'overdue', 'attention',
   'phone_order_received', 'awaiting_confirmation', 'awaiting_approval', 'confirmed', 'packed',
   'awaiting_tally_billing', 'billed_in_tally', 'ready_for_dispatch', 'dispatched',
   'delivered', 'cancelled',

@@ -29,6 +29,7 @@ describe('bounded order list query', () => {
     expect(parseOrderListQuery(new URLSearchParams('status=delivery_due_soon'))?.status).toBe('delivery_due_soon');
     expect(parseOrderListQuery(new URLSearchParams('status=back_ordered'))?.status).toBe('back_ordered');
     expect(parseOrderListQuery(new URLSearchParams('status=delivery_exception'))?.status).toBe('delivery_exception');
+    expect(parseOrderListQuery(new URLSearchParams('status=priority_urgent'))?.status).toBe('priority_urgent');
   });
 
   it('returns only one page while retaining the full matching count', () => {

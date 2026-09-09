@@ -39,4 +39,9 @@ describe('targeted order acknowledgement', () => {
     const next = applyOrderAcknowledgement(data, { action: 'record_billing_review', payload: { idempotencyKey: '1234567890abcdef', orderId: order.id, expectedVersion: 1, outcome: 'investigating', note: 'Checking invoice line' } }, { orderId: order.id, status: order.status, version: 2 });
     expect(next?.orders[0].version).toBe(2);
   });
+
+  it('updates priority without reloading the full workspace', () => {
+    const next = applyOrderAcknowledgement(data, { action: 'set_order_priority', payload: { idempotencyKey: '1234567890abcdef', orderId: order.id, expectedVersion: 1, priority: 'urgent' } }, { orderId: order.id, version: 2 });
+    expect(next?.orders[0]).toMatchObject({ priority: 'urgent', version: 2 });
+  });
 });

@@ -98,8 +98,8 @@ export async function GET(request: Request) {
           }, startedAt);
         }
         const exactCustomerLookup = listQuery.query.toLocaleLowerCase('en-IN').startsWith('customer:');
-        if (listQuery.captureDateTo || exactCustomerLookup || ['delivery_due_today', 'delivery_due_soon', 'back_ordered', 'delivery_exception'].includes(listQuery.status)) {
-          const gatewayStatus = ['delivery_due_today', 'delivery_due_soon', 'back_ordered', 'delivery_exception'].includes(listQuery.status) ? 'open' : listQuery.status;
+        if (listQuery.captureDateTo || exactCustomerLookup || ['delivery_due_today', 'delivery_due_soon', 'back_ordered', 'delivery_exception', 'priority_high', 'priority_urgent'].includes(listQuery.status)) {
+          const gatewayStatus = ['delivery_due_today', 'delivery_due_soon', 'back_ordered', 'delivery_exception', 'priority_high', 'priority_urgent'].includes(listQuery.status) ? 'open' : listQuery.status;
           const first = await callOrderGateway<OrderBootstrap>(user.email, 'list_orders', {
             page: 1, pageSize: 200, query: exactCustomerLookup ? '' : listQuery.query, status: gatewayStatus, date: listQuery.captureDateTo ? '' : listQuery.captureDate,
           });
@@ -137,7 +137,7 @@ export async function GET(request: Request) {
           headers: { ...privateHeaders, 'content-type': 'text/csv; charset=utf-8', 'content-disposition': `attachment; filename="stockflow-orders-${new Date().toISOString().slice(0, 10)}.csv"` },
         });
       } catch (error) {
-        if (listQuery.captureDateTo || listQuery.query.toLocaleLowerCase('en-IN').startsWith('customer:') || ['billing_attention', 'delivery_due_today', 'delivery_due_soon', 'back_ordered', 'delivery_exception'].includes(listQuery.status)) throw error;
+        if (listQuery.captureDateTo || listQuery.query.toLocaleLowerCase('en-IN').startsWith('customer:') || ['billing_attention', 'delivery_due_today', 'delivery_due_soon', 'back_ordered', 'delivery_exception', 'priority_high', 'priority_urgent'].includes(listQuery.status)) throw error;
         if (!(error instanceof OrderGatewayError) || ![400, 502].includes(error.status)) throw error;
         // Compatibility path while the database migration and edge function roll out.
       }
