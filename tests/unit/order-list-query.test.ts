@@ -15,12 +15,14 @@ function order(index: number, overrides: Partial<OrderSummary> = {}): OrderSumma
 
 describe('bounded order list query', () => {
   it('accepts known filters and rejects abusive or malformed inputs', () => {
-    expect(parseOrderListQuery(new URLSearchParams('page=2&status=history&query=lab&date=2026-09-07'))).toEqual({ page: 2, status: 'history', query: 'lab', captureDate: '2026-09-07' });
+    expect(parseOrderListQuery(new URLSearchParams('page=2&status=history&query=lab&date=2026-09-07'))).toEqual({ page: 2, status: 'history', query: 'lab', captureDate: '2026-09-07', captureDateTo: '' });
     expect(parseOrderListQuery(new URLSearchParams('page=0'))).toBeNull();
     expect(parseOrderListQuery(new URLSearchParams('status=unknown'))).toBeNull();
     expect(parseOrderListQuery(new URLSearchParams(`query=${'x'.repeat(121)}`))).toBeNull();
     expect(parseOrderListQuery(new URLSearchParams('date=07-09-2026'))).toBeNull();
     expect(parseOrderListQuery(new URLSearchParams('date=2026-02-31'))).toBeNull();
+    expect(parseOrderListQuery(new URLSearchParams('date=2026-09-07&dateTo=2026-09-06'))).toBeNull();
+    expect(parseOrderListQuery(new URLSearchParams('dateTo=2026-09-07'))).toBeNull();
     expect(parseOrderListQuery(new URLSearchParams('status=awaiting_approval'))?.status).toBe('awaiting_approval');
     expect(parseOrderListQuery(new URLSearchParams('status=billing_attention'))?.status).toBe('billing_attention');
     expect(parseOrderListQuery(new URLSearchParams('status=delivery_due_today'))?.status).toBe('delivery_due_today');
@@ -46,6 +48,13 @@ describe('bounded order list query', () => {
     const query = { page: 3, query: 'A&B Lab', status: 'history', captureDate: '2026-09-07' };
     expect(orderListUrl(query)).toBe('/api/orders?list=1&page=3&status=history&query=A%26B+Lab&date=2026-09-07');
     expect(orderListUrl(query, true)).toBe('/api/orders?export=1&page=3&status=history&query=A%26B+Lab&date=2026-09-07');
+    expect(orderListUrl({ ...query, captureDateTo: '2026-09-09' })).toBe('/api/orders?list=1&page=3&status=history&query=A%26B+Lab&date=2026-09-07&dateTo=2026-09-09');
+  });
+
+  it('filters an inclusive order date range before pagination', () => {
+    const orders = [order(1, { createdAt: '2026-09-02T18:29:59Z' }), order(2, { createdAt: '2026-09-02T18:30:00Z' }), order(3, { createdAt: '2026-09-04T18:29:59Z' }), order(4, { createdAt: '2026-09-04T18:30:00Z' })];
+    const result = queryOrderList(orders, { page: 1, query: '', status: 'all', captureDate: '2026-09-03', captureDateTo: '2026-09-04' });
+    expect(result.orders.map((item) => item.id)).toEqual(['2', '3']);
   });
 
   it('paginates billing discrepancies after reconciling the complete candidate set', () => {

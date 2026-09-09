@@ -74,6 +74,7 @@ export function OrderWorkspace({ actorEmail, initialStatus = 'open' }: { actorEm
   const [notice, setNotice] = useState('');
   const [query, setQuery] = useState('');
   const [captureDate, setCaptureDate] = useState('');
+  const [captureDateTo, setCaptureDateTo] = useState('');
   const [status, setStatus] = useState(initialStatus);
   const [creating, setCreating] = useState(false);
   const [repeatOrder, setRepeatOrder] = useState<OrderSummary | null>(null);
@@ -93,7 +94,7 @@ export function OrderWorkspace({ actorEmail, initialStatus = 'open' }: { actorEm
     if (showLoading) setLoading(true);
     setError('');
     try {
-      const result = await readResponse<OrderBootstrap>(await fetch(orderListUrl({ page, query, status, captureDate }), { cache: 'no-store' }));
+      const result = await readResponse<OrderBootstrap>(await fetch(orderListUrl({ page, query, status, captureDate, captureDateTo }), { cache: 'no-store' }));
       setData(result);
       setDeviceDraftState(readOfflineOrderDraft(localStorage, result.actor.email)?.state || null);
     } catch (cause) {
@@ -101,7 +102,7 @@ export function OrderWorkspace({ actorEmail, initialStatus = 'open' }: { actorEm
     } finally {
       if (showLoading) setLoading(false);
     }
-  }, [captureDate, page, query, status]);
+  }, [captureDate, captureDateTo, page, query, status]);
 
   useEffect(() => {
     if (creating || deviceDraftState !== 'pending') return;
@@ -168,13 +169,13 @@ export function OrderWorkspace({ actorEmail, initialStatus = 'open' }: { actorEm
   useEffect(() => {
     if (firstFilterRun.current) {
       firstFilterRun.current = false;
-      if (page === 1 && !query && !captureDate && status === 'open') return;
+      if (page === 1 && !query && !captureDate && !captureDateTo && status === 'open') return;
     }
     const controller = new AbortController();
     const timer = window.setTimeout(() => {
       setLoading(true);
       setError('');
-      fetch(orderListUrl({ page, query, status, captureDate }), { cache: 'no-store', signal: controller.signal })
+      fetch(orderListUrl({ page, query, status, captureDate, captureDateTo }), { cache: 'no-store', signal: controller.signal })
         .then((response) => readResponse<OrderBootstrap>(response))
         .then((result) => {
           setData(result);
@@ -191,7 +192,7 @@ export function OrderWorkspace({ actorEmail, initialStatus = 'open' }: { actorEm
       window.clearTimeout(timer);
       controller.abort();
     };
-  }, [actorEmail, captureDate, page, query, status]);
+  }, [actorEmail, captureDate, captureDateTo, page, query, status]);
 
   const visibleOrders = data?.orders || [];
   const displayedOrders = visibleOrders;
@@ -202,7 +203,7 @@ export function OrderWorkspace({ actorEmail, initialStatus = 'open' }: { actorEm
   function exportVisibleOrders() {
     if (!totalOrders) return;
     const link = document.createElement('a');
-    link.href = orderListUrl({ page: 1, query, status, captureDate }, true);
+    link.href = orderListUrl({ page: 1, query, status, captureDate, captureDateTo }, true);
     link.click();
   }
 
@@ -403,7 +404,8 @@ export function OrderWorkspace({ actorEmail, initialStatus = 'open' }: { actorEm
             />
             {query ? <button type="button" onClick={() => { setQuery(''); setPage(1); }} className="absolute bottom-1 right-1 min-h-9 rounded-lg px-3 text-xs font-bold text-[#456367] hover:bg-[#edf3f1]">Clear</button> : null}
           </div>
-          <label className="text-xs font-bold text-[#587275]">Order date<input type="date" value={captureDate} onChange={(event) => { setCaptureDate(event.target.value); setPage(1); }} className="mt-1 block min-h-11 rounded-xl border border-[#cedfdd] bg-white px-3 font-normal outline-none focus:border-[#64d4ad]" /></label>
+          <label className="text-xs font-bold text-[#587275]">Order date from<input type="date" value={captureDate} max={captureDateTo || undefined} onChange={(event) => { const nextDate = event.target.value; setCaptureDate(nextDate); if (!nextDate || (captureDateTo && nextDate > captureDateTo)) setCaptureDateTo(''); setPage(1); }} className="mt-1 block min-h-11 rounded-xl border border-[#cedfdd] bg-white px-3 font-normal outline-none focus:border-[#64d4ad]" /></label>
+          <label className="text-xs font-bold text-[#587275]">To (optional)<input type="date" value={captureDateTo} min={captureDate || undefined} disabled={!captureDate} onChange={(event) => { setCaptureDateTo(event.target.value); setPage(1); }} className="mt-1 block min-h-11 rounded-xl border border-[#cedfdd] bg-white px-3 font-normal outline-none focus:border-[#64d4ad] disabled:bg-[#edf3f1]" /></label>
           <label className="sr-only" htmlFor="order-status">Filter by status</label>
           <select
             id="order-status"

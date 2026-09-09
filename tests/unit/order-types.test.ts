@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { billingHandoffText, currentTallyFinancialYear, filterOrders, isOrderBackOrdered, isOrderDeliveryDue, isOrderDeliveryOverdue, orderAttentionReasons, orderBackOrderedQuantity, orderMatchesCaptureDate, orderNeedsBillingAttention, ordersCsv, orderStage, pageItems, repeatOrderTemplate, searchCatalog, searchCustomers, tallyInvoiceLineReconciliation, tallyInvoiceReconciliation, tallyInvoiceReconciliationDetail, validateOrderCommand } from '../../lib/order-types';
+import { billingHandoffText, currentTallyFinancialYear, filterOrders, isOrderBackOrdered, isOrderDeliveryDue, isOrderDeliveryOverdue, orderAttentionReasons, orderBackOrderedQuantity, orderMatchesCaptureDate, orderMatchesCaptureDateRange, orderNeedsBillingAttention, ordersCsv, orderStage, pageItems, repeatOrderTemplate, searchCatalog, searchCustomers, tallyInvoiceLineReconciliation, tallyInvoiceReconciliation, tallyInvoiceReconciliationDetail, validateOrderCommand } from '../../lib/order-types';
 
 describe('order command validation', () => {
   it('accepts a complete phone order', () => {
@@ -288,6 +288,8 @@ describe('order workflow and history', () => {
   it('filters capture dates using the India business date', () => {
     expect(orderMatchesCaptureDate({ ...baseOrder, createdAt: '2026-09-02T20:00:00Z' }, '2026-09-03')).toBe(true);
     expect(orderMatchesCaptureDate(baseOrder, '')).toBe(true);
+    expect(orderMatchesCaptureDateRange({ ...baseOrder, createdAt: '2026-09-04T20:00:00Z' }, '2026-09-03', '2026-09-05')).toBe(true);
+    expect(orderMatchesCaptureDateRange({ ...baseOrder, createdAt: '2026-09-05T20:00:00Z' }, '2026-09-03', '2026-09-05')).toBe(false);
   });
 
   it('tracks missing dispatch and delivery confirmation without requiring batch data', () => {

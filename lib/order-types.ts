@@ -213,6 +213,12 @@ export function orderMatchesCaptureDate(order: OrderSummary, date: string) {
   return new Intl.DateTimeFormat('en-CA', { timeZone: 'Asia/Kolkata', year: 'numeric', month: '2-digit', day: '2-digit' }).format(new Date(order.createdAt)) === date;
 }
 
+export function orderMatchesCaptureDateRange(order: OrderSummary, from: string, to: string) {
+  if (!to) return orderMatchesCaptureDate(order, from);
+  const captured = new Intl.DateTimeFormat('en-CA', { timeZone: 'Asia/Kolkata', year: 'numeric', month: '2-digit', day: '2-digit' }).format(new Date(order.createdAt));
+  return captured >= from && captured <= to;
+}
+
 export function searchCustomers(
   customers: CustomerDirectoryEntry[],
   input: string,

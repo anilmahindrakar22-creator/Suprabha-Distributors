@@ -1,5 +1,5 @@
 import type { OrderSummary, TallyInvoice } from './order-types';
-import { filterOrders, isValidCalendarDate, orderMatchesCaptureDate, orderNeedsBillingAttention, pageItems } from './order-types';
+import { filterOrders, isValidCalendarDate, orderMatchesCaptureDateRange, orderNeedsBillingAttention, pageItems } from './order-types';
 
 export const orderListPageSize = 20;
 
@@ -8,6 +8,7 @@ export type OrderListQuery = {
   query: string;
   status: string;
   captureDate: string;
+  captureDateTo?: string;
 };
 
 export function orderListUrl(query: OrderListQuery, exportAll = false) {
@@ -18,6 +19,7 @@ export function orderListUrl(query: OrderListQuery, exportAll = false) {
   });
   if (query.query) parameters.set('query', query.query);
   if (query.captureDate) parameters.set('date', query.captureDate);
+  if (query.captureDateTo) parameters.set('dateTo', query.captureDateTo);
   return `/api/orders?${parameters.toString()}`;
 }
 
@@ -34,10 +36,12 @@ export function parseOrderListQuery(parameters: URLSearchParams): OrderListQuery
   const query = (parameters.get('query') || '').trim();
   const status = parameters.get('status') || 'open';
   const captureDate = parameters.get('date') || '';
+  const captureDateTo = parameters.get('dateTo') || '';
   if (!Number.isInteger(page) || page < 1 || page > 10_000) return null;
   if (query.length > 120 || !allowedStatuses.has(status)) return null;
   if (captureDate && !isValidCalendarDate(captureDate)) return null;
-  return { page, query, status, captureDate };
+  if (captureDateTo && (!captureDate || !isValidCalendarDate(captureDateTo) || captureDateTo < captureDate)) return null;
+  return { page, query, status, captureDate, captureDateTo };
 }
 
 export function queryOrderList(orders: OrderSummary[], query: OrderListQuery) {
@@ -56,7 +60,7 @@ export function queryOrderList(orders: OrderSummary[], query: OrderListQuery) {
 
 export function matchingOrderList(orders: OrderSummary[], query: OrderListQuery) {
   return filterOrders(orders, query.query, query.status)
-    .filter((order) => orderMatchesCaptureDate(order, query.captureDate));
+    .filter((order) => orderMatchesCaptureDateRange(order, query.captureDate, query.captureDateTo || ''));
 }
 
 export function queryBillingAttentionList(orders: OrderSummary[], invoices: TallyInvoice[], snapshotFetchedAt: string, page: number, now = new Date()) {
