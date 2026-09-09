@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { readOfflineDraftConsent, readOfflineOrderDraft, removeOfflineOrderDraft, restoreOfflineDraftLines, updateOfflineDraftState, writeOfflineDraftConsent, writeOfflineOrderDraft, type OfflineOrderDraft } from '../../lib/offline-order-drafts';
+import { offlineDraftRecoveryError, readOfflineDraftConsent, readOfflineOrderDraft, removeOfflineOrderDraft, restoreOfflineDraftLines, updateOfflineDraftState, writeOfflineDraftConsent, writeOfflineOrderDraft, type OfflineOrderDraft } from '../../lib/offline-order-drafts';
 
 function memoryStorage() {
   const values = new Map<string, string>();
@@ -29,6 +29,13 @@ describe('offline order drafts', () => {
     const failed = updateOfflineDraftState(storage, draft.actorEmail, 'error', 'Customer is invalid');
     expect(failed).toMatchObject({ state: 'error', error: 'Customer is invalid' });
     expect(failed?.command).toEqual(draft.command);
+  });
+
+  it('restores the actionable failure reason when an order needs attention', () => {
+    expect(offlineDraftRecoveryError({ ...draft, state: 'error', error: 'Customer is inactive' }, false)).toBe('Customer is inactive');
+    expect(offlineDraftRecoveryError({ ...draft, state: 'error' }, false)).toBe('Check the saved order details and retry.');
+    expect(offlineDraftRecoveryError({ ...draft, state: 'error', error: 'Customer is inactive' }, true)).toContain('no longer in the current Tally catalogue');
+    expect(offlineDraftRecoveryError(draft, false)).toBe('');
   });
 
   it('ignores corrupt data and removes a completed draft', () => {

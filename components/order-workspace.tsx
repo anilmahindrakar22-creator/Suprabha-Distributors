@@ -11,7 +11,7 @@ import type {
 } from '@/lib/order-types';
 import { billingHandoffText, orderAttentionReasons, orderStage, searchCatalog, searchCustomers, tallyInvoiceLineReconciliation, tallyInvoiceReconciliationDetail } from '@/lib/order-types';
 import { orderListUrl } from '@/lib/order-list-query';
-import { readOfflineDraftConsent, readOfflineOrderDraft, removeOfflineOrderDraft, restoreOfflineDraftLines, updateOfflineDraftState, writeOfflineDraftConsent, writeOfflineOrderDraft, type OfflineDraftState } from '@/lib/offline-order-drafts';
+import { offlineDraftRecoveryError, readOfflineDraftConsent, readOfflineOrderDraft, removeOfflineOrderDraft, restoreOfflineDraftLines, updateOfflineDraftState, writeOfflineDraftConsent, writeOfflineOrderDraft, type OfflineDraftState } from '@/lib/offline-order-drafts';
 import { readCatalogCache, removeCatalogCache, writeCatalogCache } from '@/lib/catalog-cache';
 import { readCustomerCache, removeCustomerCache, writeCustomerCache } from '@/lib/customer-cache';
 import { applyOrderAcknowledgement } from '@/lib/order-acknowledgement';
@@ -730,7 +730,7 @@ function HydratedNewOrderPanel({ data, onClose, onCreated }: { data: OrderBootst
   const [restoredLines] = useState(() => restoreOfflineDraftLines(data.snapshot.catalog, initialPayload?.lines || []));
   const [lines, setLines] = useState<DraftLine[]>(restoredLines);
   const [submitting, setSubmitting] = useState(false);
-  const [error, setError] = useState(() => restoredLines.some((line) => !line.item) ? 'A saved product is no longer in the current Tally catalogue. Remove it and select the correct product before saving.' : '');
+  const [error, setError] = useState(() => offlineDraftRecoveryError(initialDraft, restoredLines.some((line) => !line.item)));
   const [idempotencyKey] = useState(() => initialPayload?.idempotencyKey || crypto.randomUUID());
   const [draftState, setDraftState] = useState<OfflineDraftState>(initialDraft?.state || 'draft');
   const [saveOnDevice, setSaveOnDevice] = useState(() => Boolean(initialDraft) || readOfflineDraftConsent(localStorage, data.actor.email));

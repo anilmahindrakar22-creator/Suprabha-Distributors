@@ -27,6 +27,11 @@ export function restoreOfflineDraftLines(
   }));
 }
 
+export function offlineDraftRecoveryError(draft: OfflineOrderDraft | null, hasUnavailableProduct: boolean) {
+  if (hasUnavailableProduct) return 'A saved product is no longer in the current Tally catalogue. Remove it and select the correct product before saving.';
+  return draft?.state === 'error' ? draft.error || 'Check the saved order details and retry.' : '';
+}
+
 function key(email: string) {
   return `${prefix}${email.trim().toLocaleLowerCase('en-IN')}`;
 }
