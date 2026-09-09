@@ -12,6 +12,7 @@ import { prepareDeviceForAccount } from '@/lib/device-account-privacy';
 export function StockFlowFrame({ actorEmail, actorRole }: { actorEmail: string; actorRole: string }) {
   const [surface, setSurface] = useState<'stock' | 'orders' | 'service' | 'users'>('stock');
   const [orderFilter, setOrderFilter] = useState('open');
+  const [deviceNotice, setDeviceNotice] = useState('');
 
   useEffect(() => {
     if ('serviceWorker' in navigator) {
@@ -21,8 +22,13 @@ export function StockFlowFrame({ actorEmail, actorRole }: { actorEmail: string; 
 
   useEffect(() => {
     const account = prepareDeviceForAccount(localStorage, sessionStorage, actorEmail);
-    if (account.switched) clearOrderBootstrapCache();
+    let noticeTimer: number | undefined;
+    if (account.switched) {
+      clearOrderBootstrapCache();
+      if (account.retainedPreviousDraft) noticeTimer = window.setTimeout(() => setDeviceNotice('A saved order for the previous account remains on this device. Sign back into that account to send or discard it.'), 0);
+    }
     void loadOrderBootstrap(actorEmail).catch(() => undefined);
+    return () => { if (noticeTimer !== undefined) window.clearTimeout(noticeTimer); };
   }, [actorEmail]);
 
   useEffect(() => {
@@ -70,6 +76,7 @@ export function StockFlowFrame({ actorEmail, actorRole }: { actorEmail: string; 
           ))}
         </nav>
       </header>
+      {deviceNotice ? <output className="flex shrink-0 items-center justify-between gap-3 border-b border-[#f0d7a5] bg-[#fff7e8] px-4 py-2 text-xs font-semibold text-[#805b20] sm:px-6"><span>{deviceNotice}</span><button type="button" onClick={() => setDeviceNotice('')} className="min-h-8 shrink-0 rounded-lg px-3 font-bold hover:bg-[#f7e8c8]">Dismiss</button></output> : null}
       <section className="min-h-0 flex-1">
         {surface === 'stock' ? (
           <iframe
