@@ -37,7 +37,7 @@ export function readOfflineOrderDraft(storage: DraftStorage, actorEmail: string)
     if (!value || value.schemaVersion !== 1 || typeof value.actorEmail !== 'string' || value.actorEmail.toLocaleLowerCase('en-IN') !== actorEmail.trim().toLocaleLowerCase('en-IN')) return null;
     if (!['draft', 'pending', 'error'].includes(String(value.state)) || value.command?.action !== 'create_order' || typeof value.command.payload?.idempotencyKey !== 'string') return null;
     const updatedAt = Date.parse(String(value.updatedAt));
-    if (!Number.isFinite(updatedAt) || updatedAt < Date.now() - retentionMs) {
+    if (!Number.isFinite(updatedAt) || (value.state === 'draft' && updatedAt < Date.now() - retentionMs)) {
       storage.removeItem(key(actorEmail));
       return null;
     }

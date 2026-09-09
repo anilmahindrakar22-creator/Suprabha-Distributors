@@ -754,6 +754,12 @@ function HydratedNewOrderPanel({ data, onClose, onCreated }: { data: OrderBootst
     }
   }
 
+  function discardSavedOrder() {
+    if (!window.confirm('Discard this unsent order from this device? This cannot be undone.')) return;
+    removeOfflineOrderDraft(localStorage, data.actor.email);
+    onClose();
+  }
+
   useEffect(() => {
     if (!saveOnDevice || draftState === 'pending' || (!customerName.trim() && lines.length === 0 && !notes.trim())) return;
     const timer = window.setTimeout(() => {
@@ -937,8 +943,9 @@ function HydratedNewOrderPanel({ data, onClose, onCreated }: { data: OrderBootst
               <label className="sr-only" htmlFor="order-notes">Order notes</label>
               <textarea id="order-notes" value={notes} onChange={(event) => setNotes(event.target.value)} maxLength={2000} rows={3} className="mt-3 w-full rounded-xl border border-[#cedfdd] p-3 font-normal outline-none focus:border-[#64d4ad]" placeholder="Delivery instructions, contact person, or urgency" />
             </details>
-            <label className="flex items-start gap-3 rounded-2xl border border-[#dce7e5] bg-white p-4 text-sm text-[#456367]"><input type="checkbox" checked={saveOnDevice} disabled={draftState === 'pending'} onChange={(event) => changeTrustedDevice(event.target.checked)} className="mt-1 size-4 accent-[#277b69]" /><span><strong className="block text-[#274b50]">Save this draft on this device</strong>Use this only on a trusted device. Drafts expire after seven days. Pending orders stay saved until sent. Product and customer search is also retained for restart recovery.</span></label>
+            <label className="flex items-start gap-3 rounded-2xl border border-[#dce7e5] bg-white p-4 text-sm text-[#456367]"><input type="checkbox" checked={saveOnDevice} disabled={draftState === 'pending'} onChange={(event) => changeTrustedDevice(event.target.checked)} className="mt-1 size-4 accent-[#277b69]" /><span><strong className="block text-[#274b50]">Save this draft on this device</strong>Use this only on a trusted device. Unsubmitted drafts expire after seven days. Pending orders and orders needing attention stay saved until sent or discarded. Product and customer search is also retained for restart recovery.</span></label>
             {customerName.trim() || lines.length > 0 ? <p aria-live="polite" className={`rounded-xl px-4 py-3 text-sm font-semibold ${draftState === 'error' ? 'bg-[#fff0ef] text-[#8d3a34]' : draftState === 'pending' ? 'bg-[#fff7e8] text-[#805b20]' : 'bg-[#edf7f4] text-[#456367]'}`}>{draftState === 'pending' ? 'Waiting to send. Your order is safe on this device.' : draftState === 'error' ? 'Draft needs attention before it can be sent.' : saveOnDevice ? 'Draft saved on this device.' : 'Draft is kept only while this form remains open.'}</p> : null}
+            {initialDraft ? <button type="button" onClick={discardSavedOrder} className="min-h-10 rounded-xl px-4 text-sm font-bold text-[#9a4e47] hover:bg-[#fff0ef]">Discard saved order</button> : null}
             {error ? <p role="alert" className="rounded-xl border border-[#efbbb6] bg-[#fff0ef] px-4 py-3 text-sm text-[#8d3a34]">{error}</p> : null}
           </div>
           <footer className="sticky bottom-0 flex items-center justify-between gap-4 border-t border-[#dce7e5] bg-white/95 px-5 py-4 backdrop-blur"><p className="text-xs text-[#718487]">{lines.length} product{lines.length === 1 ? '' : 's'} · {lines.some((line) => !line.item) ? 'product needs replacement' : draftState === 'pending' ? 'waiting to send' : saveOnDevice ? 'draft protected' : 'ready to save'}</p><button type="submit" disabled={submitting || lines.length === 0 || lines.some((line) => !line.item)} className="min-h-12 rounded-xl bg-[#092f36] px-6 font-extrabold text-white hover:bg-[#0d4549] disabled:opacity-50">{submitting ? 'Saving…' : draftState === 'pending' || draftState === 'error' ? 'Retry order' : 'Save order'}</button></footer>

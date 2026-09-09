@@ -46,6 +46,21 @@ describe('offline order drafts', () => {
     expect(readOfflineOrderDraft(storage, draft.actorEmail)).toBeNull();
   });
 
+  it.each(['pending', 'error'] as const)('keeps an old %s submission until it is sent or corrected', (state) => {
+    const storage = memoryStorage();
+    writeOfflineOrderDraft(storage, {
+      ...draft,
+      state,
+      updatedAt: new Date(Date.now() - 30 * 86_400_000).toISOString(),
+      ...(state === 'error' ? { error: 'Customer needs attention' } : {}),
+    });
+
+    expect(readOfflineOrderDraft(storage, draft.actorEmail)).toMatchObject({
+      state,
+      command: draft.command,
+    });
+  });
+
   it('stores explicit device consent per account', () => {
     const storage = memoryStorage();
     expect(readOfflineDraftConsent(storage, draft.actorEmail)).toBe(false);
