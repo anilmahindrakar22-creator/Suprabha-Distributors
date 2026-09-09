@@ -40,7 +40,7 @@ end $$;
 revoke all on function public.stockflow_priority_gateway(text,text,text,jsonb) from public, anon, authenticated;
 grant execute on function public.stockflow_priority_gateway(text,text,text,jsonb) to service_role;
 
-do $$
+do $migration$
 declare f text; updated text;
 begin
   select pg_get_functiondef('public.stockflow_order_gateway(text,text,text,jsonb)'::regprocedure) into f;
@@ -64,7 +64,7 @@ begin
   updated := replace(f, $old$'status',o.status,'source',o.source$old$, $new$'status',o.status,'priority',o.priority,'source',o.source$new$);
   if updated=f then raise exception 'Expected list priority projection was not found'; end if;
   execute updated;
-end $$;
+end $migration$;
 
 revoke all on function public.stockflow_order_gateway(text,text,text,jsonb) from public, anon, authenticated;
 revoke all on function public.stockflow_order_list_gateway(text,text,text,jsonb) from public, anon, authenticated;
