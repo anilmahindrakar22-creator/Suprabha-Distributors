@@ -76,6 +76,60 @@ Feature delivery now proceeds before the remaining [lightweight recovery work](L
 - Forecasting and opportunity scoring with method/confidence metadata.
 - Future customer interface using the same API, identity, customer, catalog and order engine.
 
+### Territory and account intelligence
+
+This is a future intelligence layer and must not expand or delay the current Phase 3 production/pilot gate.
+
+- Territory Map built from the canonical customer/account master; the map is a visualization, never a second customer database.
+- Customer, Opportunity, Equipment and Sales Territory map modes using the same underlying verified data.
+- Account intelligence may include customer type, assigned salesperson, installed equipment, key contacts, actual revenue, estimated wallet, wallet share, untapped wallet, open opportunities, last visit and account/credit status.
+- Derived metrics such as wallet share and untapped wallet must be calculated from canonical inputs rather than stored as competing truths.
+- Estimated market intelligence must carry method/source, confidence and last-verified metadata.
+- Filters may include division, customer type, salesperson, brand/equipment, account status, wallet share, revenue, GP, opportunity value, last visit, credit risk, placement status and geography.
+
+### Stakeholder Power Map
+
+The Power Map answers who influences a customer decision and how influence flows through the account. It is linked to the canonical customer/contact and CRM opportunity records rather than duplicating contacts.
+
+- Classify relevant contacts by decision role, including Decision Maker/Economic Buyer, Champion, Influencer, Technical Evaluator, User, Gatekeeper, Blocker and Coach where applicable.
+- Capture formal authority separately from observed actual influence.
+- Represent directional stakeholder relationships and influence strength (for example strong, medium or low) with evidence/confidence and last verification.
+- Capture relationship with Suprabha, sentiment/engagement, brand preference, price sensitivity, technical influence, access, relationship owner, last interaction and key concern where useful.
+- Allow opportunity-level views to identify the likely decision maker, champion, blocker and strongest known influence path.
+- Future recommendations may use verified opportunity and stakeholder data to suggest account actions, but AI decision automation remains explicitly deferred.
+
+### Social Styles for stakeholder communication
+
+Social Style is a salesperson-observed communication aid, not a psychological diagnosis. Classification must remain evidence-based, editable and explicitly uncertain when observations are insufficient.
+
+- Supported observed styles: Analytical, Driving, Expressive and Amiable.
+- Store primary style, optional secondary style, score distribution, confidence, evidence/notes, recorded_by and last_verified_at.
+- Include a `Not enough information` state; avoid forcing a classification from weak evidence.
+- Prefer classification only after several meaningful interactions (guideline: approximately 3–5 interactions).
+- Analytical guidance: lead with data, technical evidence, accuracy, method, throughput, validation, CPT and comparisons.
+- Driving guidance: be concise and lead with results, ROI, price, turnaround, commercial outcome and a clear recommendation.
+- Expressive guidance: emphasize innovation, differentiation, future potential, demonstrations and relevant success stories.
+- Amiable guidance: emphasize trust, service, training, continuity, references and implementation reassurance.
+
+#### Salesperson observation questionnaire
+
+A future CRM workflow may use ten quick observational questions rather than asking the customer to self-classify. The questions should cover:
+
+1. What the stakeholder asks about first when evaluating an instrument: data/specifications, result/price/timeline, novelty/differentiation, or service/support/reliability.
+2. Decision speed: methodical, fast/decisive, intuitive, or consultative.
+3. Meeting behaviour: detailed questioning, directing/controlling, enthusiastic/conversational, or listening/cooperative.
+4. Best response trigger: evidence/comparisons, bottom-line benefits, ideas/possibilities, or trust/reassurance.
+5. Option evaluation: careful comparison, asks for the best option, explores interesting options, or seeks the safe/comfortable choice.
+6. Communication style: precise/factual, short/direct, animated/conversational, or calm/friendly.
+7. Main pre-purchase concern: technical correctness, results, differentiation, or support.
+8. Behaviour under pressure: asks for more information, becomes more forceful, becomes more animated/emotional, or avoids conflict/delays.
+9. Importance of relationship: follows demonstrated competence, secondary to results, very important, or extremely important.
+10. Proposal preference: detailed comparison, short recommendation with numbers, attractive presentation/demo, or explanation plus follow-up discussion.
+
+Questionnaire scoring: A = Analytical, B = Driving, C = Expressive, D = Amiable. Retain the full score distribution and use it to derive primary/secondary style and confidence rather than reducing every person to a single permanent label.
+
+**Intelligence guardrail:** Territory Maps, Power Maps and Social Styles must inherit existing authorization/row scope, auditability and one-source-of-truth principles. Observations and estimates must never be presented as verified facts without provenance/confidence metadata.
+
 ## Explicitly deferred
 
 - Returns, until the product decision changes.
