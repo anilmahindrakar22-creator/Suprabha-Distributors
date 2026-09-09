@@ -326,6 +326,7 @@ export function ordersCsv(orders: OrderSummary[], reconciliation?: { invoices?: 
 
 export function filterOrders(orders: OrderSummary[], query: string, status: string) {
   const normalized = query.trim().toLocaleLowerCase('en-IN');
+  const exactCustomer = normalized.startsWith('customer:') ? normalized.slice('customer:'.length).trim() : '';
   return orders.filter((order) => {
     const searchable = [
       order.orderNumber,
@@ -351,7 +352,10 @@ export function filterOrders(orders: OrderSummary[], query: string, status: stri
       (status === 'overdue' && isOrderDeliveryOverdue(order)) ||
       (status === 'attention' && orderAttentionReasons(order).length > 0) ||
       order.status === status;
-    return matchesStatus && (!normalized || searchable.includes(normalized));
+    const matchesSearch = exactCustomer
+      ? order.customerName.trim().toLocaleLowerCase('en-IN') === exactCustomer
+      : !normalized || searchable.includes(normalized);
+    return matchesStatus && matchesSearch;
   });
 }
 

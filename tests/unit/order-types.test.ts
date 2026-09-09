@@ -227,6 +227,12 @@ describe('order workflow and history', () => {
     expect(filterOrders([delayed], '', 'attention')).toEqual([delayed]);
   });
 
+  it('finds exact customer order history without product-name collisions', () => {
+    const sameCustomer = { ...baseOrder, id: '2', customerName: 'City Hospital' };
+    const productCollision = { ...baseOrder, id: '3', customerName: 'Other Lab', lines: [{ ...baseOrder.lines[0], itemName: 'City Hospital Control' }] };
+    expect(filterOrders([sameCustomer, productCollision], 'customer: city hospital ', 'all')).toEqual([sameCustomer]);
+  });
+
   it('reconciles invoice numbers with Tally voucher numbers and references', () => {
     const billed = { ...baseOrder, tallyInvoiceNumber: ' INV-88 ' };
     const invoices = [{ voucherNumber: 'INV-88', reference: 'SF-001', party: 'City Hospital', date: '20260903', masterId: '44' }];

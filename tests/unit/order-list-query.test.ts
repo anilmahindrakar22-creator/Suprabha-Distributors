@@ -18,7 +18,7 @@ describe('bounded order list query', () => {
     expect(parseOrderListQuery(new URLSearchParams('page=2&status=history&query=lab&date=2026-09-07'))).toEqual({ page: 2, status: 'history', query: 'lab', captureDate: '2026-09-07', captureDateTo: '' });
     expect(parseOrderListQuery(new URLSearchParams('page=0'))).toBeNull();
     expect(parseOrderListQuery(new URLSearchParams('status=unknown'))).toBeNull();
-    expect(parseOrderListQuery(new URLSearchParams(`query=${'x'.repeat(121)}`))).toBeNull();
+    expect(parseOrderListQuery(new URLSearchParams(`query=${'x'.repeat(221)}`))).toBeNull();
     expect(parseOrderListQuery(new URLSearchParams('date=07-09-2026'))).toBeNull();
     expect(parseOrderListQuery(new URLSearchParams('date=2026-02-31'))).toBeNull();
     expect(parseOrderListQuery(new URLSearchParams('date=2026-09-07&dateTo=2026-09-06'))).toBeNull();

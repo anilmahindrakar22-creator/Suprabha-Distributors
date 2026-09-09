@@ -1,7 +1,7 @@
 import { getChatGPTUser } from '@/app/chatgpt-auth';
 import { callOrderGateway, OrderGatewayError } from '@/lib/order-gateway';
 import type { CatalogItem, CustomerDirectoryEntry, OrderBootstrap, OrderEvent } from '@/lib/order-types';
-import { isOrderDeliveryOverdue, orderMatchesCaptureDateRange, orderNeedsBillingAttention, ordersCsv, validateOrderCommand } from '@/lib/order-types';
+import { filterOrders, isOrderDeliveryOverdue, orderMatchesCaptureDateRange, orderNeedsBillingAttention, ordersCsv, validateOrderCommand } from '@/lib/order-types';
 import { measuredJsonResponse } from '@/lib/measured-json-response';
 import { matchingOrderList, parseOrderListQuery, queryBillingAttentionList, queryOrderList } from '@/lib/order-list-query';
 import { BoundedJsonRequestError, readBoundedJsonRequest } from '@/lib/bounded-json-request';
@@ -23,10 +23,11 @@ const invoicedStatuses = ['billed_in_tally', 'ready_for_dispatch', 'dispatched',
 async function billingAttentionOrders(userEmail: string, query: string, captureDate: string, captureDateTo = '') {
   async function loadStatus(status: string) {
     const gatewayDate = captureDateTo ? '' : captureDate;
-    const first = await callOrderGateway<OrderBootstrap>(userEmail, 'list_orders', { page: 1, pageSize: 200, query, status, date: gatewayDate });
+    const gatewayQuery = query.toLocaleLowerCase('en-IN').startsWith('customer:') ? '' : query;
+    const first = await callOrderGateway<OrderBootstrap>(userEmail, 'list_orders', { page: 1, pageSize: 200, query: gatewayQuery, status, date: gatewayDate });
     const orders = [...first.orders];
     for (let page = 2; page <= (first.pagination?.pageCount || 1); page += 1) {
-      const next = await callOrderGateway<OrderBootstrap>(userEmail, 'list_orders', { page, pageSize: 200, query, status, date: gatewayDate });
+      const next = await callOrderGateway<OrderBootstrap>(userEmail, 'list_orders', { page, pageSize: 200, query: gatewayQuery, status, date: gatewayDate });
       orders.push(...next.orders);
     }
     return { first, orders };
@@ -38,6 +39,7 @@ async function billingAttentionOrders(userEmail: string, query: string, captureD
   ]);
   const template = groups[0].first;
   const orders = groups.flatMap((group) => group.orders)
+    .filter((order) => filterOrders([order], query, 'all').length > 0)
     .filter((order) => orderMatchesCaptureDateRange(order, captureDate, captureDateTo))
     .sort((left, right) => Date.parse(right.createdAt) - Date.parse(left.createdAt));
   const invoices = invoiceSnapshot.snapshot.tallyInvoices || [];
@@ -95,15 +97,16 @@ export async function GET(request: Request) {
             pagination: page.pagination,
           }, startedAt);
         }
-        if (listQuery.captureDateTo || ['delivery_due_today', 'delivery_due_soon', 'back_ordered', 'delivery_exception'].includes(listQuery.status)) {
+        const exactCustomerLookup = listQuery.query.toLocaleLowerCase('en-IN').startsWith('customer:');
+        if (listQuery.captureDateTo || exactCustomerLookup || ['delivery_due_today', 'delivery_due_soon', 'back_ordered', 'delivery_exception'].includes(listQuery.status)) {
           const gatewayStatus = ['delivery_due_today', 'delivery_due_soon', 'back_ordered', 'delivery_exception'].includes(listQuery.status) ? 'open' : listQuery.status;
           const first = await callOrderGateway<OrderBootstrap>(user.email, 'list_orders', {
-            page: 1, pageSize: 200, query: listQuery.query, status: gatewayStatus, date: '',
+            page: 1, pageSize: 200, query: exactCustomerLookup ? '' : listQuery.query, status: gatewayStatus, date: listQuery.captureDateTo ? '' : listQuery.captureDate,
           });
           const orders = [...first.orders];
           for (let page = 2; page <= (first.pagination?.pageCount || 1); page += 1) {
             const next = await callOrderGateway<OrderBootstrap>(user.email, 'list_orders', {
-              page, pageSize: 200, query: listQuery.query, status: gatewayStatus, date: '',
+              page, pageSize: 200, query: exactCustomerLookup ? '' : listQuery.query, status: gatewayStatus, date: listQuery.captureDateTo ? '' : listQuery.captureDate,
             });
             orders.push(...next.orders);
           }
@@ -134,7 +137,7 @@ export async function GET(request: Request) {
           headers: { ...privateHeaders, 'content-type': 'text/csv; charset=utf-8', 'content-disposition': `attachment; filename="stockflow-orders-${new Date().toISOString().slice(0, 10)}.csv"` },
         });
       } catch (error) {
-        if (listQuery.captureDateTo || ['billing_attention', 'delivery_due_today', 'delivery_due_soon', 'back_ordered', 'delivery_exception'].includes(listQuery.status)) throw error;
+        if (listQuery.captureDateTo || listQuery.query.toLocaleLowerCase('en-IN').startsWith('customer:') || ['billing_attention', 'delivery_due_today', 'delivery_due_soon', 'back_ordered', 'delivery_exception'].includes(listQuery.status)) throw error;
         if (!(error instanceof OrderGatewayError) || ![400, 502].includes(error.status)) throw error;
         // Compatibility path while the database migration and edge function roll out.
       }

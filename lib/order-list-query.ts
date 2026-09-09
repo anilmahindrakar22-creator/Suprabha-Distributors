@@ -38,7 +38,7 @@ export function parseOrderListQuery(parameters: URLSearchParams): OrderListQuery
   const captureDate = parameters.get('date') || '';
   const captureDateTo = parameters.get('dateTo') || '';
   if (!Number.isInteger(page) || page < 1 || page > 10_000) return null;
-  if (query.length > 120 || !allowedStatuses.has(status)) return null;
+  if (query.length > 220 || !allowedStatuses.has(status)) return null;
   if (captureDate && !isValidCalendarDate(captureDate)) return null;
   if (captureDateTo && (!captureDate || !isValidCalendarDate(captureDateTo) || captureDateTo < captureDate)) return null;
   return { page, query, status, captureDate, captureDateTo };
