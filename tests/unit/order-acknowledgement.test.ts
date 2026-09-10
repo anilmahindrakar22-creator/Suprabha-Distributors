@@ -51,4 +51,9 @@ describe('targeted order acknowledgement', () => {
     const cleared = assigned && applyOrderAcknowledgement(assigned, { action: 'set_order_assignee', payload: { idempotencyKey: '2234567890abcdef', orderId: order.id, expectedVersion: 2 } }, { orderId: order.id, version: 3 });
     expect(cleared?.orders[0]).toMatchObject({ assignedToEmail: null, version: 3 });
   });
+
+  it('advances the local version after an activity note is acknowledged', () => {
+    const next = applyOrderAcknowledgement(data, { action: 'add_order_note', payload: { idempotencyKey: '1234567890abcdef', orderId: order.id, expectedVersion: 1, note: 'Customer requested a delivery call' } }, { orderId: order.id, version: 2 });
+    expect(next?.orders[0].version).toBe(2);
+  });
 });

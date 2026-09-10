@@ -15,6 +15,7 @@ export type GatewayAction =
   | 'create_service_ticket'
   | 'resolve_service_ticket'
   | 'record_billing_review'
+  | 'add_order_note'
   | 'set_order_assignee'
   | 'save_fulfilment'
   | 'edit_order'

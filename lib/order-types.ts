@@ -115,6 +115,7 @@ export function orderEventDescription(event: OrderEvent) {
   if (event.eventType === 'order_priority_changed') {
     return before && after ? `Changed priority from ${before} to ${after}` : after ? `Set priority to ${after}` : 'Changed order priority';
   }
+  if (event.eventType === 'order_note_added') return 'Added order note';
   if (event.toStatus && event.toStatus !== event.fromStatus) return `${(event.fromStatus || 'new').replaceAll('_', ' ')} → ${event.toStatus.replaceAll('_', ' ')}`;
   return event.eventType.replaceAll('_', ' ');
 }
@@ -530,6 +531,10 @@ export type OrderCommand =
   | {
       action: 'record_billing_review';
       payload: { idempotencyKey?: string; orderId: string; expectedVersion: number; outcome: 'investigating' | 'accepted_difference' | 'tally_corrected'; note: string };
+    }
+  | {
+      action: 'add_order_note';
+      payload: { idempotencyKey?: string; orderId: string; expectedVersion: number; note: string };
     };
 
 export function isValidCalendarDate(value: unknown) {
@@ -585,7 +590,7 @@ export function validateOrderCommand(value: unknown): OrderCommand | null {
   if (!value || typeof value !== 'object') return null;
   const command = value as { action?: unknown; payload?: unknown };
   if (
-    !['create_order', 'transition_order', 'save_fulfilment', 'save_dispatch', 'confirm_delivery', 'edit_order', 'create_exception', 'resolve_exception', 'schedule_installation', 'complete_installation', 'set_order_priority', 'set_order_assignee', 'record_billing_review'].includes(
+    !['create_order', 'transition_order', 'save_fulfilment', 'save_dispatch', 'confirm_delivery', 'edit_order', 'create_exception', 'resolve_exception', 'schedule_installation', 'complete_installation', 'set_order_priority', 'set_order_assignee', 'record_billing_review', 'add_order_note'].includes(
       String(command.action),
     ) ||
     !command.payload ||
@@ -656,6 +661,8 @@ export function validateOrderCommand(value: unknown): OrderCommand | null {
     if (!validMutationIdentity() || !['delayed', 'failed_delivery', 'damaged', 'wrong_item', 'other'].includes(String(payload.category)) || typeof payload.summary !== 'string' || payload.summary.trim().length < 3 || payload.summary.length > 500 || !boundedOptionalText('ownerEmail', 254)) return null;
   } else if (command.action === 'record_billing_review') {
     if (!validMutationIdentity() || !['investigating', 'accepted_difference', 'tally_corrected'].includes(String(payload.outcome)) || typeof payload.note !== 'string' || payload.note.trim().length < 3 || payload.note.length > 1000) return null;
+  } else if (command.action === 'add_order_note') {
+    if (!validMutationIdentity() || typeof payload.note !== 'string' || payload.note.trim().length < 3 || payload.note.length > 1000) return null;
   } else if (command.action === 'resolve_exception') {
     if (!validMutationIdentity() || typeof payload.exceptionId !== 'string' || payload.exceptionId.length < 1 || payload.exceptionId.length > 100 || typeof payload.resolution !== 'string' || payload.resolution.trim().length < 3 || payload.resolution.length > 500) return null;
   } else if (command.action === 'schedule_installation') {

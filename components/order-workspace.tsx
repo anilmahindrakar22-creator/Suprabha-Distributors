@@ -366,6 +366,9 @@ export function OrderWorkspace({ actorEmail, initialStatus = 'open' }: { actorEm
   async function recordBillingReview(order: OrderSummary, command: Extract<OrderCommand, { action: 'record_billing_review' }>) {
     await runCommand(command, `${order.orderNumber} billing review recorded.`);
   }
+  async function addOrderNote(order: OrderSummary, note: string) {
+    await runCommand({ action: 'add_order_note', payload: { orderId: order.id, expectedVersion: order.version, note } }, `${order.orderNumber} note added.`);
+  }
   async function setOrderPriority(order: OrderSummary, priority: 'normal' | 'high' | 'urgent') {
     await runCommand({ action: 'set_order_priority', payload: { orderId: order.id, expectedVersion: order.version, priority } }, `${order.orderNumber} priority updated.`);
   }
@@ -504,6 +507,7 @@ export function OrderWorkspace({ actorEmail, initialStatus = 'open' }: { actorEm
                   onException={updateException}
                   onInstallation={updateInstallation}
                   onBillingReview={recordBillingReview}
+                  onAddNote={addOrderNote}
                   onRepeat={(order) => void openNewOrder(order)}
                   onFindCustomer={(order) => { setQuery(`customer:${order.customerName}`); setStatus('all'); setCaptureDate(''); setCaptureDateTo(''); setPage(1); }}
                   onSetPriority={setOrderPriority}
@@ -571,6 +575,7 @@ function OrderRow({
   onException,
   onInstallation,
   onBillingReview,
+  onAddNote,
   onRepeat,
   onFindCustomer,
   onSetPriority,
@@ -589,6 +594,7 @@ function OrderRow({
   onException: (order: OrderSummary, command: Extract<OrderCommand, { action: 'create_exception' | 'resolve_exception' }>) => Promise<void>;
   onInstallation: (order: OrderSummary, command: Extract<OrderCommand, { action: 'schedule_installation' | 'complete_installation' }>) => Promise<void>;
   onBillingReview: (order: OrderSummary, command: Extract<OrderCommand, { action: 'record_billing_review' }>) => Promise<void>;
+  onAddNote: (order: OrderSummary, note: string) => Promise<void>;
   onRepeat: (order: OrderSummary) => void;
   onFindCustomer: (order: OrderSummary) => void;
   onSetPriority: (order: OrderSummary, priority: 'normal' | 'high' | 'urgent') => Promise<void>;
@@ -679,6 +685,7 @@ function OrderRow({
         <DeliveryExceptionPanel order={order} onSave={onException} />
         <InstallationPanel order={order} onSave={onInstallation} />
         {order.status === 'awaiting_tally_billing' ? <BillingHandoff order={order} /> : null}
+        {['administrator', 'sales', 'operations', 'warehouse', 'accounts', 'management'].includes(actorRole) ? <OrderNotePanel order={order} onSave={onAddNote} /> : null}
         <OrderActivityLog key={`${order.id}-${order.version}`} orderId={order.id} initialEvents={order.events || []} />
       </details>
     </article>
@@ -690,6 +697,13 @@ function BillingReviewPanel({ order, actorRole, onSave }: { order: OrderSummary;
   const [outcome, setOutcome] = useState<'investigating' | 'accepted_difference' | 'tally_corrected'>('investigating'); const [note, setNote] = useState('');
   if (!['administrator', 'accounts', 'operations', 'management'].includes(actorRole)) return <p className="mt-3 text-xs text-[#718487]">Accounts or operations must review this difference.</p>;
   return <div className="mt-3 border-t border-[#efcfcc] pt-3"><button type="button" onClick={() => setOpen((value) => !value)} className="text-xs font-extrabold text-[#7d413c]">{open ? '− Hide review' : '+ Record review'}</button>{open ? <div className="mt-2 grid gap-2 sm:grid-cols-[180px_1fr_auto]"><select value={outcome} onChange={(event) => setOutcome(event.target.value as typeof outcome)} className="min-h-10 rounded-lg border border-[#dfbbb7] bg-white px-2 text-xs"><option value="investigating">Investigating</option><option value="tally_corrected">Corrected in Tally</option><option value="accepted_difference">Accepted difference</option></select><input value={note} onChange={(event) => setNote(event.target.value)} minLength={3} maxLength={1000} placeholder="What was checked or corrected?" className="min-h-10 rounded-lg border border-[#dfbbb7] bg-white px-3 text-xs"/><button type="button" disabled={busy || note.trim().length < 3} onClick={async () => { setBusy(true); try { await onSave(order, { action: 'record_billing_review', payload: { orderId: order.id, expectedVersion: order.version, outcome, note: note.trim() } }); setNote(''); setOpen(false); } finally { setBusy(false); } }} className="min-h-10 rounded-lg bg-[#7d413c] px-3 text-xs font-bold text-white disabled:opacity-50">{busy ? 'Saving…' : 'Save review'}</button></div> : null}</div>;
+}
+
+function OrderNotePanel({ order, onSave }: { order: OrderSummary; onSave: (order: OrderSummary, note: string) => Promise<void> }) {
+  const [open, setOpen] = useState(false);
+  const [note, setNote] = useState('');
+  const [busy, setBusy] = useState(false);
+  return <div className="mt-5 border-t border-[#dfe9e7] pt-4"><button type="button" onClick={() => setOpen((value) => !value)} aria-expanded={open} className="text-xs font-bold uppercase tracking-wide text-[#456367]">{open ? '− Hide note' : '+ Add activity note'}</button>{open ? <div className="mt-3 grid gap-2 sm:grid-cols-[1fr_auto]"><textarea value={note} onChange={(event) => setNote(event.target.value)} minLength={3} maxLength={1000} rows={2} placeholder="Call update or internal handoff note" className="rounded-xl border border-[#cedfdd] bg-white p-3 text-sm text-[#173239] outline-none focus:border-[#64d4ad]"/><button type="button" disabled={busy || note.trim().length < 3} onClick={async () => { setBusy(true); try { await onSave(order, note.trim()); setNote(''); setOpen(false); } finally { setBusy(false); } }} className="min-h-10 self-end rounded-xl bg-[#31585d] px-4 text-sm font-bold text-white disabled:opacity-50">{busy ? 'Saving…' : 'Add note'}</button></div> : null}</div>;
 }
 
 function OrderActivityLog({ orderId, initialEvents }: { orderId: string; initialEvents: OrderEvent[] }) {
@@ -717,7 +731,7 @@ function OrderActivityLog({ orderId, initialEvents }: { orderId: string; initial
     setOpen(nextOpen);
     if (nextOpen && !loaded) void loadEvents();
   }
-  return <div className="mt-5 border-t border-[#dfe9e7] pt-4"><button type="button" onClick={toggle} aria-expanded={open} className="text-xs font-bold uppercase tracking-wide text-[#456367]">{open ? '−' : '+'} Activity log</button>{open ? loading ? <p className="mt-2 text-xs text-[#718487]">Loading activity…</p> : error ? <div className="mt-2 flex items-center gap-3"><p role="alert" className="text-xs text-[#8d3a34]">{error}</p><button type="button" onClick={() => void loadEvents()} className="text-xs font-bold text-[#31585d]">Retry</button></div> : events.length ? <ol className="mt-3 space-y-3">{events.map((event) => <li key={event.id} className="grid grid-cols-[10px_1fr] gap-3"><span className="mt-1.5 size-2.5 rounded-full bg-[#64d4ad]" /><div><p className="font-bold text-[#274b50]">{event.toStatus ? `${statusLabel(event.fromStatus || 'new')} → ${statusLabel(event.toStatus)}` : event.eventType.replaceAll('_', ' ')}</p><p className="mt-0.5 text-xs text-[#718487]">{event.actorEmail} ({event.actorRole}) · {new Date(event.createdAt).toLocaleString('en-IN')}</p>{event.reason ? <p className="mt-1 text-xs text-[#80524d]">Reason: {event.reason}</p> : null}</div></li>)}</ol> : <p className="mt-2 text-xs text-[#718487]">No recorded activity yet.</p> : null}</div>;
+  return <div className="mt-5 border-t border-[#dfe9e7] pt-4"><button type="button" onClick={toggle} aria-expanded={open} className="text-xs font-bold uppercase tracking-wide text-[#456367]">{open ? '−' : '+'} Activity log</button>{open ? loading ? <p className="mt-2 text-xs text-[#718487]">Loading activity…</p> : error ? <div className="mt-2 flex items-center gap-3"><p role="alert" className="text-xs text-[#8d3a34]">{error}</p><button type="button" onClick={() => void loadEvents()} className="text-xs font-bold text-[#31585d]">Retry</button></div> : events.length ? <ol className="mt-3 space-y-3">{events.map((event) => <li key={event.id} className="grid grid-cols-[10px_1fr] gap-3"><span className="mt-1.5 size-2.5 rounded-full bg-[#64d4ad]" /><div><p className="font-bold text-[#274b50]">{orderEventDescription(event)}</p><p className="mt-0.5 text-xs text-[#718487]">{event.actorEmail} ({event.actorRole}) · {new Date(event.createdAt).toLocaleString('en-IN')}</p>{event.reason ? <p className="mt-1 text-xs text-[#80524d]">{event.eventType === 'order_note_added' ? 'Note' : 'Reason'}: {event.reason}</p> : null}</div></li>)}</ol> : <p className="mt-2 text-xs text-[#718487]">No recorded activity yet.</p> : null}</div>;
 }
 
 function activityEventForDisplay(event: OrderEvent): OrderEvent {

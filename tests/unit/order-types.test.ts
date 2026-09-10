@@ -130,6 +130,13 @@ describe('order command validation', () => {
     expect(validateOrderCommand({ ...valid, payload: { ...valid.payload, outcome: 'ignored' } })).toBeNull();
     expect(validateOrderCommand({ ...valid, payload: { ...valid.payload, note: 'x' } })).toBeNull();
   });
+
+  it('validates bounded immutable order notes', () => {
+    const valid = { action: 'add_order_note', payload: { idempotencyKey: '1234567890abcdef', orderId: 'order-id', expectedVersion: 2, note: 'Customer asked for a morning delivery call' } };
+    expect(validateOrderCommand(valid)).toEqual(valid);
+    expect(validateOrderCommand({ ...valid, payload: { ...valid.payload, note: '  ' } })).toBeNull();
+    expect(validateOrderCommand({ ...valid, payload: { ...valid.payload, note: 'x'.repeat(1001) } })).toBeNull();
+  });
 });
 
 describe('order list pagination', () => {
