@@ -407,7 +407,7 @@ export function OrderWorkspace({ actorEmail, initialStatus = 'open' }: { actorEm
 
         <section aria-label="Order summary" className="mt-6 grid gap-3 sm:grid-cols-2 lg:grid-cols-4">
           <SummaryCard label="Delivery attention" value={operations.deliveryAttention} tone="watch" onOpen={() => { setStatus('delivery_attention'); setQuery(''); setCaptureDate(''); setCaptureDateTo(''); setPage(1); }} />
-          <SummaryCard label="Awaiting confirmation" value={operations.awaitingConfirmation} tone="watch" onOpen={() => { setStatus('awaiting_confirmation'); setQuery(''); setCaptureDate(''); setCaptureDateTo(''); setPage(1); }} />
+          <SummaryCard label="Needs attention" value={operations.needsAttention ?? operations.urgentExceptions} tone="watch" onOpen={() => { setStatus('attention'); setQuery(''); setCaptureDate(''); setCaptureDateTo(''); setPage(1); }} />
           <SummaryCard label="Awaiting Tally billing" value={operations.awaitingTallyBilling} onOpen={() => { setStatus('billing'); setQuery(''); setCaptureDate(''); setCaptureDateTo(''); setPage(1); }} />
           <SummaryCard label="Unassigned open orders" value={operations.unassignedOpen} tone="watch" onOpen={() => { setStatus('open'); setQuery('assignee:unassigned'); setCaptureDate(''); setCaptureDateTo(''); setPage(1); }} />
         </section>
@@ -473,7 +473,7 @@ export function OrderWorkspace({ actorEmail, initialStatus = 'open' }: { actorEm
         <section className="mt-4 overflow-hidden rounded-2xl border border-[#dce7e5] bg-white shadow-[0_8px_24px_rgba(9,47,54,0.05)]">
           <div className="flex items-center justify-between border-b border-[#e3ecea] px-5 py-4">
             <div>
-              <h2 className="font-extrabold text-[#173239]">{status === 'history' ? 'Old orders' : status === 'billing_attention' ? 'Billing attention' : status === 'delivery_attention' ? 'Delivery attention' : status === 'delivery_due_today' ? 'Deliveries due today' : status === 'delivery_due_soon' ? 'Deliveries due in 7 days' : status === 'back_ordered' ? 'Partial fulfilment / back-orders' : status === 'delivery_exception' ? 'Open delivery exceptions' : 'Order inbox'}</h2>
+              <h2 className="font-extrabold text-[#173239]">{status === 'history' ? 'Old orders' : status === 'attention' ? 'Orders needing attention' : status === 'billing_attention' ? 'Billing attention' : status === 'delivery_attention' ? 'Delivery attention' : status === 'delivery_due_today' ? 'Deliveries due today' : status === 'delivery_due_soon' ? 'Deliveries due in 7 days' : status === 'back_ordered' ? 'Partial fulfilment / back-orders' : status === 'delivery_exception' ? 'Open delivery exceptions' : 'Order inbox'}</h2>
               <p className="mt-1 text-xs text-[#6b7e81]">Tally stock snapshot: {staleText}</p>
             </div>
             <span className="rounded-full bg-[#e2f8ef] px-3 py-1 text-xs font-extrabold text-[#136146]">{totalOrders} orders</span>
@@ -484,7 +484,7 @@ export function OrderWorkspace({ actorEmail, initialStatus = 'open' }: { actorEm
           ) : visibleOrders.length === 0 ? (
             <div className="p-10 text-center">
               <p className="font-bold text-[#31585d]">No matching orders</p>
-              <p className="mt-2 text-sm text-[#708386]">{query ? `No orders match “${query}”. Clear the search to see the full list.` : status === 'history' ? 'Completed and cancelled orders will remain available here.' : status === 'billing_attention' ? 'No invoice, customer-ledger, product, quantity, or stale-verification issues need attention.' : status.startsWith('delivery_due_') ? 'No promised deliveries fall in this period.' : status === 'back_ordered' ? 'No prepared orders currently have a quantity shortage.' : status === 'delivery_exception' ? 'No delivery exceptions are currently open.' : 'New orders will appear here immediately.'}</p>
+              <p className="mt-2 text-sm text-[#708386]">{query ? `No orders match “${query}”. Clear the search to see the full list.` : status === 'history' ? 'Completed and cancelled orders will remain available here.' : status === 'attention' ? 'No active orders are stalled or have unresolved operational issues.' : status === 'billing_attention' ? 'No invoice, customer-ledger, product, quantity, or stale-verification issues need attention.' : status.startsWith('delivery_due_') ? 'No promised deliveries fall in this period.' : status === 'back_ordered' ? 'No prepared orders currently have a quantity shortage.' : status === 'delivery_exception' ? 'No delivery exceptions are currently open.' : 'New orders will appear here immediately.'}</p>
             </div>
           ) : (
             <div className="divide-y divide-[#e8efed]">
