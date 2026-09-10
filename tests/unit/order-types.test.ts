@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { billingHandoffText, canRoleTransitionOrder, currentTallyFinancialYear, filterOrders, isOrderBackOrdered, isOrderDeliveryDue, isOrderDeliveryOverdue, orderAttentionReasons, orderBackOrderedQuantity, orderDeliveryReminder, orderMatchesCaptureDate, orderMatchesCaptureDateRange, orderNeedsBillingAttention, orderNextOwnerLabel, orderOperationsText, ordersCsv, orderStage, pageItems, repeatOrderTemplate, searchCatalog, searchCustomers, tallyInvoiceLineReconciliation, tallyInvoiceReconciliation, tallyInvoiceReconciliationDetail, validateOrderCommand } from '../../lib/order-types';
+import { billingHandoffText, canRoleTransitionOrder, currentTallyFinancialYear, filterOrders, isOrderBackOrdered, isOrderDeliveryDue, isOrderDeliveryOverdue, orderAttentionReasons, orderBackOrderedQuantity, orderDeliveryReminder, orderEventDescription, orderMatchesCaptureDate, orderMatchesCaptureDateRange, orderNeedsBillingAttention, orderNextOwnerLabel, orderOperationsText, ordersCsv, orderStage, pageItems, repeatOrderTemplate, searchCatalog, searchCustomers, tallyInvoiceLineReconciliation, tallyInvoiceReconciliation, tallyInvoiceReconciliationDetail, validateOrderCommand } from '../../lib/order-types';
 
 describe('order command validation', () => {
   it('accepts a complete phone order', () => {
@@ -198,6 +198,14 @@ describe('order workflow and history', () => {
     expect(orderNextOwnerLabel('awaiting_tally_billing')).toBe('Accounts');
     expect(orderNextOwnerLabel('billed_in_tally')).toBe('Operations');
     expect(orderNextOwnerLabel('delivered')).toBeNull();
+  });
+
+  it('describes assignment and priority audit events with their before and after values', () => {
+    const event = { id: 1, eventType: 'order_assignment_changed', fromStatus: 'confirmed', toStatus: 'confirmed', reason: null, actorEmail: 'admin@example.com', actorRole: 'administrator', metadata: { before: 'sales@example.com', after: 'ops@example.com' }, createdAt: '2026-09-10T10:00:00Z' };
+    expect(orderEventDescription(event)).toBe('Changed owner from sales@example.com to ops@example.com');
+    expect(orderEventDescription({ ...event, metadata: { before: 'ops@example.com', after: null } })).toBe('Cleared order owner (ops@example.com)');
+    expect(orderEventDescription({ ...event, eventType: 'order_priority_changed', metadata: { before: 'normal', after: 'urgent' } })).toBe('Changed priority from normal to urgent');
+    expect(orderEventDescription({ ...event, eventType: 'status_changed', fromStatus: 'confirmed', toStatus: 'packed', metadata: {} })).toBe('confirmed → packed');
   });
   const baseOrder = {
     id: '1', orderNumber: 'SF-001', customerName: 'City Hospital', customerPhone: '9876543210',

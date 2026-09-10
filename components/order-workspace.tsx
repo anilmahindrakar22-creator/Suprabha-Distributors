@@ -9,7 +9,7 @@ import type {
   OrderEvent,
   OrderSummary,
 } from '@/lib/order-types';
-import { billingHandoffText, canRoleTransitionOrder, orderAttentionReasons, orderBackOrderedQuantity, orderDeliveryReminder, orderNextOwnerLabel, orderOperationsText, orderStage, repeatOrderTemplate, searchCatalog, searchCustomers, tallyInvoiceLineReconciliation, tallyInvoiceReconciliationDetail } from '@/lib/order-types';
+import { billingHandoffText, canRoleTransitionOrder, orderAttentionReasons, orderBackOrderedQuantity, orderDeliveryReminder, orderEventDescription, orderNextOwnerLabel, orderOperationsText, orderStage, repeatOrderTemplate, searchCatalog, searchCustomers, tallyInvoiceLineReconciliation, tallyInvoiceReconciliationDetail } from '@/lib/order-types';
 import { orderListUrl } from '@/lib/order-list-query';
 import { offlineDraftRecoveryError, readOfflineDraftConsent, readOfflineOrderDraft, removeOfflineOrderDraft, restoreOfflineDraftLines, updateOfflineDraftState, writeOfflineDraftConsent, writeOfflineOrderDraft, type OfflineDraftState } from '@/lib/offline-order-drafts';
 import { readCatalogCache, removeCatalogCache, writeCatalogCache } from '@/lib/catalog-cache';
@@ -693,7 +693,7 @@ function BillingReviewPanel({ order, actorRole, onSave }: { order: OrderSummary;
 
 function OrderActivityLog({ orderId, initialEvents }: { orderId: string; initialEvents: OrderEvent[] }) {
   const [open, setOpen] = useState(false);
-  const [events, setEvents] = useState(initialEvents);
+  const [events, setEvents] = useState(() => initialEvents.map(activityEventForDisplay));
   const [loaded, setLoaded] = useState(initialEvents.length > 0);
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState('');
@@ -703,7 +703,7 @@ function OrderActivityLog({ orderId, initialEvents }: { orderId: string; initial
     setError('');
     try {
       const result = await readResponse<{ events: OrderEvent[] }>(await fetch(`/api/orders?eventsFor=${encodeURIComponent(orderId)}`, { cache: 'no-store' }));
-      setEvents(result.events || []);
+      setEvents((result.events || []).map(activityEventForDisplay));
       setLoaded(true);
     } catch (cause) {
       setError(cause instanceof Error ? cause.message : 'Unable to load activity');
@@ -717,6 +717,12 @@ function OrderActivityLog({ orderId, initialEvents }: { orderId: string; initial
     if (nextOpen && !loaded) void loadEvents();
   }
   return <div className="mt-5 border-t border-[#dfe9e7] pt-4"><button type="button" onClick={toggle} aria-expanded={open} className="text-xs font-bold uppercase tracking-wide text-[#456367]">{open ? '−' : '+'} Activity log</button>{open ? loading ? <p className="mt-2 text-xs text-[#718487]">Loading activity…</p> : error ? <div className="mt-2 flex items-center gap-3"><p role="alert" className="text-xs text-[#8d3a34]">{error}</p><button type="button" onClick={() => void loadEvents()} className="text-xs font-bold text-[#31585d]">Retry</button></div> : events.length ? <ol className="mt-3 space-y-3">{events.map((event) => <li key={event.id} className="grid grid-cols-[10px_1fr] gap-3"><span className="mt-1.5 size-2.5 rounded-full bg-[#64d4ad]" /><div><p className="font-bold text-[#274b50]">{event.toStatus ? `${statusLabel(event.fromStatus || 'new')} → ${statusLabel(event.toStatus)}` : event.eventType.replaceAll('_', ' ')}</p><p className="mt-0.5 text-xs text-[#718487]">{event.actorEmail} ({event.actorRole}) · {new Date(event.createdAt).toLocaleString('en-IN')}</p>{event.reason ? <p className="mt-1 text-xs text-[#80524d]">Reason: {event.reason}</p> : null}</div></li>)}</ol> : <p className="mt-2 text-xs text-[#718487]">No recorded activity yet.</p> : null}</div>;
+}
+
+function activityEventForDisplay(event: OrderEvent): OrderEvent {
+  return ['order_assignment_changed', 'order_priority_changed'].includes(event.eventType)
+    ? { ...event, eventType: orderEventDescription(event), toStatus: null }
+    : event;
 }
 
 async function readOrderSubmission(response: Response) {

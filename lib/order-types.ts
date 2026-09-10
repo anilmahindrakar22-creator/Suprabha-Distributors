@@ -104,6 +104,21 @@ export type OrderEvent = {
   createdAt: string;
 };
 
+export function orderEventDescription(event: OrderEvent) {
+  const before = typeof event.metadata?.before === 'string' ? event.metadata.before : '';
+  const after = typeof event.metadata?.after === 'string' ? event.metadata.after : '';
+  if (event.eventType === 'order_assignment_changed') {
+    if (before && after) return `Changed owner from ${before} to ${after}`;
+    if (after) return `Assigned order to ${after}`;
+    return before ? `Cleared order owner (${before})` : 'Cleared order owner';
+  }
+  if (event.eventType === 'order_priority_changed') {
+    return before && after ? `Changed priority from ${before} to ${after}` : after ? `Set priority to ${after}` : 'Changed order priority';
+  }
+  if (event.toStatus && event.toStatus !== event.fromStatus) return `${(event.fromStatus || 'new').replaceAll('_', ' ')} → ${event.toStatus.replaceAll('_', ' ')}`;
+  return event.eventType.replaceAll('_', ' ');
+}
+
 export type OrderLineSummary = {
   tallyKey: string;
   itemName: string;
