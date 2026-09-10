@@ -412,6 +412,7 @@ export function filterOrders(orders: OrderSummary[], query: string, status: stri
       (status === 'picking' && ['confirmed', 'partially_reserved', 'fully_reserved', 'ready_for_picking', 'picked'].includes(order.status)) ||
       (status === 'dispatch_ready' && ['billed_in_tally', 'ready_for_dispatch'].includes(order.status)) ||
       (status === 'delivery_due_today' && isOrderDeliveryDue(order)) ||
+      (status === 'delivery_attention' && !['delivered', 'cancelled'].includes(order.status) && (isOrderDeliveryOverdue(order) || isOrderDeliveryDue(order) || (order.exceptions || []).some((item) => item.status === 'open' && ['delayed', 'failed_delivery'].includes(item.category)))) ||
       (status === 'delivery_due_soon' && isOrderDeliveryDue(order, 6)) ||
       (status === 'back_ordered' && isOrderBackOrdered(order)) ||
       (status === 'delivery_exception' && (order.exceptions || []).some((item) => item.status === 'open')) ||

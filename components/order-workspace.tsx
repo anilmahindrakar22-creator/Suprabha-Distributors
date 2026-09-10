@@ -406,7 +406,7 @@ export function OrderWorkspace({ actorEmail, initialStatus = 'open' }: { actorEm
         </header>
 
         <section aria-label="Order summary" className="mt-6 grid gap-3 sm:grid-cols-2 lg:grid-cols-4">
-          <SummaryCard label="Phone orders today" value={operations.phoneOrdersToday} />
+          <SummaryCard label="Delivery attention" value={operations.deliveryAttention} tone="watch" onOpen={() => { setStatus('delivery_attention'); setQuery(''); setCaptureDate(''); setCaptureDateTo(''); setPage(1); }} />
           <SummaryCard label="Awaiting confirmation" value={operations.awaitingConfirmation} tone="watch" onOpen={() => { setStatus('awaiting_confirmation'); setQuery(''); setCaptureDate(''); setCaptureDateTo(''); setPage(1); }} />
           <SummaryCard label="Awaiting Tally billing" value={operations.awaitingTallyBilling} onOpen={() => { setStatus('billing'); setQuery(''); setCaptureDate(''); setCaptureDateTo(''); setPage(1); }} />
           <SummaryCard label="Unassigned open orders" value={operations.unassignedOpen} tone="watch" onOpen={() => { setStatus('open'); setQuery('assignee:unassigned'); setCaptureDate(''); setCaptureDateTo(''); setPage(1); }} />
@@ -448,6 +448,7 @@ export function OrderWorkspace({ actorEmail, initialStatus = 'open' }: { actorEm
             <option value="packed">Packed</option>
             <option value="awaiting_tally_billing">Awaiting Tally billing</option>
             <option value="dispatch_ready">Ready for dispatch</option>
+            <option value="delivery_attention">Delivery attention</option>
             <option value="dispatched">Dispatched</option>
             <option value="delivery_due_today">Delivery due today</option>
             <option value="delivery_due_soon">Delivery due in 7 days</option>
@@ -472,7 +473,7 @@ export function OrderWorkspace({ actorEmail, initialStatus = 'open' }: { actorEm
         <section className="mt-4 overflow-hidden rounded-2xl border border-[#dce7e5] bg-white shadow-[0_8px_24px_rgba(9,47,54,0.05)]">
           <div className="flex items-center justify-between border-b border-[#e3ecea] px-5 py-4">
             <div>
-              <h2 className="font-extrabold text-[#173239]">{status === 'history' ? 'Old orders' : status === 'billing_attention' ? 'Billing attention' : status === 'delivery_due_today' ? 'Deliveries due today' : status === 'delivery_due_soon' ? 'Deliveries due in 7 days' : status === 'back_ordered' ? 'Partial fulfilment / back-orders' : status === 'delivery_exception' ? 'Open delivery exceptions' : 'Order inbox'}</h2>
+              <h2 className="font-extrabold text-[#173239]">{status === 'history' ? 'Old orders' : status === 'billing_attention' ? 'Billing attention' : status === 'delivery_attention' ? 'Delivery attention' : status === 'delivery_due_today' ? 'Deliveries due today' : status === 'delivery_due_soon' ? 'Deliveries due in 7 days' : status === 'back_ordered' ? 'Partial fulfilment / back-orders' : status === 'delivery_exception' ? 'Open delivery exceptions' : 'Order inbox'}</h2>
               <p className="mt-1 text-xs text-[#6b7e81]">Tally stock snapshot: {staleText}</p>
             </div>
             <span className="rounded-full bg-[#e2f8ef] px-3 py-1 text-xs font-extrabold text-[#136146]">{totalOrders} orders</span>

@@ -26,6 +26,7 @@ describe('bounded order list query', () => {
     expect(parseOrderListQuery(new URLSearchParams('status=awaiting_approval'))?.status).toBe('awaiting_approval');
     expect(parseOrderListQuery(new URLSearchParams('status=billing_attention'))?.status).toBe('billing_attention');
     expect(parseOrderListQuery(new URLSearchParams('status=delivery_due_today'))?.status).toBe('delivery_due_today');
+    expect(parseOrderListQuery(new URLSearchParams('status=delivery_attention'))?.status).toBe('delivery_attention');
     expect(parseOrderListQuery(new URLSearchParams('status=delivery_due_soon'))?.status).toBe('delivery_due_soon');
     expect(parseOrderListQuery(new URLSearchParams('status=back_ordered'))?.status).toBe('back_ordered');
     expect(parseOrderListQuery(new URLSearchParams('status=delivery_exception'))?.status).toBe('delivery_exception');

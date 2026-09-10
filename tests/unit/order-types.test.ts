@@ -410,6 +410,14 @@ describe('order workflow and history', () => {
     expect(orderAttentionReasons(overdue, today)).toContain('Delivery overdue');
   });
 
+  it('combines due deliveries and serious delivery exceptions into one active queue', () => {
+    const today = { ...baseOrder, id: 'due', expectedDeliveryDate: '2020-01-01' };
+    const failed = { ...baseOrder, id: 'failed', exceptions: [{ id: 'x1', category: 'failed_delivery' as const, status: 'open' as const, summary: 'Customer site closed', ownerEmail: null, resolution: null, createdBy: 'ops@example.com', createdAt: '2026-08-31T09:00:00Z', resolvedBy: null, resolvedAt: null }] };
+    const later = { ...baseOrder, id: 'later', expectedDeliveryDate: '2099-01-01' };
+    const closed = { ...today, id: 'closed', status: 'delivered' };
+    expect(filterOrders([today, failed, later, closed], '', 'delivery_attention')).toEqual([today, failed]);
+  });
+
   it('exports operational orders as spreadsheet-safe CSV', () => {
     const order = { ...baseOrder, customerName: '=Unsafe formula', expectedDeliveryDate: '2026-09-02' };
     const csv = ordersCsv([order]);
