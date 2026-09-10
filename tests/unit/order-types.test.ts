@@ -10,6 +10,7 @@ describe('order command validation', () => {
           idempotencyKey: '1234567890abcdef',
           customerName: 'City Diagnostic Lab',
           source: 'phone',
+          expectedDeliveryDate: '2026-09-15',
           lines: [{ tallyKey: 'ITEM-1', quantity: 2 }],
         },
       }),
@@ -22,6 +23,7 @@ describe('order command validation', () => {
     expect(validateOrderCommand({ ...base, payload: { ...base.payload, customerName: 'X'.repeat(201) } })).toBeNull();
     expect(validateOrderCommand({ ...base, payload: { ...base.payload, notes: 'X'.repeat(2001) } })).toBeNull();
     expect(validateOrderCommand({ ...base, payload: { ...base.payload, priority: 'critical' } })).toBeNull();
+    expect(validateOrderCommand({ ...base, payload: { ...base.payload, expectedDeliveryDate: '2026-02-31' } })).toBeNull();
     expect(validateOrderCommand({ ...base, payload: { ...base.payload, lines: [{ tallyKey: 'ITEM-1', quantity: 1_000_001 }] } })).toBeNull();
   });
 

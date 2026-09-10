@@ -417,6 +417,7 @@ export type OrderCommand =
         customerCity?: string;
         source: 'phone' | 'email' | 'whatsapp' | 'walk_in';
         priority?: 'normal' | 'high' | 'urgent';
+        expectedDeliveryDate?: string;
         notes?: string;
         lines: Array<{ tallyKey: string; quantity: number }>;
       };
@@ -573,6 +574,7 @@ export function validateOrderCommand(value: unknown): OrderCommand | null {
       !boundedOptionalText('customerCity', 120) ||
       !boundedOptionalText('notes', 2000) ||
       (payload.priority !== undefined && (typeof payload.priority !== 'string' || !['normal', 'high', 'urgent'].includes(payload.priority))) ||
+      (payload.expectedDeliveryDate !== undefined && payload.expectedDeliveryDate !== '' && !isValidCalendarDate(payload.expectedDeliveryDate)) ||
       !validLines
     ) {
       return null;
