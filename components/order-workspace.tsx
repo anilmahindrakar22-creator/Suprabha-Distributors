@@ -407,9 +407,9 @@ export function OrderWorkspace({ actorEmail, initialStatus = 'open' }: { actorEm
 
         <section aria-label="Order summary" className="mt-6 grid gap-3 sm:grid-cols-2 lg:grid-cols-4">
           <SummaryCard label="Phone orders today" value={operations.phoneOrdersToday} />
-          <SummaryCard label="Awaiting confirmation" value={operations.awaitingConfirmation} tone="watch" />
-          <SummaryCard label="Awaiting Tally billing" value={operations.awaitingTallyBilling} />
-          <SummaryCard label="Unassigned open orders" value={operations.unassignedOpen} tone="watch" />
+          <SummaryCard label="Awaiting confirmation" value={operations.awaitingConfirmation} tone="watch" onOpen={() => { setStatus('awaiting_confirmation'); setQuery(''); setCaptureDate(''); setCaptureDateTo(''); setPage(1); }} />
+          <SummaryCard label="Awaiting Tally billing" value={operations.awaitingTallyBilling} onOpen={() => { setStatus('billing'); setQuery(''); setCaptureDate(''); setCaptureDateTo(''); setPage(1); }} />
+          <SummaryCard label="Unassigned open orders" value={operations.unassignedOpen} tone="watch" onOpen={() => { setStatus('open'); setQuery('assignee:unassigned'); setCaptureDate(''); setCaptureDateTo(''); setPage(1); }} />
         </section>
 
         <div className="mt-5 flex flex-col gap-3 rounded-2xl border border-[#dce7e5] bg-white p-3 sm:flex-row sm:items-center">
@@ -546,13 +546,14 @@ export function OrderWorkspace({ actorEmail, initialStatus = 'open' }: { actorEm
   );
 }
 
-function SummaryCard({ label, value, tone = 'normal' }: { label: string; value?: number; tone?: 'normal' | 'watch' }) {
-  return (
-    <article className={`rounded-2xl border p-5 ${tone === 'watch' ? 'border-[#f0d7a5] bg-[#fff9ec]' : 'border-[#dce7e5] bg-white'}`}>
+function SummaryCard({ label, value, tone = 'normal', onOpen }: { label: string; value?: number; tone?: 'normal' | 'watch'; onOpen?: () => void }) {
+  const content = <>
       <p className="text-xs font-bold text-[#6b7e81]">{label}</p>
       <strong className="mt-3 block text-3xl font-black text-[#092f36]">{Number(value || 0).toLocaleString('en-IN')}</strong>
-    </article>
-  );
+      {onOpen ? <span className="mt-2 block text-[10px] font-extrabold uppercase tracking-wide text-[#5f777a]">Open queue</span> : null}
+    </>;
+  const className = `rounded-2xl border p-5 text-left ${tone === 'watch' ? 'border-[#f0d7a5] bg-[#fff9ec]' : 'border-[#dce7e5] bg-white'}`;
+  return onOpen ? <button type="button" onClick={onOpen} className={`${className} transition hover:-translate-y-0.5 hover:shadow-sm`}>{content}</button> : <article className={className}>{content}</article>;
 }
 
 function OrderRow({
