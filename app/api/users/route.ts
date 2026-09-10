@@ -12,9 +12,10 @@ async function actorEmail() {
   return user.email;
 }
 
-export async function GET() {
+export async function GET(request: Request) {
   try {
-    return Response.json(await callOrderGateway(await actorEmail(), 'list_users'), { headers });
+    const action = new URL(request.url).searchParams.get('scope') === 'assignable' ? 'list_assignable_users' : 'list_users';
+    return Response.json(await callOrderGateway(await actorEmail(), action), { headers });
   } catch (error) {
     return error instanceof OrderGatewayError ? fail(error.message, error.status) : fail('User service is temporarily unavailable', 502);
   }
