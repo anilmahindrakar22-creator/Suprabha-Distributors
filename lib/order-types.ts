@@ -401,6 +401,7 @@ export function filterOrders(orders: OrderSummary[], query: string, status: stri
       order.tallyInvoiceNumber,
       order.assignedToEmail,
       ...(order.lines || []).map((line) => line.itemName),
+      ...(order.events || []).map((event) => event.reason),
     ]
       .filter(Boolean)
       .join(' ')

@@ -309,6 +309,12 @@ describe('order workflow and history', () => {
     expect(filterOrders([mine, another, unassigned], 'assignee:unassigned', 'open')).toEqual([unassigned]);
   });
 
+  it('finds orders by immutable activity-note text when events are available', () => {
+    const noted = { ...baseOrder, events: [{ id: 9, eventType: 'order_note_added', fromStatus: baseOrder.status, toStatus: baseOrder.status, reason: 'Customer requested morning delivery', actorEmail: 'ops@example.com', actorRole: 'operations', metadata: {}, createdAt: '2026-09-10T10:00:00Z' }] };
+    expect(filterOrders([noted], 'morning delivery', 'all')).toEqual([noted]);
+    expect(filterOrders([noted], 'evening delivery', 'all')).toEqual([]);
+  });
+
   it('filters active high and urgent orders without surfacing closed work', () => {
     const high = { ...baseOrder, id: '2', priority: 'high' as const };
     const urgent = { ...baseOrder, id: '3', priority: 'urgent' as const };

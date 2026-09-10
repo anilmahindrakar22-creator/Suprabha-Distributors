@@ -422,7 +422,7 @@ export function OrderWorkspace({ actorEmail, initialStatus = 'open' }: { actorEm
               id="order-search"
               value={query}
               onChange={(event) => { setQuery(event.target.value); setPage(1); }}
-              placeholder="Customer, product, invoice, phone, or order"
+              placeholder="Customer, product, invoice, order, or note"
               className="min-h-11 w-full rounded-xl border border-[#cedfdd] px-4 pr-16 outline-none focus:border-[#64d4ad] focus:ring-3 focus:ring-[#64d4ad]/20"
             />
             {query ? <button type="button" onClick={() => { setQuery(''); setPage(1); }} className="absolute bottom-1 right-1 min-h-9 rounded-lg px-3 text-xs font-bold text-[#456367] hover:bg-[#edf3f1]">Clear</button> : null}
