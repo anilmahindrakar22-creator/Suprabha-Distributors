@@ -217,12 +217,13 @@ describe('order workflow and history', () => {
   });
 
   it('builds a concise Tally billing handoff and isolates the billing queue', () => {
-    const billing = { ...baseOrder, status: 'awaiting_tally_billing', deliveryAddress: 'Market Road', notes: 'Call before delivery' };
+    const billing = { ...baseOrder, status: 'awaiting_tally_billing', assignedToEmail: 'ops@example.com', deliveryAddress: 'Market Road', notes: 'Call before delivery' };
     expect(filterOrders([baseOrder, billing], '', 'billing')).toEqual([billing]);
     expect(billingHandoffText(billing)).toBe([
       'Order: SF-001',
       'Customer: City Hospital',
       'Phone: 9876543210',
+      'Owner: ops@example.com',
       'Products:',
       '- Glucose Reagent: 2 box',
       'Delivery: Market Road',
@@ -244,11 +245,12 @@ describe('order workflow and history', () => {
   });
 
   it('builds a copyable operational summary from existing order evidence', () => {
-    const dispatched = { ...baseOrder, status: 'dispatched', expectedDeliveryDate: '2026-09-10', deliveryAddress: 'Market Road', tallyInvoiceNumber: 'SD/26-27/0552', courierName: 'Local delivery', trackingNumber: 'LR-22', vehicleNumber: 'KA01AB1234', notes: 'Call before delivery' };
+    const dispatched = { ...baseOrder, status: 'dispatched', assignedToEmail: 'ops@example.com', expectedDeliveryDate: '2026-09-10', deliveryAddress: 'Market Road', tallyInvoiceNumber: 'SD/26-27/0552', courierName: 'Local delivery', trackingNumber: 'LR-22', vehicleNumber: 'KA01AB1234', notes: 'Call before delivery' };
     expect(orderOperationsText(dispatched)).toBe([
       'SF-001 · Dispatch',
       'Customer: City Hospital',
       'Phone: 9876543210',
+      'Owner: ops@example.com',
       'Products:',
       '- Glucose Reagent: 2 box',
       'Promised delivery: 2026-09-10',
