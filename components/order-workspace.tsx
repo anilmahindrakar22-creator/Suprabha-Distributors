@@ -9,7 +9,7 @@ import type {
   OrderEvent,
   OrderSummary,
 } from '@/lib/order-types';
-import { billingHandoffText, orderAttentionReasons, orderBackOrderedQuantity, orderDeliveryReminder, orderOperationsText, orderStage, repeatOrderTemplate, searchCatalog, searchCustomers, tallyInvoiceLineReconciliation, tallyInvoiceReconciliationDetail } from '@/lib/order-types';
+import { billingHandoffText, canRoleTransitionOrder, orderAttentionReasons, orderBackOrderedQuantity, orderDeliveryReminder, orderOperationsText, orderStage, repeatOrderTemplate, searchCatalog, searchCustomers, tallyInvoiceLineReconciliation, tallyInvoiceReconciliationDetail } from '@/lib/order-types';
 import { orderListUrl } from '@/lib/order-list-query';
 import { offlineDraftRecoveryError, readOfflineDraftConsent, readOfflineOrderDraft, removeOfflineOrderDraft, restoreOfflineDraftLines, updateOfflineDraftState, writeOfflineDraftConsent, writeOfflineOrderDraft, type OfflineDraftState } from '@/lib/offline-order-drafts';
 import { readCatalogCache, removeCatalogCache, writeCatalogCache } from '@/lib/catalog-cache';
@@ -596,6 +596,7 @@ function OrderRow({
   const [cancelling, setCancelling] = useState(false);
   const [cancelReason, setCancelReason] = useState('');
   const action = nextStatus[order.status];
+  const canAdvance = Boolean(action && canRoleTransitionOrder(actorRole, order.status, action.status));
   const total = Number(order.totalQuantity || 0);
   const requiresInvoice = order.status === 'awaiting_tally_billing';
   const canCancel = actorRole === 'administrator' && !['cancelled', 'delivered'].includes(order.status);
@@ -628,7 +629,7 @@ function OrderRow({
         <p className="text-xs font-bold text-[#708386]">Ordered quantity</p>
         <p className="mt-1 font-extrabold text-[#274b50]">{formatQuantity(total)}</p>
       </div>
-      {action ? (
+      {action && canAdvance ? (
         <div className="flex min-w-48 flex-col gap-2">
           {requiresInvoice ? <label className="text-xs font-bold text-[#587275]">Tally invoice number(s)<input maxLength={160} value={invoiceNumber} onChange={(event) => setInvoiceNumber(event.target.value)} placeholder="Use commas for split invoices" className="mt-1 min-h-10 w-full rounded-lg border border-[#cedfdd] px-3 font-normal text-[#173239] outline-none focus:border-[#64d4ad]" /></label> : null}
           <button

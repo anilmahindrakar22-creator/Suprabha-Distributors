@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { billingHandoffText, currentTallyFinancialYear, filterOrders, isOrderBackOrdered, isOrderDeliveryDue, isOrderDeliveryOverdue, orderAttentionReasons, orderBackOrderedQuantity, orderDeliveryReminder, orderMatchesCaptureDate, orderMatchesCaptureDateRange, orderNeedsBillingAttention, orderOperationsText, ordersCsv, orderStage, pageItems, repeatOrderTemplate, searchCatalog, searchCustomers, tallyInvoiceLineReconciliation, tallyInvoiceReconciliation, tallyInvoiceReconciliationDetail, validateOrderCommand } from '../../lib/order-types';
+import { billingHandoffText, canRoleTransitionOrder, currentTallyFinancialYear, filterOrders, isOrderBackOrdered, isOrderDeliveryDue, isOrderDeliveryOverdue, orderAttentionReasons, orderBackOrderedQuantity, orderDeliveryReminder, orderMatchesCaptureDate, orderMatchesCaptureDateRange, orderNeedsBillingAttention, orderOperationsText, ordersCsv, orderStage, pageItems, repeatOrderTemplate, searchCatalog, searchCustomers, tallyInvoiceLineReconciliation, tallyInvoiceReconciliation, tallyInvoiceReconciliationDetail, validateOrderCommand } from '../../lib/order-types';
 
 describe('order command validation', () => {
   it('accepts a complete phone order', () => {
@@ -180,6 +180,17 @@ describe('Tally product search', () => {
 });
 
 describe('order workflow and history', () => {
+  it('shows workflow actions only to roles accepted by the server policy', () => {
+    expect(canRoleTransitionOrder('sales', 'phone_order_received', 'awaiting_confirmation')).toBe(true);
+    expect(canRoleTransitionOrder('accounts', 'phone_order_received', 'awaiting_confirmation')).toBe(false);
+    expect(canRoleTransitionOrder('warehouse', 'confirmed', 'packed')).toBe(true);
+    expect(canRoleTransitionOrder('sales', 'confirmed', 'packed')).toBe(false);
+    expect(canRoleTransitionOrder('accounts', 'awaiting_tally_billing', 'billed_in_tally')).toBe(true);
+    expect(canRoleTransitionOrder('warehouse', 'awaiting_tally_billing', 'billed_in_tally')).toBe(false);
+    expect(canRoleTransitionOrder('operations', 'billed_in_tally', 'ready_for_dispatch')).toBe(true);
+    expect(canRoleTransitionOrder('viewer', 'billed_in_tally', 'ready_for_dispatch')).toBe(false);
+    expect(canRoleTransitionOrder('operations', 'invented', 'packed')).toBe(false);
+  });
   const baseOrder = {
     id: '1', orderNumber: 'SF-001', customerName: 'City Hospital', customerPhone: '9876543210',
     status: 'awaiting_confirmation', source: 'phone', notes: null, version: 1,

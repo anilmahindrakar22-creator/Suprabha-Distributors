@@ -265,6 +265,24 @@ export function orderStage(status: string) {
   return status.replaceAll('_', ' ');
 }
 
+const visibleTransitionRoles: Record<string, readonly string[]> = {
+  'phone_order_received->awaiting_confirmation': ['administrator', 'operations', 'sales'],
+  'awaiting_confirmation->confirmed': ['administrator', 'operations', 'sales', 'management'],
+  'awaiting_approval->confirmed': ['administrator', 'operations', 'sales', 'management'],
+  'confirmed->packed': ['administrator', 'operations', 'warehouse'],
+  'partially_reserved->packed': ['administrator', 'operations', 'warehouse'],
+  'fully_reserved->packed': ['administrator', 'operations', 'warehouse'],
+  'ready_for_picking->packed': ['administrator', 'operations', 'warehouse'],
+  'picked->packed': ['administrator', 'operations', 'warehouse'],
+  'packed->awaiting_tally_billing': ['administrator', 'operations', 'accounts'],
+  'awaiting_tally_billing->billed_in_tally': ['administrator', 'operations', 'accounts'],
+  'billed_in_tally->ready_for_dispatch': ['administrator', 'operations'],
+};
+
+export function canRoleTransitionOrder(role: string, fromStatus: string, toStatus: string) {
+  return visibleTransitionRoles[`${fromStatus}->${toStatus}`]?.includes(role) ?? false;
+}
+
 export function billingHandoffText(order: OrderSummary) {
   const lines = order.lines.map((line) => {
     const unit = line.baseUnit ? ` ${line.baseUnit}` : '';
