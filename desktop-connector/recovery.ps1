@@ -119,9 +119,19 @@ function Write-BoundedConnectorLog([string]$Path, [string]$Message, [long]$Maxim
     }
 }
 
+function Read-ConnectorJson([string]$Path) {
+    $json = [IO.File]::ReadAllText($Path)
+    # PowerShell 7 otherwise converts ISO timestamps to DateTime before our
+    # validation. Re-parsing that localized value can swap day and month.
+    if ((Get-Command ConvertFrom-Json).Parameters.ContainsKey('DateKind')) {
+        return $json | ConvertFrom-Json -DateKind String
+    }
+    return $json | ConvertFrom-Json
+}
+
 function Read-ConnectorSnapshot([string]$Path, [string]$Company) {
     try {
-        $saved = [IO.File]::ReadAllText($Path) | ConvertFrom-Json
+        $saved = Read-ConnectorJson $Path
         if ($saved.schemaVersion -ne 1 -or $saved.snapshot.company -ne $Company) { return $null }
         $stamp = [datetimeoffset]::Parse($saved.snapshot.fetchedAtIso)
         if ($stamp -gt [datetimeoffset]::UtcNow.AddMinutes(5)) { return $null }
@@ -132,7 +142,7 @@ function Read-ConnectorSnapshot([string]$Path, [string]$Company) {
 
 function Read-CustomerSnapshot([string]$Path, [string]$Company) {
     try {
-        $saved = [IO.File]::ReadAllText($Path) | ConvertFrom-Json
+        $saved = Read-ConnectorJson $Path
         if ($saved.schemaVersion -ne 1 -or $saved.snapshot.company -ne $Company) { return $null }
         $stamp = [datetimeoffset]::Parse($saved.snapshot.fetchedAtIso)
         if ($stamp -gt [datetimeoffset]::UtcNow.AddMinutes(5) -or $null -eq $saved.snapshot.customers -or @($saved.snapshot.customers).Count -eq 0) { return $null }
@@ -142,7 +152,7 @@ function Read-CustomerSnapshot([string]$Path, [string]$Company) {
 
 function Read-CatalogSnapshot([string]$Path, [string]$Company) {
     try {
-        $saved = [IO.File]::ReadAllText($Path) | ConvertFrom-Json
+        $saved = Read-ConnectorJson $Path
         if ($saved.schemaVersion -ne 1 -or $saved.snapshot.company -ne $Company -or [string]::IsNullOrWhiteSpace([string]$saved.snapshot.document)) { return $null }
         $stamp = [datetimeoffset]::Parse($saved.snapshot.fetchedAtIso)
         if ($stamp -gt [datetimeoffset]::UtcNow.AddMinutes(5)) { return $null }
