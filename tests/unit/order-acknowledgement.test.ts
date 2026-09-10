@@ -44,4 +44,11 @@ describe('targeted order acknowledgement', () => {
     const next = applyOrderAcknowledgement(data, { action: 'set_order_priority', payload: { idempotencyKey: '1234567890abcdef', orderId: order.id, expectedVersion: 1, priority: 'urgent' } }, { orderId: order.id, version: 2 });
     expect(next?.orders[0]).toMatchObject({ priority: 'urgent', version: 2 });
   });
+
+  it('updates assignment without reloading the full workspace', () => {
+    const assigned = applyOrderAcknowledgement(data, { action: 'set_order_assignee', payload: { idempotencyKey: '1234567890abcdef', orderId: order.id, expectedVersion: 1, assignedToEmail: 'ops@example.com' } }, { orderId: order.id, version: 2 });
+    expect(assigned?.orders[0]).toMatchObject({ assignedToEmail: 'ops@example.com', version: 2 });
+    const cleared = assigned && applyOrderAcknowledgement(assigned, { action: 'set_order_assignee', payload: { idempotencyKey: '2234567890abcdef', orderId: order.id, expectedVersion: 2 } }, { orderId: order.id, version: 3 });
+    expect(cleared?.orders[0]).toMatchObject({ assignedToEmail: null, version: 3 });
+  });
 });

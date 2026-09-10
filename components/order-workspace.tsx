@@ -370,6 +370,10 @@ export function OrderWorkspace({ actorEmail, initialStatus = 'open' }: { actorEm
     await runCommand({ action: 'set_order_priority', payload: { orderId: order.id, expectedVersion: order.version, priority } }, `${order.orderNumber} priority updated.`);
   }
 
+  async function setOrderAssignee(order: OrderSummary, assignedToEmail?: string) {
+    await runCommand({ action: 'set_order_assignee', payload: { orderId: order.id, expectedVersion: order.version, assignedToEmail } }, assignedToEmail ? `${order.orderNumber} assigned.` : `${order.orderNumber} assignment cleared.`);
+  }
+
   const operations = data?.operations || {};
   const staleText = data?.snapshot.fetchedAt || 'No Tally snapshot';
 
@@ -419,6 +423,7 @@ export function OrderWorkspace({ actorEmail, initialStatus = 'open' }: { actorEm
             />
             {query ? <button type="button" onClick={() => { setQuery(''); setPage(1); }} className="absolute bottom-1 right-1 min-h-9 rounded-lg px-3 text-xs font-bold text-[#456367] hover:bg-[#edf3f1]">Clear</button> : null}
           </div>
+          <button type="button" aria-pressed={query === `assignee:${actorEmail.toLocaleLowerCase('en-IN')}`} onClick={() => { setQuery((current) => current === `assignee:${actorEmail.toLocaleLowerCase('en-IN')}` ? '' : `assignee:${actorEmail.toLocaleLowerCase('en-IN')}`); setStatus('open'); setCaptureDate(''); setCaptureDateTo(''); setPage(1); }} className="min-h-11 rounded-xl border border-[#cedfdd] px-4 font-bold text-[#31585d] hover:bg-[#f1f6f4] aria-pressed:border-[#64d4ad] aria-pressed:bg-[#eaf8f1]">My work</button>
           <label className="text-xs font-bold text-[#587275]">Order date from<input type="date" value={captureDate} max={captureDateTo || undefined} onChange={(event) => { const nextDate = event.target.value; setCaptureDate(nextDate); if (!nextDate || (captureDateTo && nextDate > captureDateTo)) setCaptureDateTo(''); setPage(1); }} className="mt-1 block min-h-11 rounded-xl border border-[#cedfdd] bg-white px-3 font-normal outline-none focus:border-[#64d4ad]" /></label>
           <label className="text-xs font-bold text-[#587275]">To (optional)<input type="date" value={captureDateTo} min={captureDate || undefined} disabled={!captureDate} onChange={(event) => { setCaptureDateTo(event.target.value); setPage(1); }} className="mt-1 block min-h-11 rounded-xl border border-[#cedfdd] bg-white px-3 font-normal outline-none focus:border-[#64d4ad] disabled:bg-[#edf3f1]" /></label>
           <label className="sr-only" htmlFor="order-status">Filter by status</label>
@@ -498,6 +503,7 @@ export function OrderWorkspace({ actorEmail, initialStatus = 'open' }: { actorEm
                   onRepeat={(order) => void openNewOrder(order)}
                   onFindCustomer={(order) => { setQuery(`customer:${order.customerName}`); setStatus('all'); setCaptureDate(''); setCaptureDateTo(''); setPage(1); }}
                   onSetPriority={setOrderPriority}
+                  onSetAssignee={setOrderAssignee}
                 />
               ))}
             </div>
@@ -562,6 +568,7 @@ function OrderRow({
   onRepeat,
   onFindCustomer,
   onSetPriority,
+  onSetAssignee,
 }: {
   order: OrderSummary;
   actorRole: string;
@@ -578,6 +585,7 @@ function OrderRow({
   onRepeat: (order: OrderSummary) => void;
   onFindCustomer: (order: OrderSummary) => void;
   onSetPriority: (order: OrderSummary, priority: 'normal' | 'high' | 'urgent') => Promise<void>;
+  onSetAssignee: (order: OrderSummary, assignedToEmail?: string) => Promise<void>;
 }) {
   const [busy, setBusy] = useState(false);
   const [invoiceNumber, setInvoiceNumber] = useState(order.tallyInvoiceNumber || '');
@@ -602,6 +610,7 @@ function OrderRow({
           <strong className="text-[#092f36]">{order.orderNumber}</strong>
           <span className="rounded-full bg-[#edf3f1] px-2.5 py-1 text-[11px] font-extrabold text-[#46686c]">{orderStage(order.status)}</span>
           {order.priority && order.priority !== 'normal' ? <span className={`rounded-full px-2.5 py-1 text-[11px] font-extrabold ${order.priority === 'urgent' ? 'bg-[#fff0ef] text-[#9a3f37]' : 'bg-[#fff1d6] text-[#8a5a0a]'}`}>{order.priority === 'urgent' ? 'Urgent' : 'High priority'}</span> : null}
+          {order.assignedToEmail ? <span className="rounded-full bg-[#e8f4fa] px-2.5 py-1 text-[11px] font-extrabold text-[#315f75]">Assigned: {order.assignedToEmail}</span> : null}
           {deliveryReminder ? <span className={`rounded-full px-2.5 py-1 text-[11px] font-extrabold ${deliveryReminder === 'overdue' ? 'bg-[#fff0ef] text-[#9a3f37]' : deliveryReminder === 'today' ? 'bg-[#fff1d6] text-[#8a5a0a]' : 'bg-[#e8f4fa] text-[#315f75]'}`}>{deliveryReminder === 'overdue' ? 'Delivery overdue' : deliveryReminder === 'today' ? 'Delivery due today' : 'Delivery due soon'}</span> : null}
           {lineMatch.state === 'mismatch' ? <span className="rounded-full bg-[#fff0ef] px-2.5 py-1 text-[11px] font-extrabold text-[#8d3a34]">Billing mismatch</span> : null}
         </div>
@@ -633,6 +642,7 @@ function OrderRow({
       {cancelling ? <div className="mt-4 rounded-xl border border-[#efbbb6] bg-[#fff8f7] p-4"><label className="text-sm font-bold text-[#7d413c]">Why is this order being cancelled?<textarea value={cancelReason} onChange={(event) => setCancelReason(event.target.value)} rows={2} maxLength={500} className="mt-2 w-full rounded-xl border border-[#dfbbb7] bg-white p-3 font-normal text-[#173239] outline-none focus:border-[#d06a61]" placeholder="Cancellation reason is required" /></label><div className="mt-3 flex justify-end gap-2"><button type="button" onClick={() => { setCancelling(false); setCancelReason(''); }} className="min-h-10 rounded-xl px-4 font-bold text-[#557174]">Keep order</button><button type="button" disabled={busy || !cancelReason.trim()} onClick={async () => { setBusy(true); try { await onCancel(order, cancelReason); setCancelling(false); } finally { setBusy(false); } }} className="min-h-10 rounded-xl bg-[#a54c44] px-4 font-bold text-white disabled:opacity-50">{busy ? 'Cancelling…' : 'Confirm cancellation'}</button></div></div> : null}
       <div className="mt-3 flex flex-wrap gap-2"><button type="button" onClick={() => onFindCustomer(order)} className="min-h-10 rounded-xl border border-[#cedfdd] px-4 text-sm font-bold text-[#31585d] hover:bg-[#f1f6f4]">Customer orders</button>{canRepeat ? <button type="button" onClick={() => onRepeat(order)} className="min-h-10 rounded-xl border border-[#cedfdd] px-4 text-sm font-bold text-[#31585d] hover:bg-[#f1f6f4]">Repeat as new order</button> : null}</div>
       {!['delivered', 'cancelled'].includes(order.status) && ['administrator', 'sales', 'operations', 'management'].includes(actorRole) ? <PriorityControl order={order} onSave={onSetPriority} /> : null}
+      {!['delivered', 'cancelled'].includes(order.status) && ['administrator', 'operations', 'management'].includes(actorRole) ? <AssignmentControl order={order} onSave={onSetAssignee} /> : null}
       <OrderSummaryCopy order={order} />
       <details className="mt-4 rounded-xl bg-[#f6f8f7] px-4 py-3 text-sm">
         <summary className="cursor-pointer font-bold text-[#456367]">View order details</summary>
@@ -796,6 +806,12 @@ function OrderSummaryCopy({ order }: { order: OrderSummary }) {
 function PriorityControl({ order, onSave }: { order: OrderSummary; onSave: (order: OrderSummary, priority: 'normal' | 'high' | 'urgent') => Promise<void> }) {
   const [busy, setBusy] = useState(false);
   return <label className="mt-3 inline-flex items-center gap-2 text-xs font-bold text-[#587275]">Priority<select value={order.priority || 'normal'} disabled={busy} onChange={async (event) => { setBusy(true); try { await onSave(order, event.target.value as 'normal' | 'high' | 'urgent'); } finally { setBusy(false); } }} className="min-h-10 rounded-xl border border-[#cedfdd] bg-white px-3 text-sm font-normal text-[#173239]"><option value="normal">Normal</option><option value="high">High</option><option value="urgent">Urgent</option></select></label>;
+}
+
+function AssignmentControl({ order, onSave }: { order: OrderSummary; onSave: (order: OrderSummary, assignedToEmail?: string) => Promise<void> }) {
+  const [value, setValue] = useState(order.assignedToEmail || '');
+  const [busy, setBusy] = useState(false);
+  return <details className="mt-3 max-w-xl rounded-xl border border-[#dce7e5] bg-[#fbfcfb] px-3 py-2 text-xs"><summary className="cursor-pointer font-bold text-[#587275]">{order.assignedToEmail ? 'Change owner' : 'Assign owner'}</summary><div className="mt-2 flex flex-col gap-2 sm:flex-row"><label className="flex-1 font-bold text-[#587275]">Approved user email<input type="email" maxLength={254} value={value} onChange={(event) => setValue(event.target.value)} placeholder="name@company.com" className="mt-1 min-h-10 w-full rounded-lg border border-[#cedfdd] bg-white px-3 font-normal text-[#173239]" /></label><div className="flex items-end gap-2"><button type="button" disabled={busy || value.trim().toLocaleLowerCase('en-IN') === (order.assignedToEmail || '').toLocaleLowerCase('en-IN')} onClick={async () => { setBusy(true); try { await onSave(order, value.trim().toLocaleLowerCase('en-IN') || undefined); } finally { setBusy(false); } }} className="min-h-10 rounded-lg bg-[#092f36] px-4 font-bold text-white disabled:opacity-50">{busy ? 'Saving…' : 'Save'}</button>{order.assignedToEmail ? <button type="button" disabled={busy} onClick={async () => { setBusy(true); try { await onSave(order, undefined); setValue(''); } finally { setBusy(false); } }} className="min-h-10 rounded-lg px-3 font-bold text-[#9a4e47] disabled:opacity-50">Clear</button> : null}</div></div><p className="mt-2 text-[#718487]">Only active StockFlow users can be assigned.</p></details>;
 }
 
 function HydratedNewOrderPanel({ data, templateOrder, onClose, onCreated, onViewCustomer }: { data: OrderBootstrap; templateOrder: OrderSummary | null; onClose: () => void; onCreated: (number: string) => void; onViewCustomer: (customerName: string) => void }) {

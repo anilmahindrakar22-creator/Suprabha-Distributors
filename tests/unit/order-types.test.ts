@@ -31,6 +31,13 @@ describe('order command validation', () => {
     expect(validateOrderCommand({ ...command, payload: { ...command.payload, priority: 'critical' } })).toBeNull();
   });
 
+  it('validates versioned order assignments', () => {
+    const command = { action: 'set_order_assignee', payload: { idempotencyKey: '1234567890abcdef', orderId: 'order-id', expectedVersion: 2, assignedToEmail: 'ops@example.com' } };
+    expect(validateOrderCommand(command)).not.toBeNull();
+    expect(validateOrderCommand({ ...command, payload: { ...command.payload, assignedToEmail: 'not-an-email' } })).toBeNull();
+    expect(validateOrderCommand({ ...command, payload: { ...command.payload, assignedToEmail: undefined } })).not.toBeNull();
+  });
+
   it.each([
     null,
     {},
@@ -254,6 +261,12 @@ describe('order workflow and history', () => {
     const sameCustomer = { ...baseOrder, id: '2', customerName: 'City Hospital' };
     const productCollision = { ...baseOrder, id: '3', customerName: 'Other Lab', lines: [{ ...baseOrder.lines[0], itemName: 'City Hospital Control' }] };
     expect(filterOrders([sameCustomer, productCollision], 'customer: city hospital ', 'all')).toEqual([sameCustomer]);
+  });
+
+  it('finds only work assigned to the requested user', () => {
+    const mine = { ...baseOrder, id: '2', assignedToEmail: 'ops@example.com' };
+    const another = { ...baseOrder, id: '3', assignedToEmail: 'sales@example.com' };
+    expect(filterOrders([mine, another], 'assignee:OPS@example.com', 'open')).toEqual([mine]);
   });
 
   it('filters active high and urgent orders without surfacing closed work', () => {

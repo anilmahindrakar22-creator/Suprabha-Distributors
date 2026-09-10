@@ -24,6 +24,7 @@ export type OrderSummary = {
   customerPhone: string | null;
   status: string;
   priority?: 'normal' | 'high' | 'urgent';
+  assignedToEmail?: string | null;
   source: string;
   notes: string | null;
   version: number;
@@ -318,7 +319,7 @@ function csvCell(value: string | number | null | undefined) {
 }
 
 export function ordersCsv(orders: OrderSummary[], reconciliation?: { invoices?: TallyInvoice[]; fetchedAt?: string; now?: Date }) {
-  const headings = ['Order', 'Customer', 'Phone', 'Stage', 'Products', 'Quantity', 'Tally invoice', 'Invoice identity', 'Product and quantity check', 'Invoice differences', 'Expected delivery', 'Courier', 'Tracking', 'Last updated'];
+  const headings = ['Order', 'Customer', 'Phone', 'Stage', 'Assigned to', 'Products', 'Quantity', 'Tally invoice', 'Invoice identity', 'Product and quantity check', 'Invoice differences', 'Expected delivery', 'Courier', 'Tracking', 'Last updated'];
   const rows = orders.map((order) => {
     const identity = reconciliation ? tallyInvoiceReconciliation(order, reconciliation.invoices, reconciliation.now, reconciliation.fetchedAt) : '';
     const lines = reconciliation ? tallyInvoiceLineReconciliation(order, reconciliation.invoices, reconciliation.now, reconciliation.fetchedAt) : null;
@@ -327,6 +328,7 @@ export function ordersCsv(orders: OrderSummary[], reconciliation?: { invoices?: 
       order.customerName,
       order.customerPhone,
       orderStage(order.status),
+      order.assignedToEmail,
       order.lines.map((line) => `${line.itemName} (${line.quantity} ${line.baseUnit || ''})`.trim()).join('; '),
       order.totalQuantity,
       order.tallyInvoiceNumber,
@@ -345,12 +347,14 @@ export function ordersCsv(orders: OrderSummary[], reconciliation?: { invoices?: 
 export function filterOrders(orders: OrderSummary[], query: string, status: string) {
   const normalized = query.trim().toLocaleLowerCase('en-IN');
   const exactCustomer = normalized.startsWith('customer:') ? normalized.slice('customer:'.length).trim() : '';
+  const exactAssignee = normalized.startsWith('assignee:') ? normalized.slice('assignee:'.length).trim() : '';
   return orders.filter((order) => {
     const searchable = [
       order.orderNumber,
       order.customerName,
       order.customerPhone,
       order.tallyInvoiceNumber,
+      order.assignedToEmail,
       ...(order.lines || []).map((line) => line.itemName),
     ]
       .filter(Boolean)
@@ -374,7 +378,9 @@ export function filterOrders(orders: OrderSummary[], query: string, status: stri
       order.status === status;
     const matchesSearch = exactCustomer
       ? order.customerName.trim().toLocaleLowerCase('en-IN') === exactCustomer
-      : !normalized || searchable.includes(normalized);
+      : exactAssignee
+        ? order.assignedToEmail?.trim().toLocaleLowerCase('en-IN') === exactAssignee
+        : !normalized || searchable.includes(normalized);
     return matchesStatus && matchesSearch;
   });
 }
@@ -470,6 +476,10 @@ export type OrderCommand =
       payload: { idempotencyKey?: string; orderId: string; expectedVersion: number; priority: 'normal' | 'high' | 'urgent' };
     }
   | {
+      action: 'set_order_assignee';
+      payload: { idempotencyKey?: string; orderId: string; expectedVersion: number; assignedToEmail?: string };
+    }
+  | {
       action: 'record_billing_review';
       payload: { idempotencyKey?: string; orderId: string; expectedVersion: number; outcome: 'investigating' | 'accepted_difference' | 'tally_corrected'; note: string };
     };
@@ -527,7 +537,7 @@ export function validateOrderCommand(value: unknown): OrderCommand | null {
   if (!value || typeof value !== 'object') return null;
   const command = value as { action?: unknown; payload?: unknown };
   if (
-    !['create_order', 'transition_order', 'save_fulfilment', 'save_dispatch', 'confirm_delivery', 'edit_order', 'create_exception', 'resolve_exception', 'schedule_installation', 'complete_installation', 'set_order_priority', 'record_billing_review'].includes(
+    !['create_order', 'transition_order', 'save_fulfilment', 'save_dispatch', 'confirm_delivery', 'edit_order', 'create_exception', 'resolve_exception', 'schedule_installation', 'complete_installation', 'set_order_priority', 'set_order_assignee', 'record_billing_review'].includes(
       String(command.action),
     ) ||
     !command.payload ||
@@ -569,6 +579,9 @@ export function validateOrderCommand(value: unknown): OrderCommand | null {
     }
   } else if (command.action === 'set_order_priority') {
     if (!validMutationIdentity() || typeof payload.priority !== 'string' || !['normal', 'high', 'urgent'].includes(payload.priority)) return null;
+  } else if (command.action === 'set_order_assignee') {
+    if (!validMutationIdentity() || !boundedOptionalText('assignedToEmail', 254) || payload.assignedToEmail !== undefined && typeof payload.assignedToEmail !== 'string') return null;
+    if (typeof payload.assignedToEmail === 'string' && payload.assignedToEmail && !/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(payload.assignedToEmail)) return null;
   } else if (command.action === 'transition_order') {
     const transitionStatuses = ['awaiting_confirmation', 'awaiting_approval', 'confirmed', 'packed', 'awaiting_tally_billing', 'billed_in_tally', 'ready_for_dispatch', 'dispatched', 'delivered', 'cancelled'];
     const invoiceReferences = typeof payload.tallyInvoiceNumber === 'string' ? payload.tallyInvoiceNumber.split(',').map((item) => item.trim()).filter(Boolean) : [];
