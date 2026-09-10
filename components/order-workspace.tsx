@@ -9,7 +9,7 @@ import type {
   OrderEvent,
   OrderSummary,
 } from '@/lib/order-types';
-import { billingHandoffText, canRoleTransitionOrder, orderAttentionReasons, orderBackOrderedQuantity, orderDeliveryReminder, orderOperationsText, orderStage, repeatOrderTemplate, searchCatalog, searchCustomers, tallyInvoiceLineReconciliation, tallyInvoiceReconciliationDetail } from '@/lib/order-types';
+import { billingHandoffText, canRoleTransitionOrder, orderAttentionReasons, orderBackOrderedQuantity, orderDeliveryReminder, orderNextOwnerLabel, orderOperationsText, orderStage, repeatOrderTemplate, searchCatalog, searchCustomers, tallyInvoiceLineReconciliation, tallyInvoiceReconciliationDetail } from '@/lib/order-types';
 import { orderListUrl } from '@/lib/order-list-query';
 import { offlineDraftRecoveryError, readOfflineDraftConsent, readOfflineOrderDraft, removeOfflineOrderDraft, restoreOfflineDraftLines, updateOfflineDraftState, writeOfflineDraftConsent, writeOfflineOrderDraft, type OfflineDraftState } from '@/lib/offline-order-drafts';
 import { readCatalogCache, removeCatalogCache, writeCatalogCache } from '@/lib/catalog-cache';
@@ -599,6 +599,7 @@ function OrderRow({
   const [cancelReason, setCancelReason] = useState('');
   const action = nextStatus[order.status];
   const canAdvance = Boolean(action && canRoleTransitionOrder(actorRole, order.status, action.status));
+  const nextOwner = orderNextOwnerLabel(order.status);
   const total = Number(order.totalQuantity || 0);
   const requiresInvoice = order.status === 'awaiting_tally_billing';
   const canCancel = actorRole === 'administrator' && !['cancelled', 'delivered'].includes(order.status);
@@ -644,7 +645,7 @@ function OrderRow({
         </button>
         {canCancel ? <button type="button" disabled={busy} onClick={() => setCancelling(true)} className="min-h-10 rounded-xl px-4 text-sm font-bold text-[#9a4e47] hover:bg-[#fff0ef] disabled:opacity-50">Cancel order</button> : null}
         </div>
-      ) : canCancel ? <button type="button" disabled={busy} onClick={() => setCancelling(true)} className="min-h-10 rounded-xl px-4 text-sm font-bold text-[#9a4e47] hover:bg-[#fff0ef] disabled:opacity-50">Cancel order</button> : <span className="text-xs font-bold text-[#7d8f91]">No action due</span>}
+      ) : canCancel ? <button type="button" disabled={busy} onClick={() => setCancelling(true)} className="min-h-10 rounded-xl px-4 text-sm font-bold text-[#9a4e47] hover:bg-[#fff0ef] disabled:opacity-50">Cancel order</button> : <span className="text-xs font-bold text-[#7d8f91]">{action && nextOwner ? `Waiting for ${nextOwner}` : 'No action due'}</span>}
       </div>
       {cancelling ? <div className="mt-4 rounded-xl border border-[#efbbb6] bg-[#fff8f7] p-4"><label className="text-sm font-bold text-[#7d413c]">Why is this order being cancelled?<textarea value={cancelReason} onChange={(event) => setCancelReason(event.target.value)} rows={2} maxLength={500} className="mt-2 w-full rounded-xl border border-[#dfbbb7] bg-white p-3 font-normal text-[#173239] outline-none focus:border-[#d06a61]" placeholder="Cancellation reason is required" /></label><div className="mt-3 flex justify-end gap-2"><button type="button" onClick={() => { setCancelling(false); setCancelReason(''); }} className="min-h-10 rounded-xl px-4 font-bold text-[#557174]">Keep order</button><button type="button" disabled={busy || !cancelReason.trim()} onClick={async () => { setBusy(true); try { await onCancel(order, cancelReason); setCancelling(false); } finally { setBusy(false); } }} className="min-h-10 rounded-xl bg-[#a54c44] px-4 font-bold text-white disabled:opacity-50">{busy ? 'Cancelling…' : 'Confirm cancellation'}</button></div></div> : null}
       <div className="mt-3 flex flex-wrap gap-2"><button type="button" onClick={() => onFindCustomer(order)} className="min-h-10 rounded-xl border border-[#cedfdd] px-4 text-sm font-bold text-[#31585d] hover:bg-[#f1f6f4]">Customer orders</button>{canRepeat ? <button type="button" onClick={() => onRepeat(order)} className="min-h-10 rounded-xl border border-[#cedfdd] px-4 text-sm font-bold text-[#31585d] hover:bg-[#f1f6f4]">Repeat as new order</button> : null}</div>

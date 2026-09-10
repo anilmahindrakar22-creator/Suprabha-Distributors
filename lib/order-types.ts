@@ -283,6 +283,15 @@ export function canRoleTransitionOrder(role: string, fromStatus: string, toStatu
   return visibleTransitionRoles[`${fromStatus}->${toStatus}`]?.includes(role) ?? false;
 }
 
+export function orderNextOwnerLabel(status: string) {
+  if (status === 'phone_order_received') return 'Sales or operations';
+  if (['awaiting_confirmation', 'awaiting_approval'].includes(status)) return 'Operations or management';
+  if (['confirmed', 'partially_reserved', 'fully_reserved', 'ready_for_picking', 'picked'].includes(status)) return 'Warehouse or operations';
+  if (['packed', 'awaiting_tally_billing'].includes(status)) return 'Accounts';
+  if (status === 'billed_in_tally') return 'Operations';
+  return null;
+}
+
 export function billingHandoffText(order: OrderSummary) {
   const lines = order.lines.map((line) => {
     const unit = line.baseUnit ? ` ${line.baseUnit}` : '';

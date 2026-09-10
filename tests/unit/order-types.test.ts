@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { billingHandoffText, canRoleTransitionOrder, currentTallyFinancialYear, filterOrders, isOrderBackOrdered, isOrderDeliveryDue, isOrderDeliveryOverdue, orderAttentionReasons, orderBackOrderedQuantity, orderDeliveryReminder, orderMatchesCaptureDate, orderMatchesCaptureDateRange, orderNeedsBillingAttention, orderOperationsText, ordersCsv, orderStage, pageItems, repeatOrderTemplate, searchCatalog, searchCustomers, tallyInvoiceLineReconciliation, tallyInvoiceReconciliation, tallyInvoiceReconciliationDetail, validateOrderCommand } from '../../lib/order-types';
+import { billingHandoffText, canRoleTransitionOrder, currentTallyFinancialYear, filterOrders, isOrderBackOrdered, isOrderDeliveryDue, isOrderDeliveryOverdue, orderAttentionReasons, orderBackOrderedQuantity, orderDeliveryReminder, orderMatchesCaptureDate, orderMatchesCaptureDateRange, orderNeedsBillingAttention, orderNextOwnerLabel, orderOperationsText, ordersCsv, orderStage, pageItems, repeatOrderTemplate, searchCatalog, searchCustomers, tallyInvoiceLineReconciliation, tallyInvoiceReconciliation, tallyInvoiceReconciliationDetail, validateOrderCommand } from '../../lib/order-types';
 
 describe('order command validation', () => {
   it('accepts a complete phone order', () => {
@@ -190,6 +190,14 @@ describe('order workflow and history', () => {
     expect(canRoleTransitionOrder('operations', 'billed_in_tally', 'ready_for_dispatch')).toBe(true);
     expect(canRoleTransitionOrder('viewer', 'billed_in_tally', 'ready_for_dispatch')).toBe(false);
     expect(canRoleTransitionOrder('operations', 'invented', 'packed')).toBe(false);
+  });
+
+  it('identifies the team responsible for the next visible workflow step', () => {
+    expect(orderNextOwnerLabel('phone_order_received')).toBe('Sales or operations');
+    expect(orderNextOwnerLabel('confirmed')).toBe('Warehouse or operations');
+    expect(orderNextOwnerLabel('awaiting_tally_billing')).toBe('Accounts');
+    expect(orderNextOwnerLabel('billed_in_tally')).toBe('Operations');
+    expect(orderNextOwnerLabel('delivered')).toBeNull();
   });
   const baseOrder = {
     id: '1', orderNumber: 'SF-001', customerName: 'City Hospital', customerPhone: '9876543210',
