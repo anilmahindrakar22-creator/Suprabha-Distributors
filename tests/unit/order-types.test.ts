@@ -268,7 +268,9 @@ describe('order workflow and history', () => {
   it('finds only work assigned to the requested user', () => {
     const mine = { ...baseOrder, id: '2', assignedToEmail: 'ops@example.com' };
     const another = { ...baseOrder, id: '3', assignedToEmail: 'sales@example.com' };
-    expect(filterOrders([mine, another], 'assignee:OPS@example.com', 'open')).toEqual([mine]);
+    const unassigned = { ...baseOrder, id: '4', assignedToEmail: null };
+    expect(filterOrders([mine, another, unassigned], 'assignee:OPS@example.com', 'open')).toEqual([mine]);
+    expect(filterOrders([mine, another, unassigned], 'assignee:unassigned', 'open')).toEqual([unassigned]);
   });
 
   it('filters active high and urgent orders without surfacing closed work', () => {

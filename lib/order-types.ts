@@ -379,7 +379,9 @@ export function filterOrders(orders: OrderSummary[], query: string, status: stri
     const matchesSearch = exactCustomer
       ? order.customerName.trim().toLocaleLowerCase('en-IN') === exactCustomer
       : exactAssignee
-        ? order.assignedToEmail?.trim().toLocaleLowerCase('en-IN') === exactAssignee
+        ? exactAssignee === 'unassigned'
+          ? !order.assignedToEmail
+          : order.assignedToEmail?.trim().toLocaleLowerCase('en-IN') === exactAssignee
         : !normalized || searchable.includes(normalized);
     return matchesStatus && matchesSearch;
   });
