@@ -405,10 +405,11 @@ export function OrderWorkspace({ actorEmail, initialStatus = 'open' }: { actorEm
           </div>
         </header>
 
-        <section aria-label="Order summary" className="mt-6 grid gap-3 sm:grid-cols-3">
+        <section aria-label="Order summary" className="mt-6 grid gap-3 sm:grid-cols-2 lg:grid-cols-4">
           <SummaryCard label="Phone orders today" value={operations.phoneOrdersToday} />
           <SummaryCard label="Awaiting confirmation" value={operations.awaitingConfirmation} tone="watch" />
           <SummaryCard label="Awaiting Tally billing" value={operations.awaitingTallyBilling} />
+          <SummaryCard label="Unassigned open orders" value={operations.unassignedOpen} tone="watch" />
         </section>
 
         <div className="mt-5 flex flex-col gap-3 rounded-2xl border border-[#dce7e5] bg-white p-3 sm:flex-row sm:items-center">
