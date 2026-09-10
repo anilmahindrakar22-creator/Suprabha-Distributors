@@ -2,11 +2,9 @@ do $migration$
 declare f text; updated text;
 begin
   select pg_get_functiondef('public.stockflow_user_gateway(text,text,text,jsonb)'::regprocedure) into f;
-  updated := replace(f,
-    $old$  if v_actor_role <> 'administrator' then
-    raise exception 'Administrator access is required' using errcode = '42501';
-  end if;$old$,
-    $new$  if p_action = 'list_assignable_users' then
+  updated := regexp_replace(f,
+    $old$if v_actor_role <> 'administrator' then[[:space:]]+raise exception 'Administrator access is required' using errcode = '42501';[[:space:]]+end if;$old$,
+    $new$if p_action = 'list_assignable_users' then
     if v_actor_role not in ('administrator','operations','management') then
       raise exception 'Role cannot assign orders' using errcode = '42501';
     end if;
