@@ -617,6 +617,7 @@ function OrderRow({
   const [invoiceNumber, setInvoiceNumber] = useState(order.tallyInvoiceNumber || '');
   const [cancelling, setCancelling] = useState(false);
   const [cancelReason, setCancelReason] = useState('');
+  const [detailsLoaded, setDetailsLoaded] = useState(false);
   const action = nextStatus[order.status];
   const canAdvance = Boolean(action && canRoleTransitionOrder(actorRole, order.status, action.status));
   const nextOwner = orderNextOwnerLabel(order.status);
@@ -674,8 +675,9 @@ function OrderRow({
       {!order.assignedToEmail && !['delivered', 'cancelled'].includes(order.status) && ['administrator', 'operations', 'management'].includes(actorRole) ? <button type="button" disabled={busy} onClick={async () => { setBusy(true); try { await onSetAssignee(order, actorEmail); } finally { setBusy(false); } }} className="ml-3 min-h-10 rounded-xl border border-[#9ddbc5] bg-[#edf9f4] px-4 text-xs font-bold text-[#277b69] disabled:opacity-50">{busy ? 'Taking…' : 'Take this order'}</button> : null}
       {!['delivered', 'cancelled'].includes(order.status) && ['administrator', 'operations', 'management'].includes(actorRole) ? <AssignmentControl order={order} onSave={onSetAssignee} /> : null}
       <OrderSummaryCopy order={order} />
-      <details className="mt-4 rounded-xl bg-[#f6f8f7] px-4 py-3 text-sm">
+      <details onToggle={(event) => { if (event.currentTarget.open) setDetailsLoaded(true); }} className="mt-4 rounded-xl bg-[#f6f8f7] px-4 py-3 text-sm">
         <summary className="cursor-pointer font-bold text-[#456367]">View order details</summary>
+        {detailsLoaded ? <>
         <div className="mt-3 grid gap-4 border-t border-[#dfe9e7] pt-3 sm:grid-cols-2">
           <div>
             <p className="text-xs font-bold uppercase tracking-wide text-[#708386]">Products</p>
@@ -701,6 +703,7 @@ function OrderRow({
         {order.status === 'awaiting_tally_billing' ? <BillingHandoff order={order} /> : null}
         {['administrator', 'sales', 'operations', 'warehouse', 'accounts', 'management'].includes(actorRole) ? <OrderNotePanel order={order} onSave={onAddNote} /> : null}
         <OrderActivityLog key={`${order.id}-${order.version}`} orderId={order.id} initialEvents={order.events || []} />
+        </> : null}
       </details>
     </article>
   );

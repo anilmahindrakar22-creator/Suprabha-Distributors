@@ -18,6 +18,17 @@ The run found one defect: saving fulfilment with a blank optional promised-deliv
 
 These are single-run baselines, not percentile service-level claims. The catalogue and customer payloads are the first optimization candidates; order data itself is currently small.
 
+## Local performance batch after baseline
+
+- Tally catalogue and customer masters no longer download merely because Orders was visited; together this avoids approximately 463 KB of raw response data in an Orders-only session.
+- A normally acknowledged new order is inserted into the first open-order page without a second list request. Filtered views and uncertain recovery responses retain the authoritative refresh fallback.
+- Exact customer history is now filtered and paginated in the database rather than assembled from the complete order archive.
+- Deferred Service and administrator-only Users sections now load on demand. The measured StockFlow client chunk fell from 113,978 bytes to 102,518 bytes, a 10.1% raw reduction; separate chunks are 9,111 bytes and 3,607 bytes respectively.
+- Collapsed order details no longer mount every fulfilment, delivery, exception, installation, note and activity control during the initial inbox render. Once opened, a row retains its mounted details for that session.
+- Successful order mutations now emit the same response-size and server-timing headers as list requests, allowing the post-release pilot to separate network/server delay from browser rendering.
+
+These figures are production-build raw asset sizes before transfer compression. Live latency must be re-measured after the application and exact-customer database migration are released together.
+
 ## Five-working-day device checklist
 
 Run this once on each staff device and each approved account. Record device, account, date and result without entering passwords or customer-sensitive data in this file.

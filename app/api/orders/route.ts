@@ -167,6 +167,7 @@ export async function GET(request: Request) {
 }
 
 export async function POST(request: Request) {
+  const startedAt = performance.now();
   try {
     const user = await authorizedUser();
     const command = validateOrderCommand(await readBoundedJsonRequest(request));
@@ -177,7 +178,7 @@ export async function POST(request: Request) {
       command.action,
       command.payload,
     );
-    return Response.json(result, { headers: privateHeaders });
+    return measuredJsonResponse(result, startedAt);
   } catch (error) {
     if (error instanceof BoundedJsonRequestError) return failure(error.message, error.status);
     if (error instanceof OrderGatewayError) {

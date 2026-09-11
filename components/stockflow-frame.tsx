@@ -1,14 +1,19 @@
 'use client';
 
-import { useEffect, useState } from 'react';
+import { lazy, Suspense, useEffect, useState } from 'react';
 import Image from 'next/image';
 import { OrderWorkspace } from './order-workspace';
-import { ServiceWorkspace } from './service-workspace';
-import { UserManagement } from './user-management';
 import { readOrderDashboardMessage } from '@/lib/stockflow-navigation';
 import { clearOrderBootstrapCache, loadOrderBootstrap } from '@/lib/order-bootstrap-cache';
 import { prepareDeviceForAccount } from '@/lib/device-account-privacy';
 import { clearOrderCaptureMasterCache } from '@/lib/order-capture-masters';
+
+const ServiceWorkspace = lazy(() => import('./service-workspace').then((module) => ({ default: module.ServiceWorkspace })));
+const UserManagement = lazy(() => import('./user-management').then((module) => ({ default: module.UserManagement })));
+
+function SectionLoading() {
+  return <div className="grid h-full place-items-center text-sm font-semibold text-[#61777a]">Opening section…</div>;
+}
 
 export function StockFlowFrame({ actorEmail, actorRole }: { actorEmail: string; actorRole: string }) {
   const [surface, setSurface] = useState<'stock' | 'orders' | 'service' | 'users'>('stock');
@@ -90,8 +95,8 @@ export function StockFlowFrame({ actorEmail, actorRole }: { actorEmail: string; 
         ) : surface === 'orders' ? (
           <OrderWorkspace key={orderFilter} actorEmail={actorEmail} initialStatus={orderFilter} />
         ) : surface === 'service' ? (
-          <ServiceWorkspace />
-        ) : <UserManagement />}
+          <Suspense fallback={<SectionLoading />}><ServiceWorkspace /></Suspense>
+        ) : <Suspense fallback={<SectionLoading />}><UserManagement /></Suspense>}
       </section>
     </main>
   );
