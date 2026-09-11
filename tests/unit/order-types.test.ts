@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { billingHandoffText, canRoleTransitionOrder, currentTallyFinancialYear, customerPhoneHref, filterOrders, isOrderBackOrdered, isOrderDeliveryDue, isOrderDeliveryOverdue, orderAttentionReasons, orderBackOrderedQuantity, orderDeliveryReminder, orderEventDescription, orderMatchesCaptureDate, orderMatchesCaptureDateRange, orderNeedsBillingAttention, orderNextOwnerLabel, orderOperationsText, ordersCsv, orderStage, pageItems, repeatOrderTemplate, searchCatalog, searchCustomers, tallyInvoiceLineReconciliation, tallyInvoiceReconciliation, tallyInvoiceReconciliationDetail, validateOrderCommand } from '../../lib/order-types';
+import { billingHandoffText, canRoleTransitionOrder, currentTallyFinancialYear, customerDeliveryAddresses, customerPhoneHref, filterOrders, isOrderBackOrdered, isOrderDeliveryDue, isOrderDeliveryOverdue, orderAttentionReasons, orderBackOrderedQuantity, orderDeliveryReminder, orderEventDescription, orderMatchesCaptureDate, orderMatchesCaptureDateRange, orderNeedsBillingAttention, orderNextOwnerLabel, orderOperationsText, ordersCsv, orderStage, pageItems, repeatOrderTemplate, searchCatalog, searchCustomers, tallyInvoiceLineReconciliation, tallyInvoiceReconciliation, tallyInvoiceReconciliationDetail, validateOrderCommand } from '../../lib/order-types';
 
 describe('order command validation', () => {
   it('accepts a complete phone order', () => {
@@ -245,6 +245,18 @@ describe('order workflow and history', () => {
       source: 'phone',
       lines: [{ tallyKey: 'ITEM-1', quantity: 2 }],
     });
+  });
+
+  it('offers recent unique delivery addresses without changing historical orders', () => {
+    const orders = [
+      { ...baseOrder, id: 'newest', deliveryAddress: '  Main Road, City Lab  ', createdAt: '2026-09-10T10:00:00Z' },
+      { ...baseOrder, id: 'duplicate', deliveryAddress: 'main   road, city lab', createdAt: '2026-09-09T10:00:00Z' },
+      { ...baseOrder, id: 'older', deliveryAddress: 'Branch Lab, Market Road', createdAt: '2026-09-08T10:00:00Z' },
+      { ...baseOrder, id: 'blank', deliveryAddress: '   ', createdAt: '2026-09-11T10:00:00Z' },
+    ];
+
+    expect(customerDeliveryAddresses(orders)).toEqual(['Main Road, City Lab', 'Branch Lab, Market Road']);
+    expect(customerDeliveryAddresses(orders, 1)).toEqual(['Main Road, City Lab']);
   });
 
   it('presents detailed statuses as six simple operational stages', () => {

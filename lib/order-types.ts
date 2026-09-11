@@ -611,6 +611,21 @@ export function repeatOrderTemplate(order: OrderSummary) {
   };
 }
 
+export function customerDeliveryAddresses(orders: OrderSummary[], limit = 3) {
+  const seen = new Set<string>();
+  return [...orders]
+    .sort((left, right) => Date.parse(right.createdAt) - Date.parse(left.createdAt))
+    .flatMap((order) => {
+      const address = order.deliveryAddress?.trim();
+      if (!address) return [];
+      const key = address.replace(/\s+/g, ' ').toLocaleLowerCase('en-IN');
+      if (seen.has(key)) return [];
+      seen.add(key);
+      return [address.replace(/\s+/g, ' ')];
+    })
+    .slice(0, Math.max(0, limit));
+}
+
 function isIsoInstant(value: unknown) {
   return typeof value === 'string' && /^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}(?:\.\d{1,3})?(?:Z|[+-]\d{2}:\d{2})$/.test(value) && Number.isFinite(Date.parse(value));
 }
