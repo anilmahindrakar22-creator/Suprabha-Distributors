@@ -1,7 +1,7 @@
 import { getChatGPTUser } from '@/app/chatgpt-auth';
 import { callOrderGateway, OrderGatewayError } from '@/lib/order-gateway';
 import type { CatalogItem, CustomerDirectoryEntry, DeliveryException, EquipmentInstallation, OrderBootstrap, OrderEvent } from '@/lib/order-types';
-import { filterOrders, isOrderDeliveryOverdue, orderMatchesCaptureDateRange, orderNeedsBillingAttention, ordersCsv, validateOrderCommand } from '@/lib/order-types';
+import { isOrderDeliveryOverdue, orderNeedsBillingAttention, ordersCsv, validateOrderCommand } from '@/lib/order-types';
 import { measuredJsonResponse } from '@/lib/measured-json-response';
 import { matchingOrderList, parseOrderListQuery, queryBillingAttentionList, queryOrderList } from '@/lib/order-list-query';
 import { BoundedJsonRequestError, readBoundedJsonRequest } from '@/lib/bounded-json-request';
@@ -18,33 +18,20 @@ async function authorizedUser() {
   return user;
 }
 
-const invoicedStatuses = ['billed_in_tally', 'ready_for_dispatch', 'dispatched', 'delivered', 'cancelled'];
-
 async function billingAttentionOrders(userEmail: string, query: string, captureDate: string, captureDateTo = '') {
-  async function loadStatus(status: string) {
-    const gatewayDate = captureDateTo ? '' : captureDate;
-    const gatewayQuery = query.toLocaleLowerCase('en-IN').startsWith('customer:') ? '' : query;
-    const first = await callOrderGateway<OrderBootstrap>(userEmail, 'list_orders', { page: 1, pageSize: 200, query: gatewayQuery, status, date: gatewayDate });
-    const orders = [...first.orders];
-    for (let page = 2; page <= (first.pagination?.pageCount || 1); page += 1) {
-      const next = await callOrderGateway<OrderBootstrap>(userEmail, 'list_orders', { page, pageSize: 200, query: gatewayQuery, status, date: gatewayDate });
-      orders.push(...next.orders);
-    }
-    return { first, orders };
+  const payload = { page: 1, pageSize: 200, query, status: 'billing_candidates', date: captureDate, dateTo: captureDateTo };
+  const first = await callOrderGateway<OrderBootstrap>(userEmail, 'list_orders', payload);
+  const pages = [first];
+  for (let page = 2; page <= (first.pagination?.pageCount || 1); page += 1) {
+    pages.push(await callOrderGateway<OrderBootstrap>(userEmail, 'list_orders', { ...payload, page }));
   }
-
-  const [groups, invoiceSnapshot] = await Promise.all([
-    Promise.all(invoicedStatuses.map(loadStatus)),
-    callOrderGateway<OrderBootstrap>(userEmail, 'bootstrap'),
-  ]);
-  const template = groups[0].first;
-  const orders = groups.flatMap((group) => group.orders)
-    .filter((order) => filterOrders([order], query, 'all').length > 0)
-    .filter((order) => orderMatchesCaptureDateRange(order, captureDate, captureDateTo))
-    .sort((left, right) => Date.parse(right.createdAt) - Date.parse(left.createdAt));
-  const invoices = invoiceSnapshot.snapshot.tallyInvoices || [];
+  const orders = pages.flatMap((page) => page.orders);
+  const invoices = [...new Map(pages.flatMap((page) => page.snapshot.tallyInvoices || []).map((invoice) => [
+    `${invoice.masterId || ''}|${invoice.voucherNumber}|${invoice.party}|${invoice.date}`,
+    invoice,
+  ])).values()];
   return {
-    template,
+    template: first,
     invoices,
     orders,
   };
