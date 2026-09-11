@@ -43,6 +43,8 @@ These are single-run baselines, not percentile service-level claims. The catalog
 
 These figures are production-build raw asset sizes before transfer compression. Live latency must be re-measured after the application and exact-customer database migration are released together.
 
+The pending order-performance database changes are deliberately ordered: consolidate billing candidates, optimize row-scope evaluation, consolidate page-line projection, then bound Tally invoice payloads. Apply them in timestamp order; every patch aborts if the expected secured gateway shape is absent and restores the service-only execution grant.
+
 ## Five-working-day device checklist
 
 Run this once on each staff device and each approved account. Record device, account, date and result without entering passwords or customer-sensitive data in this file.
