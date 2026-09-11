@@ -330,6 +330,13 @@ describe('order workflow and history', () => {
     expect(filterOrders([noted], 'evening delivery', 'all')).toEqual([]);
   });
 
+  it('searches operational fulfilment and delivery details', () => {
+    const operational = { ...baseOrder, source: 'walk_in', priority: 'urgent' as const, notes: 'Call loading bay', deliveryAddress: 'Market Road', courierName: 'Safe Express', trackingNumber: 'LR-204', vehicleNumber: 'KA01AB1234', receivedBy: 'Lab manager', podReference: 'POD-42' };
+    for (const query of ['walk in', 'urgent', 'loading bay', 'market road', 'safe express', 'lr-204', 'ka01ab1234', 'lab manager', 'pod-42']) {
+      expect(filterOrders([operational], query, 'all')).toEqual([operational]);
+    }
+  });
+
   it('filters active high and urgent orders without surfacing closed work', () => {
     const high = { ...baseOrder, id: '2', priority: 'high' as const };
     const urgent = { ...baseOrder, id: '3', priority: 'urgent' as const };
