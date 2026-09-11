@@ -871,6 +871,7 @@ function HydratedNewOrderPanel({ data, templateOrder, onClose, onCreated, onView
   const [customerHistory, setCustomerHistory] = useState<{ orders: OrderSummary[]; total: number } | null>(null);
   const [customerHistoryState, setCustomerHistoryState] = useState<'idle' | 'loading' | 'error'>('idle');
   const [notes, setNotes] = useState(initialPayload?.notes || '');
+  const [source, setSource] = useState<'phone' | 'email' | 'whatsapp' | 'walk_in'>(initialPayload?.source || 'phone');
   const [priority, setPriority] = useState<'normal' | 'high' | 'urgent'>(initialPayload?.priority || 'normal');
   const [expectedDeliveryDate, setExpectedDeliveryDate] = useState(initialPayload?.expectedDeliveryDate || '');
   const [productQuery, setProductQuery] = useState('');
@@ -915,12 +916,12 @@ function HydratedNewOrderPanel({ data, templateOrder, onClose, onCreated, onView
         actorEmail: data.actor.email,
         state: draftState,
         updatedAt: new Date().toISOString(),
-        command: { action: 'create_order', payload: { idempotencyKey, customerId: selectedCustomerId, customerName: customerName.trim(), customerPhone: customerPhone.trim(), customerCity: customerCity.trim(), deliveryAddress: deliveryAddress.trim(), source: 'phone', priority, expectedDeliveryDate: expectedDeliveryDate || undefined, notes: notes.trim(), lines: lines.map((line) => ({ tallyKey: line.tallyKey, quantity: line.quantity })) } },
+        command: { action: 'create_order', payload: { idempotencyKey, customerId: selectedCustomerId, customerName: customerName.trim(), customerPhone: customerPhone.trim(), customerCity: customerCity.trim(), deliveryAddress: deliveryAddress.trim(), source, priority, expectedDeliveryDate: expectedDeliveryDate || undefined, notes: notes.trim(), lines: lines.map((line) => ({ tallyKey: line.tallyKey, quantity: line.quantity })) } },
       });
       if (!saved) setError('This browser could not save the draft. Free device storage or turn off device saving.');
     }, 400);
     return () => window.clearTimeout(timer);
-  }, [customerCity, customerName, customerPhone, data.actor.email, deliveryAddress, draftState, expectedDeliveryDate, idempotencyKey, lines, notes, priority, saveOnDevice, selectedCustomerId]);
+  }, [customerCity, customerName, customerPhone, data.actor.email, deliveryAddress, draftState, expectedDeliveryDate, idempotencyKey, lines, notes, priority, saveOnDevice, selectedCustomerId, source]);
 
   useEffect(() => {
     let active = true;
@@ -1020,7 +1021,7 @@ function HydratedNewOrderPanel({ data, templateOrder, onClose, onCreated, onView
           customerPhone: customerPhone.trim(),
           customerCity: customerCity.trim(),
           deliveryAddress: deliveryAddress.trim(),
-          source: 'phone',
+          source,
           priority,
           expectedDeliveryDate: expectedDeliveryDate || undefined,
           notes: notes.trim(),
@@ -1134,7 +1135,8 @@ function HydratedNewOrderPanel({ data, templateOrder, onClose, onCreated, onView
               <label className="sr-only" htmlFor="order-notes">Order notes</label>
               <textarea id="order-notes" value={notes} onChange={(event) => setNotes(event.target.value)} maxLength={2000} rows={3} className="mt-3 w-full rounded-xl border border-[#cedfdd] p-3 font-normal outline-none focus:border-[#64d4ad]" placeholder="Delivery instructions, contact person, or urgency" />
             </details>
-            <div className="grid gap-3 sm:grid-cols-2">
+            <div className="grid gap-3 sm:grid-cols-3">
+              <label className="rounded-2xl border border-[#dce7e5] bg-white p-4 text-sm font-bold text-[#456367]">Received via<select value={source} onChange={(event) => setSource(event.target.value as 'phone' | 'email' | 'whatsapp' | 'walk_in')} className="mt-2 min-h-11 w-full rounded-xl border border-[#cedfdd] bg-white px-3 font-normal text-[#173239]"><option value="phone">Phone</option><option value="whatsapp">WhatsApp</option><option value="email">Email</option><option value="walk_in">Walk-in</option></select></label>
               <label className="rounded-2xl border border-[#dce7e5] bg-white p-4 text-sm font-bold text-[#456367]">Order priority<select value={priority} onChange={(event) => setPriority(event.target.value as 'normal' | 'high' | 'urgent')} className="mt-2 min-h-11 w-full rounded-xl border border-[#cedfdd] bg-white px-3 font-normal text-[#173239]"><option value="normal">Normal</option><option value="high">High</option><option value="urgent">Urgent</option></select></label>
               <label className="rounded-2xl border border-[#dce7e5] bg-white p-4 text-sm font-bold text-[#456367]">Promised delivery <span className="font-normal text-[#718487]">(optional)</span><input type="date" value={expectedDeliveryDate} onChange={(event) => setExpectedDeliveryDate(event.target.value)} className="mt-2 min-h-11 w-full rounded-xl border border-[#cedfdd] bg-white px-3 font-normal text-[#173239]" /></label>
             </div>

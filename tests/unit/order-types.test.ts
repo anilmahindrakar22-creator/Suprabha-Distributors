@@ -17,6 +17,10 @@ describe('order command validation', () => {
     ).not.toBeNull();
   });
 
+  it.each(['phone', 'whatsapp', 'email', 'walk_in'] as const)('accepts %s as an order source', (source) => {
+    expect(validateOrderCommand({ action: 'create_order', payload: { idempotencyKey: '1234567890abcdef', customerName: 'City Lab', source, lines: [{ tallyKey: 'ITEM-1', quantity: 1 }] } })).not.toBeNull();
+  });
+
   it('bounds order capture text, sources, identifiers and quantities', () => {
     const base = { action: 'create_order', payload: { idempotencyKey: '1234567890abcdef', customerName: 'City Lab', source: 'phone', lines: [{ tallyKey: 'ITEM-1', quantity: 1 }] } };
     expect(validateOrderCommand({ ...base, payload: { ...base.payload, source: 'unknown' } })).toBeNull();
