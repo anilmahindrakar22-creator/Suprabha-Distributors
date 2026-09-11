@@ -39,6 +39,7 @@ These are single-run baselines, not percentile service-level claims. The catalog
 - Paginated order counts and rows now evaluate the already-loaded creator field against the authoritative role-scope table. Creator-only access remains server-enforced, without a second order-table lookup for every candidate row.
 - Each visible order card now obtains its line count, ordered quantity, compatibility quantity and line details from one database aggregate after pagination, replacing four scans of the same order lines.
 - The large Orders workspace is now a separate browser bundle. Stock opens without parsing it; idle time and the first hover, touch or keyboard focus preload both the Orders code and its data before the user opens the section.
+- Order pages now receive only Tally invoices referenced by their visible orders, after customer-ledger matching. Numeric entries still expand solely to the current `SD/YY-YY/0XXX` financial year, preserving ambiguity and line-quantity verification while excluding unrelated customer history.
 
 These figures are production-build raw asset sizes before transfer compression. Live latency must be re-measured after the application and exact-customer database migration are released together.
 
