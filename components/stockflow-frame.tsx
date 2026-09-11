@@ -2,14 +2,18 @@
 
 import { lazy, Suspense, useEffect, useState } from 'react';
 import Image from 'next/image';
-import { OrderWorkspace } from './order-workspace';
 import { readOrderDashboardMessage } from '@/lib/stockflow-navigation';
-import { clearOrderBootstrapCache, loadOrderBootstrap } from '@/lib/order-bootstrap-cache';
 import { prepareDeviceForAccount } from '@/lib/device-account-privacy';
-import { clearOrderCaptureMasterCache } from '@/lib/order-capture-masters';
 
+const loadOrderWorkspace = () => import('./order-workspace').then((module) => ({ default: module.OrderWorkspace }));
+const OrderWorkspace = lazy(loadOrderWorkspace);
 const ServiceWorkspace = lazy(() => import('./service-workspace').then((module) => ({ default: module.ServiceWorkspace })));
 const UserManagement = lazy(() => import('./user-management').then((module) => ({ default: module.UserManagement })));
+
+async function warmOrderData(actorEmail: string) {
+  const { loadOrderBootstrap } = await import('@/lib/order-bootstrap-cache');
+  await loadOrderBootstrap(actorEmail);
+}
 
 function SectionLoading() {
   return <div className="grid h-full place-items-center text-sm font-semibold text-[#61777a]">Opening section…</div>;
@@ -30,15 +34,21 @@ export function StockFlowFrame({ actorEmail, actorRole }: { actorEmail: string; 
     const account = prepareDeviceForAccount(localStorage, sessionStorage, actorEmail);
     let noticeTimer: number | undefined;
     if (account.switched) {
-      clearOrderBootstrapCache();
-      clearOrderCaptureMasterCache();
+      void Promise.all([
+        import('@/lib/order-bootstrap-cache').then((module) => module.clearOrderBootstrapCache()),
+        import('@/lib/order-capture-masters').then((module) => module.clearOrderCaptureMasterCache()),
+      ]);
       if (account.retainedPreviousDraft) noticeTimer = window.setTimeout(() => setDeviceNotice('A saved order for the previous account remains on this device. Sign back into that account to send or discard it.'), 0);
     }
+    const warmOrderWorkspace = () => {
+      void loadOrderWorkspace();
+      void warmOrderData(actorEmail).catch(() => undefined);
+    };
     const idleId = 'requestIdleCallback' in window
-      ? window.requestIdleCallback(() => void loadOrderBootstrap(actorEmail).catch(() => undefined), { timeout: 2_000 })
+      ? window.requestIdleCallback(warmOrderWorkspace, { timeout: 2_000 })
       : undefined;
     const preloadTimer = idleId === undefined
-      ? window.setTimeout(() => void loadOrderBootstrap(actorEmail).catch(() => undefined), 1_500)
+      ? window.setTimeout(warmOrderWorkspace, 1_500)
       : undefined;
     return () => {
       if (noticeTimer !== undefined) window.clearTimeout(noticeTimer);
@@ -65,7 +75,8 @@ export function StockFlowFrame({ actorEmail, actorRole }: { actorEmail: string; 
   }
 
   function warmOrders() {
-    void loadOrderBootstrap(actorEmail).catch(() => undefined);
+    void loadOrderWorkspace();
+    void warmOrderData(actorEmail).catch(() => undefined);
   }
 
   return (
@@ -109,7 +120,7 @@ export function StockFlowFrame({ actorEmail, actorRole }: { actorEmail: string; 
             allow="clipboard-write"
           />
         ) : surface === 'orders' ? (
-          <OrderWorkspace key={orderFilter} actorEmail={actorEmail} initialStatus={orderFilter} />
+          <Suspense fallback={<SectionLoading />}><OrderWorkspace key={orderFilter} actorEmail={actorEmail} initialStatus={orderFilter} /></Suspense>
         ) : surface === 'service' ? (
           <Suspense fallback={<SectionLoading />}><ServiceWorkspace /></Suspense>
         ) : <Suspense fallback={<SectionLoading />}><UserManagement /></Suspense>}

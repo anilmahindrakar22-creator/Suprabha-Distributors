@@ -37,6 +37,8 @@ These are single-run baselines, not percentile service-level claims. The catalog
 - Ordinary order pages now include only open delivery exceptions and scheduled installations needed for daily decisions. Resolved exceptions and completed-installation history load through a separately authorized endpoint only after an order's details are opened.
 - Billing Attention now reads one paginated invoiced-order candidate stream rather than scanning five status queues and loading the broad order bootstrap. Tally invoice records already scoped to each candidate page are deduplicated and reused for the existing customer, invoice and quantity reconciliation rules.
 - Paginated order counts and rows now evaluate the already-loaded creator field against the authoritative role-scope table. Creator-only access remains server-enforced, without a second order-table lookup for every candidate row.
+- Each visible order card now obtains its line count, ordered quantity, compatibility quantity and line details from one database aggregate after pagination, replacing four scans of the same order lines.
+- The large Orders workspace is now a separate browser bundle. Stock opens without parsing it; idle time and the first hover, touch or keyboard focus preload both the Orders code and its data before the user opens the section.
 
 These figures are production-build raw asset sizes before transfer compression. Live latency must be re-measured after the application and exact-customer database migration are released together.
 

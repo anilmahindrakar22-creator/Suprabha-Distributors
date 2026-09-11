@@ -7,14 +7,19 @@ const route = readFileSync('app/api/orders/route.ts', 'utf8');
 
 describe('lightweight workspace boundaries', () => {
   it('loads deferred service and administrator sections only when opened', () => {
+    expect(frame).toContain("const OrderWorkspace = lazy(loadOrderWorkspace)");
     expect(frame).toContain("lazy(() => import('./service-workspace')");
     expect(frame).toContain("lazy(() => import('./user-management')");
     expect(frame).not.toContain("import { ServiceWorkspace } from './service-workspace'");
     expect(frame).not.toContain("import { UserManagement } from './user-management'");
+    expect(frame).not.toContain("import { OrderWorkspace } from './order-workspace'");
   });
 
   it('preloads Orders without competing with the initial Stock render', () => {
     expect(frame).toContain("'requestIdleCallback' in window");
+    expect(frame).toContain('void loadOrderWorkspace()');
+    expect(frame).toContain("await import('@/lib/order-bootstrap-cache')");
+    expect(frame).not.toContain("import { clearOrderBootstrapCache, loadOrderBootstrap }");
     expect(frame).toContain('onPointerEnter={item === \'orders\' ? warmOrders : undefined}');
     expect(frame).toContain('onPointerDown={item === \'orders\' ? warmOrders : undefined}');
   });
