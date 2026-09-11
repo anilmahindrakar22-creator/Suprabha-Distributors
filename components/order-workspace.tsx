@@ -91,17 +91,6 @@ export function OrderWorkspace({ actorEmail, initialStatus = 'open' }: { actorEm
     dataRef.current = data;
   }, [data]);
 
-  useEffect(() => {
-    if (!data) return;
-    const catalogVersion = data.snapshot.catalogVersion || data.snapshot.fetchedAt;
-    const customerVersion = data.customerVersion || '';
-    const timer = window.setTimeout(() => {
-      void loadOrderCatalog(actorEmail, catalogVersion).catch(() => undefined);
-      void loadOrderCustomers(actorEmail, customerVersion).catch(() => undefined);
-    }, 750);
-    return () => window.clearTimeout(timer);
-  }, [actorEmail, data]);
-
   const load = useCallback(async (showLoading = false) => {
     if (showLoading) setLoading(true);
     setError('');
@@ -284,6 +273,18 @@ export function OrderWorkspace({ actorEmail, initialStatus = 'open' }: { actorEm
     }
   }
 
+  function warmOrderCapture() {
+    const current = dataRef.current;
+    if (!current) return;
+    const catalogVersion = current.snapshot.catalogVersion || current.snapshot.fetchedAt;
+    const customerVersion = current.customerVersion || '';
+    const trustedDevice = readOfflineDraftConsent(localStorage, current.actor.email);
+    const cachedCatalog = readCatalogCache(sessionStorage, current.actor.email, catalogVersion) || (trustedDevice ? readCatalogCache(localStorage, current.actor.email, catalogVersion) : null);
+    const cachedCustomers = readCustomerCache(sessionStorage, current.actor.email, customerVersion) || (trustedDevice ? readCustomerCache(localStorage, current.actor.email, customerVersion) : null);
+    if (!cachedCatalog) void loadOrderCatalog(actorEmail, catalogVersion).catch(() => undefined);
+    if (!cachedCustomers) void loadOrderCustomers(actorEmail, customerVersion).catch(() => undefined);
+  }
+
   async function runCommand(command: OrderCommand, success: string) {
     const scrollTop = workspaceRef.current?.scrollTop;
     const prepared = prepareOrderCommandRetry(command, pendingCommandKeysRef.current, undefined, actorEmail);
@@ -399,6 +400,8 @@ export function OrderWorkspace({ actorEmail, initialStatus = 'open' }: { actorEm
             <button
               type="button"
               onClick={() => void openNewOrder()}
+              onFocus={warmOrderCapture}
+              onPointerEnter={warmOrderCapture}
               disabled={catalogLoading}
               className="min-h-12 rounded-xl bg-[#092f36] px-5 font-bold text-white shadow-sm transition hover:bg-[#0d4549] disabled:opacity-50"
             >
