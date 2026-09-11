@@ -36,6 +36,7 @@ These are single-run baselines, not percentile service-level claims. The catalog
 - Order-history date ranges are validated and paginated in India business time by the database gateway. The interactive screen no longer gathers every page on the application server before returning the requested page; explicit CSV export continues to stream all matching pages.
 - Ordinary order pages now include only open delivery exceptions and scheduled installations needed for daily decisions. Resolved exceptions and completed-installation history load through a separately authorized endpoint only after an order's details are opened.
 - Billing Attention now reads one paginated invoiced-order candidate stream rather than scanning five status queues and loading the broad order bootstrap. Tally invoice records already scoped to each candidate page are deduplicated and reused for the existing customer, invoice and quantity reconciliation rules.
+- Paginated order counts and rows now evaluate the already-loaded creator field against the authoritative role-scope table. Creator-only access remains server-enforced, without a second order-table lookup for every candidate row.
 
 These figures are production-build raw asset sizes before transfer compression. Live latency must be re-measured after the application and exact-customer database migration are released together.
 
