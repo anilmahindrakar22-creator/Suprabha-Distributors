@@ -472,6 +472,7 @@ export type OrderCommand =
         customerName: string;
         customerPhone?: string;
         customerCity?: string;
+        deliveryAddress?: string;
         source: 'phone' | 'email' | 'whatsapp' | 'walk_in';
         priority?: 'normal' | 'high' | 'urgent';
         expectedDeliveryDate?: string;
@@ -633,6 +634,7 @@ export function validateOrderCommand(value: unknown): OrderCommand | null {
       !boundedOptionalText('customerId', 100) ||
       !boundedOptionalText('customerPhone', 40) ||
       !boundedOptionalText('customerCity', 120) ||
+      !boundedOptionalText('deliveryAddress', 1000) ||
       !boundedOptionalText('notes', 2000) ||
       (payload.priority !== undefined && (typeof payload.priority !== 'string' || !['normal', 'high', 'urgent'].includes(payload.priority))) ||
       (payload.expectedDeliveryDate !== undefined && payload.expectedDeliveryDate !== '' && !isValidCalendarDate(payload.expectedDeliveryDate)) ||

@@ -865,6 +865,7 @@ function HydratedNewOrderPanel({ data, templateOrder, onClose, onCreated, onView
   const [customerName, setCustomerName] = useState(initialPayload?.customerName || templatePayload?.customerName || '');
   const [customerPhone, setCustomerPhone] = useState(initialPayload?.customerPhone || templatePayload?.customerPhone || '');
   const [customerCity, setCustomerCity] = useState(initialPayload?.customerCity || '');
+  const [deliveryAddress, setDeliveryAddress] = useState(initialPayload?.deliveryAddress || '');
   const [selectedCustomerId, setSelectedCustomerId] = useState<string | undefined>(initialPayload?.customerId);
   const [customerSuggestionsOpen, setCustomerSuggestionsOpen] = useState(false);
   const [customerHistory, setCustomerHistory] = useState<{ orders: OrderSummary[]; total: number } | null>(null);
@@ -914,12 +915,12 @@ function HydratedNewOrderPanel({ data, templateOrder, onClose, onCreated, onView
         actorEmail: data.actor.email,
         state: draftState,
         updatedAt: new Date().toISOString(),
-        command: { action: 'create_order', payload: { idempotencyKey, customerId: selectedCustomerId, customerName: customerName.trim(), customerPhone: customerPhone.trim(), customerCity: customerCity.trim(), source: 'phone', priority, expectedDeliveryDate: expectedDeliveryDate || undefined, notes: notes.trim(), lines: lines.map((line) => ({ tallyKey: line.tallyKey, quantity: line.quantity })) } },
+        command: { action: 'create_order', payload: { idempotencyKey, customerId: selectedCustomerId, customerName: customerName.trim(), customerPhone: customerPhone.trim(), customerCity: customerCity.trim(), deliveryAddress: deliveryAddress.trim(), source: 'phone', priority, expectedDeliveryDate: expectedDeliveryDate || undefined, notes: notes.trim(), lines: lines.map((line) => ({ tallyKey: line.tallyKey, quantity: line.quantity })) } },
       });
       if (!saved) setError('This browser could not save the draft. Free device storage or turn off device saving.');
     }, 400);
     return () => window.clearTimeout(timer);
-  }, [customerCity, customerName, customerPhone, data.actor.email, draftState, expectedDeliveryDate, idempotencyKey, lines, notes, priority, saveOnDevice, selectedCustomerId]);
+  }, [customerCity, customerName, customerPhone, data.actor.email, deliveryAddress, draftState, expectedDeliveryDate, idempotencyKey, lines, notes, priority, saveOnDevice, selectedCustomerId]);
 
   useEffect(() => {
     let active = true;
@@ -1010,6 +1011,7 @@ function HydratedNewOrderPanel({ data, templateOrder, onClose, onCreated, onView
           customerName: customerName.trim(),
           customerPhone: customerPhone.trim(),
           customerCity: customerCity.trim(),
+          deliveryAddress: deliveryAddress.trim(),
           source: 'phone',
           priority,
           expectedDeliveryDate: expectedDeliveryDate || undefined,
@@ -1101,6 +1103,7 @@ function HydratedNewOrderPanel({ data, templateOrder, onClose, onCreated, onView
                   <div className="mt-3 grid gap-3 sm:grid-cols-2">
                     <label className="text-sm font-bold text-[#456367]">Phone<input maxLength={40} value={customerPhone} onChange={(event) => setCustomerPhone(event.target.value)} className="mt-2 min-h-11 w-full rounded-xl border border-[#cedfdd] bg-white px-3 font-normal outline-none focus:border-[#64d4ad]" inputMode="tel" /></label>
                     <label className="text-sm font-bold text-[#456367]">City<input maxLength={120} value={customerCity} onChange={(event) => setCustomerCity(event.target.value)} className="mt-2 min-h-11 w-full rounded-xl border border-[#cedfdd] bg-white px-3 font-normal outline-none focus:border-[#64d4ad]" /></label>
+                    <label className="text-sm font-bold text-[#456367] sm:col-span-2">Delivery address<textarea maxLength={1000} rows={2} value={deliveryAddress} onChange={(event) => setDeliveryAddress(event.target.value)} className="mt-2 w-full rounded-xl border border-[#cedfdd] bg-white p-3 font-normal outline-none focus:border-[#64d4ad]" /></label>
                   </div>
                 </details>
               </div>
