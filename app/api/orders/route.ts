@@ -75,6 +75,12 @@ export async function GET(request: Request) {
         startedAt,
       );
     }
+    if (parameters.get('summary') === '1') {
+      return measuredJsonResponse(
+        await callOrderGateway<{ operations: Record<string, number>; operationsDate: string }>(user.email, 'get_order_summary'),
+        startedAt,
+      );
+    }
     if (parameters.get('list') === '1' || parameters.get('export') === '1') {
       const listQuery = parseOrderListQuery(parameters);
       if (!listQuery) return failure('Invalid order list filters', 400);

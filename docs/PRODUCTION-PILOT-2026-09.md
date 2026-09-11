@@ -26,6 +26,9 @@ These are single-run baselines, not percentile service-level claims. The catalog
 - Deferred Service and administrator-only Users sections now load on demand. The measured StockFlow client chunk fell from 113,978 bytes to 102,518 bytes, a 10.1% raw reduction; separate chunks are 9,111 bytes and 3,607 bytes respectively.
 - Collapsed order details no longer mount every fulfilment, delivery, exception, installation, note and activity control during the initial inbox render. Once opened, a row retains its mounted details for that session.
 - Successful order mutations now emit the same response-size and server-timing headers as list requests, allowing the post-release pilot to separate network/server delay from browser rendering.
+- The stock dashboard now reads operational counters through a dedicated RBAC-protected summary gateway instead of repeatedly loading the complete order bootstrap. Focus, visibility and page-show events are coalesced within 15 seconds, while manual refresh and reconnect remain immediate.
+- Stock data renders before the independent order counters complete, so a slower operations summary cannot block the reorder screen.
+- The open-order inbox preload now waits for browser idle time instead of competing with the first Stock request. Hover, keyboard focus and touch-down on Orders still begin the preload immediately, using the existing account-isolated request deduplication.
 
 These figures are production-build raw asset sizes before transfer compression. Live latency must be re-measured after the application and exact-customer database migration are released together.
 

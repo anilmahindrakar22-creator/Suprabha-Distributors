@@ -13,6 +13,12 @@ describe('lightweight workspace boundaries', () => {
     expect(frame).not.toContain("import { UserManagement } from './user-management'");
   });
 
+  it('preloads Orders without competing with the initial Stock render', () => {
+    expect(frame).toContain("'requestIdleCallback' in window");
+    expect(frame).toContain('onPointerEnter={item === \'orders\' ? warmOrders : undefined}');
+    expect(frame).toContain('onPointerDown={item === \'orders\' ? warmOrders : undefined}');
+  });
+
   it('does not mount every order detail form in the initial inbox', () => {
     expect(orders).toContain('const [detailsLoaded, setDetailsLoaded] = useState(false)');
     expect(orders).toContain('if (event.currentTarget.open) setDetailsLoaded(true)');

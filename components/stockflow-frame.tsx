@@ -34,8 +34,17 @@ export function StockFlowFrame({ actorEmail, actorRole }: { actorEmail: string; 
       clearOrderCaptureMasterCache();
       if (account.retainedPreviousDraft) noticeTimer = window.setTimeout(() => setDeviceNotice('A saved order for the previous account remains on this device. Sign back into that account to send or discard it.'), 0);
     }
-    void loadOrderBootstrap(actorEmail).catch(() => undefined);
-    return () => { if (noticeTimer !== undefined) window.clearTimeout(noticeTimer); };
+    const idleId = 'requestIdleCallback' in window
+      ? window.requestIdleCallback(() => void loadOrderBootstrap(actorEmail).catch(() => undefined), { timeout: 2_000 })
+      : undefined;
+    const preloadTimer = idleId === undefined
+      ? window.setTimeout(() => void loadOrderBootstrap(actorEmail).catch(() => undefined), 1_500)
+      : undefined;
+    return () => {
+      if (noticeTimer !== undefined) window.clearTimeout(noticeTimer);
+      if (idleId !== undefined) window.cancelIdleCallback(idleId);
+      if (preloadTimer !== undefined) window.clearTimeout(preloadTimer);
+    };
   }, [actorEmail]);
 
   useEffect(() => {
@@ -55,6 +64,10 @@ export function StockFlowFrame({ actorEmail, actorRole }: { actorEmail: string; 
     setSurface(item);
   }
 
+  function warmOrders() {
+    void loadOrderBootstrap(actorEmail).catch(() => undefined);
+  }
+
   return (
     <main className="flex h-dvh w-full flex-col overflow-hidden bg-[#f7f6f1] text-[#173239]">
       <header className="flex h-16 shrink-0 items-center justify-between border-b border-[#dce7e5] bg-white px-4 sm:px-6">
@@ -71,6 +84,9 @@ export function StockFlowFrame({ actorEmail, actorRole }: { actorEmail: string; 
               key={item}
               type="button"
               onClick={() => openSurface(item)}
+              onFocus={item === 'orders' ? warmOrders : undefined}
+              onPointerEnter={item === 'orders' ? warmOrders : undefined}
+              onPointerDown={item === 'orders' ? warmOrders : undefined}
               aria-pressed={surface === item}
               className={`min-h-10 rounded-lg px-4 text-sm font-bold capitalize transition ${
                 surface === item
