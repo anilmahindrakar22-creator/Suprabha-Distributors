@@ -21,7 +21,7 @@ describe('lightweight workspace boundaries', () => {
 
   it('does not mount every order detail form in the initial inbox', () => {
     expect(orders).toContain('const [detailsLoaded, setDetailsLoaded] = useState(false)');
-    expect(orders).toContain('if (event.currentTarget.open) setDetailsLoaded(true)');
+    expect(orders).toContain('if (event.currentTarget.open) { setDetailsLoaded(true); void loadDetails(); }');
     expect(orders).toContain('{detailsLoaded ? <>');
   });
 

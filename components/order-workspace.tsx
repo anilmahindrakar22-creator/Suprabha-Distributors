@@ -4,6 +4,8 @@ import { useCallback, useEffect, useMemo, useRef, useState, useSyncExternalStore
 import type {
   CatalogItem,
   CustomerDirectoryEntry,
+  DeliveryException,
+  EquipmentInstallation,
   OrderBootstrap,
   OrderCommand,
   OrderEvent,
@@ -618,6 +620,8 @@ function OrderRow({
   const [cancelling, setCancelling] = useState(false);
   const [cancelReason, setCancelReason] = useState('');
   const [detailsLoaded, setDetailsLoaded] = useState(false);
+  const [detailHistory, setDetailHistory] = useState<{ exceptions: DeliveryException[]; installations: EquipmentInstallation[] } | null>(null);
+  const [detailState, setDetailState] = useState<'idle' | 'loading' | 'error'>('idle');
   const action = nextStatus[order.status];
   const canAdvance = Boolean(action && canRoleTransitionOrder(actorRole, order.status, action.status));
   const nextOwner = orderNextOwnerLabel(order.status);
@@ -632,6 +636,23 @@ function OrderRow({
   const invoiceState = invoiceMatch.state;
   const deliveryReminder = orderDeliveryReminder(order);
   const phoneHref = customerPhoneHref(order.customerPhone);
+  const mergeById = <T extends { id: string },>(history: T[], current: T[]) => [...new Map([...history, ...current].map((item) => [item.id, item])).values()];
+  const detailedOrder = detailHistory ? {
+    ...order,
+    exceptions: mergeById(detailHistory.exceptions, order.exceptions || []),
+    installations: mergeById(detailHistory.installations, order.installations || []),
+  } : order;
+  async function loadDetails() {
+    if (detailState === 'loading' || detailHistory) return;
+    setDetailState('loading');
+    try {
+      const response = await readResponse<{ exceptions: DeliveryException[]; installations: EquipmentInstallation[] }>(await fetch(`/api/orders?detailsFor=${encodeURIComponent(order.id)}`, { cache: 'no-store' }));
+      setDetailHistory({ exceptions: response.exceptions || [], installations: response.installations || [] });
+      setDetailState('idle');
+    } catch {
+      setDetailState('error');
+    }
+  }
   return (
     <article className="p-5">
       <div className="grid gap-4 lg:grid-cols-[1.5fr_1fr_auto] lg:items-center">
@@ -675,7 +696,7 @@ function OrderRow({
       {!order.assignedToEmail && !['delivered', 'cancelled'].includes(order.status) && ['administrator', 'operations', 'management'].includes(actorRole) ? <button type="button" disabled={busy} onClick={async () => { setBusy(true); try { await onSetAssignee(order, actorEmail); } finally { setBusy(false); } }} className="ml-3 min-h-10 rounded-xl border border-[#9ddbc5] bg-[#edf9f4] px-4 text-xs font-bold text-[#277b69] disabled:opacity-50">{busy ? 'Taking…' : 'Take this order'}</button> : null}
       {!['delivered', 'cancelled'].includes(order.status) && ['administrator', 'operations', 'management'].includes(actorRole) ? <AssignmentControl order={order} onSave={onSetAssignee} /> : null}
       <OrderSummaryCopy order={order} />
-      <details onToggle={(event) => { if (event.currentTarget.open) setDetailsLoaded(true); }} className="mt-4 rounded-xl bg-[#f6f8f7] px-4 py-3 text-sm">
+      <details onToggle={(event) => { if (event.currentTarget.open) { setDetailsLoaded(true); void loadDetails(); } }} className="mt-4 rounded-xl bg-[#f6f8f7] px-4 py-3 text-sm">
         <summary className="cursor-pointer font-bold text-[#456367]">View order details</summary>
         {detailsLoaded ? <>
         <div className="mt-3 grid gap-4 border-t border-[#dfe9e7] pt-3 sm:grid-cols-2">
@@ -698,8 +719,9 @@ function OrderRow({
         {!['cancelled', 'delivered'].includes(order.status) ? <FulfilmentEditor order={order} onSave={onSaveFulfilment} /> : null}
         {['ready_for_dispatch', 'dispatched', 'delivered'].includes(order.status) ? <DispatchPanel order={order} actorRole={actorRole} onSave={onDelivery} /> : null}
         {['phone_order_received','awaiting_confirmation','awaiting_approval','confirmed','partially_reserved','fully_reserved','ready_for_picking','picked','packed'].includes(order.status) ? <OrderEditPanel order={order} onSave={onEdit} /> : null}
-        <DeliveryExceptionPanel order={order} onSave={onException} />
-        <InstallationPanel order={order} onSave={onInstallation} />
+        {detailState === 'loading' ? <p className="mt-4 text-xs text-[#718487]">Loading operational history…</p> : detailState === 'error' ? <button type="button" onClick={() => void loadDetails()} className="mt-4 text-xs font-bold text-[#9a4e47]">Operational history could not load · Retry</button> : null}
+        <DeliveryExceptionPanel order={detailedOrder} onSave={onException} />
+        <InstallationPanel order={detailedOrder} onSave={onInstallation} />
         {order.status === 'awaiting_tally_billing' ? <BillingHandoff order={order} /> : null}
         {['administrator', 'sales', 'operations', 'warehouse', 'accounts', 'management'].includes(actorRole) ? <OrderNotePanel order={order} onSave={onAddNote} /> : null}
         <OrderActivityLog key={`${order.id}-${order.version}`} orderId={order.id} initialEvents={order.events || []} />

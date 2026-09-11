@@ -8,6 +8,7 @@ export type GatewayAction =
   | 'get_order_summary'
   | 'list_orders'
   | 'get_order_events'
+  | 'get_order_details'
   | 'recover_order_submission'
   | 'list_users'
   | 'list_assignable_users'

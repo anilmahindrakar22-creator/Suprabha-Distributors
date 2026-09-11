@@ -1,6 +1,6 @@
 import { getChatGPTUser } from '@/app/chatgpt-auth';
 import { callOrderGateway, OrderGatewayError } from '@/lib/order-gateway';
-import type { CatalogItem, CustomerDirectoryEntry, OrderBootstrap, OrderEvent } from '@/lib/order-types';
+import type { CatalogItem, CustomerDirectoryEntry, DeliveryException, EquipmentInstallation, OrderBootstrap, OrderEvent } from '@/lib/order-types';
 import { filterOrders, isOrderDeliveryOverdue, orderMatchesCaptureDateRange, orderNeedsBillingAttention, ordersCsv, validateOrderCommand } from '@/lib/order-types';
 import { measuredJsonResponse } from '@/lib/measured-json-response';
 import { matchingOrderList, parseOrderListQuery, queryBillingAttentionList, queryOrderList } from '@/lib/order-list-query';
@@ -60,6 +60,14 @@ export async function GET(request: Request) {
       if (!/^[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i.test(eventsFor)) return failure('Valid order ID is required', 400);
       return measuredJsonResponse(
         await callOrderGateway<{ events: OrderEvent[] }>(user.email, 'get_order_events', { orderId: eventsFor }),
+        startedAt,
+      );
+    }
+    const detailsFor = parameters.get('detailsFor');
+    if (detailsFor) {
+      if (!/^[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i.test(detailsFor)) return failure('Valid order ID is required', 400);
+      return measuredJsonResponse(
+        await callOrderGateway<{ exceptions: DeliveryException[]; installations: EquipmentInstallation[] }>(user.email, 'get_order_details', { orderId: detailsFor }),
         startedAt,
       );
     }
