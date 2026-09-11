@@ -45,6 +45,8 @@ These figures are production-build raw asset sizes before transfer compression. 
 
 The pending order-performance database changes are deliberately ordered: consolidate billing candidates, optimize row-scope evaluation, consolidate page-line projection, then bound Tally invoice payloads. Apply them in timestamp order; every patch aborts if the expected secured gateway shape is absent and restores the service-only execution grant.
 
+Billing-candidate status is added to the authoritative base order filter. The exact-customer and searchable-note optimized wrappers both delegate status decisions to that filter; a contract test protects this dependency.
+
 ## Five-working-day device checklist
 
 Run this once on each staff device and each approved account. Record device, account, date and result without entering passwords or customer-sensitive data in this file.
