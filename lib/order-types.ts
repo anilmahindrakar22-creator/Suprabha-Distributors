@@ -372,7 +372,7 @@ function csvCell(value: string | number | null | undefined) {
 }
 
 export function ordersCsv(orders: OrderSummary[], reconciliation?: { invoices?: TallyInvoice[]; fetchedAt?: string; now?: Date }) {
-  const headings = ['Order', 'Customer', 'Phone', 'Stage', 'Assigned to', 'Products', 'Quantity', 'Tally invoice', 'Invoice identity', 'Product and quantity check', 'Invoice differences', 'Expected delivery', 'Courier', 'Tracking', 'Last updated'];
+  const headings = ['Order', 'Customer', 'Phone', 'Stage', 'Priority', 'Source', 'Assigned to', 'Products', 'Quantity', 'Tally invoice', 'Invoice identity', 'Product and quantity check', 'Invoice differences', 'Expected delivery', 'Delivery address', 'Courier', 'Tracking', 'Dispatch date', 'Vehicle', 'Delivered at', 'Received by', 'Proof of delivery', 'Notes', 'Order date', 'Last updated'];
   const rows = orders.map((order) => {
     const identity = reconciliation ? tallyInvoiceReconciliation(order, reconciliation.invoices, reconciliation.now, reconciliation.fetchedAt) : '';
     const lines = reconciliation ? tallyInvoiceLineReconciliation(order, reconciliation.invoices, reconciliation.now, reconciliation.fetchedAt) : null;
@@ -381,6 +381,8 @@ export function ordersCsv(orders: OrderSummary[], reconciliation?: { invoices?: 
       order.customerName,
       order.customerPhone,
       orderStage(order.status),
+      order.priority || 'normal',
+      order.source,
       order.assignedToEmail,
       order.lines.map((line) => `${line.itemName} (${line.quantity} ${line.baseUnit || ''})`.trim()).join('; '),
       order.totalQuantity,
@@ -389,8 +391,16 @@ export function ordersCsv(orders: OrderSummary[], reconciliation?: { invoices?: 
       lines?.state.replaceAll('_', ' ') || '',
       lines?.differences.map((item) => `${item.itemName}: ordered ${item.orderedQuantity}; invoiced ${item.invoicedQuantity}`).join(' | ') || '',
       order.expectedDeliveryDate,
+      order.deliveryAddress,
       order.courierName,
       order.trackingNumber,
+      order.dispatchDate,
+      order.vehicleNumber,
+      order.deliveredAt,
+      order.receivedBy,
+      order.podReference,
+      order.notes,
+      order.createdAt,
       order.updatedAt,
     ];
   });

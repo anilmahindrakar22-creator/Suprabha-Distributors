@@ -443,10 +443,14 @@ describe('order workflow and history', () => {
   });
 
   it('exports operational orders as spreadsheet-safe CSV', () => {
-    const order = { ...baseOrder, customerName: '=Unsafe formula', expectedDeliveryDate: '2026-09-02' };
+    const order = { ...baseOrder, customerName: '=Unsafe formula', priority: 'urgent' as const, expectedDeliveryDate: '2026-09-02', deliveryAddress: 'Market Road', dispatchDate: '2026-09-02', vehicleNumber: 'KA01AB1234', deliveredAt: '2026-09-02T12:30:00Z', receivedBy: 'Lab manager', podReference: 'POD-42', notes: 'Call before delivery' };
     const csv = ordersCsv([order]);
     expect(csv).toContain('"\'=Unsafe formula"');
     expect(csv).toContain('"Glucose Reagent (2 box)"');
+    expect(csv).toContain('"Priority","Source"');
+    expect(csv).toContain('"urgent","phone"');
+    expect(csv).toContain('"Market Road"');
+    expect(csv).toContain('"KA01AB1234","2026-09-02T12:30:00Z","Lab manager","POD-42","Call before delivery"');
     expect(csv.split('\r\n')).toHaveLength(2);
   });
 
