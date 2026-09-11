@@ -15,7 +15,7 @@ describe('database-paginated order date ranges', () => {
 
   it('applies the date range inside both database count and page queries', () => {
     expect(migration).toContain('private.stockflow_order_in_capture_range(o,v_date,v_date_to)');
-    expect(migration).toContain('private.stockflow_order_matches_filter(o,v_status,v_query,null)');
+    expect(migration).toContain('private.stockflow_order_matches_filter_optimized(o,v_status,v_query,null)');
   });
 
   it('passes dateTo through the narrow gateway instead of bulk-loading pages', () => {

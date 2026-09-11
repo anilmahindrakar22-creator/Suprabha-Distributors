@@ -37,8 +37,8 @@ begin
   f := updated;
 
   updated := replace(f,
-    'private.stockflow_order_matches_filter(o,v_status,v_query,v_date)',
-    'private.stockflow_order_matches_filter(o,v_status,v_query,null) and private.stockflow_order_in_capture_range(o,v_date,v_date_to)');
+    'private.stockflow_order_matches_filter_optimized(o,v_status,v_query,v_date)',
+    'private.stockflow_order_matches_filter_optimized(o,v_status,v_query,null) and private.stockflow_order_in_capture_range(o,v_date,v_date_to)');
   if updated=f then raise exception 'Expected order list filter calls were not found'; end if;
   execute updated;
 end $migration$;
