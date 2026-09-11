@@ -2,6 +2,64 @@ import type { OrderBootstrap, OrderCommand, OrderSummary } from './order-types';
 
 type CommandResult = { orderId?: string; status?: string; version?: number; exceptionId?: string; installationId?: string };
 
+export function applyCreatedOrderAcknowledgement(
+  data: OrderBootstrap,
+  command: Extract<OrderCommand, { action: 'create_order' }>,
+  result: CommandResult & { orderNumber?: string },
+  createdAt = new Date().toISOString(),
+): OrderBootstrap | null {
+  if (!result.orderId || !result.orderNumber) return null;
+  const lines = command.payload.lines.map((line) => {
+    const item = data.snapshot.catalog.find((candidate) => candidate.tallyKey === line.tallyKey);
+    if (!item) return null;
+    return {
+      tallyKey: item.tallyKey,
+      itemName: item.item,
+      itemGroup: item.group || null,
+      baseUnit: item.baseUnit || null,
+      quantity: line.quantity,
+      reservedQuantity: 0,
+      fulfilledQuantity: 0,
+    };
+  });
+  if (lines.some((line) => !line)) return null;
+  const order: OrderSummary = {
+    id: result.orderId,
+    orderNumber: result.orderNumber,
+    customerName: command.payload.customerName,
+    customerPhone: command.payload.customerPhone || null,
+    status: result.status || 'phone_order_received',
+    priority: command.payload.priority || 'normal',
+    assignedToEmail: null,
+    source: command.payload.source,
+    notes: command.payload.notes || null,
+    version: result.version || 1,
+    createdAt,
+    updatedAt: createdAt,
+    lineCount: lines.length,
+    totalQuantity: command.payload.lines.reduce((sum, line) => sum + line.quantity, 0),
+    reservedQuantity: 0,
+    tallyInvoiceNumber: null,
+    deliveryAddress: command.payload.deliveryAddress || null,
+    expectedDeliveryDate: command.payload.expectedDeliveryDate || null,
+    lines: lines as OrderSummary['lines'],
+    events: [],
+    exceptions: [],
+    installations: [],
+  };
+  const total = data.pagination ? data.pagination.total + 1 : data.orders.length + 1;
+  const orders = [order, ...data.orders].slice(0, data.pagination?.pageSize || data.orders.length + 1);
+  return {
+    ...data,
+    orders,
+    operations: {
+      ...data.operations,
+      unassignedOpen: (data.operations.unassignedOpen || 0) + 1,
+    },
+    pagination: data.pagination ? { ...data.pagination, total, pageCount: Math.max(1, Math.ceil(total / data.pagination.pageSize)) } : data.pagination,
+  };
+}
+
 function patchedOrder(order: OrderSummary, command: OrderCommand, result: CommandResult, actor: OrderBootstrap['actor'], updatedAt: string): OrderSummary | null {
   if (!result.orderId || result.orderId !== order.id || !Number.isInteger(result.version)) return null;
   const base = { ...order, version: Number(result.version), updatedAt };

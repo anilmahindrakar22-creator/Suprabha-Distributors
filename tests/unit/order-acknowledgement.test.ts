@@ -1,11 +1,34 @@
 import { describe, expect, it } from 'vitest';
-import { applyOrderAcknowledgement } from '../../lib/order-acknowledgement';
-import type { OrderBootstrap, OrderSummary } from '../../lib/order-types';
+import { applyCreatedOrderAcknowledgement, applyOrderAcknowledgement } from '../../lib/order-acknowledgement';
+import type { OrderBootstrap, OrderCommand, OrderSummary } from '../../lib/order-types';
 
 const order = { id: 'order-1', orderNumber: 'SF-1', customerName: 'City Lab', customerPhone: null, status: 'awaiting_confirmation', source: 'phone', notes: null, version: 1, createdAt: '2026-09-06T10:00:00Z', updatedAt: '2026-09-06T10:00:00Z', lineCount: 1, totalQuantity: 2, reservedQuantity: 0, tallyInvoiceNumber: null, lines: [{ tallyKey: 'KIT-1', itemName: 'Kit', itemGroup: 'Kits', baseUnit: 'Nos', quantity: 2, reservedQuantity: 0 }], events: [], exceptions: [], installations: [] } satisfies OrderSummary;
 const data = { actor: { email: 'sales@example.com', role: 'sales' }, snapshot: { company: 'Suprabha', fetchedAt: '', catalog: [] }, customers: [], orders: [order], operations: { awaitingConfirmation: 1, awaitingTallyBilling: 0 } } satisfies OrderBootstrap;
 
 describe('targeted order acknowledgement', () => {
+  it('prepends a newly acknowledged order without reloading the list', () => {
+    const withCatalog = { ...data, snapshot: { ...data.snapshot, catalog: [{ tallyKey: 'KIT-1', item: 'Kit', group: 'Kits', baseUnit: 'Nos', closing: 8, active: true }] }, pagination: { page: 1, pageCount: 1, pageSize: 20, total: 1 }, operations: { ...data.operations, unassignedOpen: 1 } } satisfies OrderBootstrap;
+    const next = applyCreatedOrderAcknowledgement(withCatalog, { action: 'create_order', payload: { idempotencyKey: '1234567890abcdef', customerName: 'New Lab', source: 'phone', priority: 'high', lines: [{ tallyKey: 'KIT-1', quantity: 3 }] } }, { orderId: 'order-2', orderNumber: 'SF-2', status: 'phone_order_received' }, '2026-09-11T12:00:00Z');
+    expect(next?.orders[0]).toMatchObject({ id: 'order-2', orderNumber: 'SF-2', customerName: 'New Lab', priority: 'high', version: 1, totalQuantity: 3 });
+    expect(next?.orders[0].lines[0]).toMatchObject({ itemName: 'Kit', quantity: 3, fulfilledQuantity: 0 });
+    expect(next?.pagination?.total).toBe(2);
+    expect(next?.operations.unassignedOpen).toBe(2);
+  });
+
+  it('preserves the server page size while advancing pagination totals', () => {
+    const catalog = [{ tallyKey: 'KIT-1', item: 'Kit', group: 'Kits', baseUnit: 'Nos', closing: 8, active: true }];
+    const page = { ...data, snapshot: { ...data.snapshot, catalog }, orders: [order, { ...order, id: 'order-old', orderNumber: 'SF-OLD' }], pagination: { page: 1, pageCount: 1, pageSize: 2, total: 2 } } satisfies OrderBootstrap;
+    const next = applyCreatedOrderAcknowledgement(page, { action: 'create_order', payload: { idempotencyKey: '1234567890abcdef', customerName: 'New Lab', source: 'phone', lines: [{ tallyKey: 'KIT-1', quantity: 1 }] } }, { orderId: 'order-2', orderNumber: 'SF-2' });
+    expect(next?.orders.map((item) => item.id)).toEqual(['order-2', 'order-1']);
+    expect(next?.pagination).toMatchObject({ total: 3, pageCount: 2, pageSize: 2 });
+  });
+
+  it('requires authoritative identity and current catalogue details before applying a created order', () => {
+    const command: Extract<OrderCommand, { action: 'create_order' }> = { action: 'create_order', payload: { idempotencyKey: '1234567890abcdef', customerName: 'New Lab', source: 'phone', lines: [{ tallyKey: 'MISSING', quantity: 1 }] } };
+    expect(applyCreatedOrderAcknowledgement(data, command, { orderId: 'order-2', orderNumber: 'SF-2' })).toBeNull();
+    expect(applyCreatedOrderAcknowledgement(data, command, { orderId: 'order-2' })).toBeNull();
+  });
+
   it('updates a confirmed order and operational counts without a bootstrap reload', () => {
     const next = applyOrderAcknowledgement(data, { action: 'transition_order', payload: { idempotencyKey: '1234567890abcdef', orderId: order.id, expectedVersion: 1, toStatus: 'confirmed' } }, { orderId: order.id, status: 'confirmed', version: 2 }, '2026-09-06T11:00:00Z');
     expect(next?.orders[0]).toMatchObject({ status: 'confirmed', version: 2, updatedAt: '2026-09-06T11:00:00Z' });

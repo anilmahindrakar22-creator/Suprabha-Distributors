@@ -14,7 +14,7 @@ import { orderListUrl } from '@/lib/order-list-query';
 import { offlineDraftRecoveryError, readOfflineDraftConsent, readOfflineOrderDraft, removeOfflineOrderDraft, restoreOfflineDraftLines, updateOfflineDraftState, writeOfflineDraftConsent, writeOfflineOrderDraft, type OfflineDraftState } from '@/lib/offline-order-drafts';
 import { readCatalogCache, removeCatalogCache, writeCatalogCache } from '@/lib/catalog-cache';
 import { readCustomerCache, removeCustomerCache, writeCustomerCache } from '@/lib/customer-cache';
-import { applyOrderAcknowledgement } from '@/lib/order-acknowledgement';
+import { applyCreatedOrderAcknowledgement, applyOrderAcknowledgement } from '@/lib/order-acknowledgement';
 import { OrderSubmissionError, orderSubmissionError, recoverAcceptedOrder } from '@/lib/order-submission';
 import { loadOrderBootstrap } from '@/lib/order-bootstrap-cache';
 import { retryPendingOfflineOrder } from '@/lib/offline-order-retry';
@@ -22,6 +22,8 @@ import { acknowledgeOrderCommand, prepareOrderCommandRetry } from '@/lib/order-c
 import { loadOrderCatalog, loadOrderCustomers } from '@/lib/order-capture-masters';
 
 type DraftLine = { tallyKey: string; item: CatalogItem | null; quantity: number };
+type CreatedOrderResult = { orderId?: string; orderNumber?: string; status?: string; version?: number };
+type CreatedOrderCommand = Extract<OrderCommand, { action: 'create_order' }>;
 const statusNames: Record<string, string> = {
   phone_order_received: 'Phone order received',
   awaiting_confirmation: 'Awaiting confirmation',
@@ -533,11 +535,19 @@ export function OrderWorkspace({ actorEmail, initialStatus = 'open' }: { actorEm
             setCreating(false);
             setRepeatOrder(null);
           }}
-          onCreated={(number) => {
+          onCreated={(number, command, result) => {
             setDeviceDraftState(null);
             setCreating(false);
             setNotice(`${number} captured successfully.`);
-            void load();
+            const current = dataRef.current;
+            const canApplyLocally = current && command && result && page === 1 && !query && !captureDate && !captureDateTo && status === 'open';
+            const patched = canApplyLocally ? applyCreatedOrderAcknowledgement(current, command, result) : null;
+            if (patched) {
+              dataRef.current = patched;
+              setData(patched);
+            } else {
+              void load();
+            }
           }}
           onViewCustomer={(customerName) => {
             setQuery(`customer:${customerName}`);
@@ -745,7 +755,7 @@ function activityEventForDisplay(event: OrderEvent): OrderEvent {
 }
 
 async function readOrderSubmission(response: Response) {
-  const body = (await response.json().catch(() => ({}))) as { error?: string; orderNumber?: string };
+  const body = (await response.json().catch(() => ({}))) as CreatedOrderResult & { error?: string };
   if (!response.ok) throw orderSubmissionError(response.status, body.error);
   return body;
 }
@@ -818,7 +828,7 @@ function DispatchPanel({ order, actorRole, onSave }: { order: OrderSummary; acto
   return <div className="mt-5 border-t border-[#dfe9e7] pt-4"><p className="font-bold text-[#31585d]">{order.status === 'ready_for_dispatch' ? 'Dispatch details' : 'Delivery confirmation'}</p>{order.status === 'ready_for_dispatch' ? <div className="mt-3 grid gap-3 rounded-xl bg-white p-4 sm:grid-cols-2"><label className="text-sm font-bold">Courier / transporter<input maxLength={160} value={courierName} onChange={(event) => setCourierName(event.target.value)} className="mt-1 min-h-11 w-full rounded-lg border px-3 font-normal" /></label><label className="text-sm font-bold">Tracking / docket number<input maxLength={160} value={trackingNumber} onChange={(event) => setTrackingNumber(event.target.value)} className="mt-1 min-h-11 w-full rounded-lg border px-3 font-normal" /></label><label className="text-sm font-bold">Dispatch date<input type="date" value={dispatchDate} onChange={(event) => setDispatchDate(event.target.value)} className="mt-1 min-h-11 w-full rounded-lg border px-3 font-normal" /></label><label className="text-sm font-bold">Vehicle number <span className="font-normal text-[#718487]">(optional)</span><input value={vehicleNumber} onChange={(event) => setVehicleNumber(event.target.value)} maxLength={40} className="mt-1 min-h-11 w-full rounded-lg border px-3 font-normal" /></label><div className="sm:col-span-2 flex justify-end"><button type="button" disabled={!canUpdate || busy || courierName.trim().length < 2 || trackingNumber.trim().length < 2 || !dispatchDate} onClick={async () => { setBusy(true); try { await onSave(order, { action: 'save_dispatch', payload: { orderId: order.id, expectedVersion: order.version, courierName: courierName.trim(), trackingNumber: trackingNumber.trim(), dispatchDate, vehicleNumber: vehicleNumber.trim() } }); } finally { setBusy(false); } }} className="min-h-11 rounded-xl bg-[#092f36] px-5 font-bold text-white disabled:opacity-50">{busy ? 'Saving…' : 'Mark dispatched'}</button></div></div> : <div className="mt-3 grid gap-3 rounded-xl bg-white p-4 sm:grid-cols-2"><p className="sm:col-span-2 text-sm text-[#587275]">{order.courierName} · {order.trackingNumber}{order.vehicleNumber ? ` · ${order.vehicleNumber}` : ''}</p><label className="text-sm font-bold">Delivered at<input type="datetime-local" value={deliveredAt} onChange={(event) => setDeliveredAt(event.target.value)} className="mt-1 min-h-11 w-full rounded-lg border px-3 font-normal" /></label><label className="text-sm font-bold">Received by<input value={receivedBy} onChange={(event) => setReceivedBy(event.target.value)} maxLength={160} className="mt-1 min-h-11 w-full rounded-lg border px-3 font-normal" /></label><label className="text-sm font-bold sm:col-span-2">Proof of delivery reference <span className="font-normal text-[#718487]">(optional)</span><input value={podReference} onChange={(event) => setPodReference(event.target.value)} maxLength={160} className="mt-1 min-h-11 w-full rounded-lg border px-3 font-normal" /></label><div className="sm:col-span-2 flex justify-end"><button type="button" disabled={!canUpdate || busy || receivedBy.trim().length < 2 || !deliveredAt} onClick={async () => { setBusy(true); try { await onSave(order, { action: 'confirm_delivery', payload: { orderId: order.id, expectedVersion: order.version, deliveredAt: new Date(deliveredAt).toISOString(), receivedBy: receivedBy.trim(), podReference: podReference.trim() } }); } finally { setBusy(false); } }} className="min-h-11 rounded-xl bg-[#092f36] px-5 font-bold text-white disabled:opacity-50">{busy ? 'Saving…' : 'Confirm delivery'}</button></div></div>}</div>;
 }
 
-function NewOrderPanel({ data, templateOrder, onClose, onCreated, onViewCustomer }: { data: OrderBootstrap; templateOrder: OrderSummary | null; onClose: () => void; onCreated: (number: string) => void; onViewCustomer: (customerName: string) => void }) {
+function NewOrderPanel({ data, templateOrder, onClose, onCreated, onViewCustomer }: { data: OrderBootstrap; templateOrder: OrderSummary | null; onClose: () => void; onCreated: (number: string, command?: CreatedOrderCommand, result?: CreatedOrderResult) => void; onViewCustomer: (customerName: string) => void }) {
   const hydrated = useSyncExternalStore(() => () => {}, () => true, () => false);
   if (!hydrated) return null;
   return <HydratedNewOrderPanel data={data} templateOrder={templateOrder} onClose={onClose} onCreated={onCreated} onViewCustomer={onViewCustomer} />;
@@ -861,7 +871,7 @@ function AssignmentControl({ order, onSave }: { order: OrderSummary; onSave: (or
   return <details onToggle={(event) => { if (event.currentTarget.open) void loadUsers(); }} className="mt-3 max-w-xl rounded-xl border border-[#dce7e5] bg-[#fbfcfb] px-3 py-2 text-xs"><summary className="cursor-pointer font-bold text-[#587275]">{order.assignedToEmail ? 'Change owner' : 'Assign owner'}</summary><div className="mt-2 flex flex-col gap-2 sm:flex-row"><label className="flex-1 font-bold text-[#587275]">Approved user<select value={value} disabled={loadState !== 'loaded'} onChange={(event) => setValue(event.target.value)} className="mt-1 min-h-10 w-full rounded-lg border border-[#cedfdd] bg-white px-3 font-normal text-[#173239]"><option value="">Unassigned</option>{order.assignedToEmail && !users.some((user) => user.email === order.assignedToEmail) ? <option value={order.assignedToEmail}>{order.assignedToEmail}</option> : null}{users.map((user) => <option key={user.email} value={user.email}>{user.email} · {user.role}</option>)}</select></label><div className="flex items-end"><button type="button" disabled={busy || loadState !== 'loaded' || value === (order.assignedToEmail || '')} onClick={async () => { setBusy(true); try { await onSave(order, value || undefined); } finally { setBusy(false); } }} className="min-h-10 rounded-lg bg-[#092f36] px-4 font-bold text-white disabled:opacity-50">{busy ? 'Saving…' : 'Save'}</button></div></div>{loadState === 'loading' ? <p className="mt-2 text-[#718487]">Loading approved users…</p> : loadState === 'error' ? <button type="button" onClick={() => { setLoadState('idle'); void loadUsers(); }} className="mt-2 font-bold text-[#9a4e47]">Could not load users · Retry</button> : <p className="mt-2 text-[#718487]">Only active StockFlow users are shown.</p>}</details>;
 }
 
-function HydratedNewOrderPanel({ data, templateOrder, onClose, onCreated, onViewCustomer }: { data: OrderBootstrap; templateOrder: OrderSummary | null; onClose: () => void; onCreated: (number: string) => void; onViewCustomer: (customerName: string) => void }) {
+function HydratedNewOrderPanel({ data, templateOrder, onClose, onCreated, onViewCustomer }: { data: OrderBootstrap; templateOrder: OrderSummary | null; onClose: () => void; onCreated: (number: string, command?: CreatedOrderCommand, result?: CreatedOrderResult) => void; onViewCustomer: (customerName: string) => void }) {
   const [initialDraft] = useState(() => readOfflineOrderDraft(localStorage, data.actor.email));
   const initialPayload = initialDraft?.command.payload;
   const templatePayload = templateOrder ? repeatOrderTemplate(templateOrder) : undefined;
@@ -1041,7 +1051,7 @@ function HydratedNewOrderPanel({ data, templateOrder, onClose, onCreated, onView
       const response = await fetch('/api/orders', { method: 'POST', headers: { 'content-type': 'application/json' }, body: JSON.stringify(body) });
       const result = await readOrderSubmission(response);
       removeOfflineOrderDraft(localStorage, data.actor.email);
-      onCreated(result.orderNumber || 'Order');
+      onCreated(result.orderNumber || 'Order', body, result);
     } catch (cause) {
       if (cause instanceof OrderSubmissionError && cause.kind === 'conflict') {
         const accepted = await recoverAcceptedOrder(idempotencyKey);
