@@ -47,6 +47,8 @@ The pending order-performance database changes are deliberately ordered: consoli
 
 Billing-candidate status is added to the authoritative base order filter. The exact-customer and searchable-note optimized wrappers both delegate status decisions to that filter; a contract test protects this dependency.
 
+Manual order refresh now shows progress, blocks duplicate taps and uses last-request-wins protection so an older response cannot overwrite a newer filter or refresh result on a slow connection.
+
 ## Five-working-day device checklist
 
 Run this once on each staff device and each approved account. Record device, account, date and result without entering passwords or customer-sensitive data in this file.

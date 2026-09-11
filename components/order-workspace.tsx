@@ -75,6 +75,7 @@ async function readResponse<T>(response: Response): Promise<T> {
 export function OrderWorkspace({ actorEmail, initialStatus = 'open' }: { actorEmail: string; initialStatus?: string }) {
   const [data, setData] = useState<OrderBootstrap | null>(null);
   const [loading, setLoading] = useState(true);
+  const [refreshing, setRefreshing] = useState(false);
   const [error, setError] = useState('');
   const [notice, setNotice] = useState('');
   const [query, setQuery] = useState('');
@@ -90,22 +91,29 @@ export function OrderWorkspace({ actorEmail, initialStatus = 'open' }: { actorEm
   const dataRef = useRef<OrderBootstrap | null>(null);
   const retryingDraftRef = useRef(false);
   const pendingCommandKeysRef = useRef(new Map<string, string>());
+  const latestListRequestRef = useRef(0);
 
   useEffect(() => {
     dataRef.current = data;
   }, [data]);
 
-  const load = useCallback(async (showLoading = false) => {
+  const load = useCallback(async (showLoading = false, showRefreshing = false) => {
+    const requestId = ++latestListRequestRef.current;
     if (showLoading) setLoading(true);
+    if (showRefreshing) setRefreshing(true);
     setError('');
     try {
       const result = await readResponse<OrderBootstrap>(await fetch(orderListUrl({ page, query, status, captureDate, captureDateTo }), { cache: 'no-store' }));
+      if (requestId !== latestListRequestRef.current) return;
       setData(result);
       setDeviceDraftState(readOfflineOrderDraft(localStorage, result.actor.email)?.state || null);
     } catch (cause) {
-      setError(cause instanceof Error ? cause.message : 'Unable to load orders');
+      if (requestId === latestListRequestRef.current) setError(cause instanceof Error ? cause.message : 'Unable to load orders');
     } finally {
-      if (showLoading) setLoading(false);
+      if (requestId === latestListRequestRef.current) {
+        if (showLoading) setLoading(false);
+        if (showRefreshing) setRefreshing(false);
+      }
     }
   }, [captureDate, captureDateTo, page, query, status]);
 
@@ -150,20 +158,21 @@ export function OrderWorkspace({ actorEmail, initialStatus = 'open' }: { actorEm
   useEffect(() => {
     if (initialStatus !== 'open') return;
     let active = true;
+    const requestId = ++latestListRequestRef.current;
     loadOrderBootstrap(actorEmail)
       .then((result) => {
-        if (active) {
+        if (active && requestId === latestListRequestRef.current) {
           setData(result);
           setDeviceDraftState(readOfflineOrderDraft(localStorage, result.actor.email)?.state || null);
         }
       })
       .catch((cause: unknown) => {
-        if (active) {
+        if (active && requestId === latestListRequestRef.current) {
           setError(cause instanceof Error ? cause.message : 'Unable to load orders');
         }
       })
       .finally(() => {
-        if (active) setLoading(false);
+        if (active && requestId === latestListRequestRef.current) setLoading(false);
       });
     return () => {
       active = false;
@@ -178,19 +187,21 @@ export function OrderWorkspace({ actorEmail, initialStatus = 'open' }: { actorEm
     }
     const controller = new AbortController();
     const timer = window.setTimeout(() => {
+      const requestId = ++latestListRequestRef.current;
       setLoading(true);
       setError('');
       fetch(orderListUrl({ page, query, status, captureDate, captureDateTo }), { cache: 'no-store', signal: controller.signal })
         .then((response) => readResponse<OrderBootstrap>(response))
         .then((result) => {
+          if (requestId !== latestListRequestRef.current) return;
           setData(result);
           setDeviceDraftState(readOfflineOrderDraft(localStorage, result.actor.email)?.state || null);
         })
         .catch((cause: unknown) => {
-          if (!controller.signal.aborted) setError(cause instanceof Error ? cause.message : 'Unable to load orders');
+          if (!controller.signal.aborted && requestId === latestListRequestRef.current) setError(cause instanceof Error ? cause.message : 'Unable to load orders');
         })
         .finally(() => {
-          if (!controller.signal.aborted) setLoading(false);
+          if (!controller.signal.aborted && requestId === latestListRequestRef.current) setLoading(false);
         });
     }, query ? 250 : 0);
     return () => {
@@ -472,8 +483,8 @@ export function OrderWorkspace({ actorEmail, initialStatus = 'open' }: { actorEm
           <button type="button" onClick={exportVisibleOrders} disabled={!totalOrders} className="min-h-11 rounded-xl border border-[#cedfdd] px-4 font-bold text-[#31585d] hover:bg-[#f1f6f4] disabled:opacity-50">
             Export
           </button>
-          <button type="button" onClick={() => void load()} className="min-h-11 rounded-xl border border-[#cedfdd] px-4 font-bold text-[#31585d] hover:bg-[#f1f6f4]">
-            Refresh
+          <button type="button" onClick={() => void load(false, true)} disabled={refreshing} aria-busy={refreshing} className="min-h-11 rounded-xl border border-[#cedfdd] px-4 font-bold text-[#31585d] hover:bg-[#f1f6f4] disabled:opacity-60">
+            {refreshing ? 'Refreshing…' : 'Refresh'}
           </button>
         </div>
 
