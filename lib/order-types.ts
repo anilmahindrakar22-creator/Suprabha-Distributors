@@ -349,6 +349,14 @@ export function orderOperationsText(order: OrderSummary) {
   ].filter(Boolean).join('\n');
 }
 
+export function customerPhoneHref(phone: string | null | undefined) {
+  const value = phone?.trim() || '';
+  if (!value || !/^\+?[\d\s().-]+$/.test(value)) return null;
+  const digits = value.replace(/\D/g, '');
+  if (digits.length < 7 || digits.length > 15) return null;
+  return `tel:${value.startsWith('+') ? '+' : ''}${digits}`;
+}
+
 export function isOrderDeliveryOverdue(order: OrderSummary, today = new Date()) {
   return Boolean(
     order.expectedDeliveryDate &&

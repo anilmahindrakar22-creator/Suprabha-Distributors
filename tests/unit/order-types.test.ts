@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { billingHandoffText, canRoleTransitionOrder, currentTallyFinancialYear, filterOrders, isOrderBackOrdered, isOrderDeliveryDue, isOrderDeliveryOverdue, orderAttentionReasons, orderBackOrderedQuantity, orderDeliveryReminder, orderEventDescription, orderMatchesCaptureDate, orderMatchesCaptureDateRange, orderNeedsBillingAttention, orderNextOwnerLabel, orderOperationsText, ordersCsv, orderStage, pageItems, repeatOrderTemplate, searchCatalog, searchCustomers, tallyInvoiceLineReconciliation, tallyInvoiceReconciliation, tallyInvoiceReconciliationDetail, validateOrderCommand } from '../../lib/order-types';
+import { billingHandoffText, canRoleTransitionOrder, currentTallyFinancialYear, customerPhoneHref, filterOrders, isOrderBackOrdered, isOrderDeliveryDue, isOrderDeliveryOverdue, orderAttentionReasons, orderBackOrderedQuantity, orderDeliveryReminder, orderEventDescription, orderMatchesCaptureDate, orderMatchesCaptureDateRange, orderNeedsBillingAttention, orderNextOwnerLabel, orderOperationsText, ordersCsv, orderStage, pageItems, repeatOrderTemplate, searchCatalog, searchCustomers, tallyInvoiceLineReconciliation, tallyInvoiceReconciliation, tallyInvoiceReconciliationDetail, validateOrderCommand } from '../../lib/order-types';
 
 describe('order command validation', () => {
   it('accepts a complete phone order', () => {
@@ -136,6 +136,16 @@ describe('order command validation', () => {
     expect(validateOrderCommand(valid)).toEqual(valid);
     expect(validateOrderCommand({ ...valid, payload: { ...valid.payload, note: '  ' } })).toBeNull();
     expect(validateOrderCommand({ ...valid, payload: { ...valid.payload, note: 'x'.repeat(1001) } })).toBeNull();
+  });
+});
+
+describe('customer phone actions', () => {
+  it('builds safe dial links only from plausible phone numbers', () => {
+    expect(customerPhoneHref('+91 98765-43210')).toBe('tel:+919876543210');
+    expect(customerPhoneHref('(080) 2345 6789')).toBe('tel:08023456789');
+    expect(customerPhoneHref('Call 9876543210')).toBeNull();
+    expect(customerPhoneHref('123')).toBeNull();
+    expect(customerPhoneHref(null)).toBeNull();
   });
 });
 
