@@ -97,16 +97,15 @@ export async function GET(request: Request) {
             pagination: page.pagination,
           }, startedAt);
         }
-        const exactCustomerLookup = listQuery.query.toLocaleLowerCase('en-IN').startsWith('customer:');
-        if (listQuery.captureDateTo || exactCustomerLookup || ['delivery_due_today', 'delivery_due_soon', 'back_ordered', 'delivery_exception', 'priority_high', 'priority_urgent'].includes(listQuery.status)) {
+        if (listQuery.captureDateTo || ['delivery_due_today', 'delivery_due_soon', 'back_ordered', 'delivery_exception', 'priority_high', 'priority_urgent'].includes(listQuery.status)) {
           const gatewayStatus = ['delivery_due_today', 'delivery_due_soon', 'back_ordered', 'delivery_exception', 'priority_high', 'priority_urgent'].includes(listQuery.status) ? 'open' : listQuery.status;
           const first = await callOrderGateway<OrderBootstrap>(user.email, 'list_orders', {
-            page: 1, pageSize: 200, query: exactCustomerLookup ? '' : listQuery.query, status: gatewayStatus, date: listQuery.captureDateTo ? '' : listQuery.captureDate,
+            page: 1, pageSize: 200, query: listQuery.query, status: gatewayStatus, date: listQuery.captureDateTo ? '' : listQuery.captureDate,
           });
           const orders = [...first.orders];
           for (let page = 2; page <= (first.pagination?.pageCount || 1); page += 1) {
             const next = await callOrderGateway<OrderBootstrap>(user.email, 'list_orders', {
-              page, pageSize: 200, query: exactCustomerLookup ? '' : listQuery.query, status: gatewayStatus, date: listQuery.captureDateTo ? '' : listQuery.captureDate,
+              page, pageSize: 200, query: listQuery.query, status: gatewayStatus, date: listQuery.captureDateTo ? '' : listQuery.captureDate,
             });
             orders.push(...next.orders);
           }
