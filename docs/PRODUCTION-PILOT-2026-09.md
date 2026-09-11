@@ -33,6 +33,7 @@ These are single-run baselines, not percentile service-level claims. The catalog
 - Partial database indexes cover active status queues, creator-scoped queues, promised-delivery reminders and same-day dispatch events. Archived transactions remain immutable and queryable, but no longer enlarge the daily-work indexes.
 - Delivery-date, back-order, open-exception and priority queues are now filtered and paginated inside the secured database gateway. Opening one of these queues returns its requested page instead of downloading every active order for browser-side filtering; full export remains explicit.
 - Order-list responses reuse the consolidated operations summary without recalculating delayed deliveries a second time.
+- Order-history date ranges are validated and paginated in India business time by the database gateway. The interactive screen no longer gathers every page on the application server before returning the requested page; explicit CSV export continues to stream all matching pages.
 
 These figures are production-build raw asset sizes before transfer compression. Live latency must be re-measured after the application and exact-customer database migration are released together.
 

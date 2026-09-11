@@ -103,37 +103,18 @@ export async function GET(request: Request) {
             pagination: page.pagination,
           }, startedAt);
         }
-        if (listQuery.captureDateTo) {
-          const first = await callOrderGateway<OrderBootstrap>(user.email, 'list_orders', {
-            page: 1, pageSize: 200, query: listQuery.query, status: listQuery.status, date: '',
-          });
-          const orders = [...first.orders];
-          for (let page = 2; page <= (first.pagination?.pageCount || 1); page += 1) {
-            const next = await callOrderGateway<OrderBootstrap>(user.email, 'list_orders', {
-              page, pageSize: 200, query: listQuery.query, status: listQuery.status, date: '',
-            });
-            orders.push(...next.orders);
-          }
-          if (exporting) {
-            return new Response(`\uFEFF${ordersCsv(matchingOrderList(orders, listQuery), { invoices: first.snapshot.tallyInvoices, fetchedAt: first.snapshot.fetchedAt })}`, {
-              headers: { ...privateHeaders, 'content-type': 'text/csv; charset=utf-8', 'content-disposition': `attachment; filename="stockflow-orders-${new Date().toISOString().slice(0, 10)}.csv"` },
-            });
-          }
-          return measuredJsonResponse({ ...first, ...queryOrderList(orders, listQuery) }, startedAt);
-        }
         const first = await callOrderGateway<OrderBootstrap>(user.email, 'list_orders', {
           page: exporting ? 1 : listQuery.page,
-          pageSize,
-          query: listQuery.query,
-          status: listQuery.status,
-          date: listQuery.captureDate,
+          pageSize, query: listQuery.query, status: listQuery.status,
+          date: listQuery.captureDate, dateTo: listQuery.captureDateTo || '',
         });
         if (!exporting) return measuredJsonResponse(first, startedAt);
         const orders = [...first.orders];
         const pageCount = first.pagination?.pageCount || 1;
         for (let page = 2; page <= pageCount; page += 1) {
           const next = await callOrderGateway<OrderBootstrap>(user.email, 'list_orders', {
-            page, pageSize, query: listQuery.query, status: listQuery.status, date: listQuery.captureDate,
+            page, pageSize, query: listQuery.query, status: listQuery.status,
+            date: listQuery.captureDate, dateTo: listQuery.captureDateTo || '',
           });
           orders.push(...next.orders);
         }

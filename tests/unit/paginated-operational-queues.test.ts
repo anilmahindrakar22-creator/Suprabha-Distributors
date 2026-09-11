@@ -17,7 +17,7 @@ describe('database-paginated operational order queues', () => {
   it('does not bulk-load active orders for queues that the database can paginate', () => {
     expect(route).not.toContain("listQuery.captureDateTo || ['delivery_due_today'");
     expect(route).not.toContain("? 'open' : listQuery.status");
-    expect(route).toContain('if (listQuery.captureDateTo)');
+    expect(route).toContain("dateTo: listQuery.captureDateTo || ''");
   });
 
   it('removes the duplicate delayed-delivery count from every list response', () => {
