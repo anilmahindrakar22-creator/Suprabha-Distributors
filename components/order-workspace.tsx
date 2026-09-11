@@ -987,6 +987,14 @@ function HydratedNewOrderPanel({ data, templateOrder, onClose, onCreated, onView
     setCustomerHistoryState('loading');
   }
 
+  function usePreviousOrder(order: OrderSummary) {
+    if (lines.length > 0 && !window.confirm(`Replace the products currently entered with products from ${order.orderNumber}?`)) return;
+    const reusedLines = restoreOfflineDraftLines(data.snapshot.catalog, repeatOrderTemplate(order).lines);
+    setLines(reusedLines);
+    setProductQuery('');
+    setError(offlineDraftRecoveryError(null, reusedLines.some((line) => !line.item)));
+  }
+
   async function submit(event: React.SyntheticEvent<HTMLFormElement>) {
     event.preventDefault();
     if (customerName.trim().length < 2 || lines.length === 0) {
@@ -1057,8 +1065,10 @@ function HydratedNewOrderPanel({ data, templateOrder, onClose, onCreated, onView
             <fieldset className="rounded-2xl border border-[#dce7e5] bg-white p-5">
               <legend className="px-2 text-sm font-extrabold text-[#274b50]">Customer</legend>
               <div className="grid gap-4 sm:grid-cols-2">
-                <label className="relative sm:col-span-2 text-sm font-bold text-[#456367]">Name
+                <div className="relative sm:col-span-2 text-sm font-bold text-[#456367]">
+                  <label htmlFor="customer-name">Name</label>
                   <input
+                    id="customer-name"
                     required
                     maxLength={200}
                     value={customerName}
@@ -1096,8 +1106,8 @@ function HydratedNewOrderPanel({ data, templateOrder, onClose, onCreated, onView
                       ))}
                     </ul>
                   ) : null}
-                  {selectedCustomer ? <CustomerAccountPreview customer={selectedCustomer} history={customerHistory} state={customerHistoryState} onViewOrders={() => onViewCustomer(selectedCustomer.name)} /> : null}
-                </label>
+                  {selectedCustomer ? <CustomerAccountPreview customer={selectedCustomer} history={customerHistory} state={customerHistoryState} onViewOrders={() => onViewCustomer(selectedCustomer.name)} onUseOrder={usePreviousOrder} /> : null}
+                </div>
                 <details className="sm:col-span-2 rounded-xl bg-[#f6f8f7] px-3 py-2 text-sm">
                   <summary className="cursor-pointer font-bold text-[#456367]">Contact details <span className="font-normal text-[#718487]">(optional)</span></summary>
                   <div className="mt-3 grid gap-3 sm:grid-cols-2">
@@ -1140,13 +1150,13 @@ function HydratedNewOrderPanel({ data, templateOrder, onClose, onCreated, onView
   );
 }
 
-function CustomerAccountPreview({ customer, history, state, onViewOrders }: { customer: CustomerDirectoryEntry; history: { orders: OrderSummary[]; total: number } | null; state: 'idle' | 'loading' | 'error'; onViewOrders: () => void }) {
+function CustomerAccountPreview({ customer, history, state, onViewOrders, onUseOrder }: { customer: CustomerDirectoryEntry; history: { orders: OrderSummary[]; total: number } | null; state: 'idle' | 'loading' | 'error'; onViewOrders: () => void; onUseOrder: (order: OrderSummary) => void }) {
   const phoneHref = customerPhoneHref(customer.phone);
   return <section aria-label="Customer account" className="mt-2 rounded-xl border border-[#dce7e5] bg-[#fbfcfb] p-3 text-xs font-normal">
     <div className="flex items-start justify-between gap-3"><div><strong className="block text-sm text-[#274b50]">Customer account</strong><span className="mt-1 block text-[#718487]">{[customer.city, customer.phone].filter(Boolean).join(' · ') || 'Contact details unavailable in Tally'}</span></div><div className="flex shrink-0 flex-wrap justify-end gap-2">{phoneHref ? <a href={phoneHref} aria-label={`Call ${customer.name}`} className="inline-flex min-h-9 items-center rounded-lg border border-[#cedfdd] bg-white px-3 font-bold text-[#31585d]">Call</a> : null}{history ? <button type="button" onClick={onViewOrders} className="min-h-9 rounded-lg border border-[#cedfdd] bg-white px-3 font-bold text-[#31585d]">View all orders</button> : null}</div></div>
     {customer.tallyBalance !== undefined && customer.tallyBalance !== null ? <p className="mt-2 rounded-lg bg-[#f2f7f6] px-3 py-2 text-[#456367]">Read-only Tally ledger balance: <strong>₹{customer.tallyBalance.toLocaleString('en-IN', { maximumFractionDigits: 2 })}</strong>{customer.balanceAsOf ? ` · as of ${new Date(customer.balanceAsOf).toLocaleString('en-IN')}` : ''}</p> : null}
     {state === 'loading' ? <p className="mt-2 text-[#718487]">Loading this customer’s order history…</p> : null}
     {state === 'error' ? <p className="mt-2 rounded-lg bg-[#fff7e8] px-3 py-2 text-[#805b20]">Order history is unavailable right now. You can still save this order.</p> : null}
-    {history ? <details className="mt-2"><summary className="cursor-pointer font-bold text-[#456367]">Previous orders ({history.total})</summary>{history.orders.length ? <ul className="mt-2 divide-y divide-[#e3ecea]">{history.orders.map((order) => <li key={order.id} className="flex items-center justify-between gap-3 py-2"><span><strong className="block text-[#274b50]">{order.orderNumber}</strong><small className="text-[#718487]">{new Date(order.createdAt).toLocaleDateString('en-IN', { timeZone: 'Asia/Kolkata' })} · {orderStage(order.status)}</small></span><span className="shrink-0 font-bold text-[#456367]">{formatQuantity(order.totalQuantity)} qty</span></li>)}</ul> : <p className="mt-2 text-[#718487]">No previous orders found.</p>}{history.total > history.orders.length ? <p className="mt-2 text-[#718487]">Showing the latest {history.orders.length} orders.</p> : null}</details> : null}
+    {history ? <details className="mt-2"><summary className="cursor-pointer font-bold text-[#456367]">Previous orders ({history.total})</summary>{history.orders.length ? <ul className="mt-2 divide-y divide-[#e3ecea]">{history.orders.map((order) => <li key={order.id} className="flex items-center justify-between gap-3 py-2"><span><strong className="block text-[#274b50]">{order.orderNumber}</strong><small className="text-[#718487]">{new Date(order.createdAt).toLocaleDateString('en-IN', { timeZone: 'Asia/Kolkata' })} · {orderStage(order.status)} · {formatQuantity(order.totalQuantity)} qty</small><small className="mt-0.5 block max-w-sm truncate text-[#718487]">{order.lines.map((line) => line.itemName).join(', ')}</small></span><button type="button" onClick={() => onUseOrder(order)} className="min-h-9 shrink-0 rounded-lg border border-[#cedfdd] bg-white px-3 font-bold text-[#31585d]">Use items</button></li>)}</ul> : <p className="mt-2 text-[#718487]">No previous orders found.</p>}{history.total > history.orders.length ? <p className="mt-2 text-[#718487]">Showing the latest {history.orders.length} orders.</p> : null}</details> : null}
   </section>;
 }
