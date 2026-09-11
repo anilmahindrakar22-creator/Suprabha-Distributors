@@ -29,6 +29,8 @@ These are single-run baselines, not percentile service-level claims. The catalog
 - The stock dashboard now reads operational counters through a dedicated RBAC-protected summary gateway instead of repeatedly loading the complete order bootstrap. Focus, visibility and page-show events are coalesced within 15 seconds, while manual refresh and reconnect remain immediate.
 - Stock data renders before the independent order counters complete, so a slower operations summary cannot block the reorder screen.
 - The open-order inbox preload now waits for browser idle time instead of competing with the first Stock request. Hover, keyboard focus and touch-down on Orders still begin the preload immediately, using the existing account-isolated request deduplication.
+- Operational counters now use one materialized, role-scoped active-order set instead of repeating a separate order scan for each counter. The scope still comes from the server-side role policy table, including creator-only access.
+- Partial database indexes cover active status queues, creator-scoped queues, promised-delivery reminders and same-day dispatch events. Archived transactions remain immutable and queryable, but no longer enlarge the daily-work indexes.
 
 These figures are production-build raw asset sizes before transfer compression. Live latency must be re-measured after the application and exact-customer database migration are released together.
 

@@ -20,21 +20,7 @@ begin
   if v_role is null then raise exception 'Account is not approved' using errcode='42501'; end if;
 
   return jsonb_build_object(
-    'operations', private.stockflow_operations_summary(v_email,v_role) || jsonb_build_object(
-      'delayedFailedDeliveries', (
-        select count(*) from private.stockflow_orders o
-        where o.archived_at is null
-          and private.stockflow_can_access_order(v_email,v_role,o.id)
-          and o.status not in ('delivered','cancelled')
-          and (
-            o.expected_delivery_date < current_date
-            or exists(
-              select 1 from private.stockflow_delivery_exceptions issue
-              where issue.order_id=o.id and issue.status='open' and issue.category in ('delayed','failed_delivery')
-            )
-          )
-      )
-    ),
+    'operations', private.stockflow_operations_summary(v_email,v_role),
     'operationsDate', to_char(v_business_date,'YYYY-MM-DD')
   );
 end;
