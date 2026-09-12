@@ -24,6 +24,7 @@ export type OrderSummary = {
   customerPhone: string | null;
   status: string;
   priority?: 'normal' | 'high' | 'urgent';
+  pricingState?: 'review_required' | 'approval_required' | 'approved' | 'invalidated';
   assignedToEmail?: string | null;
   followUpDate?: string | null;
   followUpNote?: string | null;

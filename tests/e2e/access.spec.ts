@@ -33,3 +33,13 @@ test('order endpoint fails closed for an unapproved visitor', async ({ request }
     error: expect.stringMatching(/Sign in required|Access denied/),
   });
 });
+
+test('restricted pricing endpoint fails closed for an unapproved visitor', async ({ request }) => {
+  const response = await request.get('/api/pricing?orderId=11111111-1111-4111-8111-111111111111');
+  expect([401, 403]).toContain(response.status());
+  expect(response.headers()['cache-control']).toContain('no-store');
+  const body = await response.json();
+  expect(body).not.toHaveProperty('proposedRate');
+  expect(body).not.toHaveProperty('cost');
+  expect(body).not.toHaveProperty('margin');
+});

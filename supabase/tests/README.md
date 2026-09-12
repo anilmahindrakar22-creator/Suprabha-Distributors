@@ -8,4 +8,6 @@
 
 `fefo_allocation_integrity.sql` verifies earliest-expiry-first allocation, full and partial order states, duplicate replay, and automatic release when an allocated order is cancelled.
 
+`pricing_engine_integrity.sql` verifies restricted-role denial, exact customer/item resolution, atomic approval + audit + outbox + immutable snapshot, idempotent replay, stale-write rejection and approval invalidation after an order change. It never contacts or writes to Tally.
+
 Run it only after all migrations have been applied to a non-production database. A future CI database job can execute this file unchanged once the repository provisions an isolated PostgreSQL/Supabase service.

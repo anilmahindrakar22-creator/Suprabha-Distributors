@@ -10,7 +10,8 @@ describe('Tally invoice reconciliation connector', () => {
     expect(connector).toContain('Date,VoucherNumber,VoucherTypeName,Reference,MasterID');
     expect(connector).toContain("sourceScope = 'sales_vouchers_v1'");
     expect(connector).toContain('tallyInvoices = @($salesData.invoices)');
-    expect(connector).toContain('lineItems = @($voucher.lineItems)');
+    expect(connector).toContain('lineItems = $safeInvoiceLines');
+    expect(connector).toContain('itemName = $_.itemName; quantity = $_.quantity');
     expect(recovery).toContain("SelectSingleNode('./VOUCHERNUMBER')");
     expect(connector).toContain("$today.AddDays(-180)");
     expect(connector).toContain('$dateKey -ge $invoiceFromDate');
@@ -26,6 +27,15 @@ describe('Tally invoice reconciliation connector', () => {
     expect(connector).toContain('[xml]$companyDoc = Invoke-Tally $companyXml');
     expect(connector).toContain('[xml]$stockDoc = Get-TallyCatalogDocument');
     expect(recovery).toContain('function Read-CatalogSnapshot');
+  });
+
+  it('exports bounded read-only selling-price evidence without enabling Tally writes', () => {
+    expect(connector).toContain('AllInventoryEntries.Rate,AllInventoryEntries.Amount');
+    expect(connector).toContain('Get-PricingSalesEvidence $salesData.records $customers');
+    expect(connector).toContain('pricingHistory = [ordered]@{ sales = $pricingSales; purchaseCosts = @() }');
+    expect(connector).toContain('Commercial rates stay in pricingHistory and never enter normal order payloads.');
+    expect(connector).toContain('lineItems = $safeInvoiceLines');
+    expect(connector).not.toMatch(/CREATE\s+VOUCHER|ALTER\s+VOUCHER|DELETE\s+VOUCHER/i);
   });
 
   it('reuses the customer-master request for read-only ledger balances', () => {

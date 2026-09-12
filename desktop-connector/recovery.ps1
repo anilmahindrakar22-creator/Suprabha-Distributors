@@ -8,6 +8,23 @@ function Get-SalesRecordIdentity([string]$MasterId, [string]$Date, [string]$Vouc
     finally { $hash.Dispose() }
 }
 
+function Get-StableEvidenceVersion([string]$Value) {
+    $bytes = [Text.Encoding]::UTF8.GetBytes($Value)
+    $hash = [Security.Cryptography.SHA256]::Create()
+    try { return ([BitConverter]::ToString($hash.ComputeHash($bytes)).Replace('-', '').ToLowerInvariant()) }
+    finally { $hash.Dispose() }
+}
+
+function Get-TallyRate([string]$RateText, [string]$AmountText, [double]$Quantity) {
+    if (-not [string]::IsNullOrWhiteSpace($RateText) -and $RateText -match '-?[0-9,]+(?:\.[0-9]+)?') {
+        return [Math]::Abs([decimal]($matches[0] -replace ',', ''))
+    }
+    if ($Quantity -gt 0 -and -not [string]::IsNullOrWhiteSpace($AmountText) -and $AmountText -match '-?[0-9,]+(?:\.[0-9]+)?') {
+        return [Math]::Round([Math]::Abs([decimal]($matches[0] -replace ',', '')) / [decimal]$Quantity, 2)
+    }
+    return $null
+}
+
 function Merge-SalesRecords($Previous, $Incoming, [string]$FromDate) {
     # A complete window replaces prior rows, including deleted/omitted vouchers.
     $ids = @{}
@@ -36,13 +53,18 @@ function Convert-LegacySalesRecords([string]$Document) {
         $partyNode = $voucher.SelectSingleNode('./PARTYLEDGERNAME | ./PARTYNAME | ./BASICBUYERNAME')
         $id = Get-SalesRecordIdentity $(if ($masterIdNode) { $masterIdNode.InnerText } else { '' }) $(if ($dateNode) { $dateNode.InnerText } else { '' }) $(if ($voucherNumberNode) { $voucherNumberNode.InnerText } else { '' }) $(if ($partyNode) { $partyNode.InnerText } else { '' })
         if (-not $id) { return }
+        $lineNumber = 0
         $lines = @($voucher.SelectNodes('.//ALLINVENTORYENTRIES.LIST | .//INVENTORYENTRIES.LIST') | ForEach-Object {
+            $lineNumber++
             $itemNode = $_.SelectSingleNode('./STOCKITEMNAME')
             if (-not $itemNode -or -not $itemNode.InnerText.Trim()) { return }
             $quantityNode = $_.SelectSingleNode('./BILLEDQTY | ./ACTUALQTY')
             $quantity = 0
             if ($quantityNode -and $quantityNode.InnerText -match '-?[0-9,]+(?:\.[0-9]+)?') { $quantity = [Math]::Abs([double]($matches[0] -replace ',', '')) }
-            [ordered]@{ itemName = $itemNode.InnerText.Trim(); quantity = $quantity }
+            $rateNode = $_.SelectSingleNode('./RATE')
+            $amountNode = $_.SelectSingleNode('./AMOUNT')
+            $rate = Get-TallyRate $(if ($rateNode) { $rateNode.InnerText } else { '' }) $(if ($amountNode) { $amountNode.InnerText } else { '' }) $quantity
+            [ordered]@{ lineNumber = $lineNumber; itemName = $itemNode.InnerText.Trim(); quantity = $quantity; rate = $rate }
         })
         [ordered]@{
             masterId = $id; date = if ($dateNode) { $dateNode.InnerText.Trim() } else { '' }; voucherNumber = if ($voucherNumberNode) { $voucherNumberNode.InnerText.Trim() } else { '' }
@@ -53,6 +75,38 @@ function Convert-LegacySalesRecords([string]$Document) {
             lineItems = $lines
         }
     })
+}
+
+function Get-PricingSalesEvidence($Records, $Customers, [int]$LimitPerCustomerItem = 5, [int]$MaximumRows = 5000) {
+    $customerKeys = @{}
+    foreach ($customer in @($Customers)) {
+        $name = ([string]$customer.name).Trim().ToLowerInvariant()
+        $key = ([string]$customer.tallyKey).Trim()
+        if ($name -and $key -and -not $customerKeys.ContainsKey($name)) { $customerKeys[$name] = $key }
+    }
+    $evidence = [Collections.Generic.List[object]]::new()
+    foreach ($voucher in @($Records)) {
+        if ($voucher.cancelled -or $voucher.optional -or [string]$voucher.voucherType -ne 'Sales') { continue }
+        $customerKey = $customerKeys[([string]$voucher.party).Trim().ToLowerInvariant()]
+        if (-not $customerKey) { continue }
+        $date = [string]$voucher.date
+        if ($date -notmatch '^\d{8}$') { continue }
+        $invoiceDate = "$($date.Substring(0,4))-$($date.Substring(4,2))-$($date.Substring(6,2))"
+        foreach ($line in @($voucher.lineItems)) {
+            $item = ([string]$line.itemName).Trim()
+            if (-not $item -or $null -eq $line.rate) { continue }
+            $rate = [decimal]$line.rate
+            $sourceId = "$([string]$voucher.masterId)|$([int]$line.lineNumber)|$item"
+            $sourceVersion = Get-StableEvidenceVersion "$sourceId|$date|$rate|$([string]$voucher.voucherNumber)"
+            $evidence.Add([ordered]@{
+                customerTallyKey = $customerKey; tallyItemKey = $item; rate = $rate; invoiceDate = $invoiceDate
+                invoiceReference = [string]$voucher.voucherNumber; sourceId = $sourceId; sourceVersion = $sourceVersion
+                exceptional = $rate -le 0; exceptionType = if ($rate -le 0) { 'foc' } else { $null }
+            })
+        }
+    }
+    $bounded = @($evidence | Sort-Object invoiceDate -Descending | Group-Object { "$($_.customerTallyKey)|$($_.tallyItemKey)" } | ForEach-Object { $_.Group | Select-Object -First $LimitPerCustomerItem } | Select-Object -First $MaximumRows)
+    return $bounded
 }
 
 function Get-TrustedSalesSnapshot($Snapshot, [string]$Company) {

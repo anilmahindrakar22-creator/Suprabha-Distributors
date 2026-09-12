@@ -12,9 +12,14 @@ if ($empty.Count -ne 2) { throw 'Empty window must preserve only older history' 
 $rejected = $false
 try { Merge-SalesRecords $old @(@{date='20260901'}) '20260801' | Out-Null } catch { $rejected = $true }
 if (-not $rejected) { throw 'Missing identity accepted' }
-[xml]$legacy = '<ENVELOPE><COLLECTION><VOUCHER><MASTERID>9</MASTERID><DATE>20260905</DATE><VOUCHERNUMBER>SD/26-27/0009</VOUCHERNUMBER><VOUCHERTYPENAME>Sales</VOUCHERTYPENAME><PARTYLEDGERNAME>City Lab</PARTYLEDGERNAME><ALLINVENTORYENTRIES.LIST><STOCKITEMNAME>Kit</STOCKITEMNAME><BILLEDQTY> 2 qty</BILLEDQTY></ALLINVENTORYENTRIES.LIST></VOUCHER></COLLECTION></ENVELOPE>'
+[xml]$legacy = '<ENVELOPE><COLLECTION><VOUCHER><MASTERID>9</MASTERID><DATE>20260905</DATE><VOUCHERNUMBER>SD/26-27/0009</VOUCHERNUMBER><VOUCHERTYPENAME>Sales</VOUCHERTYPENAME><PARTYLEDGERNAME>City Lab</PARTYLEDGERNAME><ALLINVENTORYENTRIES.LIST><STOCKITEMNAME>Kit</STOCKITEMNAME><BILLEDQTY> 2 qty</BILLEDQTY><RATE>485.00/box</RATE><AMOUNT>-970.00</AMOUNT></ALLINVENTORYENTRIES.LIST></VOUCHER></COLLECTION></ENVELOPE>'
 $converted = @(Convert-LegacySalesRecords $legacy.OuterXml)
-if ($converted.Count -ne 1 -or $converted[0].date -ne '20260905' -or $converted[0].voucherNumber -ne 'SD/26-27/0009' -or $converted[0].voucherType -ne 'Sales' -or $converted[0].party -ne 'City Lab' -or $converted[0].lineItems[0].quantity -ne 2 -or $converted[0].masterId -ne 'master:9') { throw 'Legacy cache conversion failed' }
+if ($converted.Count -ne 1 -or $converted[0].date -ne '20260905' -or $converted[0].voucherNumber -ne 'SD/26-27/0009' -or $converted[0].voucherType -ne 'Sales' -or $converted[0].party -ne 'City Lab' -or $converted[0].lineItems[0].quantity -ne 2 -or $converted[0].lineItems[0].rate -ne 485 -or $converted[0].masterId -ne 'master:9') { throw 'Legacy cache conversion failed' }
+$evidence = @(Get-PricingSalesEvidence $converted @(@{name='City Lab';tallyKey='ledger:city'}) 5 50)
+if ($evidence.Count -ne 1 -or $evidence[0].customerTallyKey -ne 'ledger:city' -or $evidence[0].tallyItemKey -ne 'Kit' -or $evidence[0].rate -ne 485 -or $evidence[0].invoiceDate -ne '2026-09-05' -or -not $evidence[0].sourceVersion) { throw 'Pricing sales evidence was not built safely' }
+$focXml = $legacy.OuterXml.Replace('<RATE>485.00/box</RATE><AMOUNT>-970.00</AMOUNT>','<RATE>0.00/box</RATE><AMOUNT>0.00</AMOUNT>')
+$focEvidence = @(Get-PricingSalesEvidence @(Convert-LegacySalesRecords $focXml) @(@{name='City Lab';tallyKey='ledger:city'}) 5 50)
+if ($focEvidence.Count -ne 1 -or -not $focEvidence[0].exceptional -or $focEvidence[0].exceptionType -ne 'foc') { throw 'FOC evidence was not classified' }
 $unscoped = [pscustomobject]@{ company='TEST'; records=@([pscustomobject]@{ party='Purchase supplier' }) }
 if ($null -ne (Get-TrustedSalesSnapshot $unscoped 'TEST')) { throw 'Unscoped historical supply cache accepted' }
 $salesScoped = [pscustomobject]@{ company='TEST'; sourceScope='sales_vouchers_v1'; records=@() }

@@ -209,7 +209,7 @@ function Get-TallySalesData {
             if ([string]$baseline[$item].dateKey -lt $fromDate) { $result[$item] = $baseline[$item] }
         }
         $toDate = $today.ToString('yyyyMMdd')
-        $salesXml = '<ENVELOPE><HEADER><VERSION>1</VERSION><TALLYREQUEST>Export</TALLYREQUEST><TYPE>COLLECTION</TYPE><ID>DashboardSalesVouchers</ID></HEADER><BODY><DESC><STATICVARIABLES><SVEXPORTFORMAT>$$SysName:XML</SVEXPORTFORMAT><SVCURRENTCOMPANY>SUPRABHA DISTRIBUTORS</SVCURRENTCOMPANY><SVFROMDATE>__FROM_DATE__</SVFROMDATE><SVTODATE>__TO_DATE__</SVTODATE></STATICVARIABLES><TDL><TDLMESSAGE><COLLECTION NAME="DashboardSalesVouchers" ISINITIALIZE="Yes"><TYPE>Voucher</TYPE><CHILDOF>Sales</CHILDOF><BELONGSTO>Yes</BELONGSTO><FETCH>Date,VoucherNumber,VoucherTypeName,Reference,MasterID,PartyLedgerName,PartyName,BasicBuyerName,IsCancelled,IsOptional,AllInventoryEntries.StockItemName,AllInventoryEntries.BilledQty,AllInventoryEntries.ActualQty</FETCH></COLLECTION></TDLMESSAGE></TDL></DESC></BODY></ENVELOPE>'
+        $salesXml = '<ENVELOPE><HEADER><VERSION>1</VERSION><TALLYREQUEST>Export</TALLYREQUEST><TYPE>COLLECTION</TYPE><ID>DashboardSalesVouchers</ID></HEADER><BODY><DESC><STATICVARIABLES><SVEXPORTFORMAT>$$SysName:XML</SVEXPORTFORMAT><SVCURRENTCOMPANY>SUPRABHA DISTRIBUTORS</SVCURRENTCOMPANY><SVFROMDATE>__FROM_DATE__</SVFROMDATE><SVTODATE>__TO_DATE__</SVTODATE></STATICVARIABLES><TDL><TDLMESSAGE><COLLECTION NAME="DashboardSalesVouchers" ISINITIALIZE="Yes"><TYPE>Voucher</TYPE><CHILDOF>Sales</CHILDOF><BELONGSTO>Yes</BELONGSTO><FETCH>Date,VoucherNumber,VoucherTypeName,Reference,MasterID,PartyLedgerName,PartyName,BasicBuyerName,IsCancelled,IsOptional,AllInventoryEntries.StockItemName,AllInventoryEntries.BilledQty,AllInventoryEntries.ActualQty,AllInventoryEntries.Rate,AllInventoryEntries.Amount</FETCH></COLLECTION></TDLMESSAGE></TDL></DESC></BODY></ENVELOPE>'
         $salesXml = $salesXml.Replace('__FROM_DATE__', $fromDate).Replace('__TO_DATE__', $toDate)
         $salesXml = $salesXml.Replace('<SVFROMDATE>', '<SVFROMDATE TYPE="Date">').Replace('<SVTODATE>', '<SVTODATE TYPE="Date">')
         $salesXml = $salesXml.Replace('</COLLECTION>', '<FILTER>StockFlowSalesPeriod</FILTER></COLLECTION><SYSTEM TYPE="Formulae" NAME="StockFlowSalesPeriod">$Date &gt;= ##SVFromDate AND $Date &lt;= ##SVToDate</SYSTEM>')
@@ -243,7 +243,9 @@ function Get-TallySalesData {
             if ($voucherNumber -and $dateKey -ge $invoiceFromDate) {
                 # Reuse line details already present in the durable sales cache.
                 # This enables OMS reconciliation without another Tally request.
-                $invoices += [ordered]@{ voucherNumber = $voucherNumber; reference = $voucher.reference; party = $party; date = $dateKey; masterId = $voucher.masterId; lineItems = @($voucher.lineItems) }
+                # Commercial rates stay in pricingHistory and never enter normal order payloads.
+                $safeInvoiceLines = @($voucher.lineItems | ForEach-Object { [ordered]@{ itemName = $_.itemName; quantity = $_.quantity } })
+                $invoices += [ordered]@{ voucherNumber = $voucherNumber; reference = $voucher.reference; party = $party; date = $dateKey; masterId = $voucher.masterId; lineItems = $safeInvoiceLines }
             }
             foreach ($entry in @($voucher.lineItems)) {
                 $itemName = [string]$entry.itemName
@@ -268,7 +270,7 @@ function Get-TallySalesData {
     }
     Write-ConnectorHealth "$([datetimeoffset]::Now.ToString('o')) domain=sales records=$(@($salesRecords).Count) invoices=$(@($invoices).Count) status=accepted"
     $script:RebuildSalesHistory = $false
-    return [ordered]@{ lastSupply = $result; invoices = @($invoices) }
+    return [ordered]@{ lastSupply = $result; invoices = @($invoices); records = @($salesRecords) }
 }
 
 function Get-ReorderData {
@@ -303,9 +305,10 @@ function Read-ReorderData {
     Assert-TallyCompanyIdentity $companyDoc $companyName
     [xml]$stockDoc = Get-TallyCatalogDocument
     [xml]$reportDoc = Invoke-Tally $reportXml
+    $customers = Get-TallyCustomers
     $salesData = Get-TallySalesData
     $lastSupplyMap = $salesData.lastSupply
-    $customers = Get-TallyCustomers
+    $pricingSales = @(Get-PricingSalesEvidence $salesData.records $customers)
     $groupMap = @{}
     foreach ($item in $stockDoc.SelectNodes('//STOCKITEM')) { $groupMap[$item.GetAttribute('NAME')] = [string]$item.PARENT.'#text' }
     $groupParents = @{}
@@ -408,6 +411,7 @@ function Read-ReorderData {
         catalog = $catalog
         customers = $customers
         tallyInvoices = @($salesData.invoices)
+        pricingHistory = [ordered]@{ sales = $pricingSales; purchaseCosts = @() }
     }
 }
 

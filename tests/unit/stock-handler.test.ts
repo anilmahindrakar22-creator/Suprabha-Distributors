@@ -1,5 +1,5 @@
 import { describe, expect, it, vi } from 'vitest';
-import { createStockHandler } from '../../lib/stock-handler';
+import { createStockHandler, sanitizeStockPayload } from '../../lib/stock-handler';
 
 const user = { email: 'approved@example.com' };
 
@@ -72,5 +72,23 @@ describe('stock API handler', () => {
     expect(await response.json()).toEqual({
       error: 'Stock service is temporarily unavailable',
     });
+  });
+
+  it('removes restricted pricing, cost, margin, and suggestion data from stock payloads', () => {
+    expect(sanitizeStockPayload({
+      rows: [{ item: 'Kit', closing: 2 }],
+      pricingHistory: { sales: [{ rate: 485 }] },
+      tallyInvoices: [{ lineItems: [{ itemName: 'Kit', quantity: 2, rate: 485 }] }],
+      nested: { purchaseCost: 300, grossMargin: 38, suggestedPrice: 520 },
+    })).toEqual({
+      rows: [{ item: 'Kit', closing: 2 }],
+      tallyInvoices: [{ lineItems: [{ itemName: 'Kit', quantity: 2 }] }],
+      nested: {},
+    });
+  });
+
+  it('sanitizes proxied upstream JSON before returning it', async () => {
+    const response = await makeHandler({ fetchFn: vi.fn(async () => Response.json({ rows: [1], pricingHistory: { sales: [{ rate: 485 }] } })) })();
+    expect(await response.json()).toEqual({ rows: [1] });
   });
 });

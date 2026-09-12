@@ -22,6 +22,7 @@ import { loadOrderBootstrap } from '@/lib/order-bootstrap-cache';
 import { retryPendingOfflineOrder } from '@/lib/offline-order-retry';
 import { acknowledgeOrderCommand, prepareOrderCommandRetry } from '@/lib/order-command-idempotency';
 import { loadOrderCatalog, loadOrderCustomers } from '@/lib/order-capture-masters';
+import type { CustomerPriceContract, OrderPricingWorkspace, PricingLineResolution } from '@/lib/pricing-types';
 
 type DraftLine = { tallyKey: string; item: CatalogItem | null; quantity: number };
 type CreatedOrderResult = { orderId?: string; orderNumber?: string; status?: string; version?: number };
@@ -635,6 +636,7 @@ export function OrderWorkspace({ actorEmail, initialStatus = 'open' }: { actorEm
                   onSetPriority={setOrderPriority}
                   onSetAssignee={setOrderAssignee}
                   onFollowUp={updateOrderFollowUp}
+                  onPricingChanged={() => load(false, true)}
                 /> : null}
               </div>
             </div>
@@ -661,6 +663,7 @@ export function OrderWorkspace({ actorEmail, initialStatus = 'open' }: { actorEm
                   onSetPriority={setOrderPriority}
                   onSetAssignee={setOrderAssignee}
                   onFollowUp={updateOrderFollowUp}
+                  onPricingChanged={() => load(false, true)}
                 />)}
             </div>
           )}
@@ -737,6 +740,7 @@ function OrderRow({
   onSetPriority,
   onSetAssignee,
   onFollowUp,
+  onPricingChanged,
 }: {
   order: OrderSummary;
   actorRole: string;
@@ -757,6 +761,7 @@ function OrderRow({
   onSetPriority: (order: OrderSummary, priority: 'normal' | 'high' | 'urgent') => Promise<void>;
   onSetAssignee: (order: OrderSummary, assignedToEmail?: string) => Promise<void>;
   onFollowUp: (order: OrderSummary, command: Extract<OrderCommand, { action: 'set_order_follow_up' | 'complete_order_follow_up' }>) => Promise<void>;
+  onPricingChanged: () => Promise<void>;
 }) {
   const [busy, setBusy] = useState(false);
   const [invoiceNumber, setInvoiceNumber] = useState(order.tallyInvoiceNumber || '');
@@ -766,7 +771,8 @@ function OrderRow({
   const [detailHistory, setDetailHistory] = useState<{ exceptions: DeliveryException[]; installations: EquipmentInstallation[] } | null>(null);
   const [detailState, setDetailState] = useState<'idle' | 'loading' | 'error'>('idle');
   const action = nextStatus[order.status];
-  const canAdvance = Boolean(action && canRoleTransitionOrder(actorRole, order.status, action.status));
+  const canAdvance = Boolean(action && canRoleTransitionOrder(actorRole, order.status, action.status)
+    && (action.status !== 'awaiting_tally_billing' || order.pricingState === 'approved'));
   const nextOwner = orderNextOwnerLabel(order.status);
   const total = Number(order.totalQuantity || 0);
   const requiresInvoice = order.status === 'awaiting_tally_billing';
@@ -809,6 +815,7 @@ function OrderRow({
           {deliveryReminder ? <span className={`rounded-full px-2.5 py-1 text-[11px] font-extrabold ${deliveryReminder === 'overdue' ? 'bg-[#fff0ef] text-[#9a3f37]' : deliveryReminder === 'today' ? 'bg-[#fff1d6] text-[#8a5a0a]' : 'bg-[#e8f4fa] text-[#315f75]'}`}>{deliveryReminder === 'overdue' ? 'Delivery overdue' : deliveryReminder === 'today' ? 'Delivery due today' : 'Delivery due soon'}</span> : null}
           {followUpReminder ? <span className={`rounded-full px-2.5 py-1 text-[11px] font-extrabold ${followUpReminder === 'overdue' ? 'bg-[#fff0ef] text-[#9a3f37]' : followUpReminder === 'today' ? 'bg-[#fff1d6] text-[#8a5a0a]' : 'bg-[#e8f4fa] text-[#315f75]'}`}>{followUpReminder === 'overdue' ? 'Follow-up overdue' : followUpReminder === 'today' ? 'Follow-up today' : `Follow-up ${order.followUpDate}`}</span> : null}
           {lineMatch.state === 'mismatch' ? <span className="rounded-full bg-[#fff0ef] px-2.5 py-1 text-[11px] font-extrabold text-[#8d3a34]">Billing mismatch</span> : null}
+          <span className={`rounded-full px-2.5 py-1 text-[11px] font-extrabold ${order.pricingState === 'approved' ? 'bg-[#eaf8f1] text-[#176246]' : order.pricingState === 'approval_required' ? 'bg-[#fff1d6] text-[#8a5a0a]' : 'bg-[#f1f3f2] text-[#587275]'}`}>Pricing: {order.pricingState === 'approved' ? 'verified' : order.pricingState === 'approval_required' ? 'approval required' : 'review required'}</span>
         </div>
         <p className="mt-2 font-bold text-[#274b50]">{order.customerName}</p>
         <p className="mt-1 flex flex-wrap items-center gap-2 text-xs text-[#718487]"><span>{order.customerPhone || 'No phone recorded'} · {order.lineCount} line{order.lineCount === 1 ? '' : 's'}<span className="sm:hidden"> · {formatQuantity(total)} qty</span></span>{phoneHref ? <a href={phoneHref} aria-label={`Call ${order.customerName}`} className="rounded-lg border border-[#cedfdd] px-2 py-1 font-bold text-[#31585d] hover:bg-[#f1f6f4]">Call</a> : null}</p>
@@ -833,7 +840,7 @@ function OrderRow({
           {busy ? 'Updating…' : action.label}
         </button>
         </div>
-      ) : <span className="text-xs font-bold text-[#7d8f91]">{action && nextOwner ? `Waiting for ${nextOwner}` : 'No action due'}</span>}
+      ) : <span className="text-xs font-bold text-[#7d8f91]">{action?.status === 'awaiting_tally_billing' && order.pricingState !== 'approved' ? 'Pricing approval required' : action && nextOwner ? `Waiting for ${nextOwner}` : 'No action due'}</span>}
       </div>
       <details className="mt-3 rounded-xl border border-[#dce7e5] bg-[#fbfcfb] text-sm">
         <summary className="flex min-h-10 cursor-pointer list-none items-center justify-between gap-3 px-3 font-bold text-[#456367] marker:hidden [&::-webkit-details-marker]:hidden">
@@ -870,6 +877,7 @@ function OrderRow({
           </dl>
         </div>
         {lineMatch.state === 'mismatch' ? <div className="mt-3 rounded-xl border border-[#efc6c2] bg-[#fff8f7] p-3"><p className="text-xs font-extrabold uppercase tracking-wide text-[#8d3a34]">Tally invoice differences</p><ul className="mt-2 space-y-1 text-sm text-[#6f3f3b]">{lineMatch.differences.map((difference) => <li key={difference.itemName}>{difference.itemName}: ordered {formatQuantity(difference.orderedQuantity)}, invoiced {formatQuantity(difference.invoicedQuantity)}</li>)}</ul><BillingReviewPanel order={order} actorRole={actorRole} onSave={onBillingReview} /></div> : null}
+        {['administrator', 'accounts', 'management'].includes(actorRole) && !['billed_in_tally','ready_for_dispatch','dispatched','delivered','cancelled'].includes(order.status) ? <PricingPanel order={order} actorRole={actorRole} onChanged={onPricingChanged} /> : null}
         {!['cancelled', 'delivered'].includes(order.status) ? <FulfilmentEditor order={order} onSave={onSaveFulfilment} /> : null}
         {['ready_for_dispatch', 'dispatched', 'delivered'].includes(order.status) ? <DispatchPanel order={order} actorRole={actorRole} onSave={onDelivery} /> : null}
         {['phone_order_received','awaiting_confirmation','awaiting_approval','confirmed','partially_reserved','fully_reserved','ready_for_picking','picked','packed'].includes(order.status) ? <OrderEditPanel order={order} onSave={onEdit} /> : null}
@@ -890,6 +898,89 @@ function BillingReviewPanel({ order, actorRole, onSave }: { order: OrderSummary;
   const [outcome, setOutcome] = useState<'investigating' | 'accepted_difference' | 'tally_corrected'>('investigating'); const [note, setNote] = useState('');
   if (!['administrator', 'accounts', 'operations', 'management'].includes(actorRole)) return <p className="mt-3 text-xs text-[#718487]">Accounts or operations must review this difference.</p>;
   return <div className="mt-3 border-t border-[#efcfcc] pt-3"><button type="button" onClick={() => setOpen((value) => !value)} className="text-xs font-extrabold text-[#7d413c]">{open ? '− Hide review' : '+ Record review'}</button>{open ? <div className="mt-2 grid gap-2 sm:grid-cols-[180px_1fr_auto]"><select value={outcome} onChange={(event) => setOutcome(event.target.value as typeof outcome)} className="min-h-10 rounded-lg border border-[#dfbbb7] bg-white px-2 text-xs"><option value="investigating">Investigating</option><option value="tally_corrected">Corrected in Tally</option><option value="accepted_difference">Accepted difference</option></select><input value={note} onChange={(event) => setNote(event.target.value)} minLength={3} maxLength={1000} placeholder="What was checked or corrected?" className="min-h-10 rounded-lg border border-[#dfbbb7] bg-white px-3 text-xs"/><button type="button" disabled={busy || note.trim().length < 3} onClick={async () => { setBusy(true); try { await onSave(order, { action: 'record_billing_review', payload: { orderId: order.id, expectedVersion: order.version, outcome, note: note.trim() } }); setNote(''); setOpen(false); } finally { setBusy(false); } }} className="min-h-10 rounded-lg bg-[#7d413c] px-3 text-xs font-bold text-white disabled:opacity-50">{busy ? 'Saving…' : 'Save review'}</button></div> : null}</div>;
+}
+
+const currency = new Intl.NumberFormat('en-IN', { style: 'currency', currency: 'INR', maximumFractionDigits: 2 });
+
+function PricingPanel({ order, actorRole, onChanged }: { order: OrderSummary; actorRole: string; onChanged: () => Promise<void> }) {
+  const [workspace, setWorkspace] = useState<OrderPricingWorkspace | null>(null);
+  const [entries, setEntries] = useState<Record<string, { rate: string; reason: string }>>({});
+  const [state, setState] = useState<'idle' | 'loading' | 'saving' | 'error'>('idle');
+  const [message, setMessage] = useState('');
+  async function loadPricing(force = false) {
+    if ((!force && workspace) || state === 'loading') return;
+    setState('loading'); setMessage('');
+    try {
+      const result = await readResponse<OrderPricingWorkspace>(await fetch(`/api/pricing?orderId=${encodeURIComponent(order.id)}`, { cache: 'no-store' }));
+      setWorkspace(result);
+      setEntries(Object.fromEntries(result.lines.map((line) => [line.lineId, { rate: line.proposedRate == null ? '' : String(line.proposedRate), reason: '' }])));
+      setState('idle');
+    } catch (error) { setState('error'); setMessage(error instanceof Error ? error.message : 'Pricing could not load'); }
+  }
+  async function submit() {
+    if (!workspace) return;
+    setState('saving'); setMessage('');
+    try {
+      const response = await readResponse<{ pricingState?: string }>(await fetch('/api/pricing', {
+        method: 'POST', headers: { 'content-type': 'application/json' }, body: JSON.stringify({
+          action: 'submit_order_pricing', payload: {
+            orderId: order.id, expectedVersion: workspace.orderVersion, idempotencyKey: crypto.randomUUID(),
+            lines: workspace.lines.map((line) => ({ lineId: line.lineId, enteredRate: Number(entries[line.lineId]?.rate), reason: entries[line.lineId]?.reason.trim() || undefined })),
+          },
+        }),
+      }));
+      setMessage(response.pricingState === 'approved' ? 'Pricing approved and billing snapshot created.' : 'Pricing exception sent for approval.');
+      setWorkspace(null); await onChanged(); await loadPricing(true);
+    } catch (error) { setMessage(error instanceof Error ? error.message : 'Pricing could not be saved'); }
+    finally { setState('idle'); }
+  }
+  return <details onToggle={(event) => { if (event.currentTarget.open) void loadPricing(); }} className="mt-5 border-t border-[#dfe9e7] pt-4">
+    <summary className="cursor-pointer text-xs font-extrabold uppercase tracking-wide text-[#31585d]">Commercial pricing · restricted</summary>
+    {state === 'loading' ? <p className="mt-3 text-xs text-[#718487]">Loading governed pricing evidence…</p> : null}
+    {message ? <output className={`mt-3 block rounded-lg px-3 py-2 text-xs font-bold ${state === 'error' ? 'bg-[#fff0ef] text-[#8d3a34]' : 'bg-[#edf7f3] text-[#31585d]'}`}>{message}</output> : null}
+    {workspace ? <div className="mt-3 space-y-3">
+      {workspace.lines.map((line) => <PricingLineCard key={line.lineId} line={line} entry={entries[line.lineId] || { rate: '', reason: '' }} onChange={(entry) => setEntries((current) => ({ ...current, [line.lineId]: entry }))} />)}
+      {workspace.exceptions.map((exception) => <PriceExceptionDecision key={exception.id} exception={exception} actorRole={actorRole} onChanged={async () => { setWorkspace(null); await onChanged(); await loadPricing(true); }} />)}
+      {workspace.exceptions.length === 0 && workspace.pricingState !== 'approved' ? <button type="button" disabled={state === 'saving' || workspace.lines.some((line) => !Number(entries[line.lineId]?.rate))} onClick={() => void submit()} className="min-h-10 rounded-xl bg-[#073e46] px-4 text-sm font-bold text-white disabled:opacity-50">{state === 'saving' ? 'Saving pricing…' : 'Approve pricing'}</button> : null}
+      {workspace.customerId ? <CustomerPriceContracts customerId={workspace.customerId} lines={workspace.lines} actorRole={actorRole} onChanged={() => loadPricing(true)} /> : null}
+    </div> : null}
+  </details>;
+}
+
+function CustomerPriceContracts({ customerId, lines, actorRole, onChanged }: { customerId: string; lines: PricingLineResolution[]; actorRole: string; onChanged: () => Promise<void> }) {
+  const [contracts, setContracts] = useState<CustomerPriceContract[]>([]); const [loaded, setLoaded] = useState(false); const [busy, setBusy] = useState(false); const [message, setMessage] = useState('');
+  const [tallyKey, setTallyKey] = useState(lines[0]?.tallyKey || ''); const [price, setPrice] = useState(''); const [validFrom, setValidFrom] = useState(() => new Date().toISOString().slice(0, 10)); const [reason, setReason] = useState('');
+  async function load() { setBusy(true); setMessage(''); try { const result = await readResponse<{ contracts: CustomerPriceContract[] }>(await fetch(`/api/pricing?contracts=1&customerId=${encodeURIComponent(customerId)}`, { cache: 'no-store' })); setContracts(result.contracts); setLoaded(true); } catch (error) { setMessage(error instanceof Error ? error.message : 'Customer prices could not load'); } finally { setBusy(false); } }
+  async function create() { setBusy(true); setMessage(''); try { const active = contracts.find((contract) => contract.tallyKey === tallyKey && contract.status === 'approved' && contract.validFrom < validFrom); await readResponse(await fetch('/api/pricing', { method: 'POST', headers: { 'content-type': 'application/json' }, body: JSON.stringify({ action: 'create_price_contract', payload: { customerId, tallyKey, price: Number(price), validFrom, source: 'manual_governed', reason: reason.trim(), ...(active ? { supersedesPriceId: active.id } : {}), idempotencyKey: crypto.randomUUID() } }) })); setPrice(''); setReason(''); await load(); } catch (error) { setMessage(error instanceof Error ? error.message : 'Customer price could not be proposed'); setBusy(false); } }
+  async function decide(contract: CustomerPriceContract, action: 'approve_price_contract' | 'reject_price_contract') { setBusy(true); setMessage(''); try { await readResponse(await fetch('/api/pricing', { method: 'POST', headers: { 'content-type': 'application/json' }, body: JSON.stringify({ action, payload: { contractId: contract.id, expectedVersion: contract.version, reason: reason.trim(), idempotencyKey: crypto.randomUUID() } }) })); await load(); await onChanged(); } catch (error) { setMessage(error instanceof Error ? error.message : 'Customer price decision failed'); setBusy(false); } }
+  return <details onToggle={(event) => { if (event.currentTarget.open && !loaded) void load(); }} className="rounded-xl border border-[#dce7e5] bg-[#f7faf9] p-3"><summary className="cursor-pointer text-xs font-extrabold text-[#31585d]">Customer price contracts</summary>{busy && !loaded ? <p className="mt-2 text-xs text-[#718487]">Loading contracts…</p> : null}{message ? <p role="alert" className="mt-2 text-xs font-bold text-[#8d3a34]">{message}</p> : null}<div className="mt-3 space-y-2">{contracts.map((contract) => <div key={contract.id} className="rounded-lg bg-white p-2 text-xs"><div className="flex flex-wrap items-center justify-between gap-2"><span><strong>{contract.tallyKey}</strong> · {currency.format(contract.price)} · from {contract.validFrom}</span><span className="font-extrabold uppercase text-[#587275]">{contract.status.replaceAll('_', ' ')}</span></div>{contract.status === 'pending_approval' && ['administrator','management'].includes(actorRole) ? <div className="mt-2 flex gap-2"><button type="button" disabled={busy || reason.trim().length < 3} onClick={() => void decide(contract, 'approve_price_contract')} className="rounded-lg bg-[#176246] px-3 py-2 font-bold text-white disabled:opacity-50">Approve</button><button type="button" disabled={busy || reason.trim().length < 3} onClick={() => void decide(contract, 'reject_price_contract')} className="rounded-lg border border-[#d59c91] px-3 py-2 font-bold text-[#8d3a34] disabled:opacity-50">Reject</button></div> : null}</div>)}<div className="grid gap-2 sm:grid-cols-4"><select value={tallyKey} onChange={(event) => setTallyKey(event.target.value)} className="min-h-10 rounded-lg border border-[#cedfdd] bg-white px-2 text-xs">{lines.map((line) => <option key={line.lineId} value={line.tallyKey}>{line.itemName}</option>)}</select><input type="number" min="0.01" step="0.01" value={price} onChange={(event) => setPrice(event.target.value)} placeholder="Approved rate" className="min-h-10 rounded-lg border border-[#cedfdd] px-3 text-xs"/><input type="date" value={validFrom} onChange={(event) => setValidFrom(event.target.value)} className="min-h-10 rounded-lg border border-[#cedfdd] px-3 text-xs"/><button type="button" disabled={busy || !Number(price) || reason.trim().length < 3} onClick={() => void create()} className="rounded-lg bg-[#31585d] px-3 py-2 text-xs font-bold text-white disabled:opacity-50">Propose contract</button></div><input value={reason} onChange={(event) => setReason(event.target.value)} maxLength={1000} placeholder="Reason for proposal or decision" className="min-h-10 w-full rounded-lg border border-[#cedfdd] px-3 text-xs"/></div></details>;
+}
+
+function PricingLineCard({ line, entry, onChange }: { line: PricingLineResolution; entry: { rate: string; reason: string }; onChange: (value: { rate: string; reason: string }) => void }) {
+  return <section className="rounded-xl border border-[#dce7e5] bg-white p-3 text-xs text-[#456367]">
+    <div className="flex flex-wrap items-start justify-between gap-2"><div><strong className="block text-sm text-[#173239]">{line.itemName}</strong><span>{formatQuantity(line.quantity)} ordered · {line.resolution.replaceAll('_', ' ')}</span></div><span className={`rounded-full px-2 py-1 font-extrabold ${line.guardrail === 'PRICE_OK' ? 'bg-[#eaf8f1] text-[#176246]' : 'bg-[#fff1d6] text-[#8a5a0a]'}`}>{line.guardrail.replaceAll('_', ' ')}</span></div>
+    <div className="mt-3 grid gap-2 sm:grid-cols-2">
+      <p>Reference <strong className="block text-[#173239]">{line.proposedRate == null ? 'No price history' : currency.format(line.proposedRate)}</strong>{line.source.reference ? <small>{line.source.reference} · {line.source.date}</small> : null}</p>
+      <p>Current cost <strong className="block text-[#173239]">{line.cost ? currency.format(line.cost.amount) : 'Not available'}</strong>{line.cost?.changePercent != null ? <small>Change {line.cost.changePercent > 0 ? '+' : ''}{line.cost.changePercent}%</small> : null}</p>
+      <p>Current GP <strong className="block text-[#173239]">{line.margin.grossProfitAmount == null ? 'Not available' : `${currency.format(line.margin.grossProfitAmount)} · ${line.margin.grossMarginPercent}%`}</strong>{line.margin.erosionPercentagePoints != null ? <small>Margin change {line.margin.erosionPercentagePoints} pts</small> : null}</p>
+      <p>Suggested <strong className="block text-[#173239]">{line.suggestion ? `(${currency.format(line.suggestion.amount)})` : 'Not calculated'}</strong>{line.suggestion ? <small>{line.suggestion.policyVersion} · {line.suggestion.roundingRuleVersion}</small> : null}</p>
+    </div>
+    {line.warnings.length ? <p className="mt-2 font-extrabold text-[#8a5a0a]">{line.warnings.join(' · ').replaceAll('_', ' ')}</p> : null}
+    <div className="mt-3 grid gap-2 sm:grid-cols-2"><label className="font-bold">Selling rate<input type="number" min="0.01" max="100000000" step="0.01" value={entry.rate} onChange={(event) => onChange({ ...entry, rate: event.target.value })} className="mt-1 min-h-10 w-full rounded-lg border border-[#cedfdd] px-3 font-normal" /></label><label className="font-bold">Reason when changing/reviewing<input maxLength={1000} value={entry.reason} onChange={(event) => onChange({ ...entry, reason: event.target.value })} className="mt-1 min-h-10 w-full rounded-lg border border-[#cedfdd] px-3 font-normal" /></label></div>
+  </section>;
+}
+
+function PriceExceptionDecision({ exception, actorRole, onChanged }: { exception: OrderPricingWorkspace['exceptions'][number]; actorRole: string; onChanged: () => Promise<void> }) {
+  const [reason, setReason] = useState(''); const [busy, setBusy] = useState(false); const [message, setMessage] = useState('');
+  async function decide(action: 'approve_price_exception' | 'reject_price_exception') {
+    setBusy(true); setMessage('');
+    try {
+      await readResponse(await fetch('/api/pricing', { method: 'POST', headers: { 'content-type': 'application/json' }, body: JSON.stringify({ action, payload: { exceptionId: exception.id, expectedVersion: exception.version, reason: reason.trim(), idempotencyKey: crypto.randomUUID() } }) }));
+      await onChanged();
+    } catch (error) { setMessage(error instanceof Error ? error.message : 'Decision could not be saved'); }
+    finally { setBusy(false); }
+  }
+  return <section className="rounded-xl border border-[#efcf9c] bg-[#fff9ec] p-3 text-xs"><strong className="text-[#7a520e]">Approval required · {currency.format(exception.enteredRate)}</strong><p className="mt-1 text-[#6f5b36]">{exception.reason}</p>{['administrator','management'].includes(actorRole) ? <><input value={reason} onChange={(event) => setReason(event.target.value)} maxLength={1000} placeholder="Approval or rejection reason" className="mt-2 min-h-10 w-full rounded-lg border border-[#e2c98d] bg-white px-3"/><div className="mt-2 flex gap-2"><button type="button" disabled={busy || reason.trim().length < 3} onClick={() => void decide('approve_price_exception')} className="min-h-9 rounded-lg bg-[#176246] px-3 font-bold text-white disabled:opacity-50">Approve</button><button type="button" disabled={busy || reason.trim().length < 3} onClick={() => void decide('reject_price_exception')} className="min-h-9 rounded-lg border border-[#d59c91] px-3 font-bold text-[#8d3a34] disabled:opacity-50">Reject</button></div></> : <p className="mt-2 font-bold text-[#7a520e]">Management approval pending.</p>}{message ? <p role="alert" className="mt-2 text-[#8d3a34]">{message}</p> : null}</section>;
 }
 
 function OrderNotePanel({ order, onSave }: { order: OrderSummary; onSave: (order: OrderSummary, note: string) => Promise<void> }) {
