@@ -4,83 +4,43 @@
 
 Preserve Suprabha's real billing workflow while reducing manual Tally lookup, protecting sensitive commercial pricing, and creating a transaction-safe foundation for assisted billing.
 
-The pricing engine and Tally billing should be treated as one governed subsystem. Automated billing is not trustworthy until Suprabha OS can determine which rate a particular customer should receive for a particular stock item and can prove how that rate was selected.
+The pricing engine and Tally billing are one governed subsystem. Historical selling price is never evaluated in isolation from authoritative purchase cost when cost data is available.
 
-## Core business rule
+## Core commercial truth
 
-There is no assumption of one universal selling price for a product.
-
-The commercial truth is primarily:
+There is no universal selling price. The governed context is:
 
 ```text
 Customer × Product × Effective Price Context
 ```
 
-During transition, Tally history provides the strongest practical pricing reference:
+Operational pricing evidence is:
 
 ```text
-Customer
-  ×
-Stock Item
-  ×
-Last invoice rate
-  ×
-Invoice date
-  ×
-Recent rates
+Customer × Stock Item × Last invoice rate × Invoice date × Recent rates
 ```
 
-The last billed rate is a **suggested rate**, not an unquestionable rate. Historical Tally prices are evidence and context; they must not silently become permanent approved customer prices.
+The last billed rate is a suggested historical reference, not an unquestionable permanent rate.
 
 ## Pricing authority hierarchy
 
-Pricing resolution must be deterministic and must never guess.
+Pricing resolution is deterministic and never guesses:
 
 ```text
 ORDER ITEM
-    |
-    v
-1. Valid approved Customer × Product contract price
-    |
-    +-- exists -> propose this rate
-    |
-    v
-2. Valid customer-specific agreement / scheme
-    |
-    v
-3. Valid customer-group / contract rule
-    |
-    v
-4. Last real Tally billed rate for exact Customer × Stock Item
-    |
-    v
-5. Standard/list selling reference, if explicitly configured
-    |
-    v
-6. No trustworthy price
-       -> PRICE REVIEW REQUIRED
+  -> valid approved Customer × Product contract price
+  -> valid customer-specific agreement / scheme
+  -> valid customer-group / contract rule
+  -> last real Tally billed rate for exact Customer × Stock Item
+  -> standard/list reference only if explicitly configured
+  -> otherwise PRICE REVIEW REQUIRED
 ```
 
-A lower-priority source must never silently override a higher-priority valid source.
+A lower-priority source never silently overrides a higher-priority valid source.
 
-## Customer × Product price contracts
+## Customer × Product governed prices
 
-Where Suprabha explicitly agrees a customer-specific price, store it as a governed, effective-dated contract rather than overwriting a single mutable value.
-
-Example:
-
-```text
-Customer: Anugraha
-Product:  Glucose
-
-₹750  01-Apr-2025 -> 31-Mar-2026
-₹720  01-Apr-2026 -> 30-Sep-2026
-₹700  01-Oct-2026 -> current
-```
-
-Old price rows are never rewritten merely because a new rate is agreed. Closing an old validity period and creating a new version preserves historical truth.
-
-Recommended logical entity:
+Explicit customer prices are effective-dated immutable history, not a single overwritten value. Recommended logical entity:
 
 ```text
 customer_product_price
@@ -89,8 +49,8 @@ customer_product_price
 - product_id FK
 - price_amount NUMERIC
 - currency
-- valid_from DATE/TIMESTAMPTZ
-- valid_to DATE/TIMESTAMPTZ nullable
+- valid_from
+- valid_to nullable
 - source_type
 - agreement_reference nullable
 - scheme_reference nullable
@@ -103,33 +63,64 @@ customer_product_price
 - version INTEGER
 ```
 
-Database constraints should prevent overlapping active approved periods for the same Customer × Product where the business rule requires exclusivity.
+Database constraints prevent overlapping active approved periods where exclusivity is required. Old approved price history is never destructively overwritten.
 
 ## Tally pricing-history reference
 
-For an order line, when no higher-priority approved price exists, retrieve the most recent actual Tally billing history for the exact Customer × Stock Item combination.
+When no higher-priority approved price exists, retrieve the most recent actual Tally history for the exact Customer × Stock Item. Accounts/Admin may see last billed rate, last invoice date/reference, bounded recent rate history, and source provenance. Do not average recent rates automatically. One-off quotations, FOC/scheme-adjusted invoices, tender pricing, corrections, introductory pricing, credit-note effects, or unusual discounts must not silently become the future default. No prior history means `PRICE REVIEW REQUIRED`.
 
-The Accounts/Admin UI should show:
+## Purchase-cost guardrail
+
+Customer pricing must never be evaluated from historical selling price alone when reliable purchase-cost data is available.
+
+For every price resolution compare, where available:
+
+- last customer selling price;
+- latest authoritative purchase price / landed cost;
+- purchase cost applicable around the previous sale;
+- purchase-cost change amount and percentage;
+- current GP amount and GP% at the historical selling price;
+- previous GP% where reconstructable;
+- margin erosion in percentage points.
+
+The latest purchase cost must come from the governed authoritative source. Missing purchase cost is never guessed or fabricated.
+
+If purchase cost increased, continue to show the genuine last customer selling price as historical evidence, but prominently flag `PURCHASE PRICE INCREASED`. A purchase-cost increase does **not** automatically change the customer's selling price.
+
+Example:
 
 ```text
-Last billed rate
-Last invoice date
-Last invoice number/reference
-Recent bounded rate history
-Source = TALLY_HISTORY
+Last billed price        ₹485
+Last invoice             18-Aug-2026
+Previous purchase cost   ₹310
+Latest purchase cost     ₹350
+Purchase cost change     +12.9%
+Current GP               ₹135
+Current GP %             27.8%
+Previous GP %            36.1%
+Margin erosion           -8.3 percentage points
+Status                   PURCHASE PRICE INCREASED
 ```
 
-Recent rates are context only. Do not average them automatically and do not infer a permanent customer contract from them.
+Pricing resolution must distinguish at least:
 
-One-off quotations, FOC/scheme-adjusted invoices, tender pricing, corrections, introductory pricing, credit-note effects, or unusual discounts must not silently become the future default.
+```text
+PRICE_OK
+COST_INCREASE
+PRICE_REVIEW_REQUIRED
+```
 
-If no prior Customer × Stock Item invoice exists, the system must display `PRICE REVIEW REQUIRED` rather than inventing a rate.
+`PRICE_OK` means cost/margin remains within approved policy. `COST_INCREASE` means purchase cost increased but the resulting margin remains within permitted policy. `PRICE_REVIEW_REQUIRED` applies when current purchase cost causes margin below configured minimum, a loss, missing/untrustworthy required evidence, or another pricing-policy violation.
+
+A price violating configured margin policy cannot silently proceed to billing. Required review/approval is enforced server-side.
+
+Purchase-cost history is not destructively overwritten. The approved pricing decision or immutable billing snapshot preserves the exact authoritative cost reference/value/version used for the decision so historical economics can be reconstructed.
+
+A material authoritative purchase-cost change after pricing approval but before billing must invalidate or re-check the pricing decision according to policy. The system must not silently bill using stale economics.
 
 ## Pricing confidentiality and authorization
 
-Pricing is privileged commercial/financial information.
-
-Default access policy:
+Pricing is privileged commercial information. Default access:
 
 ```text
 ADMIN / OWNER / authorised management    full pricing access
@@ -142,471 +133,148 @@ SERVICE                                  no price values/history
 CUSTOMER                                 no internal pricing history
 ```
 
-Non-authorised roles may see operational status such as:
+Non-authorised roles may see only workflow status such as `PRICING PENDING`, `PRICING VERIFIED`, `COST REVIEW`, `APPROVAL REQUIRED`, or `PRICE REVIEW REQUIRED`.
 
-```text
-PRICING PENDING
-PRICING VERIFIED
-PRICE REVIEW REQUIRED
-```
-
-They must not receive internal rate history, cost, GP, margin, discounts, override history, or pricing-source details.
-
-This is a server/database authorization rule, not a UI-hiding rule. Restricted pricing fields must not be returned by APIs, exports, logs, browser payloads, or background queries to unauthorised roles.
-
-Sensitive pricing fields include at minimum:
-
-- current selling rate;
-- last billed rate;
-- recent rate history;
-- customer contract rate;
-- discount;
-- purchase/landed cost;
-- GP amount;
-- GP percentage;
-- margin calculations;
-- pricing override reason/history;
-- commercial approval metadata where sensitive.
+Restricted values include selling rate, last billed rate, recent rates, contract rate, discounts, purchase/landed cost, GP amount/%, margin erosion, override history and sensitive approval metadata. Authorization is enforced at API/database boundaries, not by UI hiding. Restricted values must not leak through APIs, browser payloads, exports, caches, logs, searches or error messages.
 
 ## Order-entry operating model
 
-Routine staff should not need to search Tally manually.
-
 ```text
 Order Desk
-  -> selects Customer + Product + Quantity
-  -> submits pricing request/state
+  -> Customer + Product + Quantity
+  -> submits pricing state
 
 Accounts/Admin
   -> receives resolved pricing context
-  -> sees approved contract rate or Tally history
-  -> confirms or changes proposed price
+  -> sees approved contract or Tally history
+  -> sees purchase-cost/margin warning where applicable
+  -> confirms/changes proposed price
   -> pricing validation/approval runs
 
 System
-  -> freezes approved billing snapshot
+  -> freezes approved pricing/billing snapshot
   -> order becomes ready for billing
 ```
 
-This preserves commercial confidentiality while allowing other employees to continue operational work.
+## Price exceptions
 
-## Price exception handling
-
-If an authorised user changes the proposed rate, the system evaluates the change against deterministic rules.
-
-Example:
-
-```text
-Reference rate       ₹720
-Entered rate         ₹680
-Difference           -5.56%
-Estimated GP         24.1%
-Status               PRICE EXCEPTION
-Reason               required
-Approval             required if threshold breached
-```
-
-Thresholds should be configurable and versioned. Approval requirements must not live only in frontend code.
-
-No price exception may become billable until the required approval transaction succeeds.
+Authorized changes to proposed rates are evaluated against deterministic, configurable and versioned thresholds. Store reference rate, entered rate, difference, GP impact, reason, requester, approver, timestamps and source. Required approvals cannot live only in frontend code. No exception becomes billable until the approval transaction succeeds.
 
 ## ACID transaction model
 
-Pricing approval must follow the same transaction-safe philosophy as the rest of Suprabha OS.
-
 ### Atomicity
-
-A pricing decision is committed as one transaction. For an approval event, all of the following succeed together or none succeed:
-
-1. validate order/item state;
-2. resolve or validate price source;
-3. validate authorisation;
-4. validate exception threshold;
-5. create/update immutable pricing decision/version;
-6. write approval metadata;
-7. write audit event;
-8. create billing snapshot or mark item pricing verified as applicable;
-9. create transactional outbox event if downstream action is required.
-
-If any step fails, the transaction rolls back.
+A pricing approval transaction succeeds entirely or rolls back entirely. It validates order/item state, price/cost source, authorization, exception thresholds and freshness; persists immutable pricing decision/version, approval metadata, audit event, billing snapshot/pricing state and transactional outbox event where required.
 
 ### Consistency
-
-Database constraints enforce business invariants, including:
-
-- positive/valid monetary values where applicable;
-- valid Customer/Product foreign keys;
-- allowed pricing states only;
-- no invalid state transition;
-- no duplicate active contract version where prohibited;
-- no billable order line without a resolved approved price;
-- no Tally billing command without an immutable approved billing snapshot;
-- approval user must possess the required permission;
-- audit/outbox records are created transactionally with the business change.
+Database constraints enforce valid customer/product references, monetary invariants, pricing states/transitions, contract exclusivity, permission requirements, no billable line without approved resolved price, no Tally billing command without immutable approved snapshot, and transactional coupling of audit/outbox records.
 
 ### Isolation
-
-Concurrent price edits must not silently overwrite one another.
-
-Use optimistic versioning and/or row locks for approval-critical operations. A stale editor receives a conflict and must refresh rather than overwriting a newer approved price.
-
-Example guard:
-
-```text
-UPDATE customer_product_price
-SET ... , version = version + 1
-WHERE id = :id
-  AND version = :expected_version
-```
-
-Zero updated rows means concurrency conflict.
+Concurrent price edits cannot silently overwrite each other. Use optimistic versioning and/or row locks for approval-critical operations. Stale updates fail with a conflict and require refresh. A concurrent material purchase-cost change must also make a stale pricing approval fail or require revalidation.
 
 ### Durability
+Committed approvals and audit history remain durable in PostgreSQL regardless of Tally availability. External commands remain queued through the transactional outbox rather than being lost or silently retried outside transactional control.
 
-Once a pricing approval commits, it remains durable in PostgreSQL and its audit trail. Downstream Tally availability does not determine whether the approval itself exists.
+## Immutable pricing/billing snapshot
 
-If Tally is unavailable, the approved billing command remains queued through the transactional outbox instead of losing the decision or silently retrying outside the database transaction.
+Every billable order line preserves the facts approved at that moment, including customer/product, price, quantity, discount/tax commercial fields, price source, Tally source invoice/date where applicable, contract reference, pricing-rule version, approved by/at, override reason, snapshot hash, and the authoritative purchase-cost reference/value/version used for margin validation where available.
 
-## Immutable pricing decision snapshot
+After approval the snapshot is immutable. Material order, price, or relevant authoritative cost changes invalidate/re-check the prior approval and require a new version rather than mutation.
 
-Every billable order line should preserve the pricing facts that were approved at that moment.
-
-Recommended logical entity:
-
-```text
-order_item_price_snapshot
-- id UUID PK
-- order_id FK
-- order_item_id FK
-- customer_id FK
-- product_id FK
-- price_amount
-- currency
-- quantity
-- discount fields as applicable
-- tax-relevant commercial fields as applicable
-- price_source_type
-- source_reference_id nullable
-- source_invoice_number nullable
-- source_invoice_date nullable
-- contract_price_id nullable
-- recent_rate_context_hash nullable
-- pricing_rule_version
-- approved_by
-- approved_at
-- override_reason nullable
-- snapshot_hash
-- created_at
-```
-
-After billing approval, the snapshot is immutable. A material order or price change invalidates the prior approval and creates a new version/snapshot rather than mutating history.
-
-## Billing boundary with Tally
-
-Authority remains separated:
+## Tally authority boundary
 
 ```text
 Order/workflow/price approval authority   Suprabha OS
 Accounting authority                      Tally
 Inventory authority                       Tally
-GST invoice/voucher authority              Tally
+GST invoice/voucher authority             Tally
 ```
 
-Flow:
+Browser clients never communicate directly with Tally. Live pricing-history capability begins read-only and retrieves only required exact customer/item history and governed cost evidence where safely available. Do not replicate the entire Tally database merely for convenience.
 
-```text
-Approved order
-   -> immutable billing snapshot
-   -> validation
-   -> transactional outbox
-   -> local Tally connector
-   -> create Sales Voucher
-   -> Tally acknowledgement
-   -> voucher identity returned
-   -> reconciliation
-```
+## Billing handoff and idempotency
 
-The browser must never communicate directly with Tally.
+Approved order -> immutable billing snapshot -> validation -> transactional outbox -> local Tally connector -> Sales Voucher -> acknowledgement -> voucher identity -> reconciliation.
 
-The connector receives only the minimum approved billing payload required to perform its job.
+Every billing attempt uses an immutable unique idempotency key. Ambiguous timeout requires verify-before-create. Retry must never create a duplicate invoice.
 
-## Idempotency and duplicate prevention
-
-Every billing attempt must use an immutable idempotency key, for example:
-
-```text
-SUPRABHA-ORDER-2026-00584-BILLING-V1
-```
-
-Retries use the same key. Before creating a voucher after an ambiguous timeout, the connector/system must verify whether the intended voucher was already created.
-
-A retry must never create a second invoice simply because the previous HTTP acknowledgement was lost.
-
-Recommended billing handoff fields:
-
-```text
-billing_handoff
-- id
-- order_id
-- billing_snapshot_version
-- idempotency_key UNIQUE
-- status
-- payload_hash
-- requested_by
-- requested_at
-- approved_by
-- approved_at
-- tally_company_identity
-- tally_voucher_guid nullable
-- tally_voucher_number nullable
-- attempt_count
-- last_attempt_at nullable
-- failure_code nullable
-- failure_message_sanitised nullable
-- reconciled_at nullable
-- created_at
-- updated_at
-```
-
-Suggested states:
-
-```text
-DRAFT
-VALIDATING
-READY
-QUEUED
-SENDING
-ACKNOWLEDGED
-RECONCILED
-FAILED
-REVIEW_REQUIRED
-CANCELLED
-```
+Recommended `billing_handoff` includes order/snapshot version, unique idempotency key, status, payload hash, requester/approver, Tally company identity, voucher GUID/number, attempt metadata, sanitised failure information, reconciliation timestamp and audit timestamps.
 
 ## Audit requirements
 
-Every sensitive pricing event must produce an audit record containing enough information to reconstruct responsibility without leaking unnecessary financial data into general logs.
+Append-only application audit covers price proposed/source selected, cost evidence used, purchase-price hike detected, margin erosion, price change, exception reason, approval requested/granted/rejected, snapshot created/invalidated, stale-cost revalidation, billing request, Tally acknowledgement and reconciliation result.
 
-Audit events include:
+## Safe test plan
 
-- price proposed;
-- price source selected;
-- price changed;
-- exception reason supplied;
-- approval requested;
-- approval granted/rejected;
-- pricing snapshot created/invalidated;
-- billing requested;
-- Tally acknowledgement received;
-- reconciliation passed/failed.
+### Stage 0 — Protect live data
+Fresh backup, demonstrated restore, explicit live/test company identities, private-LAN Tally endpoint, no credentials or broad raw financial responses in browser/Git/general logs.
 
-Audit logs are append-only from the application perspective.
+### Stage 1 — Read-only live Tally
+Test exact customer ledger/item lookup, historical sales vouchers, last rate/date/reference, bounded recent rates and authoritative purchase-cost evidence required by the pricing guardrail. No create/alter/cancel/delete/master writes. Compare 20–50 known combinations manually and test edge cases and unauthorized access.
 
-## Tally-history bootstrap strategy
+### Stage 2 — Shadow pricing
+Accounts/Admin sees proposed selling price plus cost/margin guardrail. Real Tally billing remains manual. Compare proposed vs actual chosen rate, source, purchase-cost warning, GP impact, tax, quantity/UOM, discount and total.
 
-Tally can help Suprabha gradually build explicit Customer × Product pricing knowledge.
+### Stage 3 — Separate restored test company
+Use a clearly named integration-test Tally company. Write-capable connector must refuse the wrong company identity.
 
-```text
-TALLY HISTORY
-      ↓
-Customer × Stock Item history
-      ↓
-Suggested customer price
-      ↓
-Accounts/Admin review
-      ↓
-APPROVED CUSTOMER × PRODUCT CONTRACT
-```
+### Stage 4 — Assisted billing in test company only
+Test normal and multi-item invoices, contract vs history fallback, expired price, purchase-cost increase, acceptable margin after cost hike, margin breach, loss-making price, missing cost history, stale approval after cost change, overrides, concurrency, GST, schemes, missing ledger/item, Tally unavailable, timeout/retry, duplicate idempotency, changed order, connector restart, reconciliation mismatch, unauthorized APIs and audit completeness.
 
-Do not automatically promote every historical rate into the approved price master.
+### Stage 5 — Production gate
+Require read-only agreement, stable shadow pricing, authorization tests, ACID/concurrency tests, test-company writes, idempotency proof, backup/restore, LAN restriction, complete audit and explicit live configuration/company identity. Initial production write mode is assisted billing only; unattended posting is a later decision.
 
-Over time, stable recurring prices can be reviewed and promoted into explicit contracts, reducing repeated lookups while preserving the original Tally evidence.
+## Initial combined build scope
 
-## Safe test principle
+Continue the current transactional build through the pricing engine before the next major consolidation/pilot gate:
 
-**No write tests against the live Tally company.**
-
-Testing is staged so live Tally is read-only first. Any voucher-creation test must use a separate restored/copied test company.
-
-## Stage 0 — Protect live data
-
-Before integration testing:
-
-- Take a fresh Tally company backup to a separate location.
-- Verify that the backup can be restored.
-- Record live and test company identities/data paths so the connector cannot confuse them.
-- Keep the Tally HTTP/ODBC endpoint available only on the office machine/private LAN; never expose it publicly.
-- Do not store Tally credentials, broad company data, or full integration responses in browser code, Git, or normal application logs.
-
-## Stage 1 — Read-only pricing-history test against live Tally
-
-Allowed operations:
-
-- exact customer ledger lookup;
-- exact stock-item lookup;
-- historical sales-voucher search;
-- return last invoice rate;
-- return invoice date/reference;
-- return a bounded recent-rate list.
-
-No voucher create, alter, cancel, delete, master create, or master alter command is permitted in this mode.
-
-Suggested acceptance tests:
-
-1. Pick 20–50 known Customer × Stock Item combinations.
-2. Staff manually checks Tally's last bill.
-3. Suprabha OS performs the read-only lookup.
-4. Compare customer, item, invoice number/date, last rate, and recent rates.
-5. Require exact agreement before progressing.
-6. Include edge cases: one prior invoice, many prior invoices, no prior invoice, zero/FOC line, special discount, duplicate-looking item names, customer aliases, cancelled/altered vouchers where applicable.
-7. Verify unauthorised roles cannot obtain pricing values through UI or API.
-
-## Stage 2 — Shadow pricing in Suprabha OS
-
-Suprabha OS displays the proposed rate to Accounts/Admin but does not create any Tally voucher.
-
-The billing operator continues creating the real bill manually in Tally. Compare:
-
-- proposed rate vs actual chosen rate;
-- price source;
-- tax treatment;
-- quantity/UOM;
-- discount;
-- invoice total.
-
-Use discrepancies to refine pricing/history rules before enabling writes.
-
-## Stage 3 — Create a separate Tally test company
-
-Restore a current backup into a clearly named test company, for example:
-
-```text
-SUPRABHA DISTRIBUTORS - INTEGRATION TEST - DO NOT USE FOR LIVE BILLING
-```
-
-The connector must be configured explicitly for this test company. Write-capable integration must refuse to run if the selected company identity does not match the configured test identity.
-
-## Stage 4 — Assisted billing writes only to test company
-
-Test the full command path:
-
-```text
-Approved Suprabha order
-      ↓
-Immutable billing payload snapshot
-      ↓
-Validation
-      ↓
-Idempotency key
-      ↓
-Create Sales Voucher in TEST Tally company
-      ↓
-Tally acknowledgement
-      ↓
-Return voucher number / identity
-      ↓
-Reconcile against expected payload
-```
-
-Required tests include:
-
-- normal invoice;
-- multiple items with different customer-specific prices;
-- contract price vs Tally-history fallback;
-- expired contract price;
-- price override approval;
-- concurrent price-edit conflict;
-- GST/tax combinations used in real operations;
-- discount and scheme cases;
-- missing ledger;
-- missing stock item;
-- Tally closed/unavailable;
-- retry after timeout;
-- duplicate-send attempt using the same idempotency key;
-- changed order after approval;
-- connector restart during processing;
-- invoice acknowledgement/reconciliation mismatch;
-- unauthorised pricing API access;
-- audit completeness.
-
-## Stage 5 — Production gate
-
-Do not enable live writes until all of the following are true:
-
-- read-only lookup agrees with manual Tally checks;
-- shadow billing is stable on real orders;
-- pricing authorization tests pass;
-- ACID/concurrency tests pass;
-- write tests pass in the copied test company;
-- duplicate-voucher/idempotency tests pass;
-- backup and restore have been demonstrated;
-- connector is restricted to the approved office host/private LAN;
-- billing/pricing audit records are complete;
-- live write mode requires an explicit environment/configuration switch and expected live company identity.
-
-Initial production mode should be **assisted billing** only: Accounts/Admin reviews the invoice preview and explicitly selects Generate in Tally. Unattended auto-posting is a later decision after a proven period of successful assisted operation.
-
-## Security and data-minimisation guardrails
-
-- Tally remains accounting and inventory authority.
-- Suprabha OS stores only the Tally-derived fields required for workflow, pricing reference, audit, and reconciliation.
-- Do not replicate the entire Tally dataset into PostgreSQL merely for convenience.
-- Browser clients never communicate directly with Tally.
-- Raw Tally responses containing broad financial data are not written to normal application logs.
-- Price APIs enforce Accounts/Admin authorization before retrieval, not after retrieval.
-- Non-authorised responses must omit sensitive values entirely.
-- Every billing command is auditable and idempotent.
-- No silent retries that can create duplicate vouchers.
-- No hard delete of approved pricing history or billing snapshots.
-
-## Initial build scope
-
-The first implementation should remain narrow:
-
-1. Accounts/Admin-only Customer × Stock Item history lookup.
-2. Last invoice rate.
-3. Invoice date/reference.
-4. Bounded recent rates.
-5. No-history state requiring review.
-6. Explicit Customer × Product contract-price model with effective dating.
-7. Deterministic pricing resolver.
-8. Price exception + approval workflow.
-9. Immutable approved order-item pricing snapshot.
-10. Read-only live-Tally mode.
-11. Shadow pricing comparison.
-12. Test-company-only assisted voucher creation.
-13. Transactional outbox + idempotency + reconciliation.
+1. Complete current order/operations hardening.
+2. Accounts/Admin-only Customer × Stock Item history lookup.
+3. Last invoice rate/date/reference and bounded recent rates.
+4. Explicit effective-dated Customer × Product contract model.
+5. Deterministic pricing resolver.
+6. Authoritative latest purchase-cost/landed-cost comparison.
+7. Purchase-price hike notification without automatic selling-price change.
+8. GP and margin-erosion calculation for authorized roles.
+9. Cost-aware price review/approval policy.
+10. Price exception + approval workflow.
+11. Immutable approved order-item pricing/billing snapshot including cost reference.
+12. Stale-price/cost revalidation before billing.
+13. Read-only live-Tally mode and shadow pricing.
 14. API/database-level pricing authorization and audit.
+15. Transactional outbox/idempotency/reconciliation foundation.
+16. Test-company-only assisted voucher creation where the safe test gate permits it; never live unsafe writes.
 
-## Build sequence
+## Build/release sequence
 
 ```text
-PHASE 3 PILOT
-      ↓
-CUSTOMER × PRODUCT PRICING ENGINE
-      ↓
-TALLY ASSISTED BILLING
-      ↓
-CRM / CUSTOMER FOUNDATION
-      ↓
-OPPORTUNITIES
-      ↓
-INSTALLED BASE / SERVICE
-      ↓
-ACTION CENTER
+CURRENT TRANSACTIONAL BUILD
+  -> order/operations hardening
+  -> Customer Pricing Engine
+  -> purchase-cost guardrails
+  -> full consolidation
+  -> full tests/build/ACID/security review
+  -> PR and merge
+  -> office pilot
+  -> then decide next development phase
 ```
 
-The pricing engine and Tally-assisted billing are one architectural programme, but implementation must be sliced so the current Phase-3 transactional pilot/hardening work is not destabilised.
+Do not artificially stop at a Phase-3 label before pricing is complete. Do not expand this combined build into full CRM, opportunities, installed-base/service expansion, AI, advanced forecasting, wallet intelligence, Power Maps/Social Styles, native mobile, microservices, elaborate dashboards, or unattended live Tally posting.
+
+## Required pricing tests
+
+At minimum cover exact contract, validity dates, expired/future contract, Tally fallback, recent-rate context, no prior price, unusual/FOC history, purchase cost unchanged/decreased/increased, small increase with acceptable GP, increase below margin threshold, selling price below current cost, missing cost history, concurrent cost/price changes, stale decision after cost change, exception approval/rejection, unauthorized pricing/cost read and mutation, authorized Accounts/Admin access, idempotency, snapshot immutability, order change after approval, audit creation, rollback on failure, sensitive-data leakage and migration safety.
 
 ## Non-negotiable principles
 
-1. Never guess a price.
-2. Never expose pricing values to an unauthorised role.
-3. Never overwrite approved history when a new price is created.
-4. Never make an order billable without an approved immutable price snapshot.
-5. Never allow a retry to create a duplicate Tally voucher.
-6. Never let the browser talk directly to Tally.
-7. Never let Tally unavailability silently lose an approved billing command.
-8. Never make Tally and Suprabha OS competing accounting or inventory authorities.
-9. Every sensitive pricing decision must be attributable and auditable.
-10. Every approval-critical mutation must obey ACID rules and concurrency controls.
+1. Never guess a selling price or purchase cost.
+2. Last selling price remains historical evidence; a purchase-cost hike creates a warning/review, not an automatic selling-price increase.
+3. Never expose pricing, cost or margin data to unauthorized roles.
+4. Never overwrite approved price or purchase-cost history.
+5. Never make an order billable without an approved immutable price snapshot.
+6. Material cost change before billing must trigger revalidation.
+7. Never allow retry to create a duplicate Tally voucher.
+8. Browser never talks directly to Tally.
+9. Tally unavailability never loses an approved command.
+10. Tally and Suprabha OS never compete as accounting/inventory authorities.
+11. Every sensitive price decision is attributable and auditable.
+12. Every approval-critical mutation obeys ACID and concurrency controls.
