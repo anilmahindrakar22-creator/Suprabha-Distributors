@@ -3,6 +3,13 @@ export type OrderDashboardMessage = {
   status: string;
 };
 
+export function defaultOrderFilterForRole(role: string) {
+  if (role === 'administrator' || role === 'management') return 'awaiting_confirmation';
+  if (role === 'accounts') return 'billing';
+  if (role === 'warehouse') return 'picking';
+  return 'open';
+}
+
 const allowedOrderFilters = new Set([
   'all',
   'attention',

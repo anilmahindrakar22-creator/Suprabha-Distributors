@@ -8,11 +8,12 @@ const data = { actor: { email: 'sales@example.com', role: 'sales' }, snapshot: {
 describe('targeted order acknowledgement', () => {
   it('prepends a newly acknowledged order without reloading the list', () => {
     const withCatalog = { ...data, snapshot: { ...data.snapshot, catalog: [{ tallyKey: 'KIT-1', item: 'Kit', group: 'Kits', baseUnit: 'Nos', closing: 8, active: true }] }, pagination: { page: 1, pageCount: 1, pageSize: 20, total: 1 }, operations: { ...data.operations, unassignedOpen: 1 } } satisfies OrderBootstrap;
-    const next = applyCreatedOrderAcknowledgement(withCatalog, { action: 'create_order', payload: { idempotencyKey: '1234567890abcdef', customerName: 'New Lab', source: 'phone', priority: 'high', lines: [{ tallyKey: 'KIT-1', quantity: 3 }] } }, { orderId: 'order-2', orderNumber: 'SF-2', status: 'phone_order_received' }, '2026-09-11T12:00:00Z');
+    const next = applyCreatedOrderAcknowledgement(withCatalog, { action: 'create_order', payload: { idempotencyKey: '1234567890abcdef', customerName: 'New Lab', source: 'phone', priority: 'high', lines: [{ tallyKey: 'KIT-1', quantity: 3 }] } }, { orderId: 'order-2', orderNumber: 'SF-2', status: 'awaiting_confirmation' }, '2026-09-11T12:00:00Z');
     expect(next?.orders[0]).toMatchObject({ id: 'order-2', orderNumber: 'SF-2', customerName: 'New Lab', priority: 'high', version: 1, totalQuantity: 3 });
     expect(next?.orders[0].lines[0]).toMatchObject({ itemName: 'Kit', quantity: 3, fulfilledQuantity: 0 });
     expect(next?.pagination?.total).toBe(2);
     expect(next?.operations.unassignedOpen).toBe(2);
+    expect(next?.operations.awaitingConfirmation).toBe(2);
   });
 
   it('preserves the server page size while advancing pagination totals', () => {
@@ -29,10 +30,33 @@ describe('targeted order acknowledgement', () => {
     expect(applyCreatedOrderAcknowledgement(data, command, { orderId: 'order-2' })).toBeNull();
   });
 
+  it('defaults a newly acknowledged field order into office confirmation', () => {
+    const withCatalog = { ...data, snapshot: { ...data.snapshot, catalog: [{ tallyKey: 'KIT-1', item: 'Kit', group: 'Kits', baseUnit: 'Nos', closing: 8, active: true }] } };
+    const next = applyCreatedOrderAcknowledgement(withCatalog, { action: 'create_order', payload: { idempotencyKey: '1234567890abcdef', customerName: 'New Lab', source: 'phone', lines: [{ tallyKey: 'KIT-1', quantity: 1 }] } }, { orderId: 'order-2', orderNumber: 'SF-2' });
+    expect(next?.orders[0].status).toBe('awaiting_confirmation');
+  });
+
   it('updates a confirmed order and operational counts without a bootstrap reload', () => {
     const next = applyOrderAcknowledgement(data, { action: 'transition_order', payload: { idempotencyKey: '1234567890abcdef', orderId: order.id, expectedVersion: 1, toStatus: 'confirmed' } }, { orderId: order.id, status: 'confirmed', version: 2 }, '2026-09-06T11:00:00Z');
     expect(next?.orders[0]).toMatchObject({ status: 'confirmed', version: 2, updatedAt: '2026-09-06T11:00:00Z' });
     expect(next?.operations.awaitingConfirmation).toBe(0);
+  });
+
+  it('updates global handoff counts by delta instead of replacing them with page counts', () => {
+    const globalData = { ...data, operations: { awaitingConfirmation: 8, awaitingTallyBilling: 4, packed: 2, billedNotDispatched: 3, unassignedOpen: 11 } };
+    const confirmed = applyOrderAcknowledgement(globalData, { action: 'transition_order', payload: { idempotencyKey: '1234567890abcdef', orderId: order.id, expectedVersion: 1, toStatus: 'confirmed' } }, { orderId: order.id, status: 'confirmed', version: 2 });
+    expect(confirmed?.operations).toMatchObject({ awaitingConfirmation: 7, awaitingTallyBilling: 4, packed: 2, billedNotDispatched: 3, unassignedOpen: 11 });
+    const cancelled = confirmed && applyOrderAcknowledgement(confirmed, { action: 'transition_order', payload: { idempotencyKey: '2234567890abcdef', orderId: order.id, expectedVersion: 2, toStatus: 'cancelled', reason: 'Duplicate order' } }, { orderId: order.id, status: 'cancelled', version: 3 });
+    expect(cancelled?.operations.unassignedOpen).toBe(10);
+  });
+
+  it('moves the live count through packing, billing, and dispatch handoffs', () => {
+    const packedOrder = { ...order, status: 'packed', version: 3 };
+    const packedData = { ...data, orders: [packedOrder], operations: { packed: 5, awaitingTallyBilling: 2, billedNotDispatched: 1, unassignedOpen: 7 } };
+    const billing = applyOrderAcknowledgement(packedData, { action: 'transition_order', payload: { idempotencyKey: '1234567890abcdef', orderId: order.id, expectedVersion: 3, toStatus: 'awaiting_tally_billing' } }, { orderId: order.id, status: 'awaiting_tally_billing', version: 4 });
+    expect(billing?.operations).toMatchObject({ packed: 4, awaitingTallyBilling: 3, billedNotDispatched: 1 });
+    const billed = billing && applyOrderAcknowledgement(billing, { action: 'transition_order', payload: { idempotencyKey: '2234567890abcdef', orderId: order.id, expectedVersion: 4, toStatus: 'billed_in_tally', tallyInvoiceNumber: 'SD/26-27/0552' } }, { orderId: order.id, status: 'billed_in_tally', version: 5 });
+    expect(billed?.operations).toMatchObject({ awaitingTallyBilling: 2, billedNotDispatched: 2 });
   });
 
   it('updates an edited order from a successful server acknowledgement', () => {

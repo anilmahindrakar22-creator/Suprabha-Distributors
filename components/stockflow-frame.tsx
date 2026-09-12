@@ -2,7 +2,7 @@
 
 import { lazy, Suspense, useEffect, useState } from 'react';
 import Image from 'next/image';
-import { readOrderDashboardMessage } from '@/lib/stockflow-navigation';
+import { defaultOrderFilterForRole, readOrderDashboardMessage } from '@/lib/stockflow-navigation';
 import { prepareDeviceForAccount } from '@/lib/device-account-privacy';
 
 const loadOrderWorkspace = () => import('./order-workspace').then((module) => ({ default: module.OrderWorkspace }));
@@ -69,7 +69,7 @@ export function StockFlowFrame({ actorEmail, actorRole }: { actorEmail: string; 
   }, []);
 
   function openSurface(item: 'stock' | 'orders' | 'service' | 'users') {
-    if (item === 'orders') setOrderFilter('open');
+    if (item === 'orders' && surface !== 'orders') setOrderFilter(defaultOrderFilterForRole(actorRole));
     setSurface(item);
   }
 

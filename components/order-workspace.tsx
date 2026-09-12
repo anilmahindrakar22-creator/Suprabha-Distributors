@@ -11,7 +11,7 @@ import type {
   OrderEvent,
   OrderSummary,
 } from '@/lib/order-types';
-import { billingHandoffText, canRoleTransitionOrder, customerBalanceFreshness, customerDeliveryAddresses, customerPhoneHref, orderAttentionReasons, orderBackOrderedQuantity, orderDeliveryReminder, orderEventDescription, orderFollowUpReminder, orderNextOwnerLabel, orderNotificationGroups, orderOperationsText, orderStage, repeatOrderTemplate, searchCatalog, searchCustomers, tallyInvoiceLineReconciliation, tallyInvoiceReconciliationDetail } from '@/lib/order-types';
+import { billingHandoffText, canRoleTransitionOrder, customerBalanceFreshness, customerDeliveryAddresses, customerPhoneHref, filterOrders, orderAttentionReasons, orderBackOrderedQuantity, orderDeliveryReminder, orderEventDescription, orderFollowUpReminder, orderMatchesCaptureDateRange, orderNextOwnerLabel, orderNotificationGroups, orderOperationsText, orderStage, repeatOrderTemplate, searchCatalog, searchCustomers, tallyInvoiceLineReconciliation, tallyInvoiceReconciliationDetail } from '@/lib/order-types';
 import { orderListUrl } from '@/lib/order-list-query';
 import { offlineDraftRecoveryError, readOfflineDraftConsent, readOfflineOrderDraft, removeOfflineOrderDraft, restoreOfflineDraftLines, updateOfflineDraftState, writeOfflineDraftConsent, writeOfflineOrderDraft, type OfflineDraftState } from '@/lib/offline-order-drafts';
 import { readCatalogCache, removeCatalogCache, writeCatalogCache } from '@/lib/catalog-cache';
@@ -26,6 +26,17 @@ import { loadOrderCatalog, loadOrderCustomers } from '@/lib/order-capture-master
 type DraftLine = { tallyKey: string; item: CatalogItem | null; quantity: number };
 type CreatedOrderResult = { orderId?: string; orderNumber?: string; status?: string; version?: number };
 type CreatedOrderCommand = Extract<OrderCommand, { action: 'create_order' }>;
+const desktopControlCenterQuery = '(min-width: 1024px)';
+
+function subscribeDesktopControlCenter(callback: () => void) {
+  const media = window.matchMedia(desktopControlCenterQuery);
+  media.addEventListener('change', callback);
+  return () => media.removeEventListener('change', callback);
+}
+
+function desktopControlCenterSnapshot() {
+  return window.matchMedia(desktopControlCenterQuery).matches;
+}
 const statusNames: Record<string, string> = {
   phone_order_received: 'Phone order received',
   awaiting_confirmation: 'Awaiting confirmation',
@@ -66,6 +77,22 @@ function statusLabel(status: string) {
   return statusNames[status] || status.replaceAll('_', ' ');
 }
 
+function compactOrderAge(createdAt: string, now = Date.now()) {
+  const elapsedMinutes = Math.max(0, Math.floor((now - new Date(createdAt).getTime()) / 60_000));
+  if (elapsedMinutes < 60) return `${elapsedMinutes}m`;
+  const elapsedHours = Math.floor(elapsedMinutes / 60);
+  if (elapsedHours < 24) return `${elapsedHours}h`;
+  return `${Math.floor(elapsedHours / 24)}d`;
+}
+
+const queueNames: Record<string, string> = {
+  open: 'Active orders', history: 'Old orders', attention: 'Orders needing attention', billing: 'Tally billing queue', billing_attention: 'Billing attention',
+  awaiting_confirmation: 'Orders awaiting confirmation', awaiting_approval: 'Orders awaiting approval', confirmed: 'Confirmed orders', picking: 'Pick & pack queue', packed: 'Packed orders',
+  awaiting_tally_billing: 'Orders awaiting Tally billing', dispatch_ready: 'Ready for dispatch', dispatched: 'Dispatched orders', follow_up_due: 'Follow-ups due', follow_up_upcoming: 'Upcoming follow-ups',
+  delivery_attention: 'Delivery attention', delivery_due_today: 'Deliveries due today', delivery_due_soon: 'Deliveries due in 7 days', back_ordered: 'Partial fulfilment / back-orders',
+  delivery_exception: 'Open delivery exceptions', priority_urgent: 'Urgent orders', priority_high: 'High-priority orders', overdue: 'Overdue deliveries', cancelled: 'Cancelled orders', all: 'All orders',
+};
+
 async function readResponse<T>(response: Response): Promise<T> {
   const body = (await response.json()) as T & { error?: string };
   if (!response.ok) throw new Error(body.error || 'Unable to complete the request');
@@ -78,6 +105,7 @@ export function OrderWorkspace({ actorEmail, initialStatus = 'open' }: { actorEm
   const [refreshing, setRefreshing] = useState(false);
   const [error, setError] = useState('');
   const [notice, setNotice] = useState('');
+  const [noticeOrderNumber, setNoticeOrderNumber] = useState('');
   const [query, setQuery] = useState('');
   const [captureDate, setCaptureDate] = useState('');
   const [captureDateTo, setCaptureDateTo] = useState('');
@@ -89,6 +117,8 @@ export function OrderWorkspace({ actorEmail, initialStatus = 'open' }: { actorEm
   const [mobileFiltersOpen, setMobileFiltersOpen] = useState(false);
   const [notificationsOpen, setNotificationsOpen] = useState(false);
   const [page, setPage] = useState(1);
+  const [selectedOrderId, setSelectedOrderId] = useState('');
+  const desktopControlCenter = useSyncExternalStore(subscribeDesktopControlCenter, desktopControlCenterSnapshot, () => false);
   const workspaceRef = useRef<HTMLDivElement>(null);
   const dataRef = useRef<OrderBootstrap | null>(null);
   const retryingDraftRef = useRef(false);
@@ -131,6 +161,7 @@ export function OrderWorkspace({ actorEmail, initialStatus = 'open' }: { actorEm
         if (result.status === 'sent') {
           setDeviceDraftState(null);
           setNotice(`${result.orderNumber} sent successfully after reconnecting.`);
+          setNoticeOrderNumber(result.orderNumber);
           await load();
         } else if (result.status === 'needs_attention') {
           setDeviceDraftState('error');
@@ -217,6 +248,27 @@ export function OrderWorkspace({ actorEmail, initialStatus = 'open' }: { actorEm
   const currentPage = data?.pagination?.page || page;
   const pageCount = data?.pagination?.pageCount || 1;
   const totalOrders = data?.pagination?.total ?? visibleOrders.length;
+  const selectedOrder = displayedOrders.find((order) => order.id === selectedOrderId) || displayedOrders[0];
+  const selectedOrderIndex = selectedOrder ? displayedOrders.findIndex((order) => order.id === selectedOrder.id) : -1;
+
+  function moveDesktopSelectionAfter(orderId: string) {
+    if (!desktopControlCenter) return;
+    const completedIndex = displayedOrders.findIndex((order) => order.id === orderId);
+    const nextOrder = displayedOrders[completedIndex + 1] || displayedOrders[completedIndex - 1];
+    if (nextOrder) {
+      setSelectedOrderId(nextOrder.id);
+      window.requestAnimationFrame(() => document.getElementById(`desktop-order-${nextOrder.id}`)?.focus());
+    }
+  }
+
+  function navigateDesktopQueue(key: string) {
+    if (!displayedOrders.length) return;
+    const currentIndex = selectedOrderIndex < 0 ? 0 : selectedOrderIndex;
+    const targetIndex = key === 'Home' ? 0 : key === 'End' ? displayedOrders.length - 1 : key === 'ArrowUp' ? Math.max(0, currentIndex - 1) : Math.min(displayedOrders.length - 1, currentIndex + 1);
+    const targetId = displayedOrders[targetIndex].id;
+    setSelectedOrderId(targetId);
+    window.requestAnimationFrame(() => document.getElementById(`desktop-order-${targetId}`)?.focus());
+  }
 
   function exportVisibleOrders() {
     if (!totalOrders) return;
@@ -307,6 +359,7 @@ export function OrderWorkspace({ actorEmail, initialStatus = 'open' }: { actorEm
     const prepared = prepareOrderCommandRetry(command, pendingCommandKeysRef.current, undefined, actorEmail);
     setError('');
     setNotice('');
+    setNoticeOrderNumber('');
     try {
       const result = await readResponse<{ orderId?: string; status?: string; version?: number; exceptionId?: string; installationId?: string }>(
         await fetch('/api/orders', {
@@ -317,24 +370,41 @@ export function OrderWorkspace({ actorEmail, initialStatus = 'open' }: { actorEm
       );
       acknowledgeOrderCommand(prepared.identity, pendingCommandKeysRef.current);
       setNotice(success);
-      const patched = dataRef.current ? applyOrderAcknowledgement(dataRef.current, prepared.command, result) : null;
-      if (patched) {
-        dataRef.current = patched;
-        setData(patched);
-      }
+      const acknowledgedOrderId = 'orderId' in prepared.command.payload ? prepared.command.payload.orderId : '';
+      const acknowledgedOrder = dataRef.current?.orders.find((order) => order.id === acknowledgedOrderId);
+      setNoticeOrderNumber(acknowledgedOrder?.orderNumber || '');
+       const patched = dataRef.current ? applyOrderAcknowledgement(dataRef.current, prepared.command, result) : null;
+       if (patched) {
+         const remainingOrders = filterOrders(patched.orders, query, status).filter((order) => orderMatchesCaptureDateRange(order, captureDate, captureDateTo));
+         const removedFromQueue = patched.orders.length - remainingOrders.length;
+         const reconciled = removedFromQueue && patched.pagination ? {
+           ...patched,
+           orders: remainingOrders,
+           pagination: {
+             ...patched.pagination,
+             total: Math.max(0, patched.pagination.total - removedFromQueue),
+             pageCount: Math.max(1, Math.ceil(Math.max(0, patched.pagination.total - removedFromQueue) / patched.pagination.pageSize)),
+           },
+         } : { ...patched, orders: remainingOrders };
+         dataRef.current = reconciled;
+         setData(reconciled);
+         if (removedFromQueue && remainingOrders.length === 0 && (reconciled.pagination?.total || 0) > 0) window.setTimeout(() => void load(), 0);
+       }
       else await load();
-      window.requestAnimationFrame(() => {
-        if (workspaceRef.current && scrollTop !== undefined) workspaceRef.current.scrollTop = scrollTop;
-      });
-    } catch (cause) {
-      setError(cause instanceof Error ? cause.message : 'Unable to update order');
-    }
-  }
+       window.requestAnimationFrame(() => {
+         if (workspaceRef.current && scrollTop !== undefined) workspaceRef.current.scrollTop = scrollTop;
+       });
+       return true;
+     } catch (cause) {
+       setError(cause instanceof Error ? cause.message : 'Unable to update order');
+       return false;
+     }
+   }
 
   async function advance(order: OrderSummary, tallyInvoiceNumber?: string) {
     const action = nextStatus[order.status];
     if (!action) return;
-    await runCommand(
+    const completed = await runCommand(
       {
         action: 'transition_order',
         payload: {
@@ -347,10 +417,11 @@ export function OrderWorkspace({ actorEmail, initialStatus = 'open' }: { actorEm
       },
       `${order.orderNumber} moved to ${statusLabel(action.status)}.`,
     );
+    if (completed) moveDesktopSelectionAfter(order.id);
   }
 
   async function cancelOrder(order: OrderSummary, reason: string) {
-    await runCommand(
+    const completed = await runCommand(
       {
         action: 'transition_order',
         payload: {
@@ -363,6 +434,7 @@ export function OrderWorkspace({ actorEmail, initialStatus = 'open' }: { actorEm
       },
       `${order.orderNumber} cancelled.`,
     );
+    if (completed) moveDesktopSelectionAfter(order.id);
   }
 
   async function saveFulfilment(order: OrderSummary, payload: Extract<OrderCommand, { action: 'save_fulfilment' }>['payload']) {
@@ -408,14 +480,11 @@ export function OrderWorkspace({ actorEmail, initialStatus = 'open' }: { actorEm
       <div className="mx-auto max-w-7xl px-3 py-3 sm:px-6 sm:py-6 lg:px-8">
         <header className="flex flex-col gap-4 sm:flex-row sm:items-end sm:justify-between">
           <div>
-            <p className="text-xs font-extrabold uppercase tracking-[0.14em] text-[#277b69]">
-              Daily order control
-            </p>
-            <h1 className="mt-1 text-3xl font-black tracking-tight text-[#092f36]">
+            <h1 className="text-2xl font-black tracking-tight text-[#092f36] sm:text-3xl">
               Orders
             </h1>
-            <p className="mt-1 hidden text-sm text-[#667b7e] sm:block">
-              Capture orders, pick and pack them, then hand billing to Tally.
+            <p className="mt-1 hidden text-sm text-[#667b7e] md:block">
+              Confirm orders, send packed orders to Tally billing, then dispatch.
             </p>
           </div>
           <div className="relative flex items-center gap-2 self-stretch sm:self-auto">
@@ -435,12 +504,12 @@ export function OrderWorkspace({ actorEmail, initialStatus = 'open' }: { actorEm
           {deviceDraftState ? <span aria-live="polite" className={`text-xs font-bold ${deviceDraftState === 'pending' ? 'text-[#9a6412]' : deviceDraftState === 'error' ? 'text-[#a0443b]' : 'text-[#587275]'}`}>{deviceDraftState === 'pending' ? '1 pending order on this device' : deviceDraftState === 'error' ? '1 device draft needs attention' : '1 draft on this device'}</span> : null}
         </header>
 
-        <section aria-label="Order summary" className="mt-3 flex snap-x gap-2 overflow-x-auto pb-1 sm:mt-6 sm:grid sm:grid-cols-2 sm:gap-3 sm:overflow-visible sm:pb-0 lg:grid-cols-5">
-          <SummaryCard label="Follow-ups due" value={operations.followUpsDue} tone="watch" onOpen={() => { setStatus('follow_up_due'); setQuery(''); setCaptureDate(''); setCaptureDateTo(''); setPage(1); }} />
-          <SummaryCard label="Delivery attention" value={operations.deliveryAttention} tone="watch" onOpen={() => { setStatus('delivery_attention'); setQuery(''); setCaptureDate(''); setCaptureDateTo(''); setPage(1); }} />
-          <SummaryCard label="Needs attention" value={operations.needsAttention ?? operations.urgentExceptions} tone="watch" onOpen={() => { setStatus('attention'); setQuery(''); setCaptureDate(''); setCaptureDateTo(''); setPage(1); }} />
-          <SummaryCard label="Awaiting Tally billing" value={operations.awaitingTallyBilling} onOpen={() => { setStatus('billing'); setQuery(''); setCaptureDate(''); setCaptureDateTo(''); setPage(1); }} />
-          <SummaryCard label="Unassigned open orders" value={operations.unassignedOpen} tone="watch" onOpen={() => { setStatus('open'); setQuery('assignee:unassigned'); setCaptureDate(''); setCaptureDateTo(''); setPage(1); }} />
+        <section aria-label="Order handoff queues" className="mt-3 flex snap-x gap-1.5 overflow-x-auto rounded-2xl border border-[#dce7e5] bg-white p-2 sm:mt-5 sm:gap-2">
+          <SummaryCard label="Confirm orders" value={operations.awaitingConfirmation} focus={['administrator', 'management'].includes(data?.actor.role || '')} onOpen={() => { setStatus('awaiting_confirmation'); setQuery(''); setCaptureDate(''); setCaptureDateTo(''); setPage(1); }} />
+          <SummaryCard label="Pick & pack" focus={['warehouse', 'operations'].includes(data?.actor.role || '')} onOpen={() => { setStatus('picking'); setQuery(''); setCaptureDate(''); setCaptureDateTo(''); setPage(1); }} />
+          <SummaryCard label="Tally billing" value={operations.awaitingTallyBilling} focus={['accounts'].includes(data?.actor.role || '')} onOpen={() => { setStatus('billing'); setQuery(''); setCaptureDate(''); setCaptureDateTo(''); setPage(1); }} />
+          <SummaryCard label="Ready to dispatch" value={operations.billedNotDispatched} focus={['operations'].includes(data?.actor.role || '')} onOpen={() => { setStatus('dispatch_ready'); setQuery(''); setCaptureDate(''); setCaptureDateTo(''); setPage(1); }} />
+          <SummaryCard label="Delivery attention" value={operations.deliveryAttention} tone="watch" focus={['operations'].includes(data?.actor.role || '')} onOpen={() => { setStatus('delivery_attention'); setQuery(''); setCaptureDate(''); setCaptureDateTo(''); setPage(1); }} />
         </section>
 
         <div className="sticky top-0 z-20 -mx-1 mt-3 flex flex-col gap-2 rounded-2xl border border-[#dce7e5] bg-white/95 p-2 shadow-sm backdrop-blur sm:static sm:mx-0 sm:mt-5 sm:flex-row sm:items-center sm:gap-3 sm:bg-white sm:p-3 sm:shadow-none">
@@ -489,9 +558,9 @@ export function OrderWorkspace({ actorEmail, initialStatus = 'open' }: { actorEm
             <option value="cancelled">Cancelled</option>
           </select>
           <div className="sm:contents">
+            <button type="button" aria-pressed={query === `assignee:${actorEmail.toLocaleLowerCase('en-IN')}`} onClick={() => { setQuery((current) => current === `assignee:${actorEmail.toLocaleLowerCase('en-IN')}` ? '' : `assignee:${actorEmail.toLocaleLowerCase('en-IN')}`); setStatus('open'); setCaptureDate(''); setCaptureDateTo(''); setPage(1); }} className="min-h-10 rounded-xl border border-[#cedfdd] px-3 text-sm font-bold text-[#31585d] hover:bg-[#f1f6f4] aria-pressed:border-[#64d4ad] aria-pressed:bg-[#eaf8f1] sm:min-h-11 sm:px-4">My work</button>
             <button type="button" aria-expanded={mobileFiltersOpen} aria-controls="mobile-order-filters" onClick={() => setMobileFiltersOpen((open) => !open)} className="flex min-h-10 items-center justify-between rounded-xl border border-[#cedfdd] px-3 text-sm font-bold text-[#31585d] sm:hidden">More filters <span aria-hidden="true" className={`transition ${mobileFiltersOpen ? 'rotate-180' : ''}`}>⌄</span></button>
             <div id="mobile-order-filters" className={`${mobileFiltersOpen ? 'grid' : 'hidden'} mt-2 grid-cols-2 gap-2 border-t border-[#e3ecea] pt-2 sm:contents`}>
-              <button type="button" aria-pressed={query === `assignee:${actorEmail.toLocaleLowerCase('en-IN')}`} onClick={() => { setQuery((current) => current === `assignee:${actorEmail.toLocaleLowerCase('en-IN')}` ? '' : `assignee:${actorEmail.toLocaleLowerCase('en-IN')}`); setStatus('open'); setCaptureDate(''); setCaptureDateTo(''); setPage(1); }} className="min-h-11 rounded-xl border border-[#cedfdd] px-3 font-bold text-[#31585d] hover:bg-[#f1f6f4] aria-pressed:border-[#64d4ad] aria-pressed:bg-[#eaf8f1] sm:px-4">My work</button>
               <button type="button" aria-pressed={query === 'assignee:unassigned'} onClick={() => { setQuery((current) => current === 'assignee:unassigned' ? '' : 'assignee:unassigned'); setStatus('open'); setCaptureDate(''); setCaptureDateTo(''); setPage(1); }} className="min-h-11 rounded-xl border border-[#cedfdd] px-3 font-bold text-[#31585d] hover:bg-[#f1f6f4] aria-pressed:border-[#64d4ad] aria-pressed:bg-[#eaf8f1] sm:px-4">Unassigned</button>
               <label className="text-xs font-bold text-[#587275]">Order date from<input type="date" value={captureDate} max={captureDateTo || undefined} onChange={(event) => { const nextDate = event.target.value; setCaptureDate(nextDate); if (!nextDate || (captureDateTo && nextDate > captureDateTo)) setCaptureDateTo(''); setPage(1); }} className="mt-1 block min-h-11 w-full rounded-xl border border-[#cedfdd] bg-white px-3 font-normal outline-none focus:border-[#64d4ad]" /></label>
               <label className="text-xs font-bold text-[#587275]">To (optional)<input type="date" value={captureDateTo} min={captureDate || undefined} disabled={!captureDate} onChange={(event) => { setCaptureDateTo(event.target.value); setPage(1); }} className="mt-1 block min-h-11 w-full rounded-xl border border-[#cedfdd] bg-white px-3 font-normal outline-none focus:border-[#64d4ad] disabled:bg-[#edf3f1]" /></label>
@@ -501,13 +570,13 @@ export function OrderWorkspace({ actorEmail, initialStatus = 'open' }: { actorEm
           </div>
         </div>
 
-        {notice ? <p className="mt-4 rounded-xl border border-[#bfe5d8] bg-[#eaf8f1] px-4 py-3 text-sm font-semibold text-[#176246]">{notice}</p> : null}
+        {notice ? <div className="mt-4 flex items-center justify-between gap-3 rounded-xl border border-[#bfe5d8] bg-[#eaf8f1] px-4 py-3 text-sm font-semibold text-[#176246]"><p>{notice}</p>{noticeOrderNumber ? <button type="button" onClick={() => { setQuery(noticeOrderNumber); setStatus('all'); setCaptureDate(''); setCaptureDateTo(''); setPage(1); }} className="min-h-9 shrink-0 rounded-lg border border-[#9ddbc5] bg-white px-3 text-xs font-bold text-[#277b69]">Review order</button> : null}</div> : null}
         {error ? <p role="alert" className="mt-4 rounded-xl border border-[#efbbb6] bg-[#fff0ef] px-4 py-3 text-sm text-[#8d3a34]">{error}</p> : null}
 
         <section className="mt-3 overflow-hidden rounded-2xl border border-[#dce7e5] bg-white shadow-[0_8px_24px_rgba(9,47,54,0.05)] sm:mt-4">
           <div className="flex items-center justify-between border-b border-[#e3ecea] px-3 py-3 sm:px-5 sm:py-4">
             <div>
-              <h2 className="font-extrabold text-[#173239]">{status === 'history' ? 'Old orders' : status === 'attention' ? 'Orders needing attention' : status === 'billing_attention' ? 'Billing attention' : status === 'follow_up_due' ? 'Follow-ups due' : status === 'follow_up_upcoming' ? 'Upcoming follow-ups' : status === 'delivery_attention' ? 'Delivery attention' : status === 'delivery_due_today' ? 'Deliveries due today' : status === 'delivery_due_soon' ? 'Deliveries due in 7 days' : status === 'back_ordered' ? 'Partial fulfilment / back-orders' : status === 'delivery_exception' ? 'Open delivery exceptions' : 'Order inbox'}</h2>
+              <h2 className="font-extrabold text-[#173239]">{queueNames[status] || statusLabel(status)}</h2>
               <p className="mt-1 hidden text-xs text-[#6b7e81] sm:block">Tally stock snapshot: {staleText}</p>
             </div>
             <span className="rounded-full bg-[#e2f8ef] px-3 py-1 text-xs font-extrabold text-[#136146]">{totalOrders} orders</span>
@@ -520,10 +589,58 @@ export function OrderWorkspace({ actorEmail, initialStatus = 'open' }: { actorEm
               <p className="font-bold text-[#31585d]">No matching orders</p>
               <p className="mt-2 text-sm text-[#708386]">{query ? `No orders match “${query}”. Clear the search to see the full list.` : status === 'history' ? 'Completed and cancelled orders will remain available here.' : status === 'attention' ? 'No active orders are stalled or have unresolved operational issues.' : status === 'billing_attention' ? 'No invoice, customer-ledger, product, quantity, or stale-verification issues need attention.' : status.startsWith('delivery_due_') ? 'No promised deliveries fall in this period.' : status === 'back_ordered' ? 'No prepared orders currently have a quantity shortage.' : status === 'delivery_exception' ? 'No delivery exceptions are currently open.' : 'New orders will appear here immediately.'}</p>
             </div>
+          ) : desktopControlCenter ? (
+            <div className="grid items-start lg:h-[calc(100dvh-20rem)] lg:min-h-96 lg:grid-cols-[minmax(280px,360px)_minmax(0,1fr)]">
+              <aside aria-label="Desktop order queue" className="h-full overflow-y-auto border-r border-[#e3ecea] bg-[#f8faf9] p-2">
+                {displayedOrders.map((order) => {
+                  const selected = order.id === selectedOrder?.id;
+                  const nextAction = nextStatus[order.status]?.label || orderNextOwnerLabel(order.status) || 'View order';
+                  const deliveryState = orderDeliveryReminder(order);
+                  const attentionCount = orderAttentionReasons(order).length;
+                  return <button id={`desktop-order-${order.id}`} key={order.id} type="button" aria-current={selected ? 'true' : undefined} onClick={() => setSelectedOrderId(order.id)} onKeyDown={(event) => { if (['ArrowUp', 'ArrowDown', 'Home', 'End'].includes(event.key)) { event.preventDefault(); navigateDesktopQueue(event.key); } }} className="mb-1 w-full rounded-xl border border-transparent px-3 py-3 text-left outline-none hover:bg-white focus-visible:border-[#64d4ad] focus-visible:ring-3 focus-visible:ring-[#64d4ad]/20 aria-current:border-[#8ad9be] aria-current:bg-white aria-current:shadow-sm">
+                    <span className="flex items-center justify-between gap-2"><strong className="text-sm text-[#173239]">{order.orderNumber}</strong><span className="flex shrink-0 items-center gap-1">{order.priority && order.priority !== 'normal' ? <span className={`rounded-full px-1.5 py-0.5 text-[9px] font-black uppercase ${order.priority === 'urgent' ? 'bg-[#fff0ef] text-[#9a3f37]' : 'bg-[#fff1d6] text-[#8a5a0a]'}`}>{order.priority}</span> : null}<span className="text-[10px] font-extrabold uppercase text-[#587275]">{orderStage(order.status)}</span></span></span>
+                    <span className="mt-1 block truncate text-sm font-bold text-[#31585d]">{order.customerName}</span>
+                    <span className="mt-1 flex items-center justify-between gap-2 text-xs text-[#718487]"><span>{formatQuantity(order.totalQuantity)} qty · {order.lineCount} line{order.lineCount === 1 ? '' : 's'}</span><span className="truncate font-bold text-[#277b69]">{nextAction}</span></span>
+                    <span className="mt-1 flex items-center gap-2 text-[10px] font-semibold text-[#718487]"><span title="Time since order capture">{compactOrderAge(order.createdAt)} old</span><span>·</span><span className="max-w-36 truncate">{order.assignedToEmail ? `Owner: ${order.assignedToEmail}` : 'Unassigned'}</span>{attentionCount ? <span className="ml-auto rounded-full bg-[#fff1d6] px-1.5 py-0.5 font-extrabold text-[#8a5a0a]">{attentionCount} alert{attentionCount === 1 ? '' : 's'}</span> : null}</span>
+                    {deliveryState ? <span className={`mt-1 block text-[10px] font-extrabold ${deliveryState === 'overdue' ? 'text-[#9a3f37]' : 'text-[#8a5a0a]'}`}>{deliveryState === 'overdue' ? 'Delivery overdue' : deliveryState === 'today' ? 'Delivery due today' : 'Delivery due soon'}</span> : null}
+                  </button>;
+                })}
+              </aside>
+              <div aria-label="Selected order workspace" className="h-full min-w-0 overflow-y-auto overscroll-contain">
+                <div className="sticky top-0 z-10 flex min-h-12 items-center justify-between gap-3 border-b border-[#e3ecea] bg-white/95 px-4 py-2 backdrop-blur">
+                  <span aria-live="polite" className="text-xs font-bold text-[#587275]">Order {selectedOrderIndex + 1} of {displayedOrders.length} <span className="ml-2 font-normal text-[#718487]">↑ ↓ to navigate</span></span>
+                  <div className="flex gap-2">
+                    <button type="button" aria-label="Previous order" disabled={selectedOrderIndex <= 0} onClick={() => setSelectedOrderId(displayedOrders[selectedOrderIndex - 1].id)} className="min-h-9 rounded-lg border border-[#cedfdd] px-3 text-xs font-bold text-[#31585d] disabled:opacity-35">Previous</button>
+                    <button type="button" aria-label="Next order" disabled={selectedOrderIndex < 0 || selectedOrderIndex >= displayedOrders.length - 1} onClick={() => setSelectedOrderId(displayedOrders[selectedOrderIndex + 1].id)} className="min-h-9 rounded-lg border border-[#cedfdd] px-3 text-xs font-bold text-[#31585d] disabled:opacity-35">Next</button>
+                  </div>
+                </div>
+                {selectedOrder ? <OrderRow
+                  key={selectedOrder.id}
+                  order={selectedOrder}
+                  actorRole={data?.actor.role || ''}
+                  actorEmail={data?.actor.email || actorEmail}
+                  tallyInvoices={data?.snapshot.tallyInvoices}
+                  tallySnapshotFetchedAt={data?.snapshot.fetchedAt}
+                  onAdvance={advance}
+                  onCancel={cancelOrder}
+                  onSaveFulfilment={saveFulfilment}
+                  onDelivery={updateDelivery}
+                  onEdit={editOrder}
+                  onException={updateException}
+                  onInstallation={updateInstallation}
+                  onBillingReview={recordBillingReview}
+                  onAddNote={addOrderNote}
+                  onRepeat={(order) => void openNewOrder(order)}
+                  onFindCustomer={(order) => { setQuery(`customer:${order.customerName}`); setStatus('all'); setCaptureDate(''); setCaptureDateTo(''); setPage(1); }}
+                  onSetPriority={setOrderPriority}
+                  onSetAssignee={setOrderAssignee}
+                  onFollowUp={updateOrderFollowUp}
+                /> : null}
+              </div>
+            </div>
           ) : (
             <div className="divide-y divide-[#e8efed]">
-              {displayedOrders.map((order) => (
-                <OrderRow
+              {displayedOrders.map((order) => <OrderRow
                   key={order.id}
                   order={order}
                   actorRole={data?.actor.role || ''}
@@ -544,8 +661,7 @@ export function OrderWorkspace({ actorEmail, initialStatus = 'open' }: { actorEm
                   onSetPriority={setOrderPriority}
                   onSetAssignee={setOrderAssignee}
                   onFollowUp={updateOrderFollowUp}
-                />
-              ))}
+                />)}
             </div>
           )}
           {!loading && pageCount > 1 ? <nav aria-label="Order pages" className="flex items-center justify-between gap-3 border-t border-[#e3ecea] px-5 py-4"><button type="button" disabled={currentPage === 1} onClick={() => setPage((value) => Math.max(1, value - 1))} className="min-h-10 rounded-xl border border-[#cedfdd] px-4 font-bold text-[#31585d] disabled:opacity-40">Previous</button><span className="text-xs font-bold text-[#6b7e81]">Page {currentPage} of {pageCount}</span><button type="button" disabled={currentPage === pageCount} onClick={() => setPage((value) => Math.min(pageCount, value + 1))} className="min-h-10 rounded-xl border border-[#cedfdd] px-4 font-bold text-[#31585d] disabled:opacity-40">Next</button></nav> : null}
@@ -566,6 +682,7 @@ export function OrderWorkspace({ actorEmail, initialStatus = 'open' }: { actorEm
             setDeviceDraftState(null);
             setCreating(false);
             setNotice(`${number} captured successfully.`);
+            setNoticeOrderNumber(number);
             const current = dataRef.current;
             const canApplyLocally = current && command && result && page === 1 && !query && !captureDate && !captureDateTo && status === 'open';
             const patched = canApplyLocally ? applyCreatedOrderAcknowledgement(current, command, result) : null;
@@ -591,13 +708,12 @@ export function OrderWorkspace({ actorEmail, initialStatus = 'open' }: { actorEm
   );
 }
 
-function SummaryCard({ label, value, tone = 'normal', onOpen }: { label: string; value?: number; tone?: 'normal' | 'watch'; onOpen?: () => void }) {
+function SummaryCard({ label, value, tone = 'normal', focus = false, onOpen }: { label: string; value?: number; tone?: 'normal' | 'watch'; focus?: boolean; onOpen?: () => void }) {
   const content = <>
-      <p className="text-xs font-bold text-[#6b7e81]">{label}</p>
-      <strong className="mt-1 block text-2xl font-black text-[#092f36] sm:mt-3 sm:text-3xl">{Number(value || 0).toLocaleString('en-IN')}</strong>
-      {onOpen ? <span className="mt-1 block text-[10px] font-extrabold uppercase tracking-wide text-[#5f777a] sm:mt-2">Open queue</span> : null}
+      <span className="min-w-0 text-left"><span className="block truncate text-xs font-bold text-[#587275]">{label}</span>{focus ? <span className="mt-0.5 block text-[9px] font-extrabold uppercase tracking-wide text-[#277b69]">Your queue</span> : null}</span>
+      <strong className="shrink-0 rounded-lg bg-white px-2 py-1 text-base font-black text-[#092f36]">{value == null ? '›' : Number(value).toLocaleString('en-IN')}</strong>
     </>;
-  const className = `min-w-36 shrink-0 snap-start rounded-xl border p-3 text-left sm:min-w-0 sm:rounded-2xl sm:p-5 ${tone === 'watch' ? 'border-[#f0d7a5] bg-[#fff9ec]' : 'border-[#dce7e5] bg-white'}`;
+  const className = `flex min-h-14 min-w-36 flex-1 shrink-0 snap-start items-center justify-between gap-2 rounded-xl border px-3 py-2 text-left ${focus ? 'border-[#8ad9be] bg-[#effbf6]' : tone === 'watch' ? 'border-[#f0d7a5] bg-[#fff9ec]' : 'border-transparent bg-[#f5f8f7]'}`;
   return onOpen ? <button type="button" onClick={onOpen} className={`${className} transition hover:-translate-y-0.5 hover:shadow-sm`}>{content}</button> : <article className={className}>{content}</article>;
 }
 
@@ -689,23 +805,24 @@ function OrderRow({
           <strong className="text-[#092f36]">{order.orderNumber}</strong>
           <span className="rounded-full bg-[#edf3f1] px-2.5 py-1 text-[11px] font-extrabold text-[#46686c]">{orderStage(order.status)}</span>
           {order.priority && order.priority !== 'normal' ? <span className={`rounded-full px-2.5 py-1 text-[11px] font-extrabold ${order.priority === 'urgent' ? 'bg-[#fff0ef] text-[#9a3f37]' : 'bg-[#fff1d6] text-[#8a5a0a]'}`}>{order.priority === 'urgent' ? 'Urgent' : 'High priority'}</span> : null}
-          {order.assignedToEmail ? <span className="rounded-full bg-[#e8f4fa] px-2.5 py-1 text-[11px] font-extrabold text-[#315f75]">Assigned: {order.assignedToEmail}</span> : null}
+          {order.assignedToEmail ? <span title={`Assigned to ${order.assignedToEmail}`} className="max-w-44 truncate rounded-full bg-[#e8f4fa] px-2.5 py-1 text-[11px] font-extrabold text-[#315f75] sm:max-w-none">Assigned: {order.assignedToEmail}</span> : null}
           {deliveryReminder ? <span className={`rounded-full px-2.5 py-1 text-[11px] font-extrabold ${deliveryReminder === 'overdue' ? 'bg-[#fff0ef] text-[#9a3f37]' : deliveryReminder === 'today' ? 'bg-[#fff1d6] text-[#8a5a0a]' : 'bg-[#e8f4fa] text-[#315f75]'}`}>{deliveryReminder === 'overdue' ? 'Delivery overdue' : deliveryReminder === 'today' ? 'Delivery due today' : 'Delivery due soon'}</span> : null}
           {followUpReminder ? <span className={`rounded-full px-2.5 py-1 text-[11px] font-extrabold ${followUpReminder === 'overdue' ? 'bg-[#fff0ef] text-[#9a3f37]' : followUpReminder === 'today' ? 'bg-[#fff1d6] text-[#8a5a0a]' : 'bg-[#e8f4fa] text-[#315f75]'}`}>{followUpReminder === 'overdue' ? 'Follow-up overdue' : followUpReminder === 'today' ? 'Follow-up today' : `Follow-up ${order.followUpDate}`}</span> : null}
           {lineMatch.state === 'mismatch' ? <span className="rounded-full bg-[#fff0ef] px-2.5 py-1 text-[11px] font-extrabold text-[#8d3a34]">Billing mismatch</span> : null}
         </div>
         <p className="mt-2 font-bold text-[#274b50]">{order.customerName}</p>
-        <p className="mt-1 flex flex-wrap items-center gap-2 text-xs text-[#718487]"><span>{order.customerPhone || 'No phone recorded'} · {order.lineCount} line{order.lineCount === 1 ? '' : 's'}</span>{phoneHref ? <a href={phoneHref} aria-label={`Call ${order.customerName}`} className="rounded-lg border border-[#cedfdd] px-2 py-1 font-bold text-[#31585d] hover:bg-[#f1f6f4]">Call</a> : null}</p>
+        <p className="mt-1 flex flex-wrap items-center gap-2 text-xs text-[#718487]"><span>{order.customerPhone || 'No phone recorded'} · {order.lineCount} line{order.lineCount === 1 ? '' : 's'}<span className="sm:hidden"> · {formatQuantity(total)} qty</span></span>{phoneHref ? <a href={phoneHref} aria-label={`Call ${order.customerName}`} className="rounded-lg border border-[#cedfdd] px-2 py-1 font-bold text-[#31585d] hover:bg-[#f1f6f4]">Call</a> : null}</p>
         {order.expectedDeliveryDate ? <p className="mt-1 text-xs font-bold text-[#456367]">Promised delivery: {new Date(`${order.expectedDeliveryDate}T00:00:00+05:30`).toLocaleDateString('en-IN', { timeZone: 'Asia/Kolkata', day: '2-digit', month: 'short', year: 'numeric' })}</p> : null}
         {backOrderedQuantity > 0 ? <p className="mt-1 text-xs font-extrabold text-[#9a6412]">Short by {formatQuantity(backOrderedQuantity)}</p> : null}
         {attention.length ? <p className="mt-2 text-xs font-bold text-[#9a6412]">Needs attention: {attention.join(' · ')}</p> : null}
+        <ul aria-label="Order product preview" className="mt-3 hidden flex-wrap gap-1.5 lg:flex">{order.lines.slice(0, 4).map((line) => <li key={line.tallyKey} className="max-w-56 truncate rounded-lg bg-[#f1f6f4] px-2 py-1 text-[11px] font-bold text-[#456367]" title={`${line.itemName} · ${formatQuantity(line.quantity)} ${line.baseUnit || ''}`}>{line.itemName} · {formatQuantity(line.quantity)} {line.baseUnit || ''}</li>)}{order.lines.length > 4 ? <li className="rounded-lg bg-[#edf3f1] px-2 py-1 text-[11px] font-bold text-[#587275]">+{order.lines.length - 4} more</li> : null}</ul>
       </div>
-      <div>
+      <div className="hidden sm:block">
         <p className="text-xs font-bold text-[#708386]">Ordered quantity</p>
         <p className="mt-1 font-extrabold text-[#274b50]">{formatQuantity(total)}</p>
       </div>
       {action && canAdvance ? (
-        <div className="flex min-w-48 flex-col gap-2">
+        <div className="flex w-full flex-col gap-2 lg:min-w-48">
           {requiresInvoice ? <label className="text-xs font-bold text-[#587275]">Tally invoice number(s)<input maxLength={160} value={invoiceNumber} onChange={(event) => setInvoiceNumber(event.target.value)} placeholder="Use commas for split invoices" className="mt-1 min-h-10 w-full rounded-lg border border-[#cedfdd] px-3 font-normal text-[#173239] outline-none focus:border-[#64d4ad]" /></label> : null}
           <button
           type="button"
@@ -715,17 +832,24 @@ function OrderRow({
         >
           {busy ? 'Updating…' : action.label}
         </button>
-        {canCancel ? <button type="button" disabled={busy} onClick={() => setCancelling(true)} className="min-h-10 rounded-xl px-4 text-sm font-bold text-[#9a4e47] hover:bg-[#fff0ef] disabled:opacity-50">Cancel order</button> : null}
         </div>
-      ) : canCancel ? <button type="button" disabled={busy} onClick={() => setCancelling(true)} className="min-h-10 rounded-xl px-4 text-sm font-bold text-[#9a4e47] hover:bg-[#fff0ef] disabled:opacity-50">Cancel order</button> : <span className="text-xs font-bold text-[#7d8f91]">{action && nextOwner ? `Waiting for ${nextOwner}` : 'No action due'}</span>}
+      ) : <span className="text-xs font-bold text-[#7d8f91]">{action && nextOwner ? `Waiting for ${nextOwner}` : 'No action due'}</span>}
       </div>
-      {cancelling ? <div className="mt-4 rounded-xl border border-[#efbbb6] bg-[#fff8f7] p-4"><label className="text-sm font-bold text-[#7d413c]">Why is this order being cancelled?<textarea value={cancelReason} onChange={(event) => setCancelReason(event.target.value)} rows={2} maxLength={500} className="mt-2 w-full rounded-xl border border-[#dfbbb7] bg-white p-3 font-normal text-[#173239] outline-none focus:border-[#d06a61]" placeholder="Cancellation reason is required" /></label><div className="mt-3 flex justify-end gap-2"><button type="button" onClick={() => { setCancelling(false); setCancelReason(''); }} className="min-h-10 rounded-xl px-4 font-bold text-[#557174]">Keep order</button><button type="button" disabled={busy || !cancelReason.trim()} onClick={async () => { setBusy(true); try { await onCancel(order, cancelReason); setCancelling(false); } finally { setBusy(false); } }} className="min-h-10 rounded-xl bg-[#a54c44] px-4 font-bold text-white disabled:opacity-50">{busy ? 'Cancelling…' : 'Confirm cancellation'}</button></div></div> : null}
-      <div className="mt-3 flex flex-wrap gap-2"><button type="button" onClick={() => onFindCustomer(order)} className="min-h-10 rounded-xl border border-[#cedfdd] px-4 text-sm font-bold text-[#31585d] hover:bg-[#f1f6f4]">Customer orders</button>{canRepeat ? <button type="button" onClick={() => onRepeat(order)} className="min-h-10 rounded-xl border border-[#cedfdd] px-4 text-sm font-bold text-[#31585d] hover:bg-[#f1f6f4]">Repeat as new order</button> : null}</div>
-      {!['delivered', 'cancelled'].includes(order.status) && ['administrator', 'sales', 'operations', 'management'].includes(actorRole) ? <PriorityControl order={order} onSave={onSetPriority} /> : null}
-      {!order.assignedToEmail && !['delivered', 'cancelled'].includes(order.status) && ['administrator', 'operations', 'management'].includes(actorRole) ? <button type="button" disabled={busy} onClick={async () => { setBusy(true); try { await onSetAssignee(order, actorEmail); } finally { setBusy(false); } }} className="ml-3 min-h-10 rounded-xl border border-[#9ddbc5] bg-[#edf9f4] px-4 text-xs font-bold text-[#277b69] disabled:opacity-50">{busy ? 'Taking…' : 'Take this order'}</button> : null}
-      {!['delivered', 'cancelled'].includes(order.status) && ['administrator', 'operations', 'management'].includes(actorRole) ? <AssignmentControl order={order} onSave={onSetAssignee} /> : null}
-      <OrderSummaryCopy order={order} />
-      {!['delivered', 'cancelled'].includes(order.status) ? <OrderFollowUpPanel order={order} actorRole={actorRole} onSave={onFollowUp} /> : null}
+      <details className="mt-3 rounded-xl border border-[#dce7e5] bg-[#fbfcfb] text-sm">
+        <summary className="flex min-h-10 cursor-pointer list-none items-center justify-between gap-3 px-3 font-bold text-[#456367] marker:hidden [&::-webkit-details-marker]:hidden">
+          <span>More order controls</span>
+          <span className="truncate text-right text-[11px] font-semibold text-[#718487]">{order.assignedToEmail ? `Owner: ${order.assignedToEmail}` : `${order.priority || 'normal'} priority`}</span>
+        </summary>
+        <div className="border-t border-[#e3ecea] p-3">
+          <div className="flex flex-wrap gap-2"><button type="button" onClick={() => onFindCustomer(order)} className="min-h-9 rounded-lg border border-[#cedfdd] px-3 text-xs font-bold text-[#31585d] hover:bg-[#f1f6f4]">Customer orders</button>{canRepeat ? <button type="button" onClick={() => onRepeat(order)} className="min-h-9 rounded-lg border border-[#cedfdd] px-3 text-xs font-bold text-[#31585d] hover:bg-[#f1f6f4]">Repeat as new order</button> : null}<OrderSummaryCopy order={order} /></div>
+          {!['delivered', 'cancelled'].includes(order.status) && ['administrator', 'sales', 'operations', 'management'].includes(actorRole) ? <PriorityControl order={order} onSave={onSetPriority} /> : null}
+          {!order.assignedToEmail && !['delivered', 'cancelled'].includes(order.status) && ['administrator', 'operations', 'management'].includes(actorRole) ? <button type="button" disabled={busy} onClick={async () => { setBusy(true); try { await onSetAssignee(order, actorEmail); } finally { setBusy(false); } }} className="mt-3 min-h-9 rounded-lg border border-[#9ddbc5] bg-[#edf9f4] px-3 text-xs font-bold text-[#277b69] disabled:opacity-50">{busy ? 'Taking…' : 'Take this order'}</button> : null}
+          {!['delivered', 'cancelled'].includes(order.status) && ['administrator', 'operations', 'management'].includes(actorRole) ? <AssignmentControl order={order} onSave={onSetAssignee} /> : null}
+          {!['delivered', 'cancelled'].includes(order.status) ? <OrderFollowUpPanel order={order} actorRole={actorRole} onSave={onFollowUp} /> : null}
+          {canCancel ? <button type="button" disabled={busy} onClick={() => setCancelling(true)} className="mt-3 min-h-9 rounded-lg px-3 text-xs font-bold text-[#9a4e47] hover:bg-[#fff0ef] disabled:opacity-50">Cancel order</button> : null}
+          {cancelling ? <div className="mt-3 rounded-xl border border-[#efbbb6] bg-[#fff8f7] p-3"><label className="text-sm font-bold text-[#7d413c]">Why is this order being cancelled?<textarea value={cancelReason} onChange={(event) => setCancelReason(event.target.value)} rows={2} maxLength={500} className="mt-2 w-full rounded-xl border border-[#dfbbb7] bg-white p-3 font-normal text-[#173239] outline-none focus:border-[#d06a61]" placeholder="Cancellation reason is required" /></label><div className="mt-3 flex justify-end gap-2"><button type="button" onClick={() => { setCancelling(false); setCancelReason(''); }} className="min-h-10 rounded-xl px-4 font-bold text-[#557174]">Keep order</button><button type="button" disabled={busy || !cancelReason.trim()} onClick={async () => { setBusy(true); try { await onCancel(order, cancelReason); setCancelling(false); } finally { setBusy(false); } }} className="min-h-10 rounded-xl bg-[#a54c44] px-4 font-bold text-white disabled:opacity-50">{busy ? 'Cancelling…' : 'Confirm cancellation'}</button></div></div> : null}
+        </div>
+      </details>
       <details onToggle={(event) => { if (event.currentTarget.open) { setDetailsLoaded(true); void loadDetails(); } }} className="mt-4 rounded-xl bg-[#f6f8f7] px-4 py-3 text-sm">
         <summary className="cursor-pointer font-bold text-[#456367]">View order details</summary>
         {detailsLoaded ? <>

@@ -28,7 +28,7 @@ export function applyCreatedOrderAcknowledgement(
     orderNumber: result.orderNumber,
     customerName: command.payload.customerName,
     customerPhone: command.payload.customerPhone || null,
-    status: result.status || 'phone_order_received',
+    status: result.status || 'awaiting_confirmation',
     priority: command.payload.priority || 'normal',
     assignedToEmail: null,
     source: command.payload.source,
@@ -54,6 +54,7 @@ export function applyCreatedOrderAcknowledgement(
     orders,
     operations: {
       ...data.operations,
+      awaitingConfirmation: (data.operations.awaitingConfirmation || 0) + (order.status === 'awaiting_confirmation' ? 1 : 0),
       unassignedOpen: (data.operations.unassignedOpen || 0) + 1,
     },
     pagination: data.pagination ? { ...data.pagination, total, pageCount: Math.max(1, Math.ceil(total / data.pagination.pageSize)) } : data.pagination,
@@ -104,20 +105,35 @@ function patchedOrder(order: OrderSummary, command: OrderCommand, result: Comman
 
 export function applyOrderAcknowledgement(data: OrderBootstrap, command: OrderCommand, result: CommandResult, updatedAt = new Date().toISOString()): OrderBootstrap | null {
   let changed = false;
+  let previousOrder: OrderSummary | null = null;
+  let updatedOrder: OrderSummary | null = null;
   const orders = data.orders.map((order) => {
     const next = patchedOrder(order, command, result, data.actor, updatedAt);
     if (!next) return order;
     changed = true;
+    previousOrder = order;
+    updatedOrder = next;
     return next;
   });
   if (!changed) return null;
+  const operations = { ...data.operations };
+  const adjust = (key: string, before: boolean, after: boolean) => {
+    if (before === after) return;
+    operations[key] = Math.max(0, Number(operations[key] || 0) + (after ? 1 : -1));
+  };
+  if (previousOrder && updatedOrder) {
+    const before = previousOrder as OrderSummary;
+    const after = updatedOrder as OrderSummary;
+    adjust('awaitingConfirmation', before.status === 'awaiting_confirmation', after.status === 'awaiting_confirmation');
+    adjust('awaitingTallyBilling', before.status === 'awaiting_tally_billing', after.status === 'awaiting_tally_billing');
+    adjust('readyForPicking', ['fully_reserved', 'ready_for_picking'].includes(before.status), ['fully_reserved', 'ready_for_picking'].includes(after.status));
+    adjust('packed', before.status === 'packed', after.status === 'packed');
+    adjust('billedNotDispatched', ['billed_in_tally', 'ready_for_dispatch'].includes(before.status), ['billed_in_tally', 'ready_for_dispatch'].includes(after.status));
+    adjust('unassignedOpen', !before.assignedToEmail && !['delivered', 'cancelled'].includes(before.status), !after.assignedToEmail && !['delivered', 'cancelled'].includes(after.status));
+  }
   return {
     ...data,
     orders,
-    operations: {
-      ...data.operations,
-      awaitingConfirmation: orders.filter((order) => order.status === 'awaiting_confirmation').length,
-      awaitingTallyBilling: orders.filter((order) => order.status === 'awaiting_tally_billing').length,
-    },
+    operations,
   };
 }
