@@ -100,7 +100,30 @@ Current GP %             27.8%
 Previous GP %            36.1%
 Margin erosion           -8.3 percentage points
 Status                   PURCHASE PRICE INCREASED
+Suggested price          (₹548)
 ```
+
+### Cost-aware suggested selling price
+
+When a purchase-cost increase is detected and enough reliable evidence exists, the Accounts/Admin pricing view should show a **suggested selling price in brackets** next to the warning/context.
+
+Compact presentation:
+
+```text
+Last billed: ₹485 · Cost ↑ 12.9% · Suggested (₹548)
+```
+
+The suggested price is advisory only. It must never silently replace the historical selling price or become an approved customer price without the normal authorization/approval flow.
+
+The deterministic suggestion should normally preserve the governed target margin. Where policy explicitly permits and reliable historical economics are available, a versioned rule may instead preserve the previously approved margin. The rule used must be identifiable in the pricing decision. Example formula for preserving target GP% `m` from current authoritative cost `c`:
+
+```text
+suggested_price = c / (1 - m)
+```
+
+Apply a configurable, versioned commercial rounding rule after calculation. Never hide the unrounded calculation from audit/reconstruction. If the target margin/rule or reliable purchase cost is unavailable, do not fabricate a suggested price; show `PRICE REVIEW REQUIRED` instead.
+
+Suggested-price provenance should preserve at least the cost reference/version, target-margin or rule version, pre-rounding result, rounding rule/version and final suggested amount. A later change to the cost or pricing rule must not rewrite the historical suggestion used for an earlier decision.
 
 Pricing resolution must distinguish at least:
 
@@ -135,7 +158,7 @@ CUSTOMER                                 no internal pricing history
 
 Non-authorised roles may see only workflow status such as `PRICING PENDING`, `PRICING VERIFIED`, `COST REVIEW`, `APPROVAL REQUIRED`, or `PRICE REVIEW REQUIRED`.
 
-Restricted values include selling rate, last billed rate, recent rates, contract rate, discounts, purchase/landed cost, GP amount/%, margin erosion, override history and sensitive approval metadata. Authorization is enforced at API/database boundaries, not by UI hiding. Restricted values must not leak through APIs, browser payloads, exports, caches, logs, searches or error messages.
+Restricted values include selling rate, suggested selling price, last billed rate, recent rates, contract rate, discounts, purchase/landed cost, GP amount/%, margin erosion, override history and sensitive approval metadata. Authorization is enforced at API/database boundaries, not by UI hiding. Restricted values must not leak through APIs, browser payloads, exports, caches, logs, searches or error messages.
 
 ## Order-entry operating model
 
@@ -147,7 +170,7 @@ Order Desk
 Accounts/Admin
   -> receives resolved pricing context
   -> sees approved contract or Tally history
-  -> sees purchase-cost/margin warning where applicable
+  -> sees purchase-cost/margin warning and bracketed suggested price where applicable
   -> confirms/changes proposed price
   -> pricing validation/approval runs
 
@@ -176,7 +199,7 @@ Committed approvals and audit history remain durable in PostgreSQL regardless of
 
 ## Immutable pricing/billing snapshot
 
-Every billable order line preserves the facts approved at that moment, including customer/product, price, quantity, discount/tax commercial fields, price source, Tally source invoice/date where applicable, contract reference, pricing-rule version, approved by/at, override reason, snapshot hash, and the authoritative purchase-cost reference/value/version used for margin validation where available.
+Every billable order line preserves the facts approved at that moment, including customer/product, price, quantity, discount/tax commercial fields, price source, Tally source invoice/date where applicable, contract reference, pricing-rule version, approved by/at, override reason, snapshot hash, authoritative purchase-cost reference/value/version, and suggested-price calculation provenance where used.
 
 After approval the snapshot is immutable. Material order, price, or relevant authoritative cost changes invalidate/re-check the prior approval and require a new version rather than mutation.
 
@@ -201,7 +224,7 @@ Recommended `billing_handoff` includes order/snapshot version, unique idempotenc
 
 ## Audit requirements
 
-Append-only application audit covers price proposed/source selected, cost evidence used, purchase-price hike detected, margin erosion, price change, exception reason, approval requested/granted/rejected, snapshot created/invalidated, stale-cost revalidation, billing request, Tally acknowledgement and reconciliation result.
+Append-only application audit covers price proposed/source selected, cost evidence used, purchase-price hike detected, suggested-price calculation and rule version, margin erosion, price change, exception reason, approval requested/granted/rejected, snapshot created/invalidated, stale-cost revalidation, billing request, Tally acknowledgement and reconciliation result.
 
 ## Safe test plan
 
@@ -212,13 +235,13 @@ Fresh backup, demonstrated restore, explicit live/test company identities, priva
 Test exact customer ledger/item lookup, historical sales vouchers, last rate/date/reference, bounded recent rates and authoritative purchase-cost evidence required by the pricing guardrail. No create/alter/cancel/delete/master writes. Compare 20–50 known combinations manually and test edge cases and unauthorized access.
 
 ### Stage 2 — Shadow pricing
-Accounts/Admin sees proposed selling price plus cost/margin guardrail. Real Tally billing remains manual. Compare proposed vs actual chosen rate, source, purchase-cost warning, GP impact, tax, quantity/UOM, discount and total.
+Accounts/Admin sees proposed selling price plus cost/margin guardrail and bracketed suggested price where calculable. Real Tally billing remains manual. Compare proposed/suggested vs actual chosen rate, source, purchase-cost warning, GP impact, tax, quantity/UOM, discount and total.
 
 ### Stage 3 — Separate restored test company
 Use a clearly named integration-test Tally company. Write-capable connector must refuse the wrong company identity.
 
 ### Stage 4 — Assisted billing in test company only
-Test normal and multi-item invoices, contract vs history fallback, expired price, purchase-cost increase, acceptable margin after cost hike, margin breach, loss-making price, missing cost history, stale approval after cost change, overrides, concurrency, GST, schemes, missing ledger/item, Tally unavailable, timeout/retry, duplicate idempotency, changed order, connector restart, reconciliation mismatch, unauthorized APIs and audit completeness.
+Test normal and multi-item invoices, contract vs history fallback, expired price, purchase-cost increase, suggested-price calculation/rounding, acceptable margin after cost hike, margin breach, loss-making price, missing cost/target-margin evidence, stale approval after cost change, overrides, concurrency, GST, schemes, missing ledger/item, Tally unavailable, timeout/retry, duplicate idempotency, changed order, connector restart, reconciliation mismatch, unauthorized APIs and audit completeness.
 
 ### Stage 5 — Production gate
 Require read-only agreement, stable shadow pricing, authorization tests, ACID/concurrency tests, test-company writes, idempotency proof, backup/restore, LAN restriction, complete audit and explicit live configuration/company identity. Initial production write mode is assisted billing only; unattended posting is a later decision.
@@ -235,14 +258,15 @@ Continue the current transactional build through the pricing engine before the n
 6. Authoritative latest purchase-cost/landed-cost comparison.
 7. Purchase-price hike notification without automatic selling-price change.
 8. GP and margin-erosion calculation for authorized roles.
-9. Cost-aware price review/approval policy.
-10. Price exception + approval workflow.
-11. Immutable approved order-item pricing/billing snapshot including cost reference.
-12. Stale-price/cost revalidation before billing.
-13. Read-only live-Tally mode and shadow pricing.
-14. API/database-level pricing authorization and audit.
-15. Transactional outbox/idempotency/reconciliation foundation.
-16. Test-company-only assisted voucher creation where the safe test gate permits it; never live unsafe writes.
+9. Bracketed cost-aware suggested selling price using a deterministic versioned margin/rounding rule.
+10. Cost-aware price review/approval policy.
+11. Price exception + approval workflow.
+12. Immutable approved order-item pricing/billing snapshot including cost and suggestion provenance.
+13. Stale-price/cost revalidation before billing.
+14. Read-only live-Tally mode and shadow pricing.
+15. API/database-level pricing authorization and audit.
+16. Transactional outbox/idempotency/reconciliation foundation.
+17. Test-company-only assisted voucher creation where the safe test gate permits it; never live unsafe writes.
 
 ## Build/release sequence
 
@@ -250,7 +274,7 @@ Continue the current transactional build through the pricing engine before the n
 CURRENT TRANSACTIONAL BUILD
   -> order/operations hardening
   -> Customer Pricing Engine
-  -> purchase-cost guardrails
+  -> purchase-cost guardrails + suggested price
   -> full consolidation
   -> full tests/build/ACID/security review
   -> PR and merge
@@ -262,19 +286,20 @@ Do not artificially stop at a Phase-3 label before pricing is complete. Do not e
 
 ## Required pricing tests
 
-At minimum cover exact contract, validity dates, expired/future contract, Tally fallback, recent-rate context, no prior price, unusual/FOC history, purchase cost unchanged/decreased/increased, small increase with acceptable GP, increase below margin threshold, selling price below current cost, missing cost history, concurrent cost/price changes, stale decision after cost change, exception approval/rejection, unauthorized pricing/cost read and mutation, authorized Accounts/Admin access, idempotency, snapshot immutability, order change after approval, audit creation, rollback on failure, sensitive-data leakage and migration safety.
+At minimum cover exact contract, validity dates, expired/future contract, Tally fallback, recent-rate context, no prior price, unusual/FOC history, purchase cost unchanged/decreased/increased, small increase with acceptable GP, increase below margin threshold, selling price below current cost, suggested-price formula, rounding, missing suggestion inputs, rule-version provenance, missing cost history, concurrent cost/price changes, stale decision after cost change, exception approval/rejection, unauthorized pricing/cost/suggestion read and mutation, authorized Accounts/Admin access, idempotency, snapshot immutability, order change after approval, audit creation, rollback on failure, sensitive-data leakage and migration safety.
 
 ## Non-negotiable principles
 
-1. Never guess a selling price or purchase cost.
+1. Never guess a selling price, suggested price or purchase cost.
 2. Last selling price remains historical evidence; a purchase-cost hike creates a warning/review, not an automatic selling-price increase.
-3. Never expose pricing, cost or margin data to unauthorized roles.
-4. Never overwrite approved price or purchase-cost history.
-5. Never make an order billable without an approved immutable price snapshot.
-6. Material cost change before billing must trigger revalidation.
-7. Never allow retry to create a duplicate Tally voucher.
-8. Browser never talks directly to Tally.
-9. Tally unavailability never loses an approved command.
-10. Tally and Suprabha OS never compete as accounting/inventory authorities.
-11. Every sensitive price decision is attributable and auditable.
-12. Every approval-critical mutation obeys ACID and concurrency controls.
+3. Suggested price is shown in brackets and is advisory until authorized approval.
+4. Never expose pricing, cost, suggestion or margin data to unauthorized roles.
+5. Never overwrite approved price or purchase-cost history.
+6. Never make an order billable without an approved immutable price snapshot.
+7. Material cost change before billing must trigger revalidation.
+8. Never allow retry to create a duplicate Tally voucher.
+9. Browser never talks directly to Tally.
+10. Tally unavailability never loses an approved command.
+11. Tally and Suprabha OS never compete as accounting/inventory authorities.
+12. Every sensitive price decision is attributable and auditable.
+13. Every approval-critical mutation obeys ACID and concurrency controls.
