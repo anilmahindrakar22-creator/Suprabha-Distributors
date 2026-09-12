@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { billingHandoffText, canRoleTransitionOrder, currentTallyFinancialYear, customerDeliveryAddresses, customerPhoneHref, filterOrders, isOrderBackOrdered, isOrderDeliveryDue, isOrderDeliveryOverdue, orderAttentionReasons, orderBackOrderedQuantity, orderDeliveryReminder, orderEventDescription, orderMatchesCaptureDate, orderMatchesCaptureDateRange, orderNeedsBillingAttention, orderNextOwnerLabel, orderOperationsText, ordersCsv, orderStage, pageItems, repeatOrderTemplate, searchCatalog, searchCustomers, tallyInvoiceLineReconciliation, tallyInvoiceReconciliation, tallyInvoiceReconciliationDetail, validateOrderCommand } from '../../lib/order-types';
+import { billingHandoffText, canRoleTransitionOrder, currentTallyFinancialYear, customerBalanceFreshness, customerDeliveryAddresses, customerPhoneHref, filterOrders, isOrderBackOrdered, isOrderDeliveryDue, isOrderDeliveryOverdue, orderAttentionReasons, orderBackOrderedQuantity, orderDeliveryReminder, orderEventDescription, orderMatchesCaptureDate, orderMatchesCaptureDateRange, orderNeedsBillingAttention, orderNextOwnerLabel, orderOperationsText, ordersCsv, orderStage, pageItems, repeatOrderTemplate, searchCatalog, searchCustomers, tallyInvoiceLineReconciliation, tallyInvoiceReconciliation, tallyInvoiceReconciliationDetail, validateOrderCommand } from '../../lib/order-types';
 
 describe('order command validation', () => {
   it('accepts a complete phone order', () => {
@@ -141,6 +141,35 @@ describe('order command validation', () => {
     expect(validateOrderCommand(valid)).toEqual(valid);
     expect(validateOrderCommand({ ...valid, payload: { ...valid.payload, note: '  ' } })).toBeNull();
     expect(validateOrderCommand({ ...valid, payload: { ...valid.payload, note: 'x'.repeat(1001) } })).toBeNull();
+  });
+});
+
+describe('Tally customer balance freshness', () => {
+  const now = new Date('2026-09-12T06:00:00.000Z');
+  const customer = {
+    id: 'customer-1',
+    name: 'City Diagnostic Lab',
+    phone: null,
+    city: null,
+    tallyKey: 'CITY-DIAGNOSTIC-LAB',
+    tallyBalance: 1250,
+  };
+
+  it('treats a balance captured within six hours as current', () => {
+    expect(customerBalanceFreshness({ ...customer, balanceAsOf: '2026-09-12T00:00:00.000Z' }, now)).toBe('current');
+  });
+
+  it.each([
+    null,
+    'invalid-date',
+    '2026-09-11T23:59:59.000Z',
+    '2026-09-12T06:00:01.000Z',
+  ])('treats an untrustworthy timestamp (%s) as stale', (balanceAsOf) => {
+    expect(customerBalanceFreshness({ ...customer, balanceAsOf }, now)).toBe('stale');
+  });
+
+  it('does not expose guidance when the server withholds the balance', () => {
+    expect(customerBalanceFreshness({ ...customer, tallyBalance: null, balanceAsOf: now.toISOString() }, now)).toBe('unavailable');
   });
 });
 

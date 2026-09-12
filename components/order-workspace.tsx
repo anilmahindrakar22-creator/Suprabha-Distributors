@@ -11,7 +11,7 @@ import type {
   OrderEvent,
   OrderSummary,
 } from '@/lib/order-types';
-import { billingHandoffText, canRoleTransitionOrder, customerDeliveryAddresses, customerPhoneHref, orderAttentionReasons, orderBackOrderedQuantity, orderDeliveryReminder, orderEventDescription, orderNextOwnerLabel, orderOperationsText, orderStage, repeatOrderTemplate, searchCatalog, searchCustomers, tallyInvoiceLineReconciliation, tallyInvoiceReconciliationDetail } from '@/lib/order-types';
+import { billingHandoffText, canRoleTransitionOrder, customerBalanceFreshness, customerDeliveryAddresses, customerPhoneHref, orderAttentionReasons, orderBackOrderedQuantity, orderDeliveryReminder, orderEventDescription, orderFollowUpReminder, orderNextOwnerLabel, orderNotificationGroups, orderOperationsText, orderStage, repeatOrderTemplate, searchCatalog, searchCustomers, tallyInvoiceLineReconciliation, tallyInvoiceReconciliationDetail } from '@/lib/order-types';
 import { orderListUrl } from '@/lib/order-list-query';
 import { offlineDraftRecoveryError, readOfflineDraftConsent, readOfflineOrderDraft, removeOfflineOrderDraft, restoreOfflineDraftLines, updateOfflineDraftState, writeOfflineDraftConsent, writeOfflineOrderDraft, type OfflineDraftState } from '@/lib/offline-order-drafts';
 import { readCatalogCache, removeCatalogCache, writeCatalogCache } from '@/lib/catalog-cache';
@@ -86,6 +86,8 @@ export function OrderWorkspace({ actorEmail, initialStatus = 'open' }: { actorEm
   const [repeatOrder, setRepeatOrder] = useState<OrderSummary | null>(null);
   const [catalogLoading, setCatalogLoading] = useState(false);
   const [deviceDraftState, setDeviceDraftState] = useState<OfflineDraftState | null>(null);
+  const [mobileFiltersOpen, setMobileFiltersOpen] = useState(false);
+  const [notificationsOpen, setNotificationsOpen] = useState(false);
   const [page, setPage] = useState(1);
   const workspaceRef = useRef<HTMLDivElement>(null);
   const dataRef = useRef<OrderBootstrap | null>(null);
@@ -393,12 +395,17 @@ export function OrderWorkspace({ actorEmail, initialStatus = 'open' }: { actorEm
     await runCommand({ action: 'set_order_assignee', payload: { orderId: order.id, expectedVersion: order.version, assignedToEmail } }, assignedToEmail ? `${order.orderNumber} assigned.` : `${order.orderNumber} assignment cleared.`);
   }
 
+  async function updateOrderFollowUp(order: OrderSummary, command: Extract<OrderCommand, { action: 'set_order_follow_up' | 'complete_order_follow_up' }>) {
+    await runCommand(command, command.action === 'set_order_follow_up' ? `${order.orderNumber} follow-up scheduled.` : `${order.orderNumber} follow-up completed.`);
+  }
+
   const operations = data?.operations || {};
+  const notifications = orderNotificationGroups(operations);
   const staleText = data?.snapshot.fetchedAt || 'No Tally snapshot';
 
   return (
     <div ref={workspaceRef} className="h-full overflow-y-auto bg-[#f7f6f1]">
-      <div className="mx-auto max-w-7xl px-4 py-6 sm:px-6 lg:px-8">
+      <div className="mx-auto max-w-7xl px-3 py-3 sm:px-6 sm:py-6 lg:px-8">
         <header className="flex flex-col gap-4 sm:flex-row sm:items-end sm:justify-between">
           <div>
             <p className="text-xs font-extrabold uppercase tracking-[0.14em] text-[#277b69]">
@@ -407,35 +414,38 @@ export function OrderWorkspace({ actorEmail, initialStatus = 'open' }: { actorEm
             <h1 className="mt-1 text-3xl font-black tracking-tight text-[#092f36]">
               Orders
             </h1>
-            <p className="mt-2 text-sm text-[#667b7e]">
+            <p className="mt-1 hidden text-sm text-[#667b7e] sm:block">
               Capture orders, pick and pack them, then hand billing to Tally.
             </p>
           </div>
-          <div className="flex flex-col items-stretch gap-2 sm:items-end">
+          <div className="relative flex items-center gap-2 self-stretch sm:self-auto">
+            <button type="button" aria-label={`Order notifications${notifications.length ? `, ${notifications.length} active groups` : ''}`} aria-expanded={notificationsOpen} onClick={() => setNotificationsOpen((open) => !open)} className="relative min-h-12 min-w-12 rounded-xl border border-[#cedfdd] bg-white px-3 text-xl text-[#31585d]" title="Order notifications">🔔{notifications.length ? <span className="absolute -right-1 -top-1 min-w-5 rounded-full bg-[#a54c44] px-1 text-center text-[11px] font-black leading-5 text-white">{notifications.length}</span> : null}</button>
             <button
               type="button"
               onClick={() => void openNewOrder()}
               onFocus={warmOrderCapture}
               onPointerEnter={warmOrderCapture}
               disabled={catalogLoading}
-              className="min-h-12 rounded-xl bg-[#092f36] px-5 font-bold text-white shadow-sm transition hover:bg-[#0d4549] disabled:opacity-50"
+              className="min-h-12 flex-1 rounded-xl bg-[#092f36] px-5 font-bold text-white shadow-sm transition hover:bg-[#0d4549] disabled:opacity-50 sm:flex-none"
             >
               {catalogLoading ? 'Loading products…' : deviceDraftState ? 'Continue order' : '+ Order'}
             </button>
-            {deviceDraftState ? <span aria-live="polite" className={`text-xs font-bold ${deviceDraftState === 'pending' ? 'text-[#9a6412]' : deviceDraftState === 'error' ? 'text-[#a0443b]' : 'text-[#587275]'}`}>{deviceDraftState === 'pending' ? '1 pending order on this device' : deviceDraftState === 'error' ? '1 device draft needs attention' : '1 draft on this device'}</span> : null}
+            {notificationsOpen ? <section aria-label="Order notifications" className="absolute right-0 top-14 z-30 w-[min(22rem,calc(100vw-1.5rem))] rounded-2xl border border-[#dce7e5] bg-white p-3 shadow-xl"><div className="flex items-center justify-between"><strong className="text-[#173239]">Order notifications</strong><button type="button" onClick={() => setNotificationsOpen(false)} className="min-h-9 rounded-lg px-2 text-xs font-bold text-[#587275]">Close</button></div>{notifications.length ? <div className="mt-2 space-y-2">{notifications.map((item) => <button type="button" key={item.id} onClick={() => { setStatus(item.status); setQuery(''); setCaptureDate(''); setCaptureDateTo(''); setPage(1); setNotificationsOpen(false); }} className="flex min-h-11 w-full items-center justify-between rounded-xl bg-[#f4f8f7] px-3 text-left text-sm font-bold text-[#31585d]"><span>{item.label}</span><span className="rounded-full bg-white px-2 py-1 text-[#9a4e47]">{item.count}</span></button>)}</div> : <p className="mt-2 rounded-xl bg-[#edf9f4] p-3 text-sm text-[#277b69]">No order action is due right now.</p>}<p className="mt-3 text-[11px] text-[#718487]">Updates when the order workspace refreshes. No background Tally query is made.</p></section> : null}
           </div>
+          {deviceDraftState ? <span aria-live="polite" className={`text-xs font-bold ${deviceDraftState === 'pending' ? 'text-[#9a6412]' : deviceDraftState === 'error' ? 'text-[#a0443b]' : 'text-[#587275]'}`}>{deviceDraftState === 'pending' ? '1 pending order on this device' : deviceDraftState === 'error' ? '1 device draft needs attention' : '1 draft on this device'}</span> : null}
         </header>
 
-        <section aria-label="Order summary" className="mt-6 grid gap-3 sm:grid-cols-2 lg:grid-cols-4">
+        <section aria-label="Order summary" className="mt-3 flex snap-x gap-2 overflow-x-auto pb-1 sm:mt-6 sm:grid sm:grid-cols-2 sm:gap-3 sm:overflow-visible sm:pb-0 lg:grid-cols-5">
+          <SummaryCard label="Follow-ups due" value={operations.followUpsDue} tone="watch" onOpen={() => { setStatus('follow_up_due'); setQuery(''); setCaptureDate(''); setCaptureDateTo(''); setPage(1); }} />
           <SummaryCard label="Delivery attention" value={operations.deliveryAttention} tone="watch" onOpen={() => { setStatus('delivery_attention'); setQuery(''); setCaptureDate(''); setCaptureDateTo(''); setPage(1); }} />
           <SummaryCard label="Needs attention" value={operations.needsAttention ?? operations.urgentExceptions} tone="watch" onOpen={() => { setStatus('attention'); setQuery(''); setCaptureDate(''); setCaptureDateTo(''); setPage(1); }} />
           <SummaryCard label="Awaiting Tally billing" value={operations.awaitingTallyBilling} onOpen={() => { setStatus('billing'); setQuery(''); setCaptureDate(''); setCaptureDateTo(''); setPage(1); }} />
           <SummaryCard label="Unassigned open orders" value={operations.unassignedOpen} tone="watch" onOpen={() => { setStatus('open'); setQuery('assignee:unassigned'); setCaptureDate(''); setCaptureDateTo(''); setPage(1); }} />
         </section>
 
-        <div className="mt-5 flex flex-col gap-3 rounded-2xl border border-[#dce7e5] bg-white p-3 sm:flex-row sm:items-center">
+        <div className="sticky top-0 z-20 -mx-1 mt-3 flex flex-col gap-2 rounded-2xl border border-[#dce7e5] bg-white/95 p-2 shadow-sm backdrop-blur sm:static sm:mx-0 sm:mt-5 sm:flex-row sm:items-center sm:gap-3 sm:bg-white sm:p-3 sm:shadow-none">
           <div className="relative flex-1">
-            <label className="mb-1 block text-xs font-bold text-[#587275]" htmlFor="order-search">Find existing order</label>
+            <label className="sr-only sm:not-sr-only sm:mb-1 sm:block sm:text-xs sm:font-bold sm:text-[#587275]" htmlFor="order-search">Find existing order</label>
             <input
               id="order-search"
               value={query}
@@ -445,10 +455,6 @@ export function OrderWorkspace({ actorEmail, initialStatus = 'open' }: { actorEm
             />
             {query ? <button type="button" onClick={() => { setQuery(''); setPage(1); }} className="absolute bottom-1 right-1 min-h-9 rounded-lg px-3 text-xs font-bold text-[#456367] hover:bg-[#edf3f1]">Clear</button> : null}
           </div>
-          <button type="button" aria-pressed={query === `assignee:${actorEmail.toLocaleLowerCase('en-IN')}`} onClick={() => { setQuery((current) => current === `assignee:${actorEmail.toLocaleLowerCase('en-IN')}` ? '' : `assignee:${actorEmail.toLocaleLowerCase('en-IN')}`); setStatus('open'); setCaptureDate(''); setCaptureDateTo(''); setPage(1); }} className="min-h-11 rounded-xl border border-[#cedfdd] px-4 font-bold text-[#31585d] hover:bg-[#f1f6f4] aria-pressed:border-[#64d4ad] aria-pressed:bg-[#eaf8f1]">My work</button>
-          <button type="button" aria-pressed={query === 'assignee:unassigned'} onClick={() => { setQuery((current) => current === 'assignee:unassigned' ? '' : 'assignee:unassigned'); setStatus('open'); setCaptureDate(''); setCaptureDateTo(''); setPage(1); }} className="min-h-11 rounded-xl border border-[#cedfdd] px-4 font-bold text-[#31585d] hover:bg-[#f1f6f4] aria-pressed:border-[#64d4ad] aria-pressed:bg-[#eaf8f1]">Unassigned</button>
-          <label className="text-xs font-bold text-[#587275]">Order date from<input type="date" value={captureDate} max={captureDateTo || undefined} onChange={(event) => { const nextDate = event.target.value; setCaptureDate(nextDate); if (!nextDate || (captureDateTo && nextDate > captureDateTo)) setCaptureDateTo(''); setPage(1); }} className="mt-1 block min-h-11 rounded-xl border border-[#cedfdd] bg-white px-3 font-normal outline-none focus:border-[#64d4ad]" /></label>
-          <label className="text-xs font-bold text-[#587275]">To (optional)<input type="date" value={captureDateTo} min={captureDate || undefined} disabled={!captureDate} onChange={(event) => { setCaptureDateTo(event.target.value); setPage(1); }} className="mt-1 block min-h-11 rounded-xl border border-[#cedfdd] bg-white px-3 font-normal outline-none focus:border-[#64d4ad] disabled:bg-[#edf3f1]" /></label>
           <label className="sr-only" htmlFor="order-status">Filter by status</label>
           <select
             id="order-status"
@@ -469,6 +475,8 @@ export function OrderWorkspace({ actorEmail, initialStatus = 'open' }: { actorEm
             <option value="packed">Packed</option>
             <option value="awaiting_tally_billing">Awaiting Tally billing</option>
             <option value="dispatch_ready">Ready for dispatch</option>
+            <option value="follow_up_due">Follow-ups due</option>
+            <option value="follow_up_upcoming">Upcoming follow-ups</option>
             <option value="delivery_attention">Delivery attention</option>
             <option value="dispatched">Dispatched</option>
             <option value="delivery_due_today">Delivery due today</option>
@@ -480,22 +488,27 @@ export function OrderWorkspace({ actorEmail, initialStatus = 'open' }: { actorEm
             <option value="overdue">Overdue deliveries</option>
             <option value="cancelled">Cancelled</option>
           </select>
-          <button type="button" onClick={exportVisibleOrders} disabled={!totalOrders} className="min-h-11 rounded-xl border border-[#cedfdd] px-4 font-bold text-[#31585d] hover:bg-[#f1f6f4] disabled:opacity-50">
-            Export
-          </button>
-          <button type="button" onClick={() => void load(false, true)} disabled={refreshing} aria-busy={refreshing} className="min-h-11 rounded-xl border border-[#cedfdd] px-4 font-bold text-[#31585d] hover:bg-[#f1f6f4] disabled:opacity-60">
-            {refreshing ? 'Refreshing…' : 'Refresh'}
-          </button>
+          <div className="sm:contents">
+            <button type="button" aria-expanded={mobileFiltersOpen} aria-controls="mobile-order-filters" onClick={() => setMobileFiltersOpen((open) => !open)} className="flex min-h-10 items-center justify-between rounded-xl border border-[#cedfdd] px-3 text-sm font-bold text-[#31585d] sm:hidden">More filters <span aria-hidden="true" className={`transition ${mobileFiltersOpen ? 'rotate-180' : ''}`}>⌄</span></button>
+            <div id="mobile-order-filters" className={`${mobileFiltersOpen ? 'grid' : 'hidden'} mt-2 grid-cols-2 gap-2 border-t border-[#e3ecea] pt-2 sm:contents`}>
+              <button type="button" aria-pressed={query === `assignee:${actorEmail.toLocaleLowerCase('en-IN')}`} onClick={() => { setQuery((current) => current === `assignee:${actorEmail.toLocaleLowerCase('en-IN')}` ? '' : `assignee:${actorEmail.toLocaleLowerCase('en-IN')}`); setStatus('open'); setCaptureDate(''); setCaptureDateTo(''); setPage(1); }} className="min-h-11 rounded-xl border border-[#cedfdd] px-3 font-bold text-[#31585d] hover:bg-[#f1f6f4] aria-pressed:border-[#64d4ad] aria-pressed:bg-[#eaf8f1] sm:px-4">My work</button>
+              <button type="button" aria-pressed={query === 'assignee:unassigned'} onClick={() => { setQuery((current) => current === 'assignee:unassigned' ? '' : 'assignee:unassigned'); setStatus('open'); setCaptureDate(''); setCaptureDateTo(''); setPage(1); }} className="min-h-11 rounded-xl border border-[#cedfdd] px-3 font-bold text-[#31585d] hover:bg-[#f1f6f4] aria-pressed:border-[#64d4ad] aria-pressed:bg-[#eaf8f1] sm:px-4">Unassigned</button>
+              <label className="text-xs font-bold text-[#587275]">Order date from<input type="date" value={captureDate} max={captureDateTo || undefined} onChange={(event) => { const nextDate = event.target.value; setCaptureDate(nextDate); if (!nextDate || (captureDateTo && nextDate > captureDateTo)) setCaptureDateTo(''); setPage(1); }} className="mt-1 block min-h-11 w-full rounded-xl border border-[#cedfdd] bg-white px-3 font-normal outline-none focus:border-[#64d4ad]" /></label>
+              <label className="text-xs font-bold text-[#587275]">To (optional)<input type="date" value={captureDateTo} min={captureDate || undefined} disabled={!captureDate} onChange={(event) => { setCaptureDateTo(event.target.value); setPage(1); }} className="mt-1 block min-h-11 w-full rounded-xl border border-[#cedfdd] bg-white px-3 font-normal outline-none focus:border-[#64d4ad] disabled:bg-[#edf3f1]" /></label>
+              <button type="button" onClick={exportVisibleOrders} disabled={!totalOrders} className="min-h-11 rounded-xl border border-[#cedfdd] px-3 font-bold text-[#31585d] hover:bg-[#f1f6f4] disabled:opacity-50 sm:px-4">Export</button>
+              <button type="button" onClick={() => void load(false, true)} disabled={refreshing} aria-busy={refreshing} className="min-h-11 rounded-xl border border-[#cedfdd] px-3 font-bold text-[#31585d] hover:bg-[#f1f6f4] disabled:opacity-60 sm:px-4">{refreshing ? 'Refreshing…' : 'Refresh'}</button>
+            </div>
+          </div>
         </div>
 
         {notice ? <p className="mt-4 rounded-xl border border-[#bfe5d8] bg-[#eaf8f1] px-4 py-3 text-sm font-semibold text-[#176246]">{notice}</p> : null}
         {error ? <p role="alert" className="mt-4 rounded-xl border border-[#efbbb6] bg-[#fff0ef] px-4 py-3 text-sm text-[#8d3a34]">{error}</p> : null}
 
-        <section className="mt-4 overflow-hidden rounded-2xl border border-[#dce7e5] bg-white shadow-[0_8px_24px_rgba(9,47,54,0.05)]">
-          <div className="flex items-center justify-between border-b border-[#e3ecea] px-5 py-4">
+        <section className="mt-3 overflow-hidden rounded-2xl border border-[#dce7e5] bg-white shadow-[0_8px_24px_rgba(9,47,54,0.05)] sm:mt-4">
+          <div className="flex items-center justify-between border-b border-[#e3ecea] px-3 py-3 sm:px-5 sm:py-4">
             <div>
-              <h2 className="font-extrabold text-[#173239]">{status === 'history' ? 'Old orders' : status === 'attention' ? 'Orders needing attention' : status === 'billing_attention' ? 'Billing attention' : status === 'delivery_attention' ? 'Delivery attention' : status === 'delivery_due_today' ? 'Deliveries due today' : status === 'delivery_due_soon' ? 'Deliveries due in 7 days' : status === 'back_ordered' ? 'Partial fulfilment / back-orders' : status === 'delivery_exception' ? 'Open delivery exceptions' : 'Order inbox'}</h2>
-              <p className="mt-1 text-xs text-[#6b7e81]">Tally stock snapshot: {staleText}</p>
+              <h2 className="font-extrabold text-[#173239]">{status === 'history' ? 'Old orders' : status === 'attention' ? 'Orders needing attention' : status === 'billing_attention' ? 'Billing attention' : status === 'follow_up_due' ? 'Follow-ups due' : status === 'follow_up_upcoming' ? 'Upcoming follow-ups' : status === 'delivery_attention' ? 'Delivery attention' : status === 'delivery_due_today' ? 'Deliveries due today' : status === 'delivery_due_soon' ? 'Deliveries due in 7 days' : status === 'back_ordered' ? 'Partial fulfilment / back-orders' : status === 'delivery_exception' ? 'Open delivery exceptions' : 'Order inbox'}</h2>
+              <p className="mt-1 hidden text-xs text-[#6b7e81] sm:block">Tally stock snapshot: {staleText}</p>
             </div>
             <span className="rounded-full bg-[#e2f8ef] px-3 py-1 text-xs font-extrabold text-[#136146]">{totalOrders} orders</span>
           </div>
@@ -530,6 +543,7 @@ export function OrderWorkspace({ actorEmail, initialStatus = 'open' }: { actorEm
                   onFindCustomer={(order) => { setQuery(`customer:${order.customerName}`); setStatus('all'); setCaptureDate(''); setCaptureDateTo(''); setPage(1); }}
                   onSetPriority={setOrderPriority}
                   onSetAssignee={setOrderAssignee}
+                  onFollowUp={updateOrderFollowUp}
                 />
               ))}
             </div>
@@ -580,10 +594,10 @@ export function OrderWorkspace({ actorEmail, initialStatus = 'open' }: { actorEm
 function SummaryCard({ label, value, tone = 'normal', onOpen }: { label: string; value?: number; tone?: 'normal' | 'watch'; onOpen?: () => void }) {
   const content = <>
       <p className="text-xs font-bold text-[#6b7e81]">{label}</p>
-      <strong className="mt-3 block text-3xl font-black text-[#092f36]">{Number(value || 0).toLocaleString('en-IN')}</strong>
-      {onOpen ? <span className="mt-2 block text-[10px] font-extrabold uppercase tracking-wide text-[#5f777a]">Open queue</span> : null}
+      <strong className="mt-1 block text-2xl font-black text-[#092f36] sm:mt-3 sm:text-3xl">{Number(value || 0).toLocaleString('en-IN')}</strong>
+      {onOpen ? <span className="mt-1 block text-[10px] font-extrabold uppercase tracking-wide text-[#5f777a] sm:mt-2">Open queue</span> : null}
     </>;
-  const className = `rounded-2xl border p-5 text-left ${tone === 'watch' ? 'border-[#f0d7a5] bg-[#fff9ec]' : 'border-[#dce7e5] bg-white'}`;
+  const className = `min-w-36 shrink-0 snap-start rounded-xl border p-3 text-left sm:min-w-0 sm:rounded-2xl sm:p-5 ${tone === 'watch' ? 'border-[#f0d7a5] bg-[#fff9ec]' : 'border-[#dce7e5] bg-white'}`;
   return onOpen ? <button type="button" onClick={onOpen} className={`${className} transition hover:-translate-y-0.5 hover:shadow-sm`}>{content}</button> : <article className={className}>{content}</article>;
 }
 
@@ -606,6 +620,7 @@ function OrderRow({
   onFindCustomer,
   onSetPriority,
   onSetAssignee,
+  onFollowUp,
 }: {
   order: OrderSummary;
   actorRole: string;
@@ -625,6 +640,7 @@ function OrderRow({
   onFindCustomer: (order: OrderSummary) => void;
   onSetPriority: (order: OrderSummary, priority: 'normal' | 'high' | 'urgent') => Promise<void>;
   onSetAssignee: (order: OrderSummary, assignedToEmail?: string) => Promise<void>;
+  onFollowUp: (order: OrderSummary, command: Extract<OrderCommand, { action: 'set_order_follow_up' | 'complete_order_follow_up' }>) => Promise<void>;
 }) {
   const [busy, setBusy] = useState(false);
   const [invoiceNumber, setInvoiceNumber] = useState(order.tallyInvoiceNumber || '');
@@ -646,6 +662,7 @@ function OrderRow({
   const lineMatch = tallyInvoiceLineReconciliation(order, tallyInvoices, new Date(), tallySnapshotFetchedAt);
   const invoiceState = invoiceMatch.state;
   const deliveryReminder = orderDeliveryReminder(order);
+  const followUpReminder = orderFollowUpReminder(order);
   const phoneHref = customerPhoneHref(order.customerPhone);
   const mergeById = <T extends { id: string },>(history: T[], current: T[]) => [...new Map([...history, ...current].map((item) => [item.id, item])).values()];
   const detailedOrder = detailHistory ? {
@@ -665,7 +682,7 @@ function OrderRow({
     }
   }
   return (
-    <article className="p-5">
+    <article className="[content-visibility:auto] [contain-intrinsic-size:auto_260px] p-3 sm:p-5">
       <div className="grid gap-4 lg:grid-cols-[1.5fr_1fr_auto] lg:items-center">
       <div>
         <div className="flex flex-wrap items-center gap-2">
@@ -674,6 +691,7 @@ function OrderRow({
           {order.priority && order.priority !== 'normal' ? <span className={`rounded-full px-2.5 py-1 text-[11px] font-extrabold ${order.priority === 'urgent' ? 'bg-[#fff0ef] text-[#9a3f37]' : 'bg-[#fff1d6] text-[#8a5a0a]'}`}>{order.priority === 'urgent' ? 'Urgent' : 'High priority'}</span> : null}
           {order.assignedToEmail ? <span className="rounded-full bg-[#e8f4fa] px-2.5 py-1 text-[11px] font-extrabold text-[#315f75]">Assigned: {order.assignedToEmail}</span> : null}
           {deliveryReminder ? <span className={`rounded-full px-2.5 py-1 text-[11px] font-extrabold ${deliveryReminder === 'overdue' ? 'bg-[#fff0ef] text-[#9a3f37]' : deliveryReminder === 'today' ? 'bg-[#fff1d6] text-[#8a5a0a]' : 'bg-[#e8f4fa] text-[#315f75]'}`}>{deliveryReminder === 'overdue' ? 'Delivery overdue' : deliveryReminder === 'today' ? 'Delivery due today' : 'Delivery due soon'}</span> : null}
+          {followUpReminder ? <span className={`rounded-full px-2.5 py-1 text-[11px] font-extrabold ${followUpReminder === 'overdue' ? 'bg-[#fff0ef] text-[#9a3f37]' : followUpReminder === 'today' ? 'bg-[#fff1d6] text-[#8a5a0a]' : 'bg-[#e8f4fa] text-[#315f75]'}`}>{followUpReminder === 'overdue' ? 'Follow-up overdue' : followUpReminder === 'today' ? 'Follow-up today' : `Follow-up ${order.followUpDate}`}</span> : null}
           {lineMatch.state === 'mismatch' ? <span className="rounded-full bg-[#fff0ef] px-2.5 py-1 text-[11px] font-extrabold text-[#8d3a34]">Billing mismatch</span> : null}
         </div>
         <p className="mt-2 font-bold text-[#274b50]">{order.customerName}</p>
@@ -707,6 +725,7 @@ function OrderRow({
       {!order.assignedToEmail && !['delivered', 'cancelled'].includes(order.status) && ['administrator', 'operations', 'management'].includes(actorRole) ? <button type="button" disabled={busy} onClick={async () => { setBusy(true); try { await onSetAssignee(order, actorEmail); } finally { setBusy(false); } }} className="ml-3 min-h-10 rounded-xl border border-[#9ddbc5] bg-[#edf9f4] px-4 text-xs font-bold text-[#277b69] disabled:opacity-50">{busy ? 'Taking…' : 'Take this order'}</button> : null}
       {!['delivered', 'cancelled'].includes(order.status) && ['administrator', 'operations', 'management'].includes(actorRole) ? <AssignmentControl order={order} onSave={onSetAssignee} /> : null}
       <OrderSummaryCopy order={order} />
+      {!['delivered', 'cancelled'].includes(order.status) ? <OrderFollowUpPanel order={order} actorRole={actorRole} onSave={onFollowUp} /> : null}
       <details onToggle={(event) => { if (event.currentTarget.open) { setDetailsLoaded(true); void loadDetails(); } }} className="mt-4 rounded-xl bg-[#f6f8f7] px-4 py-3 text-sm">
         <summary className="cursor-pointer font-bold text-[#456367]">View order details</summary>
         {detailsLoaded ? <>
@@ -868,6 +887,19 @@ function NewOrderPanel({ data, templateOrder, onClose, onCreated, onViewCustomer
   const hydrated = useSyncExternalStore(() => () => {}, () => true, () => false);
   if (!hydrated) return null;
   return <HydratedNewOrderPanel data={data} templateOrder={templateOrder} onClose={onClose} onCreated={onCreated} onViewCustomer={onViewCustomer} />;
+}
+
+function OrderFollowUpPanel({ order, actorRole, onSave }: { order: OrderSummary; actorRole: string; onSave: (order: OrderSummary, command: Extract<OrderCommand, { action: 'set_order_follow_up' | 'complete_order_follow_up' }>) => Promise<void> }) {
+  const canManage = ['administrator', 'sales', 'operations', 'accounts', 'management'].includes(actorRole);
+  const [open, setOpen] = useState(false);
+  const [busy, setBusy] = useState(false);
+  const [followUpDate, setFollowUpDate] = useState(order.followUpDate || '');
+  const [followUpNote, setFollowUpNote] = useState(order.followUpNote || '');
+  if (!canManage) return null;
+  return <div className="mt-3 rounded-xl border border-[#dce7e5] bg-[#fbfcfb] p-3 text-sm">
+    <div className="flex flex-wrap items-center justify-between gap-2"><div><strong className="text-[#31585d]">Customer follow-up</strong>{order.followUpDate ? <p className="mt-1 text-xs text-[#718487]">{order.followUpDate} · {order.followUpNote}</p> : <p className="mt-1 text-xs text-[#718487]">No follow-up scheduled</p>}</div><div className="flex gap-2">{order.followUpDate ? <button type="button" disabled={busy} onClick={async () => { setBusy(true); try { await onSave(order, { action: 'complete_order_follow_up', payload: { orderId: order.id, expectedVersion: order.version } }); setFollowUpDate(''); setFollowUpNote(''); } finally { setBusy(false); } }} className="min-h-9 rounded-lg border border-[#9ddbc5] bg-white px-3 text-xs font-bold text-[#277b69] disabled:opacity-50">{busy ? 'Saving…' : 'Done'}</button> : null}<button type="button" onClick={() => setOpen((value) => !value)} aria-expanded={open} className="min-h-9 rounded-lg border border-[#cedfdd] bg-white px-3 text-xs font-bold text-[#31585d]">{open ? 'Close' : order.followUpDate ? 'Change' : 'Schedule'}</button></div></div>
+    {open ? <div className="mt-3 grid gap-2 border-t border-[#e3ecea] pt-3 sm:grid-cols-[160px_1fr_auto]"><label className="text-xs font-bold text-[#587275]">Follow-up date<input type="date" min={new Date().toLocaleDateString('en-CA', { timeZone: 'Asia/Kolkata' })} value={followUpDate} onChange={(event) => setFollowUpDate(event.target.value)} className="mt-1 min-h-10 w-full rounded-lg border border-[#cedfdd] bg-white px-2 font-normal" /></label><label className="text-xs font-bold text-[#587275]">Purpose<input maxLength={500} value={followUpNote} onChange={(event) => setFollowUpNote(event.target.value)} placeholder="Confirm quantities, call customer…" className="mt-1 min-h-10 w-full rounded-lg border border-[#cedfdd] bg-white px-3 font-normal" /></label><button type="button" disabled={busy || !followUpDate || followUpNote.trim().length < 3} onClick={async () => { setBusy(true); try { await onSave(order, { action: 'set_order_follow_up', payload: { orderId: order.id, expectedVersion: order.version, followUpDate, followUpNote: followUpNote.trim() } }); setOpen(false); } finally { setBusy(false); } }} className="min-h-10 self-end rounded-lg bg-[#31585d] px-4 text-xs font-bold text-white disabled:opacity-50">{busy ? 'Saving…' : 'Save follow-up'}</button></div> : null}
+  </div>;
 }
 
 function OrderSummaryCopy({ order }: { order: OrderSummary }) {
@@ -1209,9 +1241,10 @@ function HydratedNewOrderPanel({ data, templateOrder, onClose, onCreated, onView
 function CustomerAccountPreview({ customer, history, state, onViewOrders, onUseOrder, onUseAddress }: { customer: CustomerDirectoryEntry; history: { orders: OrderSummary[]; total: number } | null; state: 'idle' | 'loading' | 'error'; onViewOrders: () => void; onUseOrder: (order: OrderSummary) => void; onUseAddress: (address: string) => void }) {
   const phoneHref = customerPhoneHref(customer.phone);
   const addresses = customerDeliveryAddresses(history?.orders || []);
+  const balanceFreshness = customerBalanceFreshness(customer);
   return <section aria-label="Customer account" className="mt-2 rounded-xl border border-[#dce7e5] bg-[#fbfcfb] p-3 text-xs font-normal">
     <div className="flex items-start justify-between gap-3"><div><strong className="block text-sm text-[#274b50]">Customer account</strong><span className="mt-1 block text-[#718487]">{[customer.city, customer.phone].filter(Boolean).join(' · ') || 'Contact details unavailable in Tally'}</span></div><div className="flex shrink-0 flex-wrap justify-end gap-2">{phoneHref ? <a href={phoneHref} aria-label={`Call ${customer.name}`} className="inline-flex min-h-9 items-center rounded-lg border border-[#cedfdd] bg-white px-3 font-bold text-[#31585d]">Call</a> : null}{history ? <button type="button" onClick={onViewOrders} className="min-h-9 rounded-lg border border-[#cedfdd] bg-white px-3 font-bold text-[#31585d]">View all orders</button> : null}</div></div>
-    {customer.tallyBalance !== undefined && customer.tallyBalance !== null ? <p className="mt-2 rounded-lg bg-[#f2f7f6] px-3 py-2 text-[#456367]">Read-only Tally ledger balance: <strong>₹{customer.tallyBalance.toLocaleString('en-IN', { maximumFractionDigits: 2 })}</strong>{customer.balanceAsOf ? ` · as of ${new Date(customer.balanceAsOf).toLocaleString('en-IN')}` : ''}</p> : null}
+    {balanceFreshness !== 'unavailable' ? <div className={`mt-2 rounded-lg px-3 py-2 ${balanceFreshness === 'stale' ? 'border border-[#f0d7a5] bg-[#fff9ec] text-[#805b20]' : 'bg-[#f2f7f6] text-[#456367]'}`}><p>Read-only Tally ledger balance: <strong>₹{customer.tallyBalance?.toLocaleString('en-IN', { maximumFractionDigits: 2 })}</strong>{customer.balanceAsOf ? ` · as of ${new Date(customer.balanceAsOf).toLocaleString('en-IN')}` : ''}</p>{balanceFreshness === 'stale' ? <output className="mt-1 block font-bold">Balance may be outdated. Check Tally before confirming credit terms.</output> : <p className="mt-1 text-[#718487]">For reference only; StockFlow does not approve or block credit.</p>}</div> : null}
     {state === 'loading' ? <p className="mt-2 text-[#718487]">Loading this customer’s order history…</p> : null}
     {state === 'error' ? <p className="mt-2 rounded-lg bg-[#fff7e8] px-3 py-2 text-[#805b20]">Order history is unavailable right now. You can still save this order.</p> : null}
     {addresses.length ? <div className="mt-2"><strong className="text-[#456367]">Recent delivery addresses</strong><div className="mt-1 flex flex-wrap gap-2">{addresses.map((address) => <button key={address.toLocaleLowerCase('en-IN')} type="button" onClick={() => onUseAddress(address)} title={address} className="min-h-9 max-w-full truncate rounded-lg border border-[#cedfdd] bg-white px-3 text-left font-bold text-[#31585d]">Use {address}</button>)}</div></div> : null}

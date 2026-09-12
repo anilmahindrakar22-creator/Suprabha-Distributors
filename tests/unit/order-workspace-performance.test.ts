@@ -19,9 +19,17 @@ describe('lightweight workspace boundaries', () => {
     expect(frame).toContain("'requestIdleCallback' in window");
     expect(frame).toContain('void loadOrderWorkspace()');
     expect(frame).toContain("await import('@/lib/order-bootstrap-cache')");
+    const idleWarmup = frame.slice(frame.indexOf('const warmOrderWorkspace'), frame.indexOf("const idleId"));
+    expect(idleWarmup).not.toContain('warmOrderData(actorEmail)');
     expect(frame).not.toContain("import { clearOrderBootstrapCache, loadOrderBootstrap }");
     expect(frame).toContain('onPointerEnter={item === \'orders\' ? warmOrders : undefined}');
     expect(frame).toContain('onPointerDown={item === \'orders\' ? warmOrders : undefined}');
+  });
+
+  it('renders the saved stock snapshot before waiting for mobile network refresh', () => {
+    const stock = readFileSync('public/stockflow.html', 'utf8');
+    expect(stock).toContain('function showCachedSnapshot()');
+    expect(stock.indexOf('showCachedSnapshot();')).toBeLessThan(stock.lastIndexOf('refreshData();'));
   });
 
   it('does not mount every order detail form in the initial inbox', () => {

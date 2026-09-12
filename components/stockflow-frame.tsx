@@ -40,10 +40,9 @@ export function StockFlowFrame({ actorEmail, actorRole }: { actorEmail: string; 
       ]);
       if (account.retainedPreviousDraft) noticeTimer = window.setTimeout(() => setDeviceNotice('A saved order for the previous account remains on this device. Sign back into that account to send or discard it.'), 0);
     }
-    const warmOrderWorkspace = () => {
-      void loadOrderWorkspace();
-      void warmOrderData(actorEmail).catch(() => undefined);
-    };
+    // Download only the small Orders code chunk while idle. Data waits for a clear
+    // user signal so it cannot compete with the initial Stock request on mobile.
+    const warmOrderWorkspace = () => { void loadOrderWorkspace(); };
     const idleId = 'requestIdleCallback' in window
       ? window.requestIdleCallback(warmOrderWorkspace, { timeout: 2_000 })
       : undefined;

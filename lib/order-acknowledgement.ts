@@ -77,6 +77,8 @@ function patchedOrder(order: OrderSummary, command: OrderCommand, result: Comman
   if (command.action === 'confirm_delivery') return { ...base, status: result.status || 'delivered', deliveredAt: command.payload.deliveredAt, receivedBy: command.payload.receivedBy, podReference: command.payload.podReference || null };
   if (command.action === 'set_order_priority') return { ...base, priority: command.payload.priority };
   if (command.action === 'set_order_assignee') return { ...base, assignedToEmail: command.payload.assignedToEmail || null };
+  if (command.action === 'set_order_follow_up') return { ...base, followUpDate: command.payload.followUpDate, followUpNote: command.payload.followUpNote };
+  if (command.action === 'complete_order_follow_up') return { ...base, followUpDate: null, followUpNote: null };
   if (command.action === 'create_exception') {
     if (!result.exceptionId) return null;
     return { ...base, exceptions: [...base.exceptions, { id: result.exceptionId, category: command.payload.category, status: 'open', summary: command.payload.summary, ownerEmail: command.payload.ownerEmail || null, resolution: null, createdBy: actor.email, createdAt: updatedAt, resolvedBy: null, resolvedAt: null }] };

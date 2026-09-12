@@ -25,6 +25,8 @@ export type OrderSummary = {
   status: string;
   priority?: 'normal' | 'high' | 'urgent';
   assignedToEmail?: string | null;
+  followUpDate?: string | null;
+  followUpNote?: string | null;
   source: string;
   notes: string | null;
   version: number;
@@ -57,6 +59,17 @@ export type TallyInvoice = {
   masterId: string | null;
   lineItems?: Array<{ itemName: string; quantity: number }>;
 };
+
+export function customerBalanceFreshness(
+  customer: CustomerDirectoryEntry,
+  now = new Date(),
+  maxAgeMs = 6 * 60 * 60 * 1000,
+) {
+  if (customer.tallyBalance === undefined || customer.tallyBalance === null) return 'unavailable' as const;
+  const capturedAt = Date.parse(customer.balanceAsOf || '');
+  if (!Number.isFinite(capturedAt) || capturedAt > now.getTime() || now.getTime() - capturedAt > maxAgeMs) return 'stale' as const;
+  return 'current' as const;
+}
 
 export type TallyLineReconciliation = {
   state: 'not_billed' | 'identity_unverified' | 'awaiting_detail' | 'matched' | 'mismatch';
@@ -115,6 +128,8 @@ export function orderEventDescription(event: OrderEvent) {
   if (event.eventType === 'order_priority_changed') {
     return before && after ? `Changed priority from ${before} to ${after}` : after ? `Set priority to ${after}` : 'Changed order priority';
   }
+  if (event.eventType === 'order_follow_up_set') return event.reason ? `Follow-up scheduled: ${event.reason}` : 'Follow-up scheduled';
+  if (event.eventType === 'order_follow_up_completed') return event.reason ? `Completed follow-up: ${event.reason}` : 'Completed follow-up';
   if (event.eventType === 'order_note_added') return 'Added order note';
   if (event.toStatus && event.toStatus !== event.fromStatus) return `${(event.fromStatus || 'new').replaceAll('_', ' ')} → ${event.toStatus.replaceAll('_', ' ')}`;
   return event.eventType.replaceAll('_', ' ');
@@ -141,6 +156,15 @@ export type OrderBootstrap = {
   operations: Record<string, number>;
   pagination?: { page: number; pageCount: number; pageSize: number; total: number };
 };
+
+export function orderNotificationGroups(operations: Record<string, number>) {
+  return [
+    { id: 'follow-ups', label: 'Customer follow-ups due', count: Number(operations.followUpsDue || 0), status: 'follow_up_due' },
+    { id: 'confirmations', label: 'Orders awaiting confirmation', count: Number(operations.awaitingConfirmation || 0), status: 'awaiting_confirmation' },
+    { id: 'billing', label: 'Orders awaiting Tally billing', count: Number(operations.awaitingTallyBilling || 0), status: 'billing' },
+    { id: 'delivery', label: 'Deliveries needing attention', count: Number(operations.deliveryAttention || 0), status: 'delivery_attention' },
+  ].filter((group) => group.count > 0);
+}
 
 export function currentTallyFinancialYear(now = new Date()) {
   const parts = new Intl.DateTimeFormat('en-US', { timeZone: 'Asia/Kolkata', year: 'numeric', month: 'numeric' }).formatToParts(now);
@@ -440,6 +464,8 @@ export function filterOrders(orders: OrderSummary[], query: string, status: stri
       (status === 'billing' && order.status === 'awaiting_tally_billing') ||
       (status === 'picking' && ['confirmed', 'partially_reserved', 'fully_reserved', 'ready_for_picking', 'picked'].includes(order.status)) ||
       (status === 'dispatch_ready' && ['billed_in_tally', 'ready_for_dispatch'].includes(order.status)) ||
+      (status === 'follow_up_due' && ['overdue', 'today'].includes(orderFollowUpReminder(order) || '')) ||
+      (status === 'follow_up_upcoming' && orderFollowUpReminder(order) === 'upcoming') ||
       (status === 'delivery_due_today' && isOrderDeliveryDue(order)) ||
       (status === 'delivery_attention' && !['delivered', 'cancelled'].includes(order.status) && (isOrderDeliveryOverdue(order) || isOrderDeliveryDue(order) || (order.exceptions || []).some((item) => item.status === 'open' && ['delayed', 'failed_delivery'].includes(item.category)))) ||
       (status === 'delivery_due_soon' && isOrderDeliveryDue(order, 6)) ||
@@ -558,6 +584,14 @@ export type OrderCommand =
       payload: { idempotencyKey?: string; orderId: string; expectedVersion: number; assignedToEmail?: string };
     }
   | {
+      action: 'set_order_follow_up';
+      payload: { idempotencyKey?: string; orderId: string; expectedVersion: number; followUpDate: string; followUpNote: string };
+    }
+  | {
+      action: 'complete_order_follow_up';
+      payload: { idempotencyKey?: string; orderId: string; expectedVersion: number };
+    }
+  | {
       action: 'record_billing_review';
       payload: { idempotencyKey?: string; orderId: string; expectedVersion: number; outcome: 'investigating' | 'accepted_difference' | 'tally_corrected'; note: string };
     }
@@ -602,6 +636,13 @@ export function orderDeliveryReminder(order: OrderSummary, today = new Date()): 
   return null;
 }
 
+export function orderFollowUpReminder(order: OrderSummary, today = new Date()): 'overdue' | 'today' | 'upcoming' | null {
+  if (!order.followUpDate || ['cancelled', 'delivered'].includes(order.status)) return null;
+  const date = localDateKey(today);
+  if (order.followUpDate < date) return 'overdue';
+  return order.followUpDate === date ? 'today' : 'upcoming';
+}
+
 export function repeatOrderTemplate(order: OrderSummary) {
   return {
     customerName: order.customerName,
@@ -634,7 +675,7 @@ export function validateOrderCommand(value: unknown): OrderCommand | null {
   if (!value || typeof value !== 'object') return null;
   const command = value as { action?: unknown; payload?: unknown };
   if (
-    !['create_order', 'transition_order', 'save_fulfilment', 'save_dispatch', 'confirm_delivery', 'edit_order', 'create_exception', 'resolve_exception', 'schedule_installation', 'complete_installation', 'set_order_priority', 'set_order_assignee', 'record_billing_review', 'add_order_note'].includes(
+    !['create_order', 'transition_order', 'save_fulfilment', 'save_dispatch', 'confirm_delivery', 'edit_order', 'create_exception', 'resolve_exception', 'schedule_installation', 'complete_installation', 'set_order_priority', 'set_order_assignee', 'set_order_follow_up', 'complete_order_follow_up', 'record_billing_review', 'add_order_note'].includes(
       String(command.action),
     ) ||
     !command.payload ||
@@ -681,6 +722,10 @@ export function validateOrderCommand(value: unknown): OrderCommand | null {
   } else if (command.action === 'set_order_assignee') {
     if (!validMutationIdentity() || !boundedOptionalText('assignedToEmail', 254) || payload.assignedToEmail !== undefined && typeof payload.assignedToEmail !== 'string') return null;
     if (typeof payload.assignedToEmail === 'string' && payload.assignedToEmail && !/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(payload.assignedToEmail)) return null;
+  } else if (command.action === 'set_order_follow_up') {
+    if (!validMutationIdentity() || !isValidCalendarDate(payload.followUpDate) || typeof payload.followUpNote !== 'string' || payload.followUpNote.trim().length < 3 || payload.followUpNote.length > 500) return null;
+  } else if (command.action === 'complete_order_follow_up') {
+    if (!validMutationIdentity()) return null;
   } else if (command.action === 'transition_order') {
     const transitionStatuses = ['awaiting_confirmation', 'awaiting_approval', 'confirmed', 'packed', 'awaiting_tally_billing', 'billed_in_tally', 'ready_for_dispatch', 'dispatched', 'delivered', 'cancelled'];
     const invoiceReferences = typeof payload.tallyInvoiceNumber === 'string' ? payload.tallyInvoiceNumber.split(',').map((item) => item.trim()).filter(Boolean) : [];
