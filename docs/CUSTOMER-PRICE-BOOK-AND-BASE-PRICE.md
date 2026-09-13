@@ -1,122 +1,202 @@
-# Customer Price Book and Product Base Price
+# Customer Price Book and Margin-Optimized Pricing
 
 ## Status
 
-This is the required next pricing slice. The current build is still order-centric and supports one customer-item price contract at a time. This document defines the customer-first pricing workflow to implement next.
+This is the approved next pricing design. The current coded build remains order-centric; this document defines the simpler customer-first pricing model to implement after current pricing consolidation and integrity work.
 
-## Customer-first pricing workflow
+## Core operating principle
 
-1. Open Pricing.
-2. Select a customer.
-3. Prefill the workspace with all Tally items the customer has genuinely purchased before.
-4. For every row show: item, last eligible Tally rate, Product Base Price, customer-specific price, effective price source, latest purchase/landed cost, GP amount and GP percentage.
-5. Allow direct editing of one or more customer-specific prices in the table.
-6. Add Product / All Products remains available for items never bought before.
-7. Submit only changed rows as effective-dated governed customer-price proposals.
+The system proposes the price. Staff should normally decide whether to accept the recommendation rather than manually maintaining a selling rate for every Customer × Product combination.
 
-Recommended tabs: Purchased (default), Special Prices, All Products.
+For an existing customer and product, the customer's last genuine Tally selling price is the commercial starting point. The engine compares the authoritative purchase/landed cost applicable to that historic sale with current authoritative cost.
 
-Each effective price should clearly show its source, for example:
-- ₹425 · Customer Special
-- ₹438 · Last Tally Rate
-- ₹460 · Base Price
-- Review Required
+Continuity Price = Last Genuine Customer Selling Price + max(Current Cost - Historic Cost, 0)
 
-## Product Base Price
+A purchase-cost increase is therefore passed through as an absolute rupee increase to the customer's established selling price. A cost decrease does not automatically reduce the customer's selling price.
 
-Add a separate effective-dated Product Base Price layer. It applies generally, but customer-specific evidence takes precedence where it is still economically valid.
+Example: Customer A last paid ₹420 when cost was ₹300. Current cost is ₹310. Continuity Price = ₹430.
 
-Required resolution order:
-1. Customer-specific approved price
-2. Last genuine Tally selling rate for the exact customer and item, **only when authoritative purchase/landed cost has not increased since that sale**
-3. Product Base Price
-4. Price review required
+## Price hierarchy
 
-A base-price change must never overwrite negotiated customer prices.
+1. Valid fixed contractual/tender/governed customer price, where the agreement prevents automatic repricing.
+2. Last genuine Customer × Item Tally selling price as the customer-specific commercial baseline.
+3. Apply any positive authoritative purchase/landed-cost increase since that sale to calculate the Continuity Price.
+4. For a customer/product with no genuine history, use the approved Product Base / Default Price.
+5. If neither reliable history nor a valid base/default price exists, Price Review Required.
 
-### Last genuine customer price eligibility
+Exceptional, FOC, zero-rate, future, ambiguous or otherwise ineligible Tally transactions must never silently establish the customer baseline.
 
-The customer's last genuine Tally rate is useful evidence because it reflects the actual commercial relationship with that exact customer. It should therefore outrank a generic Product Base Price when the underlying economics are unchanged.
+## Margin engine
 
-However, the last Tally rate must not be reused blindly after a purchase-cost increase.
+The Continuity Price preserves the established customer economics by passing through absolute cost increases. The engine must separately calculate a Target-Margin Price from current authoritative cost and the applicable effective-dated pricing policy.
 
-For the last genuine Customer × Item Tally price to be eligible as the effective proposed rate:
+Target-Margin Price = Current Cost / (1 - Target Margin %)
 
-- the sale must be genuine and non-exceptional;
-- the rate must be positive;
-- the invoice date must be on or before the pricing date;
-- authoritative purchase/landed cost evidence must exist for the historic sale date and current pricing date;
-- current authoritative cost must not be higher than the cost applicable to that historic sale, subject to the configured materiality/rounding tolerance.
+Apply the configured versioned rounding rule.
 
-If current purchase/landed cost has increased, the historic customer rate is retained and shown as evidence, but it is **not automatically proposed as the current selling price**. The resolver should move to Product Base Price if a valid base price exists. If no valid base price exists, pricing becomes Review Required.
+For each decision show at least:
+- Last customer price
+- Historic cost
+- Current cost and absolute change
+- Continuity Price
+- Target-Margin Price
+- Recommended Price
+- GP amount and GP% at each relevant option
+- Difference to customer
+- Additional GP per unit
+- Expected monthly GP impact when reliable customer buying-volume evidence exists
 
-A cost decrease does not invalidate the historic customer rate by itself. Existing margin and commercial policy guardrails still apply.
+The recommendation should optimize margin without hiding commercial continuity. V1 remains deterministic and explainable; no opaque AI pricing.
 
-The UI should make this explicit, for example:
+## Recommended decision UX
 
-- `₹438 · Last Tally Rate · Cost unchanged`
-- `Last Tally ₹438 · not reused: purchase cost increased`
-- `₹460 · Base Price · historic customer rate skipped after cost increase`
-
-Example: if Customer A has ₹425 special, Customer B last genuinely bought at ₹438 and cost is unchanged, Customer C has ₹440 special, and Customer D has no valid customer history but uses base ₹450, then the effective prices are A ₹425, B ₹438, C ₹440, D ₹450. If B's purchase cost has increased since the ₹438 sale, B falls through to the valid Product Base Price instead of silently reusing ₹438.
-
-## Base-price impact preview
-
-Before proposing a base-price change, show the commercial impact.
+Example:
 
 ```text
-Change Glucose base price
+ANUGRAHA — GLUCOSE
 
-₹450 → ₹460
+Last customer price                    ₹420
+Purchase cost then                     ₹300
+Purchase cost now                      ₹310  ↑ ₹10
 
-Customers affected:             83
-Customers with special price:   17
-Customers actually changing:    66
+────────────────────────────────────────────
 
-Current cost:                  ₹310
-New GP:                        ₹150
-New GP%:                       32.6%
+Maintain old economics                 ₹430
+Target-margin price                    ₹445
 
-[ Review affected customers ]
+★ RECOMMENDED                          ₹445
 
-         [Cancel] [Propose Change]
+At ₹430       GP ₹120       27.9%
+At ₹445       GP ₹135       30.3%
+
+Difference to customer                  ₹15
+Additional GP / unit                    ₹15
+
+[ Maintain ₹430 ]  [ Recommended ₹445 ]  [ Custom ]
 ```
 
-Definitions:
-- Customers affected = distinct active customers with genuine historical purchase evidence for that item.
-- Customers with special price = affected customers with a valid approved customer-specific price on the proposed effective date.
-- Customers actually changing = affected customers whose effective price resolves to Product Base Price on the proposed effective date. Customers with an eligible unchanged-cost Last Tally Rate do not automatically change merely because the Product Base Price changes.
-- Current cost = latest eligible authoritative purchase/landed cost for the effective date.
-- New GP = proposed base price minus current cost.
-- New GP% = New GP / proposed base price × 100.
+Use simple status language:
+- Green: Recommended — meets target economics.
+- Amber: Continuity — passes through cost increase but remains below target margin.
+- Red: Below minimum margin / loss-making — management approval required.
 
-If cost evidence is missing, show Cost unavailable and require review rather than calculating a guessed GP.
+A Custom price remains possible but requires a reason when changing/reviewing and follows the existing approval guardrails.
 
-Review affected customers must show a bounded paginated list with customer, current effective price, source, proposed effective price, last genuine Tally rate, whether historic cost still matches current cost, and whether the customer changes or remains protected by a higher-precedence source.
+## Customer-first pricing workspace
 
-## Governance
+1. Open Pricing.
+2. Select customer.
+3. Prefill all genuinely purchased Tally items.
+4. Show the customer-specific price book without requiring an order.
+5. Default tab: Purchased. Additional tabs: Exceptions / Special Prices and All Products.
+6. Staff normally choose a recommendation rather than type prices manually.
+7. Only material exceptions or explicit governed prices create manual customer-price maintenance work.
 
-Base-price proposals must be effective-dated, versioned, idempotent and auditable. Administrator/Management approval is required. Approval supersedes the prior base-price version without deleting history.
+Suggested row columns:
+Item | Last Customer Rate | Cost Then | Cost Now | Continuity | Target | Recommended | GP% | Monthly GP Impact | Status / Action
 
-Impact must be recomputed server-side at approval time. If concurrent customer-specific price changes, Tally history, or cost evidence materially changes the preview, approval must require refresh/review rather than silently activating stale economics.
+## Purchase-cost change workflow
 
-A base-price change is one governed product-level event, not one write per customer.
+When authoritative purchase/landed cost increases for a product, the system should automatically calculate the impact across customers who genuinely buy that item. Staff must not manually update every customer rate.
 
-## Acceptance criteria
+Example:
 
-1. Customer selection loads previously purchased items without opening an order.
-2. Last Tally rate, Product Base Price and customer-specific price are visible together.
-3. Multiple customer prices can be edited in one customer session.
-4. Pricing resolution is Customer Special → eligible Last Tally Rate → Product Base Price → Review Required.
-5. Last Tally Rate is eligible only when current authoritative purchase/landed cost has not increased since the historic sale, subject to configured materiality tolerance.
-6. A cost-increased historic rate remains visible as evidence but is skipped for automatic resolution.
-7. Base price applies automatically only where neither a valid customer-specific override nor an eligible unchanged-cost Last Tally Rate exists.
-8. Base-price impact preview shows affected, special-price and actually-changing counts based on the final resolution hierarchy.
-9. Review affected customers shows exactly who changes and why, including customers protected by Customer Special or eligible Last Tally history.
-10. Current cost, new GP and new GP% are server-derived.
-11. Existing customer-specific prices are never overwritten by a base-price change.
-12. Effective-date boundaries, stale previews, missing cost, concurrency, cost-change detection and precedence are covered by tests.
+```text
+PURCHASE COST CHANGE — GLUCOSE
 
-## Implementation boundary
+Previous cost                 ₹300
+New cost                      ₹310
+Increase                       ₹10
 
-This document records the approved design. It does not claim the feature is coded yet. Implementation requires database migration, gateway/API actions, Pricing workspace UI, tests, migration replay and office validation before release.
+Customers purchasing product    83
+Contract/fixed customers          5
+Customers requiring review       78
+
+Customer        Last Rate   Continuity   Recommended
+──────────────────────────────────────────────
+Hospital A          ₹420         ₹430          ₹445
+Lab B               ₹435         ₹445          ₹450
+Clinic C            ₹450         ₹460          ₹460
+Hospital D          ₹410         ₹420          ₹445
+
+[ Review Customers ]
+
+[ Pass Through Cost Increase ]
+[ Apply Recommended Prices ]
+```
+
+One management action represents the commercial decision for the product/cost-change event. The implementation must not require a person to type 78 prices individually.
+
+## Impact-oriented decision screen
+
+Before a bulk commercial decision, show consequences rather than only the proposed price:
+- customers affected;
+- customers protected by fixed contracts/tenders;
+- customers receiving continuity pass-through;
+- customers where target-margin recommendation is higher than continuity;
+- customers below minimum margin;
+- customers receiving a material percentage increase;
+- estimated current monthly GP;
+- estimated monthly GP under Continuity prices;
+- estimated monthly GP under Recommended prices;
+- incremental monthly GP between alternatives;
+- high-impact customer exceptions ranked first.
+
+Use actual recent buying volume when reliable. Prioritize absolute rupee impact, not GP% alone. A small rate improvement on a high-volume customer may be economically more important than a large percentage improvement on a low-volume customer.
+
+Illustrative table:
+
+```text
+Customer        Current   Suggested   GP%    Monthly GP Impact
+ABC Hospital      ₹420       ₹445      30%       +₹4,250
+XYZ Lab           ₹440       ₹450      31%       +₹1,800
+City Lab          ₹410       ₹445      30%         +₹950
+Small Lab         ₹420       ₹445      30%          +₹25
+```
+
+The default review should be Pareto-oriented: highest absolute economic impact first, with the long tail available by drill-down.
+
+## Product Base / Default Price
+
+Product Base Price is primarily a starting/default price for a customer who has no genuine Customer × Item selling history. It is not the central mechanism for maintaining existing customer prices.
+
+Base/default prices remain effective-dated, versioned and governed. They must be checked against current cost, minimum margin and target margin before use.
+
+## Fixed agreements and exceptions
+
+Tender, written contract, strategic fixed-price and other explicit governed commitments must not be silently repriced. When cost increases, show the deteriorating GP/margin and flag the account for review according to the agreement terms.
+
+FOC, scheme, exceptional and ambiguous transactions must not become the normal customer baseline unless explicitly governed.
+
+## Cost decreases
+
+Do not automatically pass purchase-cost decreases to customers. Preserve the established selling price, show improved GP/GP%, and allow Management to choose whether a strategic price reduction is justified.
+
+## V1 rules to freeze
+
+1. Existing customer: start from the last genuine Customer × Item selling price.
+2. Cost increase: calculate the absolute increase and add it to that customer's last genuine selling price to produce Continuity Price.
+3. Margin engine: independently calculate Target-Margin Price from current cost and effective policy.
+4. Recommendation: present an explainable recommended price, normally favoring target economics while showing continuity impact.
+5. New customer/product: use governed Product Base / Default Price as the starting point.
+6. Fixed contract/tender: respect the agreement; flag margin deterioration rather than silently changing it.
+7. Cost decrease: never automatically lower the customer's price.
+8. Manual/custom price: permitted with reason; below guardrails requires approval.
+9. Bulk cost change: automatically recalculate affected customers; never require manual maintenance of dozens of rates.
+10. Every material decision shows economic impact: GP ₹, GP%, customer impact, estimated monthly GP impact, affected customers and exceptions.
+11. Recommendations are deterministic, versioned, explainable and auditable.
+12. Missing cost/history/volume evidence must be visible and never guessed.
+
+## Governance and ACID requirements
+
+Pricing policy, fixed customer prices and Product Base / Default prices remain effective-dated and versioned. Material approvals are idempotent and auditable. Server-side impact must be recomputed at approval time. If cost evidence, customer agreement state, Tally history or other material inputs change between preview and approval, require refresh/review rather than silently activating stale economics.
+
+Existing immutable billing snapshots, optimistic concurrency, pricing approvals, audit events and transactional-outbox boundaries remain authoritative.
+
+## Scope boundary
+
+Stop V1 pricing expansion here. Wallet-share optimization, competitor response, game theory and predictive pricing may later influence recommendations, but they must not complicate the core engine before office data and pricing outcomes are collected.
+
+Implementation sequence remains: consolidate current pricing build → pass migration/integrity/full tests → validate live read-only Tally cost evidence → configure real Suprabha policy → implement this customer-first continuity/margin layer → shadow-test recommendations against real billing decisions → office pilot → measure outcomes.
+
+This document records the approved design. It does not claim this customer-first/bulk-repricing UX is coded yet.
