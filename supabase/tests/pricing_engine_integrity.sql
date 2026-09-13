@@ -5,6 +5,12 @@ update private.stockflow_gateway_config
 set secret_sha256=encode(extensions.digest('stockflow-pricing-test','sha256'),'hex')
 where name='orders';
 
+update private.stockflow_pricing_policies set active=false where active;
+insert into private.stockflow_pricing_policies(
+  policy_version,minimum_margin_percent,target_margin_percent,override_approval_percent,
+  rounding_increment,rounding_rule_version,effective_from,created_by_email
+) values ('integration-test-policy-v1',20,30,5,1,'integration-ceil-v1','2026-04-01','pricing-test');
+
 insert into public.stockflow_members(email,role,status,updated_at) values
   ('pricing-accounts@stockflow.local','accounts','active',now()),
   ('pricing-admin@stockflow.local','administrator','active',now()),
@@ -73,5 +79,68 @@ begin
   end;
   if exists(select 1 from private.stockflow_command_results where idempotency_key='pricing-stale-0000001') then raise exception 'Failed pricing command left an idempotency result'; end if;
 end $test$;
+
+do $contracts$
+declare
+  v_customer_id uuid; v_order_id uuid; v_line_id uuid;
+  first_result jsonb; replacement_result jsonb; overlapping_result jsonb;
+  first_id uuid; replacement_id uuid; historical jsonb; current_price jsonb;
+begin
+  insert into private.stockflow_customers(tally_key,name,created_by_email)
+  values('ledger:contract-test','Contract Test Laboratory','pricing-test') returning id into v_customer_id;
+
+  begin
+    perform public.stockflow_pricing_gateway('stockflow-pricing-test','pricing-sales@stockflow.local','create_price_contract',jsonb_build_object(
+      'customerId',v_customer_id,'tallyKey','CONTRACT-ITEM-1','price',700,'validFrom','2026-04-01',
+      'source','customer_contract','reason','Annual agreement','idempotencyKey','contract-sales-denied-01'
+    ));
+    raise exception 'Sales role created a restricted customer price';
+  exception when insufficient_privilege then null;
+  end;
+
+  first_result:=public.stockflow_pricing_gateway('stockflow-pricing-test','pricing-accounts@stockflow.local','create_price_contract',jsonb_build_object(
+    'customerId',v_customer_id,'tallyKey','CONTRACT-ITEM-1','price',700,'validFrom','2026-04-01',
+    'source','customer_contract','reason','Annual agreement','idempotencyKey','contract-create-000001'
+  ));
+  first_id:=(first_result->>'contractId')::uuid;
+  perform public.stockflow_pricing_gateway('stockflow-pricing-test','pricing-admin@stockflow.local','approve_price_contract',jsonb_build_object(
+    'contractId',first_id,'expectedVersion',1,'reason','Agreement verified','idempotencyKey','contract-approve-00001'
+  ));
+
+  replacement_result:=public.stockflow_pricing_gateway('stockflow-pricing-test','pricing-accounts@stockflow.local','create_price_contract',jsonb_build_object(
+    'customerId',v_customer_id,'tallyKey','CONTRACT-ITEM-1','price',720,'validFrom','2026-10-01',
+    'source','customer_contract','reason','New approved period','supersedesPriceId',first_id,
+    'idempotencyKey','contract-create-000002'
+  ));
+  replacement_id:=(replacement_result->>'contractId')::uuid;
+  perform public.stockflow_pricing_gateway('stockflow-pricing-test','pricing-admin@stockflow.local','approve_price_contract',jsonb_build_object(
+    'contractId',replacement_id,'expectedVersion',1,'reason','New period verified','idempotencyKey','contract-approve-00002'
+  ));
+  if not exists(select 1 from private.stockflow_customer_product_prices where id=first_id and status='superseded' and valid_to='2026-09-30') then
+    raise exception 'Superseded customer price history was not closed and retained';
+  end if;
+
+  insert into private.stockflow_orders(customer_id,customer_name,source,status,idempotency_key,created_by_email,updated_by_email)
+  values(v_customer_id,'Contract Test Laboratory','phone','packed','contract-fixture-order','pricing-accounts@stockflow.local','pricing-accounts@stockflow.local') returning id into v_order_id;
+  insert into private.stockflow_order_lines(order_id,tally_item_key,item_name,base_unit,quantity,snapshot_closing)
+  values(v_order_id,'CONTRACT-ITEM-1','Contract Test Reagent','Nos',1,10) returning id into v_line_id;
+  historical:=private.stockflow_resolve_pricing_line(v_line_id,'2026-09-12');
+  current_price:=private.stockflow_resolve_pricing_line(v_line_id,'2026-10-02');
+  if historical->>'proposedRate'<>'700.00' or current_price->>'proposedRate'<>'720.00' then
+    raise exception 'Effective-dated contract resolution failed: %, %',historical,current_price;
+  end if;
+
+  overlapping_result:=public.stockflow_pricing_gateway('stockflow-pricing-test','pricing-accounts@stockflow.local','create_price_contract',jsonb_build_object(
+    'customerId',v_customer_id,'tallyKey','CONTRACT-ITEM-1','price',710,'validFrom','2026-11-01',
+    'source','manual_governed','reason','Intentional overlap test','idempotencyKey','contract-overlap-0001'
+  ));
+  begin
+    perform public.stockflow_pricing_gateway('stockflow-pricing-test','pricing-admin@stockflow.local','approve_price_contract',jsonb_build_object(
+      'contractId',(overlapping_result->>'contractId')::uuid,'expectedVersion',1,'reason','Overlap must fail','idempotencyKey','contract-overlap-approve'
+    ));
+    raise exception 'Overlapping approved price unexpectedly succeeded';
+  exception when exclusion_violation then null;
+  end;
+end $contracts$;
 
 rollback;
