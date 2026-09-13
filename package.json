@@ -14,6 +14,7 @@
     "typecheck": "tsc --noEmit",
     "test": "vitest run --coverage",
     "test:connector": "pwsh -NoProfile -File tests/connector-recovery.ps1 && pwsh -NoProfile -File tests/connector-sales-window.ps1",
+    "test:pricing:db": "pwsh -NoProfile -File tests/pricing-migration-local.ps1",
     "test:watch": "vitest",
     "test:e2e": "playwright test",
     "test:ci": "pnpm lint && pnpm typecheck && pnpm test:connector && pnpm test && pnpm build",
