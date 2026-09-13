@@ -30,4 +30,12 @@ describe('pricing API contracts', () => {
     expect(validatePricingCommand({ action: 'approve_price_contract', payload: { contractId: id, expectedVersion: 1, reason: 'Agreement verified', idempotencyKey: '1234567890abcdef' } })?.action).toBe('approve_price_contract');
     expect(validatePricingCommand({ action: 'create_price_contract', payload: { customerId: id, tallyKey: 'ITEM-1', price: 720, validFrom: '2026-10-01', validTo: '2026-09-01', source: 'customer_contract', reason: 'Invalid range', idempotencyKey: '1234567890abcdef' } })).toBeNull();
   });
+
+  it('validates governed commercial policy inputs', () => {
+    const valid = { action: 'create_pricing_policy', payload: { policyVersion: 'commercial-2027-v1', minimumMarginPercent: 20, targetMarginPercent: 30, overrideApprovalPercent: 5, roundingIncrement: 1, roundingRuleVersion: 'ceil-rupee-v1', effectiveFrom: '2027-04-01', reason: 'Management approved annual policy', idempotencyKey: 'policy-1234567890' } };
+    expect(validatePricingCommand(valid)?.action).toBe('create_pricing_policy');
+    expect(validatePricingCommand({ ...valid, payload: { ...valid.payload, minimumMarginPercent: 100 } })).toBeNull();
+    expect(validatePricingCommand({ ...valid, payload: { ...valid.payload, roundingIncrement: 0 } })).toBeNull();
+    expect(validatePricingCommand({ ...valid, payload: { ...valid.payload, reason: '' } })).toBeNull();
+  });
 });

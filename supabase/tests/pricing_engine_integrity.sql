@@ -143,4 +143,33 @@ begin
   end;
 end $contracts$;
 
+do $policies$
+declare created jsonb; replay jsonb; policy_id uuid;
+begin
+  begin
+    perform public.stockflow_pricing_gateway('stockflow-pricing-test','pricing-accounts@stockflow.local','create_pricing_policy',jsonb_build_object(
+      'policyVersion','integration-future-v1','minimumMarginPercent',22,'targetMarginPercent',32,
+      'overrideApprovalPercent',4,'roundingIncrement',5,'roundingRuleVersion','ceil-five-v1',
+      'effectiveFrom','2027-04-01','reason','Annual management policy','idempotencyKey','policy-accounts-denied'
+    ));
+    raise exception 'Accounts role created commercial policy';
+  exception when insufficient_privilege then null;
+  end;
+  created:=public.stockflow_pricing_gateway('stockflow-pricing-test','pricing-admin@stockflow.local','create_pricing_policy',jsonb_build_object(
+    'policyVersion','integration-future-v1','minimumMarginPercent',22,'targetMarginPercent',32,
+    'overrideApprovalPercent',4,'roundingIncrement',5,'roundingRuleVersion','ceil-five-v1',
+    'effectiveFrom','2027-04-01','reason','Annual management policy','idempotencyKey','policy-create-000001'
+  ));
+  replay:=public.stockflow_pricing_gateway('stockflow-pricing-test','pricing-admin@stockflow.local','create_pricing_policy',jsonb_build_object(
+    'policyVersion','integration-future-v1','minimumMarginPercent',22,'targetMarginPercent',32,
+    'overrideApprovalPercent',4,'roundingIncrement',5,'roundingRuleVersion','ceil-five-v1',
+    'effectiveFrom','2027-04-01','reason','Annual management policy','idempotencyKey','policy-create-000001'
+  ));
+  policy_id:=(created->>'policyId')::uuid;
+  if replay<>created then raise exception 'Pricing policy idempotent replay failed'; end if;
+  if not exists(select 1 from private.stockflow_pricing_policies where id=policy_id and policy_version='integration-future-v1' and effective_from='2027-04-01') then raise exception 'New pricing policy was not stored'; end if;
+  if not exists(select 1 from private.stockflow_pricing_policies where policy_version='integration-test-policy-v1' and effective_to='2027-03-31') then raise exception 'Previous pricing policy was not closed historically'; end if;
+  if not exists(select 1 from private.stockflow_pricing_events where entity_type='pricing_policy' and entity_id=policy_id and event_type='pricing_policy_created') then raise exception 'Pricing policy audit event is missing'; end if;
+end $policies$;
+
 rollback;

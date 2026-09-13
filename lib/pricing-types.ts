@@ -50,11 +50,18 @@ export type CustomerPriceContract = {
   createdAt: string;
 };
 
+export type PricingPolicy = {
+  id: string; policyVersion: string; minimumMarginPercent: number; targetMarginPercent: number | null;
+  overrideApprovalPercent: number; roundingIncrement: number; roundingRuleVersion: string;
+  effectiveFrom: string; effectiveTo: string | null; active: boolean; createdBy: string; createdAt: string;
+};
+
 export type PricingCommand =
   | { action: 'submit_order_pricing'; payload: { orderId: string; expectedVersion: number; pricingDate?: string; idempotencyKey: string; lines: Array<{ lineId: string; enteredRate: number; reason?: string }> } }
   | { action: 'approve_price_exception' | 'reject_price_exception'; payload: { exceptionId: string; expectedVersion: number; reason: string; idempotencyKey: string } }
   | { action: 'create_price_contract'; payload: { customerId: string; tallyKey: string; price: number; validFrom: string; validTo?: string; source: 'customer_contract' | 'quotation' | 'scheme' | 'tender' | 'manual_governed'; sourceReference?: string; reason: string; supersedesPriceId?: string; idempotencyKey: string } }
-  | { action: 'approve_price_contract' | 'reject_price_contract'; payload: { contractId: string; expectedVersion: number; reason: string; idempotencyKey: string } };
+  | { action: 'approve_price_contract' | 'reject_price_contract'; payload: { contractId: string; expectedVersion: number; reason: string; idempotencyKey: string } }
+  | { action: 'create_pricing_policy'; payload: { policyVersion: string; minimumMarginPercent: number; targetMarginPercent?: number; overrideApprovalPercent: number; roundingIncrement: number; roundingRuleVersion: string; effectiveFrom: string; reason: string; idempotencyKey: string } };
 
 function validKey(value: unknown) {
   return typeof value === 'string' && value.trim().length >= 16 && value.length <= 200;
@@ -91,6 +98,11 @@ export function validatePricingCommand(value: unknown): PricingCommand | null {
   }
   if (command.action === 'approve_price_contract' || command.action === 'reject_price_contract') {
     if (!isUuid(payload.contractId) || !Number.isInteger(payload.expectedVersion) || Number(payload.expectedVersion) < 1 || typeof payload.reason !== 'string' || payload.reason.trim().length < 3 || payload.reason.length > 1000) return null;
+    return command as unknown as PricingCommand;
+  }
+  if (command.action === 'create_pricing_policy') {
+    const boundedName = (field: unknown) => typeof field === 'string' && field.trim().length >= 3 && field.trim().length <= 80;
+    if (!boundedName(payload.policyVersion) || !boundedName(payload.roundingRuleVersion) || typeof payload.minimumMarginPercent !== 'number' || !Number.isFinite(payload.minimumMarginPercent) || payload.minimumMarginPercent < -100 || payload.minimumMarginPercent >= 100 || (payload.targetMarginPercent !== undefined && (typeof payload.targetMarginPercent !== 'number' || !Number.isFinite(payload.targetMarginPercent) || payload.targetMarginPercent < 0 || payload.targetMarginPercent >= 100)) || typeof payload.overrideApprovalPercent !== 'number' || !Number.isFinite(payload.overrideApprovalPercent) || payload.overrideApprovalPercent < 0 || payload.overrideApprovalPercent > 100 || typeof payload.roundingIncrement !== 'number' || !Number.isFinite(payload.roundingIncrement) || payload.roundingIncrement <= 0 || payload.roundingIncrement > 100000 || typeof payload.effectiveFrom !== 'string' || !datePattern.test(payload.effectiveFrom) || typeof payload.reason !== 'string' || payload.reason.trim().length < 3 || payload.reason.length > 1000) return null;
     return command as unknown as PricingCommand;
   }
   return null;

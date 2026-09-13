@@ -166,7 +166,7 @@ create table private.stockflow_price_exceptions (
 
 create table private.stockflow_pricing_events (
   id bigint generated always as identity primary key,
-  entity_type text not null check (entity_type in ('customer_price','order_pricing','price_exception','billing_snapshot')),
+  entity_type text not null check (entity_type in ('pricing_policy','customer_price','order_pricing','price_exception','billing_snapshot')),
   entity_id uuid not null,
   event_type text not null check (char_length(btrim(event_type)) between 3 and 120),
   actor_email text not null,
@@ -393,6 +393,8 @@ declare
   v_order private.stockflow_orders%rowtype; v_key text; v_replay jsonb; v_result jsonb;
   v_pricing_date date; v_line jsonb; v_resolved jsonb; v_entered numeric; v_difference numeric; v_difference_percent numeric;
   v_reason text; v_decision_id uuid; v_exception_id uuid; v_snapshot_id uuid; v_snapshot_version integer; v_decision_version integer;
+  v_policy private.stockflow_pricing_policies%rowtype;
+  v_previous_policy_id uuid;
   v_requires_approval boolean:=false; v_payload_lines jsonb:='[]'::jsonb; v_exception private.stockflow_price_exceptions%rowtype;
   contract private.stockflow_customer_product_prices%rowtype;
 begin
@@ -420,9 +422,39 @@ begin
     ) contract),'[]'::jsonb));
   end if;
 
+  if p_action='list_pricing_policies' then
+    return jsonb_build_object('policies',coalesce((select jsonb_agg(to_jsonb(policy_row) order by policy_row."effectiveFrom" desc) from (
+      select p.id,p.policy_version as "policyVersion",p.minimum_margin_percent as "minimumMarginPercent",p.target_margin_percent as "targetMarginPercent",p.override_approval_percent as "overrideApprovalPercent",p.rounding_increment as "roundingIncrement",p.rounding_rule_version as "roundingRuleVersion",p.effective_from as "effectiveFrom",p.effective_to as "effectiveTo",p.active,p.created_by_email as "createdBy",p.created_at as "createdAt"
+      from private.stockflow_pricing_policies p order by p.effective_from desc limit 100
+    ) policy_row),'[]'::jsonb));
+  end if;
+
   v_key:=p_payload->>'idempotencyKey';
   v_replay:=private.begin_stockflow_command(v_email,p_action,v_key,p_payload);
   if v_replay is not null then return v_replay; end if;
+
+  if p_action='create_pricing_policy' then
+    if v_role not in ('administrator','management') then raise exception 'Pricing policy administration is restricted' using errcode='42501'; end if;
+    v_reason:=nullif(btrim(coalesce(p_payload->>'reason','')),'');
+    if v_reason is null then raise exception 'A pricing policy reason is required' using errcode='22023'; end if;
+    begin
+      v_pricing_date:=(p_payload->>'effectiveFrom')::date;
+      perform (p_payload->>'minimumMarginPercent')::numeric,(p_payload->>'overrideApprovalPercent')::numeric,(p_payload->>'roundingIncrement')::numeric;
+      if nullif(p_payload->>'targetMarginPercent','') is not null then perform (p_payload->>'targetMarginPercent')::numeric; end if;
+    exception when invalid_text_representation or invalid_datetime_format or datetime_field_overflow then raise exception 'Valid pricing policy values are required' using errcode='22023'; end;
+    perform 1 from private.stockflow_pricing_policies where active for update;
+    select * into v_policy from private.stockflow_pricing_policies where active order by effective_from desc limit 1;
+    if found and v_pricing_date<=v_policy.effective_from then raise exception 'New policy must start after the latest policy' using errcode='22023'; end if;
+    if found then v_previous_policy_id:=v_policy.id; update private.stockflow_pricing_policies set effective_to=v_pricing_date-1 where id=v_policy.id; end if;
+    insert into private.stockflow_pricing_policies(policy_version,minimum_margin_percent,target_margin_percent,override_approval_percent,rounding_increment,rounding_rule_version,effective_from,created_by_email)
+    values(btrim(p_payload->>'policyVersion'),(p_payload->>'minimumMarginPercent')::numeric,nullif(p_payload->>'targetMarginPercent','')::numeric,(p_payload->>'overrideApprovalPercent')::numeric,(p_payload->>'roundingIncrement')::numeric,btrim(p_payload->>'roundingRuleVersion'),v_pricing_date,v_email)
+    returning * into v_policy;
+    insert into private.stockflow_pricing_events(entity_type,entity_id,event_type,actor_email,actor_role,request_id,metadata)
+    values('pricing_policy',v_policy.id,'pricing_policy_created',v_email,v_role,v_key,jsonb_build_object('reason',v_reason,'policyVersion',v_policy.policy_version,'effectiveFrom',v_policy.effective_from,'previousPolicyId',v_previous_policy_id));
+    v_result:=jsonb_build_object('ok',true,'policyId',v_policy.id,'policyVersion',v_policy.policy_version,'effectiveFrom',v_policy.effective_from);
+    perform private.finish_stockflow_command(v_email,p_action,v_key,p_payload,v_policy.id,v_result);
+    return v_result;
+  end if;
 
   if p_action='create_price_contract' then
     if jsonb_typeof(p_payload)<>'object' then raise exception 'Invalid customer price request' using errcode='22023'; end if;

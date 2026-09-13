@@ -17,6 +17,8 @@ export type GatewayAction =
   | 'create_price_contract'
   | 'approve_price_contract'
   | 'reject_price_contract'
+  | 'list_pricing_policies'
+  | 'create_pricing_policy'
   | 'recover_order_submission'
   | 'list_users'
   | 'list_assignable_users'

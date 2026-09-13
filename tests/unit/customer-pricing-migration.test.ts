@@ -19,6 +19,14 @@ describe('customer pricing engine migration', () => {
     expect(migration).toContain("'no-suggestion-v1'");
   });
 
+  it('governs effective-dated policy administration through the restricted gateway', () => {
+    expect(migration).toContain("p_action='list_pricing_policies'");
+    expect(migration).toContain("p_action='create_pricing_policy'");
+    expect(migration).toContain("Pricing policy administration is restricted");
+    expect(migration).toContain('for update');
+    expect(migration).toContain("values('pricing_policy',v_policy.id,'pricing_policy_created'");
+  });
+
   it('keeps Tally evidence and commercial decisions append-only', () => {
     expect(migration).toContain('stockflow_tally_sales_prices');
     expect(migration).toContain('stockflow_tally_purchase_costs');

@@ -22,6 +22,9 @@ export async function GET(request: Request) {
     const parameters = new URL(request.url).searchParams;
     const orderId = parameters.get('orderId');
     const pricingDate = parameters.get('pricingDate');
+    if (parameters.get('policies') === '1') {
+      return Response.json(await callOrderGateway(email, 'list_pricing_policies', {}), { headers: privateHeaders });
+    }
     if (parameters.get('contracts') === '1') {
       const customerId = parameters.get('customerId');
       const tallyKey = parameters.get('tallyKey');
