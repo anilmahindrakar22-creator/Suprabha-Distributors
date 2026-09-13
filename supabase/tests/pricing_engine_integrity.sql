@@ -172,4 +172,35 @@ begin
   if not exists(select 1 from private.stockflow_pricing_events where entity_type='pricing_policy' and entity_id=policy_id and event_type='pricing_policy_created') then raise exception 'Pricing policy audit event is missing'; end if;
 end $policies$;
 
+do $exception_batch$
+declare v_customer_id uuid; v_order_id uuid; v_line_one uuid; v_line_two uuid; submitted jsonb; exception_id uuid;
+begin
+  insert into private.stockflow_customers(tally_key,name,created_by_email)
+  values('ledger:exception-batch','Exception Batch Laboratory','pricing-test') returning id into v_customer_id;
+  insert into private.stockflow_orders(customer_id,customer_name,source,status,idempotency_key,created_by_email,updated_by_email)
+  values(v_customer_id,'Exception Batch Laboratory','phone','packed','exception-batch-order','pricing-accounts@stockflow.local','pricing-accounts@stockflow.local') returning id into v_order_id;
+  insert into private.stockflow_order_lines(order_id,tally_item_key,item_name,quantity) values(v_order_id,'ITEM-1','Pricing Item One',1) returning id into v_line_one;
+  insert into private.stockflow_order_lines(order_id,tally_item_key,item_name,quantity) values(v_order_id,'ITEM-2','Pricing Item Two',1) returning id into v_line_two;
+  submitted:=public.stockflow_pricing_gateway('stockflow-pricing-test','pricing-accounts@stockflow.local','submit_order_pricing',jsonb_build_object(
+    'orderId',v_order_id,'expectedVersion',1,'pricingDate','2026-09-12','idempotencyKey','exception-batch-submit-1',
+    'lines',jsonb_build_array(jsonb_build_object('lineId',v_line_one,'enteredRate',600,'reason','Manual review'),jsonb_build_object('lineId',v_line_two,'enteredRate',700,'reason','Manual review'))
+  ));
+  if submitted->>'pricingState'<>'approval_required' then raise exception 'Exception batch was not held for approval'; end if;
+  begin
+    perform public.stockflow_pricing_gateway('stockflow-pricing-test','pricing-accounts@stockflow.local','submit_order_pricing',jsonb_build_object(
+      'orderId',v_order_id,'expectedVersion',2,'pricingDate','2026-09-12','idempotencyKey','exception-batch-submit-2',
+      'lines',jsonb_build_array(jsonb_build_object('lineId',v_line_one,'enteredRate',600,'reason','Duplicate review'),jsonb_build_object('lineId',v_line_two,'enteredRate',700,'reason','Duplicate review'))
+    ));
+    raise exception 'A second pending pricing batch was accepted';
+  exception when serialization_failure then null;
+  end;
+  select id into exception_id from private.stockflow_price_exceptions where order_id=v_order_id and state='pending' order by requested_at limit 1;
+  perform public.stockflow_pricing_gateway('stockflow-pricing-test','pricing-admin@stockflow.local','reject_price_exception',jsonb_build_object(
+    'exceptionId',exception_id,'expectedVersion',1,'reason','Commercial review declined','idempotencyKey','exception-batch-reject-1'
+  ));
+  if exists(select 1 from private.stockflow_price_exceptions where order_id=v_order_id and state='pending') then raise exception 'Sibling price exception remained pending'; end if;
+  if exists(select 1 from private.stockflow_order_pricing_decisions where order_id=v_order_id and state in ('pending_approval','approved')) then raise exception 'Rejected pricing batch left active decisions'; end if;
+  if (select pricing_state from private.stockflow_orders where id=v_order_id)<>'review_required' then raise exception 'Rejected pricing batch did not return order to review'; end if;
+end $exception_batch$;
+
 rollback;

@@ -60,6 +60,13 @@ describe('customer pricing engine migration', () => {
     expect(migration).toContain('for update');
   });
 
+  it('keeps exception approval batches single and rejects sibling decisions together', () => {
+    expect(migration).toContain('Pricing approval is already pending; decide it before submitting new pricing');
+    expect(migration).toContain("'pricing_batch_rejected'");
+    expect(migration).toContain("and state in ('pending_approval','approved')");
+    expect(migration).toContain("set pricing_state='review_required',approved_pricing_decision_id=null");
+  });
+
   it('blocks billing without a current immutable price and rechecks changed cost', () => {
     expect(migration).toContain('stockflow_require_current_pricing_before_billing');
     expect(migration).toContain("Pricing approval is required before billing");

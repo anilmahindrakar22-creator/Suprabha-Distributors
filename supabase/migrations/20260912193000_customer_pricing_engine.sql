@@ -498,6 +498,9 @@ begin
     perform private.assert_stockflow_order_access(v_email,v_role,v_order.id);
     if v_order.version<>(p_payload->>'expectedVersion')::integer then raise exception 'Order has changed; refresh before trying again' using errcode='40001'; end if;
     if v_order.customer_id is null then raise exception 'A canonical Tally customer is required for pricing' using errcode='22023'; end if;
+    if exists(select 1 from private.stockflow_price_exceptions where order_id=v_order.id and state='pending') then
+      raise exception 'Pricing approval is already pending; decide it before submitting new pricing' using errcode='40001';
+    end if;
     if jsonb_typeof(p_payload->'lines')<>'array' or jsonb_array_length(p_payload->'lines')<>(select count(*) from private.stockflow_order_lines where order_id=v_order.id) then raise exception 'Every order line requires a pricing decision' using errcode='22023'; end if;
     select coalesce(max(decision_version),0)+1 into v_decision_version from private.stockflow_order_pricing_decisions where order_id=v_order.id;
     for v_line in select value from jsonb_array_elements(p_payload->'lines') loop
@@ -564,7 +567,23 @@ begin
     insert into private.stockflow_pricing_events(entity_type,entity_id,event_type,actor_email,actor_role,request_id,metadata) values('price_exception',v_exception.id,case when p_action='approve_price_exception' then 'price_exception_approved' else 'price_exception_rejected' end,v_email,v_role,v_key,jsonb_build_object('reason',v_reason,'orderId',v_exception.order_id));
     select * into v_order from private.stockflow_orders where id=v_exception.order_id for update;
     if p_action='reject_price_exception' then
+      with rejected_siblings as (
+        update private.stockflow_price_exceptions
+          set state='rejected',decided_by_email=v_email,decided_at=now(),decision_reason='Pricing batch rejected after a related exception was declined',version=version+1
+          where order_id=v_order.id and state='pending'
+          returning id
+      )
+      insert into private.stockflow_pricing_events(entity_type,entity_id,event_type,actor_email,actor_role,request_id,metadata)
+        select 'price_exception',id,'price_exception_batch_rejected',v_email,v_role,v_key,jsonb_build_object('reason',v_reason,'triggerExceptionId',v_exception.id)
+        from rejected_siblings;
+      update private.stockflow_order_pricing_decisions
+        set state='rejected'
+        where order_id=v_order.id and decision_version=(select decision_version from private.stockflow_order_pricing_decisions where id=v_exception.decision_id)
+          and state in ('pending_approval','approved');
       update private.stockflow_orders set pricing_state='review_required',version=version+1,updated_by_email=v_email,updated_at=now() where id=v_order.id;
+      update private.stockflow_order_lines set pricing_state='review_required',approved_pricing_decision_id=null where order_id=v_order.id;
+      insert into private.stockflow_pricing_events(entity_type,entity_id,event_type,actor_email,actor_role,request_id,metadata)
+        values('order_pricing',v_order.id,'pricing_batch_rejected',v_email,v_role,v_key,jsonb_build_object('reason',v_reason,'exceptionId',v_exception.id));
     elsif not exists(select 1 from private.stockflow_price_exceptions where order_id=v_order.id and state='pending') then
       select max(decision_version) into v_decision_version from private.stockflow_order_pricing_decisions where order_id=v_order.id;
       select coalesce(max(snapshot_version),0)+1 into v_snapshot_version from private.stockflow_billing_snapshots where order_id=v_order.id;
