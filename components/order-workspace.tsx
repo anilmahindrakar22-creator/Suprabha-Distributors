@@ -942,10 +942,16 @@ function PricingPanel({ order, actorRole, onChanged }: { order: OrderSummary; ac
       {workspace.lines.map((line) => <PricingLineCard key={line.lineId} line={line} entry={entries[line.lineId] || { rate: '', reason: '' }} onChange={(entry) => setEntries((current) => ({ ...current, [line.lineId]: entry }))} />)}
       {workspace.exceptions.map((exception) => <PriceExceptionDecision key={exception.id} exception={exception} actorRole={actorRole} onChanged={async () => { setWorkspace(null); await onChanged(); await loadPricing(true); }} />)}
       {workspace.exceptions.length === 0 && workspace.pricingState !== 'approved' ? <button type="button" disabled={state === 'saving' || workspace.lines.some((line) => !Number(entries[line.lineId]?.rate))} onClick={() => void submit()} className="min-h-10 rounded-xl bg-[#073e46] px-4 text-sm font-bold text-white disabled:opacity-50">{state === 'saving' ? 'Saving pricing…' : 'Approve pricing'}</button> : null}
+      <PricingDecisionHistory history={workspace.history || []} />
       {workspace.customerId ? <CustomerPriceContracts customerId={workspace.customerId} lines={workspace.lines} actorRole={actorRole} onChanged={() => loadPricing(true)} /> : null}
       <CommercialPolicyPanel actorRole={actorRole} onChanged={() => loadPricing(true)} />
     </div> : null}
   </details>;
+}
+
+function PricingDecisionHistory({ history }: { history: OrderPricingWorkspace['history'] }) {
+  if (!history.length) return null;
+  return <details className="rounded-xl border border-[#dce7e5] bg-[#f7faf9] p-3"><summary className="cursor-pointer text-xs font-extrabold text-[#31585d]">Pricing history ({history.length})</summary><div className="mt-3 space-y-2">{history.map((entry) => <div key={entry.id} className="rounded-lg bg-white p-3 text-xs text-[#587275]"><div className="flex flex-wrap items-center justify-between gap-2"><strong className="text-[#173239]">v{entry.decisionVersion} · {entry.itemName}</strong><span className="font-extrabold uppercase">{entry.state.replaceAll('_', ' ')}</span></div><p className="mt-1">Entered {entry.approvedRate == null ? 'not approved' : currency.format(entry.approvedRate)} · reference {entry.proposedRate == null ? 'none' : currency.format(entry.proposedRate)} · {entry.sourceType.replaceAll('_', ' ')}</p><p className="mt-1">Requested by {entry.requestedBy} · {new Date(entry.requestedAt).toLocaleString('en-IN')}</p>{entry.approvedBy ? <p className="mt-1">Approved by {entry.approvedBy}{entry.approvedAt ? ` · ${new Date(entry.approvedAt).toLocaleString('en-IN')}` : ''}</p> : null}{entry.exceptionReason ? <p className="mt-1 text-[#80524d]">Reason: {entry.exceptionReason}</p> : null}{entry.invalidationReason ? <p className="mt-1 font-bold text-[#8d3a34]">Invalidated: {entry.invalidationReason}</p> : null}<p className="mt-1">Policy {entry.policyVersion} · {entry.guardrail.replaceAll('_', ' ')}</p></div>)}</div></details>;
 }
 
 function CommercialPolicyPanel({ actorRole, onChanged }: { actorRole: string; onChanged: () => Promise<void> }) {

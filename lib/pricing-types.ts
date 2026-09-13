@@ -27,6 +27,7 @@ export type OrderPricingWorkspace = {
   currentSnapshotId: string | null;
   lines: PricingLineResolution[];
   exceptions: Array<{ id: string; lineId: string; referenceRate: number | null; enteredRate: number; differenceAmount: number | null; differencePercent: number | null; reason: string; state: 'pending'; requestedBy: string; requestedAt: string; version: number }>;
+  history: Array<{ id: string; lineId: string; itemName: string; decisionVersion: number; state: 'pending_approval' | 'approved' | 'rejected' | 'invalidated'; proposedRate: number | null; approvedRate: number | null; sourceType: string; sourceReference: string | null; guardrail: string; exceptionReason: string | null; requestedBy: string; requestedAt: string; approvedBy: string | null; approvedAt: string | null; invalidatedAt: string | null; invalidationReason: string | null; policyVersion: string }>;
 };
 
 export type CustomerPriceContract = {

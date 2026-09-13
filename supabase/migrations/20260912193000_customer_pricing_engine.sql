@@ -379,7 +379,16 @@ returns jsonb language sql stable set search_path=pg_catalog,private as $$
       'id',e.id,'lineId',e.order_line_id,'referenceRate',e.reference_rate,'enteredRate',e.entered_rate,
       'differenceAmount',e.difference_amount,'differencePercent',e.difference_percent,'reason',e.reason,
       'state',e.state,'requestedBy',e.requested_by_email,'requestedAt',e.requested_at,'version',e.version
-    ) order by e.requested_at) from private.stockflow_price_exceptions e where e.order_id=o.id and e.state='pending'),'[]'::jsonb)
+    ) order by e.requested_at) from private.stockflow_price_exceptions e where e.order_id=o.id and e.state='pending'),'[]'::jsonb),
+    'history',coalesce((select jsonb_agg(to_jsonb(history_row) order by history_row."decisionVersion" desc,history_row."requestedAt" desc) from (
+      select d.id,d.order_line_id as "lineId",l.item_name as "itemName",d.decision_version as "decisionVersion",d.state,
+        d.proposed_rate as "proposedRate",d.approved_rate as "approvedRate",d.source_type as "sourceType",d.source_reference as "sourceReference",
+        d.guardrail_state as guardrail,d.exception_reason as "exceptionReason",d.requested_by_email as "requestedBy",d.requested_at as "requestedAt",
+        d.approved_by_email as "approvedBy",d.approved_at as "approvedAt",d.invalidated_at as "invalidatedAt",
+        d.invalidation_reason as "invalidationReason",d.pricing_policy_version as "policyVersion"
+      from private.stockflow_order_pricing_decisions d join private.stockflow_order_lines l on l.id=d.order_line_id
+      where d.order_id=o.id order by d.decision_version desc,d.requested_at desc limit 50
+    ) history_row),'[]'::jsonb)
   ) from private.stockflow_orders o where o.id=p_order_id and o.archived_at is null
 $$;
 revoke all on function private.stockflow_order_pricing_payload(uuid,date) from public,anon,authenticated;

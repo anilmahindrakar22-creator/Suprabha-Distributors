@@ -84,4 +84,10 @@ describe('customer pricing engine migration', () => {
     expect(migration).toContain('x.pricing_state as "pricingState"');
     expect(migration).not.toContain("'approvedRate', o.");
   });
+
+  it('returns bounded price override history only through the restricted pricing payload', () => {
+    expect(migration).toContain("'history',coalesce");
+    expect(migration).toContain('d.approved_rate as "approvedRate"');
+    expect(migration).toContain('where d.order_id=o.id order by d.decision_version desc,d.requested_at desc limit 50');
+  });
 });

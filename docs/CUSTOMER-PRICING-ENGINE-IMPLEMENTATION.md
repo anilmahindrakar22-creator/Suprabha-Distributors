@@ -24,6 +24,8 @@ Commercial policy is also effective-dated and managed through the restricted pri
 
 Price exceptions are governed as one order-level decision batch. A second submission is refused while any exception in the current batch awaits approval. Approving the final exception freezes the complete approved batch; rejecting one exception rejects every remaining decision in that batch and returns the whole order to pricing review, preventing stale sibling approvals.
 
+The restricted order-pricing workspace includes the 50 most recent line decisions, newest version first. This gives Accounts/Admin a bounded audit view of entered and reference rates, provenance, policy, requester, approver, exception reason and invalidation reason without adding commercial fields to ordinary order responses or exports.
+
 ## Safe deployment gates
 
 The migration seeds a deliberately conservative `bootstrap-review-only-v1` policy. It forces human review, permits no automatic override, and disables calculated suggestions. Before an office pilot, management must approve and configure the real minimum margin, target margin, override threshold, and rounding rule as a new effective-dated policy.
