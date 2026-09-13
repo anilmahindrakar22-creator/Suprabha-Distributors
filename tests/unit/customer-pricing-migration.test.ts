@@ -25,6 +25,7 @@ describe('customer pricing engine migration', () => {
     expect(migration).toContain("Pricing policy administration is restricted");
     expect(migration).toContain('for update');
     expect(migration).toContain("values('pricing_policy',v_policy.id,'pricing_policy_created'");
+    expect(migration).toContain('target_margin_percent is null or target_margin_percent >= minimum_margin_percent');
   });
 
   it('keeps Tally evidence and commercial decisions append-only', () => {

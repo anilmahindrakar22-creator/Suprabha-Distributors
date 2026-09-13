@@ -2,18 +2,19 @@ create extension if not exists btree_gist with schema extensions;
 
 create table private.stockflow_pricing_policies (
   id uuid primary key default extensions.gen_random_uuid(),
-  policy_version text not null unique check (char_length(btrim(policy_version)) between 1 and 80),
+  policy_version text not null unique check (char_length(btrim(policy_version)) between 3 and 80),
   minimum_margin_percent numeric(7,4) not null check (minimum_margin_percent >= -100 and minimum_margin_percent < 100),
   target_margin_percent numeric(7,4) check (target_margin_percent >= 0 and target_margin_percent < 100),
   override_approval_percent numeric(7,4) not null check (override_approval_percent >= 0 and override_approval_percent <= 100),
-  rounding_increment numeric(14,2) not null check (rounding_increment > 0),
-  rounding_rule_version text not null check (char_length(btrim(rounding_rule_version)) between 1 and 80),
+  rounding_increment numeric(14,2) not null check (rounding_increment > 0 and rounding_increment <= 100000),
+  rounding_rule_version text not null check (char_length(btrim(rounding_rule_version)) between 3 and 80),
   effective_from date not null,
   effective_to date,
   active boolean not null default true,
   created_by_email text not null,
   created_at timestamptz not null default now(),
-  check (effective_to is null or effective_to >= effective_from)
+  check (effective_to is null or effective_to >= effective_from),
+  check (target_margin_percent is null or target_margin_percent >= minimum_margin_percent)
 );
 
 -- Fail closed until management approves real commercial thresholds: this bootstrap

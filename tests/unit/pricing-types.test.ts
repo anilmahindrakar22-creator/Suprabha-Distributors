@@ -36,6 +36,7 @@ describe('pricing API contracts', () => {
     expect(validatePricingCommand(valid)?.action).toBe('create_pricing_policy');
     expect(validatePricingCommand({ ...valid, payload: { ...valid.payload, minimumMarginPercent: 100 } })).toBeNull();
     expect(validatePricingCommand({ ...valid, payload: { ...valid.payload, roundingIncrement: 0 } })).toBeNull();
+    expect(validatePricingCommand({ ...valid, payload: { ...valid.payload, minimumMarginPercent: 30, targetMarginPercent: 20 } })).toBeNull();
     expect(validatePricingCommand({ ...valid, payload: { ...valid.payload, reason: '' } })).toBeNull();
   });
 });
