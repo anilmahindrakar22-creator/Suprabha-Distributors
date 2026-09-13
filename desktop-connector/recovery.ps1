@@ -82,12 +82,16 @@ function Get-PricingSalesEvidence($Records, $Customers, [int]$LimitPerCustomerIt
     foreach ($customer in @($Customers)) {
         $name = ([string]$customer.name).Trim().ToLowerInvariant()
         $key = ([string]$customer.tallyKey).Trim()
-        if ($name -and $key -and -not $customerKeys.ContainsKey($name)) { $customerKeys[$name] = $key }
+        if (-not $name -or -not $key) { continue }
+        if (-not $customerKeys.ContainsKey($name)) { $customerKeys[$name] = $key; continue }
+        if ($customerKeys[$name] -ne $key) { $customerKeys[$name] = $null }
     }
     $evidence = [Collections.Generic.List[object]]::new()
     foreach ($voucher in @($Records)) {
         if ($voucher.cancelled -or $voucher.optional -or [string]$voucher.voucherType -ne 'Sales') { continue }
         $customerKey = $customerKeys[([string]$voucher.party).Trim().ToLowerInvariant()]
+        # A duplicate display name cannot prove an exact canonical Tally ledger.
+        # Keep the voucher in operational history but exclude it from pricing.
         if (-not $customerKey) { continue }
         $date = [string]$voucher.date
         if ($date -notmatch '^\d{8}$') { continue }

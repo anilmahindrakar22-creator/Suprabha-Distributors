@@ -34,6 +34,7 @@ describe('Tally invoice reconciliation connector', () => {
     expect(connector).toContain('Get-PricingSalesEvidence $salesData.records $customers');
     expect(connector).toContain('pricingHistory = [ordered]@{ sales = $pricingSales; purchaseCosts = @() }');
     expect(connector).toContain('Commercial rates stay in pricingHistory and never enter normal order payloads.');
+    expect(recovery).toContain('A duplicate display name cannot prove an exact canonical Tally ledger.');
     expect(connector).toContain('lineItems = $safeInvoiceLines');
     expect(connector).not.toMatch(/CREATE\s+VOUCHER|ALTER\s+VOUCHER|DELETE\s+VOUCHER/i);
   });

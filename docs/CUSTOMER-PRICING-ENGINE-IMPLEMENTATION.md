@@ -8,6 +8,8 @@ StockFlow governs order pricing decisions and approvals. TallyPrime remains the 
 
 For an exact canonical customer and stock item on the pricing date, the server resolves an effective approved customer contract first, then the latest eligible Tally sales invoice. Exceptional, zero-rate/FOC, and future sales are retained as evidence but never silently proposed. Missing evidence produces review, never an invented rate.
 
+The connector maps a sales voucher to a canonical customer ledger only when its normalized party name identifies exactly one Tally ledger key. Duplicate display names are treated as ambiguous and excluded from pricing evidence rather than attaching a commercial rate to an arbitrary customer.
+
 Reliable purchase-cost evidence is compared with the applicable historic cost. The restricted workspace shows GP, margin erosion, guardrail state, and a bracketed suggestion only when a configured target and versioned rounding rule exist. Cost increases never automatically change a customer rate.
 
 ## Security and integrity

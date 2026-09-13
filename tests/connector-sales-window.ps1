@@ -17,6 +17,8 @@ $converted = @(Convert-LegacySalesRecords $legacy.OuterXml)
 if ($converted.Count -ne 1 -or $converted[0].date -ne '20260905' -or $converted[0].voucherNumber -ne 'SD/26-27/0009' -or $converted[0].voucherType -ne 'Sales' -or $converted[0].party -ne 'City Lab' -or $converted[0].lineItems[0].quantity -ne 2 -or $converted[0].lineItems[0].rate -ne 485 -or $converted[0].masterId -ne 'master:9') { throw 'Legacy cache conversion failed' }
 $evidence = @(Get-PricingSalesEvidence $converted @(@{name='City Lab';tallyKey='ledger:city'}) 5 50)
 if ($evidence.Count -ne 1 -or $evidence[0].customerTallyKey -ne 'ledger:city' -or $evidence[0].tallyItemKey -ne 'Kit' -or $evidence[0].rate -ne 485 -or $evidence[0].invoiceDate -ne '2026-09-05' -or -not $evidence[0].sourceVersion) { throw 'Pricing sales evidence was not built safely' }
+$ambiguousEvidence = @(Get-PricingSalesEvidence $converted @(@{name='City Lab';tallyKey='ledger:city-one'},@{name=' city lab ';tallyKey='ledger:city-two'}) 5 50)
+if ($ambiguousEvidence.Count -ne 0) { throw 'Ambiguous customer ledger name was accepted for pricing' }
 $focXml = $legacy.OuterXml.Replace('<RATE>485.00/box</RATE><AMOUNT>-970.00</AMOUNT>','<RATE>0.00/box</RATE><AMOUNT>0.00</AMOUNT>')
 $focEvidence = @(Get-PricingSalesEvidence @(Convert-LegacySalesRecords $focXml) @(@{name='City Lab';tallyKey='ledger:city'}) 5 50)
 if ($focEvidence.Count -ne 1 -or -not $focEvidence[0].exceptional -or $focEvidence[0].exceptionType -ne 'foc') { throw 'FOC evidence was not classified' }
