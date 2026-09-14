@@ -1,7 +1,7 @@
 'use client';
 
 import { useEffect, useMemo, useRef, useState } from 'react';
-import { CustomerPriceBook } from './customer-price-book';
+import { CustomerPriceBook, savePricingReference } from './customer-price-book';
 import { loadOrderCatalog, loadOrderCustomers } from '@/lib/order-capture-masters';
 import type { CatalogItem, CustomerDirectoryEntry } from '@/lib/order-types';
 import type { CustomerPriceContract, PricingCommand, PricingPolicy } from '@/lib/pricing-types';
@@ -24,12 +24,16 @@ function Metric({ label, value, note, attention = false }: { label: string; valu
 }
 
 export function PricingWorkspace({ actorEmail, actorRole }: { actorEmail: string; actorRole: string }) {
+  const [recoveryBlocked, setRecoveryBlocked] = useState(true);
   const pendingCommands = useRef(new Map<string, PricingCommand>());
   async function send(command: PricingCommand) {
+    if (recoveryBlocked) throw new Error('Check the earlier pricing save before submitting another decision.');
     const fingerprint = JSON.stringify([actorEmail, actorRole, command.action, { ...command.payload, idempotencyKey: undefined }]);
     const pending = pendingCommands.current.get(fingerprint) ?? command;
     pendingCommands.current.set(fingerprint, pending);
+    savePricingReference(actorEmail, pending);
     const result = await sendRequest(pending);
+    savePricingReference(actorEmail, pending, true);
     pendingCommands.current.delete(fingerprint);
     return result;
   }
@@ -65,10 +69,12 @@ export function PricingWorkspace({ actorEmail, actorRole }: { actorEmail: string
         <Metric label="Expiring in 30 days" value={expiring} note="Renew before the end date" attention={expiring > 0} />
         <Metric label="Minimum gross margin" value={current ? `${current.minimumMarginPercent}%` : 'Not set'} note={current ? `Policy ${current.policyVersion}` : 'Management policy required'} attention={!current} />
       </section>
-      <CustomerPriceBook actorEmail={actorEmail} actorRole={actorRole} />
+      <CustomerPriceBook actorEmail={actorEmail} actorRole={actorRole} onRecoveryBlocked={setRecoveryBlocked} />
+      <fieldset disabled={recoveryBlocked} className="space-y-5">
       <ApprovalInbox items={pending} actorRole={actorRole} onChanged={refresh} send={send} />
       <ContractWorkbench items={contracts} actorEmail={actorEmail} actorRole={actorRole} onChanged={refresh} send={send} />
       <PolicyWorkbench policies={policies} actorRole={actorRole} onChanged={refresh} send={send} />
+      </fieldset>
     </div>
   </div>;
 }

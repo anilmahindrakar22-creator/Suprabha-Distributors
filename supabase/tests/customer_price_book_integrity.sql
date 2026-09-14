@@ -223,4 +223,21 @@ begin
     raise exception 'Invalid gateway recovered pricing';
   exception when insufficient_privilege then null; end;
 end $recovery$;
+do $contract_recovery$
+declare action_name text; payload jsonb; result jsonb;
+begin
+  foreach action_name in array array['create_price_contract','approve_price_contract','reject_price_contract','create_pricing_policy'] loop
+    payload := jsonb_build_object('idempotencyKey','contract-recovery-key-123','pricingAction',action_name);
+    insert into private.stockflow_command_results(actor_email,action,idempotency_key,request_hash,result)
+      values('book-admin@test.local',action_name,'contract-recovery-key-123','hash','{"restrictedRate":720}');
+    result := public.stockflow_submission_recovery_gateway('price-book-test-key','book-admin@test.local','recover_order_submission',payload);
+    if result <> '{"status":"accepted"}'::jsonb then raise exception 'Contract recovery result leaked or missing'; end if;
+    result := public.stockflow_submission_recovery_gateway('price-book-test-key','book-accounts@test.local','recover_order_submission',payload);
+    if result <> '{"status":"unresolved"}'::jsonb then raise exception 'Cross-account contract recovery'; end if;
+    begin
+      perform public.stockflow_submission_recovery_gateway('price-book-test-key','book-sales@test.local','recover_order_submission',payload);
+      raise exception 'Unauthorized contract recovery';
+    exception when insufficient_privilege then null; end;
+  end loop;
+end $contract_recovery$;
 rollback;

@@ -31,7 +31,15 @@ async function send(command: PricingCommand) {
   return data as { applied?: number; skipped?: number };
 }
 
-export function CustomerPriceBook({ actorEmail, actorRole }: { actorEmail: string; actorRole: string }) {
+export function savePricingReference(actorEmail: string, command: PricingCommand, remove = false) {
+  const key = `stockflow:pricing-recovery:${actorEmail.trim().toLowerCase()}`;
+  const saved = JSON.parse(sessionStorage.getItem(key) || '[]') as Array<{ action: string; idempotencyKey: string }>;
+  const remaining = saved.filter(value => value.idempotencyKey !== command.payload.idempotencyKey);
+  if (!remove) remaining.push({ action: command.action, idempotencyKey: command.payload.idempotencyKey });
+  sessionStorage.setItem(key, JSON.stringify(remaining));
+}
+
+export function CustomerPriceBook({ actorEmail, actorRole, onRecoveryBlocked }: { actorEmail: string; actorRole: string; onRecoveryBlocked?: (blocked: boolean) => void }) {
   const recoveryStorageKey = `stockflow:pricing-recovery:${actorEmail.trim().toLowerCase()}`;
   const [recovery, setRecovery] = useState<Array<{ action: string; idempotencyKey: string }>>([]);
   const [recoveryMessage, setRecoveryMessage] = useState('');
@@ -40,18 +48,18 @@ export function CustomerPriceBook({ actorEmail, actorRole }: { actorEmail: strin
     const timer = window.setTimeout(() => {
     try {
       const saved = JSON.parse(sessionStorage.getItem(recoveryStorageKey) || '[]');
-      if (!Array.isArray(saved) || saved.some(value => !value || !['apply_price_book','apply_product_price_impact','set_standard_item_price'].includes(value.action) || !/^[0-9a-f-]{36}$/i.test(value.idempotencyKey))) throw new Error('Invalid recovery data');
+      if (!Array.isArray(saved) || saved.some(value => !value || !['apply_price_book','apply_product_price_impact','set_standard_item_price','create_price_contract','approve_price_contract','reject_price_contract','create_pricing_policy'].includes(value.action) || !/^[0-9a-f-]{36}$/i.test(value.idempotencyKey))) throw new Error('Invalid recovery data');
       setRecovery(saved);
       setRecoveryOwner(recoveryStorageKey);
     } catch { setRecoveryMessage('Pricing recovery references could not be read. Check recent pricing activity before saving again.'); }
     }, 0);
     return () => window.clearTimeout(timer);
   }, [recoveryStorageKey]);
+  useEffect(() => {
+    onRecoveryBlocked?.(recovery.length > 0 || recoveryOwner !== recoveryStorageKey);
+  }, [onRecoveryBlocked, recovery.length, recoveryOwner, recoveryStorageKey]);
   function saveReference(command: PricingCommand, remove = false) {
-    const saved = JSON.parse(sessionStorage.getItem(recoveryStorageKey) || '[]') as Array<{ action: string; idempotencyKey: string }>;
-    const remaining = saved.filter(value => value.idempotencyKey !== command.payload.idempotencyKey);
-    if (!remove) remaining.push({ action: command.action, idempotencyKey: command.payload.idempotencyKey });
-    sessionStorage.setItem(recoveryStorageKey, JSON.stringify(remaining));
+    savePricingReference(actorEmail, command, remove);
   }
   async function checkRecovery(reference: { action: string; idempotencyKey: string }) {
     try {

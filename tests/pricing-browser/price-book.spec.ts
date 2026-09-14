@@ -2,11 +2,13 @@ import { test, expect } from '@playwright/test';
 
 for (const action of ['approve_price_contract', 'reject_price_contract', 'create_pricing_policy', 'create_price_contract']) {
   test(`${action} retains unchanged requests across uncertain responses`, async ({ page }) => {
+    let recoveryStatus = 'unresolved';
     const commands: { action: string; payload: { idempotencyKey: string } }[] = [];
     await page.route('**/api/orders?customers=1', route => route.fulfill({ json: { customers: [{ id: customerId, name: 'Test Laboratory' }] } }));
     await page.route('**/api/orders?catalog=1', route => route.fulfill({ json: { catalog: [{ tallyKey: 'GLUCOSE', item: 'Glucose reagent', group: 'Reagents', active: true }] } }));
     await page.route('**/api/pricing**', async route => {
       if (route.request().method() === 'POST') { commands.push(route.request().postDataJSON()); await route.abort('failed'); }
+      else if (route.request().url().includes('recoveryKey=')) await route.fulfill({ json: { status: recoveryStatus } });
       else await route.fulfill({ json: route.request().url().includes('policies=1') ? { policies: [] } : { contracts: [{ id: customerId, customerId, customerName: 'Test Laboratory', tallyKey: 'GLUCOSE', price: 445, validFrom: '2026-01-01', status: 'pending_approval', source: 'customer_contract', reason: 'Test', version: 1 }] } });
     });
     await page.goto('/?view=workspace');
@@ -45,6 +47,23 @@ for (const action of ['approve_price_contract', 'reject_price_contract', 'create
     await save.click();
     await expect.poll(() => commands.length).toBe(3);
     expect(commands[2].payload.idempotencyKey).not.toBe(commands[0].payload.idempotencyKey);
+    await expect(page.getByText('Failed to fetch', { exact: true })).toBeVisible();
+    const receipts = await page.evaluate(() => JSON.parse(sessionStorage.getItem('stockflow:pricing-recovery:fixture@example.test') || '[]'));
+    expect(receipts).toHaveLength(2);
+    expect(Object.keys(receipts[0]).sort()).toEqual(['action', 'idempotencyKey']);
+    await page.reload();
+    const check = page.getByRole('button', { name: /Check earlier save/ });
+    await expect(check).toHaveCount(2);
+    await expect(page.getByRole('button', { name: 'New policy', exact: true })).toBeDisabled();
+    await check.first().click();
+    await expect(page.getByText(/This save is still unresolved/)).toBeVisible();
+    recoveryStatus = 'accepted';
+    await check.first().click();
+    await expect(check).toHaveCount(1);
+    await check.first().click();
+    await expect(check).toHaveCount(0);
+    await expect(page.getByRole('button', { name: 'New policy', exact: true })).toBeEnabled();
+    expect(commands).toHaveLength(3);
   });
 }
 

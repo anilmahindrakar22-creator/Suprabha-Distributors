@@ -20,8 +20,14 @@ Validation is batched to conserve usage; this checkpoint records remaining relea
   after uncertain responses while Pricing stays mounted. Keys are scoped by actor, role,
   action and complete payload; edited decisions use new keys. No database safety controls
   changed. Four targeted desktop browser checks, targeted lint and typecheck passed.
-- Remaining recovery work: reload receipts for these older forms and safe reconciliation
-  of genuinely unresolved saves. This ticket does not claim reload recovery for those forms.
+- Contract/policy reload recovery now uses the existing account-scoped receipt panel and
+  status-only recovery gateway. Forms remain disabled until earlier receipts are confirmed.
+  The browser stores action/key only, never commercial values. Additive migration
+  20260914140000 extends the gateway allowlist without changing transaction controls.
+- Fresh validation: six targeted desktop browser tests, targeted lint, typecheck and pricing
+  migration replay/integrity tests passed, including role denial and cross-account isolation.
+- Next ticket: safe reconciliation of genuinely unresolved saves. Closing the browser
+  session may lose receipts; this build does not yet resolve definitively failed requests.
 
 - Customer-first Purchased / Exceptions / All Products worksheet, 50-row pages.
 - Shared database calculation for order lines, customer book, and product cost-change impact.
