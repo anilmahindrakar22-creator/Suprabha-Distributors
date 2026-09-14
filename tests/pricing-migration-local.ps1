@@ -57,6 +57,8 @@ try {
   Invoke-DatabaseCommand 'psql' @('-X','-q','-v','ON_ERROR_STOP=1','-d',$database,'-f',(Join-Path $repository 'supabase/tests/pricing_engine_integrity.sql'))
   Invoke-DatabaseCommand 'psql' @('-X','-q','-v','ON_ERROR_STOP=1','-d',$database,'-f',(Join-Path $repository 'supabase/tests/customer_price_book_integrity.sql'))
   Write-Output 'PASS: complete migration replay and pricing ACID tests'
+  Invoke-DatabaseCommand 'psql' @('-X','-q','-v','ON_ERROR_STOP=1','-d',$database,'-f',(Join-Path $repository 'supabase/tests/price_book_concurrency.sql'))
+  Write-Output 'PASS: two-session price-book concurrency and bulk rollback'
 } finally {
   if ($databaseCreated) { & dropdb --if-exists $database | Out-Null }
   $resolvedWork = [IO.Path]::GetFullPath($work)

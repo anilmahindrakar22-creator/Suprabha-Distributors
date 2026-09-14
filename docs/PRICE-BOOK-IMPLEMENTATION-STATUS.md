@@ -35,7 +35,11 @@ Validation is batched to conserve usage; this checkpoint records remaining relea
   and database integrity including a real second-session lock, late-request rejection,
   duplicate closure, completed-save preservation and injected audit-failure rollback.
 - Remaining limitation: browser-session closure may lose receipts. No automatic resubmission.
-- Next ticket: simultaneous pricing approvals/bulk edits and associated rollback validation.
+- Two-session customer-price approval tests now prove lock contention, stale row rejection,
+  stale bulk rejection and duplicate-command replay without extra decisions. A second-row
+  audit failure proves all bulk decisions, events, outbox entries and command results roll back.
+  Fresh pricing database replay/integrity suite passed; no production code changed.
+- Next ticket: deployment migration validation, including historical replay adjustments.
 
 - Customer-first Purchased / Exceptions / All Products worksheet, 50-row pages.
 - Shared database calculation for order lines, customer book, and product cost-change impact.
@@ -78,8 +82,8 @@ Validation is batched to conserve usage; this checkpoint records remaining relea
 - Authenticated browser acceptance for customer selection, row approval, base price save,
   bulk review, mobile layout, keyboard use, paging, and errors. Fixture tests now cover
   customer selection, tabs, row submission, Accounts restrictions and order pricing options.
-- Real two-session concurrency and injected-failure rollback tests for the new bulk mutations.
-  Existing new tests exercise stale optimistic writes sequentially.
+- Two-session price-book/bulk concurrency and failure rollback are verified locally.
+  Other order/exception approval races still need coverage at final integrity review.
 - Additional billing-boundary regression cases for agreement/policy/book changes; the new
   generic evidence-hash gate covers those sources but the transition regression changes cost.
 - Strengthen base-price preview UI (current rate, effective dates and margin evidence) and
