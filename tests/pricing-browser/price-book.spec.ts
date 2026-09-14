@@ -1,5 +1,27 @@
 import { test, expect } from '@playwright/test';
 
+test('close unsaved recovery retains busy receipts and releases only confirmed outcomes', async ({ page }) => {
+  const key = '11111111-1111-4111-8111-111111111111';
+  let status = 'unresolved';
+  const commands: unknown[] = [];
+  await page.goto('/');
+  await page.evaluate(key => sessionStorage.setItem('stockflow:pricing-recovery:fixture@example.test', JSON.stringify([{ action: 'create_pricing_policy', idempotencyKey: key }])), key);
+  await page.route('**/api/pricing**', async route => {
+    commands.push(route.request().postDataJSON());
+    await route.fulfill({ json: { status } });
+  });
+  await page.reload();
+  const close = page.getByRole('button', { name: /Close only if unsaved/ });
+  await close.click();
+  await expect(page.getByText(/This save is still unresolved/)).toBeVisible();
+  await expect(close).toBeVisible();
+  status = 'not_saved';
+  await close.click();
+  await expect(page.getByText(/blocked late delivery/)).toBeVisible();
+  await expect(close).toHaveCount(0);
+  expect(commands).toEqual(Array(2).fill({ action: 'close_unresolved_pricing', payload: { idempotencyKey: key, pricingAction: 'create_pricing_policy' } }));
+});
+
 for (const action of ['approve_price_contract', 'reject_price_contract', 'create_pricing_policy', 'create_price_contract']) {
   test(`${action} retains unchanged requests across uncertain responses`, async ({ page }) => {
     let recoveryStatus = 'unresolved';

@@ -61,14 +61,16 @@ export function CustomerPriceBook({ actorEmail, actorRole, onRecoveryBlocked }: 
   function saveReference(command: PricingCommand, remove = false) {
     savePricingReference(actorEmail, command, remove);
   }
-  async function checkRecovery(reference: { action: string; idempotencyKey: string }) {
+  async function checkRecovery(reference: { action: string; idempotencyKey: string }, closeUnresolved = false) {
     try {
-      const result = await read<{ status: string }>(`/api/pricing?${new URLSearchParams({ recoveryKey: reference.idempotencyKey, pricingAction: reference.action })}`);
-      if (result.status !== 'accepted') { setRecoveryMessage('This save is still unresolved. Check again later; do not assume it failed or enter a replacement.'); return; }
+      const response = closeUnresolved ? await fetch('/api/pricing', { method: 'POST', headers: { 'content-type': 'application/json' }, body: JSON.stringify({ action: 'close_unresolved_pricing', payload: { idempotencyKey: reference.idempotencyKey, pricingAction: reference.action } }) }) : null;
+      if (response && !response.ok) throw new Error('Recovery failed');
+      const result = response ? await response.json() as { status: string } : await read<{ status: string }>(`/api/pricing?${new URLSearchParams({ recoveryKey: reference.idempotencyKey, pricingAction: reference.action })}`);
+      if (!['accepted','not_saved'].includes(result.status)) { setRecoveryMessage('This save is still unresolved. Check again later; do not assume it failed or enter a replacement.'); return; }
       const saved = JSON.parse(sessionStorage.getItem(recoveryStorageKey) || '[]') as typeof recovery;
       sessionStorage.setItem(recoveryStorageKey, JSON.stringify(saved.filter(value => value.idempotencyKey !== reference.idempotencyKey)));
       setRecovery(values => values.filter(value => value.idempotencyKey !== reference.idempotencyKey));
-      setRecoveryMessage('The server confirmed the earlier pricing save. Reload the price book to view current prices.');
+      setRecoveryMessage(result.status === 'not_saved' ? 'The server confirmed this request did not save and blocked late delivery. You may review current prices and enter a new decision.' : 'The server confirmed the earlier pricing save. Reload the price book to view current prices.');
     } catch { setRecoveryMessage('Unable to check this save. The recovery reference has been kept; try again when connected.'); }
   }
   // Memory only: never persist restricted commercial payloads in browser storage.
@@ -129,7 +131,7 @@ export function CustomerPriceBook({ actorEmail, actorRole, onRecoveryBlocked }: 
 
   return <section className="rounded-2xl border border-[#dce7e5] bg-white p-4 sm:p-5">
     <h2 className="text-xl font-extrabold">Price book</h2>
-    {recovery.length > 0 ? <aside className="mt-3 rounded-lg bg-amber-50 p-3 text-sm"><p>An earlier pricing save needs checking before another approval. No prices were stored on this device.</p>{recovery.map(reference => <button key={reference.idempotencyKey} type="button" className={button} onClick={() => void checkRecovery(reference)}>Check earlier save {reference.idempotencyKey.slice(-6)}</button>)}</aside> : null}
+    {recovery.length > 0 ? <aside className="mt-3 rounded-lg bg-amber-50 p-3 text-sm"><p>An earlier pricing save needs checking before another approval. No prices were stored on this device.</p><p>Close only if unsaved checks the server first. A completed save is preserved; an unsaved request is blocked from arriving later.</p>{recovery.map(reference => <div key={reference.idempotencyKey} className="mt-2 flex flex-wrap gap-2"><button type="button" className={button} onClick={() => void checkRecovery(reference)}>Check earlier save {reference.idempotencyKey.slice(-6)}</button><button type="button" className={button} onClick={() => void checkRecovery(reference, true)}>Close only if unsaved {reference.idempotencyKey.slice(-6)}</button></div>)}</aside> : null}
     {recoveryMessage ? <output className="mt-2 block text-sm">{recoveryMessage}</output> : null}
     <nav aria-label="Pricing workbench" className="mt-3 flex flex-wrap gap-2">{([['customer','Customer prices'],['impact','Purchase-cost review'],['base','Base / default prices']] as const).map(([value,label]) => <button key={value} type="button" aria-pressed={mode === value} className={`${button} ${mode === value ? 'bg-[#e8f5ef]' : ''}`} onClick={() => { setMode(value); setSelected(''); setQuery(''); setPage(null); setOffset(0); setError(''); setNotice(''); }}>{label}</button>)}</nav>
     <div className="relative mt-4 max-w-xl"><label className="text-sm font-bold">{mode === 'customer' ? 'Select customer' : 'Select product'}<input className={field} value={query} placeholder="Type at least two letters" onChange={(event) => { setQuery(event.target.value); setSelected(''); setPage(null); }}/></label>{matches.length > 0 ? <div className="absolute z-20 w-full rounded-lg border bg-white p-1 shadow-lg">{matches.map((item) => <button key={item.id} type="button" className="block min-h-11 w-full rounded px-3 text-left text-sm hover:bg-[#e8f5ef]" onClick={() => { setSelected(item.id); setQuery(item.name); setOffset(0); }}>{item.name}</button>)}</div> : null}</div>

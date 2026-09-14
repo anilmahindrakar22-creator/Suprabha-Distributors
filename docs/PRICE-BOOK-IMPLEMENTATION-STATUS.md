@@ -26,8 +26,16 @@ Validation is batched to conserve usage; this checkpoint records remaining relea
   20260914140000 extends the gateway allowlist without changing transaction controls.
 - Fresh validation: six targeted desktop browser tests, targeted lint, typecheck and pricing
   migration replay/integrity tests passed, including role denial and cross-account isolation.
-- Next ticket: safe reconciliation of genuinely unresolved saves. Closing the browser
-  session may lose receipts; this build does not yet resolve definitively failed requests.
+- Unresolved receipts now offer an explicit Close only if unsaved action. The database
+  takes the existing command lock non-blockingly, preserves completed requests and leaves
+  in-flight requests unresolved. If unsaved, it atomically records a non-replayable result
+  and audit event; the original key cannot apply later. No financial data is changed.
+- Migration 20260914160000 adds this behavior without changing the shared command helper.
+  Fresh checks passed: three targeted browser tests, lint/typecheck, pricing migration replay
+  and database integrity including a real second-session lock, late-request rejection,
+  duplicate closure, completed-save preservation and injected audit-failure rollback.
+- Remaining limitation: browser-session closure may lose receipts. No automatic resubmission.
+- Next ticket: simultaneous pricing approvals/bulk edits and associated rollback validation.
 
 - Customer-first Purchased / Exceptions / All Products worksheet, 50-row pages.
 - Shared database calculation for order lines, customer book, and product cost-change impact.

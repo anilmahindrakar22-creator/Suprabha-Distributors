@@ -60,7 +60,13 @@ export async function GET(request: Request) {
 export async function POST(request: Request) {
   try {
     const email = await actorEmail();
-    const command = validatePricingCommand(await readBoundedJsonRequest(request));
+    const body = await readBoundedJsonRequest(request);
+    if (body && typeof body === 'object' && 'action' in body && body.action === 'close_unresolved_pricing') {
+      const payload = 'payload' in body ? body.payload : null;
+      if (!payload || typeof payload !== 'object' || !('idempotencyKey' in payload) || typeof payload.idempotencyKey !== 'string' || !/^[0-9a-f-]{36}$/i.test(payload.idempotencyKey) || !('pricingAction' in payload) || typeof payload.pricingAction !== 'string' || !['apply_price_book','apply_product_price_impact','set_standard_item_price','create_price_contract','approve_price_contract','reject_price_contract','create_pricing_policy'].includes(payload.pricingAction)) return failure('Invalid recovery reference', 400);
+      return Response.json(await callOrderGateway(email, 'recover_order_submission', { idempotencyKey: payload.idempotencyKey, pricingAction: payload.pricingAction, closeUnresolved: true }), { headers: privateHeaders });
+    }
+    const command = validatePricingCommand(body);
     if (!command) return failure('Invalid pricing request', 400);
     return Response.json(await callOrderGateway<Record<string, unknown>>(email, command.action, command.payload), { headers: privateHeaders });
   } catch (error) {

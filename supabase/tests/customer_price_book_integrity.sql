@@ -240,4 +240,42 @@ begin
     exception when insufficient_privilege then null; end;
   end loop;
 end $contract_recovery$;
+-- Use a separate database session to hold the real command lock deterministically.
+create extension if not exists dblink with schema public;
+do $close_recovery$
+declare payload jsonb := '{"idempotencyKey":"close-recovery-key-123","pricingAction":"create_pricing_policy","closeUnresolved":true}'; result jsonb; count_before integer;
+begin
+  perform public.dblink_connect('pricing_lock',format('host=127.0.0.1 port=%s dbname=%s user=%s',current_setting('port'),current_database(),current_user));
+  perform * from public.dblink('pricing_lock',$q$select pg_advisory_lock(hashtextextended('book-admin@test.local:create_pricing_policy:close-recovery-key-123',0))::text$q$) as t(value text);
+  result := public.stockflow_submission_recovery_gateway('price-book-test-key','book-admin@test.local','recover_order_submission',payload);
+  if result <> '{"status":"unresolved"}'::jsonb then raise exception 'Closed an in-flight command'; end if;
+  if exists(select 1 from private.stockflow_command_results where idempotency_key='close-recovery-key-123') then raise exception 'Busy recovery wrote a result'; end if;
+  perform public.dblink_disconnect('pricing_lock');
+  select count(*) into count_before from private.stockflow_pricing_events;
+  result := public.stockflow_submission_recovery_gateway('price-book-test-key','book-admin@test.local','recover_order_submission',payload);
+  if result <> '{"status":"not_saved"}'::jsonb then raise exception 'Unsaved request not closed'; end if;
+  perform public.stockflow_submission_recovery_gateway('price-book-test-key','book-admin@test.local','recover_order_submission',payload);
+  if (select count(*) from private.stockflow_pricing_events) <> count_before+1 then raise exception 'Recovery audit missing or duplicated'; end if;
+  begin
+    perform private.begin_stockflow_command('book-admin@test.local','create_pricing_policy','close-recovery-key-123','{}');
+    raise exception 'Late request was not fenced';
+  exception when invalid_parameter_value then null; end;
+  result := public.stockflow_submission_recovery_gateway('price-book-test-key','book-admin@test.local','recover_order_submission',payload-'closeUnresolved');
+  if result <> '{"status":"not_saved"}'::jsonb then raise exception 'Closed request read incorrectly'; end if;
+  result := public.stockflow_submission_recovery_gateway('price-book-test-key','book-admin@test.local','recover_order_submission',jsonb_build_object('idempotencyKey','contract-recovery-key-123','pricingAction','create_pricing_policy','closeUnresolved',true));
+  if result <> '{"status":"accepted"}'::jsonb then raise exception 'Completed save overwritten'; end if;
+end $close_recovery$;
+create function pg_temp.fail_recovery_audit() returns trigger language plpgsql as $$begin raise exception 'Injected audit failure'; end$$;
+create trigger fail_recovery_audit before insert on private.stockflow_pricing_events for each row execute function pg_temp.fail_recovery_audit();
+do $rollback_recovery$
+begin
+  begin
+    perform public.stockflow_submission_recovery_gateway('price-book-test-key','book-admin@test.local','recover_order_submission','{"idempotencyKey":"rollback-recovery-123","pricingAction":"create_pricing_policy","closeUnresolved":true}');
+    raise exception 'Expected injected audit failure';
+  exception when raise_exception then
+    if sqlerrm <> 'Injected audit failure' then raise; end if;
+  end;
+  if exists(select 1 from private.stockflow_command_results where idempotency_key='rollback-recovery-123') then raise exception 'Failed audit left a closed request'; end if;
+end $rollback_recovery$;
+drop trigger fail_recovery_audit on private.stockflow_pricing_events;
 rollback;
