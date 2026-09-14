@@ -14,6 +14,15 @@ Validation is batched to conserve usage; this checkpoint records remaining relea
 
 ## Implemented locally
 
+- Usage instruction updated: only the five-hour 20% reserve controls stopping; weekly
+  allowance is no longer a user-imposed stopping threshold.
+- Contract proposals, approval/rejection and policy creation now reuse unchanged commands
+  after uncertain responses while Pricing stays mounted. Keys are scoped by actor, role,
+  action and complete payload; edited decisions use new keys. No database safety controls
+  changed. Four targeted desktop browser checks, targeted lint and typecheck passed.
+- Remaining recovery work: reload receipts for these older forms and safe reconciliation
+  of genuinely unresolved saves. This ticket does not claim reload recovery for those forms.
+
 - Customer-first Purchased / Exceptions / All Products worksheet, 50-row pages.
 - Shared database calculation for order lines, customer book, and product cost-change impact.
 - Continuity = last eligible rate + max(current comparable cost - historic cost, 0).

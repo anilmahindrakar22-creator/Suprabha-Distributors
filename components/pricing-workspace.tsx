@@ -1,6 +1,6 @@
 'use client';
 
-import { useEffect, useMemo, useState } from 'react';
+import { useEffect, useMemo, useRef, useState } from 'react';
 import { CustomerPriceBook } from './customer-price-book';
 import { loadOrderCatalog, loadOrderCustomers } from '@/lib/order-capture-masters';
 import type { CatalogItem, CustomerDirectoryEntry } from '@/lib/order-types';
@@ -15,7 +15,7 @@ async function readResponse<T>(response: Response): Promise<T> {
   return body;
 }
 
-async function send(command: PricingCommand) {
+async function sendRequest(command: PricingCommand) {
   return readResponse(await fetch('/api/pricing', { method: 'POST', headers: { 'content-type': 'application/json' }, body: JSON.stringify(command) }));
 }
 
@@ -24,6 +24,15 @@ function Metric({ label, value, note, attention = false }: { label: string; valu
 }
 
 export function PricingWorkspace({ actorEmail, actorRole }: { actorEmail: string; actorRole: string }) {
+  const pendingCommands = useRef(new Map<string, PricingCommand>());
+  async function send(command: PricingCommand) {
+    const fingerprint = JSON.stringify([actorEmail, actorRole, command.action, { ...command.payload, idempotencyKey: undefined }]);
+    const pending = pendingCommands.current.get(fingerprint) ?? command;
+    pendingCommands.current.set(fingerprint, pending);
+    const result = await sendRequest(pending);
+    pendingCommands.current.delete(fingerprint);
+    return result;
+  }
   const [contracts, setContracts] = useState<CustomerPriceContract[]>([]);
   const [policies, setPolicies] = useState<PricingPolicy[]>([]);
   const [loading, setLoading] = useState(true);
@@ -57,14 +66,14 @@ export function PricingWorkspace({ actorEmail, actorRole }: { actorEmail: string
         <Metric label="Minimum gross margin" value={current ? `${current.minimumMarginPercent}%` : 'Not set'} note={current ? `Policy ${current.policyVersion}` : 'Management policy required'} attention={!current} />
       </section>
       <CustomerPriceBook actorEmail={actorEmail} actorRole={actorRole} />
-      <ApprovalInbox items={pending} actorRole={actorRole} onChanged={refresh} />
-      <ContractWorkbench items={contracts} actorEmail={actorEmail} actorRole={actorRole} onChanged={refresh} />
-      <PolicyWorkbench policies={policies} actorRole={actorRole} onChanged={refresh} />
+      <ApprovalInbox items={pending} actorRole={actorRole} onChanged={refresh} send={send} />
+      <ContractWorkbench items={contracts} actorEmail={actorEmail} actorRole={actorRole} onChanged={refresh} send={send} />
+      <PolicyWorkbench policies={policies} actorRole={actorRole} onChanged={refresh} send={send} />
     </div>
   </div>;
 }
 
-function ApprovalInbox({ items, actorRole, onChanged }: { items: CustomerPriceContract[]; actorRole: string; onChanged: () => Promise<void> }) {
+function ApprovalInbox({ items, actorRole, onChanged, send }: { items: CustomerPriceContract[]; actorRole: string; onChanged: () => Promise<void>; send: typeof sendRequest }) {
   const [reasons, setReasons] = useState<Record<string, string>>({}); const [busy, setBusy] = useState(''); const [message, setMessage] = useState('');
   const canApprove = ['administrator', 'management'].includes(actorRole);
   async function decide(item: CustomerPriceContract, action: 'approve_price_contract' | 'reject_price_contract') {
@@ -79,7 +88,7 @@ function ApprovalInbox({ items, actorRole, onChanged }: { items: CustomerPriceCo
   </section>;
 }
 
-function ContractWorkbench({ items, actorEmail, onChanged }: { items: CustomerPriceContract[]; actorEmail: string; actorRole: string; onChanged: () => Promise<void> }) {
+function ContractWorkbench({ items, actorEmail, onChanged, send }: { items: CustomerPriceContract[]; actorEmail: string; actorRole: string; onChanged: () => Promise<void>; send: typeof sendRequest }) {
   const [open, setOpen] = useState(false); const [mastersLoaded, setMastersLoaded] = useState(false); const [busy, setBusy] = useState(false); const [message, setMessage] = useState('');
   const [customers, setCustomers] = useState<CustomerDirectoryEntry[]>([]); const [catalog, setCatalog] = useState<CatalogItem[]>([]); const [customerQuery, setCustomerQuery] = useState(''); const [productQuery, setProductQuery] = useState(''); const [customer, setCustomer] = useState<CustomerDirectoryEntry | null>(null); const [product, setProduct] = useState<CatalogItem | null>(null);
   const [price, setPrice] = useState(''); const [validFrom, setValidFrom] = useState(today); const [validTo, setValidTo] = useState(''); const [source, setSource] = useState<'customer_contract' | 'quotation' | 'scheme' | 'tender' | 'manual_governed'>('customer_contract'); const [reference, setReference] = useState(''); const [reason, setReason] = useState(''); const [search, setSearch] = useState('');
@@ -99,7 +108,7 @@ function SearchPicker({ label, value, onChange, options, onPick }: { label: stri
   return <label className="relative text-xs font-bold">{label}<input value={value} onChange={(event) => onChange(event.target.value)} placeholder={`Type at least 2 letters`} className="mt-1 min-h-11 w-full rounded-lg border border-[#cedfdd] px-3 font-normal"/>{options.length ? <span className="absolute z-10 mt-1 block max-h-60 w-full overflow-y-auto rounded-lg border border-[#cbdedb] bg-white p-1 shadow-lg">{options.map((item) => <button key={item.id} type="button" onClick={() => onPick(item.id)} className="block min-h-11 w-full rounded-md px-3 py-2 text-left hover:bg-[#edf7f3]"><strong className="block text-xs text-[#173239]">{item.label}</strong>{item.note ? <small className="text-[#718487]">{item.note}</small> : null}</button>)}</span> : null}</label>;
 }
 
-function PolicyWorkbench({ policies, actorRole, onChanged }: { policies: PricingPolicy[]; actorRole: string; onChanged: () => Promise<void> }) {
+function PolicyWorkbench({ policies, actorRole, onChanged, send }: { policies: PricingPolicy[]; actorRole: string; onChanged: () => Promise<void>; send: typeof sendRequest }) {
   const [open, setOpen] = useState(false); const [busy, setBusy] = useState(false); const [message, setMessage] = useState(''); const [policyVersion, setPolicyVersion] = useState(''); const [minimumMargin, setMinimumMargin] = useState(''); const [targetMargin, setTargetMargin] = useState(''); const [overrideThreshold, setOverrideThreshold] = useState(''); const [roundingIncrement, setRoundingIncrement] = useState('1'); const [roundingVersion, setRoundingVersion] = useState('ceil-rupee-v1'); const [effectiveFrom, setEffectiveFrom] = useState(today); const [reason, setReason] = useState('');
   const current = policies[0]; const canManage = ['administrator', 'management'].includes(actorRole); const valid = policyVersion.trim().length >= 3 && minimumMargin !== '' && overrideThreshold !== '' && Number(roundingIncrement) > 0 && (!targetMargin || Number(targetMargin) >= Math.max(0, Number(minimumMargin))) && reason.trim().length >= 3;
   async function save() { setBusy(true); setMessage(''); try { await send({ action: 'create_pricing_policy', payload: { policyVersion: policyVersion.trim(), minimumMarginPercent: Number(minimumMargin), ...(targetMargin ? { targetMarginPercent: Number(targetMargin) } : {}), overrideApprovalPercent: Number(overrideThreshold), roundingIncrement: Number(roundingIncrement), roundingRuleVersion: roundingVersion.trim(), effectiveFrom, reason: reason.trim(), idempotencyKey: crypto.randomUUID() } }); setMessage('New policy activated; the previous policy remains in history.'); setOpen(false); await onChanged(); } catch (error) { setMessage(error instanceof Error ? error.message : 'Policy could not be saved'); } finally { setBusy(false); } }

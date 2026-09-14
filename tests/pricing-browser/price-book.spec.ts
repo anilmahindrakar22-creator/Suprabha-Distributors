@@ -1,5 +1,53 @@
 import { test, expect } from '@playwright/test';
 
+for (const action of ['approve_price_contract', 'reject_price_contract', 'create_pricing_policy', 'create_price_contract']) {
+  test(`${action} retains unchanged requests across uncertain responses`, async ({ page }) => {
+    const commands: { action: string; payload: { idempotencyKey: string } }[] = [];
+    await page.route('**/api/orders?customers=1', route => route.fulfill({ json: { customers: [{ id: customerId, name: 'Test Laboratory' }] } }));
+    await page.route('**/api/orders?catalog=1', route => route.fulfill({ json: { catalog: [{ tallyKey: 'GLUCOSE', item: 'Glucose reagent', group: 'Reagents', active: true }] } }));
+    await page.route('**/api/pricing**', async route => {
+      if (route.request().method() === 'POST') { commands.push(route.request().postDataJSON()); await route.abort('failed'); }
+      else await route.fulfill({ json: route.request().url().includes('policies=1') ? { policies: [] } : { contracts: [{ id: customerId, customerId, customerName: 'Test Laboratory', tallyKey: 'GLUCOSE', price: 445, validFrom: '2026-01-01', status: 'pending_approval', source: 'customer_contract', reason: 'Test', version: 1 }] } });
+    });
+    await page.goto('/?view=workspace');
+    let buttonName: string;
+    let reason;
+    if (action === 'create_pricing_policy') {
+      await page.getByRole('button', { name: 'New policy', exact: true }).click();
+      await page.getByLabel('Policy version', { exact: true }).fill('test-v1');
+      await page.getByLabel('Minimum gross margin %', { exact: true }).fill('20');
+      await page.getByLabel('Override approval threshold %').fill('5');
+      reason = page.getByLabel('Management reason', { exact: true });
+      buttonName = 'Activate policy';
+    } else if (action === 'create_price_contract') {
+      await page.getByRole('button', { name: '+ Propose price', exact: true }).click();
+      await page.getByLabel('Customer', { exact: true }).fill('Test');
+      await page.getByRole('button', { name: 'Test Laboratory', exact: true }).click();
+      await page.getByLabel('Product', { exact: true }).fill('Glucose');
+      await page.getByRole('button', { name: 'Glucose reagent Reagents', exact: true }).click();
+      await page.getByLabel('Selling price (₹)').fill('445');
+      reason = page.getByLabel('Business reason');
+      buttonName = 'Send for approval';
+    } else {
+      reason = page.getByPlaceholder('Approval or rejection reason');
+      buttonName = action === 'approve_price_contract' ? 'Approve' : 'Reject';
+    }
+    await reason.fill('Reviewed economics');
+    const save = page.getByRole('button', { name: buttonName, exact: true });
+    await save.click();
+    await expect(page.getByText('Failed to fetch', { exact: true })).toBeVisible();
+    await save.click();
+    await expect.poll(() => commands.length).toBe(2);
+    expect(commands[1]).toEqual(commands[0]);
+    expect(commands[0].action).toBe(action);
+    await expect(save).toBeEnabled();
+    await reason.fill('Changed decision reason');
+    await save.click();
+    await expect.poll(() => commands.length).toBe(3);
+    expect(commands[2].payload.idempotencyKey).not.toBe(commands[0].payload.idempotencyKey);
+  });
+}
+
 test('reload recovery stores only a receipt and checks the server without resubmitting', async ({ page }) => {
   let posts = 0;
   let status = 'unresolved';

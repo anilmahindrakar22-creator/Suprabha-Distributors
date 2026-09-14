@@ -1,6 +1,7 @@
 import React, { useState } from 'react';
 import { createRoot } from 'react-dom/client';
 import { CustomerPriceBook } from '@/components/customer-price-book';
+import { PricingWorkspace } from '@/components/pricing-workspace';
 import { PricingOptions } from '@/components/pricing-options';
 import type { PricingLineResolution } from '@/lib/pricing-types';
 import '@/app/globals.css';
@@ -15,6 +16,7 @@ const row = {
 function Fixture() {
   const [entry, setEntry] = useState({ rate: '445', reason: '' });
   const parameters = new URLSearchParams(location.search);
+  if (parameters.get('view') === 'workspace') return <PricingWorkspace actorEmail="fixture@example.test" actorRole="management"/>;
   return <main className="mx-auto max-w-5xl p-4"><h1>Pricing test fixture</h1>{parameters.get('view') === 'order'
     ? <PricingOptions line={{ ...row, fixed: parameters.has('fixed') }} entry={entry} onChange={setEntry}/>
     : <CustomerPriceBook actorEmail="fixture@example.test" actorRole={parameters.get('role') || 'management'}/>}</main>;
