@@ -205,4 +205,22 @@ begin
     raise exception 'Rejected handoff altered order or snapshot';
   end if;
 end $billing$;
+do $recovery$
+declare response jsonb; payload jsonb := '{"idempotencyKey":"recovery-test-key-123","pricingAction":"apply_price_book"}';
+begin
+  insert into private.stockflow_command_results(actor_email,action,idempotency_key,request_hash,result)
+    values('book-admin@test.local','apply_price_book','recovery-test-key-123','hash','{"restrictedRate":720}');
+  response := public.stockflow_submission_recovery_gateway('price-book-test-key','book-admin@test.local','recover_order_submission',payload);
+  if response <> '{"status":"accepted"}'::jsonb then raise exception 'Recovery missing or leaked values'; end if;
+  response := public.stockflow_submission_recovery_gateway('price-book-test-key','book-accounts@test.local','recover_order_submission',payload);
+  if response <> '{"status":"unresolved"}'::jsonb then raise exception 'Cross-account recovery leaked'; end if;
+  begin
+    perform public.stockflow_submission_recovery_gateway('price-book-test-key','book-sales@test.local','recover_order_submission',payload);
+    raise exception 'Sales recovered restricted pricing';
+  exception when insufficient_privilege then null; end;
+  begin
+    perform public.stockflow_submission_recovery_gateway('wrong-secret','book-admin@test.local','recover_order_submission',payload);
+    raise exception 'Invalid gateway recovered pricing';
+  exception when insufficient_privilege then null; end;
+end $recovery$;
 rollback;

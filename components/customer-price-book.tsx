@@ -32,13 +32,47 @@ async function send(command: PricingCommand) {
 }
 
 export function CustomerPriceBook({ actorEmail, actorRole }: { actorEmail: string; actorRole: string }) {
+  const recoveryStorageKey = `stockflow:pricing-recovery:${actorEmail.trim().toLowerCase()}`;
+  const [recovery, setRecovery] = useState<Array<{ action: string; idempotencyKey: string }>>([]);
+  const [recoveryMessage, setRecoveryMessage] = useState('');
+  const [recoveryOwner, setRecoveryOwner] = useState('');
+  useEffect(() => {
+    const timer = window.setTimeout(() => {
+    try {
+      const saved = JSON.parse(sessionStorage.getItem(recoveryStorageKey) || '[]');
+      if (!Array.isArray(saved) || saved.some(value => !value || !['apply_price_book','apply_product_price_impact','set_standard_item_price'].includes(value.action) || !/^[0-9a-f-]{36}$/i.test(value.idempotencyKey))) throw new Error('Invalid recovery data');
+      setRecovery(saved);
+      setRecoveryOwner(recoveryStorageKey);
+    } catch { setRecoveryMessage('Pricing recovery references could not be read. Check recent pricing activity before saving again.'); }
+    }, 0);
+    return () => window.clearTimeout(timer);
+  }, [recoveryStorageKey]);
+  function saveReference(command: PricingCommand, remove = false) {
+    const saved = JSON.parse(sessionStorage.getItem(recoveryStorageKey) || '[]') as Array<{ action: string; idempotencyKey: string }>;
+    const remaining = saved.filter(value => value.idempotencyKey !== command.payload.idempotencyKey);
+    if (!remove) remaining.push({ action: command.action, idempotencyKey: command.payload.idempotencyKey });
+    sessionStorage.setItem(recoveryStorageKey, JSON.stringify(remaining));
+  }
+  async function checkRecovery(reference: { action: string; idempotencyKey: string }) {
+    try {
+      const result = await read<{ status: string }>(`/api/pricing?${new URLSearchParams({ recoveryKey: reference.idempotencyKey, pricingAction: reference.action })}`);
+      if (result.status !== 'accepted') { setRecoveryMessage('This save is still unresolved. Check again later; do not assume it failed or enter a replacement.'); return; }
+      const saved = JSON.parse(sessionStorage.getItem(recoveryStorageKey) || '[]') as typeof recovery;
+      sessionStorage.setItem(recoveryStorageKey, JSON.stringify(saved.filter(value => value.idempotencyKey !== reference.idempotencyKey)));
+      setRecovery(values => values.filter(value => value.idempotencyKey !== reference.idempotencyKey));
+      setRecoveryMessage('The server confirmed the earlier pricing save. Reload the price book to view current prices.');
+    } catch { setRecoveryMessage('Unable to check this save. The recovery reference has been kept; try again when connected.'); }
+  }
   // Memory only: never persist restricted commercial payloads in browser storage.
   const pendingCommands = useRef(new Map<string, PricingCommand>());
   async function mutate(command: PricingCommand) {
     const fingerprint = JSON.stringify([actorEmail, actorRole, command.action, { ...command.payload, idempotencyKey: undefined }]);
     const pending = pendingCommands.current.get(fingerprint) ?? command;
     pendingCommands.current.set(fingerprint, pending);
+    // Persist only an opaque receipt before sending; no rates, reasons or customer data.
+    saveReference(pending);
     const result = await send(pending);
+    saveReference(pending, true);
     pendingCommands.current.delete(fingerprint);
     return result;
   }
@@ -51,7 +85,7 @@ export function CustomerPriceBook({ actorEmail, actorRole }: { actorEmail: strin
   const [error, setError] = useState(''); const [notice, setNotice] = useState(''); const [revision, setRevision] = useState(0);
   const [reason, setReason] = useState(''); const [busy, setBusy] = useState(false);
   const [basePrice, setBasePrice] = useState(''); const [validFrom, setValidFrom] = useState('');
-  const canApprove = ['administrator', 'management'].includes(actorRole);
+  const canApprove = ['administrator', 'management'].includes(actorRole) && recovery.length === 0 && recoveryOwner === recoveryStorageKey;
 
   useEffect(() => {
     let active = true;
@@ -87,6 +121,8 @@ export function CustomerPriceBook({ actorEmail, actorRole }: { actorEmail: strin
 
   return <section className="rounded-2xl border border-[#dce7e5] bg-white p-4 sm:p-5">
     <h2 className="text-xl font-extrabold">Price book</h2>
+    {recovery.length > 0 ? <aside className="mt-3 rounded-lg bg-amber-50 p-3 text-sm"><p>An earlier pricing save needs checking before another approval. No prices were stored on this device.</p>{recovery.map(reference => <button key={reference.idempotencyKey} type="button" className={button} onClick={() => void checkRecovery(reference)}>Check earlier save {reference.idempotencyKey.slice(-6)}</button>)}</aside> : null}
+    {recoveryMessage ? <output className="mt-2 block text-sm">{recoveryMessage}</output> : null}
     <nav aria-label="Pricing workbench" className="mt-3 flex flex-wrap gap-2">{([['customer','Customer prices'],['impact','Purchase-cost review'],['base','Base / default prices']] as const).map(([value,label]) => <button key={value} type="button" aria-pressed={mode === value} className={`${button} ${mode === value ? 'bg-[#e8f5ef]' : ''}`} onClick={() => { setMode(value); setSelected(''); setQuery(''); setPage(null); setOffset(0); setError(''); setNotice(''); }}>{label}</button>)}</nav>
     <div className="relative mt-4 max-w-xl"><label className="text-sm font-bold">{mode === 'customer' ? 'Select customer' : 'Select product'}<input className={field} value={query} placeholder="Type at least two letters" onChange={(event) => { setQuery(event.target.value); setSelected(''); setPage(null); }}/></label>{matches.length > 0 ? <div className="absolute z-20 w-full rounded-lg border bg-white p-1 shadow-lg">{matches.map((item) => <button key={item.id} type="button" className="block min-h-11 w-full rounded px-3 text-left text-sm hover:bg-[#e8f5ef]" onClick={() => { setSelected(item.id); setQuery(item.name); setOffset(0); }}>{item.name}</button>)}</div> : null}</div>
     {mode === 'customer' && selected ? <nav aria-label="Customer price categories" className="mt-4 flex flex-wrap gap-2">{[['purchased','Purchased'],['exceptions','Exceptions / special prices'],['all','All products']].map(([value,label]) => <button key={value} type="button" className={button} aria-pressed={tab === value} onClick={() => { setTab(value); setOffset(0); }}>{label}</button>)}</nav> : null}

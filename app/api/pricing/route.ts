@@ -20,6 +20,12 @@ export async function GET(request: Request) {
   try {
     const email = await actorEmail();
     const parameters = new URL(request.url).searchParams;
+    if (parameters.has('recoveryKey')) {
+      const idempotencyKey = parameters.get('recoveryKey') || '';
+      const pricingAction = parameters.get('pricingAction') || '';
+      if (!/^[0-9a-f-]{36}$/i.test(idempotencyKey) || !['apply_price_book', 'apply_product_price_impact', 'set_standard_item_price'].includes(pricingAction)) return failure('Invalid recovery reference', 400);
+      return Response.json(await callOrderGateway(email, 'recover_order_submission', { idempotencyKey, pricingAction }), { headers: privateHeaders });
+    }
     if (parameters.get('book') === '1' || parameters.get('impact') === '1') {
       const customerId = parameters.get('customerId');
       const tallyKey = parameters.get('tallyKey');

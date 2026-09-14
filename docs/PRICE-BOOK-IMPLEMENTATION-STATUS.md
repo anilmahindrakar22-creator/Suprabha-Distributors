@@ -53,11 +53,14 @@ Validation is batched to conserve usage; this checkpoint records remaining relea
   generic evidence-hash gate covers those sources but the transition regression changes cost.
 - Strengthen base-price preview UI (current rate, effective dates and margin evidence) and
   show accepted customer decisions clearly; consolidate older contract controls into exceptions.
-- Reload/unmount recovery for uncertain pricing responses remains pending. While the price
-  book stays mounted, row/base/bulk retries now retain the original command and key in memory,
-  scoped by actor and role; changed inputs use a new key. No commercial payload is written
-  to browser storage. Three targeted browser regressions reproduced the old defect and pass
-  after the fix; targeted lint and typecheck also pass. Other pricing forms are unchanged.
+- Reload recovery now retains only opaque action/key receipts in account-scoped session
+  storage. The existing recovery gateway checks the same actor's committed command and
+  returns status only, never commercial results. An unresolved receipt blocks approvals;
+  absence is not treated as failure. Five targeted browser recovery/retry checks and the
+  pricing database replay/integrity checks pass. In-memory unchanged retries retain their
+  original payload/key. No automatic resubmission or persisted price values are introduced.
+  A genuinely unresolved save needs operational reconciliation; closing the browser session
+  can lose the receipt. Other pricing forms are unchanged.
 - Performance review of product impact aggregation: responses are paginated, but server-side
   preview still calculates all buyers; approval is currently bounded to 1,000 customers.
 - Reliable volume evidence is absent. Monthly GP values are explicitly unavailable, and

@@ -1,5 +1,46 @@
 import { test, expect } from '@playwright/test';
 
+test('reload recovery stores only a receipt and checks the server without resubmitting', async ({ page }) => {
+  let posts = 0;
+  let status = 'unresolved';
+  await page.route('**/api/orders?customers=1', route => route.fulfill({ json: { customers: [{ id: customerId, name: 'Test Laboratory' }] } }));
+  await page.route('**/api/pricing**', async route => {
+    if (route.request().method() === 'POST') { posts++; await route.abort('failed'); }
+    else if (route.request().url().includes('recoveryKey=')) await route.fulfill({ json: { status } });
+    else await route.fulfill({ json: { rows: [row], offset: 0, hasMore: false } });
+  });
+  await page.goto('/');
+  await page.getByLabel('Select customer').fill('Test');
+  await page.getByRole('button', { name: 'Test Laboratory', exact: true }).click();
+  await page.getByText('Choose a price', { exact: true }).click();
+  await page.getByLabel('Decision reason').fill('Sensitive commercial reason');
+  await page.getByRole('button', { name: 'Recommended ₹445.00' }).click();
+  await expect(page.getByText('Failed to fetch', { exact: true })).toBeVisible();
+  const stored = await page.evaluate(() => JSON.parse(sessionStorage.getItem('stockflow:pricing-recovery:fixture@example.test') || '[]'));
+  expect(Object.keys(stored[0]).sort()).toEqual(['action', 'idempotencyKey']);
+  await page.reload();
+  await page.getByRole('button', { name: /Check earlier save/ }).click();
+  await expect(page.getByText(/This save is still unresolved/)).toBeVisible();
+  status = 'accepted';
+  await page.getByRole('button', { name: /Check earlier save/ }).click();
+  await expect(page.getByText(/server confirmed the earlier pricing save/)).toBeVisible();
+  expect(posts).toBe(1);
+  expect(await page.evaluate(() => sessionStorage.getItem('stockflow:pricing-recovery:fixture@example.test'))).toBe('[]');
+});
+
+test('recovery ignores another account receipts and keeps references on network failure', async ({ page }) => {
+  await page.goto('/');
+  await page.evaluate(() => sessionStorage.setItem('stockflow:pricing-recovery:other@example.test', JSON.stringify([{ action: 'apply_price_book', idempotencyKey: '11111111-1111-4111-8111-111111111111' }])));
+  await page.reload();
+  await expect(page.getByRole('button', { name: /Check earlier save/ })).toHaveCount(0);
+  await page.evaluate(() => sessionStorage.setItem('stockflow:pricing-recovery:fixture@example.test', sessionStorage.getItem('stockflow:pricing-recovery:other@example.test')!));
+  await page.route('**/api/pricing**', route => route.abort('failed'));
+  await page.reload();
+  await page.getByRole('button', { name: /Check earlier save/ }).click();
+  await expect(page.getByText(/recovery reference has been kept/)).toBeVisible();
+  await expect(page.getByRole('button', { name: /Check earlier save/ })).toBeVisible();
+});
+
 for (const mode of ['customer', 'base', 'impact'] as const) {
   test(`${mode} save retries preserve the command after a lost response`, async ({ page }) => {
     const commands: { payload: { idempotencyKey: string; reason: string } }[] = [];
