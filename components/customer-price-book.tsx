@@ -1,6 +1,6 @@
 'use client';
 
-import { useEffect, useState } from 'react';
+import { useEffect, useRef, useState } from 'react';
 import { loadOrderCatalog, loadOrderCustomers } from '@/lib/order-capture-masters';
 import type { CatalogItem, CustomerDirectoryEntry } from '@/lib/order-types';
 import type { PricingCommand } from '@/lib/pricing-types';
@@ -24,7 +24,7 @@ async function read<T>(url: string, signal?: AbortSignal): Promise<T> {
   if (!response.ok) throw new Error(data.error || 'Pricing could not load');
   return data;
 }
-async function mutate(command: PricingCommand) {
+async function send(command: PricingCommand) {
   const response = await fetch('/api/pricing', { method: 'POST', headers: { 'content-type': 'application/json' }, body: JSON.stringify(command) });
   const data = await response.json() as { error?: string; applied?: number; skipped?: number };
   if (!response.ok) throw new Error(data.error || 'Decision could not be saved');
@@ -32,6 +32,16 @@ async function mutate(command: PricingCommand) {
 }
 
 export function CustomerPriceBook({ actorEmail, actorRole }: { actorEmail: string; actorRole: string }) {
+  // Memory only: never persist restricted commercial payloads in browser storage.
+  const pendingCommands = useRef(new Map<string, PricingCommand>());
+  async function mutate(command: PricingCommand) {
+    const fingerprint = JSON.stringify([actorEmail, actorRole, command.action, { ...command.payload, idempotencyKey: undefined }]);
+    const pending = pendingCommands.current.get(fingerprint) ?? command;
+    pendingCommands.current.set(fingerprint, pending);
+    const result = await send(pending);
+    pendingCommands.current.delete(fingerprint);
+    return result;
+  }
   const [mode, setMode] = useState<'customer' | 'impact' | 'base'>('customer');
   const [customers, setCustomers] = useState<CustomerDirectoryEntry[]>([]);
   const [products, setProducts] = useState<CatalogItem[]>([]);
@@ -85,11 +95,11 @@ export function CustomerPriceBook({ actorEmail, actorRole }: { actorEmail: strin
     {loading ? <output className="mt-4 block text-sm">Calculating from current pricing evidence…</output> : null}
     {mode === 'base' ? <div className="mt-4 max-w-2xl space-y-3"><p className="text-xs text-[#61777a]">Current cost {money(page?.baseEvidence?.currentCost ?? null)} · Target-margin price {money(page?.baseEvidence?.target ?? null)}</p><p className="text-sm text-[#61777a]">For new customer/product combinations. Existing customer history and fixed agreements take priority.</p><label className="block text-sm font-bold">Base selling price ₹<input type="number" min="0.01" max="100000000" step="0.01" className={field} value={basePrice} onChange={(event) => setBasePrice(event.target.value)}/></label><label className="block text-sm font-bold">Effective from<input type="date" className={field} value={validFrom} onChange={(event) => setValidFrom(event.target.value)}/></label><label className="block text-sm font-bold">Reason<input className={field} maxLength={1000} value={reason} onChange={(event) => setReason(event.target.value)}/></label><button type="button" className={button} disabled={!canApprove || busy || !page?.previewHash || !selected || Number(basePrice)<=0 || !basePrice || !validFrom || reason.trim().length<3} onClick={() => void saveBase()}>Approve base price</button><p className="text-xs text-[#61777a]">Management approval required. Margin is checked again when the price is used.</p></div> : null}
     {mode === 'impact' && page ? <div className="mt-4 space-y-3 rounded-xl bg-[#f4f8f6] p-4"><p className="text-sm"><b>{page.customerCount}</b> customers · <b>{page.protectedCount}</b> fixed agreements · <b>{page.continuityCount}</b> continuity · <b>{page.belowMinimumCount}</b> below minimum · <b>{page.reviewCount}</b> require review · <b>{page.targetAboveContinuityCount}</b> target above continuity · <b>{page.materialIncreaseCount}</b> material increases</p><p className="text-xs text-[#61777a]">Ranked by absolute per-unit customer impact. Monthly GP: current, continuity, recommended and incremental estimates are unavailable until reliable buying volume is supplied. Approval applies to all eligible customers for this product, including later pages; fixed and missing-evidence rows are skipped.</p><label className="block text-sm font-bold">Management reason<input className={field} maxLength={1000} value={reason} onChange={(event) => setReason(event.target.value)}/></label><div className="flex flex-wrap gap-2"><button type="button" className={button} disabled={!canApprove || busy || reason.trim().length<3} onClick={() => void apply('continuity')}>Pass through cost increase</button><button type="button" className={button} disabled={!canApprove || busy || reason.trim().length<3} onClick={() => void apply('recommended')}>Apply recommended prices</button></div></div> : null}
-    {page && mode !== 'base' ? <><div className="mt-4 space-y-3">{page.rows.map((row) => <PriceRow key={`${row.customerId}:${row.tallyKey}:${row.evidenceHash}`} row={row} customerMode={mode === 'customer'} canApprove={canApprove} onChanged={() => setRevision((value) => value+1)}/>)}{!page.rows.length ? <p className="py-4 text-sm text-[#61777a]">No eligible items in this view. Tally history may still need a read-only sync.</p> : null}</div><div className="mt-4 flex items-center justify-between"><button type="button" className={button} disabled={!offset || loading} onClick={() => setOffset((value) => Math.max(0,value-50))}>Previous</button><span className="text-xs">Page {offset/50+1}</span><button type="button" className={button} disabled={!page.hasMore || loading} onClick={() => setOffset((value) => value+50)}>Next</button></div></> : null}
+    {page && mode !== 'base' ? <><div className="mt-4 space-y-3">{page.rows.map((row) => <PriceRow key={`${row.customerId}:${row.tallyKey}:${row.evidenceHash}`} row={row} customerMode={mode === 'customer'} canApprove={canApprove} mutate={mutate} onChanged={() => setRevision((value) => value+1)}/>)}{!page.rows.length ? <p className="py-4 text-sm text-[#61777a]">No eligible items in this view. Tally history may still need a read-only sync.</p> : null}</div><div className="mt-4 flex items-center justify-between"><button type="button" className={button} disabled={!offset || loading} onClick={() => setOffset((value) => Math.max(0,value-50))}>Previous</button><span className="text-xs">Page {offset/50+1}</span><button type="button" className={button} disabled={!page.hasMore || loading} onClick={() => setOffset((value) => value+50)}>Next</button></div></> : null}
   </section>;
 }
 
-function PriceRow({ row, customerMode, canApprove, onChanged }: { row: Row; customerMode: boolean; canApprove: boolean; onChanged: () => void }) {
+function PriceRow({ row, customerMode, canApprove, onChanged, mutate }: { row: Row; customerMode: boolean; canApprove: boolean; onChanged: () => void; mutate: typeof send }) {
   const [reason,setReason] = useState(''); const [custom,setCustom] = useState(''); const [busy,setBusy] = useState(false); const [message,setMessage] = useState('');
   async function accept(choice: 'continuity'|'recommended'|'custom') {
     setBusy(true); setMessage('');

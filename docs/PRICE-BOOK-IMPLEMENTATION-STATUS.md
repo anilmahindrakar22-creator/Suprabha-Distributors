@@ -1,6 +1,6 @@
 # Price book implementation checkpoint — 14 September 2026
 
-Branch: feature/customer-pricing-engine. HEAD: 4579377. Changes remain uncommitted and unpublished.
+Branch: feature/customer-pricing-engine. Pricing checkpoint committed as f0d167f; unpublished.
 Approved requirements: CUSTOMER-PRICE-BOOK-AND-BASE-PRICE.md.
 Validation is batched to conserve usage; this checkpoint records remaining release work explicitly.
 
@@ -53,7 +53,11 @@ Validation is batched to conserve usage; this checkpoint records remaining relea
   generic evidence-hash gate covers those sources but the transition regression changes cost.
 - Strengthen base-price preview UI (current rate, effective dates and margin evidence) and
   show accepted customer decisions clearly; consolidate older contract controls into exceptions.
-- Persist a retry key/payload across uncertain browser mutation responses.
+- Reload/unmount recovery for uncertain pricing responses remains pending. While the price
+  book stays mounted, row/base/bulk retries now retain the original command and key in memory,
+  scoped by actor and role; changed inputs use a new key. No commercial payload is written
+  to browser storage. Three targeted browser regressions reproduced the old defect and pass
+  after the fix; targeted lint and typecheck also pass. Other pricing forms are unchanged.
 - Performance review of product impact aggregation: responses are paginated, but server-side
   preview still calculates all buyers; approval is currently bounded to 1,000 customers.
 - Reliable volume evidence is absent. Monthly GP values are explicitly unavailable, and
