@@ -9,6 +9,9 @@ const loadOrderWorkspace = () => import('./order-workspace').then((module) => ({
 const OrderWorkspace = lazy(loadOrderWorkspace);
 const ServiceWorkspace = lazy(() => import('./service-workspace').then((module) => ({ default: module.ServiceWorkspace })));
 const UserManagement = lazy(() => import('./user-management').then((module) => ({ default: module.UserManagement })));
+const PricingWorkspace = lazy(() => import('./pricing-workspace').then((module) => ({ default: module.PricingWorkspace })));
+
+type Surface = 'stock' | 'orders' | 'pricing' | 'service' | 'users';
 
 async function warmOrderData(actorEmail: string) {
   const { loadOrderBootstrap } = await import('@/lib/order-bootstrap-cache');
@@ -20,7 +23,7 @@ function SectionLoading() {
 }
 
 export function StockFlowFrame({ actorEmail, actorRole }: { actorEmail: string; actorRole: string }) {
-  const [surface, setSurface] = useState<'stock' | 'orders' | 'service' | 'users'>('stock');
+  const [surface, setSurface] = useState<Surface>('stock');
   const [orderFilter, setOrderFilter] = useState('open');
   const [deviceNotice, setDeviceNotice] = useState('');
 
@@ -68,7 +71,7 @@ export function StockFlowFrame({ actorEmail, actorRole }: { actorEmail: string; 
     return () => window.removeEventListener('message', receiveDashboardNavigation);
   }, []);
 
-  function openSurface(item: 'stock' | 'orders' | 'service' | 'users') {
+  function openSurface(item: Surface) {
     if (item === 'orders' && surface !== 'orders') setOrderFilter(defaultOrderFilterForRole(actorRole));
     setSurface(item);
   }
@@ -88,8 +91,8 @@ export function StockFlowFrame({ actorEmail, actorRole }: { actorEmail: string; 
             <p className="hidden text-xs text-[#6b7e81] sm:block">Suprabha Distributors</p>
           </div>
         </div>
-        <nav aria-label="Application sections" className="flex rounded-xl bg-[#edf3f1] p-1">
-          {(['stock', 'orders', ...(['administrator', 'operations', 'sales', 'management'].includes(actorRole) ? ['service' as const] : []), ...(actorRole === 'administrator' ? ['users' as const] : [])] as const).map((item) => (
+        <nav aria-label="Application sections" className="flex max-w-[calc(100vw-5rem)] overflow-x-auto rounded-xl bg-[#edf3f1] p-1">
+          {(['stock', 'orders', ...(['administrator', 'management', 'accounts'].includes(actorRole) ? ['pricing' as const] : []), ...(['administrator', 'operations', 'sales', 'management'].includes(actorRole) ? ['service' as const] : []), ...(actorRole === 'administrator' ? ['users' as const] : [])] as const).map((item) => (
             <button
               key={item}
               type="button"
@@ -98,7 +101,7 @@ export function StockFlowFrame({ actorEmail, actorRole }: { actorEmail: string; 
               onPointerEnter={item === 'orders' ? warmOrders : undefined}
               onPointerDown={item === 'orders' ? warmOrders : undefined}
               aria-pressed={surface === item}
-              className={`min-h-10 rounded-lg px-4 text-sm font-bold capitalize transition ${
+              className={`min-h-10 shrink-0 rounded-lg px-3 text-sm font-bold capitalize transition sm:px-4 ${
                 surface === item
                   ? 'bg-white text-[#092f36] shadow-sm'
                   : 'text-[#61777a] hover:text-[#092f36]'
@@ -120,6 +123,8 @@ export function StockFlowFrame({ actorEmail, actorRole }: { actorEmail: string; 
           />
         ) : surface === 'orders' ? (
           <Suspense fallback={<SectionLoading />}><OrderWorkspace key={orderFilter} actorEmail={actorEmail} initialStatus={orderFilter} /></Suspense>
+        ) : surface === 'pricing' ? (
+          <Suspense fallback={<SectionLoading />}><PricingWorkspace actorEmail={actorEmail} actorRole={actorRole} /></Suspense>
         ) : surface === 'service' ? (
           <Suspense fallback={<SectionLoading />}><ServiceWorkspace /></Suspense>
         ) : <Suspense fallback={<SectionLoading />}><UserManagement /></Suspense>}

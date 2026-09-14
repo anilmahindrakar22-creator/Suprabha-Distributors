@@ -5,16 +5,16 @@ const id = '11111111-1111-4111-8111-111111111111';
 
 describe('pricing API contracts', () => {
   it('accepts bounded whole pricing decisions and exception actions', () => {
-    expect(validatePricingCommand({ action: 'submit_order_pricing', payload: { orderId: id, expectedVersion: 2, idempotencyKey: '1234567890abcdef', lines: [{ lineId: id, enteredRate: 720, reason: 'Current agreed rate' }] } })?.action).toBe('submit_order_pricing');
+    expect(validatePricingCommand({ action: 'submit_order_pricing', payload: { orderId: id, expectedVersion: 2, idempotencyKey: '1234567890abcdef', lines: [{ lineId: id, evidenceHash: 'a'.repeat(64), enteredRate: 720, reason: 'Current agreed rate' }] } })?.action).toBe('submit_order_pricing');
     expect(validatePricingCommand({ action: 'approve_price_exception', payload: { exceptionId: id, expectedVersion: 1, reason: 'Approved tender rate', idempotencyKey: 'abcdef1234567890' } })?.action).toBe('approve_price_exception');
     expect(validatePricingCommand({ action: 'reject_price_exception', payload: { exceptionId: id, expectedVersion: 1, reason: 'Margin is too low', idempotencyKey: 'abcdef1234567890' } })?.action).toBe('reject_price_exception');
   });
 
   it('rejects malformed IDs, stale versions, missing reasons, and unsafe rates', () => {
-    const valid = { action: 'submit_order_pricing', payload: { orderId: id, expectedVersion: 2, idempotencyKey: '1234567890abcdef', lines: [{ lineId: id, enteredRate: 720 }] } };
+    const valid = { action: 'submit_order_pricing', payload: { orderId: id, expectedVersion: 2, idempotencyKey: '1234567890abcdef', lines: [{ lineId: id, evidenceHash: 'a'.repeat(64), enteredRate: 720 }] } };
     expect(validatePricingCommand({ ...valid, payload: { ...valid.payload, orderId: 'bad' } })).toBeNull();
     expect(validatePricingCommand({ ...valid, payload: { ...valid.payload, expectedVersion: 0 } })).toBeNull();
-    expect(validatePricingCommand({ ...valid, payload: { ...valid.payload, lines: [{ lineId: id, enteredRate: 0 }] } })).toBeNull();
+    expect(validatePricingCommand({ ...valid, payload: { ...valid.payload, lines: [{ lineId: id, evidenceHash: 'a'.repeat(64), enteredRate: 0 }] } })).toBeNull();
     expect(validatePricingCommand({ action: 'approve_price_exception', payload: { exceptionId: id, expectedVersion: 1, reason: '', idempotencyKey: 'abcdef1234567890' } })).toBeNull();
   });
 

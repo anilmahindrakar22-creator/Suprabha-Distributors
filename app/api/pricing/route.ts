@@ -20,6 +20,15 @@ export async function GET(request: Request) {
   try {
     const email = await actorEmail();
     const parameters = new URL(request.url).searchParams;
+    if (parameters.get('book') === '1' || parameters.get('impact') === '1') {
+      const customerId = parameters.get('customerId');
+      const tallyKey = parameters.get('tallyKey');
+      const offset = Number(parameters.get('offset') || 0);
+      const tab = parameters.get('tab') || 'purchased';
+      if (!validPriceContractLookup(customerId, tallyKey) || !Number.isInteger(offset) || offset < 0 || offset > 100000 || !['purchased','exceptions','all'].includes(tab) || (parameters.get('book') === '1' ? !customerId : !tallyKey)) return failure('Invalid pricing filters', 400);
+      return Response.json(await callOrderGateway(email, parameters.get('book') === '1' ? 'get_customer_price_book' : 'get_product_price_impact', { customerId, tallyKey, offset, tab, search: (parameters.get('search') || '').slice(0, 200) }), { headers: privateHeaders });
+    }
+    if (parameters.get('base') === '1') return Response.json(await callOrderGateway(email, 'list_standard_item_prices', {}), { headers: privateHeaders });
     const orderId = parameters.get('orderId');
     const pricingDate = parameters.get('pricingDate');
     if (parameters.get('policies') === '1') {

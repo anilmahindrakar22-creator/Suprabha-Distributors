@@ -55,6 +55,7 @@ try {
   $lateTriggers = 'create trigger stockflow_delivery_exceptions_no_delete before delete on private.stockflow_delivery_exceptions for each row execute function private.prevent_business_delete(); create trigger stockflow_equipment_installations_no_delete before delete on private.stockflow_equipment_installations for each row execute function private.prevent_business_delete();'
   Invoke-DatabaseCommand 'psql' @('-X','-q','-v','ON_ERROR_STOP=1','-d',$database,'-c',$lateTriggers)
   Invoke-DatabaseCommand 'psql' @('-X','-q','-v','ON_ERROR_STOP=1','-d',$database,'-f',(Join-Path $repository 'supabase/tests/pricing_engine_integrity.sql'))
+  Invoke-DatabaseCommand 'psql' @('-X','-q','-v','ON_ERROR_STOP=1','-d',$database,'-f',(Join-Path $repository 'supabase/tests/customer_price_book_integrity.sql'))
   Write-Output 'PASS: complete migration replay and pricing ACID tests'
 } finally {
   if ($databaseCreated) { & dropdb --if-exists $database | Out-Null }

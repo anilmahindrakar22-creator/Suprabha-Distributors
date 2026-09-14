@@ -44,6 +44,7 @@ export type PricingPolicy = {
 
 export type PricingResolutionInput = {
   pricingDate: string;
+  basePrice?: ApprovedPriceContract;
   contracts: ApprovedPriceContract[];
   sellingHistory: TallySellingEvidence[];
   latestCost: PurchaseCostEvidence | null;
@@ -52,11 +53,15 @@ export type PricingResolutionInput = {
 };
 
 export type PricingResolution = {
-  resolution: 'APPROVED_CONTRACT_PRICE' | 'LAST_TALLY_INVOICE_PRICE' | 'NO_PRICE_HISTORY' | 'PRICE_REVIEW_REQUIRED' | 'PRICE_EXCEPTION';
+  continuityPrice: number | null;
+  targetMarginPrice: number | null;
+  recommendedPrice: number | null;
+  recommendationReason: string;
+  resolution: 'STANDARD_ITEM_PRICE' | 'APPROVED_CONTRACT_PRICE' | 'LAST_TALLY_INVOICE_PRICE' | 'NO_PRICE_HISTORY' | 'PRICE_REVIEW_REQUIRED' | 'PRICE_EXCEPTION';
   guardrail: 'PRICE_OK' | 'COST_INCREASE' | 'PRICE_REVIEW_REQUIRED';
   proposedRate: number | null;
   source: {
-    type: 'APPROVED_CONTRACT' | 'LAST_TALLY_INVOICE' | 'NONE';
+    type: 'STANDARD_ITEM_PRICE' | 'APPROVED_CONTRACT' | 'LAST_TALLY_INVOICE' | 'NONE';
     reference: string | null;
     date: string | null;
     version: string | null;
@@ -82,7 +87,7 @@ export type PricingResolution = {
     roundingRuleVersion: string;
     costSourceVersion: string;
   } | null;
-  warnings: Array<'PURCHASE_PRICE_INCREASED' | 'MISSING_PURCHASE_COST' | 'BELOW_MINIMUM_MARGIN' | 'LOSS_MAKING' | 'NO_ELIGIBLE_PRICE_HISTORY'>;
+  warnings: Array<'MISSING_COMPARABLE_HISTORIC_COST' | 'AMBIGUOUS_SALES_HISTORY' | 'PURCHASE_PRICE_INCREASED' | 'MISSING_PURCHASE_COST' | 'BELOW_MINIMUM_MARGIN' | 'LOSS_MAKING' | 'NO_ELIGIBLE_PRICE_HISTORY'>;
 };
 
 export const PRICING_ROLES = new Set<PricingRole>(['administrator', 'management', 'accounts']);
@@ -109,7 +114,7 @@ function grossMarginPercent(price: number, cost: number) {
 
 function currentContract(contracts: ApprovedPriceContract[], pricingDate: string) {
   const valid = contracts.filter((contract) =>
-    contract.status === 'approved'
+    (contract.status === 'approved' || contract.status === 'superseded')
     && Number.isFinite(contract.price)
     && contract.price > 0
     && validDate(contract.validFrom)
@@ -122,12 +127,14 @@ function currentContract(contracts: ApprovedPriceContract[], pricingDate: string
 
 function eligibleSellingHistory(history: TallySellingEvidence[], pricingDate: string) {
   return history
-    .filter((entry) => Number.isFinite(entry.rate) && entry.rate > 0 && validDate(entry.invoiceDate) && entry.invoiceDate <= pricingDate && !entry.exceptional)
+    .filter((entry) => Number.isFinite(entry.rate) && entry.rate > 0 && validDate(entry.invoiceDate) && entry.invoiceDate <= pricingDate && !entry.exceptional && !entry.exceptionType)
     .sort((left, right) => right.invoiceDate.localeCompare(left.invoiceDate) || right.sourceId.localeCompare(left.sourceId));
 }
 
 export function resolveCustomerPrice(input: PricingResolutionInput): PricingResolution {
   if (!validDate(input.pricingDate)) throw new Error('A valid pricing date is required');
+  const eligibleCost = (cost: PurchaseCostEvidence | null) => cost && Number.isFinite(cost.amount) && cost.amount >= 0 && validDate(cost.effectiveAt) && cost.effectiveAt <= input.pricingDate ? cost : null;
+  input = { ...input, latestCost: eligibleCost(input.latestCost), previousCost: eligibleCost(input.previousCost) };
   const { policy } = input;
   if (!Number.isFinite(policy.minimumGrossMarginPercent) || policy.minimumGrossMarginPercent < -100 || policy.minimumGrossMarginPercent >= 100) throw new Error('Invalid minimum margin policy');
   if (policy.targetGrossMarginPercent !== null && (!Number.isFinite(policy.targetGrossMarginPercent) || policy.targetGrossMarginPercent < 0 || policy.targetGrossMarginPercent >= 100)) throw new Error('Invalid target margin policy');
@@ -136,24 +143,41 @@ export function resolveCustomerPrice(input: PricingResolutionInput): PricingReso
   const contract = currentContract(input.contracts, input.pricingDate);
   const eligibleHistory = eligibleSellingHistory(input.sellingHistory, input.pricingDate);
   const lastSale = eligibleHistory[0] ?? null;
-  const proposedRate = contract?.price ?? lastSale?.rate ?? null;
+  const basePrice = input.basePrice ? currentContract([input.basePrice], input.pricingDate) : null;
+  const ambiguous = !!lastSale && eligibleHistory.some((sale) => sale.invoiceDate === lastSale.invoiceDate && sale.rate !== lastSale.rate);
+  const comparable = input.latestCost && input.previousCost && input.latestCost.kind === input.previousCost.kind
+    && input.latestCost.effectiveAt <= input.pricingDate && input.previousCost.effectiveAt <= (lastSale?.invoiceDate || input.pricingDate);
+  const continuityPrice = contract ? null : lastSale
+    ? comparable && !ambiguous ? roundMoney(lastSale.rate + Math.max(input.latestCost!.amount - input.previousCost!.amount, 0)) : null
+    : basePrice && input.latestCost ? basePrice.price : null;
+  const targetMarginPrice = input.latestCost && input.latestCost.effectiveAt <= input.pricingDate && policy.targetGrossMarginPercent !== null
+    ? roundUp(input.latestCost.amount / (1 - policy.targetGrossMarginPercent / 100), policy.roundingIncrement) : null;
+  const proposedRate = contract?.price ?? (continuityPrice == null ? null : Math.max(continuityPrice, targetMarginPrice ?? continuityPrice));
+  const recommendationReason = contract ? 'Fixed agreement retained; review margin before changing its terms.'
+    : proposedRate == null ? 'Reliable pricing evidence is incomplete; review is required.'
+    : !lastSale ? 'No genuine customer history; use the governed base price checked against target margin.'
+    : targetMarginPrice != null && targetMarginPrice > continuityPrice! ? 'Target-margin price exceeds continuity and improves gross profit.'
+    : input.latestCost && input.previousCost && input.latestCost.amount > input.previousCost.amount ? 'Pass through the absolute cost increase while preserving established customer economics.'
+    : 'Preserve the last customer rate; lower purchase cost does not trigger a price reduction.';
   const source = contract
     ? { type: 'APPROVED_CONTRACT' as const, reference: contract.id, date: contract.validFrom, version: String(contract.version) }
     : lastSale
       ? { type: 'LAST_TALLY_INVOICE' as const, reference: lastSale.invoiceReference, date: lastSale.invoiceDate, version: lastSale.sourceId }
-      : { type: 'NONE' as const, reference: null, date: null, version: null };
+      : basePrice ? { type: 'STANDARD_ITEM_PRICE' as const, reference: basePrice.id, date: basePrice.validFrom, version: String(basePrice.version) } : { type: 'NONE' as const, reference: null, date: null, version: null };
 
   const recentRates = eligibleHistory.slice(0, 5);
   const warnings: PricingResolution['warnings'] = [];
+  if (lastSale && !comparable) warnings.push('MISSING_COMPARABLE_HISTORIC_COST');
+  if (ambiguous) warnings.push('AMBIGUOUS_SALES_HISTORY');
   if (proposedRate === null) warnings.push('NO_ELIGIBLE_PRICE_HISTORY');
   if (input.latestCost === null) warnings.push('MISSING_PURCHASE_COST');
 
-  const costChangeAmount = input.latestCost && input.previousCost ? roundMoney(input.latestCost.amount - input.previousCost.amount) : null;
-  const costChangePercent = input.latestCost && input.previousCost && input.previousCost.amount > 0
-    ? roundMoney(((input.latestCost.amount - input.previousCost.amount) / input.previousCost.amount) * 100)
+  const costChangeAmount = comparable ? roundMoney(input.latestCost!.amount - input.previousCost!.amount) : null;
+  const costChangePercent = comparable && input.previousCost!.amount > 0
+    ? roundMoney(((input.latestCost!.amount - input.previousCost!.amount) / input.previousCost!.amount) * 100)
     : null;
   const currentMargin = proposedRate !== null && input.latestCost ? grossMarginPercent(proposedRate, input.latestCost.amount) : null;
-  const previousMargin = proposedRate !== null && input.previousCost ? grossMarginPercent(proposedRate, input.previousCost.amount) : null;
+  const previousMargin = lastSale && input.previousCost ? grossMarginPercent(lastSale.rate, input.previousCost.amount) : null;
   const erosion = currentMargin !== null && previousMargin !== null ? roundMoney(currentMargin - previousMargin) : null;
   const increased = costChangeAmount !== null && costChangeAmount > 0;
   if (increased) warnings.push('PURCHASE_PRICE_INCREASED');
@@ -168,7 +192,7 @@ export function resolveCustomerPrice(input: PricingResolutionInput): PricingReso
     : increased ? 'COST_INCREASE' : 'PRICE_OK';
 
   let suggestion: PricingResolution['suggestion'] = null;
-  if (increased && input.latestCost && policy.targetGrossMarginPercent !== null) {
+  if (input.latestCost && input.latestCost.effectiveAt <= input.pricingDate && policy.targetGrossMarginPercent !== null) {
     const unrounded = input.latestCost.amount / (1 - policy.targetGrossMarginPercent / 100);
     suggestion = {
       amount: roundUp(unrounded, policy.roundingIncrement),
@@ -184,9 +208,10 @@ export function resolveCustomerPrice(input: PricingResolutionInput): PricingReso
     ? input.sellingHistory.length === 0 ? 'NO_PRICE_HISTORY' : 'PRICE_REVIEW_REQUIRED'
     : guardrail === 'PRICE_REVIEW_REQUIRED'
       ? 'PRICE_REVIEW_REQUIRED'
-      : contract ? 'APPROVED_CONTRACT_PRICE' : 'LAST_TALLY_INVOICE_PRICE';
+      : contract ? 'APPROVED_CONTRACT_PRICE' : lastSale ? 'LAST_TALLY_INVOICE_PRICE' : 'STANDARD_ITEM_PRICE';
 
   return {
+    continuityPrice, targetMarginPrice, recommendedPrice: proposedRate, recommendationReason,
     resolution,
     guardrail,
     proposedRate: proposedRate === null ? null : roundMoney(proposedRate),

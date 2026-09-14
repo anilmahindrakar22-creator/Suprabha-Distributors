@@ -1,5 +1,13 @@
 -- Run only against a fully migrated non-production database. Self-contained and rolled back.
 begin;
+-- Existing command scenarios include the required preview fingerprint.
+create function pg_temp.pricing_gateway(k text,e text,a text,p jsonb) returns jsonb language plpgsql as $fn$
+begin
+  if a='submit_order_pricing' then
+    p:=jsonb_set(p,'{lines}',(select jsonb_agg(line||jsonb_build_object('evidenceHash',private.stockflow_resolve_pricing_line((line->>'lineId')::uuid,coalesce((p->>'pricingDate')::date,current_date))->>'evidenceHash')) from jsonb_array_elements(p->'lines') line));
+  end if;
+  return public.stockflow_pricing_gateway(k,e,a,p);
+end $fn$;
 
 update private.stockflow_gateway_config
 set secret_sha256=encode(extensions.digest('stockflow-pricing-test','sha256'),'hex')
@@ -36,19 +44,19 @@ begin
   values('PRICING-ITEM-1',310,'purchase_price','2026-08-01','PUR-310','cost:310','cost-version:310') returning id into v_cost_id;
 
   begin
-    perform public.stockflow_pricing_gateway('stockflow-pricing-test','pricing-sales@stockflow.local','get_order_pricing',jsonb_build_object('orderId',v_order_id));
+    perform pg_temp.pricing_gateway('stockflow-pricing-test','pricing-sales@stockflow.local','get_order_pricing',jsonb_build_object('orderId',v_order_id));
     raise exception 'Sales role retrieved restricted pricing';
   exception when insufficient_privilege then null;
   end;
 
-  workspace:=public.stockflow_pricing_gateway('stockflow-pricing-test','pricing-accounts@stockflow.local','get_order_pricing',jsonb_build_object('orderId',v_order_id,'pricingDate','2026-09-12'));
+  workspace:=pg_temp.pricing_gateway('stockflow-pricing-test','pricing-accounts@stockflow.local','get_order_pricing',jsonb_build_object('orderId',v_order_id,'pricingDate','2026-09-12'));
   if workspace->'lines'->0->>'proposedRate'<>'485.00' or workspace->'lines'->0->'cost'->>'amount'<>'310.00' then raise exception 'Exact pricing resolution failed: %',workspace; end if;
 
-  approved:=public.stockflow_pricing_gateway('stockflow-pricing-test','pricing-accounts@stockflow.local','submit_order_pricing',jsonb_build_object(
+  approved:=pg_temp.pricing_gateway('stockflow-pricing-test','pricing-accounts@stockflow.local','submit_order_pricing',jsonb_build_object(
     'orderId',v_order_id,'expectedVersion',1,'pricingDate','2026-09-12','idempotencyKey','pricing-approve-000001',
     'lines',jsonb_build_array(jsonb_build_object('lineId',v_line_id,'enteredRate',485))
   ));
-  replay:=public.stockflow_pricing_gateway('stockflow-pricing-test','pricing-accounts@stockflow.local','submit_order_pricing',jsonb_build_object(
+  replay:=pg_temp.pricing_gateway('stockflow-pricing-test','pricing-accounts@stockflow.local','submit_order_pricing',jsonb_build_object(
     'orderId',v_order_id,'expectedVersion',1,'pricingDate','2026-09-12','idempotencyKey','pricing-approve-000001',
     'lines',jsonb_build_array(jsonb_build_object('lineId',v_line_id,'enteredRate',485))
   ));
@@ -70,7 +78,7 @@ begin
   if exists(select 1 from private.stockflow_billing_snapshots where id=snapshot_id and invalidated_at is null) then raise exception 'Old billing snapshot remained current'; end if;
 
   begin
-    perform public.stockflow_pricing_gateway('stockflow-pricing-test','pricing-accounts@stockflow.local','submit_order_pricing',jsonb_build_object(
+    perform pg_temp.pricing_gateway('stockflow-pricing-test','pricing-accounts@stockflow.local','submit_order_pricing',jsonb_build_object(
       'orderId',v_order_id,'expectedVersion',1,'pricingDate','2026-09-12','idempotencyKey','pricing-stale-0000001',
       'lines',jsonb_build_array(jsonb_build_object('lineId',v_line_id,'enteredRate',485))
     ));
@@ -90,7 +98,7 @@ begin
   values('ledger:contract-test','Contract Test Laboratory','pricing-test') returning id into v_customer_id;
 
   begin
-    perform public.stockflow_pricing_gateway('stockflow-pricing-test','pricing-sales@stockflow.local','create_price_contract',jsonb_build_object(
+    perform pg_temp.pricing_gateway('stockflow-pricing-test','pricing-sales@stockflow.local','create_price_contract',jsonb_build_object(
       'customerId',v_customer_id,'tallyKey','CONTRACT-ITEM-1','price',700,'validFrom','2026-04-01',
       'source','customer_contract','reason','Annual agreement','idempotencyKey','contract-sales-denied-01'
     ));
@@ -98,22 +106,22 @@ begin
   exception when insufficient_privilege then null;
   end;
 
-  first_result:=public.stockflow_pricing_gateway('stockflow-pricing-test','pricing-accounts@stockflow.local','create_price_contract',jsonb_build_object(
+  first_result:=pg_temp.pricing_gateway('stockflow-pricing-test','pricing-accounts@stockflow.local','create_price_contract',jsonb_build_object(
     'customerId',v_customer_id,'tallyKey','CONTRACT-ITEM-1','price',700,'validFrom','2026-04-01',
     'source','customer_contract','reason','Annual agreement','idempotencyKey','contract-create-000001'
   ));
   first_id:=(first_result->>'contractId')::uuid;
-  perform public.stockflow_pricing_gateway('stockflow-pricing-test','pricing-admin@stockflow.local','approve_price_contract',jsonb_build_object(
+  perform pg_temp.pricing_gateway('stockflow-pricing-test','pricing-admin@stockflow.local','approve_price_contract',jsonb_build_object(
     'contractId',first_id,'expectedVersion',1,'reason','Agreement verified','idempotencyKey','contract-approve-00001'
   ));
 
-  replacement_result:=public.stockflow_pricing_gateway('stockflow-pricing-test','pricing-accounts@stockflow.local','create_price_contract',jsonb_build_object(
+  replacement_result:=pg_temp.pricing_gateway('stockflow-pricing-test','pricing-accounts@stockflow.local','create_price_contract',jsonb_build_object(
     'customerId',v_customer_id,'tallyKey','CONTRACT-ITEM-1','price',720,'validFrom','2026-10-01',
     'source','customer_contract','reason','New approved period','supersedesPriceId',first_id,
     'idempotencyKey','contract-create-000002'
   ));
   replacement_id:=(replacement_result->>'contractId')::uuid;
-  perform public.stockflow_pricing_gateway('stockflow-pricing-test','pricing-admin@stockflow.local','approve_price_contract',jsonb_build_object(
+  perform pg_temp.pricing_gateway('stockflow-pricing-test','pricing-admin@stockflow.local','approve_price_contract',jsonb_build_object(
     'contractId',replacement_id,'expectedVersion',1,'reason','New period verified','idempotencyKey','contract-approve-00002'
   ));
   if not exists(select 1 from private.stockflow_customer_product_prices where id=first_id and status='superseded' and valid_to='2026-09-30') then
@@ -130,12 +138,12 @@ begin
     raise exception 'Effective-dated contract resolution failed: %, %',historical,current_price;
   end if;
 
-  overlapping_result:=public.stockflow_pricing_gateway('stockflow-pricing-test','pricing-accounts@stockflow.local','create_price_contract',jsonb_build_object(
+  overlapping_result:=pg_temp.pricing_gateway('stockflow-pricing-test','pricing-accounts@stockflow.local','create_price_contract',jsonb_build_object(
     'customerId',v_customer_id,'tallyKey','CONTRACT-ITEM-1','price',710,'validFrom','2026-11-01',
     'source','manual_governed','reason','Intentional overlap test','idempotencyKey','contract-overlap-0001'
   ));
   begin
-    perform public.stockflow_pricing_gateway('stockflow-pricing-test','pricing-admin@stockflow.local','approve_price_contract',jsonb_build_object(
+    perform pg_temp.pricing_gateway('stockflow-pricing-test','pricing-admin@stockflow.local','approve_price_contract',jsonb_build_object(
       'contractId',(overlapping_result->>'contractId')::uuid,'expectedVersion',1,'reason','Overlap must fail','idempotencyKey','contract-overlap-approve'
     ));
     raise exception 'Overlapping approved price unexpectedly succeeded';
@@ -147,7 +155,7 @@ do $policies$
 declare created jsonb; replay jsonb; policy_id uuid;
 begin
   begin
-    perform public.stockflow_pricing_gateway('stockflow-pricing-test','pricing-accounts@stockflow.local','create_pricing_policy',jsonb_build_object(
+    perform pg_temp.pricing_gateway('stockflow-pricing-test','pricing-accounts@stockflow.local','create_pricing_policy',jsonb_build_object(
       'policyVersion','integration-future-v1','minimumMarginPercent',22,'targetMarginPercent',32,
       'overrideApprovalPercent',4,'roundingIncrement',5,'roundingRuleVersion','ceil-five-v1',
       'effectiveFrom','2027-04-01','reason','Annual management policy','idempotencyKey','policy-accounts-denied'
@@ -155,12 +163,12 @@ begin
     raise exception 'Accounts role created commercial policy';
   exception when insufficient_privilege then null;
   end;
-  created:=public.stockflow_pricing_gateway('stockflow-pricing-test','pricing-admin@stockflow.local','create_pricing_policy',jsonb_build_object(
+  created:=pg_temp.pricing_gateway('stockflow-pricing-test','pricing-admin@stockflow.local','create_pricing_policy',jsonb_build_object(
     'policyVersion','integration-future-v1','minimumMarginPercent',22,'targetMarginPercent',32,
     'overrideApprovalPercent',4,'roundingIncrement',5,'roundingRuleVersion','ceil-five-v1',
     'effectiveFrom','2027-04-01','reason','Annual management policy','idempotencyKey','policy-create-000001'
   ));
-  replay:=public.stockflow_pricing_gateway('stockflow-pricing-test','pricing-admin@stockflow.local','create_pricing_policy',jsonb_build_object(
+  replay:=pg_temp.pricing_gateway('stockflow-pricing-test','pricing-admin@stockflow.local','create_pricing_policy',jsonb_build_object(
     'policyVersion','integration-future-v1','minimumMarginPercent',22,'targetMarginPercent',32,
     'overrideApprovalPercent',4,'roundingIncrement',5,'roundingRuleVersion','ceil-five-v1',
     'effectiveFrom','2027-04-01','reason','Annual management policy','idempotencyKey','policy-create-000001'
@@ -181,13 +189,13 @@ begin
   values(v_customer_id,'Exception Batch Laboratory','phone','packed','exception-batch-order','pricing-accounts@stockflow.local','pricing-accounts@stockflow.local') returning id into v_order_id;
   insert into private.stockflow_order_lines(order_id,tally_item_key,item_name,quantity) values(v_order_id,'ITEM-1','Pricing Item One',1) returning id into v_line_one;
   insert into private.stockflow_order_lines(order_id,tally_item_key,item_name,quantity) values(v_order_id,'ITEM-2','Pricing Item Two',1) returning id into v_line_two;
-  submitted:=public.stockflow_pricing_gateway('stockflow-pricing-test','pricing-accounts@stockflow.local','submit_order_pricing',jsonb_build_object(
+  submitted:=pg_temp.pricing_gateway('stockflow-pricing-test','pricing-accounts@stockflow.local','submit_order_pricing',jsonb_build_object(
     'orderId',v_order_id,'expectedVersion',1,'pricingDate','2026-09-12','idempotencyKey','exception-batch-submit-1',
     'lines',jsonb_build_array(jsonb_build_object('lineId',v_line_one,'enteredRate',600,'reason','Manual review'),jsonb_build_object('lineId',v_line_two,'enteredRate',700,'reason','Manual review'))
   ));
   if submitted->>'pricingState'<>'approval_required' then raise exception 'Exception batch was not held for approval'; end if;
   begin
-    perform public.stockflow_pricing_gateway('stockflow-pricing-test','pricing-accounts@stockflow.local','submit_order_pricing',jsonb_build_object(
+    perform pg_temp.pricing_gateway('stockflow-pricing-test','pricing-accounts@stockflow.local','submit_order_pricing',jsonb_build_object(
       'orderId',v_order_id,'expectedVersion',2,'pricingDate','2026-09-12','idempotencyKey','exception-batch-submit-2',
       'lines',jsonb_build_array(jsonb_build_object('lineId',v_line_one,'enteredRate',600,'reason','Duplicate review'),jsonb_build_object('lineId',v_line_two,'enteredRate',700,'reason','Duplicate review'))
     ));
@@ -195,7 +203,7 @@ begin
   exception when serialization_failure then null;
   end;
   select id into exception_id from private.stockflow_price_exceptions where order_id=v_order_id and state='pending' order by requested_at limit 1;
-  perform public.stockflow_pricing_gateway('stockflow-pricing-test','pricing-admin@stockflow.local','reject_price_exception',jsonb_build_object(
+  perform pg_temp.pricing_gateway('stockflow-pricing-test','pricing-admin@stockflow.local','reject_price_exception',jsonb_build_object(
     'exceptionId',exception_id,'expectedVersion',1,'reason','Commercial review declined','idempotencyKey','exception-batch-reject-1'
   ));
   if exists(select 1 from private.stockflow_price_exceptions where order_id=v_order_id and state='pending') then raise exception 'Sibling price exception remained pending'; end if;

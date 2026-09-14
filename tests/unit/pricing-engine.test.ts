@@ -68,20 +68,22 @@ describe('customer pricing engine', () => {
     expect(resolveCustomerPrice({ ...base, latestCost: { ...base.latestCost!, amount: 300 } }).guardrail).toBe('PRICE_OK');
   });
 
-  it('warns on a cost increase, preserves the historical selling rate, and computes margin erosion', () => {
+  it('passes through absolute cost increases without reducing established gross profit', () => {
     const result = resolveCustomerPrice({ ...base, latestCost: { ...base.latestCost!, amount: 350, sourceVersion: 'cost-350' } });
     expect(result).toMatchObject({
-      resolution: 'LAST_TALLY_INVOICE_PRICE', guardrail: 'COST_INCREASE', proposedRate: 485,
+      resolution: 'LAST_TALLY_INVOICE_PRICE', guardrail: 'COST_INCREASE', proposedRate: 525,
+      continuityPrice: 525, targetMarginPrice: 500, recommendedPrice: 525,
       cost: { changeAmount: 40, changePercent: 12.9 },
-      margin: { grossProfitAmount: 135, grossMarginPercent: 27.84, previousGrossMarginPercent: 36.08, erosionPercentagePoints: -8.25 },
+      margin: { grossProfitAmount: 175, grossMarginPercent: 33.33, previousGrossMarginPercent: 36.08, erosionPercentagePoints: -2.75 },
       suggestion: { amount: 500, unroundedAmount: 500, costSourceVersion: 'cost-350' },
     });
     expect(result.warnings).toContain('PURCHASE_PRICE_INCREASED');
   });
 
   it('requires review when cost breaches minimum margin or makes the sale loss-making', () => {
-    expect(resolveCustomerPrice({ ...base, latestCost: { ...base.latestCost!, amount: 400 } })).toMatchObject({ resolution: 'PRICE_REVIEW_REQUIRED', guardrail: 'PRICE_REVIEW_REQUIRED' });
-    const loss = resolveCustomerPrice({ ...base, latestCost: { ...base.latestCost!, amount: 500 } });
+    const contracts = [{ id: 'fixed', price: 485, validFrom: '2026-01-01', validTo: null, status: 'approved' as const, version: 1 }];
+    expect(resolveCustomerPrice({ ...base, contracts, latestCost: { ...base.latestCost!, amount: 400 } })).toMatchObject({ resolution: 'PRICE_REVIEW_REQUIRED', guardrail: 'PRICE_REVIEW_REQUIRED', proposedRate: 485 });
+    const loss = resolveCustomerPrice({ ...base, contracts, latestCost: { ...base.latestCost!, amount: 500 } });
     expect(loss.warnings).toEqual(expect.arrayContaining(['LOSS_MAKING', 'BELOW_MINIMUM_MARGIN']));
   });
 
@@ -99,5 +101,27 @@ describe('customer pricing engine', () => {
   it('applies the versioned round-up rule to suggested prices', () => {
     const result = resolveCustomerPrice({ ...base, latestCost: { ...base.latestCost!, amount: 351, sourceVersion: 'cost-351' }, policy: { ...policy, roundingIncrement: 5 } });
     expect(result.suggestion).toEqual({ amount: 505, unroundedAmount: 501.43, targetMarginPercent: 30, policyVersion: 'policy-1', roundingRuleVersion: 'ceil-rupee-1', costSourceVersion: 'cost-351' });
+  });
+
+  it('matches the approved 420 / 300 / 310 example and explains the recommendation', () => {
+    const result = resolveCustomerPrice({ ...base, sellingHistory: [{ ...base.sellingHistory[0], rate: 420 }], previousCost: { ...base.previousCost!, amount: 300 }, policy: { ...policy, roundingIncrement: 5 } });
+    expect(result).toMatchObject({ continuityPrice: 430, targetMarginPrice: 445, recommendedPrice: 445 });
+    expect(result.recommendationReason).toContain('Target-margin');
+  });
+
+  it('uses base only for a customer with no genuine history', () => {
+    const basePrice = { id: 'default', price: 999, validFrom: '2026-01-01', validTo: null, status: 'approved' as const, version: 1 };
+    expect(resolveCustomerPrice({ ...base, basePrice }).recommendedPrice).toBe(485);
+    expect(resolveCustomerPrice({ ...base, basePrice, sellingHistory: [] })).toMatchObject({ recommendedPrice: 999, source: { type: 'STANDARD_ITEM_PRICE' } });
+  });
+
+  it('does not silently choose a rate from ambiguous history or missing historic cost', () => {
+    expect(resolveCustomerPrice({ ...base, previousCost: null }).continuityPrice).toBeNull();
+    expect(resolveCustomerPrice({ ...base, sellingHistory: [...base.sellingHistory, { ...base.sellingHistory[0], rate: 486, sourceId: 'other' }] })).toMatchObject({ recommendedPrice: null, warnings: expect.arrayContaining(['AMBIGUOUS_SALES_HISTORY']) });
+    expect(resolveCustomerPrice({ ...base, latestCost: { ...base.latestCost!, effectiveAt: '2027-01-01' } }).recommendedPrice).toBeNull();
+  });
+
+  it('preserves the last customer price after a cost decrease', () => {
+    expect(resolveCustomerPrice({ ...base, latestCost: { ...base.latestCost!, amount: 200 } })).toMatchObject({ continuityPrice: 485, recommendedPrice: 485 });
   });
 });
