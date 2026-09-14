@@ -6,6 +6,17 @@ Validation is batched to conserve usage; this checkpoint records remaining relea
 
 ## Usage-reserve stop — 14 September 2026
 
+Latest read-only deployment investigation:
+- Supabase project aormuidjbdqruglmyseh lists delivery_exceptions at 20260902054643,
+  equipment_installations at 20260902054942, then harden_business_history at 20260902081149.
+  Production therefore applied dependencies in a different order/timestamp mapping from
+  repository filenames. Both no-delete triggers were queried and are enabled (O).
+- Remote history ends at 20260912081315 order_follow_up_queue; pricing migrations are not
+  listed. Do not blindly push repository timestamps or mark migrations applied by name alone.
+- Next: compare migration SQL/schema content before preparing a mapped deployment baseline.
+  No remote writes, history repair, migrations, or publication performed.
+- Investigation stopped at five-hour 19% remaining (weekly ignored). No tests run this turn.
+
 - Latest recovery implementation commit: 74c09c5; still unpublished.
 - Start-of-turn usage check: five-hour remaining 5%; weekly remaining 24%.
 - Stopped under the approved 20% minimum reserve; no implementation or tests run this turn.
