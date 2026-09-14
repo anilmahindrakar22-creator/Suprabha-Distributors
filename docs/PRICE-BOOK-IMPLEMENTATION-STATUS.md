@@ -87,6 +87,14 @@ Validation is batched to conserve usage; this checkpoint records remaining relea
 
 ## Remaining before calling this complete or release-ready
 
+- Added actual pricing-route/auth-header/gateway serialization tests with simulated gateway
+  responses: trusted actor identity, unauthenticated denial, pricing-role denial propagation,
+  no-store headers, safe recovery GET/POST, invalid input and generic internal errors.
+  Eleven new API cases plus five pricing-validation cases passed; targeted lint and typecheck
+  passed. Tests simulate the upstream authenticated headers, not a real staff login or live RBAC.
+- Authenticated end-to-end acceptance remains blocked on an isolated deployed candidate with
+  test accounts/data. Production was not mutated and the unreleased branch was not published.
+
 - Authenticated browser acceptance for customer selection, row approval, base price save,
   bulk review, mobile layout, keyboard use, paging, and errors. Fixture tests now cover
   customer selection, tabs, row submission, Accounts restrictions and order pricing options.
