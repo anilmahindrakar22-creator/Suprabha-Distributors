@@ -4,6 +4,14 @@ Branch: feature/customer-pricing-engine. Pricing checkpoint committed as f0d167f
 Approved requirements: CUSTOMER-PRICE-BOOK-AND-BASE-PRICE.md.
 Validation is batched to conserve usage; this checkpoint records remaining release work explicitly.
 
+## Usage-reserve stop — 14 September 2026
+
+- Latest recovery implementation commit: 74c09c5; still unpublished.
+- Start-of-turn usage check: five-hour remaining 5%; weekly remaining 24%.
+- Stopped under the approved 20% minimum reserve; no implementation or tests run this turn.
+- Next ticket: unresolved pricing-save recovery and retry safety in existing contract/policy forms.
+- Existing migration working change and two untracked validation logs preserved.
+
 ## Implemented locally
 
 - Customer-first Purchased / Exceptions / All Products worksheet, 50-row pages.
