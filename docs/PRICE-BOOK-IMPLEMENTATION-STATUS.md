@@ -39,7 +39,15 @@ Validation is batched to conserve usage; this checkpoint records remaining relea
   stale bulk rejection and duplicate-command replay without extra decisions. A second-row
   audit failure proves all bulk decisions, events, outbox entries and command results roll back.
   Fresh pricing database replay/integrity suite passed; no production code changed.
-- Next ticket: deployment migration validation, including historical replay adjustments.
+- Migration validation now has -StrictHistory mode (no historical edits or deferral).
+  It fails at 20260902080651_harden_business_history.sql: private.stockflow_delivery_exceptions
+  does not yet exist. This is a clean-install release blocker, not a passing replay.
+- Default local replay now leaves all migrations from 20260913130000 byte-identical to the
+  repository, verifies file hashes, and checks preservation of a pre-upgrade order and lines.
+  This upgrade check plus pricing integrity/concurrency tests passed. Older baseline setup
+  still uses documented compatibility adjustments; deployed schema/history has not been checked.
+- Next release requirement: compare the deployed migration history and agree a clean-install
+  baseline/repair process. Do not silently rewrite already-applied migration files.
 
 - Customer-first Purchased / Exceptions / All Products worksheet, 50-row pages.
 - Shared database calculation for order lines, customer book, and product cost-change impact.

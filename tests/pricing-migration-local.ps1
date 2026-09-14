@@ -1,3 +1,4 @@
+param([switch]$StrictHistory)
 $ErrorActionPreference = 'Stop'
 
 $repository = Split-Path $PSScriptRoot -Parent
@@ -21,6 +22,7 @@ try {
   # Historical migrations compare those bodies as text, so normalize only the
   # disposable replay copy before each comparison. Production files are unchanged.
   foreach ($file in Get-ChildItem $work -Filter '*.sql') {
+    if ($StrictHistory -or $file.Name -ge '20260913130000_customer_price_book.sql') { continue }
     $sql = [IO.File]::ReadAllText($file.FullName)
     $sql = [regex]::Replace(
       $sql,
@@ -32,6 +34,7 @@ try {
 
   # These two legacy triggers precede their tables in timestamp order. Defer
   # only their creation; the original migration files remain immutable.
+  if (-not $StrictHistory) {
   $historyMigration = Join-Path $work '20260902080651_harden_business_history.sql'
   $historySql = [IO.File]::ReadAllText($historyMigration)
   foreach ($table in @('stockflow_delivery_exceptions', 'stockflow_equipment_installations')) {
@@ -39,21 +42,39 @@ try {
     $historySql = [regex]::Replace($historySql, $pattern, '')
   }
   [IO.File]::WriteAllText($historyMigration, $historySql, [Text.UTF8Encoding]::new($false))
+  }
 
   Invoke-DatabaseCommand 'createdb' @($database)
   $databaseCreated = $true
   Invoke-DatabaseCommand 'psql' @('-X','-q','-v','ON_ERROR_STOP=1','-d',$database,'-f',(Join-Path $PSScriptRoot 'supabase-local-scaffold.sql'))
 
   foreach ($migration in Get-ChildItem $work -Filter '*.sql' | Sort-Object Name) {
-    if ($migration.Name -eq $deferredMigration) { continue }
+    if (-not $StrictHistory -and $migration.Name -eq $deferredMigration) { continue }
+    if ($migration.Name -eq '20260913130000_customer_price_book.sql') {
+      $seed = @'
+insert into private.stockflow_customers(id,name,tally_key,created_by_email) values('cccccccc-cccc-4ccc-8ccc-cccccccccccc','Upgrade preservation','upgrade-preservation','test');
+insert into private.stockflow_orders(id,customer_id,customer_name,source,status,idempotency_key,created_by_email,updated_by_email) values('dddddddd-dddd-4ddd-8ddd-dddddddddddd','cccccccc-cccc-4ccc-8ccc-cccccccccccc','Upgrade preservation','phone','packed','upgrade-preservation-order','test','test');
+insert into private.stockflow_order_lines(order_id,tally_item_key,item_name,quantity) values('dddddddd-dddd-4ddd-8ddd-dddddddddddd','UPGRADE-ITEM','Existing reagent',2);
+create table public.test_upgrade_expected as select to_jsonb(o) as order_data,(select jsonb_agg(to_jsonb(l)) from private.stockflow_order_lines l where l.order_id=o.id) as line_data from private.stockflow_orders o where id='dddddddd-dddd-4ddd-8ddd-dddddddddddd';
+'@
+      Invoke-DatabaseCommand 'psql' @('-X','-q','-v','ON_ERROR_STOP=1','-d',$database,'-c',$seed)
+    }
+    if ($migration.Name -ge '20260913130000_customer_price_book.sql' -and (Get-FileHash $migration.FullName).Hash -ne (Get-FileHash (Join-Path $migrationSource $migration.Name)).Hash) { throw "Pricing migration copy changed: $($migration.Name)" }
     Invoke-DatabaseCommand 'psql' @('-X','-q','-v','ON_ERROR_STOP=1','-d',$database,'-f',$migration.FullName)
-    if ($migration.Name -eq '20260902113000_equipment_installations.sql') {
+    if (-not $StrictHistory -and $migration.Name -eq '20260902113000_equipment_installations.sql') {
       Invoke-DatabaseCommand 'psql' @('-X','-q','-v','ON_ERROR_STOP=1','-d',$database,'-f',(Join-Path $work $deferredMigration))
     }
   }
 
   $lateTriggers = 'create trigger stockflow_delivery_exceptions_no_delete before delete on private.stockflow_delivery_exceptions for each row execute function private.prevent_business_delete(); create trigger stockflow_equipment_installations_no_delete before delete on private.stockflow_equipment_installations for each row execute function private.prevent_business_delete();'
-  Invoke-DatabaseCommand 'psql' @('-X','-q','-v','ON_ERROR_STOP=1','-d',$database,'-c',$lateTriggers)
+  if (-not $StrictHistory) { Invoke-DatabaseCommand 'psql' @('-X','-q','-v','ON_ERROR_STOP=1','-d',$database,'-c',$lateTriggers) }
+  $preserved = @'
+do $$begin
+if not exists(select 1 from private.stockflow_orders o cross join public.test_upgrade_expected e where o.id='dddddddd-dddd-4ddd-8ddd-dddddddddddd' and to_jsonb(o)=e.order_data and (select jsonb_agg(to_jsonb(l)) from private.stockflow_order_lines l where l.order_id=o.id)=e.line_data) then raise exception 'Pricing upgrade changed existing order data'; end if;
+end$$;
+'@
+  Invoke-DatabaseCommand 'psql' @('-X','-q','-v','ON_ERROR_STOP=1','-d',$database,'-c',$preserved)
+  Write-Output 'PASS: byte-identical pricing upgrade preserves existing order and lines'
   Invoke-DatabaseCommand 'psql' @('-X','-q','-v','ON_ERROR_STOP=1','-d',$database,'-f',(Join-Path $repository 'supabase/tests/pricing_engine_integrity.sql'))
   Invoke-DatabaseCommand 'psql' @('-X','-q','-v','ON_ERROR_STOP=1','-d',$database,'-f',(Join-Path $repository 'supabase/tests/customer_price_book_integrity.sql'))
   Write-Output 'PASS: complete migration replay and pricing ACID tests'
