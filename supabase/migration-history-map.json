@@ -1,0 +1,523 @@
+{
+  "projectId": "aormuidjbdqruglmyseh",
+  "checkedAt": "2026-09-15",
+  "purpose": "Read-only release evidence; NOT an executable migration plan or authority to repair history.",
+  "normalization": "Remove CR characters and trim surrounding whitespace only; SHA-256 over UTF-8.",
+  "localGitHead": "db7d7d9",
+  "remoteOnly": [
+    {
+      "version": "20260829054025",
+      "name": "create_stockflow_private_snapshots",
+      "statement_count": 1,
+      "hash": "934e5e0e13408ac795a5f5c23548c499bfaea81db45fe4d7b9434522c3ce4f43"
+    },
+    {
+      "version": "20260830071657",
+      "name": "create_stockflow_member_allowlist",
+      "statement_count": 1,
+      "hash": "7b405d85834157ae7f71ef3c435e7eafa2c3ec9917838a913cdbb9f0851648b3"
+    }
+  ],
+  "migrations": [
+    {
+      "localFile": "20260830140000_order_management_foundation.sql",
+      "localSha256": "d7901e99ad2b50d7f8691a19abe433d490eeafb95ec1c10172ddc4241657eecb",
+      "remoteVersion": "20260830081136",
+      "remoteSha256": "d7901e99ad2b50d7f8691a19abe433d490eeafb95ec1c10172ddc4241657eecb",
+      "status": "exact_normalized_match"
+    },
+    {
+      "localFile": "20260831112500_rotate_order_gateway_key.sql",
+      "localSha256": "b91712959736de795326265c2ed5e79a26929f33fefeb589badbb71cf6a53511",
+      "remoteVersion": "20260831054914",
+      "remoteSha256": "b91712959736de795326265c2ed5e79a26929f33fefeb589badbb71cf6a53511",
+      "status": "exact_normalized_match"
+    },
+    {
+      "localFile": "20260831114500_harden_order_gateway.sql",
+      "localSha256": "d3286c25787fd76b1ad854115ca4212bc3d279659d16dbea77405c3efc16ca41",
+      "remoteVersion": "20260831055059",
+      "remoteSha256": "d3286c25787fd76b1ad854115ca4212bc3d279659d16dbea77405c3efc16ca41",
+      "status": "exact_normalized_match"
+    },
+    {
+      "localFile": "20260831123500_sync_tally_customer_ledgers.sql",
+      "localSha256": "f2e4e5b670769263a2403039ed8139741f5945d7917778cb59232f740f18def5",
+      "remoteVersion": "20260831062736",
+      "remoteSha256": "f2e4e5b670769263a2403039ed8139741f5945d7917778cb59232f740f18def5",
+      "status": "exact_normalized_match"
+    },
+    {
+      "localFile": "20260831124500_expand_customer_directory.sql",
+      "localSha256": "b7b585283407643be5ab3004d965839ea9976b1df2d3506a398bd76746da9b0b",
+      "remoteVersion": "20260831063104",
+      "remoteSha256": "b7b585283407643be5ab3004d965839ea9976b1df2d3506a398bd76746da9b0b",
+      "status": "exact_normalized_match"
+    },
+    {
+      "localFile": "20260831130500_start_orders_at_confirmation.sql",
+      "localSha256": "cb45aa08eaaefe2d2654b7110866f781cb3c63ffa683004912e1bab20bfb68e1",
+      "remoteVersion": "20260831135508",
+      "remoteSha256": "cb45aa08eaaefe2d2654b7110866f781cb3c63ffa683004912e1bab20bfb68e1",
+      "status": "exact_normalized_match"
+    },
+    {
+      "localFile": "20260831141000_combined_order_flow_and_history.sql",
+      "localSha256": "7c13decc05880b728cc133860fe772d48a70cca662de8ff024d7f4ec312bf148",
+      "remoteVersion": "20260831150109",
+      "remoteSha256": "7c13decc05880b728cc133860fe772d48a70cca662de8ff024d7f4ec312bf148",
+      "status": "exact_normalized_match"
+    },
+    {
+      "localFile": "20260901103000_remove_stock_reservation.sql",
+      "localSha256": "ae0fbb010b24cfc727907b1c87331f86a4a676e3adeb6cb2881ab172929461be",
+      "remoteVersion": "20260901063403",
+      "remoteSha256": "ae0fbb010b24cfc727907b1c87331f86a4a676e3adeb6cb2881ab172929461be",
+      "status": "exact_normalized_match"
+    },
+    {
+      "localFile": "20260901124500_expose_order_activity_log.sql",
+      "localSha256": "906a2e571aee10bdbe1d00f8a0356bf5bda286585a4dd68155feb2b5af9b7ff2",
+      "remoteVersion": "20260901065151",
+      "remoteSha256": "906a2e571aee10bdbe1d00f8a0356bf5bda286585a4dd68155feb2b5af9b7ff2",
+      "status": "exact_normalized_match"
+    },
+    {
+      "localFile": "20260901130000_admin_only_order_cancellation.sql",
+      "localSha256": "03c143fd5e9e963ca9656a02f9488a6fdb5784a515e206bd38879f5b8b9f316e",
+      "remoteVersion": "20260901065344",
+      "remoteSha256": "03c143fd5e9e963ca9656a02f9488a6fdb5784a515e206bd38879f5b8b9f316e",
+      "status": "exact_normalized_match"
+    },
+    {
+      "localFile": "20260901134500_user_management_gateway.sql",
+      "localSha256": "7b99fd0c70ac68e407e25ab74213ac66f685c2bb2f093a16ac0c830513c664e6",
+      "remoteVersion": "20260901072146",
+      "remoteSha256": "0309fdd8d22b52c34cb0c7833a073018ec8b6ca33711d2de5d29b61016d12371",
+      "status": "formatting_difference_reviewed",
+      "review": "Non-whitespace characters and single-quoted literals match; timestamps differ. Not raw-byte equivalence."
+    },
+    {
+      "localFile": "20260901143000_fulfilment_details.sql",
+      "localSha256": "15d80faf1f996229a8cbd601850e604b14600bdd9a763e186aad3f4a51481eac",
+      "remoteVersion": "20260901084512",
+      "remoteSha256": "15d80faf1f996229a8cbd601850e604b14600bdd9a763e186aad3f4a51481eac",
+      "status": "exact_normalized_match"
+    },
+    {
+      "localFile": "20260901153000_safe_order_editing.sql",
+      "localSha256": "47e3aa112d1eb7423a62df50220d9c06a01fce36c62206d9eb2e0dbcde0cb932",
+      "remoteVersion": "20260901144904",
+      "remoteSha256": "47e3aa112d1eb7423a62df50220d9c06a01fce36c62206d9eb2e0dbcde0cb932",
+      "status": "exact_normalized_match"
+    },
+    {
+      "localFile": "20260901163000_tally_billing_handoff.sql",
+      "localSha256": "485dbf19111be8000d75906d7157b17707701e2ef634688ba525f2cfe35a6aee",
+      "remoteVersion": "20260901150732",
+      "remoteSha256": "485dbf19111be8000d75906d7157b17707701e2ef634688ba525f2cfe35a6aee",
+      "status": "exact_normalized_match"
+    },
+    {
+      "localFile": "20260902080651_harden_business_history.sql",
+      "localSha256": "5aec89ad1d81dcdf70620b6e43faa56d992a09f42f913047edcf7180efb8da2c",
+      "remoteVersion": "20260902081149",
+      "remoteSha256": "5aec89ad1d81dcdf70620b6e43faa56d992a09f42f913047edcf7180efb8da2c",
+      "status": "exact_normalized_match"
+    },
+    {
+      "localFile": "20260902091533_centralize_order_policy.sql",
+      "localSha256": "161e78069b46812c4d632309c60d9366f3de953d75c07aa250d8b371a764fa9f",
+      "remoteVersion": "20260902151446",
+      "remoteSha256": "161e78069b46812c4d632309c60d9366f3de953d75c07aa250d8b371a764fa9f",
+      "status": "exact_normalized_match"
+    },
+    {
+      "localFile": "20260902092611_idempotent_order_transitions.sql",
+      "localSha256": "4d4772a16635f5450e357d930e6884cb6f84c92b6e25f28cb880c6f6750eeb4d",
+      "remoteVersion": "20260902151454",
+      "remoteSha256": "4d4772a16635f5450e357d930e6884cb6f84c92b6e25f28cb880c6f6750eeb4d",
+      "status": "exact_normalized_match"
+    },
+    {
+      "localFile": "20260902093349_idempotent_remaining_mutations.sql",
+      "localSha256": "9ff592376fdadf41db81939295a7b032c0d17a5e9246933462506396abe45591",
+      "remoteVersion": "20260902151502",
+      "remoteSha256": "9ff592376fdadf41db81939295a7b032c0d17a5e9246933462506396abe45591",
+      "status": "exact_normalized_match"
+    },
+    {
+      "localFile": "20260902110000_delivery_exceptions.sql",
+      "localSha256": "5f15ceecdbd0b64439b171d3c16b6346646287b2f19045c353054c3ccc581993",
+      "remoteVersion": "20260902054643",
+      "remoteSha256": "5f15ceecdbd0b64439b171d3c16b6346646287b2f19045c353054c3ccc581993",
+      "status": "exact_normalized_match"
+    },
+    {
+      "localFile": "20260902113000_equipment_installations.sql",
+      "localSha256": "b6c68d4144ad2ffa9c5070bfb7c096deb27c3479c06bae209d529ceaa82014f8",
+      "remoteVersion": "20260902054942",
+      "remoteSha256": "b6c68d4144ad2ffa9c5070bfb7c096deb27c3479c06bae209d529ceaa82014f8",
+      "status": "exact_normalized_match"
+    },
+    {
+      "localFile": "20260902145535_enforce_order_scope_and_state_constraints.sql",
+      "localSha256": "1612f2c2f6f3d0a9be14784f4d2311c2ac7d7b3177b1b688f0810819972963a2",
+      "remoteVersion": "20260902151507",
+      "remoteSha256": "1612f2c2f6f3d0a9be14784f4d2311c2ac7d7b3177b1b688f0810819972963a2",
+      "status": "exact_normalized_match"
+    },
+    {
+      "localFile": "20260902150249_audit_fulfilment_before_after.sql",
+      "localSha256": "90c89941a60852b855dd42d82ca6ea6a16340fee41504a67f3b417fb8ba61604",
+      "remoteVersion": "20260902151511",
+      "remoteSha256": "90c89941a60852b855dd42d82ca6ea6a16340fee41504a67f3b417fb8ba61604",
+      "status": "exact_normalized_match"
+    },
+    {
+      "localFile": "20260902211000_inventory_ledger_foundation.sql",
+      "localSha256": "5cf6d5bec2453b5b0eb35b1ef736d49845e40146db3c8d3aa0243ddaca54fd96",
+      "remoteVersion": "20260902155915",
+      "remoteSha256": "5cf6d5bec2453b5b0eb35b1ef736d49845e40146db3c8d3aa0243ddaca54fd96",
+      "status": "exact_normalized_match"
+    },
+    {
+      "localFile": "20260902214500_fefo_order_allocation.sql",
+      "localSha256": "47d85bfc289b0a0dc97d4add21b7187ebaa8b87e809cff7686ba9548aee82923",
+      "remoteVersion": "20260902155929",
+      "remoteSha256": "47d85bfc289b0a0dc97d4add21b7187ebaa8b87e809cff7686ba9548aee82923",
+      "status": "exact_normalized_match"
+    },
+    {
+      "localFile": "20260903103000_dispatch_delivery_confirmation.sql",
+      "localSha256": "db2f199f43a5ab6d57517ec49ab4418a0e9d67534f7c5db8d080bc0b18e48956",
+      "remoteVersion": "20260903063034",
+      "remoteSha256": "db2f199f43a5ab6d57517ec49ab4418a0e9d67534f7c5db8d080bc0b18e48956",
+      "status": "exact_normalized_match"
+    },
+    {
+      "localFile": "20260903121500_disable_dormant_inventory_sync.sql",
+      "localSha256": "de06ede9a1df158c85f8e46cdc425968b6c736ca1cf653971df515efaea94519",
+      "remoteVersion": "20260903064210",
+      "remoteSha256": "de06ede9a1df158c85f8e46cdc425968b6c736ca1cf653971df515efaea94519",
+      "status": "exact_normalized_match"
+    },
+    {
+      "localFile": "20260903123500_expose_tally_invoices_to_orders.sql",
+      "localSha256": "88c7463e06eed1cfa1c97f058ee5ff11ba49e5f947ec1417692158d9cf8bf569",
+      "remoteVersion": "20260903065405",
+      "remoteSha256": "88c7463e06eed1cfa1c97f058ee5ff11ba49e5f947ec1417692158d9cf8bf569",
+      "status": "exact_normalized_match"
+    },
+    {
+      "localFile": "20260903125500_archive_and_reset_test_orders.sql",
+      "localSha256": "361ecd862c5ea450364655dc599c23fdd7e5a7db4e4ec715103a0c9ce0ee8fa1",
+      "remoteVersion": "20260903071106",
+      "remoteSha256": "23b20ec072afd0944bb2c368404629c8271c336a859f2675aa47154719638ed5",
+      "status": "formatting_difference_reviewed",
+      "review": "Non-whitespace characters and single-quoted literals match; timestamps differ. Not raw-byte equivalence."
+    },
+    {
+      "localFile": "20260906161000_lazy_order_activity.sql",
+      "localSha256": "b78de8c74c4f00ab4918d74333f28c79d3a7a96b239c4eeb7ed503cfccdf8a20",
+      "remoteVersion": "20260906110555",
+      "remoteSha256": "b78de8c74c4f00ab4918d74333f28c79d3a7a96b239c4eeb7ed503cfccdf8a20",
+      "status": "exact_normalized_match"
+    },
+    {
+      "localFile": "20260906174500_lazy_tally_catalog.sql",
+      "localSha256": "fa309da8588f9a89fd60818d1cc459a41017f91d2a6bf25a40e5248e0909875f",
+      "remoteVersion": "20260907060918",
+      "remoteSha256": "fa309da8588f9a89fd60818d1cc459a41017f91d2a6bf25a40e5248e0909875f",
+      "status": "exact_normalized_match"
+    },
+    {
+      "localFile": "20260907133000_lazy_customer_directory.sql",
+      "localSha256": "4224d524b237016489878ef4acf281ee8b752baeb169b3793e2048daa553cf56",
+      "remoteVersion": "20260909122413",
+      "remoteSha256": "4224d524b237016489878ef4acf281ee8b752baeb169b3793e2048daa553cf56",
+      "status": "exact_normalized_match"
+    },
+    {
+      "localFile": "20260907170000_database_order_pagination.sql",
+      "localSha256": "fbc695f331fd55e17d112f69165edfa08d2762ccd49dbb891a2c7f246946b256",
+      "remoteVersion": "20260909122419",
+      "remoteSha256": "fbc695f331fd55e17d112f69165edfa08d2762ccd49dbb891a2c7f246946b256",
+      "status": "exact_normalized_match"
+    },
+    {
+      "localFile": "20260908173500_service_ticket_foundation.sql",
+      "localSha256": "47a060e74b96e965d0243541f2f0808f37634c872a0041512446f6fabb5bd50e",
+      "remoteVersion": "20260908151918",
+      "remoteSha256": "47a060e74b96e965d0243541f2f0808f37634c872a0041512446f6fabb5bd50e",
+      "status": "exact_normalized_match"
+    },
+    {
+      "localFile": "20260908182500_billing_reconciliation_review.sql",
+      "localSha256": "bf01c2cf9d673e2e654b2819d827fa7f4445679b97d949ab35e3956d82f9394e",
+      "remoteVersion": "20260908151920",
+      "remoteSha256": "bf01c2cf9d673e2e654b2819d827fa7f4445679b97d949ab35e3956d82f9394e",
+      "status": "exact_normalized_match"
+    },
+    {
+      "localFile": "20260908190000_split_invoice_references.sql",
+      "localSha256": "95e1c66ee3415ab40b6b584a76d4d0aaccc9dd05ccf20195cdc355859b630c33",
+      "remoteVersion": "20260908151923",
+      "remoteSha256": "95e1c66ee3415ab40b6b584a76d4d0aaccc9dd05ccf20195cdc355859b630c33",
+      "status": "exact_normalized_match"
+    },
+    {
+      "localFile": "20260908193000_customer_tally_balance.sql",
+      "localSha256": "de86c68fc6897c57e3f9a033b8be1ccfbaa712350e3e4fc1ea3cb8e333957cf7",
+      "remoteVersion": "20260908151926",
+      "remoteSha256": "de86c68fc6897c57e3f9a033b8be1ccfbaa712350e3e4fc1ea3cb8e333957cf7",
+      "status": "exact_normalized_match"
+    },
+    {
+      "localFile": "20260909174500_order_priority.sql",
+      "localSha256": "76cecad4da55e923e0a8d0ea0a12cf51e2e8bfe1d42c23d709b4814319fa5160",
+      "remoteVersion": "20260909122503",
+      "remoteSha256": "76cecad4da55e923e0a8d0ea0a12cf51e2e8bfe1d42c23d709b4814319fa5160",
+      "status": "exact_normalized_match"
+    },
+    {
+      "localFile": "20260909181500_order_submission_recovery.sql",
+      "localSha256": "60333d4bb839e8257af38b7a80a90618394b49be488ee6893d53b3e6b2f769f4",
+      "remoteVersion": "20260909122515",
+      "remoteSha256": "60333d4bb839e8257af38b7a80a90618394b49be488ee6893d53b3e6b2f769f4",
+      "status": "exact_normalized_match"
+    },
+    {
+      "localFile": "20260910052036_order_assignment.sql",
+      "localSha256": "1862571abaace83c1ccb01bd5f18bf2d2f893520286d8523580a2f07ec559594",
+      "remoteVersion": "20260910144047",
+      "remoteSha256": "1862571abaace83c1ccb01bd5f18bf2d2f893520286d8523580a2f07ec559594",
+      "status": "exact_normalized_match"
+    },
+    {
+      "localFile": "20260910053928_order_capture_promised_delivery.sql",
+      "localSha256": "d42cd6a5715c0fbbd936a754c47f9fafd0278aa0468ee19a09fafedc925da57e",
+      "remoteVersion": "20260910144053",
+      "remoteSha256": "d42cd6a5715c0fbbd936a754c47f9fafd0278aa0468ee19a09fafedc925da57e",
+      "status": "exact_normalized_match"
+    },
+    {
+      "localFile": "20260910054318_unassigned_order_queue.sql",
+      "localSha256": "e4162cda3733a370fa6953540c7bf200e79e5ca789efc0ef81cf59d5ac2b701a",
+      "remoteVersion": "20260910144100",
+      "remoteSha256": "e4162cda3733a370fa6953540c7bf200e79e5ca789efc0ef81cf59d5ac2b701a",
+      "status": "exact_normalized_match"
+    },
+    {
+      "localFile": "20260910054622_assignable_user_directory.sql",
+      "localSha256": "e705dd7b3ed6284cac084395b4cb998e3bc2b3f6c789855d17bb44085e996666",
+      "remoteVersion": "20260910144222",
+      "remoteSha256": "e705dd7b3ed6284cac084395b4cb998e3bc2b3f6c789855d17bb44085e996666",
+      "status": "exact_normalized_match"
+    },
+    {
+      "localFile": "20260910120451_legacy_partial_order_transition.sql",
+      "localSha256": "fa2ed51658391cefb73669e0116979475d5ac031cef9445fa941e22b2e60799d",
+      "remoteVersion": "20260910144228",
+      "remoteSha256": "fa2ed51658391cefb73669e0116979475d5ac031cef9445fa941e22b2e60799d",
+      "status": "exact_normalized_match"
+    },
+    {
+      "localFile": "20260910120855_unassigned_order_summary.sql",
+      "localSha256": "c965b9acf71e19e17e6fd1bbb0bd0a01bb1302f7b1e3e16c8c3c879fb1a8c142",
+      "remoteVersion": "20260910144234",
+      "remoteSha256": "c965b9acf71e19e17e6fd1bbb0bd0a01bb1302f7b1e3e16c8c3c879fb1a8c142",
+      "status": "exact_normalized_match"
+    },
+    {
+      "localFile": "20260910124441_delivery_attention_queue.sql",
+      "localSha256": "05a0d8c5ec4cbe0e303c1fe2f8d7a3eca7d558895bc37496f216b4148353b347",
+      "remoteVersion": "20260910144240",
+      "remoteSha256": "05a0d8c5ec4cbe0e303c1fe2f8d7a3eca7d558895bc37496f216b4148353b347",
+      "status": "exact_normalized_match"
+    },
+    {
+      "localFile": "20260910125415_operations_attention_summary.sql",
+      "localSha256": "0ee97b552bacb341a7efe1b04b133fbaec0b63c47787c72e65f2ee1a173c4554",
+      "remoteVersion": "20260910144245",
+      "remoteSha256": "0ee97b552bacb341a7efe1b04b133fbaec0b63c47787c72e65f2ee1a173c4554",
+      "status": "exact_normalized_match"
+    },
+    {
+      "localFile": "20260910142227_order_activity_notes.sql",
+      "localSha256": "a627bdfaae4df0188df72b52ec658ad51a047a4429bb3dc4474be18d59906f47",
+      "remoteVersion": "20260910144251",
+      "remoteSha256": "a627bdfaae4df0188df72b52ec658ad51a047a4429bb3dc4474be18d59906f47",
+      "status": "exact_normalized_match"
+    },
+    {
+      "localFile": "20260910143035_searchable_order_activity_notes.sql",
+      "localSha256": "36fa96da16e38160ee19fbaa15f25bfbbd7b0929e81eb74be5578fa564d88ea9",
+      "remoteVersion": "20260910144257",
+      "remoteSha256": "36fa96da16e38160ee19fbaa15f25bfbbd7b0929e81eb74be5578fa564d88ea9",
+      "status": "exact_normalized_match"
+    },
+    {
+      "localFile": "20260911114000_order_capture_delivery_address.sql",
+      "localSha256": "7797c20fc7e48cbb7af3e8c6149f2f577ed5da717a755ca4d5b5f67541f923c0",
+      "remoteVersion": "20260911064222",
+      "remoteSha256": "7797c20fc7e48cbb7af3e8c6149f2f577ed5da717a755ca4d5b5f67541f923c0",
+      "status": "exact_normalized_match"
+    },
+    {
+      "localFile": "20260911121500_search_operational_order_details.sql",
+      "localSha256": "0c86caf38acd143be578903e7d77fc54ee1e27b091db1b6324ec4502a226a0a7",
+      "remoteVersion": "20260911064234",
+      "remoteSha256": "0c86caf38acd143be578903e7d77fc54ee1e27b091db1b6324ec4502a226a0a7",
+      "status": "exact_normalized_match"
+    },
+    {
+      "localFile": "20260911132000_paginate_exact_customer_orders.sql",
+      "localSha256": "efc7f395985b8bf1c33ced8ff522cf0f358a137621eda1c7fb82360aa1579d45",
+      "remoteVersion": "20260911125648",
+      "remoteSha256": "efc7f395985b8bf1c33ced8ff522cf0f358a137621eda1c7fb82360aa1579d45",
+      "status": "exact_normalized_match"
+    },
+    {
+      "localFile": "20260911141000_lightweight_order_summary.sql",
+      "localSha256": "a4af9b4a6a0fd7ed4fb6d29cc23477ee511967b702081f571b2c0d2ee921edb7",
+      "remoteVersion": "20260911125654",
+      "remoteSha256": "a4af9b4a6a0fd7ed4fb6d29cc23477ee511967b702081f571b2c0d2ee921edb7",
+      "status": "exact_normalized_match"
+    },
+    {
+      "localFile": "20260911150000_consolidate_operations_summary.sql",
+      "localSha256": "5dd6e44acf2393a29d3ce942fb12a89c80202bbc5810787c8742817c61b8e57b",
+      "remoteVersion": "20260911125659",
+      "remoteSha256": "5dd6e44acf2393a29d3ce942fb12a89c80202bbc5810787c8742817c61b8e57b",
+      "status": "exact_normalized_match"
+    },
+    {
+      "localFile": "20260911154500_paginate_operational_order_queues.sql",
+      "localSha256": "5e23a27a8e5d6d7629eca98ad41d859a916778048ee2ab469a218be77d7d7d87",
+      "remoteVersion": "20260911125705",
+      "remoteSha256": "5e23a27a8e5d6d7629eca98ad41d859a916778048ee2ab469a218be77d7d7d87",
+      "status": "exact_normalized_match"
+    },
+    {
+      "localFile": "20260911162000_paginate_order_date_ranges.sql",
+      "localSha256": "10307bbb28072935dedbd7d6e8cc582e6d32edbb00d993247e54933ec45f4391",
+      "remoteVersion": "20260911130000",
+      "remoteSha256": "10307bbb28072935dedbd7d6e8cc582e6d32edbb00d993247e54933ec45f4391",
+      "status": "exact_normalized_match"
+    },
+    {
+      "localFile": "20260911170000_lazy_order_operational_history.sql",
+      "localSha256": "0670c1f3aff9e13936d0290604939b68f397d89f4042e14cf3938006ce651abd",
+      "remoteVersion": "20260911130006",
+      "remoteSha256": "0670c1f3aff9e13936d0290604939b68f397d89f4042e14cf3938006ce651abd",
+      "status": "exact_normalized_match"
+    },
+    {
+      "localFile": "20260911183000_consolidate_billing_candidates.sql",
+      "localSha256": "df3725bc2776e85845aefa714b7084a4cd4ab1945af22290e99a8ec8a4f38eea",
+      "remoteVersion": "20260911141402",
+      "remoteSha256": "df3725bc2776e85845aefa714b7084a4cd4ab1945af22290e99a8ec8a4f38eea",
+      "status": "exact_normalized_match"
+    },
+    {
+      "localFile": "20260911190000_optimize_paginated_order_scope.sql",
+      "localSha256": "fd8faa631f77a0028ca54efac00ad462dc92dc354bcf6894f2818ebee65e5fb3",
+      "remoteVersion": "20260911141408",
+      "remoteSha256": "fd8faa631f77a0028ca54efac00ad462dc92dc354bcf6894f2818ebee65e5fb3",
+      "status": "exact_normalized_match"
+    },
+    {
+      "localFile": "20260911193000_consolidate_order_line_projection.sql",
+      "localSha256": "54a9490e75f1a9cc269087c3d73850d628833999cd27c7b9d9d8e81cd8ec4c53",
+      "remoteVersion": "20260911141414",
+      "remoteSha256": "54a9490e75f1a9cc269087c3d73850d628833999cd27c7b9d9d8e81cd8ec4c53",
+      "status": "exact_normalized_match"
+    },
+    {
+      "localFile": "20260911200000_bound_tally_invoice_payload.sql",
+      "localSha256": "d5fe6699b7c5d83c437514ac8a7cce586145afd9285b668be044961de44daa02",
+      "remoteVersion": "20260911141420",
+      "remoteSha256": "d5fe6699b7c5d83c437514ac8a7cce586145afd9285b668be044961de44daa02",
+      "status": "exact_normalized_match"
+    },
+    {
+      "localFile": "20260912120000_return_created_order_state.sql",
+      "localSha256": "13c7df44a5e8010db5770256676fd4fcf7b29fcf52c297fc56b7e63bf2958859",
+      "remoteVersion": "20260912055205",
+      "remoteSha256": "e611ea263196a428944ba8d2b85a4f277a43197eab0f4b1fc932899de64fc36f",
+      "status": "formatting_difference_reviewed",
+      "review": "Non-whitespace characters and single-quoted literals match; timestamps differ. Not raw-byte equivalence."
+    },
+    {
+      "localFile": "20260912133000_align_created_order_audit_state.sql",
+      "localSha256": "3971caa9a4b9cf28602ec27d8c8b1df92452f1022f02b0b912838ff89604e5af",
+      "remoteVersion": "20260912081305",
+      "remoteSha256": "3971caa9a4b9cf28602ec27d8c8b1df92452f1022f02b0b912838ff89604e5af",
+      "status": "exact_normalized_match"
+    },
+    {
+      "localFile": "20260912150000_order_follow_up_queue.sql",
+      "localSha256": "4c03d537103caccccb5a52e0942cbdd03904d3046784706abce61c99bcff8c44",
+      "remoteVersion": "20260912081315",
+      "remoteSha256": "4c03d537103caccccb5a52e0942cbdd03904d3046784706abce61c99bcff8c44",
+      "status": "exact_normalized_match"
+    },
+    {
+      "localFile": "20260912193000_customer_pricing_engine.sql",
+      "localSha256": "e53c796328daca8901e13d20c604932a9f084864105e93854ebc08e8501bddb1",
+      "remoteVersion": null,
+      "remoteSha256": null,
+      "status": "not_deployed"
+    },
+    {
+      "localFile": "20260913130000_customer_price_book.sql",
+      "localSha256": "6487c3ab3bdbba9de07eed14754bc4dc0a0baac68af7a49efb884464234b2151",
+      "remoteVersion": null,
+      "remoteSha256": null,
+      "status": "not_deployed"
+    },
+    {
+      "localFile": "20260913131000_customer_price_book_resolution.sql",
+      "localSha256": "e3f54bf8f25c01e7e7668b85bd0ba1df0b1905cdc29c2a449db1d5fd9ff1789d",
+      "remoteVersion": null,
+      "remoteSha256": null,
+      "status": "not_deployed"
+    },
+    {
+      "localFile": "20260913132000_price_book_gateway.sql",
+      "localSha256": "66162c87c9d29e6daee220ddba7520c4354a855cb6b98a66546480335577f927",
+      "remoteVersion": null,
+      "remoteSha256": null,
+      "status": "not_deployed"
+    },
+    {
+      "localFile": "20260914100000_billing_pricing_evidence_gate.sql",
+      "localSha256": "3626c26da6325e9fda13abdef5496f0dda340f510649c09704e88d59434a490c",
+      "remoteVersion": null,
+      "remoteSha256": null,
+      "status": "not_deployed"
+    },
+    {
+      "localFile": "20260914120000_pricing_submission_recovery.sql",
+      "localSha256": "e5e1bdf50d6524196d2cbe3165222b6d91d65659cc6dd3228299b240b286dd35",
+      "remoteVersion": null,
+      "remoteSha256": null,
+      "status": "not_deployed"
+    },
+    {
+      "localFile": "20260914140000_contract_policy_recovery.sql",
+      "localSha256": "34e35aee5207f1e769d2aa1dd9763ca1b3354464718177196f24df819c25b565",
+      "remoteVersion": null,
+      "remoteSha256": null,
+      "status": "not_deployed"
+    },
+    {
+      "localFile": "20260914160000_close_unresolved_pricing.sql",
+      "localSha256": "d492336845d34551e516fee3a572a8c4a58b1088675e4184a194799fe80c9a02",
+      "remoteVersion": null,
+      "remoteSha256": null,
+      "status": "not_deployed"
+    }
+  ]
+}

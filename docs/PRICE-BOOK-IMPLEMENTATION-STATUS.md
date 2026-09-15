@@ -6,6 +6,24 @@ Validation is batched to conserve usage; this checkpoint records remaining relea
 
 ## Usage-reserve stop — 14 September 2026
 
+## Migration content comparison — 15 September 2026
+
+- Read-only remote history query compared 71 local migration files against 65 deployed entries.
+  Of 63 shared names, 60 SQL hashes match after CR removal and surrounding whitespace trim.
+  Three formatting differences (user_management_gateway, archive_and_reset_test_orders,
+  return_created_order_state) have identical non-whitespace content and quoted literals.
+- Eight local pricing migrations are not deployed. Two remote bootstrap migrations
+  (private snapshots and member allowlist) are absent from the local migration directory.
+- Evidence is saved in supabase/migration-history-map.json; it is NOT an executable plan.
+  Names/timestamps have not been rewritten, and remote migration history is untouched.
+- Clean-install repair must include the two real bootstrap definitions and the deployed
+  dependency order. Do not use the reduced test scaffold as a production baseline: deployed
+  stockflow_members also contains id, user_id and created_at, absent from that scaffold.
+- Checks performed: read-only history hashes, three SQL/literal comparisons and member
+  column metadata. No application tests were needed for these evidence-only files.
+- Next ticket: prepare and validate a clean-install/deployment mapping using this evidence;
+  exclude historical archive/reset and credential rotation from any live replay.
+
 Latest read-only deployment investigation:
 - Supabase project aormuidjbdqruglmyseh lists delivery_exceptions at 20260902054643,
   equipment_installations at 20260902054942, then harden_business_history at 20260902081149.
