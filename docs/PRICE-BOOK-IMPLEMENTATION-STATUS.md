@@ -8,6 +8,21 @@ Validation is batched to conserve usage; this checkpoint records remaining relea
 
 ## Migration content comparison — 15 September 2026
 
+- Added a read-only local preflight: `node tests/pricing-release-preflight.mjs`.
+  It validates the recorded project, complete local file inventory, normalized SQL hashes,
+  unique mappings/remote versions and reviewed match statuses; returns deployed dependency
+  order and only the eight explicitly allowed pending pricing migrations. Historical scripts
+  cannot be relabeled as pending, and changed/unmapped files fail closed.
+- This checks saved evidence, NOT fresh remote state. Output explicitly sets releaseReady
+  and liveHistoryRechecked to false. It cannot execute SQL or repair migration history.
+  Clean-install bootstrap recovery/replay remains incomplete; no database or Tally changes.
+- Eight focused preflight tests pass, including drift, missing/new files, duplicate mappings,
+  historical replay exclusion, unknown statuses, incorrect hashes and wrong-project evidence.
+  Typecheck and targeted lint pass after removing an unnecessary type suppression and
+  adding explicit sort comparators. The CLI successfully validates the current saved map.
+- Next ticket remains recovering the real bootstrap SQL and validating the clean-install
+  chain in deployed order; the preflight is preparation, not proof of a working clean install.
+
 - Read-only remote history query compared 71 local migration files against 65 deployed entries.
   Of 63 shared names, 60 SQL hashes match after CR removal and surrounding whitespace trim.
   Three formatting differences (user_management_gateway, archive_and_reset_test_orders,
