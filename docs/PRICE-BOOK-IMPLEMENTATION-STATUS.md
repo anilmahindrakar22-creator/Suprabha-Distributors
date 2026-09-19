@@ -157,8 +157,10 @@ Latest read-only deployment investigation:
   customer selection, tabs, row submission, Accounts restrictions and order pricing options.
 - Two-session price-book/bulk concurrency and failure rollback are verified locally.
   Other order/exception approval races still need coverage at final integrity review.
-- Additional billing-boundary regression cases for agreement/policy/book changes; the new
-  generic evidence-hash gate covers those sources but the transition regression changes cost.
+- Billing-boundary regressions now cover Tally cost, customer-contract replacement, pricing-policy
+  change and a newer accepted customer price-book decision. Each stale handoff is rejected while
+  preserving the awaiting-billing order and immutable snapshot. The verified deployed-order
+  PostgreSQL replay and complete pricing ACID/concurrency tests pass with these cases.
 - Strengthen base-price preview UI (current rate, effective dates and margin evidence) and
   show accepted customer decisions clearly; consolidate older contract controls into exceptions.
 - Reload recovery now retains only opaque action/key receipts in account-scoped session

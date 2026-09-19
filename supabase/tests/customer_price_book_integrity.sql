@@ -205,6 +205,71 @@ begin
     raise exception 'Rejected handoff altered order or snapshot';
   end if;
 end $billing$;
+
+-- Every governed pricing source is revalidated at billing, not only Tally cost evidence.
+do $billing_sources$
+declare
+  source_kind text; customer uuid; order_id uuid; line_id uuid; snapshot_id uuid;
+  contract_id uuid; created jsonb; resolved jsonb; pricing_date date := (now() at time zone 'Asia/Kolkata')::date;
+  item_key text; entered_rate numeric; snapshot_payload jsonb;
+begin
+  foreach source_kind in array array['contract','policy','price_book'] loop
+    item_key := 'BILLING-SOURCE-' || upper(source_kind);
+    insert into private.stockflow_customers(name,tally_key,created_by_email)
+      values('Billing '||source_kind,'billing-'||source_kind,'test') returning id into customer;
+    insert into private.stockflow_products(tally_item_key,name,base_unit) values(item_key,'Billing source reagent','Nos');
+    insert into private.stockflow_tally_sales_prices(customer_id,tally_item_key,invoice_rate,invoice_date,invoice_reference,source_id,source_version)
+      values(customer,item_key,100,pricing_date-30,'SOURCE-100',item_key||'-sale','1');
+    insert into private.stockflow_tally_purchase_costs(tally_item_key,cost_amount,cost_kind,effective_at,source_reference,source_id,source_version)
+      values(item_key,50,'purchase_price',pricing_date-45,'SOURCE-50',item_key||'-cost','1');
+    if source_kind='contract' then
+      insert into private.stockflow_customer_product_prices(customer_id,tally_item_key,price_amount,valid_from,status,source_type,reason,approved_by_email,approved_at,created_by_email)
+        values(customer,item_key,120,pricing_date-30,'approved','customer_contract','Original billing agreement','book-admin@test.local',now(),'book-admin@test.local') returning id into contract_id;
+    end if;
+    if source_kind='price_book' then
+      resolved:=private.stockflow_customer_price(customer,item_key,pricing_date);
+      insert into private.stockflow_price_book_decisions(customer_id,tally_item_key,pricing_date,evidence_hash,choice,price,reason,actor_email,request_id)
+        values(customer,item_key,pricing_date,resolved->>'evidenceHash','continuity',100,'Original book decision','book-admin@test.local','billing-book-original');
+    end if;
+    insert into private.stockflow_orders(customer_id,customer_name,source,status,idempotency_key,created_by_email,updated_by_email)
+      values(customer,'Billing '||source_kind,'phone','packed','billing-source-'||source_kind,'book-admin@test.local','book-admin@test.local') returning id into order_id;
+    insert into private.stockflow_order_lines(order_id,tally_item_key,item_name,quantity)
+      values(order_id,item_key,'Billing source reagent',1) returning id into line_id;
+    resolved:=private.stockflow_resolve_pricing_line(line_id,pricing_date);
+    entered_rate:=(resolved->>'proposedRate')::numeric;
+    perform public.stockflow_pricing_gateway('price-book-test-key','book-accounts@test.local','submit_order_pricing',jsonb_build_object(
+      'orderId',order_id,'expectedVersion',1,'pricingDate',pricing_date,'idempotencyKey','billing-source-submit-'||source_kind,
+      'lines',jsonb_build_array(jsonb_build_object('lineId',line_id,'enteredRate',entered_rate,'evidenceHash',resolved->>'evidenceHash'))));
+    select pricing_snapshot_id into snapshot_id from private.stockflow_orders where id=order_id;
+    select pricing_payload into snapshot_payload from private.stockflow_billing_snapshots where id=snapshot_id;
+    update private.stockflow_orders set status='awaiting_tally_billing' where id=order_id;
+
+    if source_kind='contract' then
+      created:=public.stockflow_pricing_gateway('price-book-test-key','book-accounts@test.local','create_price_contract',jsonb_build_object(
+        'customerId',customer,'tallyKey',item_key,'price',125,'validFrom',pricing_date,'source','customer_contract',
+        'reason','Replacement billing agreement','supersedesPriceId',contract_id,'idempotencyKey','billing-contract-replacement'));
+      perform public.stockflow_pricing_gateway('price-book-test-key','book-admin@test.local','approve_price_contract',jsonb_build_object(
+        'contractId',created->>'contractId','expectedVersion',1,'reason','Replacement verified','idempotencyKey','billing-contract-approval'));
+    elsif source_kind='policy' then
+      perform public.stockflow_pricing_gateway('price-book-test-key','book-admin@test.local','create_pricing_policy',jsonb_build_object(
+        'policyVersion','billing-current-policy','minimumMarginPercent',21,'targetMarginPercent',31,
+        'overrideApprovalPercent',5,'roundingIncrement',5,'roundingRuleVersion','billing-ceil-five',
+        'effectiveFrom',pricing_date,'reason','Billing policy boundary test','idempotencyKey','billing-policy-change'));
+    else
+      resolved:=private.stockflow_customer_price(customer,item_key,pricing_date);
+      insert into private.stockflow_price_book_decisions(customer_id,tally_item_key,pricing_date,evidence_hash,choice,price,reason,actor_email,request_id)
+        values(customer,item_key,pricing_date,resolved->>'evidenceHash','custom',110,'Replacement book decision','book-admin@test.local','billing-book-replacement');
+    end if;
+
+    begin
+      update private.stockflow_orders set status='billed_in_tally' where id=order_id;
+      raise exception 'Changed % evidence crossed billing boundary',source_kind;
+    exception when serialization_failure then null; end;
+    if not exists(select 1 from private.stockflow_orders where id=order_id and status='awaiting_tally_billing' and pricing_snapshot_id=snapshot_id)
+      or snapshot_payload is distinct from (select pricing_payload from private.stockflow_billing_snapshots where id=snapshot_id)
+    then raise exception 'Rejected % handoff altered order or immutable snapshot',source_kind; end if;
+  end loop;
+end $billing_sources$;
 do $recovery$
 declare response jsonb; payload jsonb := '{"idempotencyKey":"recovery-test-key-123","pricingAction":"apply_price_book"}';
 begin
