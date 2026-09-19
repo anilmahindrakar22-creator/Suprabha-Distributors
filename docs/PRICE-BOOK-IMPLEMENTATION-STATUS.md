@@ -8,6 +8,19 @@ Validation is batched to conserve usage; this checkpoint records remaining relea
 
 ## Migration content comparison — 15 September 2026
 
+- Recovered the two exact production bootstrap migrations from read-only migration history:
+  private snapshots and the full member allowlist (identity, auth binding, constraints, RLS
+  and grants). Their normalized hashes match the evidence recorded on 15 September.
+- Added `test:pricing:deployment`, which replays a disposable clean install in verified
+  production deployment order, followed by the eight pending pricing migrations.
+  It excludes the obsolete gateway-secret rotation. The historical archive migration keeps
+  its `archived_at` schema and access predicate, but the disposable copy removes its one-time
+  command that archived every order. Repository migration files remain unchanged.
+- Fresh deployed-order replay passed: existing-order preservation, complete pricing integrity,
+  billing evidence, atomic rollback, idempotency and two-session concurrency checks.
+  This resolves the missing-bootstrap/dependency-order clean-install blocker without touching
+  production or Tally. Fresh live-history comparison is still required immediately before release.
+
 - Added a read-only local preflight: `node tests/pricing-release-preflight.mjs`.
   It validates the recorded project, complete local file inventory, normalized SQL hashes,
   unique mappings/remote versions and reviewed match statuses; returns deployed dependency
@@ -20,8 +33,8 @@ Validation is batched to conserve usage; this checkpoint records remaining relea
   historical replay exclusion, unknown statuses, incorrect hashes and wrong-project evidence.
   Typecheck and targeted lint pass after removing an unnecessary type suppression and
   adding explicit sort comparators. The CLI successfully validates the current saved map.
-- Next ticket remains recovering the real bootstrap SQL and validating the clean-install
-  chain in deployed order; the preflight is preparation, not proof of a working clean install.
+- Next ticket: authenticated acceptance on an isolated deployed candidate, followed by the
+  final consolidation checkpoint. The pricing branch remains unpublished.
 
 - Read-only remote history query compared 71 local migration files against 65 deployed entries.
   Of 63 shared names, 60 SQL hashes match after CR removal and surrounding whitespace trim.

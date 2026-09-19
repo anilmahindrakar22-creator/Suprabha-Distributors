@@ -15,6 +15,7 @@
     "test": "vitest run --coverage",
     "test:connector": "pwsh -NoProfile -File tests/connector-recovery.ps1 && pwsh -NoProfile -File tests/connector-sales-window.ps1",
     "test:pricing:db": "pwsh -NoProfile -File tests/pricing-migration-local.ps1",
+    "test:pricing:deployment": "pwsh -NoProfile -File tests/pricing-migration-local.ps1 -DeploymentOrder",
     "test:watch": "vitest",
     "test:e2e": "playwright test",
     "test:pricing:e2e": "playwright test --config playwright.pricing.config.ts",

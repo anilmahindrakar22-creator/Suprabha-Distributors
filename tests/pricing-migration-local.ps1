@@ -1,5 +1,6 @@
-param([switch]$StrictHistory)
+param([switch]$StrictHistory, [switch]$DeploymentOrder)
 $ErrorActionPreference = 'Stop'
+if ($StrictHistory -and $DeploymentOrder) { throw 'Choose either StrictHistory or DeploymentOrder' }
 
 $repository = Split-Path $PSScriptRoot -Parent
 $migrationSource = Join-Path $repository 'supabase/migrations'
@@ -34,7 +35,7 @@ try {
 
   # These two legacy triggers precede their tables in timestamp order. Defer
   # only their creation; the original migration files remain immutable.
-  if (-not $StrictHistory) {
+  if (-not $StrictHistory -and -not $DeploymentOrder) {
   $historyMigration = Join-Path $work '20260902080651_harden_business_history.sql'
   $historySql = [IO.File]::ReadAllText($historyMigration)
   foreach ($table in @('stockflow_delivery_exceptions', 'stockflow_equipment_installations')) {
@@ -48,8 +49,26 @@ try {
   $databaseCreated = $true
   Invoke-DatabaseCommand 'psql' @('-X','-q','-v','ON_ERROR_STOP=1','-d',$database,'-f',(Join-Path $PSScriptRoot 'supabase-local-scaffold.sql'))
 
-  foreach ($migration in Get-ChildItem $work -Filter '*.sql' | Sort-Object Name) {
-    if (-not $StrictHistory -and $migration.Name -eq $deferredMigration) { continue }
+  $migrationPlan = @(Get-ChildItem $work -Filter '*.sql' | Sort-Object Name)
+  if ($DeploymentOrder) {
+    $evidence = Get-Content (Join-Path $repository 'supabase/migration-history-map.json') -Raw | ConvertFrom-Json
+    $excluded = @('20260831112500_rotate_order_gateway_key.sql')
+    # Retain the archived_at schema and access predicate, but never replay the
+    # historical command that archived every order in the live company.
+    $archiveMigration = Join-Path $work '20260903125500_archive_and_reset_test_orders.sql'
+    $archiveSql = [IO.File]::ReadAllText($archiveMigration)
+    $archiveSql = [regex]::Replace($archiveSql, '(?ms)^update private\.stockflow_orders\s+set archived_at.*?where archived_at is null;\s*', '')
+    if ($archiveSql -match "updated_by_email = 'administrator reset'") { throw 'Historical order reset was not removed from clean-install copy' }
+    [IO.File]::WriteAllText($archiveMigration, $archiveSql, [Text.UTF8Encoding]::new($false))
+    $deployed = @($evidence.remoteOnly | ForEach-Object { [pscustomobject]@{ localFile=$_.localFile; remoteVersion=$_.version } }) + @($evidence.migrations | Where-Object remoteVersion | Select-Object localFile,remoteVersion)
+    $pending = @($evidence.migrations | Where-Object status -eq 'not_deployed' | Sort-Object localFile | Select-Object -ExpandProperty localFile)
+    $orderedNames = @($deployed | Where-Object { $_.localFile -notin $excluded } | Sort-Object remoteVersion | Select-Object -ExpandProperty localFile) + $pending
+    $migrationPlan = @($orderedNames | ForEach-Object { Get-Item (Join-Path $work $_) })
+    if (($migrationPlan | Select-Object -ExpandProperty Name | Sort-Object -Unique).Count -ne $migrationPlan.Count) { throw 'Deployment migration plan contains duplicates' }
+  }
+
+  foreach ($migration in $migrationPlan) {
+    if (-not $StrictHistory -and -not $DeploymentOrder -and $migration.Name -eq $deferredMigration) { continue }
     if ($migration.Name -eq '20260913130000_customer_price_book.sql') {
       $seed = @'
 insert into private.stockflow_customers(id,name,tally_key,created_by_email) values('cccccccc-cccc-4ccc-8ccc-cccccccccccc','Upgrade preservation','upgrade-preservation','test');
@@ -61,13 +80,13 @@ create table public.test_upgrade_expected as select to_jsonb(o) as order_data,(s
     }
     if ($migration.Name -ge '20260913130000_customer_price_book.sql' -and (Get-FileHash $migration.FullName).Hash -ne (Get-FileHash (Join-Path $migrationSource $migration.Name)).Hash) { throw "Pricing migration copy changed: $($migration.Name)" }
     Invoke-DatabaseCommand 'psql' @('-X','-q','-v','ON_ERROR_STOP=1','-d',$database,'-f',$migration.FullName)
-    if (-not $StrictHistory -and $migration.Name -eq '20260902113000_equipment_installations.sql') {
+    if (-not $StrictHistory -and -not $DeploymentOrder -and $migration.Name -eq '20260902113000_equipment_installations.sql') {
       Invoke-DatabaseCommand 'psql' @('-X','-q','-v','ON_ERROR_STOP=1','-d',$database,'-f',(Join-Path $work $deferredMigration))
     }
   }
 
   $lateTriggers = 'create trigger stockflow_delivery_exceptions_no_delete before delete on private.stockflow_delivery_exceptions for each row execute function private.prevent_business_delete(); create trigger stockflow_equipment_installations_no_delete before delete on private.stockflow_equipment_installations for each row execute function private.prevent_business_delete();'
-  if (-not $StrictHistory) { Invoke-DatabaseCommand 'psql' @('-X','-q','-v','ON_ERROR_STOP=1','-d',$database,'-c',$lateTriggers) }
+  if (-not $StrictHistory -and -not $DeploymentOrder) { Invoke-DatabaseCommand 'psql' @('-X','-q','-v','ON_ERROR_STOP=1','-d',$database,'-c',$lateTriggers) }
   $preserved = @'
 do $$begin
 if not exists(select 1 from private.stockflow_orders o cross join public.test_upgrade_expected e where o.id='dddddddd-dddd-4ddd-8ddd-dddddddddddd' and to_jsonb(o)=e.order_data and (select jsonb_agg(to_jsonb(l)) from private.stockflow_order_lines l where l.order_id=o.id)=e.line_data) then raise exception 'Pricing upgrade changed existing order data'; end if;

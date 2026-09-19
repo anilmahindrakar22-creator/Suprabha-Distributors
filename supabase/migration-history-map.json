@@ -6,12 +6,14 @@
   "localGitHead": "db7d7d9",
   "remoteOnly": [
     {
+      "localFile": "20260829054025_create_stockflow_private_snapshots.sql",
       "version": "20260829054025",
       "name": "create_stockflow_private_snapshots",
       "statement_count": 1,
       "hash": "934e5e0e13408ac795a5f5c23548c499bfaea81db45fe4d7b9434522c3ce4f43"
     },
     {
+      "localFile": "20260830071657_create_stockflow_member_allowlist.sql",
       "version": "20260830071657",
       "name": "create_stockflow_member_allowlist",
       "statement_count": 1,

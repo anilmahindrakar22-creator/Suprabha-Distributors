@@ -5,19 +5,11 @@ do $$ begin create role service_role nologin; exception when duplicate_object th
 create schema if not exists extensions;
 create extension if not exists pgcrypto with schema extensions;
 
-create table public.stockflow_members (
-  email text primary key,
-  role text not null,
-  status text not null default 'active',
-  updated_at timestamptz not null default now()
+create schema if not exists auth;
+create table auth.users (
+  id uuid primary key,
+  email text
 );
 
-create table public.stockflow_snapshots (
-  id text primary key,
-  company text not null,
-  fetched_at timestamptz not null,
-  payload jsonb not null
-);
-
-insert into public.stockflow_snapshots(id,company,fetched_at,payload)
-values('suprabha','SUPRABHA DISTRIBUTORS',now(),'{}'::jsonb);
+create or replace function auth.uid() returns uuid language sql stable as
+$$ select null::uuid $$;

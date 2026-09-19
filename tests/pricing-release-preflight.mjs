@@ -31,6 +31,10 @@ export function pricingReleasePreflight(evidence, files) {
   for (const bootstrap of evidence.remoteOnly) {
     addVersion(bootstrap.version);
     if (!hashPattern.test(bootstrap.hash)) throw new Error('Invalid bootstrap hash');
+    if (!bootstrap.localFile || seen.has(bootstrap.localFile) || !files.has(bootstrap.localFile)) throw new Error('Missing or duplicate bootstrap migration');
+    if (sha(files.get(bootstrap.localFile)) !== bootstrap.hash) throw new Error(`Migration hash changed: ${bootstrap.localFile}`);
+    seen.add(bootstrap.localFile);
+    deployed.push({ localFile: bootstrap.localFile, remoteVersion: bootstrap.version });
   }
   for (const entry of evidence.migrations) {
     const name = entry.localFile;
@@ -66,7 +70,7 @@ export function pricingReleasePreflight(evidence, files) {
     pending,
     blockers: [
       'Refresh live migration history and compare content again before release.',
-      'Recover and validate the real bootstrap SQL and deployed-order clean-install replay.',
+      'Run the deployed-order clean-install replay immediately before release.',
       'Complete isolated authenticated acceptance and final consolidation checks.',
     ],
   };

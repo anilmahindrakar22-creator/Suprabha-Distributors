@@ -13,8 +13,12 @@ describe('read-only pricing release preflight', () => {
     const result = pricingReleasePreflight(original, source);
     expect(result.pending).toHaveLength(8);
     expect(result.pending[0]).toBe('20260912193000_customer_pricing_engine.sql');
-    expect(result.deployed).toHaveLength(63);
+    expect(result.deployed).toHaveLength(65);
     const names = result.deployed.map((entry: { localFile: string }) => entry.localFile);
+    expect(names.slice(0, 2)).toEqual([
+      '20260829054025_create_stockflow_private_snapshots.sql',
+      '20260830071657_create_stockflow_member_allowlist.sql',
+    ]);
     expect(names.indexOf('20260902113000_equipment_installations.sql')).toBeLessThan(names.indexOf('20260902080651_harden_business_history.sql'));
     expect(result.pending.join(' ')).not.toMatch(/archive|reset|rotate/);
     expect(result.releaseReady).toBe(false);
