@@ -264,3 +264,26 @@ Completed after the user requested one more slice:
   `https://suprabha-pricing-acceptance.anil-mahindrakar22.chatgpt.site`.
 - Full mutation acceptance (customer proposal/approval, base-price decision, bulk approval and
   recovery) remains to be completed before production migration and publication.
+
+## Isolated mutation acceptance and independent approval guard — 19 September 2026
+
+- Added the synthetic Tally catalogue snapshot required by the private candidate; production
+  stock, production Tally and the production Site remain untouched.
+- Authenticated customer-price entry passed: the administrator selected the synthetic customer
+  and product, submitted an effective-dated ₹800 proposal, and the candidate persisted the
+  pending contract and approval audit path.
+- Acceptance then demonstrated that the same administrator could approve their own proposal.
+  This violated the stated four-eyes control even though role authorization, optimistic locking
+  and audit persistence were otherwise working.
+- Added a database trigger that rejects a transition to `approved` when `approved_by_email`
+  equals `created_by_email`. The guard applies below the API/UI boundary and therefore cannot be
+  bypassed by a hidden frontend control.
+- Added a regression scenario proving self-approval rolls back and a different Management user
+  can approve the unchanged pending contract. The migration applied successfully to the isolated
+  PostgreSQL 17 candidate. Both the focused rollback-only trigger check and the complete
+  `pricing_engine_integrity.sql` transaction suite passed there.
+- The local deployment replay could not be rerun in this session because the local PostgreSQL
+  `createdb` executable is unavailable. Its last fresh pass remains recorded above; this new
+  migration still requires the normal deployment-order replay at the final release checkpoint.
+- Base-price and bulk-price mutation acceptance, opaque recovery acceptance, and a clean
+  two-account UI approval pass remain release blockers. Production deployment stays held.
