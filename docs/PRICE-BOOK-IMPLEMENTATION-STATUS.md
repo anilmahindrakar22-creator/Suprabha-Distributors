@@ -246,3 +246,21 @@ Completed after the user requested one more slice:
   database environment is not currently configured; production must not be used as the test bed.
 - No production database, Tally data, Site version, access policy or hosting configuration was
   changed during this check.
+
+## Isolated authenticated candidate — 19 September 2026
+
+- Created a zero-cost isolated Supabase project and private Sites candidate. It contains only
+  synthetic acceptance data; production orders, production Tally data and the production Site
+  were not changed.
+- Applied the verified deployment-order schema with historical credential rotation and the
+  one-time order archival command excluded. The pricing gateway, immutable snapshots and both
+  approved administrator accounts are present in the isolated environment.
+- Authenticated administrator access reached the restricted Pricing workspace and loaded the
+  synthetic Customer × Product price book from the isolated database.
+- PostgreSQL 17 exposed a release-blocking ambiguous `contract` reference in the customer-price
+  listing gateway that PostgreSQL 15 did not reject. The row variable and result alias now have
+  distinct names; the private candidate and local deployment replay both pass afterward.
+- The candidate is deployed privately at
+  `https://suprabha-pricing-acceptance.anil-mahindrakar22.chatgpt.site`.
+- Full mutation acceptance (customer proposal/approval, base-price decision, bulk approval and
+  recovery) remains to be completed before production migration and publication.

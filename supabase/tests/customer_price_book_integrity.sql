@@ -14,6 +14,8 @@ begin
   insert into private.stockflow_products(tally_item_key,name,base_unit) values('BOOK-GLUCOSE','Glucose','Nos');
   insert into private.stockflow_tally_sales_prices(customer_id,tally_item_key,invoice_rate,invoice_date,invoice_reference,source_id,source_version) values(a,'BOOK-GLUCOSE',420,'2026-08-18','A-420','a-sale','1'),(b,'BOOK-GLUCOSE',435,'2026-08-18','B-435','b-sale','1');
   insert into private.stockflow_tally_purchase_costs(tally_item_key,cost_amount,cost_kind,effective_at,source_reference,source_id,source_version) values('BOOK-GLUCOSE',300,'purchase_price','2026-08-01','C300','cost-300','1'),('BOOK-GLUCOSE',310,'purchase_price','2026-09-01','C310','cost-310','1');
+  r:=public.stockflow_pricing_gateway('price-book-test-key','book-admin@test.local','list_price_contracts',jsonb_build_object('customerId',a));
+  if jsonb_typeof(r->'contracts')<>'array' then raise exception 'Customer contract listing failed'; end if;
   r:=private.stockflow_customer_price(a,'BOOK-GLUCOSE','2026-09-13');
   if (r->>'continuity')::numeric<>430 or (r->>'target')::numeric<>445 or (r->>'recommended')::numeric<>445 or (r->>'additionalGP')::numeric<>15 then raise exception 'Approved example failed: %',r; end if;
   if r->>'monthlyGPImpact' is not null then raise exception 'Volume was invented'; end if;

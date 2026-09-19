@@ -40,7 +40,7 @@ declare
   v_policy private.stockflow_pricing_policies%rowtype;
   v_previous_policy_id uuid;
   v_requires_approval boolean:=false; v_payload_lines jsonb:='[]'::jsonb; v_exception private.stockflow_price_exceptions%rowtype;
-  contract private.stockflow_customer_product_prices%rowtype;
+  v_contract private.stockflow_customer_product_prices%rowtype;
 begin
   select secret_sha256 into v_hash from private.stockflow_gateway_config where name='orders';
   if v_hash is null or encode(extensions.digest(coalesce(p_gateway_key,''),'sha256'),'hex')<>v_hash then raise exception 'Unauthorized gateway' using errcode='42501'; end if;
@@ -57,13 +57,13 @@ begin
   end if;
 
   if p_action='list_price_contracts' then
-    return jsonb_build_object('contracts',coalesce((select jsonb_agg(to_jsonb(contract) order by contract."validFrom" desc,contract."createdAt" desc) from (
+    return jsonb_build_object('contracts',coalesce((select jsonb_agg(to_jsonb(contract_row) order by contract_row."validFrom" desc,contract_row."createdAt" desc) from (
       select p.id,p.customer_id as "customerId",c.name as "customerName",p.tally_item_key as "tallyKey",p.price_amount as price,p.currency,p.valid_from as "validFrom",p.valid_to as "validTo",p.status,p.source_type as source,p.source_reference as "sourceReference",p.reason,p.approved_by_email as "approvedBy",p.approved_at as "approvedAt",p.version,p.supersedes_price_id as "supersedesPriceId",p.created_by_email as "createdBy",p.created_at as "createdAt"
       from private.stockflow_customer_product_prices p join private.stockflow_customers c on c.id=p.customer_id
       where (nullif(p_payload->>'customerId','') is null or p.customer_id=(p_payload->>'customerId')::uuid)
         and (nullif(btrim(p_payload->>'tallyKey'),'') is null or p.tally_item_key=btrim(p_payload->>'tallyKey'))
       order by p.valid_from desc,p.created_at desc limit 200
-    ) contract),'[]'::jsonb));
+    ) contract_row),'[]'::jsonb));
   end if;
 
   if p_action='list_customer_purchased_items' then
@@ -152,23 +152,23 @@ begin
 
   if p_action in ('approve_price_contract','reject_price_contract') then
     if v_role not in ('administrator','management') then raise exception 'Customer price approval is restricted' using errcode='42501'; end if;
-    select * into contract from private.stockflow_customer_product_prices where id=(p_payload->>'contractId')::uuid for update;
+    select * into v_contract from private.stockflow_customer_product_prices where id=(p_payload->>'contractId')::uuid for update;
     if not found then raise exception 'Customer price was not found' using errcode='22023'; end if;
-    if contract.version<>(p_payload->>'expectedVersion')::integer then raise exception 'Customer price has changed; refresh before trying again' using errcode='40001'; end if;
-    if contract.status<>'pending_approval' then raise exception 'Customer price is already decided' using errcode='22023'; end if;
+    if v_contract.version<>(p_payload->>'expectedVersion')::integer then raise exception 'Customer price has changed; refresh before trying again' using errcode='40001'; end if;
+    if v_contract.status<>'pending_approval' then raise exception 'Customer price is already decided' using errcode='22023'; end if;
     v_reason:=nullif(btrim(coalesce(p_payload->>'reason','')),'');
     if v_reason is null then raise exception 'A decision reason is required' using errcode='22023'; end if;
-    if p_action='approve_price_contract' and contract.supersedes_price_id is not null then
-      if not exists(select 1 from private.stockflow_customer_product_prices old where old.id=contract.supersedes_price_id and old.status='approved' and old.customer_id=contract.customer_id and old.tally_item_key=contract.tally_item_key and old.valid_from<contract.valid_from) then
+    if p_action='approve_price_contract' and v_contract.supersedes_price_id is not null then
+      if not exists(select 1 from private.stockflow_customer_product_prices old where old.id=v_contract.supersedes_price_id and old.status='approved' and old.customer_id=v_contract.customer_id and old.tally_item_key=v_contract.tally_item_key and old.valid_from<v_contract.valid_from) then
         raise exception 'Superseded customer price must be an earlier approved price for the same customer and item' using errcode='22023';
       end if;
-      update private.stockflow_customer_product_prices set status='superseded',valid_to=contract.valid_from-1,version=version+1 where id=contract.supersedes_price_id;
+      update private.stockflow_customer_product_prices set status='superseded',valid_to=v_contract.valid_from-1,version=version+1 where id=v_contract.supersedes_price_id;
     end if;
-    update private.stockflow_customer_product_prices set status=case when p_action='approve_price_contract' then 'approved' else 'rejected' end,approved_by_email=case when p_action='approve_price_contract' then v_email end,approved_at=case when p_action='approve_price_contract' then now() end,version=version+1 where id=contract.id;
+    update private.stockflow_customer_product_prices set status=case when p_action='approve_price_contract' then 'approved' else 'rejected' end,approved_by_email=case when p_action='approve_price_contract' then v_email end,approved_at=case when p_action='approve_price_contract' then now() end,version=version+1 where id=v_contract.id;
     insert into private.stockflow_pricing_events(entity_type,entity_id,event_type,actor_email,actor_role,request_id,metadata)
-    values('customer_price',contract.id,case when p_action='approve_price_contract' then 'customer_price_approved' else 'customer_price_rejected' end,v_email,v_role,v_key,jsonb_build_object('reason',v_reason,'previousStatus',contract.status));
-    v_result:=jsonb_build_object('ok',true,'contractId',contract.id,'status',case when p_action='approve_price_contract' then 'approved' else 'rejected' end,'version',contract.version+1);
-    perform private.finish_stockflow_command(v_email,p_action,v_key,p_payload,contract.id,v_result);
+    values('customer_price',v_contract.id,case when p_action='approve_price_contract' then 'customer_price_approved' else 'customer_price_rejected' end,v_email,v_role,v_key,jsonb_build_object('reason',v_reason,'previousStatus',v_contract.status));
+    v_result:=jsonb_build_object('ok',true,'contractId',v_contract.id,'status',case when p_action='approve_price_contract' then 'approved' else 'rejected' end,'version',v_contract.version+1);
+    perform private.finish_stockflow_command(v_email,p_action,v_key,p_payload,v_contract.id,v_result);
     return v_result;
   end if;
 
