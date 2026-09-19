@@ -179,6 +179,30 @@ Latest read-only deployment investigation:
 
 This is a tested development checkpoint, not implementation-complete or pilot-ready.
 
+## Release consolidation — 19 September 2026
+
+- `pnpm run ci`: PASS. Fresh results: lint, typecheck, connector recovery/retention,
+  80 unit files with 385 tests, production build, 8 desktop/mobile access-denial browser
+  tests, 26 desktop/mobile pricing browser tests, and production dependency audit with no
+  known vulnerabilities. Coverage: 95.21% statements, 88.35% branches, 100% functions,
+  98.95% lines.
+- Both disposable PostgreSQL 15 paths passed in this combined run: the compatibility replay
+  and verified deployed-order clean install. Each completed existing-order preservation,
+  pricing integrity, billing evidence, rollback, idempotency and two-session concurrency tests.
+- Release preflight and branch diff checks pass. Production, Tally, remote migration history,
+  hosting and customer/order data were not changed.
+- Authenticated acceptance verdict: PARTIAL. Fresh browser tests cover customer selection,
+  customer/base decisions, retries/failure handling, role restrictions and desktop/mobile UI;
+  API tests cover trusted identity and denial; database tests exercise real transactions.
+  These layers do not constitute a genuine staff login against an isolated deployed database.
+- Consolidation verdict: no demonstrated implementation defect, but NOT pilot-ready and not
+  approved for merge/publication until isolated staff-login acceptance passes and live migration
+  history is refreshed immediately before release. Service expansion remains deferred.
+- Branch `feature/customer-pricing-engine` was 14 commits ahead of its remote before this
+  checkpoint; `origin/main` was `9afdbda`. No PR, merge, push or deployment was performed.
+- Next action requires an explicitly authorized isolated candidate environment; do not perform
+  pricing mutations against the current production company merely to satisfy acceptance.
+
 ## Additional authorized integrity slice
 
 Completed after the user requested one more slice:

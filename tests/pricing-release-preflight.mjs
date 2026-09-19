@@ -71,7 +71,7 @@ export function pricingReleasePreflight(evidence, files) {
     blockers: [
       'Refresh live migration history and compare content again before release.',
       'Run the deployed-order clean-install replay immediately before release.',
-      'Complete isolated authenticated acceptance and final consolidation checks.',
+      'Complete staff-login acceptance against an isolated deployed candidate.',
     ],
   };
 }
