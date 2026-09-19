@@ -60,6 +60,65 @@ begin
   perform public.dblink_disconnect('pricing_a'); perform public.dblink_disconnect('pricing_b');
 end $concurrent$;
 
+do $exception_approval_race$
+declare
+  v_order uuid; v_line uuid; v_exception uuid; v_evidence text;
+  v_first_payload jsonb; v_second_payload jsonb; v_first_result jsonb; v_second_result jsonb;
+  v_second_pid integer; v_attempt integer; v_events integer; v_outbox integer; v_snapshots integer;
+begin
+  insert into private.stockflow_orders(customer_id,customer_name,source,status,idempotency_key,created_by_email,updated_by_email)
+  values('aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa','Concurrent A','phone','packed','concurrent-exception-order','concurrent-a@test.local','concurrent-a@test.local')
+  returning id into v_order;
+  insert into private.stockflow_order_lines(order_id,tally_item_key,item_name,quantity)
+  values(v_order,'CONCURRENT-4','Concurrent reagent 4',1) returning id into v_line;
+  v_evidence:=private.stockflow_resolve_pricing_line(v_line,'2026-09-14')->>'evidenceHash';
+  perform public.stockflow_pricing_gateway('concurrency-key','concurrent-a@test.local','submit_order_pricing',jsonb_build_object(
+    'orderId',v_order,'expectedVersion',1,'pricingDate','2026-09-14','idempotencyKey','concurrent-exception-submit',
+    'lines',jsonb_build_array(jsonb_build_object('lineId',v_line,'enteredRate',60,'reason','Concurrent commercial review','evidenceHash',v_evidence))
+  ));
+  select id into v_exception from private.stockflow_price_exceptions where order_id=v_order and state='pending';
+  if v_exception is null then raise exception 'Concurrent exception fixture was not created'; end if;
+  v_first_payload:=jsonb_build_object('exceptionId',v_exception,'expectedVersion',1,'pricingDate','2026-09-14','reason','First management approval','idempotencyKey','concurrent-exception-first');
+  v_second_payload:=jsonb_build_object('exceptionId',v_exception,'expectedVersion',1,'pricingDate','2026-09-14','reason','Second management approval','idempotencyKey','concurrent-exception-second');
+  select count(*) into v_events from private.stockflow_pricing_events;
+  select count(*) into v_outbox from private.stockflow_outbox;
+  select count(*) into v_snapshots from private.stockflow_billing_snapshots;
+
+  perform public.dblink_connect('exception_a',format('host=127.0.0.1 port=%s dbname=%s user=%s',current_setting('port'),current_database(),current_user));
+  perform public.dblink_connect('exception_b',format('host=127.0.0.1 port=%s dbname=%s user=%s',current_setting('port'),current_database(),current_user));
+  perform public.dblink_exec('exception_b','set statement_timeout=''15s''');
+  select pid into v_second_pid from public.dblink('exception_b','select pg_backend_pid()') as t(pid integer);
+  perform public.dblink_exec('exception_a','begin');
+  select value into v_first_result from public.dblink('exception_a',format(
+    'select public.test_pricing_call(%L,%L,%L::jsonb)','concurrent-a@test.local','approve_price_exception',v_first_payload::text
+  )) as t(value jsonb);
+  if v_first_result ? 'errorCode' then raise exception 'First exception approval failed: %',v_first_result; end if;
+  perform public.dblink_send_query('exception_b',format(
+    'select public.test_pricing_call(%L,%L,%L::jsonb)','concurrent-b@test.local','approve_price_exception',v_second_payload::text
+  ));
+  for v_attempt in 1..500 loop
+    exit when exists(select 1 from pg_locks where pid=v_second_pid and not granted);
+    perform pg_sleep(0.01);
+  end loop;
+  if not exists(select 1 from pg_locks where pid=v_second_pid and not granted) then raise exception 'Second exception approval did not contend on the exception lock'; end if;
+  perform public.dblink_exec('exception_a','commit');
+  select value into v_second_result from public.dblink_get_result('exception_b') as t(value jsonb);
+  perform * from public.dblink_get_result('exception_b') as t(value jsonb);
+  perform public.dblink_disconnect('exception_a'); perform public.dblink_disconnect('exception_b');
+
+  if v_second_result->>'errorCode' is distinct from '40001' then raise exception 'Stale concurrent exception approval was not rejected: %',v_second_result; end if;
+  if public.test_pricing_call('concurrent-a@test.local','approve_price_exception',v_first_payload) is distinct from v_first_result then raise exception 'Winning exception approval replay changed'; end if;
+  if not exists(select 1 from private.stockflow_price_exceptions where id=v_exception and state='approved' and version=2 and decided_by_email='concurrent-a@test.local')
+    or not exists(select 1 from private.stockflow_order_pricing_decisions where order_line_id=v_line and state='approved' and approved_by_email='concurrent-a@test.local')
+    or not exists(select 1 from private.stockflow_orders where id=v_order and pricing_state='approved' and pricing_snapshot_id is not null)
+  then raise exception 'Winning exception approval did not persist its complete state'; end if;
+  if (select count(*) from private.stockflow_pricing_events)<>v_events+1
+    or (select count(*) from private.stockflow_outbox)<>v_outbox+1
+    or (select count(*) from private.stockflow_billing_snapshots)<>v_snapshots+1
+    or exists(select 1 from private.stockflow_command_results where idempotency_key='concurrent-exception-second')
+  then raise exception 'Concurrent exception approval left duplicate or partial state'; end if;
+end $exception_approval_race$;
+
 create function public.test_fail_second_price_audit() returns trigger language plpgsql as $$
 begin
   if new.request_id='bulk-rollback-key-123' and exists(select 1 from private.stockflow_pricing_events where request_id=new.request_id) then raise exception 'Injected second-row audit failure'; end if;

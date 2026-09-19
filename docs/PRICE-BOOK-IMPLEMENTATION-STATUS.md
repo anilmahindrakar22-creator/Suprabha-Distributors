@@ -155,8 +155,9 @@ Latest read-only deployment investigation:
 - Authenticated browser acceptance for customer selection, row approval, base price save,
   bulk review, mobile layout, keyboard use, paging, and errors. Fixture tests now cover
   customer selection, tabs, row submission, Accounts restrictions and order pricing options.
-- Two-session price-book/bulk concurrency and failure rollback are verified locally.
-  Other order/exception approval races still need coverage at final integrity review.
+- Two-session price-book/bulk and same-exception approval concurrency, plus failure rollback,
+  are verified locally. The losing exception approval is rejected as stale without duplicate
+  snapshots, audit/outbox records or command results; the winner remains idempotently replayable.
 - Billing-boundary regressions now cover Tally cost, customer-contract replacement, pricing-policy
   change and a newer accepted customer price-book decision. Each stale handoff is rejected while
   preserving the awaiting-billing order and immutable snapshot. The verified deployed-order
@@ -218,4 +219,15 @@ Completed after the user requested one more slice:
 - Fresh complete migration replay and both pricing database integrity suites passed.
 - Application code did not change in this slice, so the earlier application/build results
   were not rerun or represented as newly executed.
-- Still uncommitted and unpublished; remaining release blockers above continue to apply.
+- Committed as `71c62c7` and unpublished; remaining release blockers above continue to apply.
+
+## Concurrent exception approval integrity — 19 September 2026
+
+- Added a deterministic two-session race for two managers approving the same pending price
+  exception. The test proves real lock contention rather than sequential calls.
+- The first approval atomically creates the approved decision, immutable billing snapshot,
+  audit event and outbox entry. The stale second approval returns `40001` and persists no
+  command result or partial/duplicate state. Replaying the winner returns the original result.
+- Fresh verified deployed-order pricing migration/integrity replay passed.
+- No production, Tally, hosting or live customer/order data was changed. The isolated
+  authenticated staff-login acceptance blocker remains.
