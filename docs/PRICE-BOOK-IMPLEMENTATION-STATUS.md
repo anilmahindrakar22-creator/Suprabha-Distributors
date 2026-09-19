@@ -231,3 +231,18 @@ Completed after the user requested one more slice:
 - Fresh verified deployed-order pricing migration/integrity replay passed.
 - No production, Tally, hosting or live customer/order data was changed. The isolated
   authenticated staff-login acceptance blocker remains.
+
+## Pre-deployment gate refresh — 19 September 2026
+
+- Refreshed the live Supabase migration list read-only. The production project is healthy and
+  still ends at `order_follow_up_queue` (`20260912081315`); none of the eight pricing migrations
+  has been applied and no unexpected later migration was found.
+- Fresh verified deployed-order replay passed, including existing-order preservation, pricing
+  integrity, rollback, idempotency and two-session concurrency checks.
+- The current public Site is healthy, but it still targets that production database. Publishing
+  the pricing UI before its database boundary exists would create a broken partial release.
+- Deployment is therefore held. The remaining release gate is authenticated staff acceptance
+  in an isolated candidate followed by a controlled migration/app release. A free isolated
+  database environment is not currently configured; production must not be used as the test bed.
+- No production database, Tally data, Site version, access policy or hosting configuration was
+  changed during this check.
