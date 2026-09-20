@@ -13,6 +13,7 @@ const pricingReleaseFiles = new Set([
   '20260914120000_pricing_submission_recovery.sql',
   '20260914140000_contract_policy_recovery.sql',
   '20260914160000_close_unresolved_pricing.sql',
+  '20260919151500_enforce_independent_price_approval.sql',
 ]);
 const sha = (sql) => createHash('sha256').update(sql.replace(/\r/g, '').trim(), 'utf8').digest('hex');
 const hashPattern = /^[a-f0-9]{64}$/;

@@ -474,7 +474,7 @@
     },
     {
       "localFile": "20260913130000_customer_price_book.sql",
-      "localSha256": "6487c3ab3bdbba9de07eed14754bc4dc0a0baac68af7a49efb884464234b2151",
+      "localSha256": "d991da348ed49ca2236d4b3264013012cce463082d780d2c68b12ba6b4578149",
       "remoteVersion": null,
       "remoteSha256": null,
       "status": "not_deployed"
@@ -517,6 +517,13 @@
     {
       "localFile": "20260914160000_close_unresolved_pricing.sql",
       "localSha256": "d492336845d34551e516fee3a572a8c4a58b1088675e4184a194799fe80c9a02",
+      "remoteVersion": null,
+      "remoteSha256": null,
+      "status": "not_deployed"
+    },
+    {
+      "localFile": "20260919151500_enforce_independent_price_approval.sql",
+      "localSha256": "0e8b739f66fafa5071270db093228248b4d3f283d096f8de3626f1874fbb7a75",
       "remoteVersion": null,
       "remoteSha256": null,
       "status": "not_deployed"
