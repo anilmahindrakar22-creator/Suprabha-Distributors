@@ -89,7 +89,7 @@ function Get-PricingSalesEvidence($Records, $Customers, [int]$LimitPerCustomerIt
     }
     $evidence = [Collections.Generic.List[object]]::new()
     foreach ($voucher in @($Records)) {
-        if ($voucher.cancelled -or $voucher.optional -or [string]$voucher.voucherType -ne 'Sales') { continue }
+        if ($voucher.cancelled -or $voucher.optional -or [string]$voucher.voucherType -notin @('Sales', 'GST SALE')) { continue }
         $customerKey = $customerKeys[([string]$voucher.party).Trim().ToLowerInvariant()]
         # A duplicate display name cannot prove an exact canonical Tally ledger.
         # Keep the voucher in operational history but exclude it from pricing.
@@ -117,7 +117,7 @@ function Get-PricingSalesEvidence($Records, $Customers, [int]$LimitPerCustomerIt
 function Get-PricingPurchaseCostEvidence($Records, [int]$LimitPerItem = 5, [int]$MaximumRows = 5000) {
     $evidence = [Collections.Generic.List[object]]::new()
     foreach ($voucher in @($Records)) {
-        if ($voucher.cancelled -or $voucher.optional -or [string]$voucher.sourceDomain -ne 'purchase') { continue }
+        if ($voucher.cancelled -or $voucher.optional -or [string]$voucher.sourceDomain -ne 'purchase' -or [string]$voucher.voucherType -ne 'Purchase') { continue }
         $date = [string]$voucher.date
         if ($date -notmatch '^\d{8}$') { continue }
         $effectiveAt = "$($date.Substring(0,4))-$($date.Substring(4,2))-$($date.Substring(6,2))"
@@ -128,12 +128,12 @@ function Get-PricingPurchaseCostEvidence($Records, [int]$LimitPerItem = 5, [int]
             $sourceId = "$([string]$voucher.masterId)|$([int]$line.lineNumber)|$item"
             $sourceVersion = Get-StableEvidenceVersion "$sourceId|$date|$cost|$([string]$voucher.voucherNumber)"
             $evidence.Add([ordered]@{
-                tallyItemKey = $item; cost = $cost; costKind = 'purchase_invoice_rate'; effectiveAt = $effectiveAt
+                tallyItemKey = $item; amount = $cost; kind = 'purchase_invoice_rate'; effectiveAt = $effectiveAt
                 sourceReference = [string]$voucher.voucherNumber; sourceId = $sourceId; sourceVersion = $sourceVersion
             })
         }
     }
-    return @($evidence | Sort-Object effectiveAt -Descending | Group-Object tallyItemKey | ForEach-Object { $_.Group | Select-Object -First $LimitPerItem } | Select-Object -First $MaximumRows)
+    return @($evidence | Sort-Object effectiveAt -Descending | Group-Object { [string]$_.tallyItemKey } | ForEach-Object { $_.Group | Select-Object -First $LimitPerItem } | Select-Object -First $MaximumRows)
 }
 
 function Get-TrustedSalesSnapshot($Snapshot, [string]$Company) {

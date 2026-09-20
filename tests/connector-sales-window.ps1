@@ -17,6 +17,10 @@ $converted = @(Convert-LegacySalesRecords $legacy.OuterXml)
 if ($converted.Count -ne 1 -or $converted[0].date -ne '20260905' -or $converted[0].voucherNumber -ne 'SD/26-27/0009' -or $converted[0].voucherType -ne 'Sales' -or $converted[0].party -ne 'City Lab' -or $converted[0].lineItems[0].quantity -ne 2 -or $converted[0].lineItems[0].rate -ne 485 -or $converted[0].masterId -ne 'master:9') { throw 'Legacy cache conversion failed' }
 $evidence = @(Get-PricingSalesEvidence $converted @(@{name='City Lab';tallyKey='ledger:city'}) 5 50)
 if ($evidence.Count -ne 1 -or $evidence[0].customerTallyKey -ne 'ledger:city' -or $evidence[0].tallyItemKey -ne 'Kit' -or $evidence[0].rate -ne 485 -or $evidence[0].invoiceDate -ne '2026-09-05' -or -not $evidence[0].sourceVersion) { throw 'Pricing sales evidence was not built safely' }
+$gstSaleEvidence = @(Get-PricingSalesEvidence @(Convert-LegacySalesRecords $legacy.OuterXml.Replace('<VOUCHERTYPENAME>Sales</VOUCHERTYPENAME>','<VOUCHERTYPENAME>GST SALE</VOUCHERTYPENAME>')) @(@{name='City Lab';tallyKey='ledger:city'}) 5 50)
+if ($gstSaleEvidence.Count -ne 1) { throw 'Approved GST sales voucher type was excluded' }
+$quotationEvidence = @(Get-PricingSalesEvidence @(Convert-LegacySalesRecords $legacy.OuterXml.Replace('<VOUCHERTYPENAME>Sales</VOUCHERTYPENAME>','<VOUCHERTYPENAME>Sales-Quotation</VOUCHERTYPENAME>')) @(@{name='City Lab';tallyKey='ledger:city'}) 5 50)
+if ($quotationEvidence.Count -ne 0) { throw 'Quotation was accepted as invoiced selling-price evidence' }
 $ambiguousEvidence = @(Get-PricingSalesEvidence $converted @(@{name='City Lab';tallyKey='ledger:city-one'},@{name=' city lab ';tallyKey='ledger:city-two'}) 5 50)
 if ($ambiguousEvidence.Count -ne 0) { throw 'Ambiguous customer ledger name was accepted for pricing' }
 $focXml = $legacy.OuterXml.Replace('<RATE>485.00/box</RATE><AMOUNT>-970.00</AMOUNT>','<RATE>0.00/box</RATE><AMOUNT>0.00</AMOUNT>')
@@ -24,7 +28,7 @@ $focEvidence = @(Get-PricingSalesEvidence @(Convert-LegacySalesRecords $focXml) 
 if ($focEvidence.Count -ne 1 -or -not $focEvidence[0].exceptional -or $focEvidence[0].exceptionType -ne 'foc') { throw 'FOC evidence was not classified' }
 $purchaseXml = $legacy.OuterXml.Replace('<VOUCHERNUMBER>SD/26-27/0009</VOUCHERNUMBER>', '<VOUCHERNUMBER>PUR/009</VOUCHERNUMBER>').Replace('<VOUCHERTYPENAME>Sales</VOUCHERTYPENAME>', '<VOUCHERTYPENAME>Purchase</VOUCHERTYPENAME>')
 $purchaseEvidence = @(Get-PricingPurchaseCostEvidence @(Convert-LegacySalesRecords $purchaseXml 'purchase') 5 50)
-if ($purchaseEvidence.Count -ne 1 -or $purchaseEvidence[0].tallyItemKey -ne 'Kit' -or $purchaseEvidence[0].cost -ne 485 -or $purchaseEvidence[0].effectiveAt -ne '2026-09-05' -or $purchaseEvidence[0].costKind -ne 'purchase_invoice_rate' -or -not $purchaseEvidence[0].sourceVersion) { throw 'Purchase-cost evidence was not built safely' }
+if ($purchaseEvidence.Count -ne 1 -or $purchaseEvidence[0].tallyItemKey -ne 'Kit' -or $purchaseEvidence[0].amount -ne 485 -or $purchaseEvidence[0].effectiveAt -ne '2026-09-05' -or $purchaseEvidence[0].kind -ne 'purchase_invoice_rate' -or -not $purchaseEvidence[0].sourceVersion) { throw 'Purchase-cost evidence was not built safely' }
 $zeroPurchaseEvidence = @(Get-PricingPurchaseCostEvidence @(Convert-LegacySalesRecords $purchaseXml.Replace('<RATE>485.00/box</RATE><AMOUNT>-970.00</AMOUNT>','<RATE>0.00/box</RATE><AMOUNT>0.00</AMOUNT>') 'purchase') 5 50)
 if ($zeroPurchaseEvidence.Count -ne 0) { throw 'Zero purchase cost was accepted' }
 $unscoped = [pscustomobject]@{ company='TEST'; records=@([pscustomobject]@{ party='Purchase supplier' }) }
