@@ -128,7 +128,7 @@ function Get-PricingPurchaseCostEvidence($Records, [int]$LimitPerItem = 5, [int]
             $sourceId = "$([string]$voucher.masterId)|$([int]$line.lineNumber)|$item"
             $sourceVersion = Get-StableEvidenceVersion "$sourceId|$date|$cost|$([string]$voucher.voucherNumber)"
             $evidence.Add([ordered]@{
-                tallyItemKey = $item; amount = $cost; kind = 'purchase_invoice_rate'; effectiveAt = $effectiveAt
+                tallyItemKey = $item; amount = $cost; kind = 'purchase_price'; effectiveAt = $effectiveAt
                 sourceReference = [string]$voucher.voucherNumber; sourceId = $sourceId; sourceVersion = $sourceVersion
             })
         }
