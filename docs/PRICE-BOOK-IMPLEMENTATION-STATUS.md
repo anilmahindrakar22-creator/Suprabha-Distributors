@@ -287,3 +287,23 @@ Completed after the user requested one more slice:
   migration still requires the normal deployment-order replay at the final release checkpoint.
 - Base-price and bulk-price mutation acceptance, opaque recovery acceptance, and a clean
   two-account UI approval pass remain release blockers. Production deployment stays held.
+
+## Base and bulk mutation acceptance — 20 September 2026
+
+- Ran the real pricing gateway against the isolated PostgreSQL 17 candidate using synthetic
+  Cleaner evidence inside a rollback-only transaction. Production, Tally and the production
+  Site were not contacted or changed.
+- Base-price acceptance passed: an Administrator-approved effective-dated base price persisted
+  with one audit event and one idempotency result; replaying the same command returned the exact
+  original result without a duplicate price or audit event.
+- Bulk-price acceptance passed after adding rollback-only historical purchase-cost evidence:
+  the preview produced eligible continuity evidence, the recommended-price command created the
+  expected customer decisions, audit events and transactional outbox entries, and an identical
+  replay returned the original result without duplicates.
+- The second approved staff identity (`nikitesh.am@gmail.com`) completed ChatGPT authentication,
+  but the private candidate Site remains owner-only and denied application access. No Site access
+  policy was changed. A clean two-account UI approval pass therefore remains blocked until that
+  identity is explicitly granted candidate access.
+- Remaining release blockers: opaque recovery acceptance, two-account browser approval, and the
+  final deployment-order replay/consolidation. Base-price and bulk-price database mutation
+  acceptance are complete. Production deployment remains held.
