@@ -1,4 +1,4 @@
-param([int]$Port = 8765, [switch]$NoBrowser, [ValidateRange(5, 120)][int]$SyncMinutes = 15, [ValidateRange(15, 1440)][int]$CustomerSyncMinutes = 240, [ValidateRange(15, 1440)][int]$CatalogSyncMinutes = 240, [ValidateRange(1, 14)][int]$SalesRecentDays = 7, [ValidateRange(4, 168)][int]$SalesReconcileHours = 24, [switch]$RebuildSalesHistory)
+param([int]$Port = 8765, [switch]$NoBrowser, [ValidateRange(5, 120)][int]$SyncMinutes = 15, [ValidateRange(15, 1440)][int]$CustomerSyncMinutes = 240, [ValidateRange(15, 1440)][int]$CatalogSyncMinutes = 240, [ValidateRange(15, 1440)][int]$PurchaseSyncMinutes = 240, [ValidateRange(1, 14)][int]$SalesRecentDays = 7, [ValidateRange(4, 168)][int]$SalesReconcileHours = 24, [switch]$RebuildSalesHistory)
 
 $ErrorActionPreference = 'Stop'
 $dashboardRoot = Split-Path -Parent $MyInvocation.MyCommand.Path
@@ -9,6 +9,7 @@ $stateDirectory = Join-Path ([Environment]::GetFolderPath('LocalApplicationData'
 [IO.Directory]::CreateDirectory($stateDirectory) | Out-Null
 $snapshotPath = Join-Path $stateDirectory 'snapshot-v1.json'
 $salesPath = Join-Path $stateDirectory 'sales-history-v1.json'
+$purchasePath = Join-Path $stateDirectory 'purchase-history-v1.json'
 $customerPath = Join-Path $stateDirectory 'customer-master-v1.json'
 $catalogPath = Join-Path $stateDirectory 'catalog-master-v1.json'
 $healthLogPath = Join-Path $stateDirectory 'connector-health.log'
@@ -21,6 +22,12 @@ try {
     exit 0
 }
 $script:lastReorderData = Read-ConnectorSnapshot $snapshotPath $companyName
+$script:lastPurchaseData = Get-TrustedPurchaseSnapshot (Read-ConnectorSnapshot $purchasePath $companyName) $companyName
+if (-not $script:lastPurchaseData) { $script:lastPurchaseData = Get-TrustedPurchaseSnapshot (Read-ConnectorSnapshot "$purchasePath.bak" $companyName) $companyName }
+$script:nextPurchaseRead = Get-Date
+if ($script:lastPurchaseData) {
+    $script:nextPurchaseRead = ([datetimeoffset]::Parse($script:lastPurchaseData.fetchedAtIso)).LocalDateTime.AddMinutes($PurchaseSyncMinutes)
+}
 $script:lastCustomerData = Read-CustomerSnapshot $customerPath $companyName
 if (-not $script:lastCustomerData) { $script:lastCustomerData = Read-CustomerSnapshot "$customerPath.bak" $companyName }
 $script:nextCustomerRead = Get-Date
@@ -295,6 +302,51 @@ function Get-ReorderData {
     }
 }
 
+function Get-TallyPurchaseData {
+    if ($script:lastPurchaseData -and (Get-Date) -lt $script:nextPurchaseRead) {
+        return @($script:lastPurchaseData.records)
+    }
+    $script:nextPurchaseRead = (Get-Date).AddMinutes($PurchaseSyncMinutes)
+    $today = (Get-Date).Date
+    $cached = Get-TrustedPurchaseSnapshot (Read-ConnectorSnapshot $purchasePath $companyName) $companyName
+    if (-not $cached) {
+        $cached = @{ company = $companyName; sourceScope = 'purchase_vouchers_v1'; records = @(); reconciledAt = $null }
+    }
+    $window = Get-SalesWindow $today ([string]$cached.reconciledAt) 14 90 24
+    $fromDate = if (@($cached.records).Count) { $window.fromDate } else { $today.AddDays(-365).ToString('yyyyMMdd') }
+    $toDate = $today.ToString('yyyyMMdd')
+    $purchaseXml = '<ENVELOPE><HEADER><VERSION>1</VERSION><TALLYREQUEST>Export</TALLYREQUEST><TYPE>COLLECTION</TYPE><ID>DashboardPurchaseVouchers</ID></HEADER><BODY><DESC><STATICVARIABLES><SVEXPORTFORMAT>$$SysName:XML</SVEXPORTFORMAT><SVCURRENTCOMPANY>SUPRABHA DISTRIBUTORS</SVCURRENTCOMPANY><SVFROMDATE TYPE="Date">__FROM_DATE__</SVFROMDATE><SVTODATE TYPE="Date">__TO_DATE__</SVTODATE></STATICVARIABLES><TDL><TDLMESSAGE><COLLECTION NAME="DashboardPurchaseVouchers" ISINITIALIZE="Yes"><TYPE>Voucher</TYPE><CHILDOF>Purchase</CHILDOF><BELONGSTO>Yes</BELONGSTO><FETCH>Date,VoucherNumber,VoucherTypeName,Reference,MasterID,PartyLedgerName,IsCancelled,IsOptional,AllInventoryEntries.StockItemName,AllInventoryEntries.BilledQty,AllInventoryEntries.ActualQty,AllInventoryEntries.Rate,AllInventoryEntries.Amount</FETCH><FILTER>StockFlowPurchasePeriod</FILTER></COLLECTION><SYSTEM TYPE="Formulae" NAME="StockFlowPurchasePeriod">$Date &gt;= ##SVFromDate AND $Date &lt;= ##SVToDate</SYSTEM></TDLMESSAGE></TDL></DESC></BODY></ENVELOPE>'
+    $purchaseXml = $purchaseXml.Replace('__FROM_DATE__', $fromDate).Replace('__TO_DATE__', $toDate)
+    try {
+        $content = Invoke-Tally $purchaseXml -TimeoutSeconds 20 -MetricName 'purchase_costs'
+        $content = [regex]::Replace($content, '(<\/?)(?i:UDF):', '$1UDF_')
+        $content = [regex]::Replace($content, '(\s)(?i:UDF):([A-Za-z0-9_.-]+)=', '$1UDF_$2=')
+        [xml]$document = $content
+        if ($document.SelectSingleNode('//LINEERROR') -or -not $document.SelectSingleNode('//COLLECTION')) { throw 'Purchase export did not contain a successful collection.' }
+        foreach ($dateNode in $document.SelectNodes('//VOUCHER/DATE')) {
+            if ($dateNode.InnerText -lt $fromDate -or $dateNode.InnerText -gt $toDate) { throw 'Tally ignored the purchase date window; refusing to merge an unbounded export.' }
+        }
+        $incoming = @(Convert-LegacySalesRecords $document.OuterXml 'purchase')
+        $records = @(Merge-SalesRecords $cached.records $incoming $fromDate)
+        $fresh = @{
+            company = $companyName; fetchedAtIso = [datetimeoffset]::UtcNow.ToString('o'); sourceScope = 'purchase_vouchers_v1'
+            catalog = @(); tallyInvoices = @(); records = $records
+            reconciledAt = if ($window.reconciliation) { [datetimeoffset]::UtcNow.ToString('o') } else { $cached.reconciledAt }
+        }
+        Save-ConnectorSnapshot $purchasePath $fresh
+        $script:lastPurchaseData = $fresh
+        Write-ConnectorHealth "$([datetimeoffset]::Now.ToString('o')) domain=purchase_costs records=$($records.Count) status=accepted"
+        return $records
+    } catch {
+        $script:nextPurchaseRead = (Get-Date).AddMinutes($SyncMinutes)
+        if ($script:lastPurchaseData) {
+            Write-Host 'Purchase-cost refresh failed; retaining the saved pricing evidence.' -ForegroundColor DarkYellow
+            return @($script:lastPurchaseData.records)
+        }
+        throw
+    }
+}
+
 function Read-ReorderData {
     $today = (Get-Date).Date
     $financialYear = if ($today.Month -ge 4) { $today.Year } else { $today.Year - 1 }
@@ -307,8 +359,10 @@ function Read-ReorderData {
     [xml]$reportDoc = Invoke-Tally $reportXml
     $customers = Get-TallyCustomers
     $salesData = Get-TallySalesData
+    $purchaseRecords = Get-TallyPurchaseData
     $lastSupplyMap = $salesData.lastSupply
     $pricingSales = @(Get-PricingSalesEvidence $salesData.records $customers)
+    $pricingPurchaseCosts = @(Get-PricingPurchaseCostEvidence $purchaseRecords)
     $groupMap = @{}
     foreach ($item in $stockDoc.SelectNodes('//STOCKITEM')) { $groupMap[$item.GetAttribute('NAME')] = [string]$item.PARENT.'#text' }
     $groupParents = @{}
@@ -411,7 +465,7 @@ function Read-ReorderData {
         catalog = $catalog
         customers = $customers
         tallyInvoices = @($salesData.invoices)
-        pricingHistory = [ordered]@{ sales = $pricingSales; purchaseCosts = @() }
+        pricingHistory = [ordered]@{ sales = $pricingSales; purchaseCosts = $pricingPurchaseCosts }
     }
 }
 

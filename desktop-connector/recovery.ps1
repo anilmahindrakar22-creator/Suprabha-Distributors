@@ -42,7 +42,7 @@ function Merge-SalesRecords($Previous, $Incoming, [string]$FromDate) {
     return $merged.ToArray()
 }
 
-function Convert-LegacySalesRecords([string]$Document) {
+function Convert-LegacySalesRecords([string]$Document, [string]$SourceDomain = '') {
     [xml]$sales = $Document
     return @($sales.SelectNodes('//VOUCHER') | ForEach-Object {
         $voucher = $_
@@ -69,6 +69,7 @@ function Convert-LegacySalesRecords([string]$Document) {
         [ordered]@{
             masterId = $id; date = if ($dateNode) { $dateNode.InnerText.Trim() } else { '' }; voucherNumber = if ($voucherNumberNode) { $voucherNumberNode.InnerText.Trim() } else { '' }
             voucherType = if ($voucherTypeNode) { $voucherTypeNode.InnerText.Trim() } else { '' }
+            sourceDomain = $SourceDomain
             reference = if ($voucher.REFERENCE) { $voucher.REFERENCE.InnerText.Trim() } else { $null }
             party = if ($partyNode) { $partyNode.InnerText.Trim() } else { '' }
             cancelled = $voucher.ISCANCELLED.InnerText -eq 'Yes'; optional = $voucher.ISOPTIONAL.InnerText -eq 'Yes'
@@ -113,8 +114,36 @@ function Get-PricingSalesEvidence($Records, $Customers, [int]$LimitPerCustomerIt
     return $bounded
 }
 
+function Get-PricingPurchaseCostEvidence($Records, [int]$LimitPerItem = 5, [int]$MaximumRows = 5000) {
+    $evidence = [Collections.Generic.List[object]]::new()
+    foreach ($voucher in @($Records)) {
+        if ($voucher.cancelled -or $voucher.optional -or [string]$voucher.sourceDomain -ne 'purchase') { continue }
+        $date = [string]$voucher.date
+        if ($date -notmatch '^\d{8}$') { continue }
+        $effectiveAt = "$($date.Substring(0,4))-$($date.Substring(4,2))-$($date.Substring(6,2))"
+        foreach ($line in @($voucher.lineItems)) {
+            $item = ([string]$line.itemName).Trim()
+            if (-not $item -or $null -eq $line.rate -or [decimal]$line.rate -le 0) { continue }
+            $cost = [decimal]$line.rate
+            $sourceId = "$([string]$voucher.masterId)|$([int]$line.lineNumber)|$item"
+            $sourceVersion = Get-StableEvidenceVersion "$sourceId|$date|$cost|$([string]$voucher.voucherNumber)"
+            $evidence.Add([ordered]@{
+                tallyItemKey = $item; cost = $cost; costKind = 'purchase_invoice_rate'; effectiveAt = $effectiveAt
+                sourceReference = [string]$voucher.voucherNumber; sourceId = $sourceId; sourceVersion = $sourceVersion
+            })
+        }
+    }
+    return @($evidence | Sort-Object effectiveAt -Descending | Group-Object tallyItemKey | ForEach-Object { $_.Group | Select-Object -First $LimitPerItem } | Select-Object -First $MaximumRows)
+}
+
 function Get-TrustedSalesSnapshot($Snapshot, [string]$Company) {
     if ($null -eq $Snapshot -or $Snapshot.company -ne $Company -or $Snapshot.sourceScope -ne 'sales_vouchers_v1') { return $null }
+    if ($null -eq $Snapshot.records) { return $null }
+    return $Snapshot
+}
+
+function Get-TrustedPurchaseSnapshot($Snapshot, [string]$Company) {
+    if ($null -eq $Snapshot -or $Snapshot.company -ne $Company -or $Snapshot.sourceScope -ne 'purchase_vouchers_v1') { return $null }
     if ($null -eq $Snapshot.records) { return $null }
     return $Snapshot
 }

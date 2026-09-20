@@ -1,6 +1,6 @@
 # StockFlow Tally connector
 
-`dashboard.ps1` runs beside TallyPrime on the office Windows computer. It refreshes reorder figures and the latest seven days of Sales vouchers every 15 minutes by default. Once daily, the Sales window expands to 30 days so backdated edits and cancellations are reconciled. The complete product catalog and active `Sundry Debtors` customer ledgers use separate durable caches refreshed every four hours. A small company-identity request runs before every cycle. A missing or different company leaves the last good snapshot untouched and prevents upload.
+`dashboard.ps1` runs beside TallyPrime on the office Windows computer. It refreshes reorder figures and the latest seven days of Sales vouchers every 15 minutes by default. Once daily, the Sales window expands to 30 days so backdated edits and cancellations are reconciled. Read-only Purchase voucher evidence uses a separate durable cache and a slower four-hour schedule; its first import is limited to 365 days and later imports use a 14-day window with a daily 90-day reconciliation. The complete product catalog and active `Sundry Debtors` customer ledgers also refresh every four hours. A small company-identity request runs before every cycle. A missing or different company leaves the last good snapshot untouched and prevents upload.
 
 The upload credential must be stored in the Windows user environment as `STOCKFLOW_UPLOAD_KEY`. It must never be committed to source control. After updating this script on the office computer, restart the connector while TallyPrime is open with `SUPRABHA DISTRIBUTORS` loaded.
 
@@ -26,4 +26,4 @@ These controls run only on the Tally computer and do not add anything to the eve
 .\connector-control.ps1 -Action SetSchedule -SyncMinutes 20
 ```
 
-The supported schedule is 5–120 minutes. Pausing stops Tally reads until an administrator resumes the task. Status shows the Windows task state, latest cloud-upload result, and the accepted row counts for each available data domain without exposing its credential or business payload. Health logging is capped at 2 MB with one previous log retained, and a logging problem never interrupts extraction or upload.
+The supported operational schedule is 5–120 minutes. Purchase-cost, catalog and customer reads remain independently throttled to four hours by default. Pausing stops every Tally read until an administrator resumes the task. Status shows the Windows task state, latest cloud-upload result, and the accepted row counts for each available data domain without exposing its credential or business payload. Health logging is capped at 2 MB with one previous log retained, and a logging problem never interrupts extraction or upload.

@@ -32,11 +32,22 @@ describe('Tally invoice reconciliation connector', () => {
   it('exports bounded read-only selling-price evidence without enabling Tally writes', () => {
     expect(connector).toContain('AllInventoryEntries.Rate,AllInventoryEntries.Amount');
     expect(connector).toContain('Get-PricingSalesEvidence $salesData.records $customers');
-    expect(connector).toContain('pricingHistory = [ordered]@{ sales = $pricingSales; purchaseCosts = @() }');
+    expect(connector).toContain('$purchaseRecords = Get-TallyPurchaseData');
+    expect(connector).toContain('Get-PricingPurchaseCostEvidence $purchaseRecords');
+    expect(connector).toContain('pricingHistory = [ordered]@{ sales = $pricingSales; purchaseCosts = $pricingPurchaseCosts }');
     expect(connector).toContain('Commercial rates stay in pricingHistory and never enter normal order payloads.');
     expect(recovery).toContain('A duplicate display name cannot prove an exact canonical Tally ledger.');
     expect(connector).toContain('lineItems = $safeInvoiceLines');
     expect(connector).not.toMatch(/CREATE\s+VOUCHER|ALTER\s+VOUCHER|DELETE\s+VOUCHER/i);
+  });
+
+  it('reads purchase costs on a slower bounded incremental schedule', () => {
+    expect(connector).toContain("sourceScope = 'purchase_vouchers_v1'");
+    expect(connector).toContain('<CHILDOF>Purchase</CHILDOF>');
+    expect(connector).toContain("Get-SalesWindow $today ([string]$cached.reconciledAt) 14 90 24");
+    expect(connector).toContain("$today.AddDays(-365).ToString('yyyyMMdd')");
+    expect(connector).toContain('Tally ignored the purchase date window; refusing to merge an unbounded export.');
+    expect(connector).toContain('domain=purchase_costs records=$($records.Count) status=accepted');
   });
 
   it('reuses the customer-master request for read-only ledger balances', () => {

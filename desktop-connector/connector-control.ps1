@@ -48,7 +48,7 @@ function Show-ConnectorStatus {
     Write-Host "StockFlow connector: $($task.State)" -ForegroundColor $(if ($task.State -eq 'Running') { 'Green' } else { 'DarkYellow' })
     Write-Host "Last started: $($info.LastRunTime)"
     if ($latestUpload) { Write-Host "Latest cloud result: $latestUpload" }
-    foreach ($domain in @('reorder', 'sales', 'catalog', 'customers')) {
+    foreach ($domain in @('reorder', 'sales', 'purchase_costs', 'catalog', 'customers')) {
         $latestDomain = $healthLines | Where-Object { $_ -match "domain=$domain(?: |$)" } | Select-Object -Last 1
         if ($latestDomain) { Write-Host "Latest $domain data: $latestDomain" }
     }
