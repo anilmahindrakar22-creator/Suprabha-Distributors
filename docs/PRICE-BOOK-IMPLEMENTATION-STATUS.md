@@ -307,3 +307,32 @@ Completed after the user requested one more slice:
 - Remaining release blockers: opaque recovery acceptance, two-account browser approval, and the
   final deployment-order replay/consolidation. Base-price and bulk-price database mutation
   acceptance are complete. Production deployment remains held.
+
+## Production release and pilot handoff — 20 September 2026
+
+- Released commit `e7646c2cf831d8c90950d2322cbdb17cf8310acb` to GitHub `main` and
+  `feature/customer-pricing-engine`, production Site version 47, and `stockflow-orders`
+  Edge Function version 17.
+- Applied the nine reviewed pricing migrations after refreshing the live production migration
+  history. The release excluded historical credential rotation, one-time archival and all Tally
+  write operations.
+- Pre/post migration counts remained unchanged: 23 orders, 26 order lines, 458 customers,
+  2 members and 142 order audit events. Pricing tables and the restricted pricing gateway are
+  present after migration.
+- The clean release gate passed: lint, typecheck, connector recovery, 385 unit tests, production
+  build, 8 desktop/mobile access tests, 26 desktop/mobile pricing tests and the production
+  dependency audit. Coverage was 95.21% statements, 88.35% branches, 100% functions and 98.95%
+  lines; no known production dependency vulnerability was reported.
+- Authenticated production smoke acceptance passed with `nikitesh.am@gmail.com`: Orders loaded
+  existing operational queues and Pricing loaded the restricted price book and policy. No order,
+  price, access policy or Tally data was changed during smoke acceptance. Recent production Worker
+  error logs were empty.
+- Supabase security advice contains informational `RLS enabled, no policy` notices for deliberately
+  inaccessible private-schema tables. Performance advice includes optional covering indexes; no
+  error-level database advice or release blocker was reported.
+- Local database replay was unavailable because PostgreSQL `createdb` is not installed on this
+  workstation. The PostgreSQL 17 isolated candidate integrity run and controlled production
+  migration verification provide the release evidence for this environment.
+- Deployment is complete and the combined Orders + Operations + Pricing build is ready for a
+  controlled office pilot. The pilot must validate real staff handoffs and must keep Tally
+  read-only; production test mutations are not required for this checkpoint.
