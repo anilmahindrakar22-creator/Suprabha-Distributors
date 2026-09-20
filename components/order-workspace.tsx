@@ -1,6 +1,6 @@
 'use client';
 
-import { useCallback, useEffect, useMemo, useRef, useState, useSyncExternalStore } from 'react';
+import { useCallback, useEffect, useEffectEvent, useMemo, useRef, useState, useSyncExternalStore } from 'react';
 import type {
   CatalogItem,
   CustomerDirectoryEntry,
@@ -935,17 +935,24 @@ function PricingPanel({ order, actorRole, onChanged }: { order: OrderSummary; ac
     } catch (error) { setMessage(error instanceof Error ? error.message : 'Pricing could not be saved'); }
     finally { setState('idle'); }
   }
-  return <details onToggle={(event) => { if (event.currentTarget.open) void loadPricing(); }} className="mt-5 border-t border-[#dfe9e7] pt-4">
-    <summary className="cursor-pointer text-xs font-extrabold uppercase tracking-wide text-[#31585d]">Commercial pricing · restricted</summary>
+  const loadPricingOnOpen = useEffectEvent(loadPricing);
+  useEffect(() => {
+    if (order.pricingState === 'approved') return;
+    const timeout = window.setTimeout(() => void loadPricingOnOpen(), 0);
+    return () => window.clearTimeout(timeout);
+  }, [order.id, order.pricingState]);
+  return <section className="mt-5 border-t border-[#dfe9e7] pt-4" aria-label="Price review">
+    <div className="flex flex-wrap items-center justify-between gap-2"><h4 className="text-xs font-extrabold uppercase tracking-wide text-[#31585d]">Price review</h4><span className={`rounded-full px-2 py-1 text-[11px] font-extrabold ${order.pricingState === 'approved' ? 'bg-[#eaf8f1] text-[#176246]' : order.pricingState === 'approval_required' ? 'bg-[#fff1d6] text-[#8a5a0a]' : 'bg-[#f1f3f2] text-[#587275]'}`}>{order.pricingState === 'approved' ? 'Verified' : order.pricingState === 'approval_required' ? 'Approval required' : 'Review required'}</span></div>
+    {order.pricingState === 'approved' && !workspace ? <button type="button" onClick={() => void loadPricing()} className="mt-2 text-xs font-bold text-[#31585d]">View pricing details</button> : null}
     {state === 'loading' ? <p className="mt-3 text-xs text-[#718487]">Loading governed pricing evidence…</p> : null}
     {message ? <output className={`mt-3 block rounded-lg px-3 py-2 text-xs font-bold ${state === 'error' ? 'bg-[#fff0ef] text-[#8d3a34]' : 'bg-[#edf7f3] text-[#31585d]'}`}>{message}</output> : null}
     {workspace ? <div className="mt-3 space-y-3">
-      {workspace.lines.map((line) => <PricingLineCard key={line.lineId} line={line} entry={entries[line.lineId] || { rate: '', reason: '' }} onChange={(entry) => setEntries((current) => ({ ...current, [line.lineId]: entry }))} />)}
       {workspace.exceptions.map((exception) => <PriceExceptionDecision key={exception.id} exception={exception} actorRole={actorRole} onChanged={async () => { setWorkspace(null); await onChanged(); await loadPricing(true); }} />)}
+      {workspace.lines.map((line) => <PricingLineCard key={line.lineId} line={line} entry={entries[line.lineId] || { rate: '', reason: '' }} onChange={(entry) => setEntries((current) => ({ ...current, [line.lineId]: entry }))} />)}
       {workspace.exceptions.length === 0 && workspace.pricingState !== 'approved' ? <button type="button" disabled={state === 'saving' || workspace.lines.some((line) => !Number(entries[line.lineId]?.rate))} onClick={() => void submit()} className="min-h-10 rounded-xl bg-[#073e46] px-4 text-sm font-bold text-white disabled:opacity-50">{state === 'saving' ? 'Saving pricing…' : 'Approve pricing'}</button> : null}
       <PricingDecisionHistory history={workspace.history || []} />
     </div> : null}
-  </details>;
+  </section>;
 }
 
 function PricingDecisionHistory({ history }: { history: OrderPricingWorkspace['history'] }) {
@@ -967,12 +974,12 @@ function PriceExceptionDecision({ exception, actorRole, onChanged }: { exception
   async function decide(action: 'approve_price_exception' | 'reject_price_exception') {
     setBusy(true); setMessage('');
     try {
-      await readResponse(await fetch('/api/pricing', { method: 'POST', headers: { 'content-type': 'application/json' }, body: JSON.stringify({ action, payload: { exceptionId: exception.id, expectedVersion: exception.version, reason: reason.trim(), idempotencyKey: crypto.randomUUID() } }) }));
+      await readResponse(await fetch('/api/pricing', { method: 'POST', headers: { 'content-type': 'application/json' }, body: JSON.stringify({ action, payload: { exceptionId: exception.id, expectedVersion: exception.version, reason: reason.trim() || 'Price reviewed and approved', idempotencyKey: crypto.randomUUID() } }) }));
       await onChanged();
     } catch (error) { setMessage(error instanceof Error ? error.message : 'Decision could not be saved'); }
     finally { setBusy(false); }
   }
-  return <section className="rounded-xl border border-[#efcf9c] bg-[#fff9ec] p-3 text-xs"><strong className="text-[#7a520e]">Approval required · {currency.format(exception.enteredRate)}</strong><p className="mt-1 text-[#6f5b36]">{exception.reason}</p>{['administrator','management'].includes(actorRole) ? <><input value={reason} onChange={(event) => setReason(event.target.value)} maxLength={1000} placeholder="Approval or rejection reason" className="mt-2 min-h-10 w-full rounded-lg border border-[#e2c98d] bg-white px-3"/><div className="mt-2 flex gap-2"><button type="button" disabled={busy || reason.trim().length < 3} onClick={() => void decide('approve_price_exception')} className="min-h-9 rounded-lg bg-[#176246] px-3 font-bold text-white disabled:opacity-50">Approve</button><button type="button" disabled={busy || reason.trim().length < 3} onClick={() => void decide('reject_price_exception')} className="min-h-9 rounded-lg border border-[#d59c91] px-3 font-bold text-[#8d3a34] disabled:opacity-50">Reject</button></div></> : <p className="mt-2 font-bold text-[#7a520e]">Management approval pending.</p>}{message ? <p role="alert" className="mt-2 text-[#8d3a34]">{message}</p> : null}</section>;
+  return <section className="rounded-xl border border-[#efcf9c] bg-[#fff9ec] p-3 text-xs"><div className="flex flex-wrap items-center justify-between gap-2"><strong className="text-[#7a520e]">Approve price · {currency.format(exception.enteredRate)}</strong>{['administrator','management'].includes(actorRole) ? <button type="button" disabled={busy} onClick={() => void decide('approve_price_exception')} className="min-h-9 rounded-lg bg-[#176246] px-4 font-bold text-white disabled:opacity-50">{busy ? 'Saving…' : 'Approve'}</button> : null}</div><p className="mt-1 text-[#6f5b36]">{exception.reason}</p>{['administrator','management'].includes(actorRole) ? <><input aria-label="Price decision note" value={reason} onChange={(event) => setReason(event.target.value)} maxLength={1000} placeholder="Optional approval note · required to reject" className="mt-2 min-h-10 w-full rounded-lg border border-[#e2c98d] bg-white px-3"/><button type="button" disabled={busy || reason.trim().length < 3} onClick={() => void decide('reject_price_exception')} className="mt-2 min-h-9 rounded-lg border border-[#d59c91] px-3 font-bold text-[#8d3a34] disabled:opacity-50">Reject</button></> : <p className="mt-2 font-bold text-[#7a520e]">Management approval pending.</p>}{message ? <p role="alert" className="mt-2 text-[#8d3a34]">{message}</p> : null}</section>;
 }
 
 function OrderNotePanel({ order, onSave }: { order: OrderSummary; onSave: (order: OrderSummary, note: string) => Promise<void> }) {

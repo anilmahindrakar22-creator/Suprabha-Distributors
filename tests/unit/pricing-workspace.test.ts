@@ -25,4 +25,13 @@ describe('dedicated pricing control centre', () => {
     expect(workspace).toContain('Tally remains read-only and untouched.');
     expect(workspace).not.toMatch(/create.*voucher|post.*tally/i);
   });
+
+  it('shows order price review without a second disclosure click and keeps approval one-click', () => {
+    expect(orders).toContain('aria-label="Price review"');
+    expect(orders).toContain("if (order.pricingState === 'approved') return");
+    expect(orders).not.toContain('Commercial pricing · restricted');
+    expect(orders.indexOf('{workspace.exceptions.map')).toBeLessThan(orders.indexOf('{workspace.lines.map'));
+    expect(orders).toContain("reason.trim() || 'Price reviewed and approved'");
+    expect(orders).toContain('placeholder="Optional approval note · required to reject"');
+  });
 });
