@@ -3,6 +3,7 @@ import { fileURLToPath } from 'node:url';
 import { describe, expect, it } from 'vitest';
 
 const migration = readFileSync(fileURLToPath(new URL('../../supabase/migrations/20260912193000_customer_pricing_engine.sql', import.meta.url)), 'utf8');
+const selfApprovalPolicy = readFileSync(fileURLToPath(new URL('../../supabase/migrations/20260920123000_allow_admin_self_price_approval.sql', import.meta.url)), 'utf8');
 
 describe('customer pricing engine migration', () => {
   it('stores effective-dated contract history and prevents approved overlaps', () => {
@@ -90,5 +91,11 @@ describe('customer pricing engine migration', () => {
     expect(migration).toContain("'history',coalesce");
     expect(migration).toContain('d.approved_rate as "approvedRate"');
     expect(migration).toContain('where d.order_id=o.id order by d.decision_version desc,d.requested_at desc limit 50');
+  });
+
+  it('permits role-authorized administrators to approve their own prices', () => {
+    expect(selfApprovalPolicy).toContain('drop trigger if exists stockflow_independent_price_approval');
+    expect(selfApprovalPolicy).toContain('drop function if exists private.stockflow_enforce_independent_price_approval()');
+    expect(selfApprovalPolicy).not.toContain('create or replace function public.stockflow_pricing_gateway');
   });
 });

@@ -118,23 +118,29 @@ begin
 
   first_result:=pg_temp.pricing_gateway('stockflow-pricing-test','pricing-admin@stockflow.local','create_price_contract',jsonb_build_object(
     'customerId',v_customer_id,'tallyKey','CONTRACT-ITEM-SELF-REVIEW','price',705,'validFrom','2026-04-01',
-    'source','manual_governed','reason','Independent approval guard','idempotencyKey','contract-self-create-01'
+    'source','manual_governed','reason','Administrator governed price','idempotencyKey','contract-self-create-01'
   ));
-  begin
-    perform pg_temp.pricing_gateway('stockflow-pricing-test','pricing-admin@stockflow.local','approve_price_contract',jsonb_build_object(
-      'contractId',first_result->>'contractId','expectedVersion',1,'reason','Self approval must fail','idempotencyKey','contract-self-approve-01'
-    ));
-    raise exception 'Customer price self-approval unexpectedly succeeded';
-  exception when insufficient_privilege then null;
-  end;
-  perform pg_temp.pricing_gateway('stockflow-pricing-test','pricing-management@stockflow.local','approve_price_contract',jsonb_build_object(
-    'contractId',first_result->>'contractId','expectedVersion',1,'reason','Independent management approval','idempotencyKey','contract-independent-approve-01'
+  replacement_result:=pg_temp.pricing_gateway('stockflow-pricing-test','pricing-admin@stockflow.local','approve_price_contract',jsonb_build_object(
+    'contractId',first_result->>'contractId','expectedVersion',1,'reason','Administrator self approval','idempotencyKey','contract-self-approve-01'
   ));
+  if replacement_result <> pg_temp.pricing_gateway('stockflow-pricing-test','pricing-admin@stockflow.local','approve_price_contract',jsonb_build_object(
+    'contractId',first_result->>'contractId','expectedVersion',1,'reason','Administrator self approval','idempotencyKey','contract-self-approve-01'
+  )) then raise exception 'Administrator self-approval idempotency replay changed its result'; end if;
   if not exists (
     select 1 from private.stockflow_customer_product_prices
     where id=(first_result->>'contractId')::uuid and status='approved'
-      and approved_by_email='pricing-management@stockflow.local'
-  ) then raise exception 'Independent customer price approval was not persisted'; end if;
+      and created_by_email='pricing-admin@stockflow.local'
+      and approved_by_email='pricing-admin@stockflow.local'
+  ) then raise exception 'Administrator customer price self-approval was not persisted'; end if;
+  if (select count(*) from private.stockflow_command_results where idempotency_key='contract-self-approve-01') <> 1 then
+    raise exception 'Administrator self-approval created duplicate command results';
+  end if;
+  if not exists (
+    select 1 from private.stockflow_pricing_events
+    where entity_id=(first_result->>'contractId')::uuid
+      and event_type='customer_price_approved'
+      and actor_email='pricing-admin@stockflow.local'
+  ) then raise exception 'Administrator self-approval audit event was not persisted'; end if;
 
   replacement_result:=pg_temp.pricing_gateway('stockflow-pricing-test','pricing-accounts@stockflow.local','create_price_contract',jsonb_build_object(
     'customerId',v_customer_id,'tallyKey','CONTRACT-ITEM-1','price',720,'validFrom','2026-10-01',

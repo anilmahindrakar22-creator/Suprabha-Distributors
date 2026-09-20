@@ -527,6 +527,13 @@
       "remoteVersion": null,
       "remoteSha256": null,
       "status": "not_deployed"
+    },
+    {
+      "localFile": "20260920123000_allow_admin_self_price_approval.sql",
+      "localSha256": "b5810d232d1f38a5fb9b65629a27a2cc54764de8ff07c52b4013c8344eceabc7",
+      "remoteVersion": null,
+      "remoteSha256": null,
+      "status": "not_deployed"
     }
   ]
 }

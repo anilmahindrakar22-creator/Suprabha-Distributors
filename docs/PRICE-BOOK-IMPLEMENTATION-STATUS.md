@@ -336,3 +336,15 @@ Completed after the user requested one more slice:
 - Deployment is complete and the combined Orders + Operations + Pricing build is ready for a
   controlled office pilot. The pilot must validate real staff handoffs and must keep Tally
   read-only; production test mutations are not required for this checkpoint.
+
+## Administrator self-approval policy — 20 September 2026
+
+- Owner policy now permits an active Administrator or Management user to approve a customer-price
+  proposal they created. Approval remains denied to Accounts and operational roles by the pricing
+  gateway.
+- The forward migration removes only the independent-review trigger. Optimistic version checks,
+  idempotency, immutable pricing history and pricing audit events remain unchanged.
+- Focused integrity coverage now verifies administrator self-approval, exact idempotent replay,
+  one command result and a durable approval audit event.
+- The migration is committed for the next release but has not been applied to production in this
+  ticket.
