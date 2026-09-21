@@ -541,6 +541,13 @@
       "remoteVersion": null,
       "remoteSha256": null,
       "status": "not_deployed"
+    },
+    {
+      "localFile": "20260921123000_customer_price_book_visibility.sql",
+      "localSha256": "c57ff7bf5aaafe6caf212d0cf474504f00acaf9fb0a337c6e297ce5ab6709916",
+      "remoteVersion": null,
+      "remoteSha256": null,
+      "status": "not_deployed"
     }
   ]
 }

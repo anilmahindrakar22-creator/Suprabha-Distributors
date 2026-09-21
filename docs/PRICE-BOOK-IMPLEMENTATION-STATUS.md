@@ -361,3 +361,16 @@ Completed after the user requested one more slice:
 - Focused connector recovery, classification and pricing-import tests pass. Local database replay
   remains unavailable because PostgreSQL `createdb` is not installed on this workstation, so the
   new migration is committed but not claimed as applied or deployed.
+
+## Customer price-book visibility — 21 September 2026
+
+- Customer rows now show the governed price source, current selling rate, current cost, gross
+  profit per unit and margin without another disclosure click. Cost provenance and percentage
+  change remain visible in the same compact card.
+- Continuity and recommended prices are direct one-click approvals with a deterministic audit
+  reason when no optional note is entered. Custom prices still require an explicit reason.
+- The Exceptions view now includes both fixed customer agreements and calculated
+  `REVIEW_REQUIRED` rows from genuine customer sales history. Pricing-role checks remain enforced
+  in the database gateway, and the underlying gateway is no longer directly executable.
+- Focused unit, type, lint and desktop/mobile browser checks pass. The forward migration is
+  committed but not deployed; local database replay remains unavailable without `createdb`.

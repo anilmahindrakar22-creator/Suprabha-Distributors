@@ -101,8 +101,7 @@ test('reload recovery stores only a receipt and checks the server without resubm
   await page.goto('/');
   await page.getByLabel('Select customer').fill('Test');
   await page.getByRole('button', { name: 'Test Laboratory', exact: true }).click();
-  await page.getByText('Choose a price', { exact: true }).click();
-  await page.getByLabel('Decision reason').fill('Sensitive commercial reason');
+  await page.getByLabel(/^Decision note/).fill('Sensitive commercial reason');
   await page.getByRole('button', { name: 'Recommended ₹445.00' }).click();
   await expect(page.getByText('Failed to fetch', { exact: true })).toBeVisible();
   const stored = await page.evaluate(() => JSON.parse(sessionStorage.getItem('stockflow:pricing-recovery:fixture@example.test') || '[]'));
@@ -146,12 +145,11 @@ for (const mode of ['customer', 'base', 'impact'] as const) {
     if (mode !== 'customer') await page.getByRole('button', { name: mode === 'base' ? 'Base / default prices' : 'Purchase-cost review', exact: true }).click();
     await page.getByLabel(mode === 'customer' ? 'Select customer' : 'Select product').fill(mode === 'customer' ? 'Test' : 'Glucose');
     await page.getByRole('button', { name: mode === 'customer' ? 'Test Laboratory' : 'Glucose reagent', exact: true }).click();
-    if (mode === 'customer') await page.getByText('Choose a price', { exact: true }).click();
     if (mode === 'base') {
       await page.getByLabel('Base selling price ₹').fill('445');
       await page.getByLabel('Effective from').fill('2026-09-14');
     }
-    const reason = page.getByLabel(mode === 'customer' ? 'Decision reason' : mode === 'base' ? 'Reason' : 'Management reason', { exact: true });
+    const reason = mode === 'customer' ? page.getByLabel(/^Decision note/) : page.getByLabel(mode === 'base' ? 'Reason' : 'Management reason', { exact: true });
     await reason.fill('Approved economics');
     const save = page.getByRole('button', { name: mode === 'customer' ? 'Recommended ₹445.00' : mode === 'base' ? 'Approve base price' : 'Apply recommended prices', exact: true });
     await save.click();
@@ -159,7 +157,6 @@ for (const mode of ['customer', 'base', 'impact'] as const) {
     await save.click();
     await expect.poll(() => commands.length).toBe(2);
     expect(commands[1]).toEqual(commands[0]);
-    if (mode === 'customer') await page.getByText('Choose a price', { exact: true }).click();
     await reason.fill('A different approved decision');
     await save.click();
     await expect.poll(() => commands.length).toBe(3);
@@ -168,7 +165,7 @@ for (const mode of ['customer', 'base', 'impact'] as const) {
 }
 
 const customerId = '11111111-1111-4111-8111-111111111111';
-const row = { customerId, customerName: 'Test Laboratory', tallyKey: 'GLUCOSE', itemName: 'Glucose reagent', evidenceHash: 'a'.repeat(64), currentDecisionId: null, fixed: false, lastRate: 420, lastInvoiceDate: '2026-08-18', lastInvoiceReference: 'SD/26-27/0420', historicCost: 300, currentCost: 310, costChange: 10, continuity: 430, target: 445, recommended: 445, continuityGP: 120, continuityMargin: 27.91, recommendedGP: 135, recommendedMargin: 30.34, differenceToCustomer: 25, additionalGP: 15, status: 'RECOMMENDED', warnings: [] };
+const row = { customerId, customerName: 'Test Laboratory', tallyKey: 'GLUCOSE', itemName: 'Glucose reagent', evidenceHash: 'a'.repeat(64), currentDecisionId: null, fixed: false, lastRate: 420, lastInvoiceDate: '2026-08-18', lastInvoiceReference: 'SD/26-27/0420', historicCost: 300, currentCost: 310, costChange: 10, continuity: 430, target: 445, recommended: 445, continuityGP: 120, continuityMargin: 27.91, recommendedGP: 135, recommendedMargin: 30.34, differenceToCustomer: 25, additionalGP: 15, status: 'RECOMMENDED', warnings: [], source: { type: 'LAST_TALLY_INVOICE', reference: 'SD/26-27/0420', date: '2026-08-18', version: 'v1' }, cost: { amount: 310, kind: 'purchase_price', effectiveAt: '2026-09-01', sourceReference: 'PUR/310', changeAmount: 10, changePercent: 3.33 } };
 
 test('order choices show economics and allow explicit custom input', async ({ page }) => {
   await page.goto('/?view=order');
@@ -200,11 +197,11 @@ test('customer-first worksheet defaults to Purchased and submits a bound decisio
   await page.getByRole('button', { name: 'Test Laboratory', exact: true }).click();
   await expect(page.getByText('Glucose reagent', { exact: true })).toBeVisible();
   expect(reads[0]).toContain('tab=purchased');
-  await expect(page.getByText('₹420.00', { exact: true })).toBeVisible();
-  await page.getByText('Choose a price', { exact: true }).click();
-  await page.getByLabel('Decision reason').fill('Approve recommended economics');
+  await expect(page.getByText('Price source:')).toBeVisible();
+  await expect(page.getByText('Last Tally sales invoice')).toBeVisible();
+  await expect(page.getByText('Current selling rate', { exact: true })).toBeVisible();
   await page.getByRole('button', { name: 'Recommended ₹445.00' }).click();
-  await expect.poll(() => saved).toMatchObject({ action: 'apply_price_book', payload: { customerId, tallyKey: 'GLUCOSE', choice: 'recommended', evidenceHash: row.evidenceHash, expectedDecisionId: null } });
+  await expect.poll(() => saved).toMatchObject({ action: 'apply_price_book', payload: { customerId, tallyKey: 'GLUCOSE', choice: 'recommended', evidenceHash: row.evidenceHash, expectedDecisionId: null, reason: 'Approved recommended price' } });
   await page.getByRole('button', { name: 'All products', exact: true }).click();
   await expect.poll(() => reads.at(-1)).toContain('tab=all');
   await page.getByRole('button', { name: 'Exceptions / special prices', exact: true }).click();
@@ -217,7 +214,6 @@ test('Accounts can inspect economics but cannot approve a customer book price', 
   await page.goto('/?role=accounts');
   await page.getByLabel('Select customer').fill('Test');
   await page.getByRole('button', { name: 'Test Laboratory', exact: true }).click();
-  await page.getByText('Choose a price', { exact: true }).click();
-  await page.getByLabel('Decision reason').fill('Review only');
+  await page.getByLabel(/^Decision note/).fill('Review only');
   await expect(page.getByRole('button', { name: 'Recommended ₹445.00' })).toBeDisabled();
 });
