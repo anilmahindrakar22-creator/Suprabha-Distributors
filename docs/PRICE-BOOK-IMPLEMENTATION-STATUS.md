@@ -401,3 +401,14 @@ Completed after the user requested one more slice:
   policy: an Administrator or Management user can approve a price, including their own proposal.
 - Focused unit, lint, type and desktop/mobile browser checks pass. This is a UI-only ticket: no
   database, pricing transaction or read-only Tally behavior changed, and it has not been deployed.
+
+## Migration replay checkpoint — 21 September 2026
+
+- The pending pricing release contains 13 forward migrations, ending with governed routine-order
+  pricing. The repository deployment-order runner and migration-history map are present.
+- A fresh isolated replay is currently blocked on this workstation: `createdb`, `psql`, Docker,
+  Podman and the Supabase CLI are unavailable. The existing local validation logs are from
+  14 September and are not treated as current evidence for the expanded migration chain.
+- No migration, production database or Tally data was changed. Resume by providing an isolated
+  PostgreSQL runtime, then run the deployment-order replay, pricing integrity and concurrency SQL
+  checks before the final consolidation checkpoint.
