@@ -37,6 +37,7 @@ for (const action of ['approve_price_contract', 'reject_price_contract', 'create
     let buttonName: string;
     let reason;
     if (action === 'create_pricing_policy') {
+      await page.getByText('Pricing administration', { exact: true }).click();
       await page.getByRole('button', { name: 'New policy', exact: true }).click();
       await page.getByLabel('Policy version', { exact: true }).fill('test-v1');
       await page.getByLabel('Minimum gross margin %', { exact: true }).fill('20');
@@ -44,6 +45,7 @@ for (const action of ['approve_price_contract', 'reject_price_contract', 'create
       reason = page.getByLabel('Management reason', { exact: true });
       buttonName = 'Activate policy';
     } else if (action === 'create_price_contract') {
+      await page.getByText('Pricing administration', { exact: true }).click();
       await page.getByRole('button', { name: '+ Propose price', exact: true }).click();
       await page.getByLabel('Customer', { exact: true }).fill('Test');
       await page.getByRole('button', { name: 'Test Laboratory', exact: true }).click();
@@ -76,6 +78,7 @@ for (const action of ['approve_price_contract', 'reject_price_contract', 'create
     await page.reload();
     const check = page.getByRole('button', { name: /Check earlier save/ });
     await expect(check).toHaveCount(2);
+    await page.getByText('Pricing administration', { exact: true }).click();
     await expect(page.getByRole('button', { name: 'New policy', exact: true })).toBeDisabled();
     await check.first().click();
     await expect(page.getByText(/This save is still unresolved/)).toBeVisible();

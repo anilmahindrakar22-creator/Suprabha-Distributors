@@ -391,3 +391,13 @@ Completed after the user requested one more slice:
 - Focused authorization-contract, UI-contract, idempotency, release-preflight, lint and type checks
   pass. The forward migration and Worker routing change are committed but not deployed; local
   database replay remains unavailable without `createdb`.
+
+## Simplified pricing administration — 21 September 2026
+
+- The daily Pricing workspace keeps the customer price book and pending price decisions visible,
+  while customer-agreement setup, agreement history and commercial-policy controls are grouped
+  under a collapsed `Pricing administration` section.
+- Removed stale four-eyes and independent-review wording. The interface now matches the approved
+  policy: an Administrator or Management user can approve a price, including their own proposal.
+- Focused unit, lint, type and desktop/mobile browser checks pass. This is a UI-only ticket: no
+  database, pricing transaction or read-only Tally behavior changed, and it has not been deployed.

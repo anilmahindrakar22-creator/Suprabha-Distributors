@@ -23,6 +23,10 @@ describe('dedicated pricing control centre', () => {
     expect(workspace).toContain("action: 'create_price_contract'");
     expect(workspace).toContain("action: 'create_pricing_policy'");
     expect(workspace).toContain('Tally remains read-only and untouched.');
+    expect(workspace).toContain('Pricing administration');
+    expect(workspace).toContain('Customer agreements, proposals and commercial policy');
+    expect(workspace).not.toContain('Four-eyes review');
+    expect(workspace).not.toContain('independent approval');
     expect(workspace).not.toMatch(/create.*voucher|post.*tally/i);
   });
 
