@@ -26,6 +26,13 @@ if ($ambiguousEvidence.Count -ne 0) { throw 'Ambiguous customer ledger name was 
 $focXml = $legacy.OuterXml.Replace('<RATE>485.00/box</RATE><AMOUNT>-970.00</AMOUNT>','<RATE>0.00/box</RATE><AMOUNT>0.00</AMOUNT>')
 $focEvidence = @(Get-PricingSalesEvidence @(Convert-LegacySalesRecords $focXml) @(@{name='City Lab';tallyKey='ledger:city'}) 5 50)
 if ($focEvidence.Count -ne 1 -or -not $focEvidence[0].exceptional -or $focEvidence[0].exceptionType -ne 'foc') { throw 'FOC evidence was not classified' }
+$schemeXml = $legacy.OuterXml.Replace('<REFERENCE></REFERENCE>', '<REFERENCE>Annual Scheme</REFERENCE>')
+if ($schemeXml -eq $legacy.OuterXml) { $schemeXml = $legacy.OuterXml.Replace('<VOUCHERNUMBER>SD/26-27/0009</VOUCHERNUMBER>', '<VOUCHERNUMBER>SD/26-27/0009</VOUCHERNUMBER><REFERENCE>Annual Scheme</REFERENCE>') }
+$schemeEvidence = @(Get-PricingSalesEvidence @(Convert-LegacySalesRecords $schemeXml) @(@{name='City Lab';tallyKey='ledger:city'}) 5 50)
+if ($schemeEvidence.Count -ne 1 -or -not $schemeEvidence[0].exceptional -or $schemeEvidence[0].exceptionType -ne 'scheme') { throw 'Positive-rate scheme evidence was not classified' }
+$tenderXml = $legacy.OuterXml.Replace('<VOUCHERNUMBER>SD/26-27/0009</VOUCHERNUMBER>', '<VOUCHERNUMBER>SD/26-27/0009</VOUCHERNUMBER><REFERENCE>Tender 2026</REFERENCE>')
+$tenderEvidence = @(Get-PricingSalesEvidence @(Convert-LegacySalesRecords $tenderXml) @(@{name='City Lab';tallyKey='ledger:city'}) 5 50)
+if ($tenderEvidence.Count -ne 1 -or $tenderEvidence[0].exceptionType -ne 'tender') { throw 'Positive-rate tender evidence was not classified' }
 $purchaseXml = $legacy.OuterXml.Replace('<VOUCHERNUMBER>SD/26-27/0009</VOUCHERNUMBER>', '<VOUCHERNUMBER>PUR/009</VOUCHERNUMBER>').Replace('<VOUCHERTYPENAME>Sales</VOUCHERTYPENAME>', '<VOUCHERTYPENAME>Purchase</VOUCHERTYPENAME>')
 $purchaseEvidence = @(Get-PricingPurchaseCostEvidence @(Convert-LegacySalesRecords $purchaseXml 'purchase') 5 50)
 if ($purchaseEvidence.Count -ne 1 -or $purchaseEvidence[0].tallyItemKey -ne 'Kit' -or $purchaseEvidence[0].amount -ne 485 -or $purchaseEvidence[0].effectiveAt -ne '2026-09-05' -or $purchaseEvidence[0].kind -ne 'purchase_price' -or -not $purchaseEvidence[0].sourceVersion) { throw 'Purchase-cost evidence was not built safely' }

@@ -50,6 +50,7 @@ function Convert-LegacySalesRecords([string]$Document, [string]$SourceDomain = '
         $dateNode = $voucher.SelectSingleNode('./DATE')
         $voucherNumberNode = $voucher.SelectSingleNode('./VOUCHERNUMBER')
         $voucherTypeNode = $voucher.SelectSingleNode('./VOUCHERTYPENAME')
+        $referenceNode = $voucher.SelectSingleNode('./REFERENCE')
         $partyNode = $voucher.SelectSingleNode('./PARTYLEDGERNAME | ./PARTYNAME | ./BASICBUYERNAME')
         $id = Get-SalesRecordIdentity $(if ($masterIdNode) { $masterIdNode.InnerText } else { '' }) $(if ($dateNode) { $dateNode.InnerText } else { '' }) $(if ($voucherNumberNode) { $voucherNumberNode.InnerText } else { '' }) $(if ($partyNode) { $partyNode.InnerText } else { '' })
         if (-not $id) { return }
@@ -70,12 +71,22 @@ function Convert-LegacySalesRecords([string]$Document, [string]$SourceDomain = '
             masterId = $id; date = if ($dateNode) { $dateNode.InnerText.Trim() } else { '' }; voucherNumber = if ($voucherNumberNode) { $voucherNumberNode.InnerText.Trim() } else { '' }
             voucherType = if ($voucherTypeNode) { $voucherTypeNode.InnerText.Trim() } else { '' }
             sourceDomain = $SourceDomain
-            reference = if ($voucher.REFERENCE) { $voucher.REFERENCE.InnerText.Trim() } else { $null }
+            reference = if ($referenceNode) { $referenceNode.InnerText.Trim() } else { $null }
             party = if ($partyNode) { $partyNode.InnerText.Trim() } else { '' }
             cancelled = $voucher.ISCANCELLED.InnerText -eq 'Yes'; optional = $voucher.ISOPTIONAL.InnerText -eq 'Yes'
             lineItems = $lines
         }
     })
+}
+
+function Get-PricingSalesExceptionType($Voucher, [decimal]$Rate) {
+    if ($Rate -le 0) { return 'foc' }
+    $marker = "$([string]$Voucher.reference) $([string]$Voucher.voucherType)".Trim()
+    if ($marker -match '(?i)(^|[^a-z])scheme([^a-z]|$)') { return 'scheme' }
+    if ($marker -match '(?i)(^|[^a-z])tender([^a-z]|$)') { return 'tender' }
+    if ($marker -match '(?i)(^|[^a-z])correction([^a-z]|$)') { return 'correction' }
+    if ($marker -match '(?i)(^|[^a-z])(special[ -]?quotation|quotation)([^a-z]|$)') { return 'special_quotation' }
+    return $null
 }
 
 function Get-PricingSalesEvidence($Records, $Customers, [int]$LimitPerCustomerItem = 5, [int]$MaximumRows = 5000) {
@@ -101,12 +112,13 @@ function Get-PricingSalesEvidence($Records, $Customers, [int]$LimitPerCustomerIt
             $item = ([string]$line.itemName).Trim()
             if (-not $item -or $null -eq $line.rate) { continue }
             $rate = [decimal]$line.rate
+            $exceptionType = Get-PricingSalesExceptionType $voucher $rate
             $sourceId = "$([string]$voucher.masterId)|$([int]$line.lineNumber)|$item"
             $sourceVersion = Get-StableEvidenceVersion "$sourceId|$date|$rate|$([string]$voucher.voucherNumber)"
             $evidence.Add([ordered]@{
                 customerTallyKey = $customerKey; tallyItemKey = $item; rate = $rate; invoiceDate = $invoiceDate
                 invoiceReference = [string]$voucher.voucherNumber; sourceId = $sourceId; sourceVersion = $sourceVersion
-                exceptional = $rate -le 0; exceptionType = if ($rate -le 0) { 'foc' } else { $null }
+                exceptional = $null -ne $exceptionType; exceptionType = $exceptionType
             })
         }
     }

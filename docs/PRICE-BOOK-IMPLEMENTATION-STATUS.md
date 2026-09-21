@@ -348,3 +348,16 @@ Completed after the user requested one more slice:
   one command result and a durable approval audit event.
 - The migration is committed for the next release but has not been applied to production in this
   ticket.
+
+## Pricing-evidence import correction — 21 September 2026
+
+- The read-only Tally connector now marks positive-rate scheme, tender, correction and special-
+  quotation sales as exceptional evidence. Zero and negative rates remain classified as FOC.
+- Fixed populated Tally voucher-reference parsing so reference-based classification does not stop
+  an otherwise valid sales-history refresh.
+- Added an immutable private import-run record with received, accepted, duplicate, unmatched and
+  rejected counts. Invalid or unmatched pricing evidence is now observable without exposing
+  customer names, prices or other restricted commercial values in general application payloads.
+- Focused connector recovery, classification and pricing-import tests pass. Local database replay
+  remains unavailable because PostgreSQL `createdb` is not installed on this workstation, so the
+  new migration is committed but not claimed as applied or deployed.

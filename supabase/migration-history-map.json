@@ -534,6 +534,13 @@
       "remoteVersion": null,
       "remoteSha256": null,
       "status": "not_deployed"
+    },
+    {
+      "localFile": "20260921110000_observable_pricing_evidence_import.sql",
+      "localSha256": "751626e067ff2e913d3d778aa5c5617ced244e2575b68a2167800fd01381a000",
+      "remoteVersion": null,
+      "remoteSha256": null,
+      "status": "not_deployed"
     }
   ]
 }
