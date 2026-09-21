@@ -406,9 +406,12 @@ Completed after the user requested one more slice:
 
 - The pending pricing release contains 13 forward migrations, ending with governed routine-order
   pricing. The repository deployment-order runner and migration-history map are present.
-- A fresh isolated replay is currently blocked on this workstation: `createdb`, `psql`, Docker,
-  Podman and the Supabase CLI are unavailable. The existing local validation logs are from
-  14 September and are not treated as current evidence for the expanded migration chain.
-- No migration, production database or Tally data was changed. Resume by providing an isolated
-  PostgreSQL runtime, then run the deployment-order replay, pricing integrity and concurrency SQL
-  checks before the final consolidation checkpoint.
+- Restored the official PostgreSQL 17.11 portable runtime after confirming PostgreSQL had been
+  removed and the current Winget installer URL returned HTTP 403. `createdb` now creates and drops
+  isolated local databases successfully; the user-local `bin` directory is on the user `PATH`.
+- A fresh deployment-order replay exposed and fixed an ambiguous member-email reference in the
+  price-book gateway. The concurrency fixture was also split at its transaction boundary so its
+  committed setup cannot hold the evidence lock needed by the two independent approval sessions.
+- Fresh deployment-order replay, existing-order preservation, pricing ACID checks, two-session
+  concurrency and injected bulk-rollback checks all pass on isolated PostgreSQL 17.11. No
+  production database or Tally data was changed.

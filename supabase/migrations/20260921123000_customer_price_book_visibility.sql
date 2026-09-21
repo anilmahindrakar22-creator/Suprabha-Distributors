@@ -16,7 +16,7 @@ security definer
 set search_path=pg_catalog,private,extensions
 as $$
 declare
-  email text:=lower(btrim(p_actor_email));
+  actor_email text:=lower(btrim(p_actor_email));
   role text;
   secret text;
   customer uuid;
@@ -34,7 +34,9 @@ begin
   if secret is null or encode(extensions.digest(coalesce(p_gateway_key,''),'sha256'),'hex')<>secret then
     raise exception 'Unauthorized gateway' using errcode='42501';
   end if;
-  select m.role into role from public.stockflow_members m where m.email=email and status='active';
+  select m.role into role
+  from public.stockflow_members m
+  where m.email=actor_email and m.status='active';
   perform private.stockflow_assert_pricing_role(role);
   if offset_rows<0 or offset_rows>100000 or selected_tab not in ('purchased','exceptions','all') then
     raise exception 'Invalid price-book filters' using errcode='22023';

@@ -26,4 +26,10 @@ describe('customer price-book visibility', () => {
     expect(migration).toContain('perform private.stockflow_assert_pricing_role(role)');
     expect(migration).toContain('revoke all on function public.stockflow_pricing_gateway_v2');
   });
+
+  it('resolves the authenticated member without an ambiguous email reference', () => {
+    expect(migration).toContain('actor_email text:=lower(btrim(p_actor_email))');
+    expect(migration).toContain("where m.email=actor_email and m.status='active'");
+    expect(migration).not.toContain('m.email=email');
+  });
 });

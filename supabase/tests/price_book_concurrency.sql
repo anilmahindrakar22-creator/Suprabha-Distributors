@@ -60,11 +60,11 @@ begin
   perform public.dblink_disconnect('pricing_a'); perform public.dblink_disconnect('pricing_b');
 end $concurrent$;
 
-do $exception_approval_race$
+-- Commit the fixture before opening independent approval sessions. The pricing
+-- submission deliberately holds evidence-table locks until commit.
+do $exception_fixture$
 declare
-  v_order uuid; v_line uuid; v_exception uuid; v_evidence text;
-  v_first_payload jsonb; v_second_payload jsonb; v_first_result jsonb; v_second_result jsonb;
-  v_second_pid integer; v_attempt integer; v_events integer; v_outbox integer; v_snapshots integer;
+  v_order uuid; v_line uuid; v_evidence text;
 begin
   insert into private.stockflow_orders(customer_id,customer_name,source,status,idempotency_key,created_by_email,updated_by_email)
   values('aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa','Concurrent A','phone','packed','concurrent-exception-order','concurrent-a@test.local','concurrent-a@test.local')
@@ -76,6 +76,16 @@ begin
     'orderId',v_order,'expectedVersion',1,'pricingDate','2026-09-14','idempotencyKey','concurrent-exception-submit',
     'lines',jsonb_build_array(jsonb_build_object('lineId',v_line,'enteredRate',60,'reason','Concurrent commercial review','evidenceHash',v_evidence))
   ));
+end $exception_fixture$;
+
+do $exception_approval_race$
+declare
+  v_order uuid; v_line uuid; v_exception uuid;
+  v_first_payload jsonb; v_second_payload jsonb; v_first_result jsonb; v_second_result jsonb;
+  v_second_pid integer; v_attempt integer; v_events integer; v_outbox integer; v_snapshots integer;
+begin
+  select id into strict v_order from private.stockflow_orders where idempotency_key='concurrent-exception-order';
+  select id into strict v_line from private.stockflow_order_lines where order_id=v_order;
   select id into v_exception from private.stockflow_price_exceptions where order_id=v_order and state='pending';
   if v_exception is null then raise exception 'Concurrent exception fixture was not created'; end if;
   v_first_payload:=jsonb_build_object('exceptionId',v_exception,'expectedVersion',1,'pricingDate','2026-09-14','reason','First management approval','idempotencyKey','concurrent-exception-first');
