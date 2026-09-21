@@ -16,12 +16,10 @@ describe('observable pricing evidence import', () => {
     expect(migration).not.toContain("'amount',");
   });
 
-  it('classifies explicitly marked positive-rate commercial exceptions', () => {
-    expect(recovery).toContain('function Get-PricingSalesExceptionType');
-    expect(recovery).toContain("return 'scheme'");
-    expect(recovery).toContain("return 'tender'");
-    expect(recovery).toContain("return 'correction'");
-    expect(recovery).toContain("return 'special_quotation'");
+  it('does not infer tender, scheme or special pricing from unreliable Tally free text', () => {
+    expect(recovery).not.toContain('function Get-PricingSalesExceptionType');
+    expect(recovery).toContain("$exceptionType = if ($rate -le 0) { 'foc' } else { $null }");
+    expect(recovery).toContain('Do not infer commercial intent from free text.');
     expect(recovery).toContain('exceptional = $null -ne $exceptionType');
   });
 });

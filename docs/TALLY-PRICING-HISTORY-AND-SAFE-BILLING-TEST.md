@@ -67,7 +67,7 @@ Database constraints prevent overlapping active approved periods where exclusivi
 
 ## Tally pricing-history reference
 
-When no higher-priority approved price exists, retrieve the most recent actual Tally history for the exact Customer × Stock Item. Accounts/Admin may see last billed rate, last invoice date/reference, bounded recent rate history, and source provenance. Do not average recent rates automatically. One-off quotations, FOC/scheme-adjusted invoices, tender pricing, corrections, introductory pricing, credit-note effects, or unusual discounts must not silently become the future default. No prior history means `PRICE REVIEW REQUIRED`.
+When no higher-priority approved price exists, retrieve the most recent actual Tally history for the exact Customer × Stock Item. Accounts/Admin may see last billed rate, last invoice date/reference, bounded recent rate history, and source provenance. Do not average recent rates automatically. Tally does not provide a reliable tender, scheme or special-price marker, so StockFlow must not guess those meanings from free text. FOC/zero-rate history is excluded when objectively detectable; other special commercial terms must be entered as explicit governed prices in StockFlow. No prior history means `PRICE REVIEW REQUIRED`.
 
 ## Purchase-cost guardrail
 

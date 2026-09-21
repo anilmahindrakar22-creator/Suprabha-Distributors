@@ -166,7 +166,7 @@ Base/default prices remain effective-dated, versioned and governed. They must be
 
 Tender, written contract, strategic fixed-price and other explicit governed commitments must not be silently repriced. When cost increases, show the deteriorating GP/margin and flag the account for review according to the agreement terms.
 
-FOC, scheme, exceptional and ambiguous transactions must not become the normal customer baseline unless explicitly governed.
+Tally does not identify tenders, schemes or special prices reliably. StockFlow must not infer those meanings from voucher references or other free text. FOC/zero-rate and ambiguous transactions are excluded when objectively detectable; a tender, scheme or special price is protected only through an explicit governed Customer × Product price record in StockFlow.
 
 ## Cost decreases
 

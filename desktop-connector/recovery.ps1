@@ -79,16 +79,6 @@ function Convert-LegacySalesRecords([string]$Document, [string]$SourceDomain = '
     })
 }
 
-function Get-PricingSalesExceptionType($Voucher, [decimal]$Rate) {
-    if ($Rate -le 0) { return 'foc' }
-    $marker = "$([string]$Voucher.reference) $([string]$Voucher.voucherType)".Trim()
-    if ($marker -match '(?i)(^|[^a-z])scheme([^a-z]|$)') { return 'scheme' }
-    if ($marker -match '(?i)(^|[^a-z])tender([^a-z]|$)') { return 'tender' }
-    if ($marker -match '(?i)(^|[^a-z])correction([^a-z]|$)') { return 'correction' }
-    if ($marker -match '(?i)(^|[^a-z])(special[ -]?quotation|quotation)([^a-z]|$)') { return 'special_quotation' }
-    return $null
-}
-
 function Get-PricingSalesEvidence($Records, $Customers, [int]$LimitPerCustomerItem = 5, [int]$MaximumRows = 5000) {
     $customerKeys = @{}
     foreach ($customer in @($Customers)) {
@@ -112,7 +102,8 @@ function Get-PricingSalesEvidence($Records, $Customers, [int]$LimitPerCustomerIt
             $item = ([string]$line.itemName).Trim()
             if (-not $item -or $null -eq $line.rate) { continue }
             $rate = [decimal]$line.rate
-            $exceptionType = Get-PricingSalesExceptionType $voucher $rate
+            # Tally has no reliable tender/scheme/special-price marker. Do not infer commercial intent from free text.
+            $exceptionType = if ($rate -le 0) { 'foc' } else { $null }
             $sourceId = "$([string]$voucher.masterId)|$([int]$line.lineNumber)|$item"
             $sourceVersion = Get-StableEvidenceVersion "$sourceId|$date|$rate|$([string]$voucher.voucherNumber)"
             $evidence.Add([ordered]@{

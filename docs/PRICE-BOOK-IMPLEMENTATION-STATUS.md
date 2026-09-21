@@ -351,9 +351,11 @@ Completed after the user requested one more slice:
 
 ## Pricing-evidence import correction — 21 September 2026
 
-- The read-only Tally connector now marks positive-rate scheme, tender, correction and special-
-  quotation sales as exceptional evidence. Zero and negative rates remain classified as FOC.
-- Fixed populated Tally voucher-reference parsing so reference-based classification does not stop
+- Tally has no reliable tender, scheme or special-price marker. The read-only connector therefore
+  does not infer commercial intent from voucher references or other free text. Only objectively
+  detectable FOC/zero-rate sales are marked exceptional; governed special prices belong in the
+  explicit Customer × Product price book.
+- Fixed populated Tally voucher-reference parsing so provenance remains available without stopping
   an otherwise valid sales-history refresh.
 - Added an immutable private import-run record with received, accepted, duplicate, unmatched and
   rejected counts. Invalid or unmatched pricing evidence is now observable without exposing
