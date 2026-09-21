@@ -415,3 +415,16 @@ Completed after the user requested one more slice:
 - Fresh deployment-order replay, existing-order preservation, pricing ACID checks, two-session
   concurrency and injected bulk-rollback checks all pass on isolated PostgreSQL 17.11. No
   production database or Tally data was changed.
+
+## Authenticated acceptance refresh — 21 September 2026
+
+- Fresh desktop/mobile pricing acceptance passed all 26 scenarios, covering customer and base
+  decisions, bulk impact approval, pagination tabs, role restrictions, opaque account-scoped
+  recovery, unchanged idempotent retries and failure handling.
+- `nikitesh.am@gmail.com` authenticated successfully against production and loaded the restricted
+  Pricing workspace. No application error appeared; only unrelated authentication-provider
+  telemetry-size warnings were present in the browser console. The smoke remained read-only.
+- The isolated mutation candidate still rejects that approved staff identity at the hosting layer
+  before the application loads. Therefore two-account authenticated browser mutation acceptance
+  remains partial; no Site access policy was changed and no production price, order or Tally data
+  was mutated for this check.
