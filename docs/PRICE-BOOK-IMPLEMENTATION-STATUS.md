@@ -428,3 +428,19 @@ Completed after the user requested one more slice:
   before the application loads. Therefore two-account authenticated browser mutation acceptance
   remains partial; no Site access policy was changed and no production price, order or Tally data
   was mutated for this check.
+
+## Final consolidation checkpoint — 21 September 2026
+
+- The deployment-order PostgreSQL 17.11 replay passes with byte-identical order preservation,
+  pricing ACID integrity, two-session approval concurrency and injected bulk-rollback checks.
+- The complete repository gate passes: lint, typecheck, connector recovery/retention, 397 unit
+  tests, production build, 8 desktop/mobile access-security tests, 26 desktop/mobile pricing
+  tests and the production dependency audit. Coverage is 95.21% statements, 88.35% branches,
+  100% functions and 98.95% lines; no known high-severity production dependency vulnerability
+  was reported.
+- Consolidation detected and corrected the stale reviewed checksum for the fixed price-book
+  visibility migration. The focused eight-case release-preflight suite passes afterward.
+- Automated engineering evidence is green, but release readiness remains `PARTIAL`: live migration
+  history must be refreshed immediately before release, and the isolated candidate must permit a
+  second approved staff identity for authenticated mutation acceptance. No merge, push, deployment,
+  production mutation or Tally write was performed.
