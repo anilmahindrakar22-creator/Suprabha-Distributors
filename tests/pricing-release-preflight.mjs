@@ -17,6 +17,7 @@ const pricingReleaseFiles = new Set([
   '20260920123000_allow_admin_self_price_approval.sql',
   '20260921110000_observable_pricing_evidence_import.sql',
   '20260921123000_customer_price_book_visibility.sql',
+  '20260921143000_apply_governed_order_prices.sql',
 ]);
 const sha = (sql) => createHash('sha256').update(sql.replace(/\r/g, '').trim(), 'utf8').digest('hex');
 const hashPattern = /^[a-f0-9]{64}$/;

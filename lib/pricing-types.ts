@@ -31,6 +31,7 @@ export type PricingLineResolution = {
   margin: { grossProfitAmount: number | null; grossMarginPercent: number | null; previousGrossMarginPercent: number | null; erosionPercentagePoints: number | null };
   suggestion: null | { amount: number; unroundedAmount: number; targetMarginPercent: number; policyVersion: string; roundingRuleVersion: string; costSourceVersion: string };
   warnings: string[];
+  governed?: boolean;
 };
 
 export type OrderPricingWorkspace = {
@@ -78,6 +79,7 @@ export type CustomerPurchasedItem = { tallyKey: string; itemName: string; lastRa
 
 export type PricingCommand =
   | { action: 'submit_order_pricing'; payload: { orderId: string; expectedVersion: number; pricingDate?: string; idempotencyKey: string; lines: Array<{ lineId: string; enteredRate: number; reason?: string; evidenceHash: string }> } }
+  | { action: 'apply_governed_order_pricing'; payload: { orderId: string; expectedVersion: number; pricingDate?: string; idempotencyKey: string } }
   | { action: 'approve_price_exception' | 'reject_price_exception'; payload: { exceptionId: string; expectedVersion: number; reason: string; idempotencyKey: string } }
   | { action: 'create_price_contract'; payload: { customerId: string; tallyKey: string; price: number; validFrom: string; validTo?: string; source: 'customer_contract' | 'quotation' | 'scheme' | 'tender' | 'manual_governed'; sourceReference?: string; reason: string; supersedesPriceId?: string; idempotencyKey: string } }
   | { action: 'approve_price_contract' | 'reject_price_contract'; payload: { contractId: string; expectedVersion: number; reason: string; idempotencyKey: string } }
@@ -112,6 +114,10 @@ export function validatePricingCommand(value: unknown): PricingCommand | null {
     if (!Array.isArray(payload.lines) || payload.lines.length < 1 || payload.lines.length > 100) return null;
     const lines = payload.lines.map(exactObject);
     if (lines.some((line) => !line || !isUuid(line.lineId) || typeof line.evidenceHash !== 'string' || !/^[a-f0-9]{64}$/.test(line.evidenceHash) || typeof line.enteredRate !== 'number' || !Number.isFinite(line.enteredRate) || line.enteredRate <= 0 || line.enteredRate > 100_000_000 || (line.reason !== undefined && (typeof line.reason !== 'string' || line.reason.trim().length > 1000)))) return null;
+    return command as unknown as PricingCommand;
+  }
+  if (command.action === 'apply_governed_order_pricing') {
+    if (!isUuid(payload.orderId) || !Number.isInteger(payload.expectedVersion) || Number(payload.expectedVersion) < 1 || (payload.pricingDate !== undefined && (typeof payload.pricingDate !== 'string' || !datePattern.test(payload.pricingDate)))) return null;
     return command as unknown as PricingCommand;
   }
   if (command.action === 'approve_price_exception' || command.action === 'reject_price_exception') {

@@ -376,3 +376,18 @@ Completed after the user requested one more slice:
   in the database gateway, and the underlying gateway is no longer directly executable.
 - Focused unit, type, lint and desktop/mobile browser checks pass. The forward migration is
   committed but not deployed; local database replay remains unavailable without `createdb`.
+
+## Governed prices in routine orders — 21 September 2026
+
+- Accounts, Administrator and Management can apply all current governed prices to a routine order
+  with one action. Operational order-entry roles still receive no restricted commercial values.
+- The shortcut is available only when every line exactly matches an effective approved customer
+  agreement, the approved base price itself, or a price-book decision bound to the current evidence.
+  Missing evidence, an unapproved suggestion, a changed cost/source or a review-required guardrail
+  fails closed into the existing manual exception workflow.
+- The action delegates within the same database transaction to the existing idempotent pricing
+  decision, immutable billing-snapshot, audit-event and outbox workflow. A lost response retries
+  with the same client request key.
+- Focused authorization-contract, UI-contract, idempotency, release-preflight, lint and type checks
+  pass. The forward migration and Worker routing change are committed but not deployed; local
+  database replay remains unavailable without `createdb`.

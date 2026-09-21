@@ -908,6 +908,8 @@ function PricingPanel({ order, actorRole, onChanged }: { order: OrderSummary; ac
   const [entries, setEntries] = useState<Record<string, { rate: string; reason: string }>>({});
   const [state, setState] = useState<'idle' | 'loading' | 'saving' | 'error'>('idle');
   const [message, setMessage] = useState('');
+  const [manualReview, setManualReview] = useState(false);
+  const governedRequest = useRef<{ orderId: string; version: number; idempotencyKey: string } | null>(null);
   async function loadPricing(force = false) {
     if ((!force && workspace) || state === 'loading') return;
     setState('loading'); setMessage('');
@@ -915,6 +917,7 @@ function PricingPanel({ order, actorRole, onChanged }: { order: OrderSummary; ac
       const result = await readResponse<OrderPricingWorkspace>(await fetch(`/api/pricing?orderId=${encodeURIComponent(order.id)}`, { cache: 'no-store' }));
       setWorkspace(result);
       setEntries(Object.fromEntries(result.lines.map((line) => [line.lineId, { rate: line.proposedRate == null ? '' : String(line.proposedRate), reason: '' }])));
+      setManualReview(false);
       setState('idle');
     } catch (error) { setState('error'); setMessage(error instanceof Error ? error.message : 'Pricing could not load'); }
   }
@@ -935,12 +938,32 @@ function PricingPanel({ order, actorRole, onChanged }: { order: OrderSummary; ac
     } catch (error) { setMessage(error instanceof Error ? error.message : 'Pricing could not be saved'); }
     finally { setState('idle'); }
   }
+  async function applyGoverned() {
+    if (!workspace) return;
+    const request = governedRequest.current?.orderId === order.id && governedRequest.current.version === workspace.orderVersion
+      ? governedRequest.current
+      : { orderId: order.id, version: workspace.orderVersion, idempotencyKey: crypto.randomUUID() };
+    governedRequest.current = request;
+    setState('saving'); setMessage('');
+    try {
+      await readResponse(await fetch('/api/pricing', {
+        method: 'POST', headers: { 'content-type': 'application/json' }, body: JSON.stringify({
+          action: 'apply_governed_order_pricing', payload: { orderId: request.orderId, expectedVersion: request.version, idempotencyKey: request.idempotencyKey },
+        }),
+      }));
+      governedRequest.current = null;
+      setMessage('Governed customer prices applied and billing snapshot created.');
+      setWorkspace(null); await onChanged();
+    } catch (error) { setMessage(error instanceof Error ? error.message : 'Governed pricing could not be applied'); }
+    finally { setState('idle'); }
+  }
   const loadPricingOnOpen = useEffectEvent(loadPricing);
   useEffect(() => {
     if (order.pricingState === 'approved') return;
     const timeout = window.setTimeout(() => void loadPricingOnOpen(), 0);
     return () => window.clearTimeout(timeout);
   }, [order.id, order.pricingState]);
+  const governedReady = Boolean(workspace?.lines.length) && workspace!.lines.every((line) => line.governed && line.guardrail !== 'PRICE_REVIEW_REQUIRED' && Number(line.proposedRate) > 0);
   return <section className="mt-5 border-t border-[#dfe9e7] pt-4" aria-label="Price review">
     <div className="flex flex-wrap items-center justify-between gap-2"><h4 className="text-xs font-extrabold uppercase tracking-wide text-[#31585d]">Price review</h4><span className={`rounded-full px-2 py-1 text-[11px] font-extrabold ${order.pricingState === 'approved' ? 'bg-[#eaf8f1] text-[#176246]' : order.pricingState === 'approval_required' ? 'bg-[#fff1d6] text-[#8a5a0a]' : 'bg-[#f1f3f2] text-[#587275]'}`}>{order.pricingState === 'approved' ? 'Verified' : order.pricingState === 'approval_required' ? 'Approval required' : 'Review required'}</span></div>
     {order.pricingState === 'approved' && !workspace ? <button type="button" onClick={() => void loadPricing()} className="mt-2 text-xs font-bold text-[#31585d]">View pricing details</button> : null}
@@ -948,8 +971,9 @@ function PricingPanel({ order, actorRole, onChanged }: { order: OrderSummary; ac
     {message ? <output className={`mt-3 block rounded-lg px-3 py-2 text-xs font-bold ${state === 'error' ? 'bg-[#fff0ef] text-[#8d3a34]' : 'bg-[#edf7f3] text-[#31585d]'}`}>{message}</output> : null}
     {workspace ? <div className="mt-3 space-y-3">
       {workspace.exceptions.map((exception) => <PriceExceptionDecision key={exception.id} exception={exception} actorRole={actorRole} onChanged={async () => { setWorkspace(null); await onChanged(); await loadPricing(true); }} />)}
-      {workspace.lines.map((line) => <PricingLineCard key={line.lineId} line={line} entry={entries[line.lineId] || { rate: '', reason: '' }} onChange={(entry) => setEntries((current) => ({ ...current, [line.lineId]: entry }))} />)}
-      {workspace.exceptions.length === 0 && workspace.pricingState !== 'approved' ? <button type="button" disabled={state === 'saving' || workspace.lines.some((line) => !Number(entries[line.lineId]?.rate))} onClick={() => void submit()} className="min-h-10 rounded-xl bg-[#073e46] px-4 text-sm font-bold text-white disabled:opacity-50">{state === 'saving' ? 'Saving pricing…' : 'Approve pricing'}</button> : null}
+      {workspace.lines.map((line) => <PricingLineCard key={line.lineId} line={line} compact={governedReady && !manualReview} entry={entries[line.lineId] || { rate: '', reason: '' }} onChange={(entry) => setEntries((current) => ({ ...current, [line.lineId]: entry }))} />)}
+      {workspace.exceptions.length === 0 && workspace.pricingState !== 'approved' && governedReady && !manualReview ? <div className="flex flex-wrap gap-2"><button type="button" disabled={state === 'saving'} onClick={() => void applyGoverned()} className="min-h-10 rounded-xl bg-[#073e46] px-4 text-sm font-bold text-white disabled:opacity-50">{state === 'saving' ? 'Applying price book…' : 'Use governed prices'}</button><button type="button" disabled={state === 'saving'} onClick={() => setManualReview(true)} className="min-h-10 rounded-xl border border-[#b9d5cd] px-4 text-sm font-bold text-[#31585d]">Review or override this order</button></div> : null}
+      {workspace.exceptions.length === 0 && workspace.pricingState !== 'approved' && (!governedReady || manualReview) ? <button type="button" disabled={state === 'saving' || workspace.lines.some((line) => !Number(entries[line.lineId]?.rate))} onClick={() => void submit()} className="min-h-10 rounded-xl bg-[#073e46] px-4 text-sm font-bold text-white disabled:opacity-50">{state === 'saving' ? 'Saving pricing…' : 'Approve pricing'}</button> : null}
       <PricingDecisionHistory history={workspace.history || []} />
     </div> : null}
   </section>;
@@ -960,12 +984,12 @@ function PricingDecisionHistory({ history }: { history: OrderPricingWorkspace['h
   return <details className="rounded-xl border border-[#dce7e5] bg-[#f7faf9] p-3"><summary className="cursor-pointer text-xs font-extrabold text-[#31585d]">Pricing history ({history.length})</summary><div className="mt-3 space-y-2">{history.map((entry) => <div key={entry.id} className="rounded-lg bg-white p-3 text-xs text-[#587275]"><div className="flex flex-wrap items-center justify-between gap-2"><strong className="text-[#173239]">v{entry.decisionVersion} · {entry.itemName}</strong><span className="font-extrabold uppercase">{entry.state.replaceAll('_', ' ')}</span></div><p className="mt-1">Entered {entry.approvedRate == null ? 'not approved' : currency.format(entry.approvedRate)} · reference {entry.proposedRate == null ? 'none' : currency.format(entry.proposedRate)} · {entry.sourceType.replaceAll('_', ' ')}</p><p className="mt-1">Requested by {entry.requestedBy} · {new Date(entry.requestedAt).toLocaleString('en-IN')}</p>{entry.approvedBy ? <p className="mt-1">Approved by {entry.approvedBy}{entry.approvedAt ? ` · ${new Date(entry.approvedAt).toLocaleString('en-IN')}` : ''}</p> : null}{entry.exceptionReason ? <p className="mt-1 text-[#80524d]">Reason: {entry.exceptionReason}</p> : null}{entry.invalidationReason ? <p className="mt-1 font-bold text-[#8d3a34]">Invalidated: {entry.invalidationReason}</p> : null}<p className="mt-1">Policy {entry.policyVersion} · {entry.guardrail.replaceAll('_', ' ')}</p></div>)}</div></details>;
 }
 
-function PricingLineCard({ line, entry, onChange }: { line: PricingLineResolution; entry: { rate: string; reason: string }; onChange: (value: { rate: string; reason: string }) => void }) {
+function PricingLineCard({ line, entry, compact, onChange }: { line: PricingLineResolution; entry: { rate: string; reason: string }; compact: boolean; onChange: (value: { rate: string; reason: string }) => void }) {
   return <section className="rounded-xl border border-[#dce7e5] bg-white p-3 text-xs text-[#456367]">
     <div className="flex flex-wrap items-start justify-between gap-2"><div><strong className="block text-sm text-[#173239]">{line.itemName}</strong><span>{formatQuantity(line.quantity)} ordered · {line.resolution.replaceAll('_', ' ')}</span></div><span className={`rounded-full px-2 py-1 font-extrabold ${line.guardrail === 'PRICE_OK' ? 'bg-[#eaf8f1] text-[#176246]' : 'bg-[#fff1d6] text-[#8a5a0a]'}`}>{line.guardrail.replaceAll('_', ' ')}</span></div>
     {line.source.reference ? <p className="mt-2">Source: {line.source.reference} · {line.source.date}</p> : null}
     {line.warnings.length ? <p className="mt-2 font-extrabold text-[#8a5a0a]">{line.warnings.join(' · ').replaceAll('_', ' ')}</p> : null}
-    <PricingOptions line={line} entry={entry} onChange={onChange}/>
+    {compact ? <p className="mt-2 rounded-lg bg-[#edf7f3] p-3 font-bold text-[#176246]">Governed price: {line.proposedRate == null ? 'Unavailable' : currency.format(line.proposedRate)}</p> : <PricingOptions line={line} entry={entry} onChange={onChange}/>}
   </section>;
 }
 

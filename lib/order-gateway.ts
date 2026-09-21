@@ -11,6 +11,7 @@ export type GatewayAction =
   | 'get_order_details'
   | 'get_order_pricing'
   | 'submit_order_pricing'
+  | 'apply_governed_order_pricing'
   | 'approve_price_exception'
   | 'reject_price_exception'
   | 'list_price_contracts'

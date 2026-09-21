@@ -8,6 +8,7 @@ describe('pricing API contracts', () => {
     expect(validatePricingCommand({ action: 'submit_order_pricing', payload: { orderId: id, expectedVersion: 2, idempotencyKey: '1234567890abcdef', lines: [{ lineId: id, evidenceHash: 'a'.repeat(64), enteredRate: 720, reason: 'Current agreed rate' }] } })?.action).toBe('submit_order_pricing');
     expect(validatePricingCommand({ action: 'approve_price_exception', payload: { exceptionId: id, expectedVersion: 1, reason: 'Approved tender rate', idempotencyKey: 'abcdef1234567890' } })?.action).toBe('approve_price_exception');
     expect(validatePricingCommand({ action: 'reject_price_exception', payload: { exceptionId: id, expectedVersion: 1, reason: 'Margin is too low', idempotencyKey: 'abcdef1234567890' } })?.action).toBe('reject_price_exception');
+    expect(validatePricingCommand({ action: 'apply_governed_order_pricing', payload: { orderId: id, expectedVersion: 2, idempotencyKey: 'abcdef1234567890' } })?.action).toBe('apply_governed_order_pricing');
   });
 
   it('rejects malformed IDs, stale versions, missing reasons, and unsafe rates', () => {
@@ -16,6 +17,7 @@ describe('pricing API contracts', () => {
     expect(validatePricingCommand({ ...valid, payload: { ...valid.payload, expectedVersion: 0 } })).toBeNull();
     expect(validatePricingCommand({ ...valid, payload: { ...valid.payload, lines: [{ lineId: id, evidenceHash: 'a'.repeat(64), enteredRate: 0 }] } })).toBeNull();
     expect(validatePricingCommand({ action: 'approve_price_exception', payload: { exceptionId: id, expectedVersion: 1, reason: '', idempotencyKey: 'abcdef1234567890' } })).toBeNull();
+    expect(validatePricingCommand({ action: 'apply_governed_order_pricing', payload: { orderId: id, expectedVersion: 0, idempotencyKey: 'abcdef1234567890' } })).toBeNull();
   });
 
   it('validates bounded pricing lookups', () => {

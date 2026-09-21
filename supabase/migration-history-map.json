@@ -548,6 +548,13 @@
       "remoteVersion": null,
       "remoteSha256": null,
       "status": "not_deployed"
+    },
+    {
+      "localFile": "20260921143000_apply_governed_order_prices.sql",
+      "localSha256": "2079a75c3a4a81a6716be772105ef5e2acb77639d6eb3dee7b4d7495e0002741",
+      "remoteVersion": null,
+      "remoteSha256": null,
+      "status": "not_deployed"
     }
   ]
 }
