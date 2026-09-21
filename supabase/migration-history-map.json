@@ -1,9 +1,9 @@
 {
   "projectId": "aormuidjbdqruglmyseh",
-  "checkedAt": "2026-09-15",
+  "checkedAt": "2026-09-21",
   "purpose": "Read-only release evidence; NOT an executable migration plan or authority to repair history.",
   "normalization": "Remove CR characters and trim surrounding whitespace only; SHA-256 over UTF-8.",
-  "localGitHead": "db7d7d9",
+  "localGitHead": "c83d763c750517ef29c120379fe4adc224b11175",
   "remoteOnly": [
     {
       "localFile": "20260829054025_create_stockflow_private_snapshots.sql",
@@ -468,93 +468,93 @@
     {
       "localFile": "20260912193000_customer_pricing_engine.sql",
       "localSha256": "e53c796328daca8901e13d20c604932a9f084864105e93854ebc08e8501bddb1",
-      "remoteVersion": null,
-      "remoteSha256": null,
-      "status": "not_deployed"
+      "remoteVersion": "20260920062344",
+      "remoteSha256": "e53c796328daca8901e13d20c604932a9f084864105e93854ebc08e8501bddb1",
+      "status": "exact_normalized_match"
     },
     {
       "localFile": "20260913130000_customer_price_book.sql",
       "localSha256": "d991da348ed49ca2236d4b3264013012cce463082d780d2c68b12ba6b4578149",
-      "remoteVersion": null,
-      "remoteSha256": null,
-      "status": "not_deployed"
+      "remoteVersion": "20260920062359",
+      "remoteSha256": "d991da348ed49ca2236d4b3264013012cce463082d780d2c68b12ba6b4578149",
+      "status": "exact_normalized_match"
     },
     {
       "localFile": "20260913131000_customer_price_book_resolution.sql",
       "localSha256": "e3f54bf8f25c01e7e7668b85bd0ba1df0b1905cdc29c2a449db1d5fd9ff1789d",
-      "remoteVersion": null,
-      "remoteSha256": null,
-      "status": "not_deployed"
+      "remoteVersion": "20260920062406",
+      "remoteSha256": "e3f54bf8f25c01e7e7668b85bd0ba1df0b1905cdc29c2a449db1d5fd9ff1789d",
+      "status": "exact_normalized_match"
     },
     {
       "localFile": "20260913132000_price_book_gateway.sql",
       "localSha256": "66162c87c9d29e6daee220ddba7520c4354a855cb6b98a66546480335577f927",
-      "remoteVersion": null,
-      "remoteSha256": null,
-      "status": "not_deployed"
+      "remoteVersion": "20260920062412",
+      "remoteSha256": "66162c87c9d29e6daee220ddba7520c4354a855cb6b98a66546480335577f927",
+      "status": "exact_normalized_match"
     },
     {
       "localFile": "20260914100000_billing_pricing_evidence_gate.sql",
       "localSha256": "3626c26da6325e9fda13abdef5496f0dda340f510649c09704e88d59434a490c",
-      "remoteVersion": null,
-      "remoteSha256": null,
-      "status": "not_deployed"
+      "remoteVersion": "20260920062425",
+      "remoteSha256": "3626c26da6325e9fda13abdef5496f0dda340f510649c09704e88d59434a490c",
+      "status": "exact_normalized_match"
     },
     {
       "localFile": "20260914120000_pricing_submission_recovery.sql",
       "localSha256": "e5e1bdf50d6524196d2cbe3165222b6d91d65659cc6dd3228299b240b286dd35",
-      "remoteVersion": null,
-      "remoteSha256": null,
-      "status": "not_deployed"
+      "remoteVersion": "20260920062431",
+      "remoteSha256": "e5e1bdf50d6524196d2cbe3165222b6d91d65659cc6dd3228299b240b286dd35",
+      "status": "exact_normalized_match"
     },
     {
       "localFile": "20260914140000_contract_policy_recovery.sql",
       "localSha256": "34e35aee5207f1e769d2aa1dd9763ca1b3354464718177196f24df819c25b565",
-      "remoteVersion": null,
-      "remoteSha256": null,
-      "status": "not_deployed"
+      "remoteVersion": "20260920062437",
+      "remoteSha256": "34e35aee5207f1e769d2aa1dd9763ca1b3354464718177196f24df819c25b565",
+      "status": "exact_normalized_match"
     },
     {
       "localFile": "20260914160000_close_unresolved_pricing.sql",
       "localSha256": "d492336845d34551e516fee3a572a8c4a58b1088675e4184a194799fe80c9a02",
-      "remoteVersion": null,
-      "remoteSha256": null,
-      "status": "not_deployed"
+      "remoteVersion": "20260920062443",
+      "remoteSha256": "d492336845d34551e516fee3a572a8c4a58b1088675e4184a194799fe80c9a02",
+      "status": "exact_normalized_match"
     },
     {
       "localFile": "20260919151500_enforce_independent_price_approval.sql",
       "localSha256": "0e8b739f66fafa5071270db093228248b4d3f283d096f8de3626f1874fbb7a75",
-      "remoteVersion": null,
-      "remoteSha256": null,
-      "status": "not_deployed"
+      "remoteVersion": "20260920062449",
+      "remoteSha256": "0e8b739f66fafa5071270db093228248b4d3f283d096f8de3626f1874fbb7a75",
+      "status": "exact_normalized_match"
     },
     {
       "localFile": "20260920123000_allow_admin_self_price_approval.sql",
       "localSha256": "b5810d232d1f38a5fb9b65629a27a2cc54764de8ff07c52b4013c8344eceabc7",
-      "remoteVersion": null,
-      "remoteSha256": null,
-      "status": "not_deployed"
+      "remoteVersion": "20260921103245",
+      "remoteSha256": "b5810d232d1f38a5fb9b65629a27a2cc54764de8ff07c52b4013c8344eceabc7",
+      "status": "exact_normalized_match"
     },
     {
       "localFile": "20260921110000_observable_pricing_evidence_import.sql",
       "localSha256": "751626e067ff2e913d3d778aa5c5617ced244e2575b68a2167800fd01381a000",
-      "remoteVersion": null,
-      "remoteSha256": null,
-      "status": "not_deployed"
+      "remoteVersion": "20260921103252",
+      "remoteSha256": "751626e067ff2e913d3d778aa5c5617ced244e2575b68a2167800fd01381a000",
+      "status": "exact_normalized_match"
     },
     {
       "localFile": "20260921123000_customer_price_book_visibility.sql",
       "localSha256": "561bd6ec496d19304a4e6e19d6ff272d22cbc557366c3426005007cea92e818b",
-      "remoteVersion": null,
-      "remoteSha256": null,
-      "status": "not_deployed"
+      "remoteVersion": "20260921103258",
+      "remoteSha256": "561bd6ec496d19304a4e6e19d6ff272d22cbc557366c3426005007cea92e818b",
+      "status": "exact_normalized_match"
     },
     {
       "localFile": "20260921143000_apply_governed_order_prices.sql",
       "localSha256": "2079a75c3a4a81a6716be772105ef5e2acb77639d6eb3dee7b4d7495e0002741",
-      "remoteVersion": null,
-      "remoteSha256": null,
-      "status": "not_deployed"
+      "remoteVersion": "20260921103304",
+      "remoteSha256": "2079a75c3a4a81a6716be772105ef5e2acb77639d6eb3dee7b4d7495e0002741",
+      "status": "exact_normalized_match"
     }
   ]
 }

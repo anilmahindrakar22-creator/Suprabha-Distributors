@@ -9,11 +9,10 @@ const original = JSON.parse(readFileSync(new URL('../../supabase/migration-histo
 const source = new Map(readdirSync(fileURLToPath(directory)).filter((name) => name.endsWith('.sql')).map((name) => [name, readFileSync(new URL(name, directory), 'utf8')]));
 
 describe('read-only pricing release preflight', () => {
-  it('validates current evidence and lists only the thirteen pending pricing migrations', () => {
+  it('validates the refreshed production evidence with no pending migrations', () => {
     const result = pricingReleasePreflight(original, source);
-    expect(result.pending).toHaveLength(13);
-    expect(result.pending[0]).toBe('20260912193000_customer_pricing_engine.sql');
-    expect(result.deployed).toHaveLength(65);
+    expect(result.pending).toEqual([]);
+    expect(result.deployed).toHaveLength(78);
     const names = result.deployed.map((entry: { localFile: string }) => entry.localFile);
     expect(names.slice(0, 2)).toEqual([
       '20260829054025_create_stockflow_private_snapshots.sql',
@@ -26,7 +25,7 @@ describe('read-only pricing release preflight', () => {
   });
   it('accepts documented CRLF normalization without modifying source', () => {
     const crlf = new Map([...source].map(([name, sql]) => [name, sql.replace(/\r/g, '').replace(/\n/g, '\r\n')]));
-    expect(pricingReleasePreflight(original, crlf).pending).toHaveLength(13);
+    expect(pricingReleasePreflight(original, crlf).pending).toEqual([]);
   });
   it('rejects changed SQL including changes inside literals', () => {
     const files = new Map(source);
