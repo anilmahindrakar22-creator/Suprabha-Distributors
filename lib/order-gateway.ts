@@ -26,6 +26,7 @@ export type GatewayAction =
   | 'preview_customer_prices'
   | 'get_product_price_impact'
   | 'apply_price_book'
+  | 'approve_customer_price_book'
   | 'apply_product_price_impact'
   | 'recover_order_submission'
   | 'list_users'

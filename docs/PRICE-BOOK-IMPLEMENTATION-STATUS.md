@@ -474,3 +474,18 @@ Completed after the user requested one more slice:
   not a deployment or an authenticated staff workflow acceptance.
 - Next gate: isolated authenticated acceptance of the correction, including two approved staff
   accounts and a real confirmation/pricing exception flow. Do not mutate production orders or Tally.
+
+## Customer-wide approval slice — 23 September 2026
+
+- Selecting a customer now shows purchased items in a compact price table with last rate,
+  historic/current cost, current GP, recommendation and approval status. Item details remain
+  available on demand; exceptions have a one-click filter.
+- An Administrator or Management user can approve all eligible recommendations in one
+  evidence-bound, idempotent database transaction. Fixed prices, accepted decisions, inactive
+  products and review-needed rows are excluded, counted and left unchanged. Audit events and
+  outbox records are written atomically with the new decisions. Accounts can view but not approve;
+  operational roles cannot read prices.
+- The new migration is pending, not deployed. Isolated deployment-order replay, pricing ACID
+  and concurrency checks, 24 focused unit tests, lint and typecheck pass. Authenticated candidate
+  acceptance and fresh release-time migration comparison remain open; no production or Tally
+  data was changed.

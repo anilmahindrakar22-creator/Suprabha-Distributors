@@ -562,6 +562,13 @@
       "remoteVersion": null,
       "remoteSha256": null,
       "status": "not_deployed"
+    },
+    {
+      "localFile": "20260923150000_customer_price_book_bulk_approval.sql",
+      "localSha256": "08ed469cce4b32efc92dd8edc21fcbd4be85de3941550faca190053912ff570e",
+      "remoteVersion": null,
+      "remoteSha256": null,
+      "status": "not_deployed"
     }
   ]
 }

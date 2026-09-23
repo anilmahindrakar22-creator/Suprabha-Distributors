@@ -1,6 +1,6 @@
 'use client';
 
-import { useEffect, useRef, useState } from 'react';
+import { Fragment, useEffect, useRef, useState } from 'react';
 import { loadOrderCatalog, loadOrderCustomers } from '@/lib/order-capture-masters';
 import type { CatalogItem, CustomerDirectoryEntry } from '@/lib/order-types';
 import type { PricingCommand } from '@/lib/pricing-types';
@@ -16,7 +16,7 @@ type Row = {
   source?: { type: string; reference: string | null; date: string | null; version: string | null };
   cost?: { amount: number; kind: string; effectiveAt: string; sourceReference: string; changeAmount: number | null; changePercent: number | null } | null;
 };
-type Page = { rows: Row[]; hasMore: boolean; offset: number; previewHash?: string; customerCount?: number; protectedCount?: number; reviewCount?: number; targetAboveContinuityCount?: number; materialIncreaseCount?: number; continuityCount?: number; belowMinimumCount?: number; baseEvidence?: Row };
+type Page = { rows: Row[]; hasMore: boolean; offset: number; previewHash?: string; approvalPreviewHash?: string; bulkTotalCount?: number; bulkEligibleCount?: number; bulkExcludedCount?: number; bulkEligibleKeys?: string[]; customerCount?: number; protectedCount?: number; reviewCount?: number; targetAboveContinuityCount?: number; materialIncreaseCount?: number; continuityCount?: number; belowMinimumCount?: number; baseEvidence?: Row };
 const money = (value: number | null) => value == null ? 'Unavailable' : new Intl.NumberFormat('en-IN', { style: 'currency', currency: 'INR', maximumFractionDigits: 2 }).format(value);
 const percent = (value: number | null) => value == null ? 'Unavailable' : `${value.toFixed(2)}%`;
 const field = 'mt-1 min-h-11 w-full rounded-lg border border-[#cedfdd] bg-white px-3 text-sm';
@@ -30,9 +30,9 @@ async function read<T>(url: string, signal?: AbortSignal): Promise<T> {
 }
 async function send(command: PricingCommand) {
   const response = await fetch('/api/pricing', { method: 'POST', headers: { 'content-type': 'application/json' }, body: JSON.stringify(command) });
-  const data = await response.json() as { error?: string; applied?: number; skipped?: number };
+  const data = await response.json() as { error?: string; applied?: number; skipped?: number; excluded?: number };
   if (!response.ok) throw new Error(data.error || 'Decision could not be saved');
-  return data as { applied?: number; skipped?: number };
+  return data as { applied?: number; skipped?: number; excluded?: number };
 }
 
 export function savePricingReference(actorEmail: string, command: PricingCommand, remove = false) {
@@ -52,7 +52,7 @@ export function CustomerPriceBook({ actorEmail, actorRole, onRecoveryBlocked }: 
     const timer = window.setTimeout(() => {
     try {
       const saved = JSON.parse(sessionStorage.getItem(recoveryStorageKey) || '[]');
-      if (!Array.isArray(saved) || saved.some(value => !value || !['apply_price_book','apply_product_price_impact','set_standard_item_price','create_price_contract','approve_price_contract','reject_price_contract','create_pricing_policy'].includes(value.action) || !/^[0-9a-f-]{36}$/i.test(value.idempotencyKey))) throw new Error('Invalid recovery data');
+      if (!Array.isArray(saved) || saved.some(value => !value || !['apply_price_book','approve_customer_price_book','apply_product_price_impact','set_standard_item_price','create_price_contract','approve_price_contract','reject_price_contract','create_pricing_policy'].includes(value.action) || !/^[0-9a-f-]{36}$/i.test(value.idempotencyKey))) throw new Error('Invalid recovery data');
       setRecovery(saved);
       setRecoveryOwner(recoveryStorageKey);
     } catch { setRecoveryMessage('Pricing recovery references could not be read. Check recent pricing activity before saving again.'); }
@@ -98,6 +98,7 @@ export function CustomerPriceBook({ actorEmail, actorRole, onRecoveryBlocked }: 
   const [page, setPage] = useState<Page | null>(null); const [loading, setLoading] = useState(false);
   const [error, setError] = useState(''); const [notice, setNotice] = useState(''); const [revision, setRevision] = useState(0);
   const [reason, setReason] = useState(''); const [busy, setBusy] = useState(false);
+  const [acceptRecommended, setAcceptRecommended] = useState(true);
   const [basePrice, setBasePrice] = useState(''); const [validFrom, setValidFrom] = useState('');
   const canApprove = ['administrator', 'management'].includes(actorRole) && recovery.length === 0 && recoveryOwner === recoveryStorageKey;
 
@@ -125,6 +126,16 @@ export function CustomerPriceBook({ actorEmail, actorRole, onRecoveryBlocked }: 
     } catch (failure) { setError(failure instanceof Error ? failure.message : 'Decision failed'); }
     finally { setBusy(false); }
   }
+  async function approveCustomerBook() {
+    if (!selected || !page?.approvalPreviewHash || !page.bulkEligibleCount || busy || !acceptRecommended) return;
+    setBusy(true); setError(''); setNotice('');
+    try {
+      const result = await mutate({ action: 'approve_customer_price_book', payload: { customerId: selected, approvalPreviewHash: page.approvalPreviewHash, idempotencyKey: crypto.randomUUID() } });
+      setNotice(`${result.applied} recommended prices approved together. ${result.excluded} fixed, already-approved, or review-needed items were left unchanged.`);
+      setRevision((value) => value + 1);
+    } catch (failure) { setError(failure instanceof Error ? failure.message : 'Price book approval failed'); }
+    finally { setBusy(false); }
+  }
   async function saveBase() {
     setBusy(true); setError(''); setNotice('');
     try { await mutate({ action: 'set_standard_item_price', payload: { previewHash: page?.previewHash || '', tallyKey: selected, price: Number(basePrice), validFrom, reason, idempotencyKey: crypto.randomUUID() } }); setNotice('Base price saved. It applies where no genuine customer history or fixed agreement exists.'); }
@@ -140,14 +151,26 @@ export function CustomerPriceBook({ actorEmail, actorRole, onRecoveryBlocked }: 
     {recoveryMessage ? <output className="mt-2 block text-sm">{recoveryMessage}</output> : null}
     <nav aria-label="Pricing workbench" className="mt-3 flex flex-wrap gap-2">{([['customer','Customer prices'],['impact','Purchase-cost review'],['base','Base / default prices']] as const).map(([value,label]) => <button key={value} type="button" aria-pressed={mode === value} className={`${button} ${mode === value ? 'bg-[#e8f5ef]' : ''}`} onClick={() => { setMode(value); setSelected(''); setQuery(''); setPage(null); setOffset(0); setError(''); setNotice(''); }}>{label}</button>)}</nav>
     <div className="relative mt-4 max-w-xl"><label className="text-sm font-bold">{mode === 'customer' ? 'Select customer' : 'Select product'}<input className={field} value={query} placeholder="Type at least two letters" onChange={(event) => { setQuery(event.target.value); setSelected(''); setPage(null); }}/></label>{matches.length > 0 ? <div className="absolute z-20 w-full rounded-lg border bg-white p-1 shadow-lg">{matches.map((item) => <button key={item.id} type="button" className="block min-h-11 w-full rounded px-3 text-left text-sm hover:bg-[#e8f5ef]" onClick={() => { setSelected(item.id); setQuery(item.name); setOffset(0); }}>{item.name}</button>)}</div> : null}</div>
-    {mode === 'customer' && selected ? <nav aria-label="Customer price categories" className="mt-4 flex flex-wrap gap-2">{[['purchased','Purchased'],['exceptions','Exceptions / special prices'],['all','All products']].map(([value,label]) => <button key={value} type="button" className={button} aria-pressed={tab === value} onClick={() => { setTab(value); setOffset(0); }}>{label}</button>)}</nav> : null}
+    {mode === 'customer' && selected ? <div className="mt-4 flex flex-wrap items-center gap-3"><label className="flex min-h-10 items-center gap-2 text-sm font-bold"><input type="checkbox" checked={tab === 'exceptions'} onChange={(event) => { setTab(event.target.checked ? 'exceptions' : 'purchased'); setOffset(0); }} />Review exceptions only</label><button type="button" className={button} aria-pressed={tab === 'all'} onClick={() => { setTab(tab === 'all' ? 'purchased' : 'all'); setOffset(0); }}>{tab === 'all' ? 'Purchased items' : 'Browse all products'}</button></div> : null}
     {error ? <p role="alert" className="mt-3 rounded-lg bg-red-50 p-3 text-sm text-red-800">{error}</p> : null}
     {notice ? <output className="mt-3 block rounded-lg bg-green-50 p-3 text-sm text-green-900">{notice}</output> : null}
     {loading ? <output className="mt-4 block text-sm">Calculating from current pricing evidence…</output> : null}
     {mode === 'base' ? <div className="mt-4 max-w-2xl space-y-3"><p className="text-xs text-[#61777a]">Current cost {money(page?.baseEvidence?.currentCost ?? null)} · Target-margin price {money(page?.baseEvidence?.target ?? null)}</p><p className="text-sm text-[#61777a]">For new customer/product combinations. Existing customer history and fixed agreements take priority.</p><label className="block text-sm font-bold">Base selling price ₹<input type="number" min="0.01" max="100000000" step="0.01" className={field} value={basePrice} onChange={(event) => setBasePrice(event.target.value)}/></label><label className="block text-sm font-bold">Effective from<input type="date" className={field} value={validFrom} onChange={(event) => setValidFrom(event.target.value)}/></label><label className="block text-sm font-bold">Reason<input className={field} maxLength={1000} value={reason} onChange={(event) => setReason(event.target.value)}/></label><button type="button" className={button} disabled={!canApprove || busy || !page?.previewHash || !selected || Number(basePrice)<=0 || !basePrice || !validFrom || reason.trim().length<3} onClick={() => void saveBase()}>Approve base price</button><p className="text-xs text-[#61777a]">Management approval required. Margin is checked again when the price is used.</p></div> : null}
     {mode === 'impact' && page ? <div className="mt-4 space-y-3 rounded-xl bg-[#f4f8f6] p-4"><p className="text-sm"><b>{page.customerCount}</b> customers · <b>{page.protectedCount}</b> fixed agreements · <b>{page.continuityCount}</b> continuity · <b>{page.belowMinimumCount}</b> below minimum · <b>{page.reviewCount}</b> require review · <b>{page.targetAboveContinuityCount}</b> target above continuity · <b>{page.materialIncreaseCount}</b> material increases</p><p className="text-xs text-[#61777a]">Ranked by absolute per-unit customer impact. Monthly GP: current, continuity, recommended and incremental estimates are unavailable until reliable buying volume is supplied. One click approves all safe rows, including later pages; fixed and missing-evidence rows are skipped and remain visible for review.</p><div className="flex flex-wrap gap-2"><button type="button" className={button} disabled={!canApprove || busy} onClick={() => void apply('continuity')}>Pass through cost increase</button><button type="button" className={button} disabled={!canApprove || busy} onClick={() => void apply('recommended')}>Apply recommended prices</button></div></div> : null}
-    {page && mode !== 'base' ? <><div className="mt-4 space-y-3">{page.rows.map((row) => <PriceRow key={`${row.customerId}:${row.tallyKey}:${row.evidenceHash}`} row={row} customerMode={mode === 'customer'} canApprove={canApprove} mutate={mutate} onChanged={() => setRevision((value) => value+1)}/>)}{!page.rows.length ? <p className="py-4 text-sm text-[#61777a]">No eligible items in this view. Tally history may still need a read-only sync.</p> : null}</div><div className="mt-4 flex items-center justify-between"><button type="button" className={button} disabled={!offset || loading} onClick={() => setOffset((value) => Math.max(0,value-50))}>Previous</button><span className="text-xs">Page {offset/50+1}</span><button type="button" className={button} disabled={!page.hasMore || loading} onClick={() => setOffset((value) => value+50)}>Next</button></div></> : null}
+    {mode === 'customer' && selected && tab === 'purchased' && page ? <section className="mt-4 rounded-xl border border-[#dce7e5] p-3" aria-label="Customer price-book approval"><p className="text-sm font-bold">{page.bulkTotalCount ?? 0} purchased items · {page.bulkEligibleCount ?? 0} ready · {page.bulkExcludedCount ?? 0} protected or need review</p><p className="mt-1 text-xs text-[#61777a]">Approval covers all eligible purchased items, including later pages. Fixed, already-approved, inactive and review-needed prices stay unchanged.</p><div className="mt-3 flex flex-wrap items-center gap-3"><label className="flex min-h-10 items-center gap-2 text-sm font-bold"><input type="checkbox" checked={acceptRecommended} onChange={(event) => setAcceptRecommended(event.target.checked)} />Accept recommended prices</label><button type="button" className={button} disabled={!canApprove || busy || !acceptRecommended || !page.approvalPreviewHash || !page.bulkEligibleCount} onClick={() => void approveCustomerBook()}>{busy ? 'Approving price book…' : 'Approve price book'}</button></div>{!canApprove ? <p className="mt-2 text-xs">Administrator or Management approval required.</p> : null}</section> : null}
+    {page && mode !== 'base' ? <><div className="mt-4 space-y-3">{mode === 'customer' && tab === 'purchased' ? <CustomerPriceTable rows={page.rows} eligibleKeys={page.bulkEligibleKeys || []} canApprove={canApprove} mutate={mutate} onChanged={() => setRevision((value) => value+1)} /> : page.rows.map((row) => <PriceRow key={`${row.customerId}:${row.tallyKey}:${row.evidenceHash}`} row={row} customerMode={mode === 'customer'} canApprove={canApprove} mutate={mutate} onChanged={() => setRevision((value) => value+1)}/>)}{!page.rows.length ? <p className="py-4 text-sm text-[#61777a]">No eligible items in this view. Tally history may still need a read-only sync.</p> : null}</div><div className="mt-4 flex items-center justify-between"><button type="button" className={button} disabled={!offset || loading} onClick={() => setOffset((value) => Math.max(0,value-50))}>Previous</button><span className="text-xs">Page {offset/50+1}</span><button type="button" className={button} disabled={!page.hasMore || loading} onClick={() => setOffset((value) => value+50)}>Next</button></div></> : null}
   </section>;
+}
+
+function CustomerPriceTable({ rows, eligibleKeys, canApprove, mutate, onChanged }: { rows: Row[]; eligibleKeys: string[]; canApprove: boolean; mutate: typeof send; onChanged: () => void }) {
+  const [expanded, setExpanded] = useState('');
+  const eligible = new Set(eligibleKeys);
+  return <div className="overflow-x-auto rounded-xl border border-[#dce7e5]"><table className="w-full min-w-[760px] text-left text-sm"><thead className="bg-[#f4f8f6] text-xs text-[#456367]"><tr>{['Product','Last price','Old cost','Cost now','GP%','Recommended','Status'].map((heading) => <th key={heading} className="px-3 py-2">{heading}</th>)}</tr></thead><tbody className="divide-y divide-[#e3ecea]">{rows.map((row) => {
+    const currentRate = row.currentPrice;
+    const gp = currentRate != null && row.currentCost != null && currentRate > 0 ? (currentRate-row.currentCost)/currentRate*100 : null;
+    const status = row.fixed ? 'Fixed price' : row.currentDecisionId ? 'Approved' : eligible.has(row.tallyKey) ? 'Ready' : 'Review required';
+    return <Fragment key={`${row.customerId}:${row.tallyKey}`}><tr><td className="px-3 py-2"><strong>{row.itemName}</strong><button type="button" className="ml-2 text-xs font-bold text-[#176246] underline" aria-expanded={expanded === row.tallyKey} onClick={() => setExpanded((value) => value === row.tallyKey ? '' : row.tallyKey)}>{expanded === row.tallyKey ? 'Hide details' : 'Review item'}</button></td><td className="px-3 py-2">{money(row.lastRate)}</td><td className="px-3 py-2">{money(row.historicCost)}</td><td className="px-3 py-2">{money(row.currentCost)}</td><td className="px-3 py-2">{percent(gp)}</td><td className="px-3 py-2 font-bold">{money(row.recommended)}</td><td className="px-3 py-2">{status}</td></tr>{expanded === row.tallyKey ? <tr><td colSpan={7} className="p-3"><PriceRow row={row} customerMode canApprove={canApprove} mutate={mutate} onChanged={onChanged} /></td></tr> : null}</Fragment>;
+  })}</tbody></table></div>;
 }
 
 function PriceRow({ row, customerMode, canApprove, onChanged, mutate }: { row: Row; customerMode: boolean; canApprove: boolean; onChanged: () => void; mutate: typeof send }) {

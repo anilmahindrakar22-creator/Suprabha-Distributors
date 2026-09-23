@@ -90,6 +90,7 @@ export type PricingCommand =
   | { action: 'approve_price_contract' | 'reject_price_contract'; payload: { contractId: string; expectedVersion: number; reason: string; idempotencyKey: string } }
   | { action: 'create_pricing_policy'; payload: { policyVersion: string; minimumMarginPercent: number; targetMarginPercent?: number; overrideApprovalPercent: number; roundingIncrement: number; roundingRuleVersion: string; effectiveFrom: string; reason: string; idempotencyKey: string } }
   | { action: 'apply_price_book' | 'apply_product_price_impact'; payload: { customerId?: string; expectedDecisionId?: string | null; tallyKey: string; choice: 'continuity' | 'recommended' | 'custom'; price?: number; reason: string; evidenceHash?: string; previewHash?: string; idempotencyKey: string } }
+  | { action: 'approve_customer_price_book'; payload: { customerId: string; approvalPreviewHash: string; idempotencyKey: string } }
   | { action: 'set_standard_item_price'; payload: { previewHash: string; tallyKey: string; price: number; validFrom: string; reason: string; idempotencyKey: string } };
 
 function validKey(value: unknown) {
@@ -108,6 +109,10 @@ export function validatePricingCommand(value: unknown): PricingCommand | null {
   const command = exactObject(value);
   const payload = exactObject(command?.payload);
   if (!command || !payload || !validKey(payload.idempotencyKey)) return null;
+  if (command.action === 'approve_customer_price_book') {
+    if (!isUuid(payload.customerId) || typeof payload.approvalPreviewHash !== 'string' || !/^[a-f0-9]{64}$/.test(payload.approvalPreviewHash)) return null;
+    return command as unknown as PricingCommand;
+  }
   if (command.action === 'apply_price_book' || command.action === 'apply_product_price_impact') {
     const hash = command.action === 'apply_price_book' ? payload.evidenceHash : payload.previewHash;
     if (typeof hash !== 'string' || !/^[a-f0-9]{64}$/.test(hash) || (command.action === 'apply_price_book' && !isUuid(payload.customerId)) || typeof payload.tallyKey !== 'string' || !payload.tallyKey.trim() || payload.tallyKey.length > 240 || !['continuity','recommended','custom'].includes(String(payload.choice)) || typeof payload.reason !== 'string' || payload.reason.trim().length < 3 || payload.reason.length > 1000 || (payload.choice === 'custom' && (command.action === 'apply_product_price_impact' || typeof payload.price !== 'number' || !Number.isFinite(payload.price) || payload.price <= 0 || payload.price > 100000000))) return null;
