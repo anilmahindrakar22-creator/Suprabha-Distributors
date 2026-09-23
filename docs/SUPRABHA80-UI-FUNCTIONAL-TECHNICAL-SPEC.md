@@ -1019,3 +1019,10 @@ The primary test is whether it helps management answer:
 > Where is the economic opportunity, what is blocking it, where should our people act, and what market evidence is still missing?
 
 If a geographic visualization does not improve one of those decisions, it should not be added.
+
+
+## 27. Normal-path automation principle
+
+> **Suprabha OS should automate the normal path and expose the exceptional path. Humans should spend their time on decisions, relationships and exceptions—not re-entering facts the system already knows.**
+
+This is a system-wide product and architecture principle. New workflows and UI should be reviewed against it: canonical data should prefill automatically, routine deterministic work should be automated safely, and human attention should be reserved for material exceptions, approvals, relationships and judgment.
