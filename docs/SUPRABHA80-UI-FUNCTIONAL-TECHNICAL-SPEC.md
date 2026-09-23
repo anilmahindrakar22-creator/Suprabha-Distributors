@@ -821,3 +821,201 @@ The future module is architecturally successful when management can open one scr
 > What are the few most economically valuable actions Suprabha should take now, why are they recommended, what will they cost, who owns them, and did previous actions actually work?
 
 —without re-entering data already held by Suprabha OS, without confusing estimates with financial truth, and without allowing the intelligence layer to bypass Pricing, accounting, inventory, credit, audit or other governed transactional controls.
+
+
+## 26. Canonical Market Map architecture
+
+This section supersedes any earlier proposal that treated Customer, Opportunity, Equipment and Sales Territory as four peer map modes.
+
+The canonical UX is **decision-oriented**:
+
+1. **WALLET — Where is the money?**
+2. **OPPORTUNITY — Where can we win, defend or recover?**
+3. **ACTION — What should we do, and where?**
+4. **COVERAGE — What parts of the market do we not understand well enough?**
+
+Customer, Equipment and Territory are not discarded. They become geographic entities, overlays and filters that support all four decision modes.
+
+### 26.1 Architecture
+
+```text
+Customer/Address Geo ─┐
+Equipment/Installed ──┼──> Geographic Read Model
+Territory/Assignment ─┘             │
+                                    │
+Commercial Intelligence ────────────┤
+Wallet / Opportunity / Action       │
+                                    ▼
+                         MARKET MAP EXPERIENCE
+                     WALLET | OPPORTUNITY
+                       ACTION | COVERAGE
+                                    │
+                         Layers + Filters
+                    Customer / Equipment /
+                    Territory / Division /
+                    Salesperson / Constraint
+```
+
+Coordinates and normalized addresses belong to the canonical Customer/Address domain. Do not duplicate latitude/longitude into wallet_opportunity or commercial_action merely for map rendering.
+
+### 26.2 Wallet mode
+
+Business question: **Where is the addressable economic wallet?**
+
+Map may represent:
+- estimated addressable wallet;
+- current Suprabha revenue;
+- wallet share;
+- untapped wallet;
+- absolute GP;
+- division/category;
+- estimate confidence and freshness.
+
+Selecting an account opens the same Account Opportunity Workspace used elsewhere.
+
+### 26.3 Opportunity mode
+
+Business question: **Where can Suprabha economically grow, defend or recover business?**
+
+Layers may include:
+- reagent/product opportunities;
+- instrument opportunities;
+- Suprabha installed instruments;
+- competitor installed instruments where evidence exists;
+- replacement opportunities;
+- placement opportunities;
+- primary constraints;
+- expected GP opportunity/protected;
+- confidence.
+
+Equipment is primarily an Opportunity layer, not an isolated map mode.
+
+### 26.4 Action mode
+
+Business question: **Where should people act?**
+
+Show bounded commercial actions such as:
+- salesperson/management visit;
+- demonstration;
+- instrument placement;
+- service intervention;
+- collection;
+- stock/availability action;
+- account defense/recovery;
+- investigation.
+
+Allow filtering by owner, salesperson, territory, due date, action type and economic impact.
+
+Future route/visit assistance may suggest nearby high-value actions, but routing must optimize useful economic work rather than merely shortest distance. A future objective may consider expected economic gain per salesperson day/km. This is advisory and must not silently reassign owners or alter approved actions.
+
+### 26.5 Coverage mode
+
+Business question: **Where is market intelligence incomplete or stale?**
+
+Show:
+- unmapped/partially mapped accounts;
+- stale wallet snapshots;
+- low-confidence wallet estimates;
+- missing division breakdown;
+- missing/low-confidence installed-base evidence;
+- opportunities with UNKNOWN constraint;
+- territories with weak account coverage;
+- accounts requiring verification.
+
+Coverage is a data-quality and market-census view, not a sales-performance score.
+
+### 26.6 Shared overlays and filters
+
+The four modes use the same underlying map engine and account geography.
+
+Shared filters/overlays may include:
+- territory;
+- salesperson/owner;
+- diagnostic division;
+- customer type;
+- equipment/installed base;
+- opportunity type;
+- constraint;
+- confidence;
+- economic impact band;
+- due/overdue status;
+- active/inactive account where governed.
+
+Territory therefore applies across Wallet, Opportunity, Action and Coverage rather than existing as its own isolated mode.
+
+Customer is the fundamental geographic entity and appears according to the active decision mode rather than being a separate Customer mode.
+
+### 26.7 Interaction model
+
+The Map and List experiences are two projections of the same underlying records.
+
+```text
+        Same query / read model
+                │
+          ┌─────┴─────┐
+          ▼           ▼
+       LIST VIEW    MAP VIEW
+          │           │
+          └─────┬─────┘
+                ▼
+        Same decision drawer
+                ▼
+        Same domain commands
+```
+
+Switching List ↔ Map must not create separate workflow state, duplicate opportunities/actions, or change business authority.
+
+Selecting a marker should open the same decision drawer/account workspace as selecting its corresponding list row.
+
+### 26.8 Geographic read model
+
+Use a bounded geographic read model/projection for map performance. It may join/reference:
+- canonical account ID and coordinates;
+- territory/assignment;
+- current wallet snapshot summary;
+- current opportunity summary;
+- current action summary;
+- installed-base summary;
+- confidence/freshness indicators.
+
+The projection is disposable/rebuildable and non-authoritative. Source-domain records remain truth.
+
+Expose calculated_at/source watermarks so stale geographic intelligence is visible.
+
+### 26.9 Map functional requirements
+
+- **MAP-FR-01:** Authorized users can switch between WALLET, OPPORTUNITY, ACTION and COVERAGE without leaving the Market Map.
+- **MAP-FR-02:** Mode changes alter presentation/query semantics, not source-of-truth ownership.
+- **MAP-FR-03:** Territory, salesperson and division filters apply across relevant modes.
+- **MAP-FR-04:** Customer coordinates come from canonical Customer/Address geography.
+- **MAP-FR-05:** Opportunity/action records reference account geography; they do not duplicate coordinates.
+- **MAP-FR-06:** Equipment is an overlay/layer and may contribute to opportunity reasoning.
+- **MAP-FR-07:** Marker selection opens the same business object/workspace as list selection.
+- **MAP-FR-08:** Clustering/aggregation must not hide the underlying exact account records on drill-down.
+- **MAP-FR-09:** Estimates display confidence/freshness; missing geography remains visibly missing.
+- **MAP-FR-10:** Coverage mode never invents coordinates, wallet values or installed-base facts.
+- **MAP-FR-11:** Map recommendations remain advisory; governed Pricing, Orders, Service, Credit and other domain commands retain their normal authority.
+- **MAP-FR-12:** Future route suggestions use approved/current actions and must not silently create, approve or reassign commercial actions.
+
+### 26.10 Map technical requirements
+
+- Prefer one map component/query abstraction with mode-specific projections rather than four separate map implementations.
+- Fetch only viewport/relevant records when dataset size requires it.
+- Support marker clustering at wider zoom levels.
+- Preserve stable account IDs through clusters/drill-down.
+- Keep sensitive commercial fields behind existing server-side RBAC.
+- Cache/rebuild geographic projections independently of transactional order/pricing writes.
+- Geographic projection failures must not block order capture, pricing approval, billing or other transactional operations.
+- No external map provider becomes a source of commercial truth.
+- Provider-specific map code must remain behind an adapter/component boundary so the commercial domain does not depend on one mapping vendor.
+- Exact address/geocode corrections must flow back through the governed Customer/Address process, not by editing opportunity/action records.
+
+### 26.11 Map UX guardrail
+
+The map exists to improve decisions, not to decorate dashboards.
+
+The primary test is whether it helps management answer:
+
+> Where is the economic opportunity, what is blocking it, where should our people act, and what market evidence is still missing?
+
+If a geographic visualization does not improve one of those decisions, it should not be added.
