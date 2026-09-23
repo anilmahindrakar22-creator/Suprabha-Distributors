@@ -1026,3 +1026,30 @@ If a geographic visualization does not improve one of those decisions, it should
 > **Suprabha OS should automate the normal path and expose the exceptional path. Humans should spend their time on decisions, relationships and exceptions—not re-entering facts the system already knows.**
 
 This is a system-wide product and architecture principle. New workflows and UI should be reviewed against it: canonical data should prefill automatically, routine deterministic work should be automated safely, and human attention should be reserved for material exceptions, approvals, relationships and judgment.
+
+
+## 28. Pricing normal-path integration checkpoint
+
+The customer-first pricing correction is now substantially represented in code: customer selection, purchased-item loading, historical selling-price evidence, cost evidence, continuity/target/recommended calculations, risk states, bulk price-book approval, protected exceptions, governed customer price decisions and governed order-pricing support.
+
+The remaining acceptance focus is not another pricing redesign. It is an end-to-end audit of:
+
+```text
+Customer Price Book
+      ↓
+Order Capture
+      ↓
+Automatic governed customer price
+      ↓
+Normal path remains invisible to staff
+      ↓
+Only material exception interrupts
+      ↓
+Server revalidation
+      ↓
+Immutable billing snapshot
+```
+
+For a normal governed Customer × Product combination, order entry should simply display the resolved price and provenance without requiring the employee to repeat pricing work. Manual interaction belongs to genuine exceptions.
+
+The next architecture/review checkpoint should therefore verify Price Book → Order Capture → governed price resolution → exception-only interruption → immutable billing snapshot end-to-end before adding more pricing features.
