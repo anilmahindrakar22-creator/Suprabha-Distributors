@@ -463,3 +463,14 @@ Completed after the user requested one more slice:
   production build and all 401 unit tests pass. Read-only release preflight lists this
   correction as a pending migration. This is not yet a release claim: fresh live migration
   comparison and authenticated acceptance remain open.
+
+## Fresh production migration-history check — 23 September 2026
+
+- Read-only live Supabase inspection found 78 deployed migrations. Their versions, names and
+  normalized SHA-256 SQL fingerprints match all 78 recorded deployed entries. The new
+  customer-first correction is absent from production and remains the sole pending migration.
+- No live SQL was modified. The saved comparison date and inspected branch HEAD were refreshed;
+  the preflight intentionally still reports `releaseReady: false` because a saved comparison is
+  not a deployment or an authenticated staff workflow acceptance.
+- Next gate: isolated authenticated acceptance of the correction, including two approved staff
+  accounts and a real confirmation/pricing exception flow. Do not mutate production orders or Tally.
