@@ -14,13 +14,16 @@ $serverStartedByScript = $false
 function Resolve-PostgresProgram([string]$Name) {
   $command = Get-Command $Name -ErrorAction SilentlyContinue
   if ($command) { return $command.Source }
-  $candidateBins = @(
-    $env:STOCKFLOW_POSTGRES_BIN,
-    (Join-Path $env:LOCALAPPDATA 'Programs\PostgreSQL\17-portable\pgsql\bin'),
+  $candidateBins = @($env:STOCKFLOW_POSTGRES_BIN)
+  if ($env:LOCALAPPDATA) {
+    $candidateBins += Join-Path $env:LOCALAPPDATA 'Programs\PostgreSQL\17-portable\pgsql\bin'
+  }
+  $candidateBins += @(
     (Join-Path (Split-Path $repository -Parent) 'stockflow-phase3-local-tools\postgres17-portable\pgsql\bin'),
     (Join-Path (Split-Path $repository -Parent) 'stockflow-phase3-local-tools\postgres17\bin'),
     (Join-Path (Split-Path $repository -Parent) 'stockflow-phase3-local-tools\postgres15-portable\pgsql\bin')
-  ) | Where-Object { $_ -and (Test-Path $_) }
+  )
+  $candidateBins = $candidateBins | Where-Object { $_ -and (Test-Path $_) }
   foreach ($bin in $candidateBins) {
     $program = Join-Path $bin "$Name.exe"
     if (Test-Path $program) { return $program }
@@ -31,7 +34,6 @@ function Resolve-PostgresProgram([string]$Name) {
 $createdbProgram = Resolve-PostgresProgram 'createdb'
 $psqlProgram = Resolve-PostgresProgram 'psql'
 $dropdbProgram = Resolve-PostgresProgram 'dropdb'
-$pgCtlProgram = Resolve-PostgresProgram 'pg_ctl'
 $pgIsReadyProgram = Resolve-PostgresProgram 'pg_isready'
 $databaseUser = if ($env:STOCKFLOW_POSTGRES_USER) { $env:STOCKFLOW_POSTGRES_USER } else { 'postgres' }
 
@@ -44,6 +46,7 @@ try {
   New-Item -ItemType Directory -Path $work | Out-Null
   & $pgIsReadyProgram -q
   if ($LASTEXITCODE -ne 0) {
+    $pgCtlProgram = Resolve-PostgresProgram 'pg_ctl'
     $portableRoot = Split-Path (Split-Path (Split-Path $createdbProgram -Parent) -Parent) -Parent
     $dataCandidates = @(
       $env:STOCKFLOW_POSTGRES_DATA,
