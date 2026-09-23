@@ -489,3 +489,14 @@ Completed after the user requested one more slice:
   and concurrency checks, 24 focused unit tests, lint and typecheck pass. Authenticated candidate
   acceptance and fresh release-time migration comparison remain open; no production or Tally
   data was changed.
+
+## Isolated Pricing browser acceptance — 23 September 2026
+
+- The browser suite now checks the customer-wide preview, eligible/excluded counts, explicit
+  approval checkbox, one bound approval request, and receipt-only recovery on desktop and mobile.
+  Existing per-item checks were aligned with the collapsed detail panel, and routine approval
+  tests with the current optional-note behavior.
+- All 28 isolated desktop/mobile Pricing browser cases pass. These use fixture API responses,
+  so they do not establish two-account authenticated acceptance against a deployed candidate.
+  That gate and a fresh release-time migration comparison remain open. No production or Tally
+  data was changed.
