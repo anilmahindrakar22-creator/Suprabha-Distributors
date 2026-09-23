@@ -61,6 +61,12 @@ export async function POST(request: Request) {
   try {
     const email = await actorEmail();
     const body = await readBoundedJsonRequest(request);
+    if (body && typeof body === 'object' && 'action' in body && body.action === 'preview_customer_prices') {
+      const payload = 'payload' in body && body.payload && typeof body.payload === 'object' && !Array.isArray(body.payload) ? body.payload as Record<string, unknown> : null;
+      const tallyKeys = payload?.tallyKeys;
+      if (!payload || typeof payload.customerId !== 'string' || !validPriceContractLookup(payload.customerId, null) || !Array.isArray(tallyKeys) || tallyKeys.length < 1 || tallyKeys.length > 50 || tallyKeys.some((key) => typeof key !== 'string' || !key.trim() || key.length > 240)) return failure('Invalid price preview request', 400);
+      return Response.json(await callOrderGateway(email, 'preview_customer_prices', { customerId: payload.customerId, tallyKeys }), { headers: privateHeaders });
+    }
     if (body && typeof body === 'object' && 'action' in body && body.action === 'close_unresolved_pricing') {
       const payload = 'payload' in body ? body.payload : null;
       if (!payload || typeof payload !== 'object' || !('idempotencyKey' in payload) || typeof payload.idempotencyKey !== 'string' || !/^[0-9a-f-]{36}$/i.test(payload.idempotencyKey) || !('pricingAction' in payload) || typeof payload.pricingAction !== 'string' || !['apply_price_book','apply_product_price_impact','set_standard_item_price','create_price_contract','approve_price_contract','reject_price_contract','create_pricing_policy'].includes(payload.pricingAction)) return failure('Invalid recovery reference', 400);

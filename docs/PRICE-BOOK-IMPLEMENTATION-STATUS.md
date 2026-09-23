@@ -444,3 +444,22 @@ Completed after the user requested one more slice:
   history must be refreshed immediately before release, and the isolated candidate must permit a
   second approved staff identity for authenticated mutation acceptance. No merge, push, deployment,
   production mutation or Tally write was performed.
+
+## Customer-first correction in progress — 23 September 2026
+
+- Current customer price now displays the accepted evidence-bound price-book decision, not
+  merely the last Tally invoice. A changed evidence hash expires that decision; the calculated
+  recommendation remains a proposal, not an automatically approved current price.
+- A new confirmation transaction applies fully governed order prices and creates the immutable
+  billing snapshot, audit events and outbox entry together. Missing or review-required evidence
+  leaves pricing unapproved. Existing confirmed orders retain an explicit apply action; viewing
+  an order never silently writes pricing decisions.
+- Order entry offers bounded customer-price previews only to Administrator, Management and
+  Accounts. The database gateway denies operational-role access to commercial values.
+- Routine bulk and contract approvals no longer require typing a reason; deterministic audit
+  reasons are supplied. Custom decisions and rejections still require an explicit reason.
+- Local deployment-order migration replay, existing pricing integrity/concurrency checks and
+  the new confirmation/authorization/injected-rollback tests pass. Lint, typecheck, the
+  production build and all 401 unit tests pass. Read-only release preflight lists this
+  correction as a pending migration. This is not yet a release claim: fresh live migration
+  comparison and authenticated acceptance remain open.

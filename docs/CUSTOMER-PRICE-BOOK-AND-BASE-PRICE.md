@@ -2,7 +2,7 @@
 
 ## Status
 
-This is the approved next pricing design. The current coded build remains order-centric; this document defines the simpler customer-first pricing model to implement after current pricing consolidation and integrity work.
+This is the approved customer-first pricing design. The evidence-based price book, bulk impact flow and governed order resolution are implemented on the customer-pricing branch. Production rollout, real-policy configuration and office acceptance remain separate gates.
 
 ## Core operating principle
 
@@ -197,6 +197,4 @@ Existing immutable billing snapshots, optimistic concurrency, pricing approvals,
 
 Stop V1 pricing expansion here. Wallet-share optimization, competitor response, game theory and predictive pricing may later influence recommendations, but they must not complicate the core engine before office data and pricing outcomes are collected.
 
-Implementation sequence remains: consolidate current pricing build → pass migration/integrity/full tests → validate live read-only Tally cost evidence → configure real Suprabha policy → implement this customer-first continuity/margin layer → shadow-test recommendations against real billing decisions → office pilot → measure outcomes.
-
-This document records the approved design. It does not claim this customer-first/bulk-repricing UX is coded yet.
+Remaining release sequence: full validation → fresh live migration-history check → configure real Suprabha policy → validate read-only Tally evidence → shadow-test recommendations against real billing decisions → office pilot → measure outcomes. The application never writes to Tally.

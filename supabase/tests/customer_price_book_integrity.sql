@@ -75,6 +75,10 @@ begin
   r:=private.stockflow_customer_price(a,'BOOK-GLUCOSE','2026-09-13');
   payload:=jsonb_build_object('customerId',a,'tallyKey','BOOK-GLUCOSE','pricingDate','2026-09-13','evidenceHash',r->>'evidenceHash','expectedDecisionId',r->>'currentDecisionId','choice','continuity','reason','Maintain commercial continuity','idempotencyKey','book-single-approval-03');
   perform public.stockflow_pricing_gateway('price-book-test-key','book-admin@test.local','apply_price_book',payload);
+  r:=private.stockflow_customer_price(a,'BOOK-GLUCOSE','2026-09-13');
+  if (r->>'currentPrice')::numeric<>430 or r->>'currentPriceSource'<>'PRICE_BOOK_DECISION' then
+    raise exception 'Accepted customer price was not shown as current';
+  end if;
   begin
     perform public.stockflow_pricing_gateway('price-book-test-key','book-admin@test.local','apply_price_book',payload||jsonb_build_object('idempotencyKey','book-single-stale-04'));
     raise exception 'Concurrent row edit accepted';
@@ -93,6 +97,10 @@ begin
   if exists(select 1 from private.stockflow_command_results where idempotency_key='book-order-stale-cost-05') then raise exception 'Failed approval left partial command'; end if;
   r:=private.stockflow_resolve_pricing_line(l,'2026-09-13');
   if (r->>'proposedRate')::numeric<>460 then raise exception 'Evidence change failed to expire accepted price'; end if;
+  r:=private.stockflow_customer_price(a,'BOOK-GLUCOSE','2026-09-13');
+  if r->>'currentDecisionId' is not null or r->>'currentPriceSource'<>'LAST_TALLY_INVOICE' then
+    raise exception 'Expired decision remained the current customer price';
+  end if;
 
   -- A cost decrease preserves the last customer price, never automatically discounts it.
   insert into private.stockflow_tally_purchase_costs(tally_item_key,cost_amount,cost_kind,effective_at,source_reference,source_id,source_version) values('BOOK-GLUCOSE',280,'purchase_price','2026-09-13','C280','cost-280','1');

@@ -18,11 +18,16 @@ export type PricingLineResolution = {
   differenceToCustomer: number | null;
   additionalGP: number | null;
   evidenceHash: string;
+  currentDecisionId?: string | null;
+  currentDecisionChoice?: 'continuity' | 'recommended' | 'custom' | null;
+  currentPrice?: number | null;
+  currentPriceSource?: 'PRICE_BOOK_DECISION' | 'APPROVED_CONTRACT' | 'STANDARD_ITEM_PRICE' | 'LAST_TALLY_INVOICE' | 'NONE';
+  riskStatus?: 'GREEN' | 'AMBER' | 'RED';
   lineId: string;
   tallyKey: string;
   itemName: string;
   quantity: number;
-  resolution: 'APPROVED_CONTRACT_PRICE' | 'STANDARD_ITEM_PRICE' | 'LAST_TALLY_INVOICE_PRICE' | 'NO_PRICE_HISTORY' | 'PRICE_REVIEW_REQUIRED';
+  resolution: 'APPROVED_CONTRACT_PRICE' | 'STANDARD_ITEM_PRICE' | 'CUSTOMER_PRICE_BOOK_PRICE' | 'LAST_TALLY_INVOICE_PRICE' | 'NO_PRICE_HISTORY' | 'PRICE_REVIEW_REQUIRED';
   guardrail: 'PRICE_OK' | 'COST_INCREASE' | 'PRICE_REVIEW_REQUIRED';
   proposedRate: number | null;
   source: { type: 'APPROVED_CONTRACT' | 'STANDARD_ITEM_PRICE' | 'LAST_TALLY_INVOICE' | 'NONE'; reference: string | null; date: string | null; version: string | null };

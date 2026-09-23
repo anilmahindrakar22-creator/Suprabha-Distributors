@@ -555,6 +555,13 @@
       "remoteVersion": "20260921103304",
       "remoteSha256": "2079a75c3a4a81a6716be772105ef5e2acb77639d6eb3dee7b4d7495e0002741",
       "status": "exact_normalized_match"
+    },
+    {
+      "localFile": "20260921160000_customer_first_pricing_correction.sql",
+      "localSha256": "42b32be564ab162cf2b41e0fb19527323a7ac0bfd6b239b3ae66158ea22f34f4",
+      "remoteVersion": null,
+      "remoteSha256": null,
+      "status": "not_deployed"
     }
   ]
 }
