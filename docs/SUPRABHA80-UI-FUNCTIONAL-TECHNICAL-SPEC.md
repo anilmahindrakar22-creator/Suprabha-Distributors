@@ -1053,3 +1053,184 @@ Immutable billing snapshot
 For a normal governed Customer × Product combination, order entry should simply display the resolved price and provenance without requiring the employee to repeat pricing work. Manual interaction belongs to genuine exceptions.
 
 The next architecture/review checkpoint should therefore verify Price Book → Order Capture → governed price resolution → exception-only interruption → immutable billing snapshot end-to-end before adding more pricing features.
+
+
+## 29. New-user UI/UX principles and V1 corrections
+
+### 29.1 UX objective
+
+A new operational employee should be able to use the normal Suprabha OS workflow after minimal instruction without understanding the underlying architecture, pricing engine, Tally integration, concurrency model, audit model or internal technical terminology.
+
+Two companion principles govern the UI:
+
+> **Suprabha OS should automate the normal path and expose the exceptional path. Humans should spend their time on decisions, relationships and exceptions—not re-entering facts the system already knows.**
+
+> **Show employees the business decision, not the system machinery behind the decision.**
+
+The system may collect evidence, calculate, validate, reconcile, audit, protect concurrency and maintain history underneath. The operational employee should normally see only the information required to perform the business task.
+
+### 29.2 Organize around jobs, not software modules
+
+Primary navigation should use familiar business jobs and be role-sensitive. A general structure is:
+
+```text
+Home
+Orders
+Customers
+Products
+Dispatch
+Collections
+Service
+
+Management
+Pricing
+Reports
+Settings
+```
+
+Users should see only the sections appropriate to their role. For example, an Order Desk user may primarily need Home, New Order, Orders and Customers.
+
+### 29.3 Action-oriented home
+
+Operational home screens should answer **“What do I need to do?”** before showing broad KPI dashboards.
+
+Prioritize work queues such as orders needing correction, billing attention, overdue dispatches and collection follow-ups. Management may additionally receive financial and commercial KPIs.
+
+### 29.4 New Order normal path
+
+New Order is a critical V1 screen and should be intentionally simple:
+
+```text
+Select/Search Customer
+        ↓
+Frequently ordered / Search Products
+        ↓
+Quantity
+        ↓
+Approved Customer Price appears automatically
+        ↓
+Promised Delivery / Notes
+        ↓
+PLACE ORDER
+```
+
+Do not expose historic cost, target margin, continuity calculations, evidence hashes, policy versions, Tally source IDs, guardrails or other internal machinery on the normal order-entry surface.
+
+### 29.5 Progressive disclosure
+
+Normal state should show concise business information such as:
+
+```text
+₹1,240  ✓ Customer Price
+```
+
+Optional details may reveal previous selling price, current cost, GP, margin, source and approval date to authorized users. Deeper evidence/audit information remains available to management/admin without cluttering normal workflows.
+
+### 29.6 Business language over engineering language
+
+Operational UI should translate internal concepts into familiar business language while retaining exact technical terminology in logs/admin/audit surfaces.
+
+Examples:
+- Pricing resolution → Price
+- Governed price → Approved price
+- Pricing evidence → Price history
+- Guardrail → Needs review
+- Immutable snapshot → Approved billing price
+- Reconciliation → Tally check
+- Exception → Needs attention
+- Idempotency conflict → Order already saved
+- Recovery reference → Checking previous save
+- Purchase-cost impact → Supplier price change
+- Missing authoritative evidence → Cost information unavailable
+
+### 29.7 Customer Price Book hierarchy
+
+The customer-first Price Book should emphasize:
+- customer identity,
+- purchased-product count,
+- Ready / Review / Fixed Agreement summary,
+- Purchased / Needs Review / All Products views,
+- Last Price,
+- New/Current Cost,
+- Recommended Price,
+- GP/Margin,
+- concise reason for review where relevant,
+- individual exception action,
+- bulk acceptance of all safe recommendations.
+
+Advanced evidence remains progressively disclosed.
+
+### 29.8 Supplier Price Changes
+
+For ordinary business users, prefer **Supplier Price Changes** over **Purchase Cost Review**.
+
+The screen should communicate:
+- supplier/product,
+- old cost,
+- new cost,
+- absolute change,
+- number of affected customers,
+- safe-to-update count,
+- fixed/protected count,
+- review-required count,
+- economic impact where reliable,
+- Review Customers action.
+
+The engine performs the complex cross-customer calculations underneath.
+
+### 29.9 Exception states
+
+Do not rely on color alone. Prefer explicit states:
+- ✓ READY
+- ⚠ REVIEW
+- ⛔ BLOCKED
+
+Color is secondary reinforcement. Normal success should not create excessive visual noise; exceptions deserve visual attention.
+
+### 29.10 Consistent entity workspaces
+
+Use predictable pages:
+- Customer: Overview | Orders | Prices | Instruments | Payments | Activity
+- Product: Overview | Customers | Stock | Supplier Cost | Sales History
+- Order: Order → Billing → Packing → Dispatch → Delivery
+
+### 29.11 Universal search direction
+
+Future search should allow a user to search Suprabha OS without first knowing the module: customer, order number, product, invoice or instrument. Results should be grouped by entity type.
+
+### 29.12 Actionable error messages
+
+Operational errors must explain the business problem and next safe action rather than exposing internal codes.
+
+Examples:
+- PRICE_REVIEW_REQUIRED → “Price needs approval” + reason + Request Approval.
+- VERSION_CONFLICT → “This order changed while you were working” + who/when where available + See Changes / Reload Order.
+
+Internal error codes remain available in diagnostics/audit evidence.
+
+### 29.13 Desktop and mobile
+
+V1 remains desktop-first for office/order-desk work. Future salesperson/service mobile UX should be action-first rather than a compressed desktop interface. Do not expand mobile scope before the transactional V1 pilot.
+
+### 29.14 Immediate V1 UX corrections
+
+Before broader UI expansion, prioritize:
+1. Role-based simplified navigation.
+2. Action-oriented Home / Needs Attention.
+3. Extremely simple New Order normal path.
+4. Customer Price Book with Purchased / Needs Review / All Products and safe bulk acceptance.
+5. Replace engineering terminology with business terminology on operational surfaces.
+6. Progressive disclosure of pricing, Tally, audit and technical detail.
+
+Avoid a broad visual redesign while Pricing and the transactional spine are being consolidated.
+
+### 29.15 New-user usability acceptance test
+
+Pilot the interface with at least one employee who has not followed the development process. Without step-by-step assistance, ask the employee to:
+1. Create an order for an existing customer.
+2. Add three products.
+3. Find yesterday's order.
+4. Identify why a price needs review.
+5. Determine whether an order was dispatched.
+
+Every instance of “Where do I click?”, incorrect navigation, unexplained terminology, repeated data entry or inability to identify the next action is UX evidence to record and correct. The purpose is to validate learnability of the operational flow, not merely visual appearance.
