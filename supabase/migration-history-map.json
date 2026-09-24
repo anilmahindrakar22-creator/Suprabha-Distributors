@@ -569,6 +569,13 @@
       "remoteVersion": null,
       "remoteSha256": null,
       "status": "not_deployed"
+    },
+    {
+      "localFile": "20260924100000_cost_increase_exception_gate.sql",
+      "localSha256": "f9135c22ad31e6bf7429a697a64ab1ca3ae3c3c99df2ee4e18990f6806f08286",
+      "remoteVersion": null,
+      "remoteSha256": null,
+      "status": "not_deployed"
     }
   ]
 }

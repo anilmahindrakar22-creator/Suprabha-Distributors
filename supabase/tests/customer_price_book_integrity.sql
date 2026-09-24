@@ -96,7 +96,9 @@ begin
   exception when serialization_failure then null; end;
   if exists(select 1 from private.stockflow_command_results where idempotency_key='book-order-stale-cost-05') then raise exception 'Failed approval left partial command'; end if;
   r:=private.stockflow_resolve_pricing_line(l,'2026-09-13');
-  if (r->>'proposedRate')::numeric<>460 then raise exception 'Evidence change failed to expire accepted price'; end if;
+  if (r->>'proposedRate')::numeric<>420 or r->>'guardrail'<>'PRICE_REVIEW_REQUIRED' then
+    raise exception 'New cost evidence did not expire the decision and require review';
+  end if;
   r:=private.stockflow_customer_price(a,'BOOK-GLUCOSE','2026-09-13');
   if r->>'currentDecisionId' is not null or r->>'currentPriceSource'<>'LAST_TALLY_INVOICE' then
     raise exception 'Expired decision remained the current customer price';

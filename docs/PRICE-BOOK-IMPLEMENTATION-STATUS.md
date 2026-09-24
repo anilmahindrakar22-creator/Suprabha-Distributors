@@ -500,3 +500,22 @@ Completed after the user requested one more slice:
   so they do not establish two-account authenticated acceptance against a deployed candidate.
   That gate and a fresh release-time migration comparison remain open. No production or Tally
   data was changed.
+
+## Cost-increase exception correction — 24 September 2026
+
+- The approved pricing design now treats a verified purchase-cost increase as an administrator
+  exception, including under an approved fixed customer agreement. No automatic price increase
+  or billing snapshot occurs on confirmation. With comparable unchanged/lower cost and a valid
+  minimum margin, repeat orders proceed at the last genuine customer selling rate rather than
+  silently adopting the higher target-margin recommendation.
+- Added a forward migration that gates order resolution and automatic confirmation at the
+  database boundary. Customer-wide bulk approval excludes cost-increase review rows; explicit
+  administrator exception approval retains the existing ACID snapshot, audit and outbox path.
+- Isolated PostgreSQL migration replay and deployment-order replay pass. The rollback-only
+  regression verifies unchanged-cost auto approval, increased-cost hold for regular and fixed
+  items, bulk exclusion and administrator exception approval. Focused pricing unit tests,
+  lint and typecheck pass. Desktop/mobile browser fixture tests need a final rerun after their
+  cost-increase expectations were updated.
+- The private acceptance site still runs the prior candidate version. The new migration is
+  pending there and in production. No public deployment or Tally write has occurred. Two-account
+  authenticated acceptance and fresh release-time production migration comparison remain open.

@@ -131,7 +131,7 @@ export function CustomerPriceBook({ actorEmail, actorRole, onRecoveryBlocked }: 
     setBusy(true); setError(''); setNotice('');
     try {
       const result = await mutate({ action: 'approve_customer_price_book', payload: { customerId: selected, approvalPreviewHash: page.approvalPreviewHash, idempotencyKey: crypto.randomUUID() } });
-      setNotice(`${result.applied} recommended prices approved together. ${result.excluded} fixed, already-approved, or review-needed items were left unchanged.`);
+      setNotice(`${result.applied} recommended ${result.applied === 1 ? 'price' : 'prices'} approved. ${result.excluded} fixed, already-approved, or review-needed items were left unchanged.`);
       setRevision((value) => value + 1);
     } catch (failure) { setError(failure instanceof Error ? failure.message : 'Price book approval failed'); }
     finally { setBusy(false); }
@@ -168,7 +168,9 @@ function CustomerPriceTable({ rows, eligibleKeys, canApprove, mutate, onChanged 
   return <div className="overflow-x-auto rounded-xl border border-[#dce7e5]"><table className="w-full min-w-[760px] text-left text-sm"><thead className="bg-[#f4f8f6] text-xs text-[#456367]"><tr>{['Product','Last price','Old cost','Cost now','GP%','Recommended','Status'].map((heading) => <th key={heading} className="px-3 py-2">{heading}</th>)}</tr></thead><tbody className="divide-y divide-[#e3ecea]">{rows.map((row) => {
     const currentRate = row.currentPrice;
     const gp = currentRate != null && row.currentCost != null && currentRate > 0 ? (currentRate-row.currentCost)/currentRate*100 : null;
-    const status = row.fixed ? 'Fixed price' : row.currentDecisionId ? 'Approved' : eligible.has(row.tallyKey) ? 'Ready' : 'Review required';
+    const status = row.costChange != null && row.costChange > 0 && !row.currentDecisionId
+      ? 'Cost increase · review'
+      : row.fixed ? 'Fixed price' : row.currentDecisionId ? 'Approved' : eligible.has(row.tallyKey) ? 'Ready' : 'Review required';
     return <Fragment key={`${row.customerId}:${row.tallyKey}`}><tr><td className="px-3 py-2"><strong>{row.itemName}</strong><button type="button" className="ml-2 text-xs font-bold text-[#176246] underline" aria-expanded={expanded === row.tallyKey} onClick={() => setExpanded((value) => value === row.tallyKey ? '' : row.tallyKey)}>{expanded === row.tallyKey ? 'Hide details' : 'Review item'}</button></td><td className="px-3 py-2">{money(row.lastRate)}</td><td className="px-3 py-2">{money(row.historicCost)}</td><td className="px-3 py-2">{money(row.currentCost)}</td><td className="px-3 py-2">{percent(gp)}</td><td className="px-3 py-2 font-bold">{money(row.recommended)}</td><td className="px-3 py-2">{status}</td></tr>{expanded === row.tallyKey ? <tr><td colSpan={7} className="p-3"><PriceRow row={row} customerMode canApprove={canApprove} mutate={mutate} onChanged={onChanged} /></td></tr> : null}</Fragment>;
   })}</tbody></table></div>;
 }

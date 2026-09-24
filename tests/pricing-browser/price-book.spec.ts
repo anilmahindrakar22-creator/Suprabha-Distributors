@@ -233,14 +233,15 @@ test('customer book previews visible economics and approves eligible purchased i
   await page.route('**/api/pricing**', async route => {
     if (route.request().method() === 'POST') {
       posts.push(route.request().postDataJSON());
-      await route.fulfill({ json: { ok: true, applied: 2, excluded: 1 } });
+      await route.fulfill({ json: { ok: true, applied: 1, excluded: 2 } });
       return;
     }
     await route.fulfill({ json: {
-      rows: [row, { ...row, tallyKey: 'CRP', itemName: 'CRP reagent', lastRate: 620, historicCost: 390, currentCost: 410, recommended: 640 },
-        { ...row, tallyKey: 'FIXED', itemName: 'Fixed reagent', fixed: true, lastRate: 700, recommended: 700 }],
+      rows: [{ ...row, currentCost: 300, costChange: 0, continuity: 420 },
+        { ...row, tallyKey: 'CRP', itemName: 'CRP reagent', lastRate: 620, historicCost: 390, currentCost: 410, costChange: 20, recommended: 640, status: 'REVIEW_REQUIRED' },
+        { ...row, tallyKey: 'FIXED', itemName: 'Fixed reagent', fixed: true, lastRate: 700, recommended: 700, status: 'REVIEW_REQUIRED' }],
       offset: 0, hasMore: false, approvalPreviewHash, bulkTotalCount: 3,
-      bulkEligibleCount: 2, bulkExcludedCount: 1, bulkEligibleKeys: ['GLUCOSE', 'CRP'],
+      bulkEligibleCount: 1, bulkExcludedCount: 2, bulkEligibleKeys: ['GLUCOSE'],
     } });
   });
   await page.goto('/');
@@ -250,13 +251,14 @@ test('customer book previews visible economics and approves eligible purchased i
   await expect(page.getByRole('table')).toContainText('CRP reagent');
   await expect(page.getByRole('table')).toContainText('Fixed reagent');
   await expect(page.getByRole('table')).toContainText('₹420.00');
-  await expect(page.getByText('3 purchased items · 2 ready · 1 protected or need review')).toBeVisible();
+  await expect(page.getByText('3 purchased items · 1 ready · 2 protected or need review')).toBeVisible();
+  await expect(page.getByRole('table')).toContainText('Cost increase · review');
   await page.getByLabel('Accept recommended prices').uncheck();
   await expect(page.getByRole('button', { name: 'Approve price book' })).toBeDisabled();
   await page.getByLabel('Accept recommended prices').check();
   await page.getByRole('button', { name: 'Approve price book' }).click();
   await expect.poll(() => posts).toMatchObject([{ action: 'approve_customer_price_book', payload: { customerId, approvalPreviewHash } }]);
   expect(posts[0].payload.idempotencyKey).toMatch(/^[0-9a-f-]{36}$/);
-  await expect(page.getByText('2 recommended prices approved together. 1 fixed, already-approved, or review-needed items were left unchanged.')).toBeVisible();
+  await expect(page.getByText('1 recommended price approved. 2 fixed, already-approved, or review-needed items were left unchanged.')).toBeVisible();
   expect(await page.evaluate(() => sessionStorage.getItem('stockflow:pricing-recovery:fixture@example.test'))).toBe('[]');
 });
