@@ -514,8 +514,10 @@ Completed after the user requested one more slice:
 - Isolated PostgreSQL migration replay and deployment-order replay pass. The rollback-only
   regression verifies unchanged-cost auto approval, increased-cost hold for regular and fixed
   items, bulk exclusion and administrator exception approval. Focused pricing unit tests,
-  lint and typecheck pass. Desktop/mobile browser fixture tests need a final rerun after their
-  cost-increase expectations were updated.
-- The private acceptance site still runs the prior candidate version. The new migration is
-  pending there and in production. No public deployment or Tally write has occurred. Two-account
-  authenticated acceptance and fresh release-time production migration comparison remain open.
+  lint, typecheck and the updated desktop/mobile browser cases pass. GitHub quality/security
+  gates and CodeQL both passed for merge commit `989e287`.
+- The separate private acceptance database now has the cost-increase migration, and acceptance
+  site version 3 (`20346f6`) deployed successfully. The public app and production database remain
+  unchanged; no Tally write has occurred. The isolated site's authenticated two-account acceptance
+  still needs the owner's sign-in and approval of a synthetic proposal. Fresh release-time
+  production migration comparison remains open, so the pricing release is not yet pilot-ready.
