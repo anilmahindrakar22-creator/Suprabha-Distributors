@@ -1287,3 +1287,69 @@ Capture at least app_boot_ms, order_list_ms, customer_search_ms, catalog_search_
 P0 during/before pilot: instrument timings; simplify New Order; prefetch/cache masters; invisible normal-path pricing; remove unnecessary loading states; keyboard-first capture.
 P1 after pilot: focused UI components; selected read models; frequent/repeat products; stale-while-refresh queues; role-specific Needs Attention.
 P2 only if measurement justifies: deeper query/index optimization, incremental sync, larger projection infrastructure/background workers.
+
+
+## 31. Fast order capture and demand-driven replenishment
+
+### 31.1 Fast phone-order capture
+Order capture should minimize clicks and repeated entry. After customer selection, immediately surface a compact list of the customer's frequently/recently purchased products with governed customer prices already resolved where safe.
+
+Target interaction:
+```text
+Select customer
+  → frequent/recent products appear
+  → enter quantity beside product
+  → price resolves automatically
+  → cursor returns to product search
+  → save
+```
+
+Support keyboard-first rapid entry: type product shorthand/search, select with Enter, enter quantity, Enter to add and return focus to product search. Avoid separate Add Product dialogs, pricing screens or confirmations on the normal path. Target customer + five routine products in approximately 20–30 seconds under normal warm conditions.
+
+### 31.2 Products not yet used vs products not in the canonical catalog
+If an item exists in the synced Tally catalog, it must remain searchable in order capture even if it has never been ordered before or is excluded from reorder monitoring.
+
+If a requested item genuinely does not exist in the canonical Tally/catalog master, do not let ordinary users silently create a Product Master. Provide a controlled **Request new product / Requested item** path capturing description, requested quantity, customer and optional note. The requested line remains explicitly unmapped/non-inventory until an authorized user maps it to an existing canonical Tally item or completes the proper master-creation process.
+
+This preserves one source of truth and prevents duplicate/near-duplicate product masters.
+
+### 31.3 Customer demand must override reorder-monitoring scope
+A configured reorder subset is useful for proactive stock replenishment, but it must never hide real customer demand.
+
+Rule:
+
+> **Unfulfilled confirmed customer demand automatically creates or contributes to a procurement requirement. Reorder settings are not allowed to hide real customer demand.**
+
+Therefore an item with insufficient available Tally stock for confirmed/open customer demand must appear in the Requirements/Reorder operational view even if the item is not part of the configured reorder-monitoring subset.
+
+### 31.4 Separate demand shortage from proactive replenishment
+The Requirements/Reorder UI should distinguish:
+
+**Customer Demand**
+- item,
+- current authoritative/advisory Tally stock with freshness,
+- open customer demand,
+- shortage quantity,
+- affected order count,
+- oldest/priority affected order,
+- procurement attention state.
+
+**Stock Replenishment**
+- configured monitored item,
+- current stock,
+- reorder level/policy,
+- suggested replenishment quantity,
+- freshness/provenance.
+
+Actual customer shortage has higher operational priority than policy-based replenishment.
+
+### 31.5 Derived requirement, not duplicate inventory truth
+The procurement requirement is derived from authoritative open customer demand and the latest trusted Tally stock snapshot. It must not create a second stock ledger or pretend StockFlow owns inventory. Tally remains inventory authority.
+
+The requirement projection should be rebuildable and should reconcile when orders are cancelled/changed, Tally stock changes, or item mapping is corrected.
+
+### 31.6 Stock-arrival continuation
+When a later Tally sync shows stock becoming available for an item with open shortage demand, Suprabha OS should surface the affected waiting orders and quantity now available so operations can continue fulfilment. Do not silently allocate or change financial/inventory truth without the governed workflow.
+
+### 31.7 Priority
+Treat confirmed-demand → shortage → procurement requirement visibility as a V1/P1 operational priority before sophisticated demand forecasting. Losing visibility of a real customer order is a higher-risk failure than imperfect forecast-based replenishment.
