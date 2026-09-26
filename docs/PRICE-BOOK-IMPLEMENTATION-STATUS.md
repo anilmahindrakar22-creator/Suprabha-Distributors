@@ -595,3 +595,16 @@ Completed after the user requested one more slice:
   migration hash and eight-case release-preflight unit suite were refreshed and pass.
 - This correction is not deployed. PR checks must rerun on the new commit; the production
   recovery method remains unconfirmed. No public deployment or Tally change occurred.
+
+## Release gate status — 26 September 2026
+
+- PR #29 is open, review-ready and mergeable at `a8be161`. Quality/security and CodeQL
+  both passed on that exact commit. No new code changes were made during this check.
+- Production remains on Supabase Free. No verified, recoverable database export exists yet.
+  The local PostgreSQL dump client is available, but no production database connection
+  credential or URL is configured in this workspace, and the Supabase CLI is not installed.
+  Supabase's Free-plan guidance recommends a manual logical export. Do not apply the three
+  pending migrations or deploy the gateway/app until an export and recovery check are complete.
+- Next release action: obtain a production read-only/dump connection securely, create a private
+  logical backup, verify the artifact and an isolated restore, then recheck migration history
+  immediately before the controlled migration → gateway → app rollout. Tally remains read-only.
