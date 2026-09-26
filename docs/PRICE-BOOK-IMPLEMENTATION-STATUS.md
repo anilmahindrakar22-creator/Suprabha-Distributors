@@ -521,3 +521,23 @@ Completed after the user requested one more slice:
   unchanged; no Tally write has occurred. The isolated site's authenticated two-account acceptance
   still needs the owner's sign-in and approval of a synthetic proposal. Fresh release-time
   production migration comparison remains open, so the pricing release is not yet pilot-ready.
+
+## Private acceptance gateway and order-entry handoff — 26 September 2026
+
+- The private acceptance database confirms a synthetic customer-product proposal requested by
+  `nikitesh.am@gmail.com` and approved by `anil.mahindrakar22@gmail.com`, with separate audit
+  actors and an effective approved rate of ₹335. No production pricing data was changed.
+- Authenticated order entry initially showed “Customer price unavailable” for that exact
+  customer/product because the private acceptance Edge Function was still version 1, whose
+  action allowlist lacked `preview_customer_prices`. The database resolver itself returned the
+  approved contract correctly. Deployed the repository's existing `stockflow-orders` function
+  to the private acceptance project as version 2; the same form then displayed
+  “Current price ₹335.00 · GREEN”. No order was submitted, and public StockFlow and Tally were
+  untouched.
+- Fresh local `pnpm test:pricing:deployment` and `pnpm run ci` passed. The latter covered lint,
+  typecheck, connector checks, 402 unit tests, production build, 8 access browser cases,
+  28 pricing browser cases and the production dependency audit (no known high-severity finding).
+- Release remains held: complete the authenticated pricing-to-order state transition on the
+  private candidate, refresh production migration comparison immediately before release, and
+  obtain review/merge approval. The pending migrations and pricing build are not public or
+  pilot-ready yet.
