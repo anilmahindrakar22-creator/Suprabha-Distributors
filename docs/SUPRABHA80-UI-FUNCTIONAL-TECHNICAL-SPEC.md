@@ -1234,3 +1234,122 @@ Pilot the interface with at least one employee who has not followed the developm
 5. Determine whether an order was dispatched.
 
 Every instance of “Where do I click?”, incorrect navigation, unexplained terminology, repeated data entry or inability to identify the next action is UX evidence to record and correct. The purpose is to validate learnability of the operational flow, not merely visual appearance.
+
+
+## 30. Performance and workflow-speed architecture
+
+Performance means three things: system response speed, workflow completion speed, and human decision speed. Optimize all three, with workflow/human speed taking priority over infrastructure complexity.
+
+### 30.1 Performance targets
+- App/home useful: <1.5s target.
+- Warm order list: <1s target.
+- Customer/product search: <100ms perceived where locally cached.
+- Customer selection: near-instant shell with dependent data loaded in parallel.
+- Governed price appearance: <300ms perceived where evidence is available/cached.
+- Add/edit order line: immediate local interaction.
+- Typical order save: <1s target, subject to authoritative server confirmation.
+- Existing order open: <500ms perceived where cached/read-model data is available.
+- Operational queue switch: <300ms perceived.
+
+Measure p50 and p95 rather than averages.
+
+### 30.2 Keep the core architecture simple
+Retain the modular monolith, PostgreSQL/Supabase transactional authority and trusted local Tally connector. Do not introduce Redis, Kafka, Elasticsearch, Kubernetes, microservices or a separate pricing service without measured need.
+
+### 30.3 Purpose-built read models
+After V1 stabilization, introduce rebuildable/non-authoritative projections for high-frequency UI reads, e.g. order queue, customer order summary, customer price book, product cost impact and customer account summary. Transactional normalized tables remain authoritative.
+
+### 30.4 Cache, version and prefetch
+Cache relatively stable customer/product/master data with explicit versions. On app/order-desk entry, prefetch likely order-capture dependencies in the background. On customer selection, load frequent/recent products, governed prices and lightweight account context in parallel rather than serially.
+
+### 30.5 Customer-specific fast capture
+Use deterministic transaction history to surface frequently/recently ordered products and repeat-order actions. This is not predictive AI; it is a convenience projection from authoritative history.
+
+### 30.6 Invisible normal-path pricing
+For a normal governed Customer × Product combination, order entry shows the resolved approved price without opening Pricing. Only material exceptions interrupt capture.
+
+### 30.7 Optimistic interaction boundaries
+Use immediate local UI for safe reversible interactions such as adding lines, changing quantities, notes and navigation. Keep final pricing approval, billing snapshots, authoritative stock/invoice reconciliation and financial operations server-confirmed.
+
+### 30.8 UI decomposition
+Gradually decompose large operational workspaces into focused components such as OrderQueue, OrderSearch, OrderDetail, NewOrder, CustomerPicker, FrequentProducts, OrderLines, BillingPanel, FulfilmentPanel and AttentionPanel. This is a UI/code organization change, not a microservice split.
+
+### 30.9 Search, pagination and refresh
+Search cached customer/product data locally first where safe; use server search as needed. Paginate/virtualize large operational lists. Prefer stale-while-refresh behavior where safe: show usable cached data immediately, indicate freshness, then replace with current server state.
+
+### 30.10 Exception-first and keyboard-first UX
+Needs Attention queues reduce both query/render load and human scanning. Order capture should support keyboard-first operation with intelligent autofocus, Enter selection, arrow-key navigation and shortcuts for common actions.
+
+### 30.11 Performance instrumentation
+Capture at least app_boot_ms, order_list_ms, customer_search_ms, catalog_search_ms, pricing_preview_ms, order_save_ms, order_open_ms, pricing_book_ms and tally_reconcile_ms, plus workflow timing from customer selection to first line and order submission.
+
+### 30.12 Sequence
+P0 during/before pilot: instrument timings; simplify New Order; prefetch/cache masters; invisible normal-path pricing; remove unnecessary loading states; keyboard-first capture.
+P1 after pilot: focused UI components; selected read models; frequent/repeat products; stale-while-refresh queues; role-specific Needs Attention.
+P2 only if measurement justifies: deeper query/index optimization, incremental sync, larger projection infrastructure/background workers.
+
+
+## 31. Fast order capture and demand-driven replenishment
+
+### 31.1 Fast phone-order capture
+Order capture should minimize clicks and repeated entry. After customer selection, immediately surface a compact list of the customer's frequently/recently purchased products with governed customer prices already resolved where safe.
+
+Target interaction:
+```text
+Select customer
+  → frequent/recent products appear
+  → enter quantity beside product
+  → price resolves automatically
+  → cursor returns to product search
+  → save
+```
+
+Support keyboard-first rapid entry: type product shorthand/search, select with Enter, enter quantity, Enter to add and return focus to product search. Avoid separate Add Product dialogs, pricing screens or confirmations on the normal path. Target customer + five routine products in approximately 20–30 seconds under normal warm conditions.
+
+### 31.2 Products not yet used vs products not in the canonical catalog
+If an item exists in the synced Tally catalog, it must remain searchable in order capture even if it has never been ordered before or is excluded from reorder monitoring.
+
+If a requested item genuinely does not exist in the canonical Tally/catalog master, do not let ordinary users silently create a Product Master. Provide a controlled **Request new product / Requested item** path capturing description, requested quantity, customer and optional note. The requested line remains explicitly unmapped/non-inventory until an authorized user maps it to an existing canonical Tally item or completes the proper master-creation process.
+
+This preserves one source of truth and prevents duplicate/near-duplicate product masters.
+
+### 31.3 Customer demand must override reorder-monitoring scope
+A configured reorder subset is useful for proactive stock replenishment, but it must never hide real customer demand.
+
+Rule:
+
+> **Unfulfilled confirmed customer demand automatically creates or contributes to a procurement requirement. Reorder settings are not allowed to hide real customer demand.**
+
+Therefore an item with insufficient available Tally stock for confirmed/open customer demand must appear in the Requirements/Reorder operational view even if the item is not part of the configured reorder-monitoring subset.
+
+### 31.4 Separate demand shortage from proactive replenishment
+The Requirements/Reorder UI should distinguish:
+
+**Customer Demand**
+- item,
+- current authoritative/advisory Tally stock with freshness,
+- open customer demand,
+- shortage quantity,
+- affected order count,
+- oldest/priority affected order,
+- procurement attention state.
+
+**Stock Replenishment**
+- configured monitored item,
+- current stock,
+- reorder level/policy,
+- suggested replenishment quantity,
+- freshness/provenance.
+
+Actual customer shortage has higher operational priority than policy-based replenishment.
+
+### 31.5 Derived requirement, not duplicate inventory truth
+The procurement requirement is derived from authoritative open customer demand and the latest trusted Tally stock snapshot. It must not create a second stock ledger or pretend StockFlow owns inventory. Tally remains inventory authority.
+
+The requirement projection should be rebuildable and should reconcile when orders are cancelled/changed, Tally stock changes, or item mapping is corrected.
+
+### 31.6 Stock-arrival continuation
+When a later Tally sync shows stock becoming available for an item with open shortage demand, Suprabha OS should surface the affected waiting orders and quantity now available so operations can continue fulfilment. Do not silently allocate or change financial/inventory truth without the governed workflow.
+
+### 31.7 Priority
+Treat confirmed-demand → shortage → procurement requirement visibility as a V1/P1 operational priority before sophisticated demand forecasting. Losing visibility of a real customer order is a higher-risk failure than imperfect forecast-based replenishment.
