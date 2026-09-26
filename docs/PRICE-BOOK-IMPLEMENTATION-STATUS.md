@@ -444,3 +444,167 @@ Completed after the user requested one more slice:
   history must be refreshed immediately before release, and the isolated candidate must permit a
   second approved staff identity for authenticated mutation acceptance. No merge, push, deployment,
   production mutation or Tally write was performed.
+
+## Customer-first correction in progress — 23 September 2026
+
+- Current customer price now displays the accepted evidence-bound price-book decision, not
+  merely the last Tally invoice. A changed evidence hash expires that decision; the calculated
+  recommendation remains a proposal, not an automatically approved current price.
+- A new confirmation transaction applies fully governed order prices and creates the immutable
+  billing snapshot, audit events and outbox entry together. Missing or review-required evidence
+  leaves pricing unapproved. Existing confirmed orders retain an explicit apply action; viewing
+  an order never silently writes pricing decisions.
+- Order entry offers bounded customer-price previews only to Administrator, Management and
+  Accounts. The database gateway denies operational-role access to commercial values.
+- Routine bulk and contract approvals no longer require typing a reason; deterministic audit
+  reasons are supplied. Custom decisions and rejections still require an explicit reason.
+- Local deployment-order migration replay, existing pricing integrity/concurrency checks and
+  the new confirmation/authorization/injected-rollback tests pass. Lint, typecheck, the
+  production build and all 401 unit tests pass. Read-only release preflight lists this
+  correction as a pending migration. This is not yet a release claim: fresh live migration
+  comparison and authenticated acceptance remain open.
+
+## Fresh production migration-history check — 23 September 2026
+
+- Read-only live Supabase inspection found 78 deployed migrations. Their versions, names and
+  normalized SHA-256 SQL fingerprints match all 78 recorded deployed entries. The new
+  customer-first correction is absent from production and remains the sole pending migration.
+- No live SQL was modified. The saved comparison date and inspected branch HEAD were refreshed;
+  the preflight intentionally still reports `releaseReady: false` because a saved comparison is
+  not a deployment or an authenticated staff workflow acceptance.
+- Next gate: isolated authenticated acceptance of the correction, including two approved staff
+  accounts and a real confirmation/pricing exception flow. Do not mutate production orders or Tally.
+
+## Customer-wide approval slice — 23 September 2026
+
+- Selecting a customer now shows purchased items in a compact price table with last rate,
+  historic/current cost, current GP, recommendation and approval status. Item details remain
+  available on demand; exceptions have a one-click filter.
+- An Administrator or Management user can approve all eligible recommendations in one
+  evidence-bound, idempotent database transaction. Fixed prices, accepted decisions, inactive
+  products and review-needed rows are excluded, counted and left unchanged. Audit events and
+  outbox records are written atomically with the new decisions. Accounts can view but not approve;
+  operational roles cannot read prices.
+- The new migration is pending, not deployed. Isolated deployment-order replay, pricing ACID
+  and concurrency checks, 24 focused unit tests, lint and typecheck pass. Authenticated candidate
+  acceptance and fresh release-time migration comparison remain open; no production or Tally
+  data was changed.
+
+## Isolated Pricing browser acceptance — 23 September 2026
+
+- The browser suite now checks the customer-wide preview, eligible/excluded counts, explicit
+  approval checkbox, one bound approval request, and receipt-only recovery on desktop and mobile.
+  Existing per-item checks were aligned with the collapsed detail panel, and routine approval
+  tests with the current optional-note behavior.
+- All 28 isolated desktop/mobile Pricing browser cases pass. These use fixture API responses,
+  so they do not establish two-account authenticated acceptance against a deployed candidate.
+  That gate and a fresh release-time migration comparison remain open. No production or Tally
+  data was changed.
+
+## Cost-increase exception correction — 24 September 2026
+
+- The approved pricing design now treats a verified purchase-cost increase as an administrator
+  exception, including under an approved fixed customer agreement. No automatic price increase
+  or billing snapshot occurs on confirmation. With comparable unchanged/lower cost and a valid
+  minimum margin, repeat orders proceed at the last genuine customer selling rate rather than
+  silently adopting the higher target-margin recommendation.
+- Added a forward migration that gates order resolution and automatic confirmation at the
+  database boundary. Customer-wide bulk approval excludes cost-increase review rows; explicit
+  administrator exception approval retains the existing ACID snapshot, audit and outbox path.
+- Isolated PostgreSQL migration replay and deployment-order replay pass. The rollback-only
+  regression verifies unchanged-cost auto approval, increased-cost hold for regular and fixed
+  items, bulk exclusion and administrator exception approval. Focused pricing unit tests,
+  lint, typecheck and the updated desktop/mobile browser cases pass. GitHub quality/security
+  gates and CodeQL both passed for merge commit `989e287`.
+- The separate private acceptance database now has the cost-increase migration, and acceptance
+  site version 3 (`20346f6`) deployed successfully. The public app and production database remain
+  unchanged; no Tally write has occurred. The isolated site's authenticated two-account acceptance
+  still needs the owner's sign-in and approval of a synthetic proposal. Fresh release-time
+  production migration comparison remains open, so the pricing release is not yet pilot-ready.
+
+## Private acceptance gateway and order-entry handoff — 26 September 2026
+
+- The private acceptance database confirms a synthetic customer-product proposal requested by
+  `nikitesh.am@gmail.com` and approved by `anil.mahindrakar22@gmail.com`, with separate audit
+  actors and an effective approved rate of ₹335. No production pricing data was changed.
+- Authenticated order entry initially showed “Customer price unavailable” for that exact
+  customer/product because the private acceptance Edge Function was still version 1, whose
+  action allowlist lacked `preview_customer_prices`. The database resolver itself returned the
+  approved contract correctly. Deployed the repository's existing `stockflow-orders` function
+  to the private acceptance project as version 2; the same form then displayed
+  “Current price ₹335.00 · GREEN”. No order was submitted, and public StockFlow and Tally were
+  untouched.
+- Fresh local `pnpm test:pricing:deployment` and `pnpm run ci` passed. The latter covered lint,
+  typecheck, connector checks, 402 unit tests, production build, 8 access browser cases,
+  28 pricing browser cases and the production dependency audit (no known high-severity finding).
+- Release remains held: complete the authenticated pricing-to-order state transition on the
+  private candidate, refresh production migration comparison immediately before release, and
+  obtain review/merge approval. The pending migrations and pricing build are not public or
+  pilot-ready yet.
+
+## Authenticated pricing-to-order acceptance — 26 September 2026
+
+- On the private acceptance site, `nikitesh.am@gmail.com` captured synthetic order
+  `SF-260926-00021` for Acceptance Laboratory × Acceptance Analyzer Cleaner, then confirmed it.
+  The database shows `confirmed`, `pricing_state=approved`, a version-1 immutable billing
+  snapshot at the approved ₹335 rate, and matching order/pricing audit events. No Tally action
+  or public production change was made.
+- This closes the isolated pricing-to-order handoff check. A fresh production migration-history
+  comparison, review and controlled release decision remain before public deployment or pilot.
+
+## Fresh production migration comparison — 26 September 2026
+
+- Read-only live inspection found 78 production migration records, ending at remote version
+  `20260921103304`. All 78 versions, names, statement counts and normalized SHA-256 SQL
+  fingerprints match the saved mapping; there is no unexpected live migration.
+- Three local pricing migrations remain unapplied to production: customer-first correction,
+  customer-wide bulk approval, and cost-increase exception gate. Local release preflight passed,
+  but its static `releaseReady: false` result is intentionally not a deployment authorization.
+- No production data or schema was changed. Next gate is final review of the three-migration application
+  sequence and controlled public release decision; Tally stays untouched.
+
+## Pending migration sequence review — 26 September 2026
+
+- Reviewed the three pending migrations in timestamp order: customer-first correction,
+  customer-wide bulk approval, then cost-increase exception gate. Each later migration wraps
+  functions established by its predecessor; do not reorder or skip them. No direct business
+  data rewrite or deletion was found. The revised decision CHECK constraints accept all three
+  existing production decision rows (current values: `price_exception` and
+  `last_tally_invoice`). Production runs PostgreSQL 17.6; the isolated replay used PostgreSQL
+  17.11. The local deployment-order and injected-failure checks had passed before this review;
+  they were not rerun here. No DDL down-migration rehearsal exists.
+- Production `stockflow-orders` Edge Function version 18 lacks the new price-preview and bulk
+  actions. The safe release order is: recheck live history and preserve a recovery point; apply
+  the three migrations in order; deploy the repository gateway; verify its actions; deploy the
+  application; then perform authenticated smoke and staff pilot checks. Do not expose the new
+  application against the old gateway (the private candidate reproduced that failure).
+- PR #29 is still draft at remote head `95a656e` with an outdated description claiming two
+  pending migrations and incomplete two-account acceptance. Its quality/security and CodeQL
+  checks passed at that remote head. Local documentation was ahead of the remote branch; no push,
+  merge, production deployment or Tally change was made during this review.
+
+## Final review security correction — 26 September 2026
+
+- Independent PR review found the pending bulk-approval gateway could reach its write path when
+  no active member role was found: SQL `NULL NOT IN (...)` does not reject that actor. The audit
+  table's non-null role constraint prevented a committed approval in the reproduced case, but
+  authorization must reject it directly. The gateway now explicitly rejects a null role.
+- Added rollback-only integration checks for unknown and suspended actors. The pre-fix check
+  failed on an audit constraint instead of an authorization error; after the fix, normal and
+  deployment-order PostgreSQL replays pass, including ACID/concurrency checks. The pending
+  migration hash and eight-case release-preflight unit suite were refreshed and pass.
+- This correction is not deployed. PR checks must rerun on the new commit; the production
+  recovery method remains unconfirmed. No public deployment or Tally change occurred.
+
+## Release gate status — 26 September 2026
+
+- PR #29 is open, review-ready and mergeable at `a8be161`. Quality/security and CodeQL
+  both passed on that exact commit. No new code changes were made during this check.
+- Production remains on Supabase Free. No verified, recoverable database export exists yet.
+  The local PostgreSQL dump client is available, but no production database connection
+  credential or URL is configured in this workspace, and the Supabase CLI is not installed.
+  Supabase's Free-plan guidance recommends a manual logical export. Do not apply the three
+  pending migrations or deploy the gateway/app until an export and recovery check are complete.
+- Next release action: obtain a production read-only/dump connection securely, create a private
+  logical backup, verify the artifact and an isolated restore, then recheck migration history
+  immediately before the controlled migration → gateway → app rollout. Tally remains read-only.

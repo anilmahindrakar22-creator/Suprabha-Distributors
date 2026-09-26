@@ -26,6 +26,7 @@ import type { OrderPricingWorkspace, PricingLineResolution } from '@/lib/pricing
 import { PricingOptions } from './pricing-options';
 
 type DraftLine = { tallyKey: string; item: CatalogItem | null; quantity: number };
+type OrderEntryPrice = { tallyKey: string; currentPrice: number | null; currentPriceSource: string; riskStatus: 'GREEN' | 'AMBER' | 'RED'; recommendationReason?: string };
 type CreatedOrderResult = { orderId?: string; orderNumber?: string; status?: string; version?: number };
 type CreatedOrderCommand = Extract<OrderCommand, { action: 'create_order' }>;
 const desktopControlCenterQuery = '(min-width: 1024px)';
@@ -953,9 +954,8 @@ function PricingPanel({ order, actorRole, onChanged }: { order: OrderSummary; ac
       }));
       governedRequest.current = null;
       setMessage('Governed customer prices applied and billing snapshot created.');
-      setWorkspace(null); await onChanged();
-    } catch (error) { setMessage(error instanceof Error ? error.message : 'Governed pricing could not be applied'); }
-    finally { setState('idle'); }
+      setWorkspace(null); await onChanged(); setState('idle');
+    } catch (error) { setMessage(error instanceof Error ? error.message : 'Governed pricing could not be applied'); setState('error'); }
   }
   const loadPricingOnOpen = useEffectEvent(loadPricing);
   useEffect(() => {
@@ -972,8 +972,8 @@ function PricingPanel({ order, actorRole, onChanged }: { order: OrderSummary; ac
     {workspace ? <div className="mt-3 space-y-3">
       {workspace.exceptions.map((exception) => <PriceExceptionDecision key={exception.id} exception={exception} actorRole={actorRole} onChanged={async () => { setWorkspace(null); await onChanged(); await loadPricing(true); }} />)}
       {workspace.lines.map((line) => <PricingLineCard key={line.lineId} line={line} compact={governedReady && !manualReview} entry={entries[line.lineId] || { rate: '', reason: '' }} onChange={(entry) => setEntries((current) => ({ ...current, [line.lineId]: entry }))} />)}
-      {workspace.exceptions.length === 0 && workspace.pricingState !== 'approved' && governedReady && !manualReview ? <div className="flex flex-wrap gap-2"><button type="button" disabled={state === 'saving'} onClick={() => void applyGoverned()} className="min-h-10 rounded-xl bg-[#073e46] px-4 text-sm font-bold text-white disabled:opacity-50">{state === 'saving' ? 'Applying price book…' : 'Use governed prices'}</button><button type="button" disabled={state === 'saving'} onClick={() => setManualReview(true)} className="min-h-10 rounded-xl border border-[#b9d5cd] px-4 text-sm font-bold text-[#31585d]">Review or override this order</button></div> : null}
-      {workspace.exceptions.length === 0 && workspace.pricingState !== 'approved' && (!governedReady || manualReview) ? <button type="button" disabled={state === 'saving' || workspace.lines.some((line) => !Number(entries[line.lineId]?.rate))} onClick={() => void submit()} className="min-h-10 rounded-xl bg-[#073e46] px-4 text-sm font-bold text-white disabled:opacity-50">{state === 'saving' ? 'Saving pricing…' : 'Approve pricing'}</button> : null}
+      {workspace.exceptions.length === 0 && workspace.pricingState !== 'approved' && governedReady && !manualReview ? <div className="flex flex-wrap items-center gap-3">{order.status === 'awaiting_confirmation' || order.status === 'phone_order_received' ? <p className="text-xs font-bold text-[#176246]">Governed prices will apply when this order is confirmed.</p> : <button type="button" disabled={state === 'saving'} onClick={() => void applyGoverned()} className="min-h-10 rounded-xl bg-[#073e46] px-4 text-sm font-bold text-white disabled:opacity-50">{state === 'saving' ? 'Applying prices…' : 'Apply governed prices'}</button>}<button type="button" disabled={state === 'saving'} onClick={() => setManualReview(true)} className="min-h-10 rounded-xl border border-[#b9d5cd] px-4 text-sm font-bold text-[#31585d]">Review price exception</button></div> : null}
+      {workspace.exceptions.length === 0 && workspace.pricingState !== 'approved' && (!governedReady || manualReview) ? <button type="button" disabled={state === 'saving' || workspace.lines.some((line) => !Number(entries[line.lineId]?.rate))} onClick={() => void submit()} className="min-h-10 rounded-xl bg-[#073e46] px-4 text-sm font-bold text-white disabled:opacity-50">{state === 'saving' ? 'Saving pricing…' : governedReady ? 'Submit price override' : 'Submit price exception'}</button> : null}
       <PricingDecisionHistory history={workspace.history || []} />
     </div> : null}
   </section>;
@@ -1201,6 +1201,12 @@ function HydratedNewOrderPanel({ data, templateOrder, onClose, onCreated, onView
   const [idempotencyKey] = useState(() => initialPayload?.idempotencyKey || crypto.randomUUID());
   const [draftState, setDraftState] = useState<OfflineDraftState>(initialDraft?.state || 'draft');
   const [saveOnDevice, setSaveOnDevice] = useState(() => Boolean(initialDraft) || readOfflineDraftConsent(localStorage, data.actor.email));
+  const [entryPriceResult, setEntryPriceResult] = useState<{ key: string; prices: Record<string, OrderEntryPrice>; failed: boolean } | null>(null);
+  const canViewPrices = ['administrator', 'accounts', 'management'].includes(data.actor.role);
+  const pricingKeys = lines.map((line) => line.tallyKey).sort().join('\u001f');
+  const entryPriceKey = `${selectedCustomerId || ''}\u001e${pricingKeys}`;
+  const entryPrices = entryPriceResult?.key === entryPriceKey ? entryPriceResult.prices : {};
+  const entryPriceState = entryPriceResult?.key === entryPriceKey ? entryPriceResult.failed ? 'error' : 'idle' : 'loading';
 
   function changeTrustedDevice(allowed: boolean) {
     if (!writeOfflineDraftConsent(localStorage, data.actor.email, allowed)) {
@@ -1296,6 +1302,22 @@ function HydratedNewOrderPanel({ data, templateOrder, onClose, onCreated, onView
       .catch((cause) => { if (cause instanceof DOMException && cause.name === 'AbortError') return; setCustomerHistory(null); setCustomerHistoryState('error'); });
     return () => controller.abort();
   }, [selectedCustomer]);
+
+  useEffect(() => {
+    if (!canViewPrices || !selectedCustomerId || !pricingKeys) return;
+    const controller = new AbortController();
+    fetch('/api/pricing', {
+      method: 'POST',
+      cache: 'no-store',
+      signal: controller.signal,
+      headers: { 'content-type': 'application/json' },
+      body: JSON.stringify({ action: 'preview_customer_prices', payload: { customerId: selectedCustomerId, tallyKeys: pricingKeys.split('\u001f') } }),
+    })
+      .then((response) => readResponse<{ prices: OrderEntryPrice[] }>(response))
+      .then((result) => { if (!controller.signal.aborted) setEntryPriceResult({ key: entryPriceKey, prices: Object.fromEntries(result.prices.map((price) => [price.tallyKey, price])), failed: false }); })
+      .catch((cause) => { if (!(cause instanceof DOMException && cause.name === 'AbortError') && !controller.signal.aborted) setEntryPriceResult({ key: entryPriceKey, prices: {}, failed: true }); });
+    return () => controller.abort();
+  }, [canViewPrices, entryPriceKey, pricingKeys, selectedCustomerId]);
 
   function chooseCustomer(customer: CustomerDirectoryEntry) {
     setSelectedCustomerId(customer.id);
@@ -1449,7 +1471,7 @@ function HydratedNewOrderPanel({ data, templateOrder, onClose, onCreated, onView
               <label className="text-sm font-bold text-[#456367]">Find product<input maxLength={200} value={productQuery} onChange={(event) => setProductQuery(event.target.value)} className="mt-2 min-h-11 w-full rounded-xl border border-[#cedfdd] px-3 font-normal outline-none focus:border-[#64d4ad]" placeholder="Type a product name" /></label>
               {matches.length ? <div className="mt-2 overflow-hidden rounded-xl border border-[#dce7e5]">{matches.map((item) => <button key={item.tallyKey} type="button" onClick={() => { setLines((current) => [...current, { tallyKey: item.tallyKey, item, quantity: 1 }]); setProductQuery(''); }} className="flex min-h-12 w-full items-center justify-between gap-4 border-b border-[#edf2f0] px-3 text-left last:border-0 hover:bg-[#f2faf7]"><span><strong className="block text-sm text-[#173239]">{item.item}</strong><small className="text-[#718487]">{item.group}</small></span><span className="shrink-0 text-xs font-bold text-[#277b69]">Available {formatQuantity(item.closing)} {item.baseUnit}</span></button>)}</div> : null}
               {productQuery.trim() && matches.length === 0 ? <p className="mt-2 rounded-xl bg-[#fff7e8] px-3 py-2 text-sm text-[#805b20]">No Tally products match “{productQuery.trim()}”.</p> : null}
-              <div className="mt-4 space-y-2">{lines.map((line) => <div key={line.tallyKey} className={`grid grid-cols-[1fr_90px_auto] items-center gap-3 rounded-xl p-3 ${line.item ? 'bg-[#f2f7f5]' : 'border border-[#efbbb6] bg-[#fff0ef]'}`}><div className="min-w-0"><strong className="block truncate text-sm text-[#173239]">{line.item?.item || `Unavailable Tally item (${line.tallyKey})`}</strong><small className={line.item ? 'text-[#718487]' : 'font-bold text-[#8d3a34]'}>{line.item ? `Closing ${formatQuantity(line.item.closing)} ${line.item.baseUnit}` : 'Remove and select its current catalogue replacement'}</small></div><label className="sr-only" htmlFor={`qty-${line.tallyKey}`}>Quantity for {line.item?.item || line.tallyKey}</label><input id={`qty-${line.tallyKey}`} type="number" min="1" max="1000000" step="1" required value={line.quantity} onChange={(event) => setLines((current) => current.map((entry) => entry.tallyKey === line.tallyKey ? { ...entry, quantity: Number(event.target.value) } : entry))} className="min-h-10 rounded-lg border border-[#cedfdd] px-2 text-right" /><button type="button" onClick={() => setLines((current) => current.filter((entry) => entry.tallyKey !== line.tallyKey))} aria-label={`Remove ${line.item?.item || line.tallyKey}`} className="size-10 rounded-lg text-xl text-[#9a4e47] hover:bg-[#ffeae8]">×</button></div>)}</div>
+              <div className="mt-4 space-y-2">{lines.map((line) => { const price = entryPrices[line.tallyKey]; return <div key={line.tallyKey} className={`grid grid-cols-[1fr_90px_auto] items-center gap-3 rounded-xl p-3 ${line.item ? 'bg-[#f2f7f5]' : 'border border-[#efbbb6] bg-[#fff0ef]'}`}><div className="min-w-0"><strong className="block truncate text-sm text-[#173239]">{line.item?.item || `Unavailable Tally item (${line.tallyKey})`}</strong><small className={line.item ? 'text-[#718487]' : 'font-bold text-[#8d3a34]'}>{line.item ? `Closing ${formatQuantity(line.item.closing)} ${line.item.baseUnit}` : 'Remove and select its current catalogue replacement'}</small>{canViewPrices ? <small className={`mt-1 block font-bold ${price?.riskStatus === 'RED' ? 'text-[#8d3a34]' : price?.riskStatus === 'AMBER' ? 'text-[#805b20]' : 'text-[#176246]'}`}>{price ? `Current price ${price.currentPrice == null ? 'review required' : currency.format(price.currentPrice)} · ${price.riskStatus}` : entryPriceState === 'loading' ? 'Resolving customer price…' : 'Customer price unavailable · review required'}</small> : <small className="mt-1 block text-[#718487]">Pricing is checked at confirmation.</small>}</div><label className="sr-only" htmlFor={`qty-${line.tallyKey}`}>Quantity for {line.item?.item || line.tallyKey}</label><input id={`qty-${line.tallyKey}`} type="number" min="1" max="1000000" step="1" required value={line.quantity} onChange={(event) => setLines((current) => current.map((entry) => entry.tallyKey === line.tallyKey ? { ...entry, quantity: Number(event.target.value) } : entry))} className="min-h-10 rounded-lg border border-[#cedfdd] px-2 text-right" /><button type="button" onClick={() => setLines((current) => current.filter((entry) => entry.tallyKey !== line.tallyKey))} aria-label={`Remove ${line.item?.item || line.tallyKey}`} className="size-10 rounded-lg text-xl text-[#9a4e47] hover:bg-[#ffeae8]">×</button></div>; })}</div>
               {lines.length >= 50 ? <p className="mt-2 text-xs font-bold text-[#805b20]">Maximum 50 products per order.</p> : null}
               {lines.length === 0 ? <p className="mt-4 rounded-xl bg-[#f6f8f7] p-4 text-center text-sm text-[#718487]">Search and add the products requested on the call.</p> : null}
             </fieldset>

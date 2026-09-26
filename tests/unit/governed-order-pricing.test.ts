@@ -22,10 +22,10 @@ describe('governed order pricing', () => {
     expect(migration).toContain('revoke all on function public.stockflow_pricing_gateway_v3');
   });
 
-  it('offers one routine-order action while retaining an explicit override path', () => {
+  it('automates routine pricing while retaining an explicit exception path', () => {
     expect(orders).toContain("action: 'apply_governed_order_pricing'");
-    expect(orders).toContain('Use governed prices');
-    expect(orders).toContain('Review or override this order');
+    expect(orders).not.toContain('Use governed prices');
+    expect(orders).toContain('Review price exception');
     expect(orders).toContain('Governed price:');
     expect(orders).toContain('governedRequest.current = request');
     expect(edge.match(/apply_governed_order_pricing/g)?.length).toBe(2);

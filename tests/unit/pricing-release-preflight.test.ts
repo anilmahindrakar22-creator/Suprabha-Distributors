@@ -9,9 +9,9 @@ const original = JSON.parse(readFileSync(new URL('../../supabase/migration-histo
 const source = new Map(readdirSync(fileURLToPath(directory)).filter((name) => name.endsWith('.sql')).map((name) => [name, readFileSync(new URL(name, directory), 'utf8')]));
 
 describe('read-only pricing release preflight', () => {
-  it('validates the refreshed production evidence with no pending migrations', () => {
+  it('validates the saved production evidence and lists the new pending migration', () => {
     const result = pricingReleasePreflight(original, source);
-    expect(result.pending).toEqual([]);
+    expect(result.pending).toEqual(['20260921160000_customer_first_pricing_correction.sql', '20260923150000_customer_price_book_bulk_approval.sql', '20260924100000_cost_increase_exception_gate.sql']);
     expect(result.deployed).toHaveLength(78);
     const names = result.deployed.map((entry: { localFile: string }) => entry.localFile);
     expect(names.slice(0, 2)).toEqual([
@@ -25,7 +25,7 @@ describe('read-only pricing release preflight', () => {
   });
   it('accepts documented CRLF normalization without modifying source', () => {
     const crlf = new Map([...source].map(([name, sql]) => [name, sql.replace(/\r/g, '').replace(/\n/g, '\r\n')]));
-    expect(pricingReleasePreflight(original, crlf).pending).toEqual([]);
+    expect(pricingReleasePreflight(original, crlf).pending).toEqual(['20260921160000_customer_first_pricing_correction.sql', '20260923150000_customer_price_book_bulk_approval.sql', '20260924100000_cost_increase_exception_gate.sql']);
   });
   it('rejects changed SQL including changes inside literals', () => {
     const files = new Map(source);
