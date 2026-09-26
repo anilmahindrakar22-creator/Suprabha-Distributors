@@ -551,3 +551,14 @@ Completed after the user requested one more slice:
   or public production change was made.
 - This closes the isolated pricing-to-order handoff check. A fresh production migration-history
   comparison, review and controlled release decision remain before public deployment or pilot.
+
+## Fresh production migration comparison — 26 September 2026
+
+- Read-only live inspection found 78 production migration records, ending at remote version
+  `20260921103304`. All 78 versions, names, statement counts and normalized SHA-256 SQL
+  fingerprints match the saved mapping; there is no unexpected live migration.
+- Three local pricing migrations remain unapplied to production: customer-first correction,
+  customer-wide bulk approval, and cost-increase exception gate. Local release preflight passed,
+  but its static `releaseReady: false` result is intentionally not a deployment authorization.
+- No production data or schema was changed. Next gate is final review of the three-migration application
+  sequence and controlled public release decision; Tally stays untouched.
