@@ -11,7 +11,8 @@ insert into private.stockflow_pricing_policies(
 insert into public.stockflow_members(email,role,status) values
   ('bulk-admin@test.local','administrator','active'),
   ('bulk-accounts@test.local','accounts','active'),
-  ('bulk-sales@test.local','sales','active');
+  ('bulk-sales@test.local','sales','active'),
+  ('bulk-inactive@test.local','administrator','suspended');
 
 do $test$
 declare
@@ -61,6 +62,18 @@ begin
   payload:=jsonb_build_object('customerId',customer,
     'approvalPreviewHash',preview->>'approvalPreviewHash',
     'idempotencyKey','customer-bulk-test-request-01');
+  begin
+    perform public.stockflow_pricing_gateway('customer-bulk-test-key','bulk-unknown@test.local',
+      'approve_customer_price_book',payload||jsonb_build_object(
+        'idempotencyKey','customer-bulk-unknown-request-01'));
+    raise exception 'Unknown actor approved customer book';
+  exception when insufficient_privilege then null; end;
+  begin
+    perform public.stockflow_pricing_gateway('customer-bulk-test-key','bulk-inactive@test.local',
+      'approve_customer_price_book',payload||jsonb_build_object(
+        'idempotencyKey','customer-bulk-inactive-request-01'));
+    raise exception 'Inactive actor approved customer book';
+  exception when insufficient_privilege then null; end;
   begin
     perform public.stockflow_pricing_gateway('customer-bulk-test-key','bulk-accounts@test.local',
       'approve_customer_price_book',payload);

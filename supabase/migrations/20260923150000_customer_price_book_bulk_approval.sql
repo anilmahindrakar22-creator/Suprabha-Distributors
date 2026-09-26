@@ -134,7 +134,7 @@ begin
   end if;
   select m.role into actor_role from public.stockflow_members m
   where m.email=actor_email and m.status='active';
-  if actor_role not in ('administrator','management') then
+  if actor_role is null or actor_role not in ('administrator','management') then
     raise exception 'Commercial approval is restricted to management' using errcode='42501';
   end if;
   customer:=(p_payload->>'customerId')::uuid;

@@ -582,3 +582,16 @@ Completed after the user requested one more slice:
   pending migrations and incomplete two-account acceptance. Its quality/security and CodeQL
   checks passed at that remote head. Local documentation was ahead of the remote branch; no push,
   merge, production deployment or Tally change was made during this review.
+
+## Final review security correction — 26 September 2026
+
+- Independent PR review found the pending bulk-approval gateway could reach its write path when
+  no active member role was found: SQL `NULL NOT IN (...)` does not reject that actor. The audit
+  table's non-null role constraint prevented a committed approval in the reproduced case, but
+  authorization must reject it directly. The gateway now explicitly rejects a null role.
+- Added rollback-only integration checks for unknown and suspended actors. The pre-fix check
+  failed on an audit constraint instead of an authorization error; after the fix, normal and
+  deployment-order PostgreSQL replays pass, including ACID/concurrency checks. The pending
+  migration hash and eight-case release-preflight unit suite were refreshed and pass.
+- This correction is not deployed. PR checks must rerun on the new commit; the production
+  recovery method remains unconfirmed. No public deployment or Tally change occurred.
