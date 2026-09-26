@@ -562,3 +562,23 @@ Completed after the user requested one more slice:
   but its static `releaseReady: false` result is intentionally not a deployment authorization.
 - No production data or schema was changed. Next gate is final review of the three-migration application
   sequence and controlled public release decision; Tally stays untouched.
+
+## Pending migration sequence review — 26 September 2026
+
+- Reviewed the three pending migrations in timestamp order: customer-first correction,
+  customer-wide bulk approval, then cost-increase exception gate. Each later migration wraps
+  functions established by its predecessor; do not reorder or skip them. No direct business
+  data rewrite or deletion was found. The revised decision CHECK constraints accept all three
+  existing production decision rows (current values: `price_exception` and
+  `last_tally_invoice`). Production runs PostgreSQL 17.6; the isolated replay used PostgreSQL
+  17.11. The local deployment-order and injected-failure checks had passed before this review;
+  they were not rerun here. No DDL down-migration rehearsal exists.
+- Production `stockflow-orders` Edge Function version 18 lacks the new price-preview and bulk
+  actions. The safe release order is: recheck live history and preserve a recovery point; apply
+  the three migrations in order; deploy the repository gateway; verify its actions; deploy the
+  application; then perform authenticated smoke and staff pilot checks. Do not expose the new
+  application against the old gateway (the private candidate reproduced that failure).
+- PR #29 is still draft at remote head `95a656e` with an outdated description claiming two
+  pending migrations and incomplete two-account acceptance. Its quality/security and CodeQL
+  checks passed at that remote head. Local documentation was ahead of the remote branch; no push,
+  merge, production deployment or Tally change was made during this review.
