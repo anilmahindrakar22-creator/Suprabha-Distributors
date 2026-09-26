@@ -541,3 +541,13 @@ Completed after the user requested one more slice:
   private candidate, refresh production migration comparison immediately before release, and
   obtain review/merge approval. The pending migrations and pricing build are not public or
   pilot-ready yet.
+
+## Authenticated pricing-to-order acceptance — 26 September 2026
+
+- On the private acceptance site, `nikitesh.am@gmail.com` captured synthetic order
+  `SF-260926-00021` for Acceptance Laboratory × Acceptance Analyzer Cleaner, then confirmed it.
+  The database shows `confirmed`, `pricing_state=approved`, a version-1 immutable billing
+  snapshot at the approved ₹335 rate, and matching order/pricing audit events. No Tally action
+  or public production change was made.
+- This closes the isolated pricing-to-order handoff check. A fresh production migration-history
+  comparison, review and controlled release decision remain before public deployment or pilot.
