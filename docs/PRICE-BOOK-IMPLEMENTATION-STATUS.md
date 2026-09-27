@@ -624,3 +624,23 @@ Completed after the user requested one more slice:
   CodeQL checks successful. Production still lists 78 migrations, ending at
   `20260921103304`; the three pricing migrations remain unapplied. No production schema,
   pricing data, Edge Function, application or Tally change was made during this follow-up.
+
+## Controlled release progress — 27 September 2026
+
+- The owner explicitly waived the backup gate after being informed that production contained
+  28 OMS orders, 458 customer records and 2 billing snapshots, identifying those records as
+  test/disposable. No valid database backup was created. This is a release risk, not evidence
+  that recovery is available. Tally remains untouched.
+- Fresh deployment-order local replay passed: existing order/line preservation, complete
+  migration chain, pricing ACID checks, two-session concurrency and bulk rollback. The remote
+  PR quality/security and CodeQL checks passed on the preceding documentation head.
+- Applied the three reviewed migrations in order as remote versions `20260927060906`,
+  `20260927060927` and `20260927060946`. Their remote SQL normalized SHA-256 values exactly
+  match the three local files. Production now lists 81 migrations; order, line, customer,
+  customer-price and billing-snapshot counts were unchanged immediately afterward.
+- Deployed `stockflow-orders` Edge Function version 20. Its retrieved source exactly matches
+  the repository file and includes the price-preview and customer-book bulk-approval routes.
+  The function retains its existing gateway-key authentication mode. The security advisor
+  reports only informational no-policy notices on intentionally private RLS tables.
+- The public Site deployment, authenticated production smoke, PR merge and office-pilot gate
+  are still pending. Do not report the pricing release complete from migrations alone.
