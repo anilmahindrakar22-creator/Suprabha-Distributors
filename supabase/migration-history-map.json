@@ -1,9 +1,9 @@
 {
   "projectId": "aormuidjbdqruglmyseh",
-  "checkedAt": "2026-09-23",
+  "checkedAt": "2026-09-27",
   "purpose": "Read-only release evidence; NOT an executable migration plan or authority to repair history.",
   "normalization": "Remove CR characters and trim surrounding whitespace only; SHA-256 over UTF-8.",
-  "localGitHead": "03a183300652c8c4839e0053562c2462d16709ab",
+  "localGitHead": "bac9cb149d56b6c9175625d67980b781672bc533",
   "remoteOnly": [
     {
       "localFile": "20260829054025_create_stockflow_private_snapshots.sql",
@@ -559,23 +559,23 @@
     {
       "localFile": "20260921160000_customer_first_pricing_correction.sql",
       "localSha256": "42b32be564ab162cf2b41e0fb19527323a7ac0bfd6b239b3ae66158ea22f34f4",
-      "remoteVersion": null,
-      "remoteSha256": null,
-      "status": "not_deployed"
+      "remoteVersion": "20260927060906",
+      "remoteSha256": "42b32be564ab162cf2b41e0fb19527323a7ac0bfd6b239b3ae66158ea22f34f4",
+      "status": "exact_normalized_match"
     },
     {
       "localFile": "20260923150000_customer_price_book_bulk_approval.sql",
       "localSha256": "5a67e340333ee236d35c60e467c67ee529477966101f6ff06cc33092a0ec6df4",
-      "remoteVersion": null,
-      "remoteSha256": null,
-      "status": "not_deployed"
+      "remoteVersion": "20260927060927",
+      "remoteSha256": "5a67e340333ee236d35c60e467c67ee529477966101f6ff06cc33092a0ec6df4",
+      "status": "exact_normalized_match"
     },
     {
       "localFile": "20260924100000_cost_increase_exception_gate.sql",
       "localSha256": "f9135c22ad31e6bf7429a697a64ab1ca3ae3c3c99df2ee4e18990f6806f08286",
-      "remoteVersion": null,
-      "remoteSha256": null,
-      "status": "not_deployed"
+      "remoteVersion": "20260927060946",
+      "remoteSha256": "f9135c22ad31e6bf7429a697a64ab1ca3ae3c3c99df2ee4e18990f6806f08286",
+      "status": "exact_normalized_match"
     }
   ]
 }
