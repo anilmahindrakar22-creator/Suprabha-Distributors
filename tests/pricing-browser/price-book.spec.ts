@@ -262,3 +262,36 @@ test('customer book previews visible economics and approves eligible purchased i
   await expect(page.getByText('1 recommended price approved. 2 fixed, already-approved, or review-needed items were left unchanged.')).toBeVisible();
   expect(await page.evaluate(() => sessionStorage.getItem('stockflow:pricing-recovery:fixture@example.test'))).toBe('[]');
 });
+
+test('customer group prices use a gross margin preview and bind one approval to its hash', async ({ page }) => {
+  const posts: Array<{ action: string; payload: Record<string, unknown> }> = [];
+  await page.route('**/api/orders?customers=1', route => route.fulfill({ json: { customers: [{ id: customerId, name: 'Test Laboratory' }] } }));
+  await page.route('**/api/pricing**', async route => {
+    if (route.request().method() === 'POST') {
+      const command = route.request().postDataJSON(); posts.push(command);
+      await route.fulfill({ json: command.action === 'preview_customer_group_margin' ? {
+        customerId, itemGroup: 'Sysmex', grossMarginPercent: 35, previewHash: 'c'.repeat(64), eligibleCount: 1, excludedCount: 1,
+        rows: [
+          { tallyKey: 'ITEM-1', itemName: 'Sysmex reagent', lastRate: 500, currentCost: 300, proposedRate: 461.54, grossMarginPercent: 35, eligible: true, exclusionReason: null, costChange: 25 },
+          { tallyKey: 'ITEM-2', itemName: 'Sysmex control', lastRate: 400, currentCost: null, proposedRate: null, grossMarginPercent: null, eligible: false, exclusionReason: 'Missing current cost', costChange: null },
+        ],
+      } : { ok: true, applied: 1, excluded: 1 } });
+      return;
+    }
+    await route.fulfill({ json: { rows: [row], offset: 0, hasMore: false } });
+  });
+  await page.goto('/');
+  await page.getByLabel('Select customer').fill('Test');
+  await page.getByRole('button', { name: 'Test Laboratory', exact: true }).click();
+  await page.getByLabel('Catalog group').selectOption('Sysmex');
+  await page.getByLabel('Gross margin percent').fill('35');
+  await page.getByRole('button', { name: 'Preview item prices' }).click();
+  const groupPreview = page.getByRole('region', { name: 'Group gross margin pricing' }).getByRole('table');
+  await expect(groupPreview).toContainText('₹461.54');
+  await expect(groupPreview).toContainText('Missing current cost');
+  await page.getByRole('button', { name: 'Approve 1 gross margin prices' }).click();
+  expect(posts[0]).toEqual({ action: 'preview_customer_group_margin', payload: { customerId, itemGroup: 'Sysmex', grossMarginPercent: 35 } });
+  expect(posts[1]).toMatchObject({ action: 'approve_customer_group_margin', payload: { customerId, itemGroup: 'Sysmex', grossMarginPercent: 35, previewHash: 'c'.repeat(64) } });
+  expect(posts[1].payload.idempotencyKey).toMatch(/^[0-9a-f-]{36}$/);
+  await expect(page.getByText('1 item price approved at 35.00% gross margin. 1 excluded item was left unchanged.')).toBeVisible();
+});
