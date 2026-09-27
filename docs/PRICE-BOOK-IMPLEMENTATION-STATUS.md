@@ -608,3 +608,19 @@ Completed after the user requested one more slice:
 - Next release action: obtain a production read-only/dump connection securely, create a private
   logical backup, verify the artifact and an isolated restore, then recheck migration history
   immediately before the controlled migration → gateway → app rollout. Tally remains read-only.
+
+## Backup gate follow-up — 27 September 2026
+
+- The production project remains healthy and the public StockFlow page returned HTTP 200 after
+  the owner reset the database password. Direct PostgreSQL connections are reachable, but the
+  attempted manual `pg_dump` exports were rejected for the `postgres` role. Each attempt left
+  only a zero-byte file; there is **no valid recovery backup**. Do not release on that basis.
+- A private local helper now prompts for the database password without echoing it, and a
+  separate verification helper checks archive size, required auth/business table entries,
+  full archive streaming and SHA-256. Its empty-file rejection was exercised successfully;
+  positive archive and isolated-restore checks remain pending a successful export. Neither
+  helper nor any backup data is in the repository.
+- PR #29 remains open, review-ready and mergeable at `c23b629`, with both quality/security and
+  CodeQL checks successful. Production still lists 78 migrations, ending at
+  `20260921103304`; the three pricing migrations remain unapplied. No production schema,
+  pricing data, Edge Function, application or Tally change was made during this follow-up.
