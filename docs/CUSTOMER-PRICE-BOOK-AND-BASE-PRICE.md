@@ -2,17 +2,17 @@
 
 ## Status
 
-This is the approved next pricing design. The current coded build remains order-centric; this document defines the simpler customer-first pricing model to implement after current pricing consolidation and integrity work.
+This is the approved customer-first pricing design, updated on 24 September 2026: a verified purchase-cost increase is an exception requiring administrator review, including under a fixed agreement. The evidence-based price book, bulk impact flow and governed order resolution are implemented on the customer-pricing branch. Production rollout, real-policy configuration and office acceptance remain separate gates.
 
 ## Core operating principle
 
-The system proposes the price. Staff should normally decide whether to accept the recommendation rather than manually maintaining a selling rate for every Customer × Product combination.
+The system shows an explainable recommendation, but does not silently change an established customer rate. An unchanged or lower purchase cost allows a repeat order to proceed at the customer's last genuine selling rate, provided cost evidence is comparable and the minimum-margin guardrail passes. A verified cost increase pauses pricing for administrator review. The order itself may be confirmed, but no pricing approval or billing snapshot is created until the exception is resolved.
 
 For an existing customer and product, the customer's last genuine Tally selling price is the commercial starting point. The engine compares the authoritative purchase/landed cost applicable to that historic sale with current authoritative cost.
 
 Continuity Price = Last Genuine Customer Selling Price + max(Current Cost - Historic Cost, 0)
 
-A purchase-cost increase is therefore passed through as an absolute rupee increase to the customer's established selling price. A cost decrease does not automatically reduce the customer's selling price.
+A purchase-cost increase can be shown as a possible pass-through amount, but it is never applied automatically. A cost decrease does not automatically reduce the customer's selling price.
 
 Example: Customer A last paid ₹420 when cost was ₹300. Current cost is ₹310. Continuity Price = ₹430.
 
@@ -20,8 +20,8 @@ Example: Customer A last paid ₹420 when cost was ₹300. Current cost is ₹31
 
 1. Valid fixed contractual/tender/governed customer price, where the agreement prevents automatic repricing.
 2. Last genuine Customer × Item Tally selling price as the customer-specific commercial baseline.
-3. Apply any positive authoritative purchase/landed-cost increase since that sale to calculate the Continuity Price.
-4. For a customer/product with no genuine history, use the approved Product Base / Default Price.
+3. Compare authoritative purchase/landed cost at the historic sale with current cost. If it increased, flag an exception; the Continuity Price is review context, not an automatic rate.
+4. If cost did not increase and minimum margin is met, retain the last genuine customer rate for routine processing. For a customer/product with no genuine history, use the approved Product Base / Default Price.
 5. If neither reliable history nor a valid base/default price exists, Price Review Required.
 
 Exceptional, FOC, zero-rate, future, ambiguous or otherwise ineligible Tally transactions must never silently establish the customer baseline.
@@ -97,7 +97,7 @@ Item | Last Customer Rate | Cost Then | Cost Now | Continuity | Target | Recomme
 
 ## Purchase-cost change workflow
 
-When authoritative purchase/landed cost increases for a product, the system should automatically calculate the impact across customers who genuinely buy that item. Staff must not manually update every customer rate.
+When authoritative purchase/landed cost increases for a product, the system should automatically calculate the impact across customers who genuinely buy that item and place affected prices into the review queue. Staff must not manually update every customer rate. Any subsequent bulk action is an explicit administrator decision, never automatic approval.
 
 Example:
 
@@ -164,7 +164,7 @@ Base/default prices remain effective-dated, versioned and governed. They must be
 
 ## Fixed agreements and exceptions
 
-Tender, written contract, strategic fixed-price and other explicit governed commitments must not be silently repriced. When cost increases, show the deteriorating GP/margin and flag the account for review according to the agreement terms.
+Tender, written contract, strategic fixed-price and other explicit governed commitments must not be silently repriced. When cost increases, pause order pricing and show the deteriorating GP/margin as an administrator exception, even when the agreed rate itself remains unchanged.
 
 Tally does not identify tenders, schemes or special prices reliably. StockFlow must not infer those meanings from voucher references or other free text. FOC/zero-rate and ambiguous transactions are excluded when objectively detectable; a tender, scheme or special price is protected only through an explicit governed Customer × Product price record in StockFlow.
 
@@ -175,12 +175,12 @@ Do not automatically pass purchase-cost decreases to customers. Preserve the est
 ## V1 rules to freeze
 
 1. Existing customer: start from the last genuine Customer × Item selling price.
-2. Cost increase: calculate the absolute increase and add it to that customer's last genuine selling price to produce Continuity Price.
+2. Cost increase: calculate the absolute increase as review context, but require an administrator exception decision before pricing can be approved. This includes fixed agreements.
 3. Margin engine: independently calculate Target-Margin Price from current cost and effective policy.
-4. Recommendation: present an explainable recommended price, normally favoring target economics while showing continuity impact.
+4. Recommendation: present an explainable option, normally favoring target economics while showing continuity impact; it never changes an order rate without a governed decision.
 5. New customer/product: use governed Product Base / Default Price as the starting point.
 6. Fixed contract/tender: respect the agreement; flag margin deterioration rather than silently changing it.
-7. Cost decrease: never automatically lower the customer's price.
+7. No cost increase: proceed at the last genuine customer rate when comparable evidence and minimum margin are valid. Cost decrease never automatically lowers the customer's price.
 8. Manual/custom price: permitted with reason; below guardrails requires approval.
 9. Bulk cost change: automatically recalculate affected customers; never require manual maintenance of dozens of rates.
 10. Every material decision shows economic impact: GP ₹, GP%, customer impact, estimated monthly GP impact, affected customers and exceptions.
@@ -197,6 +197,4 @@ Existing immutable billing snapshots, optimistic concurrency, pricing approvals,
 
 Stop V1 pricing expansion here. Wallet-share optimization, competitor response, game theory and predictive pricing may later influence recommendations, but they must not complicate the core engine before office data and pricing outcomes are collected.
 
-Implementation sequence remains: consolidate current pricing build → pass migration/integrity/full tests → validate live read-only Tally cost evidence → configure real Suprabha policy → implement this customer-first continuity/margin layer → shadow-test recommendations against real billing decisions → office pilot → measure outcomes.
-
-This document records the approved design. It does not claim this customer-first/bulk-repricing UX is coded yet.
+Remaining release sequence: full validation → fresh live migration-history check → configure real Suprabha policy → validate read-only Tally evidence → shadow-test recommendations against real billing decisions → office pilot → measure outcomes. The application never writes to Tally.

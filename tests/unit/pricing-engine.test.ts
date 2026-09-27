@@ -68,16 +68,21 @@ describe('customer pricing engine', () => {
     expect(resolveCustomerPrice({ ...base, latestCost: { ...base.latestCost!, amount: 300 } }).guardrail).toBe('PRICE_OK');
   });
 
-  it('passes through absolute cost increases without reducing established gross profit', () => {
+  it('keeps the last customer rate pending review when purchase cost increases', () => {
     const result = resolveCustomerPrice({ ...base, latestCost: { ...base.latestCost!, amount: 350, sourceVersion: 'cost-350' } });
     expect(result).toMatchObject({
-      resolution: 'LAST_TALLY_INVOICE_PRICE', guardrail: 'COST_INCREASE', proposedRate: 525,
+      resolution: 'PRICE_REVIEW_REQUIRED', guardrail: 'PRICE_REVIEW_REQUIRED', proposedRate: 485,
       continuityPrice: 525, targetMarginPrice: 500, recommendedPrice: 525,
       cost: { changeAmount: 40, changePercent: 12.9 },
-      margin: { grossProfitAmount: 175, grossMarginPercent: 33.33, previousGrossMarginPercent: 36.08, erosionPercentagePoints: -2.75 },
+      margin: { grossProfitAmount: 135, grossMarginPercent: 27.84, previousGrossMarginPercent: 36.08, erosionPercentagePoints: -8.25 },
       suggestion: { amount: 500, unroundedAmount: 500, costSourceVersion: 'cost-350' },
     });
     expect(result.warnings).toContain('PURCHASE_PRICE_INCREASED');
+  });
+
+  it('can show a higher target as advice while unchanged cost proceeds at the last rate', () => {
+    const result = resolveCustomerPrice({ ...base, sellingHistory: [{ ...base.sellingHistory[0], rate: 400 }] });
+    expect(result).toMatchObject({ proposedRate: 400, recommendedPrice: 443, guardrail: 'PRICE_OK' });
   });
 
   it('requires review when cost breaches minimum margin or makes the sale loss-making', () => {
@@ -103,10 +108,11 @@ describe('customer pricing engine', () => {
     expect(result.suggestion).toEqual({ amount: 505, unroundedAmount: 501.43, targetMarginPercent: 30, policyVersion: 'policy-1', roundingRuleVersion: 'ceil-rupee-1', costSourceVersion: 'cost-351' });
   });
 
-  it('matches the approved 420 / 300 / 310 example and explains the recommendation', () => {
+  it('shows the 420 / 300 / 310 economics but requires a cost-increase exception', () => {
     const result = resolveCustomerPrice({ ...base, sellingHistory: [{ ...base.sellingHistory[0], rate: 420 }], previousCost: { ...base.previousCost!, amount: 300 }, policy: { ...policy, roundingIncrement: 5 } });
     expect(result).toMatchObject({ continuityPrice: 430, targetMarginPrice: 445, recommendedPrice: 445 });
-    expect(result.recommendationReason).toContain('Target-margin');
+    expect(result).toMatchObject({ proposedRate: 420, guardrail: 'PRICE_REVIEW_REQUIRED' });
+    expect(result.recommendationReason).toContain('administrator reviews');
   });
 
   it('uses base only for a customer with no genuine history', () => {

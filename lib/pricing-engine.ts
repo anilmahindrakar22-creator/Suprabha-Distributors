@@ -152,12 +152,16 @@ export function resolveCustomerPrice(input: PricingResolutionInput): PricingReso
     : basePrice && input.latestCost ? basePrice.price : null;
   const targetMarginPrice = input.latestCost && input.latestCost.effectiveAt <= input.pricingDate && policy.targetGrossMarginPercent !== null
     ? roundUp(input.latestCost.amount / (1 - policy.targetGrossMarginPercent / 100), policy.roundingIncrement) : null;
-  const proposedRate = contract?.price ?? (continuityPrice == null ? null : Math.max(continuityPrice, targetMarginPrice ?? continuityPrice));
+  const recommendedRate = contract?.price ?? (continuityPrice == null ? null : Math.max(continuityPrice, targetMarginPrice ?? continuityPrice));
+  const proposedRate = contract?.price ?? (lastSale
+    ? continuityPrice == null ? null : lastSale.rate
+    : basePrice && input.latestCost ? basePrice.price : null);
   const recommendationReason = contract ? 'Fixed agreement retained; review margin before changing its terms.'
-    : proposedRate == null ? 'Reliable pricing evidence is incomplete; review is required.'
+    : recommendedRate == null ? 'Reliable pricing evidence is incomplete; review is required.'
     : !lastSale ? 'No genuine customer history; use the governed base price checked against target margin.'
+    : input.latestCost && input.previousCost && input.latestCost.amount > input.previousCost.amount
+      ? 'Purchase cost increased; keep the last customer rate until an administrator reviews the exception.'
     : targetMarginPrice != null && targetMarginPrice > continuityPrice! ? 'Target-margin price exceeds continuity and improves gross profit.'
-    : input.latestCost && input.previousCost && input.latestCost.amount > input.previousCost.amount ? 'Pass through the absolute cost increase while preserving established customer economics.'
     : 'Preserve the last customer rate; lower purchase cost does not trigger a price reduction.';
   const source = contract
     ? { type: 'APPROVED_CONTRACT' as const, reference: contract.id, date: contract.validFrom, version: String(contract.version) }
@@ -189,7 +193,7 @@ export function resolveCustomerPrice(input: PricingResolutionInput): PricingReso
     || warnings.includes('LOSS_MAKING')
     || warnings.includes('BELOW_MINIMUM_MARGIN')
     ? 'PRICE_REVIEW_REQUIRED'
-    : increased ? 'COST_INCREASE' : 'PRICE_OK';
+    : increased ? 'PRICE_REVIEW_REQUIRED' : 'PRICE_OK';
 
   let suggestion: PricingResolution['suggestion'] = null;
   if (input.latestCost && input.latestCost.effectiveAt <= input.pricingDate && policy.targetGrossMarginPercent !== null) {
@@ -211,7 +215,7 @@ export function resolveCustomerPrice(input: PricingResolutionInput): PricingReso
       : contract ? 'APPROVED_CONTRACT_PRICE' : lastSale ? 'LAST_TALLY_INVOICE_PRICE' : 'STANDARD_ITEM_PRICE';
 
   return {
-    continuityPrice, targetMarginPrice, recommendedPrice: proposedRate, recommendationReason,
+    continuityPrice, targetMarginPrice, recommendedPrice: recommendedRate, recommendationReason,
     resolution,
     guardrail,
     proposedRate: proposedRate === null ? null : roundMoney(proposedRate),

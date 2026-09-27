@@ -14,6 +14,7 @@ export function PricingOptions({ line, entry, onChange }: { line: PricingLineRes
     onChange({ rate: String(amount), reason });
   };
   return <div className="mt-3 space-y-3">
+    {line.costChange != null && line.costChange > 0 && line.guardrail === 'PRICE_REVIEW_REQUIRED' ? <p className="rounded-lg bg-amber-50 p-3 text-xs font-bold text-amber-900">Purchase cost increased. This order needs administrator price review before billing, including fixed agreements.</p> : null}
     <dl className="grid grid-cols-2 gap-3 text-xs sm:grid-cols-3">
       {([
         ['Last customer rate', line.lastRate], ['Cost at last sale', line.historicCost], ['Current cost', line.currentCost],
