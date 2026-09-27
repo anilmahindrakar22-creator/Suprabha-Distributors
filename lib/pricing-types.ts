@@ -81,6 +81,9 @@ export type PricingPolicy = {
 
 export type StandardItemPrice = { id: string; tallyKey: string; itemName: string; price: number; validFrom: string; validTo: string | null; status: 'approved' | 'superseded'; reason: string; version: number; approvedBy: string; approvedAt: string };
 export type CustomerPurchasedItem = { tallyKey: string; itemName: string; lastRate: number; lastInvoiceDate: string; lastInvoiceReference: string };
+export type CustomerGroupMarginRow = { tallyKey: string; itemName: string; lastRate: number | null; currentCost: number | null; proposedRate: number | null; grossMarginPercent: number | null; eligible: boolean; exclusionReason: string | null; costChange: number | null };
+export type CustomerGroupMarginPreview = { customerId: string; itemGroup: 'Diasys Diagnostic India Pvt Ltd' | 'Sysmex'; grossMarginPercent: number; previewHash: string; eligibleCount: number; excludedCount: number; rows: CustomerGroupMarginRow[] };
+export const CUSTOMER_GROUP_MARGIN_GROUPS = ['Diasys Diagnostic India Pvt Ltd', 'Sysmex'] as const;
 
 export type PricingCommand =
   | { action: 'submit_order_pricing'; payload: { orderId: string; expectedVersion: number; pricingDate?: string; idempotencyKey: string; lines: Array<{ lineId: string; enteredRate: number; reason?: string; evidenceHash: string }> } }
@@ -91,6 +94,7 @@ export type PricingCommand =
   | { action: 'create_pricing_policy'; payload: { policyVersion: string; minimumMarginPercent: number; targetMarginPercent?: number; overrideApprovalPercent: number; roundingIncrement: number; roundingRuleVersion: string; effectiveFrom: string; reason: string; idempotencyKey: string } }
   | { action: 'apply_price_book' | 'apply_product_price_impact'; payload: { customerId?: string; expectedDecisionId?: string | null; tallyKey: string; choice: 'continuity' | 'recommended' | 'custom'; price?: number; reason: string; evidenceHash?: string; previewHash?: string; idempotencyKey: string } }
   | { action: 'approve_customer_price_book'; payload: { customerId: string; approvalPreviewHash: string; idempotencyKey: string } }
+  | { action: 'approve_customer_group_margin'; payload: { customerId: string; itemGroup: typeof CUSTOMER_GROUP_MARGIN_GROUPS[number]; grossMarginPercent: number; previewHash: string; idempotencyKey: string } }
   | { action: 'set_standard_item_price'; payload: { previewHash: string; tallyKey: string; price: number; validFrom: string; reason: string; idempotencyKey: string } };
 
 function validKey(value: unknown) {
@@ -111,6 +115,10 @@ export function validatePricingCommand(value: unknown): PricingCommand | null {
   if (!command || !payload || !validKey(payload.idempotencyKey)) return null;
   if (command.action === 'approve_customer_price_book') {
     if (!isUuid(payload.customerId) || typeof payload.approvalPreviewHash !== 'string' || !/^[a-f0-9]{64}$/.test(payload.approvalPreviewHash)) return null;
+    return command as unknown as PricingCommand;
+  }
+  if (command.action === 'approve_customer_group_margin') {
+    if (!isUuid(payload.customerId) || !CUSTOMER_GROUP_MARGIN_GROUPS.includes(payload.itemGroup as typeof CUSTOMER_GROUP_MARGIN_GROUPS[number]) || typeof payload.grossMarginPercent !== 'number' || !Number.isFinite(payload.grossMarginPercent) || payload.grossMarginPercent <= 0 || payload.grossMarginPercent >= 100 || typeof payload.previewHash !== 'string' || !/^[a-f0-9]{64}$/.test(payload.previewHash)) return null;
     return command as unknown as PricingCommand;
   }
   if (command.action === 'apply_price_book' || command.action === 'apply_product_price_impact') {

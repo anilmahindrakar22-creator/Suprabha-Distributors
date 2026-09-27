@@ -3,7 +3,7 @@
 import { Fragment, useEffect, useRef, useState } from 'react';
 import { loadOrderCatalog, loadOrderCustomers } from '@/lib/order-capture-masters';
 import type { CatalogItem, CustomerDirectoryEntry } from '@/lib/order-types';
-import type { PricingCommand } from '@/lib/pricing-types';
+import { CUSTOMER_GROUP_MARGIN_GROUPS, type CustomerGroupMarginPreview, type PricingCommand } from '@/lib/pricing-types';
 
 type Row = {
   currentDecisionId: string | null; customerId: string; customerName: string; tallyKey: string; itemName: string; evidenceHash: string;
@@ -52,7 +52,7 @@ export function CustomerPriceBook({ actorEmail, actorRole, onRecoveryBlocked }: 
     const timer = window.setTimeout(() => {
     try {
       const saved = JSON.parse(sessionStorage.getItem(recoveryStorageKey) || '[]');
-      if (!Array.isArray(saved) || saved.some(value => !value || !['apply_price_book','approve_customer_price_book','apply_product_price_impact','set_standard_item_price','create_price_contract','approve_price_contract','reject_price_contract','create_pricing_policy'].includes(value.action) || !/^[0-9a-f-]{36}$/i.test(value.idempotencyKey))) throw new Error('Invalid recovery data');
+      if (!Array.isArray(saved) || saved.some(value => !value || !['apply_price_book','approve_customer_price_book','approve_customer_group_margin','apply_product_price_impact','set_standard_item_price','create_price_contract','approve_price_contract','reject_price_contract','create_pricing_policy'].includes(value.action) || !/^[0-9a-f-]{36}$/i.test(value.idempotencyKey))) throw new Error('Invalid recovery data');
       setRecovery(saved);
       setRecoveryOwner(recoveryStorageKey);
     } catch { setRecoveryMessage('Pricing recovery references could not be read. Check recent pricing activity before saving again.'); }
@@ -100,7 +100,45 @@ export function CustomerPriceBook({ actorEmail, actorRole, onRecoveryBlocked }: 
   const [reason, setReason] = useState(''); const [busy, setBusy] = useState(false);
   const [acceptRecommended, setAcceptRecommended] = useState(true);
   const [basePrice, setBasePrice] = useState(''); const [validFrom, setValidFrom] = useState('');
+  const [group, setGroup] = useState<typeof CUSTOMER_GROUP_MARGIN_GROUPS[number]>(CUSTOMER_GROUP_MARGIN_GROUPS[0]);
+  const [grossMargin, setGrossMargin] = useState('');
+  const [groupPreview, setGroupPreview] = useState<CustomerGroupMarginPreview | null>(null);
+  const [groupPreviewKey, setGroupPreviewKey] = useState('');
+  const [groupPreviewBusy, setGroupPreviewBusy] = useState(false);
+  const [groupPreviewError, setGroupPreviewError] = useState('');
+  const activeGroupRequest = useRef(0);
   const canApprove = ['administrator', 'management'].includes(actorRole) && recovery.length === 0 && recoveryOwner === recoveryStorageKey;
+  const currentGroupPreviewKey = JSON.stringify([selected, group, Number(grossMargin)]);
+  function invalidateGroupPreview() {
+    activeGroupRequest.current += 1;
+    setGroupPreview(null); setGroupPreviewKey(''); setGroupPreviewError('');
+  }
+  async function previewCustomerGroupMargin() {
+    if (!selected || !grossMargin || !Number.isFinite(Number(grossMargin)) || Number(grossMargin) <= 0 || Number(grossMargin) >= 100) return;
+    const requestId = ++activeGroupRequest.current;
+    const requestKey = JSON.stringify([selected, group, Number(grossMargin)]);
+    setGroupPreviewBusy(true); setGroupPreview(null); setGroupPreviewKey(''); setGroupPreviewError('');
+    try {
+      const response = await fetch('/api/pricing', { method: 'POST', cache: 'no-store', headers: { 'content-type': 'application/json' }, body: JSON.stringify({ action: 'preview_customer_group_margin', payload: { customerId: selected, itemGroup: group, grossMarginPercent: Number(grossMargin) } }) });
+      const data = await response.json() as CustomerGroupMarginPreview & { error?: string };
+      if (!response.ok) throw new Error(data.error || 'Group margin preview could not load');
+      if (activeGroupRequest.current !== requestId) return;
+      setGroupPreview(data); setGroupPreviewKey(requestKey);
+    } catch (failure) {
+      if (activeGroupRequest.current === requestId) setGroupPreviewError(failure instanceof Error ? failure.message : 'Group margin preview could not load');
+    } finally { if (activeGroupRequest.current === requestId) setGroupPreviewBusy(false); }
+  }
+  async function approveCustomerGroupMargin() {
+    if (!groupPreview || groupPreviewKey !== currentGroupPreviewKey || busy || !canApprove || !groupPreview.eligibleCount) return;
+    setBusy(true); setError(''); setNotice('');
+    try {
+      const result = await mutate({ action: 'approve_customer_group_margin', payload: { customerId: selected, itemGroup: group, grossMarginPercent: Number(grossMargin), previewHash: groupPreview.previewHash, idempotencyKey: crypto.randomUUID() } });
+      const applied = result.applied ?? 0; const excluded = result.excluded ?? groupPreview.excludedCount;
+      setNotice(`${applied} item ${applied === 1 ? 'price' : 'prices'} approved at ${Number(grossMargin).toFixed(2)}% gross margin. ${excluded} excluded ${excluded === 1 ? 'item was' : 'items were'} left unchanged.`);
+      invalidateGroupPreview(); setRevision(value => value + 1);
+    } catch (failure) { setError(failure instanceof Error ? failure.message : 'Group margin approval failed'); }
+    finally { setBusy(false); }
+  }
 
   useEffect(() => {
     let active = true;
@@ -150,8 +188,9 @@ export function CustomerPriceBook({ actorEmail, actorRole, onRecoveryBlocked }: 
     {recovery.length > 0 ? <aside className="mt-3 rounded-lg bg-amber-50 p-3 text-sm"><p>An earlier pricing save needs checking before another approval. No prices were stored on this device.</p><p>Close only if unsaved checks the server first. A completed save is preserved; an unsaved request is blocked from arriving later.</p>{recovery.map(reference => <div key={reference.idempotencyKey} className="mt-2 flex flex-wrap gap-2"><button type="button" className={button} onClick={() => void checkRecovery(reference)}>Check earlier save {reference.idempotencyKey.slice(-6)}</button><button type="button" className={button} onClick={() => void checkRecovery(reference, true)}>Close only if unsaved {reference.idempotencyKey.slice(-6)}</button></div>)}</aside> : null}
     {recoveryMessage ? <output className="mt-2 block text-sm">{recoveryMessage}</output> : null}
     <nav aria-label="Pricing workbench" className="mt-3 flex flex-wrap gap-2">{([['customer','Customer prices'],['impact','Purchase-cost review'],['base','Base / default prices']] as const).map(([value,label]) => <button key={value} type="button" aria-pressed={mode === value} className={`${button} ${mode === value ? 'bg-[#e8f5ef]' : ''}`} onClick={() => { setMode(value); setSelected(''); setQuery(''); setPage(null); setOffset(0); setError(''); setNotice(''); }}>{label}</button>)}</nav>
-    <div className="relative mt-4 max-w-xl"><label className="text-sm font-bold">{mode === 'customer' ? 'Select customer' : 'Select product'}<input className={field} value={query} placeholder="Type at least two letters" onChange={(event) => { setQuery(event.target.value); setSelected(''); setPage(null); }}/></label>{matches.length > 0 ? <div className="absolute z-20 w-full rounded-lg border bg-white p-1 shadow-lg">{matches.map((item) => <button key={item.id} type="button" className="block min-h-11 w-full rounded px-3 text-left text-sm hover:bg-[#e8f5ef]" onClick={() => { setSelected(item.id); setQuery(item.name); setOffset(0); }}>{item.name}</button>)}</div> : null}</div>
+    <div className="relative mt-4 max-w-xl"><label className="text-sm font-bold">{mode === 'customer' ? 'Select customer' : 'Select product'}<input className={field} value={query} placeholder="Type at least two letters" onChange={(event) => { setQuery(event.target.value); setSelected(''); setPage(null); invalidateGroupPreview(); }}/></label>{matches.length > 0 ? <div className="absolute z-20 w-full rounded-lg border bg-white p-1 shadow-lg">{matches.map((item) => <button key={item.id} type="button" className="block min-h-11 w-full rounded px-3 text-left text-sm hover:bg-[#e8f5ef]" onClick={() => { invalidateGroupPreview(); setSelected(item.id); setQuery(item.name); setOffset(0); }}>{item.name}</button>)}</div> : null}</div>
     {mode === 'customer' && selected ? <div className="mt-4 flex flex-wrap items-center gap-3"><label className="flex min-h-10 items-center gap-2 text-sm font-bold"><input type="checkbox" checked={tab === 'exceptions'} onChange={(event) => { setTab(event.target.checked ? 'exceptions' : 'purchased'); setOffset(0); }} />Review exceptions only</label><button type="button" className={button} aria-pressed={tab === 'all'} onClick={() => { setTab(tab === 'all' ? 'purchased' : 'all'); setOffset(0); }}>{tab === 'all' ? 'Purchased items' : 'Browse all products'}</button></div> : null}
+    {mode === 'customer' && selected ? <section className="mt-4 rounded-xl border border-[#dce7e5] p-3" aria-label="Group gross margin pricing"><h3 className="text-sm font-extrabold">Set gross margin for an instrument group</h3><p className="mt-1 text-xs text-[#61777a]">Calculates a separate selling price for each eligible item using its current cost. Existing prices remain visible in the preview.</p><div className="mt-3 grid gap-3 sm:grid-cols-[1fr_1fr_auto] sm:items-end"><label className="text-sm font-bold">Catalog group<select className={field} value={group} onChange={event => { setGroup(event.target.value as typeof group); invalidateGroupPreview(); }}><option value={CUSTOMER_GROUP_MARGIN_GROUPS[0]}>Diasys Diagnostic India Pvt Ltd</option><option value={CUSTOMER_GROUP_MARGIN_GROUPS[1]}>Sysmex</option></select></label><label className="text-sm font-bold">Gross margin %<input aria-label="Gross margin percent" className={field} type="number" min="0.01" max="99.99" step="0.01" value={grossMargin} onChange={event => { setGrossMargin(event.target.value); invalidateGroupPreview(); }}/></label><button type="button" className={button} disabled={groupPreviewBusy || !grossMargin || Number(grossMargin) <= 0 || Number(grossMargin) >= 100} onClick={() => void previewCustomerGroupMargin()}>{groupPreviewBusy ? 'Calculating…' : 'Preview item prices'}</button></div>{groupPreviewError ? <p role="alert" className="mt-3 text-sm text-red-800">{groupPreviewError}</p> : null}{groupPreview && groupPreviewKey === currentGroupPreviewKey ? <><p className="mt-3 text-sm font-bold">{groupPreview.eligibleCount} eligible · {groupPreview.excludedCount} excluded</p><div className="mt-2 overflow-x-auto rounded-lg border border-[#dce7e5]"><table className="w-full min-w-[760px] text-left text-xs"><thead className="bg-[#f4f8f6]"><tr>{['Item','Last price','Current cost','Proposed rate','Gross margin','Status'].map(label => <th key={label} className="px-3 py-2">{label}</th>)}</tr></thead><tbody className="divide-y divide-[#e3ecea]">{groupPreview.rows.map(row => <tr key={row.tallyKey}><td className="px-3 py-2">{row.itemName}</td><td className="px-3 py-2">{money(row.lastRate)}</td><td className="px-3 py-2">{money(row.currentCost)}</td><td className="px-3 py-2 font-bold">{money(row.proposedRate)}</td><td className="px-3 py-2">{percent(row.grossMarginPercent)}</td><td className="px-3 py-2">{row.eligible ? 'Ready' : row.exclusionReason || 'Excluded'}{row.costChange != null ? ` · cost ${money(row.costChange)}` : ''}</td></tr>)}</tbody></table></div><div className="mt-3 flex flex-wrap items-center gap-3"><button type="button" className={button} disabled={!canApprove || busy || !groupPreview.eligibleCount || groupPreviewKey !== currentGroupPreviewKey} onClick={() => void approveCustomerGroupMargin()}>{busy ? 'Approving…' : `Approve ${groupPreview.eligibleCount} gross margin prices`}</button>{!canApprove ? <span className="text-xs">Administrator or Management approval required.</span> : null}</div></> : null}</section> : null}
     {error ? <p role="alert" className="mt-3 rounded-lg bg-red-50 p-3 text-sm text-red-800">{error}</p> : null}
     {notice ? <output className="mt-3 block rounded-lg bg-green-50 p-3 text-sm text-green-900">{notice}</output> : null}
     {loading ? <output className="mt-4 block text-sm">Calculating from current pricing evidence…</output> : null}

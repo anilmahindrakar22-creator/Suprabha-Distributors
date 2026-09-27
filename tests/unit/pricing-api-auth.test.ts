@@ -58,4 +58,16 @@ describe('authenticated pricing API boundary (gateway responses simulated)', () 
     expect(result.status).toBe(502);
     expect(await result.json()).toEqual({ error: 'Pricing service is temporarily unavailable' });
   });
+  it('forwards an exact catalog group margin preview and rejects unknown groups', async () => {
+    const invalid = await POST(new Request('http://local/api/pricing', { method: 'POST', headers: { 'content-type': 'application/json' }, body: JSON.stringify({ action: 'preview_customer_group_margin', payload: { customerId: key, itemGroup: 'SYS 480', grossMarginPercent: 30 } }) }));
+    expect(invalid.status).toBe(400);
+    expect(network).not.toHaveBeenCalled();
+    const zero = await POST(new Request('http://local/api/pricing', { method: 'POST', headers: { 'content-type': 'application/json' }, body: JSON.stringify({ action: 'preview_customer_group_margin', payload: { customerId: key, itemGroup: 'Sysmex', grossMarginPercent: 0 } }) }));
+    expect(zero.status).toBe(400);
+    expect(network).not.toHaveBeenCalled();
+    const valid = await POST(new Request('http://local/api/pricing', { method: 'POST', headers: { 'content-type': 'application/json' }, body: JSON.stringify({ action: 'preview_customer_group_margin', payload: { customerId: key, itemGroup: 'Sysmex', grossMarginPercent: 30 } }) }));
+    expect(valid.status).toBe(200);
+    expect(JSON.parse(network.mock.calls[0][1]?.body as string)).toEqual({ actorEmail: 'accounts@example.test', action: 'preview_customer_group_margin', payload: { customerId: key, itemGroup: 'Sysmex', grossMarginPercent: 30 } });
+    expect(valid.headers.get('cache-control')).toBe('private, no-store');
+  });
 });
