@@ -66,3 +66,24 @@ Do not use real patient data. Do not change Tally, connector, permissions or Ser
 ## Pilot exit gate
 
 Proceed only if five working days complete without duplicate submissions, lost committed orders, cross-account draft exposure, unexplained Tally slowdowns or unresolved critical workflow failures. Service expansion remains deferred.
+
+## 27 September 2026 — Supabase CPU incident (pilot hold)
+
+The project reported high CPU. Read-only logs showed approximately 6,000 PostgreSQL `40001` order/pricing conflicts per minute, sustained across multiple PostgREST sessions. The caller and retry source are not yet identified. Query performance and missing indexes are not established as the primary cause.
+
+The owner approved a temporary order-entry interruption while keeping the Supabase project running. The owner deleted the modern `default` secret API key (masked prefix `sb_secret_K54k1`) in the dashboard; this **did not** stop the conflicts. Do not assume that deletion was the fix or that Edge Function database credentials were unaffected.
+
+As a reversible emergency containment, `EXECUTE` was revoked from `service_role` on `public.stockflow_order_gateway(text,text,text,jsonb)` and `public.stockflow_pricing_gateway(text,text,text,jsonb)`. The original ACL for each was `{postgres=X/postgres,service_role=X/postgres}`. The `40001` rate fell from 6,000/minute to 1,124 in the cutover minute and then zero in the next observed minute; sampled PostgREST sessions were idle. Order transitions and pricing actions are intentionally unavailable while these grants are absent. Business rows, Tally, and project status were not changed by the grant revocation.
+
+Do not restore these grants until the repeated caller is identified, retry behavior is bounded, the Edge Function credential path is verified, and a controlled smoke test is ready. The exact privilege restoration is:
+
+```sql
+BEGIN;
+GRANT EXECUTE ON FUNCTION public.stockflow_order_gateway(text,text,text,jsonb) TO service_role;
+GRANT EXECUTE ON FUNCTION public.stockflow_pricing_gateway(text,text,text,jsonb) TO service_role;
+COMMIT;
+```
+
+After restoration, verify the ACLs, the order workflow, Tally snapshot freshness, and the per-minute `40001` rate before resuming the pilot. No paid compute upgrade or project pause was made.
+
+At the time of containment, the latest `stockflow_snapshots.updated_at` was 21 September 2026 10:22 UTC, so cloud stock freshness was already overdue before this intervention. Connector/cloud-sync repair remains separate from the CPU containment.
