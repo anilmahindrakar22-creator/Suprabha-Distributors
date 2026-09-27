@@ -644,3 +644,18 @@ Completed after the user requested one more slice:
   reports only informational no-policy notices on intentionally private RLS tables.
 - The public Site deployment, authenticated production smoke, PR merge and office-pilot gate
   are still pending. Do not report the pricing release complete from migrations alone.
+
+## Post-deployment checkpoint — 27 September 2026
+
+- PR #29 merged to `main` at `643b0a218dabce638baf273ce6024ee543e8c205`. Site version 49 is
+  publicly deployed successfully. The live root returns HTTP 200; unsigned requests to
+  `/api/orders?list=1` and `/api/pricing` return 401 as expected.
+- The signed-in owner can load the Pricing page. Anugraha Diabetes & Endocrinology Center shows
+  24 purchased items, 0 ready and 24 requiring review. Approval is disabled by the existing
+  intentional `bootstrap-review-only-v1` policy, whose minimum gross margin is 99.99%.
+  Management must provide the real minimum/target margin and remaining policy values before
+  the pilot.
+- The Stock page reports its Tally snapshot overdue; the last upload was 21 September 2026 at
+  03:52 PM. Tally remains untouched.
+- No valid database backup exists; the user explicitly accepted the risk to test/disposable
+  records. Authenticated mutation and two-role production acceptance have not been completed.
