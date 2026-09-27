@@ -52,4 +52,3 @@ Deno.serve(async (request: Request) => {
     if (admission?.allowed) requestGate.finish(admission, conflict);
   }
 });
-
