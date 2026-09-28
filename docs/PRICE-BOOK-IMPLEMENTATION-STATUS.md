@@ -706,3 +706,24 @@ Completed after the user requested one more slice:
   No new tests or deployment were run this turn. Deno is still unavailable locally.
 - Next ticket: validate the updated Edge handler in its actual runtime and prepare
   the safety-fix deployment independently of the pending group-margin migration.
+
+## PostgREST retry correction deployed — 28 September 2026
+
+- Root cause confirmed: StockFlow used SQLSTATE `40001` for ordinary stale-state
+  business conflicts. PostgREST 14.5 internally retried those RPC transactions,
+  amplifying a small number of stale requests into millions of database errors.
+- Applied only `non_retryable_business_conflicts` as remote migration
+  `20260928104105`. Its normalized SQL SHA-256 exactly matches the reviewed local
+  migration (`2c41e197...6347`). The pending group-margin migration was not applied.
+- Production now has zero StockFlow functions explicitly raising business `40001`
+  and 19 guards raising non-retryable `PT409`. Genuine PostgreSQL serialization
+  failures remain unchanged. PostgREST sessions were idle after deployment.
+- Deployed `stockflow-orders` Edge Function version 24 with `PT409` mapped to HTTP
+  409, bounded actual request bytes, canonical duplicate fingerprints, fail-closed
+  request-map capacity and in-flight protection. Its unauthenticated smoke returned
+  the expected 403 without reaching a business mutation.
+- Fresh validation before deployment: application lint/typecheck, connector tests,
+  414 unit tests, production build, deployment-order migration replay, pricing ACID,
+  rollback and two-session concurrency all passed. Security advisor findings remain
+  informational no-policy notices on deliberately private/RLS-denied tables. Tally
+  and business records were not changed.

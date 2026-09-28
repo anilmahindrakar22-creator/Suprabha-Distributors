@@ -594,9 +594,9 @@
     {
       "localFile": "20260928104500_non_retryable_business_conflicts.sql",
       "localSha256": "2c41e1974355526524b06deb873243e729bc95fe7add3351b309131ec6226347",
-      "remoteVersion": null,
-      "remoteSha256": null,
-      "status": "not_deployed"
+      "remoteVersion": "20260928104105",
+      "remoteSha256": "2c41e1974355526524b06deb873243e729bc95fe7add3351b309131ec6226347",
+      "status": "exact_normalized_match"
     }
   ]
 }

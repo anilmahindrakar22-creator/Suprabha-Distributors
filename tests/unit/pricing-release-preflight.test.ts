@@ -11,11 +11,8 @@ const source = new Map(readdirSync(fileURLToPath(directory)).filter((name) => na
 describe('read-only pricing release preflight', () => {
   it('validates the saved production evidence after deployment', () => {
     const result = pricingReleasePreflight(original, source);
-    expect(result.pending).toEqual([
-      '20260928104500_non_retryable_business_conflicts.sql',
-      '20260928110000_customer_group_gross_margin.sql',
-    ]);
-    expect(result.deployed).toHaveLength(82);
+    expect(result.pending).toEqual(['20260928110000_customer_group_gross_margin.sql']);
+    expect(result.deployed).toHaveLength(83);
     const names = result.deployed.map((entry: { localFile: string }) => entry.localFile);
     expect(names.slice(0, 2)).toEqual([
       '20260829054025_create_stockflow_private_snapshots.sql',
@@ -28,10 +25,7 @@ describe('read-only pricing release preflight', () => {
   });
   it('accepts documented CRLF normalization without modifying source', () => {
     const crlf = new Map([...source].map(([name, sql]) => [name, sql.replace(/\r/g, '').replace(/\n/g, '\r\n')]));
-    expect(pricingReleasePreflight(original, crlf).pending).toEqual([
-      '20260928104500_non_retryable_business_conflicts.sql',
-      '20260928110000_customer_group_gross_margin.sql',
-    ]);
+    expect(pricingReleasePreflight(original, crlf).pending).toEqual(['20260928110000_customer_group_gross_margin.sql']);
   });
   it('rejects changed SQL including changes inside literals', () => {
     const files = new Map(source);
