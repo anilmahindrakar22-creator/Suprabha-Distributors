@@ -1,5 +1,5 @@
 import "jsr:@supabase/functions-js/edge-runtime.d.ts";
-import { isApprovedGatewayKey, RequestGate } from "./request-gate.ts";
+import { isApprovedGatewayKey, readBoundedJson, RequestGate } from "./request-gate.ts";
 
 const headers = { "content-type": "application/json; charset=utf-8", "cache-control": "private, no-store" };
 const reply = (body: unknown, status = 200, extraHeaders: Record<string, string> = {}) => new Response(JSON.stringify(body), { status, headers: { ...headers, ...extraHeaders } });
@@ -15,8 +15,11 @@ Deno.serve(async (request: Request) => {
   if (Number(request.headers.get("content-length") || 0) > 65_536) return reply({ error: "Request is too large" }, 413);
 
   let body: { actorEmail?: string; action?: string; payload?: Record<string, unknown> };
-  try { body = await request.json(); } catch { return reply({ error: "Invalid JSON" }, 400); }
-  if (typeof body.actorEmail !== "string" || typeof body.action !== "string" || !actions.includes(body.action)) return reply({ error: "Invalid request" }, 400);
+  try { body = await readBoundedJson(request) as typeof body; } catch (error) {
+    return error instanceof RangeError ? reply({ error: "Request is too large" }, 413) : reply({ error: "Invalid JSON" }, 400);
+  }
+  if (!body || typeof body !== "object" || typeof body.actorEmail !== "string" || !body.actorEmail.trim() || body.actorEmail.length > 254 || typeof body.action !== "string" || !actions.includes(body.action)
+    || (body.payload != null && (typeof body.payload !== "object" || Array.isArray(body.payload)))) return reply({ error: "Invalid request" }, 400);
 
   const admission = readActions.has(body.action) ? null : await requestGate.begin(gatewayKey, body.actorEmail, body.action, body.payload ?? {});
   if (admission && !admission.allowed) return reply({ message: "Wait before retrying this command", code: "54000" }, 429, { "retry-after": String(admission.retryAfterSeconds) });

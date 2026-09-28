@@ -667,3 +667,32 @@ Completed after the user requested one more slice:
 - A Tally snapshot already saved on the office PC uploaded with HTTP 200. After restarting the scheduled connector, its own cloud upload logged `status=ok` and zero consecutive failures. No Tally voucher or setting was changed.
 - The cloud snapshot advanced from 21 September to 28 September. The import recorded pricing evidence and removed it from the public snapshot. Orders and billing snapshots remained at 28 and 2; one customer ledger from the saved snapshot was imported, taking the customer count from 458 to 459.
 - No verified production backup exists; the owner previously accepted the risk to test/disposable records. This connector fix does not prove the broader office pilot or resolve the pricing policy values and two-role acceptance. Continue observing upload freshness and Supabase resource use.
+
+## Defect verification — 28 September 2026
+
+- Merged released main (`3de3247`) into the working pricing branch, retaining both
+  release checkpoints and preserving unrelated local changes.
+- Regression tests reproduced three Edge safety-brake defects: live entries evicted
+  at capacity, reordered JSON bypassing duplicate checks, and slow requests admitted
+  again after the cooldown elapsed. Fixed with fail-closed bounded maps, canonical
+  object fingerprints and explicit in-flight tracking. Successful requests still
+  release the local brake; database idempotency/version checks remain authoritative.
+- Request bodies are now bounded by actual UTF-8 bytes, not only Content-Length;
+  invalid/null bodies and non-object payloads are rejected before database access.
+- Production migration history confirms group-margin pricing is not deployed. Renamed
+  only that unapplied migration to `20260928074228_customer_group_gross_margin.sql`
+  without changing SQL, and added its hash as pending release evidence. Previously,
+  the release preflight failed on the unmapped file; deployed history is unchanged.
+- Fresh validation: 413 unit tests across 85 files passed, application lint/typecheck
+  passed, gate-helper lint passed, deployment-order database replay passed (including
+  group margins, snapshot privileges, preservation, ACID and two-session rollback).
+  Direct Node-based lint/typechecking of the Deno entrypoint cannot resolve its JSR
+  runtime import/Deno globals; Deno is not installed here. Deno deployment validation
+  remains required. No production build or authenticated browser acceptance this turn.
+- Read-only production check: snapshot updated at `2026-09-28T07:38:58.998Z`, with no
+  pricing history in the public payload. Logs from 07:25–07:44 UTC returned no matching
+  PostgreSQL 40001/permission-denied or Edge 500 events. This does not prove long-term
+  resource stability or establish the original traffic source.
+- These new fixes are committed locally, not deployed. Remaining release checks:
+  Edge runtime validation/deployment, pending group-margin rollout, real pricing policy
+  values, authenticated two-role acceptance and operational pilot. No Tally changes.

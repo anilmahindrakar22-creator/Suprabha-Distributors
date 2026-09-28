@@ -1,10 +1,52 @@
 import { describe, expect, it } from 'vitest';
-import { isApprovedGatewayKey, RequestGate } from '../../supabase/functions/stockflow-orders/request-gate';
+import { isApprovedGatewayKey, readBoundedJson, RequestGate } from '../../supabase/functions/stockflow-orders/request-gate';
 
 const gateway = 'approved-gateway-key';
 const actor = 'admin@example.com';
 
 describe('Edge request safety gate', () => {
+  it('bounds actual UTF-8 body bytes without trusting Content-Length', async () => {
+    const make = (body: string, length?: string) => new Request('https://example.test', {
+      method: 'POST', body, headers: length ? { 'content-length': length } : {},
+    });
+    expect(await readBoundedJson(make('{"a":1}'), 7)).toEqual({ a: 1 });
+    await expect(readBoundedJson(make('{"a":12}'), 7)).rejects.toThrow(RangeError);
+    await expect(readBoundedJson(make('{"a":"₹"}', '1'), 9)).rejects.toThrow(RangeError);
+    await expect(readBoundedJson(make('invalid'), 10)).rejects.toThrow(SyntaxError);
+  });
+  it('blocks duplicates with reordered nested object keys', async () => {
+    const gate = new RequestGate();
+    const first = await gate.begin(gateway, actor, 'edit_order', { orderId: 'a', change: { version: 1, quantity: 2 } }, 1_000);
+    expect(first.allowed).toBe(true);
+    expect((await gate.begin(gateway, actor, 'edit_order', { change: { quantity: 2, version: 1 }, orderId: 'a' }, 1_001)).allowed).toBe(false);
+  });
+
+  it('does not evict active requests or actor limits when capacity is full', async () => {
+    const gate = new RequestGate(10, 60_000, 60_000, 2);
+    const first = await gate.begin(gateway, actor, 'edit_order', { orderId: 'a' }, 1_000);
+    expect(first.allowed).toBe(true);
+    expect((await gate.begin(gateway, actor, 'edit_order', { orderId: 'b' }, 1_001)).allowed).toBe(true);
+    expect((await gate.begin(gateway, actor, 'edit_order', { orderId: 'c' }, 1_002)).allowed).toBe(false);
+    expect((await gate.begin(gateway, actor, 'edit_order', { orderId: 'a' }, 1_003)).allowed).toBe(false);
+
+    const actors = new RequestGate(1, 60_000, 60_000, 2);
+    for (const email of ['a@example.com', 'b@example.com']) {
+      const entry = await actors.begin(gateway, email, 'edit_order', {}, 1_000);
+      if (entry.allowed) actors.finish(entry, false, 1_000);
+    }
+    expect((await actors.begin(gateway, 'c@example.com', 'edit_order', {}, 1_001)).allowed).toBe(false);
+    expect((await actors.begin(gateway, 'a@example.com', 'edit_order', {}, 1_002)).allowed).toBe(false);
+    expect((await actors.begin(gateway, 'c@example.com', 'edit_order', {}, 61_001)).allowed).toBe(true);
+  });
+
+  it('keeps a slow request in flight beyond the cooldown and releases it on finish', async () => {
+    const gate = new RequestGate();
+    const entry = await gate.begin(gateway, actor, 'edit_order', { orderId: 'slow' }, 1_000);
+    expect(entry.allowed).toBe(true);
+    expect((await gate.begin(gateway, actor, 'edit_order', { orderId: 'slow' }, 62_000)).allowed).toBe(false);
+    if (entry.allowed) gate.finish(entry, false, 62_001);
+    expect((await gate.begin(gateway, actor, 'edit_order', { orderId: 'slow' }, 62_002)).allowed).toBe(true);
+  });
   it('rejects an outdated gateway key before a database request', async () => {
     const digest = await crypto.subtle.digest('SHA-256', new TextEncoder().encode(gateway));
     const hash = Array.from(new Uint8Array(digest), (byte) => byte.toString(16).padStart(2, '0')).join('');

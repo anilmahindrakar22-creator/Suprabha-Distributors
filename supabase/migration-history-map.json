@@ -583,6 +583,13 @@
       "remoteVersion": "20260928072110",
       "remoteSha256": "3e98b2022094e6e435fb5f3187e85d1835b0ab3d44344d8dcc0d419359b897f0",
       "status": "exact_normalized_match"
+    },
+    {
+      "localFile": "20260928074228_customer_group_gross_margin.sql",
+      "localSha256": "a79f43129d6cf86b8c1e63f14f1e1dfb0daa2c8bbe9abcd189123bfbf07ae1b5",
+      "remoteVersion": null,
+      "remoteSha256": null,
+      "status": "not_deployed"
     }
   ]
 }
