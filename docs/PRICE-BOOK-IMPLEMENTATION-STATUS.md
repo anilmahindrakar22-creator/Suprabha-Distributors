@@ -696,3 +696,13 @@ Completed after the user requested one more slice:
 - These new fixes are committed locally, not deployed. Remaining release checks:
   Edge runtime validation/deployment, pending group-margin rollout, real pricing policy
   values, authenticated two-role acceptance and operational pilot. No Tally changes.
+
+## Usage checkpoint — 28 September 2026
+
+- Start-of-turn usage check: five-hour allowance 86% used / 14% remaining,
+  below the owner's 20% remaining stop threshold. Weekly allowance is disregarded
+  as requested. No reset credit used.
+- Implementation remains at `74a4e18`; unrelated working changes are preserved.
+  No new tests or deployment were run this turn. Deno is still unavailable locally.
+- Next ticket: validate the updated Edge handler in its actual runtime and prepare
+  the safety-fix deployment independently of the pending group-margin migration.
