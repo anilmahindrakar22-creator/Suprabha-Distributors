@@ -517,7 +517,7 @@ try {
         if (-not $listener.Pending()) {
             if ((Get-Date) -ge $nextCloudSync) {
                 try {
-                    $cloudJson = (Get-ReorderData | ConvertTo-Json -Depth 6 -Compress)
+                    $null = Get-ReorderData
                 } catch {
                     Write-Host "Automatic sync will retry in $SyncMinutes minutes." -ForegroundColor DarkYellow
                 }
