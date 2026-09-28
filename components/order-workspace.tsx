@@ -1323,6 +1323,22 @@ export function HydratedNewOrderPanel({ data, templateOrder, onClose, onCreated,
     [customerName, data.customers],
   );
   const selectedCustomer = data.customers.find((customer) => customer.id === selectedCustomerId);
+  const recentProducts = useMemo(() => {
+    if (!selectedCustomerId || !customerHistory || lines.length >= 50) return [];
+    const catalogByKey = new Map(data.snapshot.catalog.filter((item) => item.active).map((item) => [item.tallyKey, item]));
+    const seen = new Set(lines.map((line) => line.tallyKey));
+    const products: CatalogItem[] = [];
+    for (const order of [...customerHistory.orders].sort((left, right) => Date.parse(right.createdAt) - Date.parse(left.createdAt))) {
+      for (const line of order.lines || []) {
+        const item = catalogByKey.get(line.tallyKey);
+        if (!item || seen.has(line.tallyKey)) continue;
+        seen.add(line.tallyKey);
+        products.push(item);
+        if (products.length === 5) return products;
+      }
+    }
+    return products;
+  }, [customerHistory, data.snapshot.catalog, lines, selectedCustomerId]);
 
   useEffect(() => {
     if (!selectedCustomer) return;
@@ -1362,7 +1378,7 @@ export function HydratedNewOrderPanel({ data, templateOrder, onClose, onCreated,
   }
 
   function addProduct(item: CatalogItem) {
-    setLines((current) => [...current, { tallyKey: item.tallyKey, item, quantity: 1 }]);
+    setLines((current) => current.length >= 50 || current.some((line) => line.tallyKey === item.tallyKey) ? current : [...current, { tallyKey: item.tallyKey, item, quantity: 1 }]);
     setProductQuery('');
     setActiveProductIndex(0);
     focusQuantityKey.current = item.tallyKey;
@@ -1538,6 +1554,7 @@ export function HydratedNewOrderPanel({ data, templateOrder, onClose, onCreated,
 
             <fieldset className="rounded-2xl border border-[#dce7e5] bg-white p-5">
               <legend className="px-2 text-sm font-extrabold text-[#274b50]">Products</legend>
+              {recentProducts.length ? <section aria-label="Recently ordered products" className="mb-4"><p className="mb-2 text-xs font-bold text-[#587275]">Recently ordered by this customer</p><div className="flex gap-2 overflow-x-auto pb-1">{recentProducts.map((item) => <button key={item.tallyKey} type="button" onClick={() => addProduct(item)} title={item.item} className="min-h-10 max-w-56 shrink-0 truncate rounded-lg border border-[#cde1dc] bg-[#f2f8f5] px-3 text-sm font-bold text-[#31585d]">Add {item.item}</button>)}</div></section> : null}
               <label className="text-sm font-bold text-[#456367]">Find product<input ref={productInputRef} maxLength={200} value={productQuery} onChange={(event) => { setProductQuery(event.target.value); setActiveProductIndex(0); }} onKeyDown={(event) => {
                 if (event.key === 'Enter') event.preventDefault();
                 if (matches.length === 0) return;

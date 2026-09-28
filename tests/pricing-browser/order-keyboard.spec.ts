@@ -71,3 +71,39 @@ test('device draft protection stays explicit without dominating the form', async
   await page.reload();
   await expect(consent).not.toBeChecked();
 });
+
+test('recent customer products can be added from the existing history response', async ({ page }) => {
+  let historyRequests = 0;
+  let submissions = 0;
+  await page.route('**/api/orders?list=1*', async (route) => {
+    historyRequests += 1;
+    await route.fulfill({ json: { orders: [{
+      id: '33333333-3333-4333-8333-333333333333', orderNumber: 'SF-TEST-1', customerName: 'Test Beta Laboratory',
+      customerPhone: null, status: 'delivered', source: 'phone', notes: null, version: 1,
+      createdAt: '2026-09-20T10:00:00Z', updatedAt: '2026-09-20T10:00:00Z', lineCount: 3,
+      totalQuantity: 3, reservedQuantity: 0, tallyInvoiceNumber: null,
+      lines: [
+        { tallyKey: 'GLUCOSE-B', itemName: 'Glucose B', quantity: 1 },
+        { tallyKey: 'CRP', itemName: 'CRP', quantity: 1 },
+        { tallyKey: 'OLD-ITEM', itemName: 'Old item', quantity: 1 },
+      ], events: [], exceptions: [], installations: [],
+    }], pagination: { total: 1 } } });
+  });
+  await page.route('**/api/orders', async (route) => {
+    if (route.request().method() === 'POST') submissions += 1;
+    await route.fulfill({ json: {} });
+  });
+  await page.goto('/?view=order-entry');
+  const customer = page.getByRole('combobox', { name: 'Name' });
+  await customer.fill('Beta');
+  await customer.press('Enter');
+  const recent = page.getByRole('region', { name: 'Recently ordered products' });
+  await expect(recent.getByRole('button', { name: 'Add Glucose B' })).toBeVisible();
+  await expect(recent.getByRole('button', { name: 'Add CRP' })).toBeVisible();
+  await expect(recent.getByRole('button', { name: 'Add Old item' })).toHaveCount(0);
+  await recent.getByRole('button', { name: 'Add Glucose B' }).click();
+  await expect(page.getByRole('spinbutton', { name: 'Quantity for Glucose B' })).toBeFocused();
+  await expect(recent.getByRole('button', { name: 'Add Glucose B' })).toHaveCount(0);
+  expect(historyRequests).toBe(1);
+  expect(submissions).toBe(0);
+});
