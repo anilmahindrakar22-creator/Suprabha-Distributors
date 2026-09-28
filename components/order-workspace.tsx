@@ -1177,7 +1177,7 @@ function AssignmentControl({ order, onSave }: { order: OrderSummary; onSave: (or
   return <details onToggle={(event) => { if (event.currentTarget.open) void loadUsers(); }} className="mt-3 max-w-xl rounded-xl border border-[#dce7e5] bg-[#fbfcfb] px-3 py-2 text-xs"><summary className="cursor-pointer font-bold text-[#587275]">{order.assignedToEmail ? 'Change owner' : 'Assign owner'}</summary><div className="mt-2 flex flex-col gap-2 sm:flex-row"><label className="flex-1 font-bold text-[#587275]">Approved user<select value={value} disabled={loadState !== 'loaded'} onChange={(event) => setValue(event.target.value)} className="mt-1 min-h-10 w-full rounded-lg border border-[#cedfdd] bg-white px-3 font-normal text-[#173239]"><option value="">Unassigned</option>{order.assignedToEmail && !users.some((user) => user.email === order.assignedToEmail) ? <option value={order.assignedToEmail}>{order.assignedToEmail}</option> : null}{users.map((user) => <option key={user.email} value={user.email}>{user.email} · {user.role}</option>)}</select></label><div className="flex items-end"><button type="button" disabled={busy || loadState !== 'loaded' || value === (order.assignedToEmail || '')} onClick={async () => { setBusy(true); try { await onSave(order, value || undefined); } finally { setBusy(false); } }} className="min-h-10 rounded-lg bg-[#092f36] px-4 font-bold text-white disabled:opacity-50">{busy ? 'Saving…' : 'Save'}</button></div></div>{loadState === 'loading' ? <p className="mt-2 text-[#718487]">Loading approved users…</p> : loadState === 'error' ? <button type="button" onClick={() => { setLoadState('idle'); void loadUsers(); }} className="mt-2 font-bold text-[#9a4e47]">Could not load users · Retry</button> : <p className="mt-2 text-[#718487]">Only active StockFlow users are shown.</p>}</details>;
 }
 
-function HydratedNewOrderPanel({ data, templateOrder, onClose, onCreated, onViewCustomer }: { data: OrderBootstrap; templateOrder: OrderSummary | null; onClose: () => void; onCreated: (number: string, command?: CreatedOrderCommand, result?: CreatedOrderResult) => void; onViewCustomer: (customerName: string) => void }) {
+export function HydratedNewOrderPanel({ data, templateOrder, onClose, onCreated, onViewCustomer }: { data: OrderBootstrap; templateOrder: OrderSummary | null; onClose: () => void; onCreated: (number: string, command?: CreatedOrderCommand, result?: CreatedOrderResult) => void; onViewCustomer: (customerName: string) => void }) {
   const [initialDraft] = useState(() => readOfflineOrderDraft(localStorage, data.actor.email));
   const initialPayload = initialDraft?.command.payload;
   const templatePayload = templateOrder ? repeatOrderTemplate(templateOrder) : undefined;
@@ -1187,6 +1187,7 @@ function HydratedNewOrderPanel({ data, templateOrder, onClose, onCreated, onView
   const [deliveryAddress, setDeliveryAddress] = useState(initialPayload?.deliveryAddress || '');
   const [selectedCustomerId, setSelectedCustomerId] = useState<string | undefined>(initialPayload?.customerId);
   const [customerSuggestionsOpen, setCustomerSuggestionsOpen] = useState(false);
+  const [activeCustomerIndex, setActiveCustomerIndex] = useState(0);
   const [customerHistory, setCustomerHistory] = useState<{ orders: OrderSummary[]; total: number } | null>(null);
   const [customerHistoryState, setCustomerHistoryState] = useState<'idle' | 'loading' | 'error'>('idle');
   const [notes, setNotes] = useState(initialPayload?.notes || '');
@@ -1194,6 +1195,9 @@ function HydratedNewOrderPanel({ data, templateOrder, onClose, onCreated, onView
   const [priority, setPriority] = useState<'normal' | 'high' | 'urgent'>(initialPayload?.priority || 'normal');
   const [expectedDeliveryDate, setExpectedDeliveryDate] = useState(initialPayload?.expectedDeliveryDate || '');
   const [productQuery, setProductQuery] = useState('');
+  const [activeProductIndex, setActiveProductIndex] = useState(0);
+  const focusQuantityKey = useRef<string | null>(null);
+  const productInputRef = useRef<HTMLInputElement>(null);
   const [restoredLines] = useState(() => restoreOfflineDraftLines(data.snapshot.catalog, initialPayload?.lines || templatePayload?.lines || []));
   const [lines, setLines] = useState<DraftLine[]>(restoredLines);
   const [submitting, setSubmitting] = useState(false);
@@ -1207,6 +1211,12 @@ function HydratedNewOrderPanel({ data, templateOrder, onClose, onCreated, onView
   const entryPriceKey = `${selectedCustomerId || ''}\u001e${pricingKeys}`;
   const entryPrices = entryPriceResult?.key === entryPriceKey ? entryPriceResult.prices : {};
   const entryPriceState = entryPriceResult?.key === entryPriceKey ? entryPriceResult.failed ? 'error' : 'idle' : 'loading';
+
+  useEffect(() => {
+    if (!focusQuantityKey.current) return;
+    document.getElementById(`qty-${focusQuantityKey.current}`)?.focus();
+    focusQuantityKey.current = null;
+  }, [lines]);
 
   function changeTrustedDevice(allowed: boolean) {
     if (!writeOfflineDraftConsent(localStorage, data.actor.email, allowed)) {
@@ -1327,6 +1337,14 @@ function HydratedNewOrderPanel({ data, templateOrder, onClose, onCreated, onView
     setCustomerSuggestionsOpen(false);
     setCustomerHistory(null);
     setCustomerHistoryState('loading');
+    productInputRef.current?.focus();
+  }
+
+  function addProduct(item: CatalogItem) {
+    setLines((current) => [...current, { tallyKey: item.tallyKey, item, quantity: 1 }]);
+    setProductQuery('');
+    setActiveProductIndex(0);
+    focusQuantityKey.current = item.tallyKey;
   }
 
   function usePreviousOrder(order: OrderSummary) {
@@ -1425,9 +1443,30 @@ function HydratedNewOrderPanel({ data, templateOrder, onClose, onCreated, onView
                       setCustomerHistory(null);
                       setCustomerHistoryState('idle');
                       setCustomerSuggestionsOpen(true);
+                      setActiveCustomerIndex(0);
                     }}
                     onFocus={() => setCustomerSuggestionsOpen(true)}
                     onBlur={() => window.setTimeout(() => setCustomerSuggestionsOpen(false), 120)}
+                    onKeyDown={(event) => {
+                      if (event.key === 'Enter' && selectedCustomerId) {
+                        event.preventDefault();
+                        productInputRef.current?.focus();
+                        return;
+                      }
+                      if (!customerSuggestionsOpen || customerMatches.length === 0) {
+                        if (event.key === 'Enter') event.preventDefault();
+                        return;
+                      }
+                      if (event.key === 'ArrowDown' || event.key === 'ArrowUp') {
+                        event.preventDefault();
+                        setActiveCustomerIndex((index) => (index + (event.key === 'ArrowDown' ? 1 : -1) + customerMatches.length) % customerMatches.length);
+                      } else if (event.key === 'Enter') {
+                        event.preventDefault();
+                        chooseCustomer(customerMatches[Math.min(activeCustomerIndex, customerMatches.length - 1)]);
+                      } else if (event.key === 'Escape') {
+                        setCustomerSuggestionsOpen(false);
+                      }
+                    }}
                     role="combobox"
                     aria-autocomplete="list"
                     aria-expanded={customerSuggestionsOpen && customerMatches.length > 0}
@@ -1438,13 +1477,13 @@ function HydratedNewOrderPanel({ data, templateOrder, onClose, onCreated, onView
                   />
                   {customerSuggestionsOpen && customerMatches.length > 0 ? (
                     <ul id="customer-suggestions" aria-label="Matching Tally customer ledgers" className="absolute left-0 right-0 top-full z-20 mt-1 max-h-64 overflow-y-auto rounded-xl border border-[#cfe0dd] bg-white py-1 shadow-xl">
-                      {customerMatches.map((customer) => (
+                      {customerMatches.map((customer, index) => (
                         <li key={customer.id}>
                           <button
                             type="button"
                             onMouseDown={(event) => event.preventDefault()}
                             onClick={() => chooseCustomer(customer)}
-                            className="block min-h-12 w-full px-3 py-2 text-left font-normal hover:bg-[#f2faf7] focus:bg-[#f2faf7] focus:outline-none"
+                            className={`block min-h-12 w-full px-3 py-2 text-left font-normal hover:bg-[#f2faf7] focus:bg-[#f2faf7] focus:outline-none ${index === activeCustomerIndex ? 'bg-[#f2faf7]' : ''}`}
                           >
                             <strong className="block text-sm text-[#173239]">{customer.name}</strong>
                             <small className="block text-[#718487]">{[customer.city, customer.phone].filter(Boolean).join(' · ') || 'Tally customer ledger'}{customer.tallyBalance !== undefined && customer.tallyBalance !== null ? ` · Tally balance ₹${customer.tallyBalance.toLocaleString('en-IN', { maximumFractionDigits: 2 })}` : ''}</small>
@@ -1468,10 +1507,20 @@ function HydratedNewOrderPanel({ data, templateOrder, onClose, onCreated, onView
 
             <fieldset className="rounded-2xl border border-[#dce7e5] bg-white p-5">
               <legend className="px-2 text-sm font-extrabold text-[#274b50]">Products</legend>
-              <label className="text-sm font-bold text-[#456367]">Find product<input maxLength={200} value={productQuery} onChange={(event) => setProductQuery(event.target.value)} className="mt-2 min-h-11 w-full rounded-xl border border-[#cedfdd] px-3 font-normal outline-none focus:border-[#64d4ad]" placeholder="Type a product name" /></label>
-              {matches.length ? <div className="mt-2 overflow-hidden rounded-xl border border-[#dce7e5]">{matches.map((item) => <button key={item.tallyKey} type="button" onClick={() => { setLines((current) => [...current, { tallyKey: item.tallyKey, item, quantity: 1 }]); setProductQuery(''); }} className="flex min-h-12 w-full items-center justify-between gap-4 border-b border-[#edf2f0] px-3 text-left last:border-0 hover:bg-[#f2faf7]"><span><strong className="block text-sm text-[#173239]">{item.item}</strong><small className="text-[#718487]">{item.group}</small></span><span className="shrink-0 text-xs font-bold text-[#277b69]">Available {formatQuantity(item.closing)} {item.baseUnit}</span></button>)}</div> : null}
+              <label className="text-sm font-bold text-[#456367]">Find product<input ref={productInputRef} maxLength={200} value={productQuery} onChange={(event) => { setProductQuery(event.target.value); setActiveProductIndex(0); }} onKeyDown={(event) => {
+                if (event.key === 'Enter') event.preventDefault();
+                if (matches.length === 0) return;
+                if (event.key === 'ArrowDown' || event.key === 'ArrowUp') {
+                  event.preventDefault();
+                  setActiveProductIndex((index) => (index + (event.key === 'ArrowDown' ? 1 : -1) + matches.length) % matches.length);
+                } else if (event.key === 'Enter') {
+                  event.preventDefault();
+                  addProduct(matches[Math.min(activeProductIndex, matches.length - 1)]);
+                }
+              }} role="combobox" aria-autocomplete="list" aria-expanded={matches.length > 0} aria-controls="product-suggestions" className="mt-2 min-h-11 w-full rounded-xl border border-[#cedfdd] px-3 font-normal outline-none focus:border-[#64d4ad]" placeholder="Type a product name" /></label>
+              {matches.length ? <div id="product-suggestions" aria-label="Matching Tally products" className="mt-2 overflow-hidden rounded-xl border border-[#dce7e5]">{matches.map((item, index) => <button key={item.tallyKey} type="button" onClick={() => addProduct(item)} className={`flex min-h-12 w-full items-center justify-between gap-4 border-b border-[#edf2f0] px-3 text-left last:border-0 hover:bg-[#f2faf7] ${index === activeProductIndex ? 'bg-[#f2faf7]' : ''}`}><span><strong className="block text-sm text-[#173239]">{item.item}</strong><small className="text-[#718487]">{item.group}</small></span><span className="shrink-0 text-xs font-bold text-[#277b69]">Available {formatQuantity(item.closing)} {item.baseUnit}</span></button>)}</div> : null}
               {productQuery.trim() && matches.length === 0 ? <p className="mt-2 rounded-xl bg-[#fff7e8] px-3 py-2 text-sm text-[#805b20]">No Tally products match “{productQuery.trim()}”.</p> : null}
-              <div className="mt-4 space-y-2">{lines.map((line) => { const price = entryPrices[line.tallyKey]; return <div key={line.tallyKey} className={`grid grid-cols-[1fr_90px_auto] items-center gap-3 rounded-xl p-3 ${line.item ? 'bg-[#f2f7f5]' : 'border border-[#efbbb6] bg-[#fff0ef]'}`}><div className="min-w-0"><strong className="block truncate text-sm text-[#173239]">{line.item?.item || `Unavailable Tally item (${line.tallyKey})`}</strong><small className={line.item ? 'text-[#718487]' : 'font-bold text-[#8d3a34]'}>{line.item ? `Closing ${formatQuantity(line.item.closing)} ${line.item.baseUnit}` : 'Remove and select its current catalogue replacement'}</small>{canViewPrices ? <small className={`mt-1 block font-bold ${price?.riskStatus === 'RED' ? 'text-[#8d3a34]' : price?.riskStatus === 'AMBER' ? 'text-[#805b20]' : 'text-[#176246]'}`}>{price ? `Current price ${price.currentPrice == null ? 'review required' : currency.format(price.currentPrice)} · ${price.riskStatus}` : entryPriceState === 'loading' ? 'Resolving customer price…' : 'Customer price unavailable · review required'}</small> : <small className="mt-1 block text-[#718487]">Pricing is checked at confirmation.</small>}</div><label className="sr-only" htmlFor={`qty-${line.tallyKey}`}>Quantity for {line.item?.item || line.tallyKey}</label><input id={`qty-${line.tallyKey}`} type="number" min="1" max="1000000" step="1" required value={line.quantity} onChange={(event) => setLines((current) => current.map((entry) => entry.tallyKey === line.tallyKey ? { ...entry, quantity: Number(event.target.value) } : entry))} className="min-h-10 rounded-lg border border-[#cedfdd] px-2 text-right" /><button type="button" onClick={() => setLines((current) => current.filter((entry) => entry.tallyKey !== line.tallyKey))} aria-label={`Remove ${line.item?.item || line.tallyKey}`} className="size-10 rounded-lg text-xl text-[#9a4e47] hover:bg-[#ffeae8]">×</button></div>; })}</div>
+              <div className="mt-4 space-y-2">{lines.map((line) => { const price = entryPrices[line.tallyKey]; return <div key={line.tallyKey} className={`grid grid-cols-[1fr_90px_auto] items-center gap-3 rounded-xl p-3 ${line.item ? 'bg-[#f2f7f5]' : 'border border-[#efbbb6] bg-[#fff0ef]'}`}><div className="min-w-0"><strong className="block truncate text-sm text-[#173239]">{line.item?.item || `Unavailable Tally item (${line.tallyKey})`}</strong><small className={line.item ? 'text-[#718487]' : 'font-bold text-[#8d3a34]'}>{line.item ? `Closing ${formatQuantity(line.item.closing)} ${line.item.baseUnit}` : 'Remove and select its current catalogue replacement'}</small>{canViewPrices ? <small className={`mt-1 block font-bold ${price?.riskStatus === 'RED' ? 'text-[#8d3a34]' : price?.riskStatus === 'AMBER' ? 'text-[#805b20]' : 'text-[#176246]'}`}>{price ? `Current price ${price.currentPrice == null ? 'review required' : currency.format(price.currentPrice)} · ${price.riskStatus}` : entryPriceState === 'loading' ? 'Resolving customer price…' : 'Customer price unavailable · review required'}</small> : <small className="mt-1 block text-[#718487]">Pricing is checked at confirmation.</small>}</div><label className="sr-only" htmlFor={`qty-${line.tallyKey}`}>Quantity for {line.item?.item || line.tallyKey}</label><input id={`qty-${line.tallyKey}`} type="number" min="1" max="1000000" step="1" required value={line.quantity} onChange={(event) => setLines((current) => current.map((entry) => entry.tallyKey === line.tallyKey ? { ...entry, quantity: Number(event.target.value) } : entry))} onKeyDown={(event) => { if (event.key === 'Enter') { event.preventDefault(); productInputRef.current?.focus(); } }} className="min-h-10 rounded-lg border border-[#cedfdd] px-2 text-right" /><button type="button" onClick={() => setLines((current) => current.filter((entry) => entry.tallyKey !== line.tallyKey))} aria-label={`Remove ${line.item?.item || line.tallyKey}`} className="size-10 rounded-lg text-xl text-[#9a4e47] hover:bg-[#ffeae8]">×</button></div>; })}</div>
               {lines.length >= 50 ? <p className="mt-2 text-xs font-bold text-[#805b20]">Maximum 50 products per order.</p> : null}
               {lines.length === 0 ? <p className="mt-4 rounded-xl bg-[#f6f8f7] p-4 text-center text-sm text-[#718487]">Search and add the products requested on the call.</p> : null}
             </fieldset>
