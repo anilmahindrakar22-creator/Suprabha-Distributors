@@ -585,7 +585,7 @@
       "status": "exact_normalized_match"
     },
     {
-      "localFile": "20260928074228_customer_group_gross_margin.sql",
+      "localFile": "20260928110000_customer_group_gross_margin.sql",
       "localSha256": "a79f43129d6cf86b8c1e63f14f1e1dfb0daa2c8bbe9abcd189123bfbf07ae1b5",
       "remoteVersion": null,
       "remoteSha256": null,
