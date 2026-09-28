@@ -48,6 +48,10 @@ Save-ConnectorSnapshot $path $snapshot
 if ((Read-ConnectorSnapshot $path 'TEST').catalog[0].tallyKey -ne 'B') { throw 'Atomic replacement failed' }
 
 $healthPath = Join-Path $directory 'health.log'
+if ((Get-ConnectorUploadFailureCode ([pscustomobject]@{ Exception = [pscustomobject]@{ Response = [pscustomobject]@{ StatusCode = 500 } } })) -ne 'http_500') { throw 'Cloud HTTP failure status was not classified' }
+if ((Get-ConnectorUploadFailureCode ([pscustomobject]@{ Exception = [pscustomobject]@{ Response = [pscustomobject]@{ StatusCode = 401 } } })) -ne 'http_401') { throw 'Cloud authorization failure status was not classified' }
+if ((Get-ConnectorUploadFailureCode ([pscustomobject]@{ Exception = [pscustomobject]@{ Response = $null } })) -ne 'network') { throw 'Cloud network failure was not classified' }
+if ((Get-ConnectorUploadFailureCode ([pscustomobject]@{ Exception = [pscustomobject]@{ Response = [pscustomobject]@{ StatusCode = 'secret-data' } } })) -ne 'network') { throw 'Untrusted HTTP status reached health log' }
 if (-not (Write-BoundedConnectorLog $healthPath 'first-entry' 1)) { throw 'Initial health log write failed' }
 if (-not (Write-BoundedConnectorLog $healthPath 'second-entry' 1)) { throw 'Rotated health log write failed' }
 if ((Get-Content -LiteralPath "$healthPath.previous" -Raw).Trim() -ne 'first-entry') { throw 'Health log rotation did not retain the previous log' }

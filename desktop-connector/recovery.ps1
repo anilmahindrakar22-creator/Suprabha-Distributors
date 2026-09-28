@@ -209,6 +209,19 @@ function Write-BoundedConnectorLog([string]$Path, [string]$Message, [long]$Maxim
     }
 }
 
+function Get-ConnectorUploadFailureCode($ErrorRecord) {
+    # Record only the numeric HTTP status. Exception text and response bodies can
+    # contain credentials, server details, or customer data.
+    $response = $ErrorRecord.Exception.Response
+    if ($null -ne $response -and $null -ne $response.StatusCode) {
+        try {
+            $code = [int]$response.StatusCode
+            if ($code -ge 100 -and $code -le 599) { return "http_$code" }
+        } catch { }
+    }
+    return 'network'
+}
+
 function Read-ConnectorJson([string]$Path) {
     $json = [IO.File]::ReadAllText($Path)
     # PowerShell 7 otherwise converts ISO timestamps to DateTime before our
