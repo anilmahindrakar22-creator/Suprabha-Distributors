@@ -1,9 +1,9 @@
 {
   "projectId": "aormuidjbdqruglmyseh",
-  "checkedAt": "2026-09-27",
+  "checkedAt": "2026-09-28",
   "purpose": "Read-only release evidence; NOT an executable migration plan or authority to repair history.",
   "normalization": "Remove CR characters and trim surrounding whitespace only; SHA-256 over UTF-8.",
-  "localGitHead": "bac9cb149d56b6c9175625d67980b781672bc533",
+  "localGitHead": "018d9803f9390d4da6a6c0b106f1ab059060a552",
   "remoteOnly": [
     {
       "localFile": "20260829054025_create_stockflow_private_snapshots.sql",
@@ -576,6 +576,13 @@
       "remoteVersion": "20260927060946",
       "remoteSha256": "f9135c22ad31e6bf7429a697a64ab1ca3ae3c3c99df2ee4e18990f6806f08286",
       "status": "exact_normalized_match"
+    },
+    {
+      "localFile": "20260927180000_snapshot_pricing_import_privilege.sql",
+      "localSha256": "3e98b2022094e6e435fb5f3187e85d1835b0ab3d44344d8dcc0d419359b897f0",
+      "remoteVersion": null,
+      "remoteSha256": null,
+      "status": "not_deployed"
     }
   ]
 }
