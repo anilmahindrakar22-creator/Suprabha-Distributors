@@ -128,6 +128,7 @@ export function OrderWorkspace({ actorEmail, initialStatus = 'open' }: { actorEm
   const retryingDraftRef = useRef(false);
   const pendingCommandKeysRef = useRef(new Map<string, string>());
   const latestListRequestRef = useRef(0);
+  const openingOrderRequestRef = useRef(0);
 
   useEffect(() => {
     dataRef.current = data;
@@ -289,6 +290,7 @@ export function OrderWorkspace({ actorEmail, initialStatus = 'open' }: { actorEm
 
   async function openNewOrder(template?: OrderSummary) {
     if (catalogLoading) return;
+    const requestId = ++openingOrderRequestRef.current;
     const startedAt = performance.now();
     setError('');
     setCatalogLoading(true);
@@ -296,13 +298,16 @@ export function OrderWorkspace({ actorEmail, initialStatus = 'open' }: { actorEm
     try {
       if (!current) {
         current = await loadOrderBootstrap(actorEmail);
+        if (requestId !== openingOrderRequestRef.current) return;
         dataRef.current = current;
         setData(current);
         setDeviceDraftState(readOfflineOrderDraft(localStorage, current.actor.email)?.state || null);
       }
     } catch (cause) {
-      setError(cause instanceof Error ? cause.message : 'Unable to load order capture');
-      setCatalogLoading(false);
+      if (requestId === openingOrderRequestRef.current) {
+        setError(cause instanceof Error ? cause.message : 'Unable to load order capture');
+        setCatalogLoading(false);
+      }
       return;
     }
     try {
@@ -318,6 +323,7 @@ export function OrderWorkspace({ actorEmail, initialStatus = 'open' }: { actorEm
         ? Promise.resolve(null)
         : loadOrderCustomers(actorEmail, customerVersion);
       const [catalogResult, customerResult] = await Promise.all([catalogRequest, customerRequest]);
+      if (requestId !== openingOrderRequestRef.current) return;
       if (catalogResult) {
         catalog = catalogResult.catalog;
       }
@@ -348,10 +354,15 @@ export function OrderWorkspace({ actorEmail, initialStatus = 'open' }: { actorEm
       setCreating(true);
       recordOrderClientTiming('order_open_ms', startedAt);
     } catch (cause) {
-      setError(cause instanceof Error ? cause.message : 'Unable to load Tally customers and products');
+      if (requestId === openingOrderRequestRef.current) setError(cause instanceof Error ? cause.message : 'Unable to load Tally customers and products');
     } finally {
-      setCatalogLoading(false);
+      if (requestId === openingOrderRequestRef.current) setCatalogLoading(false);
     }
+  }
+
+  function cancelOrderPreparation() {
+    openingOrderRequestRef.current += 1;
+    setCatalogLoading(false);
   }
 
   function warmOrderCapture() {
@@ -682,6 +693,7 @@ export function OrderWorkspace({ actorEmail, initialStatus = 'open' }: { actorEm
         </section>
       </div>
 
+      {catalogLoading && !creating ? <div className="fixed inset-0 z-50 flex items-center justify-center bg-[#092f36]/45 p-4" role="presentation"><dialog open aria-modal="true" aria-label="Preparing order" onKeyDown={(event) => { if (event.key === 'Escape') cancelOrderPreparation(); }} className="relative m-auto w-full max-w-sm rounded-2xl border border-[#dce7e5] bg-white p-6 shadow-2xl"><h2 className="text-lg font-black text-[#092f36]">Preparing order</h2><p className="mt-2 text-sm text-[#587275]">Loading customer and product lists…</p><button type="button" autoFocus onClick={cancelOrderPreparation} className="mt-5 min-h-10 rounded-xl border border-[#cedfdd] px-4 text-sm font-bold text-[#31585d]">Cancel</button></dialog></div> : null}
       {creating && data ? (
         <NewOrderPanel
           data={data}

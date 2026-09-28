@@ -3,7 +3,7 @@ import { createRoot } from 'react-dom/client';
 import { CustomerPriceBook } from '@/components/customer-price-book';
 import { PricingWorkspace } from '@/components/pricing-workspace';
 import { PricingOptions } from '@/components/pricing-options';
-import { HydratedNewOrderPanel } from '@/components/order-workspace';
+import { HydratedNewOrderPanel, OrderWorkspace } from '@/components/order-workspace';
 import type { PricingLineResolution } from '@/lib/pricing-types';
 import type { OrderBootstrap } from '@/lib/order-types';
 import '@/app/globals.css';
@@ -18,8 +18,7 @@ const row = {
 function Fixture() {
   const [entry, setEntry] = useState({ rate: '445', reason: '' });
   const parameters = new URLSearchParams(location.search);
-  if (parameters.get('view') === 'order-entry') {
-    const data: OrderBootstrap = {
+  const data: OrderBootstrap = {
       actor: { email: 'order-desk@example.test', role: 'sales' },
       snapshot: { company: 'TEST', fetchedAt: new Date().toISOString(), catalog: [
         { tallyKey: 'GLUCOSE-A', item: 'Glucose A', group: 'Diasys', baseUnit: 'Nos', closing: 10, active: true },
@@ -31,7 +30,9 @@ function Fixture() {
         { id: '22222222-2222-4222-8222-222222222222', name: 'Test Beta Laboratory', phone: null, city: null, tallyKey: 'BETA' },
       ],
       orders: [], operations: {},
-    };
+  };
+  if (parameters.get('view') === 'orders-workspace') return <OrderWorkspace actorEmail={data.actor.email} />;
+  if (parameters.get('view') === 'order-entry') {
     return <HydratedNewOrderPanel data={data} templateOrder={null} onClose={() => undefined} onCreated={() => undefined} onViewCustomer={() => undefined} />;
   }
   if (parameters.get('view') === 'workspace') return <PricingWorkspace actorEmail="fixture@example.test" actorRole="management"/>;
