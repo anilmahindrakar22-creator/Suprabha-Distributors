@@ -1,5 +1,9 @@
 $ErrorActionPreference = 'Stop'
 . (Join-Path $PSScriptRoot '../desktop-connector/recovery.ps1')
+$dashboardSource = Get-Content -LiteralPath (Join-Path $PSScriptRoot '../desktop-connector/dashboard.ps1') -Raw
+if ($dashboardSource -notmatch 'request=local_http status=disconnected' -or $dashboardSource -notmatch 'catch \[System\.Net\.Sockets\.SocketException\]') {
+    throw 'Local HTTP client disconnects are not contained by the connector'
+}
 $directory = Join-Path ([IO.Path]::GetTempPath()) ([guid]::NewGuid().ToString('N'))
 [IO.Directory]::CreateDirectory($directory) | Out-Null
 $path = Join-Path $directory 'snapshot.json'
@@ -78,4 +82,4 @@ if ($baseline['Kit'].dateKey -ne '20260905' -or $baseline['Kit'].quantity -ne 2)
 [IO.File]::Delete($healthPath)
 [IO.File]::Delete("$healthPath.previous")
 [IO.Directory]::Delete($directory)
-Write-Output 'PASS: restart recovery, timestamp preservation, durable customer/catalog caches, saved/live company validation, atomic replacement, bounded health log, corrupt cache, exclusive lock, compact baseline'
+Write-Output 'PASS: disconnect containment, restart recovery, timestamp preservation, durable customer/catalog caches, saved/live company validation, atomic replacement, bounded health log, corrupt cache, exclusive lock, compact baseline'

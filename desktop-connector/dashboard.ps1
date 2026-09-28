@@ -473,11 +473,19 @@ function Read-ReorderData {
 function Send-Response($Client, [int]$Status, [string]$ContentType, [byte[]]$Body) {
     $statusText = if ($Status -eq 200) { 'OK' } else { 'Service Unavailable' }
     $header = "HTTP/1.1 $Status $statusText`r`nContent-Type: $ContentType`r`nContent-Length: $($Body.Length)`r`nCache-Control: no-store`r`nConnection: close`r`n`r`n"
-    $stream = $Client.GetStream()
-    $headerBytes = [Text.Encoding]::ASCII.GetBytes($header)
-    $stream.Write($headerBytes, 0, $headerBytes.Length)
-    $stream.Write($Body, 0, $Body.Length)
-    $stream.Flush()
+    try {
+        $stream = $Client.GetStream()
+        $headerBytes = [Text.Encoding]::ASCII.GetBytes($header)
+        $stream.Write($headerBytes, 0, $headerBytes.Length)
+        $stream.Write($Body, 0, $Body.Length)
+        $stream.Flush()
+    } catch [System.IO.IOException] {
+        # A browser can abandon a request while Tally or cloud work is in progress.
+        # The local client is disposable; the long-running connector is not.
+        Write-ConnectorHealth "$([datetimeoffset]::Now.ToString('o')) request=local_http status=disconnected"
+    } catch [System.Net.Sockets.SocketException] {
+        Write-ConnectorHealth "$([datetimeoffset]::Now.ToString('o')) request=local_http status=disconnected"
+    }
 }
 
 $existingUrl = "http://localhost:$Port"
@@ -551,6 +559,8 @@ try {
                 # Chrome may open a speculative connection and close it without
                 # completing an HTTP request. This is normal and can be ignored.
                 continue
+            } catch [System.Net.Sockets.SocketException] {
+                continue
             }
             $path = if ($requestLine -match '^GET\s+([^\s]+)') { $matches[1] } else { '/' }
             if ($path -like '/api/reorder*') {
@@ -571,6 +581,12 @@ try {
             } else {
                 Send-Response $client 200 'text/html; charset=utf-8' ([IO.File]::ReadAllBytes($indexPath))
             }
+        } catch [System.IO.IOException] {
+            Write-ConnectorHealth "$([datetimeoffset]::Now.ToString('o')) request=local_http status=disconnected"
+            continue
+        } catch [System.Net.Sockets.SocketException] {
+            Write-ConnectorHealth "$([datetimeoffset]::Now.ToString('o')) request=local_http status=disconnected"
+            continue
         } finally { $client.Close() }
     }
 } finally { $listener.Stop(); $instanceLock.Dispose() }
