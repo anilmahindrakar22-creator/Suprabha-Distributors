@@ -3,7 +3,7 @@
   "checkedAt": "2026-09-28",
   "purpose": "Read-only release evidence; NOT an executable migration plan or authority to repair history.",
   "normalization": "Remove CR characters and trim surrounding whitespace only; SHA-256 over UTF-8.",
-  "localGitHead": "018d9803f9390d4da6a6c0b106f1ab059060a552",
+  "localGitHead": "dd791a9ff937feed4e667d687eec434dd8d0415b",
   "remoteOnly": [
     {
       "localFile": "20260829054025_create_stockflow_private_snapshots.sql",
@@ -580,9 +580,9 @@
     {
       "localFile": "20260927180000_snapshot_pricing_import_privilege.sql",
       "localSha256": "3e98b2022094e6e435fb5f3187e85d1835b0ab3d44344d8dcc0d419359b897f0",
-      "remoteVersion": null,
-      "remoteSha256": null,
-      "status": "not_deployed"
+      "remoteVersion": "20260928072110",
+      "remoteSha256": "3e98b2022094e6e435fb5f3187e85d1835b0ab3d44344d8dcc0d419359b897f0",
+      "status": "exact_normalized_match"
     }
   ]
 }
