@@ -54,3 +54,20 @@ test('optional order details stay compact and retain entered values', async ({ p
   await expect(page.getByLabel('Promised delivery')).toHaveValue('2026-10-05');
   await expect(page.getByLabel('Order notes')).toHaveValue('Call before delivery');
 });
+
+test('device draft protection stays explicit without dominating the form', async ({ page }) => {
+  await page.goto('/?view=order-entry');
+  const consent = page.getByRole('checkbox', { name: 'Save draft on this device' });
+  await expect(consent).not.toBeChecked();
+  const explanation = page.locator('details').filter({ hasText: 'About device drafts' });
+  await expect(explanation).toBeVisible();
+  await expect(explanation.getByText('Unsubmitted drafts expire after seven days.')).toBeHidden();
+  await explanation.locator('summary').click();
+  await expect(explanation.getByText('Unsubmitted drafts expire after seven days.')).toBeVisible();
+  await consent.check();
+  await page.reload();
+  await expect(consent).toBeChecked();
+  await consent.uncheck();
+  await page.reload();
+  await expect(consent).not.toBeChecked();
+});
