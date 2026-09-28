@@ -70,7 +70,7 @@ begin
   begin
     perform public.stockflow_pricing_gateway('price-book-test-key','book-admin@test.local','apply_product_price_impact',payload||jsonb_build_object('idempotencyKey','book-stale-approval-02'));
     raise exception 'Stale bulk preview accepted';
-  exception when serialization_failure then null; end;
+  exception when sqlstate 'PT409' then null; end;
 
   r:=private.stockflow_customer_price(a,'BOOK-GLUCOSE','2026-09-13');
   payload:=jsonb_build_object('customerId',a,'tallyKey','BOOK-GLUCOSE','pricingDate','2026-09-13','evidenceHash',r->>'evidenceHash','expectedDecisionId',r->>'currentDecisionId','choice','continuity','reason','Maintain commercial continuity','idempotencyKey','book-single-approval-03');
@@ -82,7 +82,7 @@ begin
   begin
     perform public.stockflow_pricing_gateway('price-book-test-key','book-admin@test.local','apply_price_book',payload||jsonb_build_object('idempotencyKey','book-single-stale-04'));
     raise exception 'Concurrent row edit accepted';
-  exception when serialization_failure then null; end;
+  exception when sqlstate 'PT409' then null; end;
 
   insert into private.stockflow_orders(customer_id,customer_name,source,status,idempotency_key,created_by_email,updated_by_email) values(a,'Book A','phone','packed','book-order-01','book-admin@test.local','book-admin@test.local') returning id into o;
   insert into private.stockflow_order_lines(order_id,tally_item_key,item_name,quantity) values(o,'BOOK-GLUCOSE','Glucose',1) returning id into l;
@@ -93,7 +93,7 @@ begin
   begin
     perform public.stockflow_pricing_gateway('price-book-test-key','book-admin@test.local','submit_order_pricing',payload);
     raise exception 'Stale cost approved for billing';
-  exception when serialization_failure then null; end;
+  exception when sqlstate 'PT409' then null; end;
   if exists(select 1 from private.stockflow_command_results where idempotency_key='book-order-stale-cost-05') then raise exception 'Failed approval left partial command'; end if;
   r:=private.stockflow_resolve_pricing_line(l,'2026-09-13');
   if (r->>'proposedRate')::numeric<>420 or r->>'guardrail'<>'PRICE_REVIEW_REQUIRED' then
@@ -178,7 +178,7 @@ begin
       perform public.stockflow_pricing_gateway('price-book-test-key','book-admin@test.local','approve_price_exception',jsonb_build_object(
         'exceptionId',pending_exception,'expectedVersion',1,'pricingDate','2026-09-13','reason','Stale batch must fail','idempotencyKey','sibling-stale-approval-'||scenario));
       raise exception 'Stale sibling pricing was approved in scenario %',scenario;
-    exception when serialization_failure then null; end;
+    exception when sqlstate 'PT409' then null; end;
     if result_before is distinct from (select to_jsonb(o) from private.stockflow_orders o where o.id=order_id)
       or (select count(*) from private.stockflow_pricing_events)<>audit_count
       or (select count(*) from private.stockflow_outbox)<>outbox_count
@@ -212,7 +212,7 @@ begin
   begin
     update private.stockflow_orders set status='billed_in_tally' where id=order_id;
     raise exception 'Stale approval crossed billing boundary';
-  exception when serialization_failure then null; end;
+  exception when sqlstate 'PT409' then null; end;
   if not exists(select 1 from private.stockflow_orders where id=order_id and status='awaiting_tally_billing' and pricing_snapshot_id=snapshot_id) then
     raise exception 'Rejected handoff altered order or snapshot';
   end if;
@@ -276,7 +276,7 @@ begin
     begin
       update private.stockflow_orders set status='billed_in_tally' where id=order_id;
       raise exception 'Changed % evidence crossed billing boundary',source_kind;
-    exception when serialization_failure then null; end;
+    exception when sqlstate 'PT409' then null; end;
     if not exists(select 1 from private.stockflow_orders where id=order_id and status='awaiting_tally_billing' and pricing_snapshot_id=snapshot_id)
       or snapshot_payload is distinct from (select pricing_payload from private.stockflow_billing_snapshots where id=snapshot_id)
     then raise exception 'Rejected % handoff altered order or immutable snapshot',source_kind; end if;

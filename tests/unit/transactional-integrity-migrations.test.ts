@@ -18,7 +18,7 @@ describe('transactional integrity database assets', () => {
 
   it('tests duplicate replay and stale-writer rejection through real gateways', () => {
     expect(integrationTest.match(/public\.stockflow_edit_gateway/g)).toHaveLength(3);
-    expect(integrationTest).toContain('exception when serialization_failure');
+    expect(integrationTest).toContain("exception when sqlstate 'PT409'");
     expect(integrationTest).toContain('Duplicate edit created');
   });
 

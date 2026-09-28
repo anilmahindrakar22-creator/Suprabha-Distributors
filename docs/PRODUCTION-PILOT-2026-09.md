@@ -66,3 +66,55 @@ Do not use real patient data. Do not change Tally, connector, permissions or Ser
 ## Pilot exit gate
 
 Proceed only if five working days complete without duplicate submissions, lost committed orders, cross-account draft exposure, unexplained Tally slowdowns or unresolved critical workflow failures. Service expansion remains deferred.
+
+## 27 September 2026 — Supabase CPU incident (pilot hold)
+
+The project reported high CPU. Read-only logs showed approximately 6,000 PostgreSQL `40001` order/pricing conflicts per minute, sustained across multiple PostgREST sessions. The caller and retry source are not yet identified. Query performance and missing indexes are not established as the primary cause.
+
+The owner approved a temporary order-entry interruption while keeping the Supabase project running. The owner deleted the modern `default` secret API key (masked prefix `sb_secret_K54k1`) in the dashboard; this **did not** stop the conflicts. Do not assume that deletion was the fix or that Edge Function database credentials were unaffected.
+
+As a reversible emergency containment, `EXECUTE` was revoked from `service_role` on `public.stockflow_order_gateway(text,text,text,jsonb)` and `public.stockflow_pricing_gateway(text,text,text,jsonb)`. The original ACL for each was `{postgres=X/postgres,service_role=X/postgres}`. The `40001` rate fell from 6,000/minute to 1,124 in the cutover minute and then zero in the next observed minute; sampled PostgREST sessions were idle. Order transitions and pricing actions are intentionally unavailable while these grants are absent. Business rows, Tally, and project status were not changed by the grant revocation.
+
+Do not restore these grants until the repeated caller is identified, retry behavior is bounded, the Edge Function credential path is verified, and a controlled smoke test is ready. The exact privilege restoration is:
+
+```sql
+BEGIN;
+GRANT EXECUTE ON FUNCTION public.stockflow_order_gateway(text,text,text,jsonb) TO service_role;
+GRANT EXECUTE ON FUNCTION public.stockflow_pricing_gateway(text,text,text,jsonb) TO service_role;
+COMMIT;
+```
+
+After restoration, verify the ACLs, the order workflow, Tally snapshot freshness, and the per-minute `40001` rate before resuming the pilot. No paid compute upgrade or project pause was made.
+
+At the time of containment, the latest `stockflow_snapshots.updated_at` was 21 September 2026 10:22 UTC, so cloud stock freshness was already overdue before this intervention. Connector/cloud-sync repair remains separate from the CPU containment.
+
+### Containment follow-up, 27 September
+
+The failed commands were repeatedly carrying stale order versions or pricing evidence. Those `40001` results are deliberate conflict rejections, not a reason to retry the same request. The exact originating client remains unproven: available Site Worker and Edge Function logs did not account for the database request rate. Do not describe this as a confirmed credential compromise or a confirmed browser retry loop.
+
+Root cause clarification, 28 September: retained PostgreSQL logs show 4,150,654
+`40001` entries on 27 September and 8,589,264 on 26 September, while the retained
+HTTP logs contain only a small number of matching gateway calls. The database was
+running PostgREST 14.5. Supabase documents that PostgREST 14 internally retries an
+RPC transaction when application code deliberately raises SQLSTATE `40001`; one
+stale request can therefore create a large internal retry loop. StockFlow used that
+database serialization code for ordinary optimistic-concurrency and pricing-evidence
+rejections. This is the established amplification mechanism. The original request
+that first triggered a stale rejection remains unidentified and is not required to
+explain the sustained load.
+
+The corrective migration changes only explicit StockFlow business-conflict raises
+from `40001` to PostgREST's non-retryable HTTP-conflict code `PT409`. Genuine database
+serialization failures remain `40001`. Client and Edge mappings accept both codes
+during rollout. A deployment-order replay proves no StockFlow function retains an
+explicit retryable business-conflict raise and verifies the stale-write behavior,
+ACID rollback, concurrency controls and existing order preservation.
+
+The release process missed a **negative-path load** scenario. Transaction tests covered rollback, concurrency and idempotency, but not a client sending an already-rejected mutation thousands of times; there was no per-actor request budget or conflict-rate pilot gate. This is an operational gap, not a reason to relax version checks.
+
+The owner created a replacement named Supabase backend secret (`stockflowedge`). The order Edge Function now uses that modern secret in the `apikey` header only. A new random 256-bit order gateway credential replaced the old Site and database values; only its SHA-256 verifier is in source. Edge rejects an outdated gateway key before calling PostgREST. Accepted mutating requests have a per-actor, per-isolate budget of 60/minute, a single in-flight copy of a command, and a 60-second cooldown when that exact command conflicts; a new idempotency key alone does not bypass the cooldown. This is a safety brake, not a globally distributed quota, and direct PostgREST calls do not pass through it.
+
+Order Edge Function version 23 and Site environment revision 4 were deployed. The two `service_role` grants were restored at 12:07 UTC after the new credential path was deployed. The live administrator Orders and Pricing read paths loaded, and one intentionally invalid `create_order` probe returned `22023` before any business write. PostgreSQL logs had **zero new `40001` conflicts** in the observed minutes through 12:13 UTC; the sampled database had one active and eight other ordinary service sessions. The seven-day infrastructure peak still displays 100% and must not be mistaken for the current CPU rate; the live CPU report was temporarily unavailable after restoration. The 60-minute memory report showed 406.51 MB used with a broadly flat chart, and active sessions were not accumulating. This alone is not evidence of a leak; monitor swap, free memory and the multi-day trend before changing memory configuration.
+
+For future releases, do not treat the incident as resolved solely because one smoke test passes. Check per-minute `40001` and `42501` counts, active database sessions and current CPU over the next working day. If conflicts exceed **10/minute for 5 consecutive minutes**, immediately pause the two gateway grants above, inspect the request path and credential use, and do not purchase additional compute to mask the problem. Review any new mutation/retry path with a repeated-conflict test and ensure rejected commands do not spin. The Tally snapshot remains stale and is a separate connector-health issue; this incident response did not change Tally.
+

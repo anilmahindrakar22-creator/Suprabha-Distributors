@@ -51,7 +51,7 @@ begin
     perform public.dblink_exec('pricing_a','commit');
     select value into r from public.dblink_get_result('pricing_b') as t(value jsonb);
     perform * from public.dblink_get_result('pricing_b') as t(value jsonb);
-    if scenario<3 and r->>'errorCode' is distinct from '40001' then raise exception 'Stale approval not rejected: %',r; end if;
+    if scenario<3 and r->>'errorCode' is distinct from 'PT409' then raise exception 'Stale approval not rejected: %',r; end if;
     if scenario=3 and r is distinct from first_result then raise exception 'Duplicate response differs'; end if;
     expected_rows:=case when scenario=1 then 1 else 2 end;
     if (select count(*) from private.stockflow_price_book_decisions) <> count_before+expected_rows then raise exception 'Concurrent request left extra decisions'; end if;
@@ -116,7 +116,7 @@ begin
   perform * from public.dblink_get_result('exception_b') as t(value jsonb);
   perform public.dblink_disconnect('exception_a'); perform public.dblink_disconnect('exception_b');
 
-  if v_second_result->>'errorCode' is distinct from '40001' then raise exception 'Stale concurrent exception approval was not rejected: %',v_second_result; end if;
+  if v_second_result->>'errorCode' is distinct from 'PT409' then raise exception 'Stale concurrent exception approval was not rejected: %',v_second_result; end if;
   if public.test_pricing_call('concurrent-a@test.local','approve_price_exception',v_first_payload) is distinct from v_first_result then raise exception 'Winning exception approval replay changed'; end if;
   if not exists(select 1 from private.stockflow_price_exceptions where id=v_exception and state='approved' and version=2 and decided_by_email='concurrent-a@test.local')
     or not exists(select 1 from private.stockflow_order_pricing_decisions where order_line_id=v_line and state='approved' and approved_by_email='concurrent-a@test.local')
