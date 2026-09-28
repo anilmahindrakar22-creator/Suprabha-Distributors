@@ -78,7 +78,8 @@ function Publish-CloudSnapshot([string]$Json) {
     } catch {
         $watch.Stop()
         $script:cloudUploadFailures++
-        Write-ConnectorHealth "$([datetimeoffset]::Now.ToString('o')) request=cloud_upload durationMs=$($watch.ElapsedMilliseconds) consecutiveFailures=$($script:cloudUploadFailures) status=failed"
+        $failureCode = Get-ConnectorUploadFailureCode $_
+        Write-ConnectorHealth "$([datetimeoffset]::Now.ToString('o')) request=cloud_upload durationMs=$($watch.ElapsedMilliseconds) consecutiveFailures=$($script:cloudUploadFailures) status=failed failure=$failureCode"
         # The local dashboard must remain usable even when the internet is down.
         Write-Host 'Cloud upload pending; the saved snapshot will be retried.' -ForegroundColor DarkYellow
         return $false
