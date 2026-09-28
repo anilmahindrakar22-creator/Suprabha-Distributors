@@ -104,7 +104,7 @@ test('reload recovery stores only a receipt and checks the server without resubm
   await page.goto('/');
   await page.getByLabel('Select customer').fill('Test');
   await page.getByRole('button', { name: 'Test Laboratory', exact: true }).click();
-  await page.getByRole('button', { name: 'Review item' }).click();
+  await page.getByRole('button', { name: 'Review item', exact: true }).click();
   await page.getByLabel(/^Decision note/).fill('Sensitive commercial reason');
   await page.getByRole('button', { name: 'Recommended ₹445.00' }).click();
   await expect(page.getByText('Failed to fetch', { exact: true })).toBeVisible();
@@ -149,7 +149,7 @@ for (const mode of ['customer', 'base', 'impact'] as const) {
     if (mode !== 'customer') await page.getByRole('button', { name: mode === 'base' ? 'Base / default prices' : 'Purchase-cost review', exact: true }).click();
     await page.getByLabel(mode === 'customer' ? 'Select customer' : 'Select product').fill(mode === 'customer' ? 'Test' : 'Glucose');
     await page.getByRole('button', { name: mode === 'customer' ? 'Test Laboratory' : 'Glucose reagent', exact: true }).click();
-    if (mode === 'customer') await page.getByRole('button', { name: 'Review item' }).click();
+    if (mode === 'customer') await page.getByRole('button', { name: 'Review item', exact: true }).click();
     if (mode === 'base') {
       await page.getByLabel('Base selling price ₹').fill('445');
       await page.getByLabel('Effective from').fill('2026-09-14');
@@ -162,7 +162,7 @@ for (const mode of ['customer', 'base', 'impact'] as const) {
     await save.click();
     await expect.poll(() => commands.length).toBe(2);
     expect(commands[1]).toEqual(commands[0]);
-    if (mode === 'customer') await page.getByRole('button', { name: 'Review item' }).click();
+    if (mode === 'customer') await page.getByRole('button', { name: 'Review item', exact: true }).click();
     if (reason) await reason.fill('A different approved decision');
     await (mode === 'impact' ? page.getByRole('button', { name: 'Pass through cost increase' }) : save).click();
     await expect.poll(() => commands.length).toBe(3);
@@ -203,7 +203,7 @@ test('customer-first worksheet defaults to Purchased and submits a bound decisio
   await page.getByRole('button', { name: 'Test Laboratory', exact: true }).click();
   await expect(page.getByText('Glucose reagent', { exact: true })).toBeVisible();
   expect(reads[0]).toContain('tab=purchased');
-  await page.getByRole('button', { name: 'Review item' }).click();
+  await page.getByRole('button', { name: 'Review item', exact: true }).click();
   await expect(page.getByText('Price source:')).toBeVisible();
   await expect(page.getByText('Last Tally sales invoice')).toBeVisible();
   await expect(page.getByText('Current selling rate', { exact: true })).toBeVisible();
@@ -221,7 +221,7 @@ test('Accounts can inspect economics but cannot approve a customer book price', 
   await page.goto('/?role=accounts');
   await page.getByLabel('Select customer').fill('Test');
   await page.getByRole('button', { name: 'Test Laboratory', exact: true }).click();
-  await page.getByRole('button', { name: 'Review item' }).click();
+  await page.getByRole('button', { name: 'Review item', exact: true }).click();
   await page.getByLabel(/^Decision note/).fill('Review only');
   await expect(page.getByRole('button', { name: 'Recommended ₹445.00' })).toBeDisabled();
 });
@@ -261,4 +261,37 @@ test('customer book previews visible economics and approves eligible purchased i
   expect(posts[0].payload.idempotencyKey).toMatch(/^[0-9a-f-]{36}$/);
   await expect(page.getByText('1 recommended price approved. 2 fixed, already-approved, or review-needed items were left unchanged.')).toBeVisible();
   expect(await page.evaluate(() => sessionStorage.getItem('stockflow:pricing-recovery:fixture@example.test'))).toBe('[]');
+});
+
+test('customer group prices use a gross margin preview and bind one approval to its hash', async ({ page }) => {
+  const posts: Array<{ action: string; payload: Record<string, unknown> }> = [];
+  await page.route('**/api/orders?customers=1', route => route.fulfill({ json: { customers: [{ id: customerId, name: 'Test Laboratory' }] } }));
+  await page.route('**/api/pricing**', async route => {
+    if (route.request().method() === 'POST') {
+      const command = route.request().postDataJSON(); posts.push(command);
+      await route.fulfill({ json: command.action === 'preview_customer_group_margin' ? {
+        customerId, itemGroup: 'Sysmex', grossMarginPercent: 35, previewHash: 'c'.repeat(64), eligibleCount: 1, excludedCount: 1,
+        rows: [
+          { tallyKey: 'ITEM-1', itemName: 'Sysmex reagent', lastRate: 500, currentCost: 300, proposedRate: 461.54, grossMarginPercent: 35, eligible: true, exclusionReason: null, costChange: 25 },
+          { tallyKey: 'ITEM-2', itemName: 'Sysmex control', lastRate: 400, currentCost: null, proposedRate: null, grossMarginPercent: null, eligible: false, exclusionReason: 'Missing current cost', costChange: null },
+        ],
+      } : { ok: true, applied: 1, excluded: 1 } });
+      return;
+    }
+    await route.fulfill({ json: { rows: [row], offset: 0, hasMore: false } });
+  });
+  await page.goto('/');
+  await page.getByLabel('Select customer').fill('Test');
+  await page.getByRole('button', { name: 'Test Laboratory', exact: true }).click();
+  await page.getByLabel('Catalog group').selectOption('Sysmex');
+  await page.getByLabel('Gross margin percent').fill('35');
+  await page.getByRole('button', { name: 'Preview item prices' }).click();
+  const groupPreview = page.getByRole('region', { name: 'Group gross margin pricing' }).getByRole('table');
+  await expect(groupPreview).toContainText('₹461.54');
+  await expect(groupPreview).toContainText('Missing current cost');
+  await page.getByRole('button', { name: 'Approve 1 gross margin prices' }).click();
+  expect(posts[0]).toEqual({ action: 'preview_customer_group_margin', payload: { customerId, itemGroup: 'Sysmex', grossMarginPercent: 35 } });
+  expect(posts[1]).toMatchObject({ action: 'approve_customer_group_margin', payload: { customerId, itemGroup: 'Sysmex', grossMarginPercent: 35, previewHash: 'c'.repeat(64) } });
+  expect(posts[1].payload.idempotencyKey).toMatch(/^[0-9a-f-]{36}$/);
+  await expect(page.getByText('1 item price approved at 35.00% gross margin. 1 excluded item was left unchanged.')).toBeVisible();
 });

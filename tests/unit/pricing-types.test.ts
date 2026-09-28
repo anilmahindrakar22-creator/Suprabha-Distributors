@@ -41,4 +41,14 @@ describe('pricing API contracts', () => {
     expect(validatePricingCommand({ ...valid, payload: { ...valid.payload, minimumMarginPercent: 30, targetMarginPercent: 20 } })).toBeNull();
     expect(validatePricingCommand({ ...valid, payload: { ...valid.payload, reason: '' } })).toBeNull();
   });
+
+  it('validates customer group gross margin approvals without accepting rupee rates', () => {
+    const valid = { action: 'approve_customer_group_margin', payload: { customerId: id, itemGroup: 'Sysmex', grossMarginPercent: 32.5, previewHash: 'a'.repeat(64), idempotencyKey: '1234567890abcdef' } };
+    expect(validatePricingCommand(valid)?.action).toBe('approve_customer_group_margin');
+    expect(validatePricingCommand({ ...valid, payload: { ...valid.payload, itemGroup: 'SYS 480' } })).toBeNull();
+    expect(validatePricingCommand({ ...valid, payload: { ...valid.payload, grossMarginPercent: 100 } })).toBeNull();
+    expect(validatePricingCommand({ ...valid, payload: { ...valid.payload, grossMarginPercent: 0 } })).toBeNull();
+    expect(validatePricingCommand({ ...valid, payload: { ...valid.payload, grossMarginPercent: -1 } })).toBeNull();
+    expect(validatePricingCommand({ ...valid, payload: { ...valid.payload, previewHash: 'stale' } })).toBeNull();
+  });
 });

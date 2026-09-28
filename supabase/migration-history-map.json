@@ -585,6 +585,13 @@
       "status": "exact_normalized_match"
     },
     {
+      "localFile": "20260928110000_customer_group_gross_margin.sql",
+      "localSha256": "e07bf146a9a884dc27c78c47aba196c0af0669eded04046d0f8580162bd1b625",
+      "remoteVersion": null,
+      "remoteSha256": null,
+      "status": "not_deployed"
+    },
+    {
       "localFile": "20260928104500_non_retryable_business_conflicts.sql",
       "localSha256": "2c41e1974355526524b06deb873243e729bc95fe7add3351b309131ec6226347",
       "remoteVersion": "20260928104105",
