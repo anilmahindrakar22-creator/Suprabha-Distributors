@@ -12,7 +12,7 @@ describe('read-only pricing release preflight', () => {
   it('validates the saved production evidence after deployment', () => {
     const result = pricingReleasePreflight(original, source);
     expect(result.pending).toEqual([]);
-    expect(result.deployed).toHaveLength(81);
+    expect(result.deployed).toHaveLength(82);
     const names = result.deployed.map((entry: { localFile: string }) => entry.localFile);
     expect(names.slice(0, 2)).toEqual([
       '20260829054025_create_stockflow_private_snapshots.sql',
