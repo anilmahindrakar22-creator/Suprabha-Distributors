@@ -644,3 +644,11 @@ Completed after the user requested one more slice:
   reports only informational no-policy notices on intentionally private RLS tables.
 - The public Site deployment, authenticated production smoke, PR merge and office-pilot gate
   are still pending. Do not report the pricing release complete from migrations alone.
+
+## Connector upload recovery — 28 September 2026
+
+- PR #31 merged to `main` at `dd791a9ff937feed4e667d687eec434dd8d0415b` after the quality/security and CodeQL checks passed. The production-order migration replay, connector tests, 402 unit tests, typecheck, lint and production build also passed.
+- Applied only `snapshot_pricing_import_privilege` as remote migration `20260928072110`. Its normalized SQL hash matches the local file. The private import trigger now runs under its trusted owner with a pinned search path; direct table/function access for app roles was not added.
+- A Tally snapshot already saved on the office PC uploaded with HTTP 200. After restarting the scheduled connector, its own cloud upload logged `status=ok` and zero consecutive failures. No Tally voucher or setting was changed.
+- The cloud snapshot advanced from 21 September to 28 September. The import recorded pricing evidence and removed it from the public snapshot. Orders and billing snapshots remained at 28 and 2; one customer ledger from the saved snapshot was imported, taking the customer count from 458 to 459.
+- No verified production backup exists; the owner previously accepted the risk to test/disposable records. This connector fix does not prove the broader office pilot or resolve the pricing policy values and two-role acceptance. Continue observing upload freshness and Supabase resource use.
