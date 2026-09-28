@@ -92,6 +92,24 @@ At the time of containment, the latest `stockflow_snapshots.updated_at` was 21 S
 
 The failed commands were repeatedly carrying stale order versions or pricing evidence. Those `40001` results are deliberate conflict rejections, not a reason to retry the same request. The exact originating client remains unproven: available Site Worker and Edge Function logs did not account for the database request rate. Do not describe this as a confirmed credential compromise or a confirmed browser retry loop.
 
+Root cause clarification, 28 September: retained PostgreSQL logs show 4,150,654
+`40001` entries on 27 September and 8,589,264 on 26 September, while the retained
+HTTP logs contain only a small number of matching gateway calls. The database was
+running PostgREST 14.5. Supabase documents that PostgREST 14 internally retries an
+RPC transaction when application code deliberately raises SQLSTATE `40001`; one
+stale request can therefore create a large internal retry loop. StockFlow used that
+database serialization code for ordinary optimistic-concurrency and pricing-evidence
+rejections. This is the established amplification mechanism. The original request
+that first triggered a stale rejection remains unidentified and is not required to
+explain the sustained load.
+
+The corrective migration changes only explicit StockFlow business-conflict raises
+from `40001` to PostgREST's non-retryable HTTP-conflict code `PT409`. Genuine database
+serialization failures remain `40001`. Client and Edge mappings accept both codes
+during rollout. A deployment-order replay proves no StockFlow function retains an
+explicit retryable business-conflict raise and verifies the stale-write behavior,
+ACID rollback, concurrency controls and existing order preservation.
+
 The release process missed a **negative-path load** scenario. Transaction tests covered rollback, concurrency and idempotency, but not a client sending an already-rejected mutation thousands of times; there was no per-actor request budget or conflict-rate pilot gate. This is an operational gap, not a reason to relax version checks.
 
 The owner created a replacement named Supabase backend secret (`stockflowedge`). The order Edge Function now uses that modern secret in the `apikey` header only. A new random 256-bit order gateway credential replaced the old Site and database values; only its SHA-256 verifier is in source. Edge rejects an outdated gateway key before calling PostgREST. Accepted mutating requests have a per-actor, per-isolate budget of 60/minute, a single in-flight copy of a command, and a 60-second cooldown when that exact command conflicts; a new idempotency key alone does not bypass the cooldown. This is a safety brake, not a globally distributed quota, and direct PostgREST calls do not pass through it.

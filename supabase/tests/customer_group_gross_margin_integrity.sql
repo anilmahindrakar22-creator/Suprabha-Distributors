@@ -98,7 +98,7 @@ begin
       payload||jsonb_build_object('previewHash',repeat('a',64),
         'idempotencyKey','group-margin-stale-0001'));
     raise exception 'Stale preview was accepted';
-  exception when serialization_failure then null; end;
+  exception when sqlstate 'PT409' then null; end;
   if exists(select 1 from private.stockflow_command_results
     where idempotency_key='group-margin-stale-0001') then
     raise exception 'Stale preview left a receipt';

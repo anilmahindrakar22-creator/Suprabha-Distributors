@@ -91,7 +91,7 @@ export async function callOrderGateway<T>(
   const status =
     failure.code === '42501'
       ? 403
-      : failure.code === '40001'
+      : failure.code === '40001' || failure.code === 'PT409'
         ? 409
         : failure.code === '54000'
           ? 429

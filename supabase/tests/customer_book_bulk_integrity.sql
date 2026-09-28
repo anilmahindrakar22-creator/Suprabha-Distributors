@@ -99,7 +99,7 @@ begin
       'approve_customer_price_book',payload||jsonb_build_object(
         'idempotencyKey','customer-bulk-test-request-02'));
     raise exception 'Stale preview was accepted';
-  exception when serialization_failure then null; end;
+  exception when sqlstate 'PT409' then null; end;
   if exists (select 1 from private.stockflow_command_results
     where idempotency_key='customer-bulk-test-request-02') then
     raise exception 'Failed approval left a partial idempotency result';

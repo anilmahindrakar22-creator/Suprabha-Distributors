@@ -43,7 +43,7 @@ Deno.serve(async (request: Request) => {
     const data = await response.json();
     if (!response.ok) {
       const error = data as { code?: string; message?: string };
-      conflict = error.code === "40001";
+      conflict = error.code === "40001" || error.code === "PT409";
       const status = error.code === "42501" ? 403 : conflict ? 409 : error.code === "54000" ? 429 : 400;
       return reply({ message: error.message, code: error.code }, status);
     }
