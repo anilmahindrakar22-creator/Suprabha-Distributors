@@ -1430,6 +1430,13 @@ export function HydratedNewOrderPanel({ data, templateOrder, onClose, onCreated,
     }
   }
 
+  const orderDetailSummary = [
+    source === 'phone' ? '' : source === 'walk_in' ? 'Walk-in' : source === 'whatsapp' ? 'WhatsApp' : 'Email',
+    priority === 'normal' ? '' : priority === 'urgent' ? 'Urgent' : 'High priority',
+    expectedDeliveryDate ? `Promised delivery ${expectedDeliveryDate}` : '',
+    notes.trim() ? 'Notes added' : '',
+  ].filter(Boolean).join(' · ') || '(optional)';
+
   return (
     <div className="fixed inset-0 z-50 flex justify-end bg-[#092f36]/45 backdrop-blur-sm" role="presentation" onMouseDown={(event) => { if (event.target === event.currentTarget) onClose(); }}>
       <dialog open aria-labelledby="new-order-title" className="ml-auto mr-0 h-full max-h-none w-full max-w-2xl overflow-y-auto bg-[#f7f6f1] p-0 shadow-2xl">
@@ -1538,15 +1545,15 @@ export function HydratedNewOrderPanel({ data, templateOrder, onClose, onCreated,
             </fieldset>
 
             <details className="rounded-2xl border border-[#dce7e5] bg-white p-4">
-              <summary className="cursor-pointer text-sm font-bold text-[#456367]">Add order notes <span className="font-normal text-[#718487]">(optional)</span></summary>
-              <label className="sr-only" htmlFor="order-notes">Order notes</label>
-              <textarea id="order-notes" value={notes} onChange={(event) => setNotes(event.target.value)} maxLength={2000} rows={3} className="mt-3 w-full rounded-xl border border-[#cedfdd] p-3 font-normal outline-none focus:border-[#64d4ad]" placeholder="Delivery instructions, contact person, or urgency" />
+              <summary className="cursor-pointer text-sm font-bold text-[#456367]">Order details <span className="font-normal text-[#718487]">{orderDetailSummary}</span></summary>
+              <div className="mt-3 grid gap-3 sm:grid-cols-3">
+                <label className="text-sm font-bold text-[#456367]">Received via<select value={source} onChange={(event) => setSource(event.target.value as 'phone' | 'email' | 'whatsapp' | 'walk_in')} className="mt-2 min-h-11 w-full rounded-xl border border-[#cedfdd] bg-white px-3 font-normal text-[#173239]"><option value="phone">Phone</option><option value="whatsapp">WhatsApp</option><option value="email">Email</option><option value="walk_in">Walk-in</option></select></label>
+                <label className="text-sm font-bold text-[#456367]">Order priority<select value={priority} onChange={(event) => setPriority(event.target.value as 'normal' | 'high' | 'urgent')} className="mt-2 min-h-11 w-full rounded-xl border border-[#cedfdd] bg-white px-3 font-normal text-[#173239]"><option value="normal">Normal</option><option value="high">High</option><option value="urgent">Urgent</option></select></label>
+                <label className="text-sm font-bold text-[#456367]">Promised delivery <span className="font-normal text-[#718487]">(optional)</span><input type="date" value={expectedDeliveryDate} onChange={(event) => setExpectedDeliveryDate(event.target.value)} className="mt-2 min-h-11 w-full rounded-xl border border-[#cedfdd] bg-white px-3 font-normal text-[#173239]" /></label>
+                <label htmlFor="order-notes" className="text-sm font-bold text-[#456367] sm:col-span-3">Order notes <span className="font-normal text-[#718487]">(optional)</span></label>
+                <textarea id="order-notes" value={notes} onChange={(event) => setNotes(event.target.value)} maxLength={2000} rows={3} className="w-full rounded-xl border border-[#cedfdd] p-3 font-normal outline-none focus:border-[#64d4ad] sm:col-span-3" placeholder="Delivery instructions, contact person, or urgency" />
+              </div>
             </details>
-            <div className="grid gap-3 sm:grid-cols-3">
-              <label className="rounded-2xl border border-[#dce7e5] bg-white p-4 text-sm font-bold text-[#456367]">Received via<select value={source} onChange={(event) => setSource(event.target.value as 'phone' | 'email' | 'whatsapp' | 'walk_in')} className="mt-2 min-h-11 w-full rounded-xl border border-[#cedfdd] bg-white px-3 font-normal text-[#173239]"><option value="phone">Phone</option><option value="whatsapp">WhatsApp</option><option value="email">Email</option><option value="walk_in">Walk-in</option></select></label>
-              <label className="rounded-2xl border border-[#dce7e5] bg-white p-4 text-sm font-bold text-[#456367]">Order priority<select value={priority} onChange={(event) => setPriority(event.target.value as 'normal' | 'high' | 'urgent')} className="mt-2 min-h-11 w-full rounded-xl border border-[#cedfdd] bg-white px-3 font-normal text-[#173239]"><option value="normal">Normal</option><option value="high">High</option><option value="urgent">Urgent</option></select></label>
-              <label className="rounded-2xl border border-[#dce7e5] bg-white p-4 text-sm font-bold text-[#456367]">Promised delivery <span className="font-normal text-[#718487]">(optional)</span><input type="date" value={expectedDeliveryDate} onChange={(event) => setExpectedDeliveryDate(event.target.value)} className="mt-2 min-h-11 w-full rounded-xl border border-[#cedfdd] bg-white px-3 font-normal text-[#173239]" /></label>
-            </div>
             <label className="flex items-start gap-3 rounded-2xl border border-[#dce7e5] bg-white p-4 text-sm text-[#456367]"><input type="checkbox" checked={saveOnDevice} disabled={draftState === 'pending'} onChange={(event) => changeTrustedDevice(event.target.checked)} className="mt-1 size-4 accent-[#277b69]" /><span><strong className="block text-[#274b50]">Save this draft on this device</strong>Use this only on a trusted device. Unsubmitted drafts expire after seven days. Pending orders and orders needing attention stay saved until sent or discarded. Product and customer search is also retained for restart recovery.</span></label>
             {customerName.trim() || lines.length > 0 ? <p aria-live="polite" className={`rounded-xl px-4 py-3 text-sm font-semibold ${draftState === 'error' ? 'bg-[#fff0ef] text-[#8d3a34]' : draftState === 'pending' ? 'bg-[#fff7e8] text-[#805b20]' : 'bg-[#edf7f4] text-[#456367]'}`}>{draftState === 'pending' ? 'Waiting to send. Your order is safe on this device.' : draftState === 'error' ? 'Draft needs attention before it can be sent.' : saveOnDevice ? 'Draft saved on this device.' : 'Draft is kept only while this form remains open.'}</p> : null}
             {initialDraft ? <button type="button" onClick={discardSavedOrder} className="min-h-10 rounded-xl px-4 text-sm font-bold text-[#9a4e47] hover:bg-[#fff0ef]">Discard saved order</button> : null}
