@@ -22,6 +22,7 @@ import { loadOrderBootstrap } from '@/lib/order-bootstrap-cache';
 import { retryPendingOfflineOrder } from '@/lib/offline-order-retry';
 import { acknowledgeOrderCommand, prepareOrderCommandRetry } from '@/lib/order-command-idempotency';
 import { loadOrderCatalog, loadOrderCustomers } from '@/lib/order-capture-masters';
+import { recordOrderClientTiming } from '@/lib/order-client-timing';
 import type { OrderPricingWorkspace, PricingLineResolution } from '@/lib/pricing-types';
 import { PricingOptions } from './pricing-options';
 
@@ -133,6 +134,7 @@ export function OrderWorkspace({ actorEmail, initialStatus = 'open' }: { actorEm
   }, [data]);
 
   const load = useCallback(async (showLoading = false, showRefreshing = false) => {
+    const startedAt = performance.now();
     const requestId = ++latestListRequestRef.current;
     if (showLoading) setLoading(true);
     if (showRefreshing) setRefreshing(true);
@@ -140,6 +142,7 @@ export function OrderWorkspace({ actorEmail, initialStatus = 'open' }: { actorEm
     try {
       const result = await readResponse<OrderBootstrap>(await fetch(orderListUrl({ page, query, status, captureDate, captureDateTo }), { cache: 'no-store' }));
       if (requestId !== latestListRequestRef.current) return;
+      recordOrderClientTiming('order_list_ms', startedAt);
       setData(result);
       setDeviceDraftState(readOfflineOrderDraft(localStorage, result.actor.email)?.state || null);
     } catch (cause) {
@@ -193,11 +196,13 @@ export function OrderWorkspace({ actorEmail, initialStatus = 'open' }: { actorEm
 
   useEffect(() => {
     if (initialStatus !== 'open') return;
+    const startedAt = performance.now();
     let active = true;
     const requestId = ++latestListRequestRef.current;
     loadOrderBootstrap(actorEmail)
       .then((result) => {
         if (active && requestId === latestListRequestRef.current) {
+          recordOrderClientTiming('order_list_ms', startedAt);
           setData(result);
           setDeviceDraftState(readOfflineOrderDraft(localStorage, result.actor.email)?.state || null);
         }
@@ -223,6 +228,7 @@ export function OrderWorkspace({ actorEmail, initialStatus = 'open' }: { actorEm
     }
     const controller = new AbortController();
     const timer = window.setTimeout(() => {
+      const startedAt = performance.now();
       const requestId = ++latestListRequestRef.current;
       setLoading(true);
       setError('');
@@ -230,6 +236,7 @@ export function OrderWorkspace({ actorEmail, initialStatus = 'open' }: { actorEm
         .then((response) => readResponse<OrderBootstrap>(response))
         .then((result) => {
           if (requestId !== latestListRequestRef.current) return;
+          recordOrderClientTiming('order_list_ms', startedAt);
           setData(result);
           setDeviceDraftState(readOfflineOrderDraft(localStorage, result.actor.email)?.state || null);
         })
@@ -282,6 +289,7 @@ export function OrderWorkspace({ actorEmail, initialStatus = 'open' }: { actorEm
 
   async function openNewOrder(template?: OrderSummary) {
     if (catalogLoading) return;
+    const startedAt = performance.now();
     setError('');
     setCatalogLoading(true);
     let current = dataRef.current;
@@ -338,6 +346,7 @@ export function OrderWorkspace({ actorEmail, initialStatus = 'open' }: { actorEm
         setRepeatOrder(template || null);
       }
       setCreating(true);
+      recordOrderClientTiming('order_open_ms', startedAt);
     } catch (cause) {
       setError(cause instanceof Error ? cause.message : 'Unable to load Tally customers and products');
     } finally {
@@ -1370,6 +1379,7 @@ export function HydratedNewOrderPanel({ data, templateOrder, onClose, onCreated,
       setError('Remove unavailable products and select their current Tally catalogue replacements before saving.');
       return;
     }
+    const startedAt = performance.now();
     setSubmitting(true);
     setError('');
     try {
@@ -1397,12 +1407,14 @@ export function HydratedNewOrderPanel({ data, templateOrder, onClose, onCreated,
       const response = await fetch('/api/orders', { method: 'POST', headers: { 'content-type': 'application/json' }, body: JSON.stringify(body) });
       const result = await readOrderSubmission(response);
       removeOfflineOrderDraft(localStorage, data.actor.email);
+      recordOrderClientTiming('order_save_ms', startedAt);
       onCreated(result.orderNumber || 'Order', body, result);
     } catch (cause) {
       if (cause instanceof OrderSubmissionError && cause.kind === 'conflict') {
         const accepted = await recoverAcceptedOrder(idempotencyKey);
         if (accepted) {
           removeOfflineOrderDraft(localStorage, data.actor.email);
+          recordOrderClientTiming('order_save_ms', startedAt);
           onCreated(accepted);
           return;
         }
