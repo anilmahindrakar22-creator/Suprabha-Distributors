@@ -583,6 +583,13 @@
       "remoteVersion": "20260928072110",
       "remoteSha256": "3e98b2022094e6e435fb5f3187e85d1835b0ab3d44344d8dcc0d419359b897f0",
       "status": "exact_normalized_match"
+    },
+    {
+      "localFile": "20260928104500_non_retryable_business_conflicts.sql",
+      "localSha256": "2c41e1974355526524b06deb873243e729bc95fe7add3351b309131ec6226347",
+      "remoteVersion": "20260928104105",
+      "remoteSha256": "2c41e1974355526524b06deb873243e729bc95fe7add3351b309131ec6226347",
+      "status": "exact_normalized_match"
     }
   ]
 }

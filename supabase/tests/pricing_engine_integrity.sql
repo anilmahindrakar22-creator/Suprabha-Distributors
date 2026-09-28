@@ -84,7 +84,7 @@ begin
       'lines',jsonb_build_array(jsonb_build_object('lineId',v_line_id,'enteredRate',485))
     ));
     raise exception 'Stale pricing writer unexpectedly succeeded';
-  exception when serialization_failure then null;
+  exception when sqlstate 'PT409' then null;
   end;
   if exists(select 1 from private.stockflow_command_results where idempotency_key='pricing-stale-0000001') then raise exception 'Failed pricing command left an idempotency result'; end if;
 end $test$;
@@ -227,7 +227,7 @@ begin
       'lines',jsonb_build_array(jsonb_build_object('lineId',v_line_one,'enteredRate',600,'reason','Duplicate review'),jsonb_build_object('lineId',v_line_two,'enteredRate',700,'reason','Duplicate review'))
     ));
     raise exception 'A second pending pricing batch was accepted';
-  exception when serialization_failure then null;
+  exception when sqlstate 'PT409' then null;
   end;
   select id into exception_id from private.stockflow_price_exceptions where order_id=v_order_id and state='pending' order by requested_at limit 1;
   perform pg_temp.pricing_gateway('stockflow-pricing-test','pricing-admin@stockflow.local','reject_price_exception',jsonb_build_object(

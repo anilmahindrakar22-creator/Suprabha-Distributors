@@ -55,6 +55,7 @@ describe('order gateway client', () => {
   it.each([
     ['42501', 403],
     ['40001', 409],
+    ['PT409', 409],
     ['54000', 429],
     ['22023', 400],
   ])('maps database code %s to HTTP %s', async (code, status) => {

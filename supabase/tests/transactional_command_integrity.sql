@@ -67,7 +67,7 @@ begin
       )
     );
     raise exception 'Stale writer unexpectedly overwrote the order';
-  exception when serialization_failure then null;
+  exception when sqlstate 'PT409' then null;
   end;
   if exists(select 1 from private.stockflow_command_results
     where actor_email='integration-test@stockflow.local' and idempotency_key='stale-command-12345') then
