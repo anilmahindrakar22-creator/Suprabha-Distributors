@@ -320,13 +320,17 @@ end $contract_recovery$;
 -- Use a separate database session to hold the real command lock deterministically.
 create extension if not exists dblink with schema public;
 do $close_recovery$
-declare payload jsonb := '{"idempotencyKey":"close-recovery-key-123","pricingAction":"create_pricing_policy","closeUnresolved":true}'; result jsonb; count_before integer;
+declare payload jsonb := '{"idempotencyKey":"close-recovery-key-123","pricingAction":"create_pricing_policy","closeUnresolved":true}'; result jsonb; count_before integer; lock_released boolean;
 begin
   perform public.dblink_connect('pricing_lock',format('host=127.0.0.1 port=%s dbname=%s user=%s',current_setting('port'),current_database(),current_user));
   perform * from public.dblink('pricing_lock',$q$select pg_advisory_lock(hashtextextended('book-admin@test.local:create_pricing_policy:close-recovery-key-123',0))::text$q$) as t(value text);
   result := public.stockflow_submission_recovery_gateway('price-book-test-key','book-admin@test.local','recover_order_submission',payload);
   if result <> '{"status":"unresolved"}'::jsonb then raise exception 'Closed an in-flight command'; end if;
   if exists(select 1 from private.stockflow_command_results where idempotency_key='close-recovery-key-123') then raise exception 'Busy recovery wrote a result'; end if;
+  -- End the simulated command lock explicitly before testing recovery. Waiting
+  -- for dblink session teardown alone is timing-sensitive on PostgreSQL 15.
+  select released into lock_released from public.dblink('pricing_lock',$q$select pg_advisory_unlock(hashtextextended('book-admin@test.local:create_pricing_policy:close-recovery-key-123',0))$q$) as t(released boolean);
+  if not lock_released then raise exception 'Simulated command lock was not released'; end if;
   perform public.dblink_disconnect('pricing_lock');
   select count(*) into count_before from private.stockflow_pricing_events;
   result := public.stockflow_submission_recovery_gateway('price-book-test-key','book-admin@test.local','recover_order_submission',payload);
