@@ -15,7 +15,7 @@ const connectorControl = readFileSync(
 describe('Tally stock sync health', () => {
   it('automatically checks the cloud snapshot every five minutes', () => {
     expect(dashboard).toContain('const CLOUD_REFRESH_INTERVAL_MS=5*60*1000');
-    expect(dashboard).toContain('setInterval(()=>void refreshData(),CLOUD_REFRESH_INTERVAL_MS)');
+    expect(dashboard).toContain('setInterval(()=>{if(!document.hidden)void refreshData()},CLOUD_REFRESH_INTERVAL_MS)');
     expect(dashboard).toContain("document.addEventListener('visibilitychange'");
     expect(dashboard).toContain("window.addEventListener('focus'");
     expect(dashboard).toContain("window.addEventListener('online'");
@@ -34,7 +34,7 @@ describe('Tally stock sync health', () => {
   });
 
   it('keeps source-specific timestamps alongside the stock snapshot timestamp', () => {
-    expect(connector).toContain('$sourceFetchedAtIso = Get-ConnectorSourceFetchedAt $fetchedAtIso $script:lastCatalogData $script:lastCustomerData');
+    expect(connector).toContain('$sourceFetchedAtIso = Get-ConnectorSourceFetchedAt $fetchedAtIso $script:lastCatalogData $script:lastCustomerData $salesData.fetchedAtIso $script:lastPurchaseData.fetchedAtIso');
     expect(connector).toContain('sourceFetchedAtIso = $sourceFetchedAtIso');
   });
 
@@ -94,6 +94,19 @@ describe('Tally stock sync health', () => {
   it('records upload payload bytes without logging the upload key or body', () => {
     expect(connector).toContain('bytes=$payloadBytes');
     expect(connector).not.toContain('key=$cloudUploadKey');
+  });
+
+  it('serializes a stock snapshot once and reuses its JSON for LAN reads and cloud delivery', () => {
+    expect(connector).toContain('$freshJson = $fresh | ConvertTo-Json -Depth 6 -Compress');
+    expect(connector).toContain('$script:lastReorderJson = $freshJson');
+    expect(connector).toContain('Publish-CloudSnapshot $script:pendingUploadJson');
+    expect(connector).toContain('$json = $script:lastReorderJson');
+    expect(connector).not.toContain('$json = ($script:lastReorderData | ConvertTo-Json -Depth 6 -Compress)');
+  });
+
+  it('runs due background work despite a sustained queue of LAN readers', () => {
+    expect(connector).toContain('Test-ConnectorShouldRunBackground ($listener.Pending()) $requestsSinceBackground $backgroundDue');
+    expect(connector).toContain('$requestsSinceBackground++');
   });
 
   it('provides office-only status, pause, resume, restart, and schedule controls', () => {

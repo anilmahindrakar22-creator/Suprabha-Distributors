@@ -16,6 +16,8 @@ export function prepareDeviceForAccount(
 ) {
   const current = normalize(actorEmail);
   try {
+    // The old unscoped Stock cache could be shown to a different signed-in user.
+    persistentStorage.removeItem('stockflow-last-snapshot-v2');
     const previous = normalize(persistentStorage.getItem(activeAccountKey) || '');
     if (!previous || previous === current) {
       persistentStorage.setItem(activeAccountKey, current);
@@ -27,6 +29,7 @@ export function prepareDeviceForAccount(
     removeCustomerCache(persistentStorage, previous);
     removeCatalogCache(sessionStorage, previous);
     removeCustomerCache(sessionStorage, previous);
+    persistentStorage.removeItem(`stockflow-last-snapshot-v3:${encodeURIComponent(previous)}`);
     writeOfflineDraftConsent(persistentStorage, previous, false);
     persistentStorage.setItem(activeAccountKey, current);
     return { switched: true, retainedPreviousDraft };

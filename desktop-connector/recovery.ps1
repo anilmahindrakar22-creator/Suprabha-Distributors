@@ -229,6 +229,10 @@ function Test-ConnectorUploadBlocked($State, [string]$UploadKey) {
     return $null -ne $State -and [string]$State.blockedKeyHash -ceq (Get-StableEvidenceVersion $UploadKey)
 }
 
+function Test-ConnectorShouldRunBackground([bool]$ClientPending, [int]$RequestsSinceBackground, [bool]$WorkDue) {
+    return -not $ClientPending -or ($RequestsSinceBackground -ge 1 -and $WorkDue)
+}
+
 function Write-BoundedConnectorLog([string]$Path, [string]$Message, [long]$MaximumBytes = 2MB) {
     try {
         if ([IO.File]::Exists($Path) -and ([IO.FileInfo]$Path).Length -ge $MaximumBytes) {
@@ -266,10 +270,10 @@ function Get-TallyRetryDelayMinutes([int]$NormalMinutes, [int]$ConsecutiveFailur
     return [int][Math]::Min($maximum, $NormalMinutes * [Math]::Pow(2, $exponent))
 }
 
-function Get-ConnectorSourceFetchedAt([string]$StockFetchedAtIso, $CatalogSnapshot, $CustomerSnapshot) {
+function Get-ConnectorSourceFetchedAt([string]$StockFetchedAtIso, $CatalogSnapshot, $CustomerSnapshot, [string]$SalesFetchedAtIso = $null, [string]$PurchaseFetchedAtIso = $null) {
     $catalogAt = if ($CatalogSnapshot) { [string]$CatalogSnapshot.fetchedAtIso } else { $null }
     $customersAt = if ($CustomerSnapshot) { [string]$CustomerSnapshot.fetchedAtIso } else { $null }
-    return [ordered]@{ stock = $StockFetchedAtIso; catalog = $catalogAt; customers = $customersAt }
+    return [ordered]@{ stock = $StockFetchedAtIso; catalog = $catalogAt; customers = $customersAt; sales = $SalesFetchedAtIso; purchase = $PurchaseFetchedAtIso }
 }
 
 function Read-ConnectorJson([string]$Path) {

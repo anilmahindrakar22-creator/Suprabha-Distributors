@@ -32,14 +32,24 @@ export function sanitizeStockPayload(value: unknown): unknown {
   ));
 }
 
+const dashboardStockFields = new Set([
+  'company', 'fetchedAt', 'fetchedAtShort', 'fetchedAtIso', 'sourceFetchedAtIso',
+  'supplyHistoryFrom', 'supplyHistoryTo', 'supplyHistoryRange', 'rows', 'groups',
+]);
+
+function projectDashboardStockPayload(value: unknown): unknown {
+  if (value === null || typeof value !== 'object' || Array.isArray(value)) return {};
+  return Object.fromEntries(Object.entries(value).filter(([key]) => dashboardStockFields.has(key)));
+}
+
 export function createStockHandler<User>({
   endpoint,
   fetchFn,
   getUser,
   hasAccess,
   readKey,
-}: StockHandlerDependencies<User>): () => Promise<Response> {
-  return async function getStock(): Promise<Response> {
+}: StockHandlerDependencies<User>): (request?: Request) => Promise<Response> {
+  return async function getStock(request?: Request): Promise<Response> {
     const user = await getUser();
     if (!user) return errorResponse('Sign in required', 401);
     if (!(await hasAccess(user))) return errorResponse('Access denied', 403);
@@ -55,7 +65,13 @@ export function createStockHandler<User>({
 
       const text = await response.text();
       let body = text;
-      try { body = JSON.stringify(sanitizeStockPayload(JSON.parse(text))); } catch { /* Preserve controlled upstream non-JSON errors. */ }
+      try {
+        const parsed = JSON.parse(text);
+        const projected = response.ok && request && new URL(request.url).searchParams.get('view') === 'dashboard'
+          ? projectDashboardStockPayload(parsed)
+          : parsed;
+        body = JSON.stringify(sanitizeStockPayload(projected));
+      } catch { /* Preserve controlled upstream non-JSON errors. */ }
       return new Response(body, {
         status: response.status,
         headers: privateJsonHeaders,

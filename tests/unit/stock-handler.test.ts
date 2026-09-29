@@ -101,4 +101,26 @@ describe('stock API handler', () => {
     const response = await makeHandler({ fetchFn: vi.fn(async () => Response.json({ rows: [1], pricingHistory: { sales: [{ rate: 485 }] } })) })();
     expect(await response.json()).toEqual({ rows: [1] });
   });
+
+  it('sends only Stock dashboard fields for its opt-in lightweight view', async () => {
+    const sourceFetchedAtIso = { stock: '2026-09-29T12:00:00Z', catalog: '2026-09-29T08:00:00Z', sales: '2026-09-29T11:00:00Z' };
+    const fetchFn = vi.fn(async () => Response.json({
+      company: 'TEST', fetchedAt: '29 Sep', fetchedAtIso: sourceFetchedAtIso.stock,
+      sourceFetchedAtIso, groups: ['Sysmex'], rows: [{ item: 'Kit', closing: 2, purchaseCost: 300 }],
+      catalog: [{ tallyKey: 'Kit' }], customers: [{ name: 'Hospital' }],
+      tallyInvoices: [{ voucherNumber: '99' }], pricingHistory: { secret: true },
+    }));
+    const response = await makeHandler({ fetchFn })(new Request('https://stock.example/api/stock?view=dashboard'));
+    expect(await response.json()).toEqual({
+      company: 'TEST', fetchedAt: '29 Sep', fetchedAtIso: sourceFetchedAtIso.stock,
+      sourceFetchedAtIso, groups: ['Sysmex'], rows: [{ item: 'Kit', closing: 2 }],
+    });
+    expect(response.headers.get('cache-control')).toBe('private, no-store');
+  });
+
+  it('preserves controlled upstream errors in the lightweight view', async () => {
+    const response = await makeHandler({ fetchFn: vi.fn(async () => Response.json({ error: 'Stock sync unavailable' }, { status: 503 })) })(new Request('https://stock.example/api/stock?view=dashboard'));
+    expect(response.status).toBe(503);
+    expect(await response.json()).toEqual({ error: 'Stock sync unavailable' });
+  });
 });

@@ -26,6 +26,7 @@ export function StockFlowFrame({ actorEmail, actorRole }: { actorEmail: string; 
   const [surface, setSurface] = useState<Surface>('stock');
   const [orderFilter, setOrderFilter] = useState('open');
   const [deviceNotice, setDeviceNotice] = useState('');
+  const [readyEmail, setReadyEmail] = useState('');
 
   useEffect(() => {
     if ('serviceWorker' in navigator) {
@@ -35,6 +36,7 @@ export function StockFlowFrame({ actorEmail, actorRole }: { actorEmail: string; 
 
   useEffect(() => {
     const account = prepareDeviceForAccount(localStorage, sessionStorage, actorEmail);
+    const readyTimer = window.setTimeout(() => setReadyEmail(actorEmail), 0);
     let noticeTimer: number | undefined;
     if (account.switched) {
       void Promise.all([
@@ -53,6 +55,7 @@ export function StockFlowFrame({ actorEmail, actorRole }: { actorEmail: string; 
       ? window.setTimeout(warmOrderWorkspace, 1_500)
       : undefined;
     return () => {
+      window.clearTimeout(readyTimer);
       if (noticeTimer !== undefined) window.clearTimeout(noticeTimer);
       if (idleId !== undefined) window.cancelIdleCallback(idleId);
       if (preloadTimer !== undefined) window.clearTimeout(preloadTimer);
@@ -114,12 +117,13 @@ export function StockFlowFrame({ actorEmail, actorRole }: { actorEmail: string; 
       </header>
       {deviceNotice ? <output className="flex shrink-0 items-center justify-between gap-3 border-b border-[#f0d7a5] bg-[#fff7e8] px-4 py-2 text-xs font-semibold text-[#805b20] sm:px-6"><span>{deviceNotice}</span><button type="button" onClick={() => setDeviceNotice('')} className="min-h-8 shrink-0 rounded-lg px-3 font-bold hover:bg-[#f7e8c8]">Dismiss</button></output> : null}
       <section className="min-h-0 flex-1">
-        {surface === 'stock' ? (
+        {readyEmail !== actorEmail ? <SectionLoading /> : surface === 'stock' ? (
           <iframe
             title="Suprabha stock dashboard"
             src="/stockflow.html"
             className="h-full w-full border-0"
             allow="clipboard-write"
+            onLoad={(event) => event.currentTarget.contentWindow?.postMessage({ type: 'stockflow-cache-account', email: actorEmail }, window.location.origin)}
           />
         ) : surface === 'orders' ? (
           <Suspense fallback={<SectionLoading />}><OrderWorkspace key={orderFilter} actorEmail={actorEmail} initialStatus={orderFilter} /></Suspense>

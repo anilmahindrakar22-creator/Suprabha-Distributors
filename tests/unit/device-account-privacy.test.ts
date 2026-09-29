@@ -24,6 +24,8 @@ describe('trusted-device account switching', () => {
     writeCustomerCache(session, pending.actorEmail, 'v1', customers);
     writeOfflineDraftConsent(local, pending.actorEmail, true);
     writeOfflineOrderDraft(local, pending);
+    local.setItem('stockflow-last-snapshot-v2', 'legacy shared Stock payload');
+    local.setItem('stockflow-last-snapshot-v3:first%40example.com', 'first account Stock payload');
 
     expect(prepareDeviceForAccount(local, session, 'second@example.com')).toEqual({ switched: true, retainedPreviousDraft: true });
     expect(readCatalogCache(local, pending.actorEmail, 'v1')).toBeNull();
@@ -31,6 +33,8 @@ describe('trusted-device account switching', () => {
     expect(readCustomerCache(local, pending.actorEmail, 'v1')).toBeNull();
     expect(readCustomerCache(session, pending.actorEmail, 'v1')).toBeNull();
     expect(readOfflineDraftConsent(local, pending.actorEmail)).toBe(false);
+    expect(local.getItem('stockflow-last-snapshot-v2')).toBeNull();
+    expect(local.getItem('stockflow-last-snapshot-v3:first%40example.com')).toBeNull();
     expect(readOfflineOrderDraft(local, pending.actorEmail)?.command.payload.idempotencyKey).toBe('1234567890abcdef');
     expect(readOfflineOrderDraft(local, 'second@example.com')).toBeNull();
   });

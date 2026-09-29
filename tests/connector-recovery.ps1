@@ -125,12 +125,17 @@ function Invoke-WebRequest { param($Uri, $Method, $ContentType, $Headers, $Body,
 if (Publish-CloudSnapshot 'snapshot-four') { throw 'Rejected cloud upload was incorrectly acknowledged' }
 if (-not $script:uploadAuthBlocked -or -not (Test-ConnectorUploadBlocked (Read-ConnectorUploadState $uploadStatePath 'TEST') $cloudUploadKey)) { throw 'Authorization rejection was not durably blocked' }
 if (Test-ConnectorUploadBlocked (Read-ConnectorUploadState $uploadStatePath 'TEST') 'rotated-test-key') { throw 'New upload key remained blocked after authorization rejection' }
+if (-not (Test-ConnectorShouldRunBackground $false 0 $false)) { throw 'Idle connector must run its background loop' }
+if (Test-ConnectorShouldRunBackground $true 0 $true) { throw 'First waiting LAN request must be served before due background work' }
+if (-not (Test-ConnectorShouldRunBackground $true 1 $true)) { throw 'Steady LAN requests must not starve due background work' }
+if (Test-ConnectorShouldRunBackground $true 1 $false) { throw 'Background work ran before its schedule' }
 if ((Get-TallyRetryDelayMinutes 15 1) -ne 15) { throw 'First Tally failure must retain the normal retry interval' }
 if ((Get-TallyRetryDelayMinutes 15 2) -ne 30 -or (Get-TallyRetryDelayMinutes 15 3) -ne 60) { throw 'Repeated Tally failures did not back off' }
 if ((Get-TallyRetryDelayMinutes 15 8) -ne 60 -or (Get-TallyRetryDelayMinutes 120 8) -ne 120) { throw 'Tally retry delay exceeded its cap or shortened the configured interval' }
-$freshness = Get-ConnectorSourceFetchedAt '2026-09-29T12:00:00Z' @{ fetchedAtIso = '2026-09-29T08:00:00Z' } @{ fetchedAtIso = '2026-09-29T04:00:00Z' }
-if ($freshness.stock -ne '2026-09-29T12:00:00Z' -or $freshness.catalog -ne '2026-09-29T08:00:00Z' -or $freshness.customers -ne '2026-09-29T04:00:00Z') { throw 'Source freshness was incorrectly advanced by a stock-only refresh' }
+$freshness = Get-ConnectorSourceFetchedAt '2026-09-29T12:00:00Z' @{ fetchedAtIso = '2026-09-29T08:00:00Z' } @{ fetchedAtIso = '2026-09-29T04:00:00Z' } '2026-09-29T11:00:00Z' '2026-09-29T06:00:00Z'
+if ($freshness.stock -ne '2026-09-29T12:00:00Z' -or $freshness.catalog -ne '2026-09-29T08:00:00Z' -or $freshness.customers -ne '2026-09-29T04:00:00Z' -or $freshness.sales -ne '2026-09-29T11:00:00Z' -or $freshness.purchase -ne '2026-09-29T06:00:00Z') { throw 'Source freshness was incorrectly advanced by a stock-only refresh' }
 if ((Get-ConnectorSourceFetchedAt '2026-09-29T12:00:00Z' $null $null).catalog) { throw 'Missing catalog source must not appear fresh' }
+if ((Get-ConnectorSourceFetchedAt '2026-09-29T12:00:00Z' $null $null).purchase) { throw 'Missing purchase source must not appear fresh' }
 if (-not (Write-BoundedConnectorLog $healthPath 'first-entry' 1)) { throw 'Initial health log write failed' }
 if (-not (Write-BoundedConnectorLog $healthPath 'second-entry' 1)) { throw 'Rotated health log write failed' }
 if ((Get-Content -LiteralPath "$healthPath.previous" -Raw).Trim() -ne 'first-entry') { throw 'Health log rotation did not retain the previous log' }

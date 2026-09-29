@@ -9,6 +9,22 @@ $taskName = 'Suprabha StockFlow Tally Sync'
 $installer = Join-Path $PSScriptRoot 'install-startup.ps1'
 $stateDirectory = Join-Path ([Environment]::GetFolderPath('LocalApplicationData')) 'SuprabhaStockFlow'
 $healthLog = Join-Path $stateDirectory 'connector-health.log'
+$companyName = 'SUPRABHA DISTRIBUTORS'
+. (Join-Path $PSScriptRoot 'recovery.ps1')
+
+function Get-CloudUploadDisplayStatus([string]$SnapshotPath, [string]$UploadStatePath, [string]$Company) {
+    $snapshot = Read-ConnectorSnapshotWithBackup $SnapshotPath $Company
+    if (-not $snapshot) { return 'No local snapshot available' }
+
+    $uploadState = Read-ConnectorUploadState $UploadStatePath $Company
+    if ($null -ne $uploadState -and -not [string]::IsNullOrWhiteSpace([string]$uploadState.blockedKeyHash)) {
+        return 'Paused after rejected upload key; awaiting successful upload'
+    }
+
+    $snapshotJson = $snapshot | ConvertTo-Json -Depth 6 -Compress
+    if (Test-ConnectorUploadAcknowledged $uploadState $snapshotJson) { return 'Acknowledged (current snapshot)' }
+    return 'Pending upload'
+}
 
 function Get-ConnectorTask {
     $task = Get-ScheduledTask -TaskName $taskName -ErrorAction SilentlyContinue
@@ -43,10 +59,13 @@ function Start-ConnectorSafely {
 function Show-ConnectorStatus {
     $task = Get-ConnectorTask
     $info = $task | Get-ScheduledTaskInfo
+    $snapshotPath = Join-Path $stateDirectory 'snapshot-v1.json'
     $healthLines = if (Test-Path -LiteralPath $healthLog) { @(Get-Content -LiteralPath $healthLog -Tail 200) } else { @() }
     $latestUpload = $healthLines | Where-Object { $_ -match 'request=cloud_upload' } | Select-Object -Last 1
     Write-Host "StockFlow connector: $($task.State)" -ForegroundColor $(if ($task.State -eq 'Running') { 'Green' } else { 'DarkYellow' })
     Write-Host "Last started: $($info.LastRunTime)"
+    $cloudStatus = Get-CloudUploadDisplayStatus $snapshotPath (Join-Path $stateDirectory 'cloud-upload-state-v1.json') $companyName
+    Write-Host "Cloud upload state: $cloudStatus"
     if ($latestUpload) { Write-Host "Latest cloud result: $latestUpload" }
     foreach ($domain in @('reorder', 'sales', 'purchase_costs', 'catalog', 'customers')) {
         $latestDomain = $healthLines | Where-Object { $_ -match "domain=$domain(?: |$)" } | Select-Object -Last 1
@@ -54,6 +73,7 @@ function Show-ConnectorStatus {
     }
 }
 
+if ($MyInvocation.InvocationName -ne '.') {
 switch ($Action) {
     'Pause' {
         Stop-ConnectorSafely
@@ -75,4 +95,5 @@ switch ($Action) {
         Write-Host "StockFlow will now read Tally every $SyncMinutes minutes." -ForegroundColor Green
     }
     default { Show-ConnectorStatus }
+}
 }
