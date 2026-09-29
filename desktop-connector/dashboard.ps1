@@ -21,7 +21,7 @@ try {
     Write-Host 'StockFlow connector is already running.'
     exit 0
 }
-$script:lastReorderData = Read-ConnectorSnapshot $snapshotPath $companyName
+$script:lastReorderData = Read-ConnectorSnapshotWithBackup $snapshotPath $companyName
 $script:lastPurchaseData = Get-TrustedPurchaseSnapshot (Read-ConnectorSnapshot $purchasePath $companyName) $companyName
 if (-not $script:lastPurchaseData) { $script:lastPurchaseData = Get-TrustedPurchaseSnapshot (Read-ConnectorSnapshot "$purchasePath.bak" $companyName) $companyName }
 $script:nextPurchaseRead = Get-Date

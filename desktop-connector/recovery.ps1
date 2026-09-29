@@ -243,6 +243,12 @@ function Read-ConnectorSnapshot([string]$Path, [string]$Company) {
     } catch { return $null }
 }
 
+function Read-ConnectorSnapshotWithBackup([string]$Path, [string]$Company) {
+    $snapshot = Read-ConnectorSnapshot $Path $Company
+    if ($snapshot) { return $snapshot }
+    return Read-ConnectorSnapshot "$Path.bak" $Company
+}
+
 function Read-CustomerSnapshot([string]$Path, [string]$Company) {
     try {
         $saved = Read-ConnectorJson $Path

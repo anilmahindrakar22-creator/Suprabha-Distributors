@@ -50,6 +50,10 @@ if (-not $missingCompanyRejected) { throw 'Missing live Tally company identity a
 $snapshot.catalog = @(@{ tallyKey = 'B' })
 Save-ConnectorSnapshot $path $snapshot
 if ((Read-ConnectorSnapshot $path 'TEST').catalog[0].tallyKey -ne 'B') { throw 'Atomic replacement failed' }
+if ((Read-ConnectorSnapshotWithBackup $path 'TEST').catalog[0].tallyKey -ne 'B') { throw 'Valid main snapshot was not preferred' }
+[IO.File]::WriteAllText($path, '{broken')
+if ((Read-ConnectorSnapshotWithBackup $path 'TEST').catalog[0].tallyKey -ne 'A') { throw 'Main snapshot did not recover from its last good backup' }
+if ($null -ne (Read-ConnectorSnapshotWithBackup $path 'OTHER')) { throw 'Wrong-company main snapshot backup accepted' }
 
 $healthPath = Join-Path $directory 'health.log'
 if ((Get-ConnectorUploadFailureCode ([pscustomobject]@{ Exception = [pscustomobject]@{ Response = [pscustomobject]@{ StatusCode = 500 } } })) -ne 'http_500') { throw 'Cloud HTTP failure status was not classified' }
@@ -61,7 +65,6 @@ if (-not (Write-BoundedConnectorLog $healthPath 'second-entry' 1)) { throw 'Rota
 if ((Get-Content -LiteralPath "$healthPath.previous" -Raw).Trim() -ne 'first-entry') { throw 'Health log rotation did not retain the previous log' }
 if ((Get-Content -LiteralPath $healthPath -Raw).Trim() -ne 'second-entry') { throw 'Health log rotation did not write the current log' }
 if (Write-BoundedConnectorLog $directory 'ignored') { throw 'Health log failure was not contained' }
-[IO.File]::WriteAllText($path, '{broken')
 if ($null -ne (Read-ConnectorSnapshot $path 'TEST')) { throw 'Corrupt cache accepted' }
 $lockPath = Join-Path $directory 'connector.lock'
 $handle = [IO.File]::Open($lockPath, 'OpenOrCreate', 'ReadWrite', 'None')
@@ -82,4 +85,4 @@ if ($baseline['Kit'].dateKey -ne '20260905' -or $baseline['Kit'].quantity -ne 2)
 [IO.File]::Delete($healthPath)
 [IO.File]::Delete("$healthPath.previous")
 [IO.Directory]::Delete($directory)
-Write-Output 'PASS: disconnect containment, restart recovery, timestamp preservation, durable customer/catalog caches, saved/live company validation, atomic replacement, bounded health log, corrupt cache, exclusive lock, compact baseline'
+Write-Output 'PASS: disconnect containment, restart and backup recovery, timestamp preservation, durable customer/catalog caches, saved/live company validation, atomic replacement, bounded health log, corrupt cache, exclusive lock, compact baseline'
