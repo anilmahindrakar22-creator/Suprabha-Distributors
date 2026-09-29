@@ -203,6 +203,32 @@ function Save-ConnectorSnapshot([string]$Path, $Snapshot) {
     }
 }
 
+function Save-ConnectorUploadState([string]$Path, $State) {
+    Save-ConnectorSnapshot $Path $State
+}
+
+function Read-ConnectorUploadState([string]$Path, [string]$Company) {
+    foreach ($candidate in @($Path, "$Path.bak")) {
+        try {
+            $saved = Read-ConnectorJson $candidate
+            $state = $saved.snapshot
+            if ($saved.schemaVersion -ne 1 -or $state.company -cne $Company -or $state.kind -ne 'cloud_upload_state_v1') { continue }
+            if ($null -ne $state.ackedHash -and [string]$state.ackedHash -cnotmatch '^[a-f0-9]{64}$') { continue }
+            if ($null -ne $state.blockedKeyHash -and [string]$state.blockedKeyHash -cnotmatch '^[a-f0-9]{64}$') { continue }
+            return $state
+        } catch { }
+    }
+    return $null
+}
+
+function Test-ConnectorUploadAcknowledged($State, [string]$Json) {
+    return $null -ne $State -and [string]$State.ackedHash -ceq (Get-StableEvidenceVersion $Json)
+}
+
+function Test-ConnectorUploadBlocked($State, [string]$UploadKey) {
+    return $null -ne $State -and [string]$State.blockedKeyHash -ceq (Get-StableEvidenceVersion $UploadKey)
+}
+
 function Write-BoundedConnectorLog([string]$Path, [string]$Message, [long]$MaximumBytes = 2MB) {
     try {
         if ([IO.File]::Exists($Path) -and ([IO.FileInfo]$Path).Length -ge $MaximumBytes) {

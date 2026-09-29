@@ -12,6 +12,7 @@ $salesPath = Join-Path $stateDirectory 'sales-history-v1.json'
 $purchasePath = Join-Path $stateDirectory 'purchase-history-v1.json'
 $customerPath = Join-Path $stateDirectory 'customer-master-v1.json'
 $catalogPath = Join-Path $stateDirectory 'catalog-master-v1.json'
+$uploadStatePath = Join-Path $stateDirectory 'cloud-upload-state-v1.json'
 $healthLogPath = Join-Path $stateDirectory 'connector-health.log'
 $script:tallyFailures = @{}
 # A held file handle prevents duplicate extraction across launches and ports.
@@ -59,6 +60,18 @@ $cloudUploadKey = [Environment]::GetEnvironmentVariable('STOCKFLOW_UPLOAD_KEY', 
 if ([string]::IsNullOrWhiteSpace($cloudUploadKey)) {
     throw 'StockFlow cloud sync is not configured. Ask the administrator to set STOCKFLOW_UPLOAD_KEY for this Windows user.'
 }
+$script:uploadState = Read-ConnectorUploadState $uploadStatePath $companyName
+if (-not $script:uploadState) {
+    $script:uploadState = [ordered]@{ company = $companyName; kind = 'cloud_upload_state_v1'; ackedHash = $null; blockedKeyHash = $null }
+}
+if ($script:pendingUpload) {
+    $snapshotJson = $script:pendingUpload | ConvertTo-Json -Depth 6 -Compress
+    if (Test-ConnectorUploadAcknowledged $script:uploadState $snapshotJson) { $script:pendingUpload = $null }
+}
+$script:uploadAuthBlocked = Test-ConnectorUploadBlocked $script:uploadState $cloudUploadKey
+if ($script:uploadAuthBlocked) {
+    Write-Host 'Cloud upload is paused for the rejected upload key; correct the key and restart the connector.' -ForegroundColor DarkYellow
+}
 
 function Write-ConnectorHealth([string]$Message) {
     if (-not (Write-BoundedConnectorLog $healthLogPath $Message)) {
@@ -69,20 +82,21 @@ function Write-ConnectorHealth([string]$Message) {
 
 function Publish-CloudSnapshot([string]$Json) {
     $watch = [Diagnostics.Stopwatch]::StartNew()
+    $payloadBytes = [Text.Encoding]::UTF8.GetByteCount($Json)
     try {
         Invoke-WebRequest -Uri $cloudSyncUrl -Method Post -ContentType 'application/json' -Headers @{ 'x-upload-key' = $cloudUploadKey } -Body $Json -UseBasicParsing -TimeoutSec 15 | Out-Null
         $watch.Stop()
-        $script:cloudUploadFailures = 0
-        $script:uploadAuthBlocked = $false
-        Write-ConnectorHealth "$([datetimeoffset]::Now.ToString('o')) request=cloud_upload durationMs=$($watch.ElapsedMilliseconds) consecutiveFailures=0 status=ok"
-        Write-Host "Cloud snapshot updated." -ForegroundColor DarkGreen
-        return $true
     } catch {
         $watch.Stop()
         $script:cloudUploadFailures++
         $failureCode = Get-ConnectorUploadFailureCode $_
         $script:uploadAuthBlocked = Test-ConnectorUploadAuthFailure $failureCode
-        Write-ConnectorHealth "$([datetimeoffset]::Now.ToString('o')) request=cloud_upload durationMs=$($watch.ElapsedMilliseconds) consecutiveFailures=$($script:cloudUploadFailures) status=failed failure=$failureCode"
+        if ($script:uploadAuthBlocked) {
+            $script:uploadState.blockedKeyHash = Get-StableEvidenceVersion $cloudUploadKey
+            try { Save-ConnectorUploadState $uploadStatePath $script:uploadState }
+            catch { Write-ConnectorHealth "$([datetimeoffset]::Now.ToString('o')) request=cloud_upload_state status=failed" }
+        }
+        Write-ConnectorHealth "$([datetimeoffset]::Now.ToString('o')) request=cloud_upload durationMs=$($watch.ElapsedMilliseconds) bytes=$payloadBytes consecutiveFailures=$($script:cloudUploadFailures) status=failed failure=$failureCode"
         # The local dashboard must remain usable even when the internet is down.
         if ($script:uploadAuthBlocked) {
             Write-Host 'Cloud upload authorization was rejected. The saved snapshot is retained; correct the upload key and restart the connector.' -ForegroundColor DarkYellow
@@ -91,6 +105,20 @@ function Publish-CloudSnapshot([string]$Json) {
         }
         return $false
     }
+    $script:uploadState.ackedHash = Get-StableEvidenceVersion $Json
+    $script:uploadState.blockedKeyHash = $null
+    try { Save-ConnectorUploadState $uploadStatePath $script:uploadState }
+    catch {
+        $script:cloudUploadFailures++
+        Write-ConnectorHealth "$([datetimeoffset]::Now.ToString('o')) request=cloud_upload_receipt bytes=$payloadBytes status=failed"
+        Write-Host 'Cloud accepted the snapshot, but its local receipt could not be saved; the snapshot will be retried.' -ForegroundColor DarkYellow
+        return $false
+    }
+    $script:cloudUploadFailures = 0
+    $script:uploadAuthBlocked = $false
+    Write-ConnectorHealth "$([datetimeoffset]::Now.ToString('o')) request=cloud_upload durationMs=$($watch.ElapsedMilliseconds) bytes=$payloadBytes consecutiveFailures=0 status=ok"
+    Write-Host "Cloud snapshot updated." -ForegroundColor DarkGreen
+    return $true
 }
 
 function Get-Number([string]$Text) {

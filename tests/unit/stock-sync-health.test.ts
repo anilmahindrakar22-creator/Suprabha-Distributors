@@ -84,6 +84,18 @@ describe('Tally stock sync health', () => {
     expect(connector).toContain('if ($script:pendingUpload -and -not $script:uploadAuthBlocked -and (Get-Date) -ge $script:nextUpload)');
   });
 
+  it('remembers cloud upload receipts and rejected credentials across connector restarts', () => {
+    expect(connector).toContain('Read-ConnectorUploadState $uploadStatePath $companyName');
+    expect(connector).toContain('Test-ConnectorUploadAcknowledged $script:uploadState $snapshotJson');
+    expect(connector).toContain('Test-ConnectorUploadBlocked $script:uploadState $cloudUploadKey');
+    expect(connector).toContain('Save-ConnectorUploadState $uploadStatePath $script:uploadState');
+  });
+
+  it('records upload payload bytes without logging the upload key or body', () => {
+    expect(connector).toContain('bytes=$payloadBytes');
+    expect(connector).not.toContain('key=$cloudUploadKey');
+  });
+
   it('provides office-only status, pause, resume, restart, and schedule controls', () => {
     expect(connectorControl).toContain("[ValidateSet('Status', 'Pause', 'Resume', 'Restart', 'SetSchedule')]");
     expect(connectorControl).toContain('Stop-ScheduledTask -TaskName $taskName');
