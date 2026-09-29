@@ -54,6 +54,19 @@ if ((Read-ConnectorSnapshotWithBackup $path 'TEST').catalog[0].tallyKey -ne 'B')
 [IO.File]::WriteAllText($path, '{broken')
 if ((Read-ConnectorSnapshotWithBackup $path 'TEST').catalog[0].tallyKey -ne 'A') { throw 'Main snapshot did not recover from its last good backup' }
 if ($null -ne (Read-ConnectorSnapshotWithBackup $path 'OTHER')) { throw 'Wrong-company main snapshot backup accepted' }
+$salesPath = Join-Path $directory 'sales.json'
+$salesSnapshot = @{ company = 'TEST'; fetchedAtIso = [datetimeoffset]::UtcNow.ToString('o'); sourceScope = 'sales_vouchers_v1'; catalog = @(); tallyInvoices = @(); records = @(@{ masterId = 'A' }) }
+Save-ConnectorSnapshot $salesPath $salesSnapshot
+$salesSnapshot.records = @(@{ masterId = 'B' })
+Save-ConnectorSnapshot $salesPath $salesSnapshot
+if ((Read-TrustedSalesSnapshotWithBackup $salesPath 'TEST').records[0].masterId -ne 'B') { throw 'Valid sales history was not preferred' }
+[IO.File]::WriteAllText($salesPath, '{broken')
+$recoveredSales = Read-TrustedSalesSnapshotWithBackup $salesPath 'TEST'
+if ($recoveredSales.records[0].masterId -ne 'A') { throw 'Sales history did not recover from its last good backup' }
+if ($null -ne (Read-TrustedSalesSnapshotWithBackup $salesPath 'OTHER')) { throw 'Wrong-company sales history backup accepted' }
+$salesSnapshot.sourceScope = 'purchase_vouchers_v1'
+[IO.File]::WriteAllText($salesPath, (@{ schemaVersion = 1; snapshot = $salesSnapshot } | ConvertTo-Json -Depth 12 -Compress))
+if ((Read-TrustedSalesSnapshotWithBackup $salesPath 'TEST').records[0].masterId -ne 'A') { throw 'Wrong-domain sales cache was not rejected in favor of the trusted backup' }
 
 $healthPath = Join-Path $directory 'health.log'
 if ((Get-ConnectorUploadFailureCode ([pscustomobject]@{ Exception = [pscustomobject]@{ Response = [pscustomobject]@{ StatusCode = 500 } } })) -ne 'http_500') { throw 'Cloud HTTP failure status was not classified' }
@@ -82,6 +95,8 @@ if ($baseline['Kit'].dateKey -ne '20260905' -or $baseline['Kit'].quantity -ne 2)
 [IO.File]::Delete("$customerPath.bak")
 [IO.File]::Delete($catalogPath)
 [IO.File]::Delete("$catalogPath.bak")
+[IO.File]::Delete($salesPath)
+[IO.File]::Delete("$salesPath.bak")
 [IO.File]::Delete($healthPath)
 [IO.File]::Delete("$healthPath.previous")
 [IO.Directory]::Delete($directory)

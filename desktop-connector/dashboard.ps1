@@ -191,7 +191,7 @@ function Get-TallySalesData {
         $invoiceFromDate = $today.AddDays(-180).ToString('yyyyMMdd')
         $financialYear = if ($today.Month -ge 4) { $today.Year } else { $today.Year - 1 }
         $fromDate = [datetime]::new($financialYear - 5, 4, 1).ToString('yyyyMMdd')
-        $cachedSales = Get-TrustedSalesSnapshot (Read-ConnectorSnapshot $salesPath $companyName) $companyName
+        $cachedSales = Read-TrustedSalesSnapshotWithBackup $salesPath $companyName
         if ($cachedSales -and $null -eq $cachedSales.records -and $cachedSales.document) {
             $cachedSales = @{
                 company = $companyName; fetchedAtIso = [string]$cachedSales.fetchedAtIso; sourceScope = 'sales_vouchers_v1'

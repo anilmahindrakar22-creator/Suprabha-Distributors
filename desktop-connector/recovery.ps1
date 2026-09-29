@@ -145,6 +145,14 @@ function Get-TrustedSalesSnapshot($Snapshot, [string]$Company) {
     return $Snapshot
 }
 
+function Read-TrustedSalesSnapshotWithBackup([string]$Path, [string]$Company) {
+    foreach ($candidate in @($Path, "$Path.bak")) {
+        $snapshot = Get-TrustedSalesSnapshot (Read-ConnectorSnapshot $candidate $Company) $Company
+        if ($snapshot) { return $snapshot }
+    }
+    return $null
+}
+
 function Get-TrustedPurchaseSnapshot($Snapshot, [string]$Company) {
     if ($null -eq $Snapshot -or $Snapshot.company -ne $Company -or $Snapshot.sourceScope -ne 'purchase_vouchers_v1') { return $null }
     if ($null -eq $Snapshot.records) { return $null }
