@@ -107,3 +107,42 @@ test('recent customer products can be added from the existing history response',
   expect(historyRequests).toBe(1);
   expect(submissions).toBe(0);
 });
+
+test('switching back to a customer reuses only that customer’s history', async ({ page }) => {
+  const historyQueries: string[] = [];
+  await page.route('**/api/orders?list=1*', async (route) => {
+    const query = new URL(route.request().url()).searchParams.get('query') || '';
+    historyQueries.push(query);
+    const alpha = query.includes('Alpha');
+    await route.fulfill({ json: { orders: [{
+      id: alpha ? 'aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa' : 'bbbbbbbb-bbbb-4bbb-8bbb-bbbbbbbbbbbb',
+      orderNumber: alpha ? 'SF-ALPHA' : 'SF-BETA', customerName: alpha ? 'Test Alpha Laboratory' : 'Test Beta Laboratory',
+      customerPhone: null, status: 'delivered', source: 'phone', notes: null, version: 1,
+      createdAt: '2026-09-20T10:00:00Z', updatedAt: '2026-09-20T10:00:00Z', lineCount: 1,
+      totalQuantity: 1, reservedQuantity: 0, tallyInvoiceNumber: null,
+      lines: [{ tallyKey: alpha ? 'GLUCOSE-A' : 'CRP', itemName: alpha ? 'Glucose A' : 'CRP', quantity: 1 }],
+      events: [], exceptions: [], installations: [],
+    }], pagination: { total: 1 } } });
+  });
+  await page.goto('/?view=order-entry');
+  const customer = page.getByRole('combobox', { name: 'Name' });
+  const recent = page.getByRole('region', { name: 'Recently ordered products' });
+  await customer.fill('Beta');
+  await expect(customer).toHaveAttribute('aria-expanded', 'true');
+  await customer.press('Enter');
+  await expect(customer).toHaveValue('Test Beta Laboratory');
+  await expect(recent.getByRole('button', { name: 'Add CRP' })).toBeVisible();
+  await customer.fill('Alpha');
+  await expect(customer).toHaveAttribute('aria-expanded', 'true');
+  await customer.press('Enter');
+  await expect(customer).toHaveValue('Test Alpha Laboratory');
+  await expect(recent.getByRole('button', { name: 'Add Glucose A' })).toBeVisible();
+  await expect(recent.getByRole('button', { name: 'Add CRP' })).toHaveCount(0);
+  await customer.fill('Beta');
+  await expect(customer).toHaveAttribute('aria-expanded', 'true');
+  await customer.press('Enter');
+  await expect(customer).toHaveValue('Test Beta Laboratory');
+  await expect(recent.getByRole('button', { name: 'Add CRP' })).toBeVisible();
+  await expect(recent.getByRole('button', { name: 'Add Glucose A' })).toHaveCount(0);
+  expect(historyQueries).toHaveLength(2);
+});

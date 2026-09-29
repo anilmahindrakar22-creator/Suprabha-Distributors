@@ -1207,10 +1207,13 @@ export function HydratedNewOrderPanel({ data, templateOrder, onClose, onCreated,
   const [customerCity, setCustomerCity] = useState(initialPayload?.customerCity || '');
   const [deliveryAddress, setDeliveryAddress] = useState(initialPayload?.deliveryAddress || '');
   const [selectedCustomerId, setSelectedCustomerId] = useState<string | undefined>(initialPayload?.customerId);
+  const selectedCustomerKey = selectedCustomerId ? `${data.actor.email.trim().toLocaleLowerCase('en-IN')}:${selectedCustomerId}` : '';
   const [customerSuggestionsOpen, setCustomerSuggestionsOpen] = useState(false);
   const [activeCustomerIndex, setActiveCustomerIndex] = useState(0);
-  const [customerHistory, setCustomerHistory] = useState<{ orders: OrderSummary[]; total: number } | null>(null);
+  const [customerHistory, setCustomerHistory] = useState<{ ownerKey: string; orders: OrderSummary[]; total: number } | null>(null);
   const [customerHistoryState, setCustomerHistoryState] = useState<'idle' | 'loading' | 'error'>('idle');
+  const customerHistoryCacheRef = useRef(new Map<string, { ownerKey: string; orders: OrderSummary[]; total: number }>());
+  const currentCustomerKeyRef = useRef(selectedCustomerKey);
   const [notes, setNotes] = useState(initialPayload?.notes || '');
   const [source, setSource] = useState<'phone' | 'email' | 'whatsapp' | 'walk_in'>(initialPayload?.source || 'phone');
   const [priority, setPriority] = useState<'normal' | 'high' | 'urgent'>(initialPayload?.priority || 'normal');
@@ -1324,7 +1327,7 @@ export function HydratedNewOrderPanel({ data, templateOrder, onClose, onCreated,
   );
   const selectedCustomer = data.customers.find((customer) => customer.id === selectedCustomerId);
   const recentProducts = useMemo(() => {
-    if (!selectedCustomerId || !customerHistory || lines.length >= 50) return [];
+    if (!selectedCustomerId || customerHistory?.ownerKey !== selectedCustomerKey || lines.length >= 50) return [];
     const catalogByKey = new Map(data.snapshot.catalog.filter((item) => item.active).map((item) => [item.tallyKey, item]));
     const seen = new Set(lines.map((line) => line.tallyKey));
     const products: CatalogItem[] = [];
@@ -1338,17 +1341,34 @@ export function HydratedNewOrderPanel({ data, templateOrder, onClose, onCreated,
       }
     }
     return products;
-  }, [customerHistory, data.snapshot.catalog, lines, selectedCustomerId]);
+  }, [customerHistory, data.snapshot.catalog, lines, selectedCustomerId, selectedCustomerKey]);
 
   useEffect(() => {
     if (!selectedCustomer) return;
+    currentCustomerKeyRef.current = selectedCustomerKey;
+    const cached = customerHistoryCacheRef.current.get(selectedCustomerKey);
+    if (cached) {
+      setCustomerHistory(cached);
+      setCustomerHistoryState('idle');
+      return;
+    }
     const controller = new AbortController();
     fetch(orderListUrl({ page: 1, query: `customer:${selectedCustomer.name}`, status: 'all', captureDate: '' }), { cache: 'no-store', signal: controller.signal })
       .then((response) => readResponse<OrderBootstrap>(response))
-      .then((result) => { setCustomerHistory({ orders: result.orders.slice(0, 5), total: result.pagination?.total || result.orders.length }); setCustomerHistoryState('idle'); })
-      .catch((cause) => { if (cause instanceof DOMException && cause.name === 'AbortError') return; setCustomerHistory(null); setCustomerHistoryState('error'); });
+      .then((result) => {
+        if (controller.signal.aborted || currentCustomerKeyRef.current !== selectedCustomerKey) return;
+        const history = { ownerKey: selectedCustomerKey, orders: result.orders.slice(0, 5), total: result.pagination?.total || result.orders.length };
+        customerHistoryCacheRef.current.set(selectedCustomerKey, history);
+        setCustomerHistory(history);
+        setCustomerHistoryState('idle');
+      })
+      .catch((cause) => {
+        if (controller.signal.aborted || currentCustomerKeyRef.current !== selectedCustomerKey || cause instanceof DOMException && cause.name === 'AbortError') return;
+        setCustomerHistory(null);
+        setCustomerHistoryState('error');
+      });
     return () => controller.abort();
-  }, [selectedCustomer]);
+  }, [selectedCustomer, selectedCustomerKey]);
 
   useEffect(() => {
     if (!canViewPrices || !selectedCustomerId || !pricingKeys) return;
@@ -1367,13 +1387,16 @@ export function HydratedNewOrderPanel({ data, templateOrder, onClose, onCreated,
   }, [canViewPrices, entryPriceKey, pricingKeys, selectedCustomerId]);
 
   function chooseCustomer(customer: CustomerDirectoryEntry) {
+    const customerKey = `${data.actor.email.trim().toLocaleLowerCase('en-IN')}:${customer.id}`;
+    currentCustomerKeyRef.current = customerKey;
     setSelectedCustomerId(customer.id);
     setCustomerName(customer.name);
     setCustomerPhone(customer.phone || '');
     setCustomerCity(customer.city || '');
     setCustomerSuggestionsOpen(false);
-    setCustomerHistory(null);
-    setCustomerHistoryState('loading');
+    const cached = customerHistoryCacheRef.current.get(customerKey);
+    setCustomerHistory(cached || null);
+    setCustomerHistoryState(cached ? 'idle' : 'loading');
     productInputRef.current?.focus();
   }
 
@@ -1485,6 +1508,7 @@ export function HydratedNewOrderPanel({ data, templateOrder, onClose, onCreated,
                     maxLength={200}
                     value={customerName}
                     onChange={(event) => {
+                      currentCustomerKeyRef.current = '';
                       setCustomerName(event.target.value);
                       setSelectedCustomerId(undefined);
                       setCustomerHistory(null);
@@ -1539,7 +1563,7 @@ export function HydratedNewOrderPanel({ data, templateOrder, onClose, onCreated,
                       ))}
                     </ul>
                   ) : null}
-                  {selectedCustomer ? <CustomerAccountPreview customer={selectedCustomer} history={customerHistory} state={customerHistoryState} onViewOrders={() => onViewCustomer(selectedCustomer.name)} onUseOrder={usePreviousOrder} onUseAddress={usePreviousAddress} /> : null}
+                  {selectedCustomer ? <CustomerAccountPreview customer={selectedCustomer} history={customerHistory?.ownerKey === selectedCustomerKey ? customerHistory : null} state={customerHistoryState} onViewOrders={() => onViewCustomer(selectedCustomer.name)} onUseOrder={usePreviousOrder} onUseAddress={usePreviousAddress} /> : null}
                 </div>
                 <details className="sm:col-span-2 rounded-xl bg-[#f6f8f7] px-3 py-2 text-sm">
                   <summary className="cursor-pointer font-bold text-[#456367]">Contact details <span className="font-normal text-[#718487]">(optional)</span></summary>
