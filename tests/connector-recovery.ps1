@@ -73,6 +73,9 @@ if ((Get-ConnectorUploadFailureCode ([pscustomobject]@{ Exception = [pscustomobj
 if ((Get-ConnectorUploadFailureCode ([pscustomobject]@{ Exception = [pscustomobject]@{ Response = [pscustomobject]@{ StatusCode = 401 } } })) -ne 'http_401') { throw 'Cloud authorization failure status was not classified' }
 if ((Get-ConnectorUploadFailureCode ([pscustomobject]@{ Exception = [pscustomobject]@{ Response = $null } })) -ne 'network') { throw 'Cloud network failure was not classified' }
 if ((Get-ConnectorUploadFailureCode ([pscustomobject]@{ Exception = [pscustomobject]@{ Response = [pscustomobject]@{ StatusCode = 'secret-data' } } })) -ne 'network') { throw 'Untrusted HTTP status reached health log' }
+if ((Get-TallyRetryDelayMinutes 15 1) -ne 15) { throw 'First Tally failure must retain the normal retry interval' }
+if ((Get-TallyRetryDelayMinutes 15 2) -ne 30 -or (Get-TallyRetryDelayMinutes 15 3) -ne 60) { throw 'Repeated Tally failures did not back off' }
+if ((Get-TallyRetryDelayMinutes 15 8) -ne 60 -or (Get-TallyRetryDelayMinutes 120 8) -ne 120) { throw 'Tally retry delay exceeded its cap or shortened the configured interval' }
 if (-not (Write-BoundedConnectorLog $healthPath 'first-entry' 1)) { throw 'Initial health log write failed' }
 if (-not (Write-BoundedConnectorLog $healthPath 'second-entry' 1)) { throw 'Rotated health log write failed' }
 if ((Get-Content -LiteralPath "$healthPath.previous" -Raw).Trim() -ne 'first-entry') { throw 'Health log rotation did not retain the previous log' }
@@ -100,4 +103,4 @@ if ($baseline['Kit'].dateKey -ne '20260905' -or $baseline['Kit'].quantity -ne 2)
 [IO.File]::Delete($healthPath)
 [IO.File]::Delete("$healthPath.previous")
 [IO.Directory]::Delete($directory)
-Write-Output 'PASS: disconnect containment, restart and backup recovery, timestamp preservation, durable customer/catalog caches, saved/live company validation, atomic replacement, bounded health log, corrupt cache, exclusive lock, compact baseline'
+Write-Output 'PASS: disconnect containment, restart and backup recovery, timestamp preservation, durable customer/catalog caches, saved/live company validation, atomic replacement, bounded Tally retry, bounded health log, corrupt cache, exclusive lock, compact baseline'

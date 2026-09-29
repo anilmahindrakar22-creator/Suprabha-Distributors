@@ -297,7 +297,6 @@ function Get-ReorderData {
     } catch {
         if ($script:lastReorderData) {
             Write-Host 'Tally refresh failed; retaining the last successful snapshot and its timestamp.' -ForegroundColor DarkYellow
-            return $script:lastReorderData
         }
         throw
     }
@@ -520,16 +519,21 @@ Write-Host "Press Ctrl+C to stop." -ForegroundColor DarkGray
 if (-not $NoBrowser) { Start-Process "http://localhost:$Port" }
 
 $nextCloudSync = Get-Date
+$automaticTallyFailures = 0
 try {
     while ($true) {
         if (-not $listener.Pending()) {
             if ((Get-Date) -ge $nextCloudSync) {
                 try {
                     $null = Get-ReorderData
+                    $automaticTallyFailures = 0
+                    $nextCloudSync = (Get-Date).AddMinutes($SyncMinutes)
                 } catch {
-                    Write-Host "Automatic sync will retry in $SyncMinutes minutes." -ForegroundColor DarkYellow
+                    $automaticTallyFailures++
+                    $retryMinutes = Get-TallyRetryDelayMinutes $SyncMinutes $automaticTallyFailures
+                    Write-Host "Automatic sync will retry in $retryMinutes minutes." -ForegroundColor DarkYellow
+                    $nextCloudSync = (Get-Date).AddMinutes($retryMinutes)
                 }
-                $nextCloudSync = (Get-Date).AddMinutes($SyncMinutes)
             }
             if ($script:pendingUpload -and (Get-Date) -ge $script:nextUpload) {
                 if (Publish-CloudSnapshot ($script:pendingUpload | ConvertTo-Json -Depth 6 -Compress)) {

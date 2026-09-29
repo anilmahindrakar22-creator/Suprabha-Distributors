@@ -230,6 +230,12 @@ function Get-ConnectorUploadFailureCode($ErrorRecord) {
     return 'network'
 }
 
+function Get-TallyRetryDelayMinutes([int]$NormalMinutes, [int]$ConsecutiveFailures) {
+    $maximum = [Math]::Max(60, $NormalMinutes)
+    $exponent = [Math]::Min(6, [Math]::Max(0, $ConsecutiveFailures - 1))
+    return [int][Math]::Min($maximum, $NormalMinutes * [Math]::Pow(2, $exponent))
+}
+
 function Read-ConnectorJson([string]$Path) {
     $json = [IO.File]::ReadAllText($Path)
     # PowerShell 7 otherwise converts ISO timestamps to DateTime before our
