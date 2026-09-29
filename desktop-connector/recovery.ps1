@@ -230,6 +230,10 @@ function Get-ConnectorUploadFailureCode($ErrorRecord) {
     return 'network'
 }
 
+function Test-ConnectorUploadAuthFailure([string]$FailureCode) {
+    return $FailureCode -in @('http_401', 'http_403')
+}
+
 function Get-TallyRetryDelayMinutes([int]$NormalMinutes, [int]$ConsecutiveFailures) {
     $maximum = [Math]::Max(60, $NormalMinutes)
     $exponent = [Math]::Min(6, [Math]::Max(0, $ConsecutiveFailures - 1))

@@ -51,6 +51,7 @@ if ($RebuildSalesHistory) {
 $script:pendingUpload = $script:lastReorderData
 $script:nextUpload = Get-Date
 $script:cloudUploadFailures = 0
+$script:uploadAuthBlocked = $false
 $diasysGroup = 'Diasys Diagnostic India Pvt Ltd'
 $allowedGroups = @($diasysGroup, 'SYS 480', 'SYS Aurora', 'Sysmex')
 $cloudSyncUrl = 'https://aormuidjbdqruglmyseh.supabase.co/functions/v1/stockflow-sync'
@@ -72,6 +73,7 @@ function Publish-CloudSnapshot([string]$Json) {
         Invoke-WebRequest -Uri $cloudSyncUrl -Method Post -ContentType 'application/json' -Headers @{ 'x-upload-key' = $cloudUploadKey } -Body $Json -UseBasicParsing -TimeoutSec 15 | Out-Null
         $watch.Stop()
         $script:cloudUploadFailures = 0
+        $script:uploadAuthBlocked = $false
         Write-ConnectorHealth "$([datetimeoffset]::Now.ToString('o')) request=cloud_upload durationMs=$($watch.ElapsedMilliseconds) consecutiveFailures=0 status=ok"
         Write-Host "Cloud snapshot updated." -ForegroundColor DarkGreen
         return $true
@@ -79,9 +81,14 @@ function Publish-CloudSnapshot([string]$Json) {
         $watch.Stop()
         $script:cloudUploadFailures++
         $failureCode = Get-ConnectorUploadFailureCode $_
+        $script:uploadAuthBlocked = Test-ConnectorUploadAuthFailure $failureCode
         Write-ConnectorHealth "$([datetimeoffset]::Now.ToString('o')) request=cloud_upload durationMs=$($watch.ElapsedMilliseconds) consecutiveFailures=$($script:cloudUploadFailures) status=failed failure=$failureCode"
         # The local dashboard must remain usable even when the internet is down.
-        Write-Host 'Cloud upload pending; the saved snapshot will be retried.' -ForegroundColor DarkYellow
+        if ($script:uploadAuthBlocked) {
+            Write-Host 'Cloud upload authorization was rejected. The saved snapshot is retained; correct the upload key and restart the connector.' -ForegroundColor DarkYellow
+        } else {
+            Write-Host 'Cloud upload pending; the saved snapshot will be retried.' -ForegroundColor DarkYellow
+        }
         return $false
     }
 }
@@ -435,12 +442,14 @@ function Read-ReorderData {
     $catalog = @($catalog | Sort-Object group, item)
     Write-ConnectorHealth "$([datetimeoffset]::Now.ToString('o')) domain=reorder rows=$($sorted.Count) catalog=$($catalog.Count) customers=$($customers.Count) status=accepted"
     $fetchedAtIso = (Get-Date).ToUniversalTime().ToString('o')
+    $sourceFetchedAtIso = Get-ConnectorSourceFetchedAt $fetchedAtIso $script:lastCatalogData $script:lastCustomerData
     return [ordered]@{
         company = $companyName
         fetchedAt = (Get-Date).ToString('dd MMM yyyy, hh:mm:ss tt')
         fetchedAtShort = (Get-Date).ToString('dd MMM, hh:mm tt')
         fetchedAtIso = $fetchedAtIso
-        sourceFetchedAtIso = Get-ConnectorSourceFetchedAt $fetchedAtIso $script:lastCatalogData $script:lastCustomerData
+        sourceFetchedAtIso = $sourceFetchedAtIso
+        catalogVersion = $sourceFetchedAtIso.catalog
         supplyHistoryFrom = $historyFrom.ToString('dd MMM yyyy')
         supplyHistoryTo = $today.ToString('dd MMM yyyy')
         supplyHistoryRange = "$($historyFrom.ToString('dd MMM yyyy')) to $($today.ToString('dd MMM yyyy'))"
@@ -537,7 +546,7 @@ try {
                     $nextCloudSync = (Get-Date).AddMinutes($retryMinutes)
                 }
             }
-            if ($script:pendingUpload -and (Get-Date) -ge $script:nextUpload) {
+            if ($script:pendingUpload -and -not $script:uploadAuthBlocked -and (Get-Date) -ge $script:nextUpload) {
                 if (Publish-CloudSnapshot ($script:pendingUpload | ConvertTo-Json -Depth 6 -Compress)) {
                     $script:pendingUpload = $null
                 }

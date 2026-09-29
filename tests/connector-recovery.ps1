@@ -73,6 +73,8 @@ if ((Get-ConnectorUploadFailureCode ([pscustomobject]@{ Exception = [pscustomobj
 if ((Get-ConnectorUploadFailureCode ([pscustomobject]@{ Exception = [pscustomobject]@{ Response = [pscustomobject]@{ StatusCode = 401 } } })) -ne 'http_401') { throw 'Cloud authorization failure status was not classified' }
 if ((Get-ConnectorUploadFailureCode ([pscustomobject]@{ Exception = [pscustomobject]@{ Response = $null } })) -ne 'network') { throw 'Cloud network failure was not classified' }
 if ((Get-ConnectorUploadFailureCode ([pscustomobject]@{ Exception = [pscustomobject]@{ Response = [pscustomobject]@{ StatusCode = 'secret-data' } } })) -ne 'network') { throw 'Untrusted HTTP status reached health log' }
+if (-not (Test-ConnectorUploadAuthFailure 'http_401') -or -not (Test-ConnectorUploadAuthFailure 'http_403')) { throw 'Cloud authorization failures must stop automatic retries' }
+if (Test-ConnectorUploadAuthFailure 'http_500' -or (Test-ConnectorUploadAuthFailure 'network')) { throw 'Temporary cloud failures must remain retryable' }
 if ((Get-TallyRetryDelayMinutes 15 1) -ne 15) { throw 'First Tally failure must retain the normal retry interval' }
 if ((Get-TallyRetryDelayMinutes 15 2) -ne 30 -or (Get-TallyRetryDelayMinutes 15 3) -ne 60) { throw 'Repeated Tally failures did not back off' }
 if ((Get-TallyRetryDelayMinutes 15 8) -ne 60 -or (Get-TallyRetryDelayMinutes 120 8) -ne 120) { throw 'Tally retry delay exceeded its cap or shortened the configured interval' }

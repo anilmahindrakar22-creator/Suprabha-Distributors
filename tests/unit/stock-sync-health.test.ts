@@ -34,7 +34,12 @@ describe('Tally stock sync health', () => {
   });
 
   it('keeps source-specific timestamps alongside the stock snapshot timestamp', () => {
-    expect(connector).toContain('sourceFetchedAtIso = Get-ConnectorSourceFetchedAt $fetchedAtIso $script:lastCatalogData $script:lastCustomerData');
+    expect(connector).toContain('$sourceFetchedAtIso = Get-ConnectorSourceFetchedAt $fetchedAtIso $script:lastCatalogData $script:lastCustomerData');
+    expect(connector).toContain('sourceFetchedAtIso = $sourceFetchedAtIso');
+  });
+
+  it('versions the order catalog from its own master refresh, not each stock refresh', () => {
+    expect(connector).toContain('catalogVersion = $sourceFetchedAtIso.catalog');
   });
 
   it('records per-domain counts and consecutive Tally failures', () => {
@@ -72,6 +77,11 @@ describe('Tally stock sync health', () => {
     expect(connector).toContain('$script:cloudUploadFailures = 0');
     expect(connector).toContain('[Math]::Min(30, 5 * [Math]::Pow(2');
     expect(connector).toContain('$script:nextUpload = (Get-Date).AddMinutes($retryMinutes)');
+  });
+
+  it('pauses repeated cloud uploads after authorization rejection while retaining the pending snapshot', () => {
+    expect(connector).toContain('$script:uploadAuthBlocked = Test-ConnectorUploadAuthFailure $failureCode');
+    expect(connector).toContain('if ($script:pendingUpload -and -not $script:uploadAuthBlocked -and (Get-Date) -ge $script:nextUpload)');
   });
 
   it('provides office-only status, pause, resume, restart, and schedule controls', () => {

@@ -24,6 +24,7 @@ const pricingReleaseFiles = new Set([
   '20260927180000_snapshot_pricing_import_privilege.sql',
   '20260928110000_customer_group_gross_margin.sql',
   '20260928104500_non_retryable_business_conflicts.sql',
+  '20260929180000_catalog_source_version.sql',
 ]);
 const sha = (sql) => createHash('sha256').update(sql.replace(/\r/g, '').trim(), 'utf8').digest('hex');
 const hashPattern = /^[a-f0-9]{64}$/;

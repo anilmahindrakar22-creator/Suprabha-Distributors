@@ -597,6 +597,13 @@
       "remoteVersion": "20260928104105",
       "remoteSha256": "2c41e1974355526524b06deb873243e729bc95fe7add3351b309131ec6226347",
       "status": "exact_normalized_match"
+    },
+    {
+      "localFile": "20260929180000_catalog_source_version.sql",
+      "localSha256": "2c8a3ce7a76fd89bafe06a7b7128536d33476f80ce17809b06cfb8e8c8d97e0b",
+      "remoteVersion": null,
+      "remoteSha256": null,
+      "status": "not_deployed"
     }
   ]
 }

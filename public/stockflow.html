@@ -59,4 +59,51 @@ async function activateMetric(action){priorityFilter='all';$('group').value='All
 document.querySelectorAll('.metric-action').forEach(card=>{card.setAttribute('aria-pressed','false');card.onclick=()=>activateMetric(card.dataset.action);card.onkeydown=e=>{if(e.key==='Enter'||e.key===' '){e.preventDefault();activateMetric(card.dataset.action)}}});
 function setView(n,targetId){document.querySelectorAll('.view').forEach(v=>v.classList.toggle('active',v.id===n+'View'));document.querySelectorAll('[data-view]').forEach(b=>b.classList.toggle('active',b.dataset.view===n));const target=targetId?document.getElementById(targetId):document.getElementById(n+'View');requestAnimationFrame(()=>target.scrollIntoView({behavior:'smooth',block:'start'}))}
 document.querySelectorAll('[data-view]').forEach(b=>b.onclick=()=>{clearFocus();setView(b.dataset.view)});$('clearSelection').onclick=()=>{clearFocus();window.scrollTo({top:document.querySelector('.metrics').offsetTop-18,behavior:'smooth'})};$('group').onchange=()=>{clearFocus();render()};$('search').oninput=()=>{clearFocus();render()};$('refresh').onclick=()=>activateMetric('refresh');window.addEventListener('beforeinstallprompt',e=>{e.preventDefault();deferred=e;$('install').classList.add('show')});$('installBtn').onclick=async()=>{if(!deferred)return;deferred.prompt();await deferred.userChoice;deferred=null;$('install').classList.remove('show')};if('serviceWorker'in navigator)navigator.serviceWorker.register('/sw.js').catch(()=>{});refreshData();setInterval(()=>void refreshData(),CLOUD_REFRESH_INTERVAL_MS);document.addEventListener('visibilitychange',()=>{if(!document.hidden)void refreshData()});window.addEventListener('focus',()=>void refreshData());window.addEventListener('online',()=>void refreshData(true));window.addEventListener('pageshow',()=>void refreshData());
-</script></body></html>
+</script>
+<script>
+(() => {
+  const dashboard = document.querySelector('.controls');
+  if (!dashboard || typeof window.applyData !== 'function') return;
+
+  const details = document.createElement('details');
+  details.style.cssText = 'max-width:1220px;margin:10px auto 0;padding:10px 14px;border:1px solid #dce7e5;border-radius:14px;background:#fff;color:#173239;font-size:12px';
+  const summary = document.createElement('summary');
+  summary.textContent = 'Source update times';
+  summary.style.cssText = 'cursor:pointer;font-weight:750;color:#456367';
+  details.append(summary);
+
+  const timestamps = document.createElement('dl');
+  timestamps.style.cssText = 'display:grid;grid-template-columns:repeat(3,minmax(0,1fr));gap:8px 16px;margin:10px 0 2px';
+  details.append(timestamps);
+  dashboard.after(details);
+
+  const sources = [['Stock', 'stock'], ['Catalog', 'catalog'], ['Customers', 'customers']];
+  const formatTimestamp = (value) => {
+    if (typeof value !== 'string') return 'Not available';
+    const time = Date.parse(value);
+    return Number.isFinite(time)
+      ? new Intl.DateTimeFormat('en-IN', { dateStyle: 'medium', timeStyle: 'short' }).format(time)
+      : 'Not available';
+  };
+  const applyData = window.applyData;
+  window.applyData = function(body, status) {
+    applyData(body, status);
+    timestamps.replaceChildren();
+    const metadata = body && body.sourceFetchedAtIso && typeof body.sourceFetchedAtIso === 'object'
+      ? body.sourceFetchedAtIso
+      : {};
+    for (const [label, key] of sources) {
+      const name = document.createElement('dt');
+      name.textContent = label;
+      name.style.cssText = 'color:#6b7e81;font-weight:650';
+      const time = document.createElement('dd');
+      time.textContent = formatTimestamp(metadata[key]);
+      time.style.cssText = 'margin:2px 0 0;font-variant-numeric:tabular-nums';
+      const item = document.createElement('div');
+      item.append(name, time);
+      timestamps.append(item);
+    }
+  };
+})();
+</script>
+</body></html>
