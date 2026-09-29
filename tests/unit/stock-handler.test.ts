@@ -62,6 +62,16 @@ describe('stock API handler', () => {
     });
   });
 
+  it('preserves separate stock, catalog, and customer source timestamps', async () => {
+    const sourceFetchedAtIso = {
+      stock: '2026-09-29T12:00:00Z',
+      catalog: '2026-09-29T08:00:00Z',
+      customers: '2026-09-29T04:00:00Z',
+    };
+    const response = await makeHandler({ fetchFn: vi.fn(async () => Response.json({ fetchedAtIso: sourceFetchedAtIso.stock, sourceFetchedAtIso })) })();
+    expect(await response.json()).toEqual({ fetchedAtIso: sourceFetchedAtIso.stock, sourceFetchedAtIso });
+  });
+
   it('returns a controlled error when stock storage is unavailable', async () => {
     const response = await makeHandler({
       fetchFn: vi.fn(async () => {

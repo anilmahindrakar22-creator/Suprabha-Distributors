@@ -29,7 +29,12 @@ describe('Tally stock sync health', () => {
   });
 
   it('publishes a machine-readable timestamp with every connector snapshot', () => {
-    expect(connector).toContain("fetchedAtIso = (Get-Date).ToUniversalTime().ToString('o')");
+    expect(connector).toContain("$fetchedAtIso = (Get-Date).ToUniversalTime().ToString('o')");
+    expect(connector).toContain('fetchedAtIso = $fetchedAtIso');
+  });
+
+  it('keeps source-specific timestamps alongside the stock snapshot timestamp', () => {
+    expect(connector).toContain('sourceFetchedAtIso = Get-ConnectorSourceFetchedAt $fetchedAtIso $script:lastCatalogData $script:lastCustomerData');
   });
 
   it('records per-domain counts and consecutive Tally failures', () => {

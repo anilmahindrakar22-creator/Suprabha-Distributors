@@ -434,11 +434,13 @@ function Read-ReorderData {
     }
     $catalog = @($catalog | Sort-Object group, item)
     Write-ConnectorHealth "$([datetimeoffset]::Now.ToString('o')) domain=reorder rows=$($sorted.Count) catalog=$($catalog.Count) customers=$($customers.Count) status=accepted"
+    $fetchedAtIso = (Get-Date).ToUniversalTime().ToString('o')
     return [ordered]@{
         company = $companyName
         fetchedAt = (Get-Date).ToString('dd MMM yyyy, hh:mm:ss tt')
         fetchedAtShort = (Get-Date).ToString('dd MMM, hh:mm tt')
-        fetchedAtIso = (Get-Date).ToUniversalTime().ToString('o')
+        fetchedAtIso = $fetchedAtIso
+        sourceFetchedAtIso = Get-ConnectorSourceFetchedAt $fetchedAtIso $script:lastCatalogData $script:lastCustomerData
         supplyHistoryFrom = $historyFrom.ToString('dd MMM yyyy')
         supplyHistoryTo = $today.ToString('dd MMM yyyy')
         supplyHistoryRange = "$($historyFrom.ToString('dd MMM yyyy')) to $($today.ToString('dd MMM yyyy'))"

@@ -236,6 +236,12 @@ function Get-TallyRetryDelayMinutes([int]$NormalMinutes, [int]$ConsecutiveFailur
     return [int][Math]::Min($maximum, $NormalMinutes * [Math]::Pow(2, $exponent))
 }
 
+function Get-ConnectorSourceFetchedAt([string]$StockFetchedAtIso, $CatalogSnapshot, $CustomerSnapshot) {
+    $catalogAt = if ($CatalogSnapshot) { [string]$CatalogSnapshot.fetchedAtIso } else { $null }
+    $customersAt = if ($CustomerSnapshot) { [string]$CustomerSnapshot.fetchedAtIso } else { $null }
+    return [ordered]@{ stock = $StockFetchedAtIso; catalog = $catalogAt; customers = $customersAt }
+}
+
 function Read-ConnectorJson([string]$Path) {
     $json = [IO.File]::ReadAllText($Path)
     # PowerShell 7 otherwise converts ISO timestamps to DateTime before our
