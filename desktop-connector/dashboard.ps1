@@ -121,16 +121,24 @@ function Publish-CloudSnapshot([string]$Json) {
         }
         return $false
     }
-    $script:uploadState.ackedHash = Get-StableEvidenceVersion $Json
+    # Cloud acceptance clears rejection flags even if saving the local receipt fails.
+    # Advance the acknowledgement only after its atomic disk write succeeds.
+    $script:uploadAuthBlocked = $false
+    $script:uploadPayloadBlocked = $false
     $script:uploadState.blockedKeyHash = $null
     $script:uploadState.rejectedPayloadHash = $null
-    try { Save-ConnectorUploadState $uploadStatePath $script:uploadState }
+    $receipt = [ordered]@{
+        company = $script:uploadState.company; kind = 'cloud_upload_state_v1'
+        ackedHash = Get-StableEvidenceVersion $Json; blockedKeyHash = $null; rejectedPayloadHash = $null
+    }
+    try { Save-ConnectorUploadState $uploadStatePath $receipt }
     catch {
         $script:cloudUploadFailures++
         Write-ConnectorHealth "$([datetimeoffset]::Now.ToString('o')) request=cloud_upload_receipt bytes=$payloadBytes status=failed"
         Write-Host 'Cloud accepted the snapshot, but its local receipt could not be saved; the snapshot will be retried.' -ForegroundColor DarkYellow
         return $false
     }
+    $script:uploadState = $receipt
     $script:cloudUploadFailures = 0
     $script:uploadAuthBlocked = $false
     $script:uploadPayloadBlocked = $false

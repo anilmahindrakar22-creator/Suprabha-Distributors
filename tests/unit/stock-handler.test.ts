@@ -125,10 +125,22 @@ describe('stock API handler', () => {
     });
   });
 
-  it('preserves controlled upstream errors in the lightweight view', async () => {
+  it('returns a controlled error for an unavailable upstream in the lightweight view', async () => {
     const response = await makeHandler({ fetchFn: vi.fn(async () => Response.json({ error: 'Stock sync unavailable' }, { status: 503 })) })(new Request('https://stock.example/api/stock?view=dashboard'));
     expect(response.status).toBe(503);
-    expect(await response.json()).toEqual({ error: 'Stock sync unavailable' });
+    expect(await response.json()).toEqual({ error: 'Stock service is temporarily unavailable' });
+  });
+
+  it.each([
+    Response.json({ error: 'private upstream key and customer price 4450' }, { status: 500 }),
+    new Response('<html>private upstream key and customer price 4450</html>', { status: 502 }),
+    new Response('private upstream key and customer price 4450', { status: 200 }),
+    Response.json('private upstream key and customer price 4450'),
+    Response.json({ error: 'private upstream key and customer price 4450' }),
+  ])('never forwards raw upstream errors or malformed successful bodies to operational users (%j)', async upstream => {
+    const response = await makeHandler({ fetchFn: vi.fn(async () => upstream) })();
+    expect(response.status).toBe(upstream.ok ? 502 : upstream.status);
+    expect(await response.json()).toEqual({ error: 'Stock service is temporarily unavailable' });
   });
 
   it('shares concurrent authorized reads but does not cache a settled response', async () => {

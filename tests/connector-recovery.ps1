@@ -151,6 +151,20 @@ function Invoke-WebRequest { param($Uri, $Method, $ContentType, $Headers, $Body,
 if (-not (Publish-CloudSnapshot 'changed-snapshot')) { throw 'Changed snapshot did not recover' }
 $recoveredState = Read-ConnectorUploadState $uploadStatePath 'TEST'
 if ($recoveredState.rejectedPayloadHash -or $script:uploadPayloadBlocked) { throw 'Successful upload retained payload rejection' }
+$saveUploadStateFunction = (Get-Command Save-ConnectorUploadState).ScriptBlock
+$script:uploadAuthBlocked = $true
+$script:uploadPayloadBlocked = $true
+$script:uploadState.blockedKeyHash = Get-StableEvidenceVersion $cloudUploadKey
+$script:uploadState.rejectedPayloadHash = Get-StableEvidenceVersion 'old-rejected-data'
+try {
+    function Save-ConnectorUploadState { param($Path, $State) throw 'simulated receipt disk failure' }
+    if (Publish-CloudSnapshot 'accepted-without-receipt') { throw 'Receipt failure was reported as durable success' }
+    if ($script:uploadAuthBlocked -or $script:uploadPayloadBlocked) { throw 'Receipt failure left a successful upload permanently blocked' }
+    if (Test-ConnectorUploadAcknowledged $script:uploadState 'accepted-without-receipt') { throw 'Receipt failure advanced in-memory acknowledgement' }
+} finally {
+    Set-Item -Path Function:Save-ConnectorUploadState -Value $saveUploadStateFunction
+}
+if (-not (Publish-CloudSnapshot 'accepted-without-receipt')) { throw 'Receipt save retry did not recover' }
 if (-not (Test-ConnectorUploadAcknowledged $recoveredState 'changed-snapshot')) { throw 'Recovered upload receipt missing' }
 if ((Get-Content -LiteralPath $uploadStatePath -Raw).Contains('changed-snapshot')) { throw 'Receipt exposed business payload' }
 if (-not (Test-ConnectorUploadPayloadFailure 'http_400') -or -not (Test-ConnectorUploadPayloadFailure 'http_413') -or (Test-ConnectorUploadPayloadFailure 'network')) { throw 'Payload failure classification failed' }

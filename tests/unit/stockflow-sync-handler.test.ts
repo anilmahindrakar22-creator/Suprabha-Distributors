@@ -1,7 +1,7 @@
 import { afterEach, describe, expect, it, vi } from 'vitest';
 import { createSyncHandler } from '../../supabase/functions/stockflow-sync/handler';
 
-const validPayload = { company: 'TEST', fetchedAt: '2026-09-30', rows: [{ item: 'Kit' }], groups: ['Sysmex'] };
+const validPayload = { company: 'SUPRABHA DISTRIBUTORS', fetchedAt: '2026-09-30', rows: [{ item: 'Kit' }], groups: ['Sysmex'] };
 const databaseUrl = 'https://database.example';
 const databaseSecret = 'test-secret';
 afterEach(() => vi.restoreAllMocks());
@@ -137,6 +137,54 @@ describe('Stockflow sync edge handler', () => {
       },
     });
     expect(JSON.parse(init?.body as string)).toMatchObject({ id: 'suprabha', company: validPayload.company, payload: validPayload });
+  });
+
+  it.each(['OTHER COMPANY', '', 'SUPRABHA DISTRIBUTORS BRANCH'])('rejects a snapshot from %j before writing the single-company row', async company => {
+    const { handler, fetchFn } = makeHandler({ fetchFn: vi.fn(async () => new Response(null, { status: 204 })) });
+    const response = await handler(postRequest(JSON.stringify({ ...validPayload, company }), 'upload-key'));
+    expect(response.status).toBe(400);
+    expect(await response.json()).toEqual({ error: 'Invalid snapshot' });
+    expect(fetchFn).not.toHaveBeenCalled();
+  });
+
+  it('accepts company-name casing and whitespace used by the existing connector identity check', async () => {
+    const { handler, fetchFn } = makeHandler({ fetchFn: vi.fn(async () => new Response(null, { status: 204 })) });
+    const response = await handler(postRequest(JSON.stringify({ ...validPayload, company: ' suprabha distributors ' }), 'upload-key'));
+    expect(response.status).toBe(200);
+    expect(fetchFn).toHaveBeenCalledOnce();
+  });
+
+  it.each([
+    { ...validPayload, fetchedAt: undefined },
+    { ...validPayload, fetchedAt: ' ' },
+    { ...validPayload, fetchedAtIso: 'not-a-timestamp' },
+    { ...validPayload, fetchedAtIso: 123 },
+    { ...validPayload, fetchedAtIso: '2026-02-30T12:00:00Z' },
+  ])('rejects missing or invalid source freshness without inventing an extraction time (%j)', async payload => {
+    const { handler, fetchFn } = makeHandler({ fetchFn: vi.fn(async () => new Response(null, { status: 204 })) });
+    const response = await handler(postRequest(JSON.stringify(payload), 'upload-key'));
+    expect(response.status).toBe(400);
+    expect(fetchFn).not.toHaveBeenCalled();
+  });
+
+  it.each(['2026-09-30T12:00:00Z', '2026-09-30T12:00:00.1234567+00:00'])('persists the actual ISO source time %s rather than the display label', async fetchedAtIso => {
+    const fetchFn = vi.fn(async (_input: RequestInfo | URL, _init?: RequestInit) => new Response(null, { status: 204 }));
+    const { handler } = makeHandler({ fetchFn });
+    const response = await handler(postRequest(JSON.stringify({ ...validPayload, fetchedAtIso }), 'upload-key'));
+    expect(response.status).toBe(200);
+    expect(JSON.parse(fetchFn.mock.calls[0][1]?.body as string).fetched_at).toBe(fetchedAtIso);
+  });
+
+  it('accepts an ISO-only snapshot and preserves legacy display-only extraction times', async () => {
+    const fetchFn = vi.fn(async (_input: RequestInfo | URL, _init?: RequestInit) => new Response(null, { status: 204 }));
+    const { handler } = makeHandler({ fetchFn });
+    for (const payload of [
+      { ...validPayload, fetchedAt: undefined, fetchedAtIso: '2026-09-30T12:00:00Z' },
+      { ...validPayload, fetchedAt: '30 Sep 2026, 05:30:00 PM' },
+    ]) {
+      expect((await handler(postRequest(JSON.stringify(payload), 'upload-key'))).status).toBe(200);
+      expect(JSON.parse(fetchFn.mock.calls.at(-1)?.[1]?.body as string).fetched_at).toBe('fetchedAtIso' in payload ? payload.fetchedAtIso : payload.fetchedAt);
+    }
   });
 
   it.each([

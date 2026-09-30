@@ -73,14 +73,16 @@ export function createStockHandler<User>({
             headers: { 'x-dashboard-key': key },
             signal: AbortSignal.timeout(15_000),
           });
-          const text = await response.text();
-          let body = text;
-          try {
-            const parsed = JSON.parse(text);
-            const projected = response.ok && dashboardView ? projectDashboardStockPayload(parsed) : parsed;
-            body = JSON.stringify(sanitizeStockPayload(projected));
-          } catch { /* Preserve controlled upstream non-JSON errors. */ }
-          return { body, status: response.status };
+          if (!response.ok) {
+            // Database/gateway error bodies can contain commercial values or credentials.
+            // Never forward them to operational users, even when they are valid JSON.
+            await response.body?.cancel();
+            return { body: JSON.stringify({ error: 'Stock service is temporarily unavailable' }), status: response.status };
+          }
+          const parsed = await response.json();
+          if (parsed === null || typeof parsed !== 'object' || Array.isArray(parsed) || 'error' in parsed) throw new Error('Invalid snapshot response');
+          const projected = dashboardView ? projectDashboardStockPayload(parsed) : parsed;
+          return { body: JSON.stringify(sanitizeStockPayload(projected)), status: response.status };
         })();
         entry = { key, result };
         inFlight.set(view, entry);
