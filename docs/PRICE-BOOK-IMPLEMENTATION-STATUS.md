@@ -741,6 +741,13 @@ Completed after the user requested one more slice:
 - Application success was followed by an authoritative policy-list refresh showing 25%, the new policy version and unchanged approval/rounding controls. Expanded history shows both versions: bootstrap `2026-04-01` through `2026-09-29`, replacement from `2026-09-30`. No historical policy was overwritten or deleted. No blind retry or direct database write was used.
 - This clears the bootstrap minimum-margin configuration blocker only. It does not establish each customer's reagent margins, full pricing acceptance, backup recovery, staff-device acceptance or pilot completion. Only this checkpoint changed in source control; no application source change, migration or publication.
 
+### Bounded timeout investigation — 30 September 2026
+
+- Read-only log investigation for 09:30–10:30 UTC. Discovered actual flattened attribute names before aggregating: `request.method`, `request.path`/`request.pathname`, `response.status_code`, `execution_time_ms`. Initial unqualified status/method aggregation returned empty fields; no result was interpreted as a successful request without correcting that query. No request headers, credentials, query strings or customer data were retrieved.
+- Returned function logs: 20 Orders POST requests, all HTTP 200, maximum execution 2,490 ms; four normal sync uploads, all HTTP 200, maximum 5,453 ms; three sync reads, all HTTP 200, maximum 1,312 ms. Live/candidate sync each also recorded one 400 POST and one 401 GET, consistent with the deliberate rejection probes in the preceding cutover. These counts describe returned logs, not guaranteed exhaustive traffic, browser latency or p95.
+- Returned REST logs for catalog, customer, order list/summary, pricing, users and snapshot reads/uploads all show HTTP 200. Eight PostgREST timeout-manager messages in the same window carry only infrastructure metadata, without request identifiers for attribution. Two PgBouncer timeout messages describe idle connection expiry. No demonstrable failed StockFlow request or application cause established; do not label the generic messages harmless or claim the issue fixed.
+- No code/configuration changes, additional probes, database writes, Tally operations or test-suite rerun. Upload maximum remains a performance signal needing representative measurements; authenticated candidate acceptance and pending catalog release remain next dependencies. Checkpoint-only change; whitespace validation before commit.
+
 ### Five live release checks — 30 September 2026
 
 - Started clean at `f5ada5e`. Checked live migration history, sync freshness, gateway permissions, timeout diagnostics and connection activity; no application or production changes.
