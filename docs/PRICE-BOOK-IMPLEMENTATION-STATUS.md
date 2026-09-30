@@ -741,6 +741,16 @@ Completed after the user requested one more slice:
 - Application success was followed by an authoritative policy-list refresh showing 25%, the new policy version and unchanged approval/rounding controls. Expanded history shows both versions: bootstrap `2026-04-01` through `2026-09-29`, replacement from `2026-09-30`. No historical policy was overwritten or deleted. No blind retry or direct database write was used.
 - This clears the bootstrap minimum-margin configuration blocker only. It does not establish each customer's reagent margins, full pricing acceptance, backup recovery, staff-device acceptance or pilot completion. Only this checkpoint changed in source control; no application source change, migration or publication.
 
+### Five live release checks — 30 September 2026
+
+- Started clean at `f5ada5e`. Checked live migration history, sync freshness, gateway permissions, timeout diagnostics and connection activity; no application or production changes.
+- Live history still lists 84 migrations, ending with gross-margin migration `20260928113956`, hash `e07bf146a9a884dc27c78c47aba196c0af0669eded04046d0f8580162bd1b625`. Catalog-source migration remains absent. Retrieved current hashes; no new automated all-hash comparison or saved-map rewrite.
+- At 10:35:19 UTC (16:05 IST), latest upload was 10:27:39.574 UTC and extraction 10:27:38.3842820Z. Snapshot JSON text is 579,832 bytes. Normal office uploads continue after cutover; this is not wire-size, latency or CPU evidence. Two diagnostic queries used incorrect schema names and were corrected against the repository; no writes occurred.
+- Catalog/list/internal order gateways deny anon/authenticated execution. Service role can execute catalog/list, not the internal before-auto-pricing gateway. This verifies those grants, not complete pricing role acceptance.
+- Logs from 29 September 10:30 UTC to 30 September 10:30 UTC contain 34 PostgREST timeout messages (Warp timeout-manager thread termination). Two separate PgBouncer messages describe idle server connection expiry, not demonstrated order failures. No `40001`/`42501` text matches in the returned window. Affected requests and timeout cause remain unknown; do not infer sustained CPU health or a recurrence of the former retry incident.
+- Connection sample: one active connection (the diagnostic), five idle, one null state, no other active query at that instant. This is not sustained resource or p95 measurement.
+- Fresh evidence-only preflight exited 0, correctly reporting `releaseReady=false` with catalog migration and authenticated isolated-candidate acceptance pending. No full suite/build rerun, merge, publication, Tally operation or pricing mutation. Staff-device acceptance, measured performance, working-day pilot and restore rehearsal remain outstanding. `git diff --check` passed before commit.
+
 ### Three-check pricing validation batch — 30 September 2026
 
 - Started clean at `5b9159a`. Completed three verification slices as one batch: customer/group gross-margin behavior, cost-increase exception behavior and release-preflight assessment. Used existing synthetic fixtures and isolated local PostgreSQL, not real customer margin approvals or live pricing mutations.
