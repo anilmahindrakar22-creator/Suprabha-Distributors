@@ -32,6 +32,7 @@ export async function readBoundedJson(request: Request, maximumBytes = 65_536): 
 export const approvedGatewayHash = 'f34221ee674c8fa961b423c3791cdea423baacfd8a78312835b002fc792b72eb';
 
 export async function isApprovedGatewayKey(value: string, expectedHash = approvedGatewayHash): Promise<boolean> {
+  if (!/^[a-f0-9]{64}$/.test(expectedHash)) return false;
   const digest = await crypto.subtle.digest('SHA-256', new TextEncoder().encode(value));
   const actual = Array.from(new Uint8Array(digest), (byte) => byte.toString(16).padStart(2, '0')).join('');
   let difference = 0;
@@ -104,4 +105,3 @@ export class RequestGate {
     return Array.from(new Uint8Array(digest), (byte) => byte.toString(16).padStart(2, '0')).join('');
   }
 }
-

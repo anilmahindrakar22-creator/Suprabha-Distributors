@@ -11,7 +11,7 @@ Deno.serve(async (request: Request) => {
   if (request.method !== "POST") return reply({ error: "Method not allowed" }, 405);
   const gatewayKey = request.headers.get("x-order-gateway-key");
   if (!gatewayKey || gatewayKey.length < 32) return reply({ message: "Unauthorized gateway", code: "42501" }, 403);
-  if (!await isApprovedGatewayKey(gatewayKey)) return reply({ message: "Unauthorized gateway", code: "42501" }, 403);
+  if (!await isApprovedGatewayKey(gatewayKey, Deno.env.get("STOCKFLOW_ORDER_GATEWAY_SHA256"))) return reply({ message: "Unauthorized gateway", code: "42501" }, 403);
   if (Number(request.headers.get("content-length") || 0) > 65_536) return reply({ error: "Request is too large" }, 413);
 
   let body: { actorEmail?: string; action?: string; payload?: Record<string, unknown> };

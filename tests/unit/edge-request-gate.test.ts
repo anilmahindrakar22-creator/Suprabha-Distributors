@@ -52,6 +52,9 @@ describe('Edge request safety gate', () => {
     const hash = Array.from(new Uint8Array(digest), (byte) => byte.toString(16).padStart(2, '0')).join('');
     expect(await isApprovedGatewayKey(gateway, hash)).toBe(true);
     expect(await isApprovedGatewayKey('old-key', hash)).toBe(false);
+    expect(await isApprovedGatewayKey(gateway, '')).toBe(false);
+    expect(await isApprovedGatewayKey(gateway, `${hash}extra`)).toBe(false);
+    expect(await isApprovedGatewayKey(gateway, 'not-a-hash')).toBe(false);
   });
   it('allows a command once, then cools down the same stale command even with a new idempotency key', async () => {
     const gate = new RequestGate();
@@ -99,4 +102,3 @@ describe('Edge request safety gate', () => {
     expect(attempts.filter((attempt) => !attempt.allowed)).toHaveLength(17);
   });
 });
-
