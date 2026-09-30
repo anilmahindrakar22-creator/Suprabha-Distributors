@@ -1,7 +1,8 @@
-import { describe, expect, it, vi } from 'vitest';
+import { afterEach, describe, expect, it, vi } from 'vitest';
 import { createStockHandler, sanitizeStockPayload } from '../../lib/stock-handler';
 
 const user = { email: 'approved@example.com' };
+afterEach(() => vi.restoreAllMocks());
 
 function makeHandler(overrides = {}) {
   return createStockHandler({
@@ -59,6 +60,7 @@ describe('stock API handler', () => {
     expect(fetchFn).toHaveBeenCalledWith('https://stock.example/snapshot', {
       cache: 'no-store',
       headers: { 'x-dashboard-key': 'server-only-key' },
+      signal: expect.any(AbortSignal),
     });
   });
 
@@ -119,6 +121,7 @@ describe('stock API handler', () => {
     expect(fetchFn).toHaveBeenCalledWith('https://stock.example/snapshot?view=dashboard', {
       cache: 'no-store',
       headers: { 'x-dashboard-key': 'server-only-key' },
+      signal: expect.any(AbortSignal),
     });
   });
 
@@ -126,5 +129,67 @@ describe('stock API handler', () => {
     const response = await makeHandler({ fetchFn: vi.fn(async () => Response.json({ error: 'Stock sync unavailable' }, { status: 503 })) })(new Request('https://stock.example/api/stock?view=dashboard'));
     expect(response.status).toBe(503);
     expect(await response.json()).toEqual({ error: 'Stock sync unavailable' });
+  });
+
+  it('shares concurrent authorized reads but does not cache a settled response', async () => {
+    let release!: (response: Response) => void;
+    const fetchFn = vi.fn<typeof fetch>(() => new Promise(resolve => { release = resolve; }));
+    const handler = makeHandler({ fetchFn });
+    const first = handler();
+    const second = handler();
+    await vi.waitFor(() => expect(fetchFn).toHaveBeenCalledTimes(1));
+    release(Response.json({ rows: [1], pricingHistory: { rate: 50 } }));
+    const responses = await Promise.all([first, second]);
+    for (const response of responses) expect(await response.json()).toEqual({ rows: [1] });
+    fetchFn.mockResolvedValueOnce(Response.json({ rows: [2] }));
+    expect(await (await handler()).json()).toEqual({ rows: [2] });
+    expect(fetchFn).toHaveBeenCalledTimes(2);
+  });
+
+  it('checks each caller before sharing work and keeps different views separate', async () => {
+    const hasAccess = vi.fn().mockResolvedValueOnce(true).mockResolvedValueOnce(false).mockResolvedValueOnce(true);
+    const fetchFn = vi.fn<typeof fetch>(async () => Response.json({ rows: [], catalog: ['legacy'] }));
+    const handler = makeHandler({ hasAccess, fetchFn });
+    const [legacy, denied, dashboard] = await Promise.all([
+      handler(), handler(), handler(new Request('https://stock.example/api/stock?view=dashboard')),
+    ]);
+    expect(denied.status).toBe(403);
+    expect(await legacy.json()).toEqual({ rows: [], catalog: ['legacy'] });
+    expect(await dashboard.json()).toEqual({ rows: [] });
+    expect(fetchFn).toHaveBeenCalledTimes(2);
+    expect(hasAccess).toHaveBeenCalledTimes(3);
+  });
+
+  it('does not share an old credential request after key rotation', async () => {
+    let key = 'old-key';
+    let release!: (response: Response) => void;
+    const fetchFn = vi.fn<typeof fetch>(() => new Promise(resolve => { release = resolve; }));
+    const handler = makeHandler({ fetchFn, readKey: () => key });
+    const oldRequest = handler();
+    await vi.waitFor(() => expect(fetchFn).toHaveBeenCalledTimes(1));
+    key = 'new-key';
+    fetchFn.mockResolvedValueOnce(Response.json({ rows: ['new'] }));
+    expect(await (await handler()).json()).toEqual({ rows: ['new'] });
+    release(Response.json({ rows: ['old'] }));
+    expect(await (await oldRequest).json()).toEqual({ rows: ['old'] });
+    expect(fetchFn.mock.calls[1][1]?.headers).toEqual({ 'x-dashboard-key': 'new-key' });
+  });
+
+  it('bounds a stalled upstream read and allows the next refresh after abort', async () => {
+    const controller = new AbortController();
+    const timeout = vi.spyOn(AbortSignal, 'timeout').mockReturnValue(controller.signal);
+    const fetchFn = vi.fn<typeof fetch>((_url, init) => new Promise((_resolve, reject) => {
+      init?.signal?.addEventListener('abort', () => reject(new DOMException('Timed out', 'TimeoutError')), { once: true });
+    }));
+    const handler = makeHandler({ fetchFn });
+    const pending = handler();
+    await vi.waitFor(() => expect(fetchFn).toHaveBeenCalledOnce());
+    controller.abort();
+    const failed = await pending;
+    expect(failed.status).toBe(502);
+    expect(timeout).toHaveBeenCalledWith(15_000);
+    fetchFn.mockResolvedValueOnce(Response.json({ rows: ['recovered'] }));
+    expect(await (await handler()).json()).toEqual({ rows: ['recovered'] });
+    expect(fetchFn).toHaveBeenCalledTimes(2);
   });
 });

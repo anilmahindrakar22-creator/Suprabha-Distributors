@@ -1,9 +1,10 @@
-import { describe, expect, it, vi } from 'vitest';
+import { afterEach, describe, expect, it, vi } from 'vitest';
 import { createSyncHandler } from '../../supabase/functions/stockflow-sync/handler';
 
 const validPayload = { company: 'TEST', fetchedAt: '2026-09-30', rows: [{ item: 'Kit' }], groups: ['Sysmex'] };
 const databaseUrl = 'https://database.example';
 const databaseSecret = 'test-secret';
+afterEach(() => vi.restoreAllMocks());
 
 function makeHandler(options: {
   env?: Record<string, string | undefined>;
@@ -170,5 +171,22 @@ describe('Stockflow sync edge handler', () => {
     expect(response.status).toBe(413);
     expect(await response.json()).toEqual({ error: 'Snapshot is too large' });
     expect(fetchFn).not.toHaveBeenCalled();
+  });
+
+  it.each(['GET', 'POST'])('bounds database %s requests and returns no success on timeout', async method => {
+    const controller = new AbortController();
+    const timeout = vi.spyOn(AbortSignal, 'timeout').mockReturnValue(controller.signal);
+    const fetchFn = vi.fn<typeof fetch>((_url, init) => new Promise((_resolve, reject) => {
+      init?.signal?.addEventListener('abort', () => reject(new DOMException('Timed out', 'TimeoutError')), { once: true });
+    }));
+    const { handler } = makeHandler({ fetchFn });
+    const pending = handler(method === 'GET' ? getRequest('https://edge.example/stockflow-sync', 'read-key') : postRequest(JSON.stringify(validPayload), 'upload-key'));
+    await vi.waitFor(() => expect(fetchFn).toHaveBeenCalledOnce());
+    controller.abort();
+    const response = await pending;
+    expect(response.status).toBe(502);
+    expect(await response.json()).toEqual({ error: 'Stock service is temporarily unavailable' });
+    expect(timeout).toHaveBeenCalledWith(10_000);
+    expect(fetchFn).toHaveBeenCalledOnce();
   });
 });

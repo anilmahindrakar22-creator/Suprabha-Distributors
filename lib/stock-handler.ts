@@ -49,6 +49,9 @@ export function createStockHandler<User>({
   hasAccess,
   readKey,
 }: StockHandlerDependencies<User>): (request?: Request) => Promise<Response> {
+  // Coalesce reads for each view's current credential in this handler instance. No settled
+  // responses are cached; every caller still passes its own authorization check.
+  const inFlight = new Map<string, { key: string; result: Promise<{ body: string; status: number }> }>();
   return async function getStock(request?: Request): Promise<Response> {
     const user = await getUser();
     if (!user) return errorResponse('Sign in required', 401);
@@ -61,22 +64,32 @@ export function createStockHandler<User>({
       const dashboardView = request && new URL(request.url).searchParams.get('view') === 'dashboard';
       const upstream = new URL(endpoint);
       if (dashboardView) upstream.searchParams.set('view', 'dashboard');
-      const response = await fetchFn(upstream.toString(), {
-        cache: 'no-store',
-        headers: { 'x-dashboard-key': key },
-      });
-
-      const text = await response.text();
-      let body = text;
-      try {
-        const parsed = JSON.parse(text);
-        const projected = response.ok && dashboardView
-          ? projectDashboardStockPayload(parsed)
-          : parsed;
-        body = JSON.stringify(sanitizeStockPayload(projected));
-      } catch { /* Preserve controlled upstream non-JSON errors. */ }
-      return new Response(body, {
-        status: response.status,
+      const view = dashboardView ? 'dashboard' : 'legacy';
+      let entry = inFlight.get(view);
+      if (!entry || entry.key !== key) {
+        const result = (async () => {
+          const response = await fetchFn(upstream.toString(), {
+            cache: 'no-store',
+            headers: { 'x-dashboard-key': key },
+            signal: AbortSignal.timeout(15_000),
+          });
+          const text = await response.text();
+          let body = text;
+          try {
+            const parsed = JSON.parse(text);
+            const projected = response.ok && dashboardView ? projectDashboardStockPayload(parsed) : parsed;
+            body = JSON.stringify(sanitizeStockPayload(projected));
+          } catch { /* Preserve controlled upstream non-JSON errors. */ }
+          return { body, status: response.status };
+        })();
+        entry = { key, result };
+        inFlight.set(view, entry);
+      }
+      let result: { body: string; status: number };
+      try { result = await entry.result; }
+      finally { if (inFlight.get(view) === entry) inFlight.delete(view); }
+      return new Response(result.body, {
+        status: result.status,
         headers: privateJsonHeaders,
       });
     } catch {

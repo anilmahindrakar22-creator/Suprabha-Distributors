@@ -67,6 +67,62 @@ test('hidden stock tabs stop polling and refresh when visible again', async ({ p
   await expect.poll(() => stockRequests).toBe(2);
 });
 
+test('a stalled Stock response body times out and a later refresh recovers', async ({ page }) => {
+  await page.clock.install();
+  await page.addInitScript(() => {
+    const nativeFetch = window.fetch.bind(window);
+    let stall = true;
+    window.fetch = (input, init) => {
+      if (stall && String(input).includes('/api/stock?view=dashboard')) {
+        stall = false;
+        const body = new ReadableStream({
+          start(controller) {
+            init?.signal?.addEventListener('abort', () => controller.error(new DOMException('Aborted', 'AbortError')), { once: true });
+          },
+        });
+        return Promise.resolve(new Response(body, { headers: { 'Content-Type': 'application/json' } }));
+      }
+      return nativeFetch(input, init);
+    };
+  });
+  await page.route('**/api/stock?view=dashboard', (route) => route.fulfill({ json: stockPayload() }));
+  await page.route('**/api/orders?summary=1', (route) => route.fulfill({ json: {} }));
+  await page.goto('/stockflow.html');
+  await page.clock.fastForward(20_001);
+  await expect(page.locator('#refresh')).toBeEnabled();
+  await page.getByRole('button', { name: 'Refresh' }).click();
+  await expect(page.locator('#company')).toHaveText('Test company');
+});
+
+test('a stalled order summary body times out without discarding Stock and refresh can recover', async ({ page }) => {
+  await page.clock.install();
+  await page.addInitScript(() => {
+    const nativeFetch = window.fetch.bind(window);
+    let stall = true;
+    window.fetch = (input, init) => {
+      if (stall && String(input).includes('/api/orders?summary=1')) {
+        stall = false;
+        const body = new ReadableStream({
+          start(controller) {
+            init?.signal?.addEventListener('abort', () => controller.error(new DOMException('Aborted', 'AbortError')), { once: true });
+          },
+        });
+        return Promise.resolve(new Response(body, { headers: { 'Content-Type': 'application/json' } }));
+      }
+      return nativeFetch(input, init);
+    };
+  });
+  await page.route('**/api/stock?view=dashboard', (route) => route.fulfill({ json: stockPayload() }));
+  await page.route('**/api/orders?summary=1', (route) => route.fulfill({ json: {} }));
+  await page.goto('/stockflow.html');
+  await page.clock.fastForward(20_001);
+  await expect(page.locator('#company')).toHaveText('Test company');
+  await expect(page.locator('#refresh')).toBeEnabled();
+  await expect(page.locator('#opsSource')).toHaveText('Orders unavailable');
+  await page.getByRole('button', { name: 'Refresh' }).click();
+  await expect(page.locator('#opsSource')).toHaveText('Live Orders');
+});
+
 test('offline Stock cache is not shared between signed-in accounts', async ({ page }) => {
   await page.addInitScript(() => {
     if (window.parent !== window) return;
@@ -86,4 +142,62 @@ test('offline Stock cache is not shared between signed-in accounts', async ({ pa
   await expect(stock.locator('#company')).not.toHaveText('FIRST ACCOUNT CACHE');
   await page.evaluate(() => document.querySelector('iframe')?.contentWindow?.postMessage({ type: 'stockflow-cache-account', email: 'first@example.com' }, location.origin));
   await expect(stock.locator('#company')).toHaveText('FIRST ACCOUNT CACHE');
+});
+
+test('Stock history stays scoped to the trusted account and ignores legacy shared history', async ({ page }) => {
+  const older = new Date(Date.now() - 2 * 24 * 60 * 60 * 1000).toISOString().slice(0, 10);
+  await page.addInitScript((stamp) => {
+    localStorage.setItem('stockflow-history-daily-v1', JSON.stringify([{ stamp, label: 'Legacy daily history', count: 90, qty: 900 }]));
+    localStorage.setItem('stockflow-history-v2', JSON.stringify([{ stamp, label: 'Legacy migrated history', count: 91, qty: 901 }]));
+    localStorage.setItem('stockflow-history-daily-v2:first%40example.com', JSON.stringify([{ stamp, label: 'First account history', count: 11, qty: 111 }]));
+    localStorage.setItem('stockflow-history-daily-v2:second%40example.com', JSON.stringify([{ stamp, label: 'Second account history', count: 22, qty: 222 }]));
+  }, older);
+  await page.route('**/cache-test', (route) => route.fulfill({ contentType: 'text/html', body: '<iframe src="/stockflow.html"></iframe>' }));
+  await page.route('**/api/stock?view=dashboard', (route) => route.fulfill({ json: stockPayload() }));
+  await page.route('**/api/orders?summary=1', (route) => route.fulfill({ json: {} }));
+  await page.goto('/cache-test');
+  const stock = page.frameLocator('iframe');
+  await expect(stock.locator('#company')).toHaveText('Test company');
+  await expect(stock.locator('#history .history-col')).toHaveCount(0);
+  await expect.poll(() => page.evaluate(() => [localStorage.getItem('stockflow-history-daily-v1'), localStorage.getItem('stockflow-history-v2')])).toEqual([null, null]);
+
+  await page.evaluate(() => document.querySelector('iframe')?.contentWindow?.postMessage({ type: 'stockflow-cache-account', email: 'first@example.com' }, location.origin));
+  await expect(stock.locator('#history')).toContainText('First account history');
+  await expect(stock.locator('#history')).not.toContainText('Second account history');
+  await expect(stock.locator('#history')).not.toContainText('Legacy');
+
+  await page.evaluate(() => document.querySelector('iframe')?.contentWindow?.postMessage({ type: 'stockflow-cache-account', email: 'second@example.com' }, location.origin));
+  await expect(stock.locator('#history')).toContainText('Second account history');
+  await expect(stock.locator('#history')).not.toContainText('First account history');
+  await expect(stock.locator('#history')).not.toContainText('Legacy');
+
+  await page.evaluate(() => document.querySelector('iframe')?.contentWindow?.postMessage({ type: 'stockflow-cache-account', email: 'first@example.com' }, location.origin));
+  await expect(stock.locator('#history')).toContainText('First account history');
+  await expect(stock.locator('#history')).not.toContainText('Second account history');
+});
+
+test('a trusted account handoff before the live Stock response saves history in that account scope', async ({ page }) => {
+  const older = new Date(Date.now() - 2 * 24 * 60 * 60 * 1000).toISOString().slice(0, 10);
+  await page.addInitScript((stamp) => {
+    localStorage.setItem('stockflow-history-daily-v2:early%40example.com', JSON.stringify([{ stamp, label: 'Early account history', count: 33, qty: 333 }]));
+  }, older);
+  let releaseStock!: () => void;
+  const stockGate = new Promise<void>((resolve) => { releaseStock = resolve; });
+  let stockRequested = false;
+  await page.route('**/cache-test', (route) => route.fulfill({ contentType: 'text/html', body: '<iframe src="/stockflow.html"></iframe>' }));
+  await page.route('**/api/stock?view=dashboard', async (route) => {
+    stockRequested = true;
+    await stockGate;
+    await route.fulfill({ json: stockPayload() });
+  });
+  await page.route('**/api/orders?summary=1', (route) => route.fulfill({ json: {} }));
+  await page.goto('/cache-test');
+  const stock = page.frameLocator('iframe');
+  await expect.poll(() => stockRequested).toBe(true);
+  await expect(stock.locator('#history .history-col')).toHaveCount(0);
+  await page.evaluate(() => document.querySelector('iframe')?.contentWindow?.postMessage({ type: 'stockflow-cache-account', email: 'early@example.com' }, location.origin));
+  releaseStock();
+  await expect(stock.locator('#company')).toHaveText('Test company');
+  await expect(stock.locator('#history')).toContainText('Early account history');
+  await expect.poll(() => page.evaluate(() => localStorage.getItem('stockflow-history-daily-v2:early%40example.com'))).not.toBeNull();
 });

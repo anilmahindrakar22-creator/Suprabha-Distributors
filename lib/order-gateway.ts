@@ -72,6 +72,9 @@ export async function callOrderGateway<T>(
   const response = await fetch(`${url}/functions/v1/stockflow-orders`, {
     method: 'POST',
     cache: 'no-store',
+    // A timeout is an unknown mutation outcome, never permission to resubmit
+    // with a new idempotency key. Existing API recovery paths resolve it.
+    signal: AbortSignal.timeout(30_000),
     headers: {
       'content-type': 'application/json',
       'x-order-gateway-key': gatewayKey,

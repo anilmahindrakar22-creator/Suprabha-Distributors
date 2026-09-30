@@ -26,6 +26,9 @@ describe('trusted-device account switching', () => {
     writeOfflineOrderDraft(local, pending);
     local.setItem('stockflow-last-snapshot-v2', 'legacy shared Stock payload');
     local.setItem('stockflow-last-snapshot-v3:first%40example.com', 'first account Stock payload');
+    local.setItem('stockflow-history-daily-v1', 'shared chart history');
+    local.setItem('stockflow-history-v2', 'legacy chart history');
+    local.setItem('stockflow-history-daily-v2:first%40example.com', 'first account chart history');
 
     expect(prepareDeviceForAccount(local, session, 'second@example.com')).toEqual({ switched: true, retainedPreviousDraft: true });
     expect(readCatalogCache(local, pending.actorEmail, 'v1')).toBeNull();
@@ -35,6 +38,9 @@ describe('trusted-device account switching', () => {
     expect(readOfflineDraftConsent(local, pending.actorEmail)).toBe(false);
     expect(local.getItem('stockflow-last-snapshot-v2')).toBeNull();
     expect(local.getItem('stockflow-last-snapshot-v3:first%40example.com')).toBeNull();
+    expect(local.getItem('stockflow-history-daily-v1')).toBeNull();
+    expect(local.getItem('stockflow-history-v2')).toBeNull();
+    expect(local.getItem('stockflow-history-daily-v2:first%40example.com')).toBeNull();
     expect(readOfflineOrderDraft(local, pending.actorEmail)?.command.payload.idempotencyKey).toBe('1234567890abcdef');
     expect(readOfflineOrderDraft(local, 'second@example.com')).toBeNull();
   });
@@ -44,7 +50,9 @@ describe('trusted-device account switching', () => {
     const session = memoryStorage();
     prepareDeviceForAccount(local, session, 'First@Example.com');
     writeCatalogCache(local, 'first@example.com', 'v1', catalog);
+    local.setItem('stockflow-history-daily-v2:first%40example.com', 'same account chart');
     expect(prepareDeviceForAccount(local, session, ' first@example.com ')).toEqual({ switched: false, retainedPreviousDraft: false });
     expect(readCatalogCache(local, 'first@example.com', 'v1')).toEqual(catalog);
+    expect(local.getItem('stockflow-history-daily-v2:first%40example.com')).toBe('same account chart');
   });
 });

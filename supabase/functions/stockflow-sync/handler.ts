@@ -42,7 +42,7 @@ export function createSyncHandler({ env, fetchFn }: Dependencies) {
           : 'payload,updated_at');
         target.searchParams.set('id', 'eq.suprabha');
         target.searchParams.set('limit', '1');
-        const response = await fetchFn(target.toString(), { headers: { apikey: secret }, cache: 'no-store' });
+        const response = await fetchFn(target.toString(), { headers: { apikey: secret }, cache: 'no-store', signal: AbortSignal.timeout(10_000) });
         if (!response.ok) return reply({ error: 'Unable to load snapshot' }, 500);
         const rows = await response.json() as Record<string, unknown>[];
         if (!rows.length) return reply({ error: 'No snapshot has been uploaded yet' }, 404);
@@ -59,6 +59,7 @@ export function createSyncHandler({ env, fetchFn }: Dependencies) {
       target.searchParams.set('on_conflict', 'id');
       const response = await fetchFn(target.toString(), {
         method: 'POST',
+        signal: AbortSignal.timeout(10_000),
         headers: { apikey: secret, 'content-type': 'application/json', prefer: 'resolution=merge-duplicates,return=minimal' },
         body: JSON.stringify({ id: 'suprabha', company: payload.company, fetched_at: fetchedAt, payload, updated_at: new Date().toISOString() }),
       });
