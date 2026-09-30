@@ -64,13 +64,14 @@ if ([string]::IsNullOrWhiteSpace($cloudUploadKey)) {
 }
 $script:uploadState = Read-ConnectorUploadState $uploadStatePath $companyName
 if (-not $script:uploadState) {
-    $script:uploadState = [ordered]@{ company = $companyName; kind = 'cloud_upload_state_v1'; ackedHash = $null; blockedKeyHash = $null }
+    $script:uploadState = [ordered]@{ company = $companyName; kind = 'cloud_upload_state_v1'; ackedHash = $null; blockedKeyHash = $null; rejectedPayloadHash = $null }
 }
 if ($script:pendingUpload) {
     $snapshotJson = $script:pendingUploadJson
     if (Test-ConnectorUploadAcknowledged $script:uploadState $snapshotJson) { $script:pendingUpload = $null }
 }
 if (-not $script:pendingUpload) { $script:pendingUploadJson = $null }
+$script:uploadPayloadBlocked = Test-ConnectorUploadPayloadRejected $script:uploadState $script:pendingUploadJson
 $script:uploadAuthBlocked = Test-ConnectorUploadBlocked $script:uploadState $cloudUploadKey
 if ($script:uploadAuthBlocked) {
     Write-Host 'Cloud upload is paused for the rejected upload key; correct the key and restart the connector.' -ForegroundColor DarkYellow
@@ -84,6 +85,10 @@ function Write-ConnectorHealth([string]$Message) {
 }
 
 function Publish-CloudSnapshot([string]$Json) {
+    if (Test-ConnectorUploadPayloadRejected $script:uploadState $Json) {
+        $script:uploadPayloadBlocked = $true
+        return $false
+    }
     $watch = [Diagnostics.Stopwatch]::StartNew()
     $payloadBytes = [Text.Encoding]::UTF8.GetByteCount($Json)
     try {
@@ -94,8 +99,14 @@ function Publish-CloudSnapshot([string]$Json) {
         $script:cloudUploadFailures++
         $failureCode = Get-ConnectorUploadFailureCode $_
         $script:uploadAuthBlocked = Test-ConnectorUploadAuthFailure $failureCode
+        $script:uploadPayloadBlocked = Test-ConnectorUploadPayloadFailure $failureCode
         if ($script:uploadAuthBlocked) {
             $script:uploadState.blockedKeyHash = Get-StableEvidenceVersion $cloudUploadKey
+        }
+        if ($script:uploadPayloadBlocked) {
+            $script:uploadState.rejectedPayloadHash = Get-StableEvidenceVersion $Json
+        }
+        if ($script:uploadAuthBlocked -or $script:uploadPayloadBlocked) {
             try { Save-ConnectorUploadState $uploadStatePath $script:uploadState }
             catch { Write-ConnectorHealth "$([datetimeoffset]::Now.ToString('o')) request=cloud_upload_state status=failed" }
         }
@@ -103,6 +114,8 @@ function Publish-CloudSnapshot([string]$Json) {
         # The local dashboard must remain usable even when the internet is down.
         if ($script:uploadAuthBlocked) {
             Write-Host 'Cloud upload authorization was rejected. The saved snapshot is retained; correct the upload key and restart the connector.' -ForegroundColor DarkYellow
+        } elseif ($script:uploadPayloadBlocked) {
+            Write-Host 'Cloud rejected the snapshot as invalid or too large. The local snapshot is retained; upload is paused until the data changes.' -ForegroundColor DarkYellow
         } else {
             Write-Host 'Cloud upload pending; the saved snapshot will be retried.' -ForegroundColor DarkYellow
         }
@@ -110,6 +123,7 @@ function Publish-CloudSnapshot([string]$Json) {
     }
     $script:uploadState.ackedHash = Get-StableEvidenceVersion $Json
     $script:uploadState.blockedKeyHash = $null
+    $script:uploadState.rejectedPayloadHash = $null
     try { Save-ConnectorUploadState $uploadStatePath $script:uploadState }
     catch {
         $script:cloudUploadFailures++
@@ -119,6 +133,7 @@ function Publish-CloudSnapshot([string]$Json) {
     }
     $script:cloudUploadFailures = 0
     $script:uploadAuthBlocked = $false
+    $script:uploadPayloadBlocked = $false
     Write-ConnectorHealth "$([datetimeoffset]::Now.ToString('o')) request=cloud_upload durationMs=$($watch.ElapsedMilliseconds) bytes=$payloadBytes consecutiveFailures=0 status=ok"
     Write-Host "Cloud snapshot updated." -ForegroundColor DarkGreen
     return $true
@@ -335,6 +350,7 @@ function Get-ReorderData {
         $script:lastReorderJson = $freshJson
         $script:pendingUpload = $fresh
         $script:pendingUploadJson = $script:lastReorderJson
+        $script:uploadPayloadBlocked = Test-ConnectorUploadPayloadRejected $script:uploadState $script:pendingUploadJson
         return $fresh
     } catch {
         if ($script:lastReorderData) {
@@ -569,7 +585,7 @@ $automaticTallyFailures = 0
 $requestsSinceBackground = 0
 try {
     while ($true) {
-        $backgroundDue = (Get-Date) -ge $nextCloudSync -or ($script:pendingUpload -and -not $script:uploadAuthBlocked -and (Get-Date) -ge $script:nextUpload)
+        $backgroundDue = (Get-Date) -ge $nextCloudSync -or ($script:pendingUpload -and -not $script:uploadAuthBlocked -and -not $script:uploadPayloadBlocked -and (Get-Date) -ge $script:nextUpload)
         if (Test-ConnectorShouldRunBackground ($listener.Pending()) $requestsSinceBackground $backgroundDue) {
             $requestsSinceBackground = 0
             if ((Get-Date) -ge $nextCloudSync) {
@@ -584,7 +600,7 @@ try {
                     $nextCloudSync = (Get-Date).AddMinutes($retryMinutes)
                 }
             }
-            if ($script:pendingUpload -and -not $script:uploadAuthBlocked -and (Get-Date) -ge $script:nextUpload) {
+            if ($script:pendingUpload -and -not $script:uploadAuthBlocked -and -not $script:uploadPayloadBlocked -and (Get-Date) -ge $script:nextUpload) {
                 if (Publish-CloudSnapshot $script:pendingUploadJson) {
                     $script:pendingUpload = $null
                     $script:pendingUploadJson = $null

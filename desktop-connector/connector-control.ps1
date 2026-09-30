@@ -22,6 +22,7 @@ function Get-CloudUploadDisplayStatus([string]$SnapshotPath, [string]$UploadStat
     }
 
     $snapshotJson = $snapshot | ConvertTo-Json -Depth 6 -Compress
+    if (Test-ConnectorUploadPayloadRejected $uploadState $snapshotJson) { return 'Paused after rejected snapshot; waiting for changed data' }
     if (Test-ConnectorUploadAcknowledged $uploadState $snapshotJson) { return 'Acknowledged (current snapshot)' }
     return 'Pending upload'
 }

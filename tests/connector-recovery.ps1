@@ -125,6 +125,37 @@ function Invoke-WebRequest { param($Uri, $Method, $ContentType, $Headers, $Body,
 if (Publish-CloudSnapshot 'snapshot-four') { throw 'Rejected cloud upload was incorrectly acknowledged' }
 if (-not $script:uploadAuthBlocked -or -not (Test-ConnectorUploadBlocked (Read-ConnectorUploadState $uploadStatePath 'TEST') $cloudUploadKey)) { throw 'Authorization rejection was not durably blocked' }
 if (Test-ConnectorUploadBlocked (Read-ConnectorUploadState $uploadStatePath 'TEST') 'rotated-test-key') { throw 'New upload key remained blocked after authorization rejection' }
+$script:rejectedUploadCalls = 0
+$script:fakePayloadException = [Exception]::new('invalid snapshot')
+$script:fakePayloadException | Add-Member -NotePropertyName Response -NotePropertyValue ([pscustomobject]@{ StatusCode = 400 })
+function Invoke-WebRequest { param($Uri, $Method, $ContentType, $Headers, $Body, [switch]$UseBasicParsing, $TimeoutSec) $script:rejectedUploadCalls++; throw $script:fakePayloadException }
+if (Publish-CloudSnapshot 'rejected-snapshot') { throw 'Invalid snapshot was incorrectly acknowledged' }
+if (Publish-CloudSnapshot 'rejected-snapshot') { throw 'Repeated invalid snapshot was incorrectly acknowledged' }
+if ($script:rejectedUploadCalls -ne 1) { throw 'Unchanged rejected snapshot was sent to the cloud more than once' }
+$rejectedState = Read-ConnectorUploadState $uploadStatePath 'TEST'
+if (-not (Test-ConnectorUploadPayloadRejected $rejectedState 'rejected-snapshot')) { throw 'Rejected payload marker did not survive restart' }
+if (Test-ConnectorUploadPayloadRejected $rejectedState 'changed-snapshot') { throw 'Changed payload remained blocked' }
+if ($rejectedState.ackedHash -ceq (Get-StableEvidenceVersion 'rejected-snapshot')) { throw 'Rejected payload was acknowledged' }
+$script:fakePayloadException.Response.StatusCode = 413
+if (Publish-CloudSnapshot 'oversize-snapshot') { throw 'Oversized payload was acknowledged' }
+if (Publish-CloudSnapshot 'oversize-snapshot') { throw 'Repeated oversized payload was acknowledged' }
+if ($script:rejectedUploadCalls -ne 2) { throw 'Oversized payload was retried unchanged' }
+foreach ($statusCode in @(429, 500)) {
+    $script:fakePayloadException.Response.StatusCode = $statusCode
+    $callsBefore = $script:rejectedUploadCalls
+    Publish-CloudSnapshot "retryable-$statusCode" | Out-Null
+    Publish-CloudSnapshot "retryable-$statusCode" | Out-Null
+    if ($script:rejectedUploadCalls -ne $callsBefore + 2 -or $script:uploadPayloadBlocked) { throw 'Transient HTTP failure was permanently blocked' }
+}
+function Invoke-WebRequest { param($Uri, $Method, $ContentType, $Headers, $Body, [switch]$UseBasicParsing, $TimeoutSec) return [pscustomobject]@{ StatusCode = 200 } }
+if (-not (Publish-CloudSnapshot 'changed-snapshot')) { throw 'Changed snapshot did not recover' }
+$recoveredState = Read-ConnectorUploadState $uploadStatePath 'TEST'
+if ($recoveredState.rejectedPayloadHash -or $script:uploadPayloadBlocked) { throw 'Successful upload retained payload rejection' }
+if (-not (Test-ConnectorUploadAcknowledged $recoveredState 'changed-snapshot')) { throw 'Recovered upload receipt missing' }
+if ((Get-Content -LiteralPath $uploadStatePath -Raw).Contains('changed-snapshot')) { throw 'Receipt exposed business payload' }
+if (-not (Test-ConnectorUploadPayloadFailure 'http_400') -or -not (Test-ConnectorUploadPayloadFailure 'http_413') -or (Test-ConnectorUploadPayloadFailure 'network')) { throw 'Payload failure classification failed' }
+Save-ConnectorUploadState $invalidUploadStatePath @{ company='TEST'; kind='cloud_upload_state_v1'; ackedHash=$null; blockedKeyHash=$null; rejectedPayloadHash='invalid' }
+if ($null -ne (Read-ConnectorUploadState $invalidUploadStatePath 'TEST')) { throw 'Invalid rejected payload hash accepted' }
 if (-not (Test-ConnectorShouldRunBackground $false 0 $false)) { throw 'Idle connector must run its background loop' }
 if (Test-ConnectorShouldRunBackground $true 0 $true) { throw 'First waiting LAN request must be served before due background work' }
 if (-not (Test-ConnectorShouldRunBackground $true 1 $true)) { throw 'Steady LAN requests must not starve due background work' }
@@ -166,5 +197,6 @@ if ($baseline['Kit'].dateKey -ne '20260905' -or $baseline['Kit'].quantity -ne 2)
 [IO.File]::Delete("$uploadStatePath.bak")
 [IO.File]::Delete($uploadPayloadPath)
 [IO.File]::Delete($invalidUploadStatePath)
+[IO.File]::Delete("$invalidUploadStatePath.bak")
 [IO.Directory]::Delete($directory)
 Write-Output 'PASS: disconnect containment, restart and backup recovery, timestamp preservation, durable customer/catalog caches, saved/live company validation, atomic replacement, bounded Tally retry, bounded health log, corrupt cache, exclusive lock, compact baseline'

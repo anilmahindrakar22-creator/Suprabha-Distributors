@@ -215,6 +215,10 @@ function Read-ConnectorUploadState([string]$Path, [string]$Company) {
             if ($saved.schemaVersion -ne 1 -or $state.company -cne $Company -or $state.kind -ne 'cloud_upload_state_v1') { continue }
             if ($null -ne $state.ackedHash -and [string]$state.ackedHash -cnotmatch '^[a-f0-9]{64}$') { continue }
             if ($null -ne $state.blockedKeyHash -and [string]$state.blockedKeyHash -cnotmatch '^[a-f0-9]{64}$') { continue }
+            if ($null -ne $state.rejectedPayloadHash -and [string]$state.rejectedPayloadHash -cnotmatch '^[a-f0-9]{64}$') { continue }
+            if (-not $state.PSObject.Properties['rejectedPayloadHash']) {
+                $state | Add-Member -NotePropertyName rejectedPayloadHash -NotePropertyValue $null
+            }
             return $state
         } catch { }
     }
@@ -227,6 +231,10 @@ function Test-ConnectorUploadAcknowledged($State, [string]$Json) {
 
 function Test-ConnectorUploadBlocked($State, [string]$UploadKey) {
     return $null -ne $State -and [string]$State.blockedKeyHash -ceq (Get-StableEvidenceVersion $UploadKey)
+}
+
+function Test-ConnectorUploadPayloadRejected($State, [string]$Json) {
+    return $null -ne $State -and -not [string]::IsNullOrEmpty($Json) -and [string]$State.rejectedPayloadHash -ceq (Get-StableEvidenceVersion $Json)
 }
 
 function Test-ConnectorShouldRunBackground([bool]$ClientPending, [int]$RequestsSinceBackground, [bool]$WorkDue) {
@@ -262,6 +270,10 @@ function Get-ConnectorUploadFailureCode($ErrorRecord) {
 
 function Test-ConnectorUploadAuthFailure([string]$FailureCode) {
     return $FailureCode -in @('http_401', 'http_403')
+}
+
+function Test-ConnectorUploadPayloadFailure([string]$FailureCode) {
+    return $FailureCode -in @('http_400', 'http_413')
 }
 
 function Get-TallyRetryDelayMinutes([int]$NormalMinutes, [int]$ConsecutiveFailures) {

@@ -31,7 +31,14 @@ try {
     $cleared = Get-CloudUploadDisplayStatus $snapshotPath $uploadStatePath $company
     if ($cleared -ne 'Acknowledged (current snapshot)') { throw 'Cleared rejection state did not return to the acknowledged status' }
 
-    foreach ($status in @($pending, $acknowledged, $paused)) {
+    Save-ConnectorUploadState $uploadStatePath @{ company = $company; kind = 'cloud_upload_state_v1'; ackedHash = $null; blockedKeyHash = $null; rejectedPayloadHash = $snapshotHash }
+    $payloadPaused = Get-CloudUploadDisplayStatus $snapshotPath $uploadStatePath $company
+    if ($payloadPaused -ne 'Paused after rejected snapshot; waiting for changed data') { throw 'Rejected snapshot status missing' }
+    $snapshot.catalog[0].tallyKey = 'changed-private-marker'
+    Save-ConnectorSnapshot $snapshotPath $snapshot
+    if ((Get-CloudUploadDisplayStatus $snapshotPath $uploadStatePath $company) -ne 'Pending upload') { throw 'Changed snapshot should be eligible for upload' }
+
+    foreach ($status in @($pending, $acknowledged, $paused, $payloadPaused)) {
         if ($status.Contains('unavailable-to-status-command') -or $status.Contains('private-catalog-marker') -or $status -match '[a-f0-9]{64}') {
             throw 'Cloud upload status exposed a key, hash, or snapshot payload marker'
         }
