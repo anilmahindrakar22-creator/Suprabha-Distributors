@@ -16,6 +16,26 @@ function makeHandler(overrides = {}) {
 }
 
 describe('stock API handler', () => {
+  it.each([
+    {}, { rows: null, groups: null }, { rows: [], groups: null },
+    { rows: {}, groups: [] }, { rows: [], groups: [null] },
+    { rows: [null], groups: [] }, { rows: [{ item: null }], groups: [] },
+  ])('rejects unusable dashboard collections instead of reporting empty stock (%j)', async body => {
+    const response = await makeHandler({ fetchFn: vi.fn(async () => Response.json(body)) })(
+      new Request('https://stock.example/api/stock?view=dashboard'),
+    );
+    expect(response.status).toBe(502);
+    expect(await response.json()).toEqual({ error: 'Stock service is temporarily unavailable' });
+  });
+
+  it('accepts a genuinely empty dashboard snapshot', async () => {
+    const response = await makeHandler({ fetchFn: vi.fn(async () => Response.json({ rows: [], groups: [] })) })(
+      new Request('https://stock.example/api/stock?view=dashboard'),
+    );
+    expect(response.status).toBe(200);
+    expect(await response.json()).toEqual({ rows: [], groups: [] });
+  });
+
   it('reads the configured backend at request time without a production fallback', async () => {
     const config: { endpoint?: string } = {};
     const fetchFn = vi.fn<typeof fetch>(async () => Response.json({ rows: [] }));
@@ -171,14 +191,14 @@ describe('stock API handler', () => {
 
   it('checks each caller before sharing work and keeps different views separate', async () => {
     const hasAccess = vi.fn().mockResolvedValueOnce(true).mockResolvedValueOnce(false).mockResolvedValueOnce(true);
-    const fetchFn = vi.fn<typeof fetch>(async () => Response.json({ rows: [], catalog: ['legacy'] }));
+    const fetchFn = vi.fn<typeof fetch>(async () => Response.json({ rows: [], groups: [], catalog: ['legacy'] }));
     const handler = makeHandler({ hasAccess, fetchFn });
     const [legacy, denied, dashboard] = await Promise.all([
       handler(), handler(), handler(new Request('https://stock.example/api/stock?view=dashboard')),
     ]);
     expect(denied.status).toBe(403);
-    expect(await legacy.json()).toEqual({ rows: [], catalog: ['legacy'] });
-    expect(await dashboard.json()).toEqual({ rows: [] });
+    expect(await legacy.json()).toEqual({ rows: [], groups: [], catalog: ['legacy'] });
+    expect(await dashboard.json()).toEqual({ rows: [], groups: [] });
     expect(fetchFn).toHaveBeenCalledTimes(2);
     expect(hasAccess).toHaveBeenCalledTimes(3);
   });

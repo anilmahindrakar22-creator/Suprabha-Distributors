@@ -604,6 +604,13 @@
       "remoteVersion": null,
       "remoteSha256": null,
       "status": "not_deployed"
+    },
+    {
+      "localFile": "20260930125943_preserve_customers_on_partial_snapshot.sql",
+      "localSha256": "d23c9e48b286f66927c6db54c52f77f39b7d4e22a1d8c6be4e6480c2c0c4d0f1",
+      "remoteVersion": null,
+      "remoteSha256": null,
+      "status": "not_deployed"
     }
   ]
 }

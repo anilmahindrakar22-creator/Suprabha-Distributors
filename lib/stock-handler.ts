@@ -82,6 +82,15 @@ export function createStockHandler<User>({
           }
           const parsed = await response.json();
           if (parsed === null || typeof parsed !== 'object' || Array.isArray(parsed) || 'error' in parsed) throw new Error('Invalid snapshot response');
+          // Missing source collections are not evidence of zero stock. Reject them
+          // so the dashboard can retain its last valid offline snapshot instead.
+          const snapshot = parsed as Record<string, unknown>;
+          if (dashboardView && (!Array.isArray(snapshot.rows) || !Array.isArray(snapshot.groups)
+            || !snapshot.groups.every((group: unknown) => typeof group === 'string')
+            || !snapshot.rows.every((row: unknown) => row !== null && typeof row === 'object'
+              && !Array.isArray(row) && 'item' in row && typeof row.item === 'string'))) {
+            throw new Error('Invalid dashboard snapshot');
+          }
           const projected = dashboardView ? projectDashboardStockPayload(parsed) : parsed;
           return { body: JSON.stringify(sanitizeStockPayload(projected)), status: response.status };
         })();
