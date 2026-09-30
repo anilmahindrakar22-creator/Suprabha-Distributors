@@ -741,6 +741,13 @@ Completed after the user requested one more slice:
 - Application success was followed by an authoritative policy-list refresh showing 25%, the new policy version and unchanged approval/rounding controls. Expanded history shows both versions: bootstrap `2026-04-01` through `2026-09-29`, replacement from `2026-09-30`. No historical policy was overwritten or deleted. No blind retry or direct database write was used.
 - This clears the bootstrap minimum-margin configuration blocker only. It does not establish each customer's reagent margins, full pricing acceptance, backup recovery, staff-device acceptance or pilot completion. Only this checkpoint changed in source control; no application source change, migration or publication.
 
+### Private Stock endpoint prerequisites — 30 September 2026
+
+- Applied the existing snapshot_pricing_import_privilege migration only to isolated project ayrvhemxzizpkfcycvip; the migration tool returned success. This preserves the qualified security-definer import trigger and removes direct execution grants rather than granting private evidence tables to service_role.
+- Deployed existing repository stockflow-sync index, handler and request-gate dependency to that private project: ACTIVE version 1, bundle hash aaa1c5ac82a7dfd755f02b0c356bce43cd116cf7bedb0bbf5044cedcd4af9018. Custom read/upload header authentication is retained; JWT verification is disabled only because the handler enforces that existing custom boundary before database access.
+- Fresh targeted sync handler tests passed 32 tests (exit 0). An unauthenticated live private endpoint probe returned 503 with the controlled not-configured error, as expected while its read/upload secrets remain absent. This does not prove authenticated Stock reads or upload/import success.
+- Separate private read/upload key configuration, matching private Site read key, synthetic snapshot population and populated group-price acceptance remain incomplete. No production or Tally changes, no copied production credentials, no public release, and no pilot-ready claim.
+
 ### Private gateway and group-preview repair — 30 September 2026
 
 - Owner created candidate API Secret key `stockflowedge`; verified name on project `ayrvhemxzizpkfcycvip` without revealing its value. Queried only the existing database gateway verifier, not its credential. It differs from the production default.
