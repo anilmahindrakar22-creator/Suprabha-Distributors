@@ -1,6 +1,6 @@
 {
   "projectId": "aormuidjbdqruglmyseh",
-  "checkedAt": "2026-09-28",
+  "checkedAt": "2026-09-30T08:52:15Z",
   "purpose": "Read-only release evidence; NOT an executable migration plan or authority to repair history.",
   "normalization": "Remove CR characters and trim surrounding whitespace only; SHA-256 over UTF-8.",
   "localGitHead": "dd791a9ff937feed4e667d687eec434dd8d0415b",
@@ -587,9 +587,9 @@
     {
       "localFile": "20260928110000_customer_group_gross_margin.sql",
       "localSha256": "e07bf146a9a884dc27c78c47aba196c0af0669eded04046d0f8580162bd1b625",
-      "remoteVersion": null,
-      "remoteSha256": null,
-      "status": "not_deployed"
+      "remoteVersion": "20260928113956",
+      "remoteSha256": "e07bf146a9a884dc27c78c47aba196c0af0669eded04046d0f8580162bd1b625",
+      "status": "exact_normalized_match"
     },
     {
       "localFile": "20260928104500_non_retryable_business_conflicts.sql",

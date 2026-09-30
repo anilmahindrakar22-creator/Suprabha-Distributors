@@ -146,3 +146,18 @@ test('switching back to a customer reuses only that customer’s history', async
   await expect(recent.getByRole('button', { name: 'Add Glucose A' })).toHaveCount(0);
   expect(historyQueries).toHaveLength(2);
 });
+
+test('returning to customer search cancels the earlier blur timer', async ({ page }) => {
+  await page.clock.install();
+  await page.goto('/?view=order-entry');
+  const customer = page.getByRole('combobox', { name: 'Name' });
+  await customer.fill('Beta');
+  await customer.press('Enter');
+  await expect(page.getByRole('combobox', { name: 'Find product' })).toBeFocused();
+  await customer.fill('Alpha');
+  await expect(customer).toHaveAttribute('aria-expanded', 'true');
+  await page.clock.runFor(150);
+  await expect(customer).toHaveAttribute('aria-expanded', 'true');
+  await customer.press('Enter');
+  await expect(customer).toHaveValue('Test Alpha Laboratory');
+});

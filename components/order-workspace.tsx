@@ -1209,6 +1209,7 @@ export function HydratedNewOrderPanel({ data, templateOrder, onClose, onCreated,
   const [selectedCustomerId, setSelectedCustomerId] = useState<string | undefined>(initialPayload?.customerId);
   const selectedCustomerKey = selectedCustomerId ? `${data.actor.email.trim().toLocaleLowerCase('en-IN')}:${selectedCustomerId}` : '';
   const [customerSuggestionsOpen, setCustomerSuggestionsOpen] = useState(false);
+  const customerBlurTimerRef = useRef<number | null>(null);
   const [activeCustomerIndex, setActiveCustomerIndex] = useState(0);
   const [customerHistory, setCustomerHistory] = useState<{ ownerKey: string; orders: OrderSummary[]; total: number } | null>(null);
   const [customerHistoryState, setCustomerHistoryState] = useState<'idle' | 'loading' | 'error'>('idle');
@@ -1235,6 +1236,10 @@ export function HydratedNewOrderPanel({ data, templateOrder, onClose, onCreated,
   const entryPriceKey = `${selectedCustomerId || ''}\u001e${pricingKeys}`;
   const entryPrices = entryPriceResult?.key === entryPriceKey ? entryPriceResult.prices : {};
   const entryPriceState = entryPriceResult?.key === entryPriceKey ? entryPriceResult.failed ? 'error' : 'idle' : 'loading';
+
+  useEffect(() => () => {
+    if (customerBlurTimerRef.current !== null) window.clearTimeout(customerBlurTimerRef.current);
+  }, []);
 
   useEffect(() => {
     if (!focusQuantityKey.current) return;
@@ -1516,8 +1521,18 @@ export function HydratedNewOrderPanel({ data, templateOrder, onClose, onCreated,
                       setCustomerSuggestionsOpen(true);
                       setActiveCustomerIndex(0);
                     }}
-                    onFocus={() => setCustomerSuggestionsOpen(true)}
-                    onBlur={() => window.setTimeout(() => setCustomerSuggestionsOpen(false), 120)}
+                    onFocus={() => {
+                      if (customerBlurTimerRef.current !== null) window.clearTimeout(customerBlurTimerRef.current);
+                      customerBlurTimerRef.current = null;
+                      setCustomerSuggestionsOpen(true);
+                    }}
+                    onBlur={() => {
+                      if (customerBlurTimerRef.current !== null) window.clearTimeout(customerBlurTimerRef.current);
+                      customerBlurTimerRef.current = window.setTimeout(() => {
+                        customerBlurTimerRef.current = null;
+                        setCustomerSuggestionsOpen(false);
+                      }, 120);
+                    }}
                     onKeyDown={(event) => {
                       if (event.key === 'Enter' && selectedCustomerId) {
                         event.preventDefault();

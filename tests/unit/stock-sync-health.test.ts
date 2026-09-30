@@ -81,7 +81,7 @@ describe('Tally stock sync health', () => {
 
   it('pauses repeated cloud uploads after authorization rejection while retaining the pending snapshot', () => {
     expect(connector).toContain('$script:uploadAuthBlocked = Test-ConnectorUploadAuthFailure $failureCode');
-    expect(connector).toContain('if ($script:pendingUpload -and -not $script:uploadAuthBlocked -and (Get-Date) -ge $script:nextUpload)');
+    expect(connector).toContain('if ($script:pendingUpload -and -not $script:uploadAuthBlocked -and -not $script:uploadPayloadBlocked -and (Get-Date) -ge $script:nextUpload)');
   });
 
   it('remembers cloud upload receipts and rejected credentials across connector restarts', () => {
