@@ -741,6 +741,13 @@ Completed after the user requested one more slice:
 - Application success was followed by an authoritative policy-list refresh showing 25%, the new policy version and unchanged approval/rounding controls. Expanded history shows both versions: bootstrap `2026-04-01` through `2026-09-29`, replacement from `2026-09-30`. No historical policy was overwritten or deleted. No blind retry or direct database write was used.
 - This clears the bootstrap minimum-margin configuration blocker only. It does not establish each customer's reagent margins, full pricing acceptance, backup recovery, staff-device acceptance or pilot completion. Only this checkpoint changed in source control; no application source change, migration or publication.
 
+### Candidate Stock backend isolation fix — 30 September 2026
+
+- Demonstrated source defect: Stock route hard-coded the production sync URL while candidate runtime `SUPABASE_URL` points to the isolated acceptance project. Orders/Pricing already use that configuration. Candidate's private read credential was therefore sent to the wrong project, consistent with its unauthorized Stock response.
+- Stock now resolves its server-only configured backend per request, with no hard-coded production fallback. Missing configuration fails closed after existing authentication/membership checks. In-flight coalescing is scoped to resolved endpoint/view and credential, preventing sharing across backend changes. Sanitization, deadlines and private response headers remain intact.
+- Added configured-backend/missing-configuration regression. Stock handler suite passed 21 tests; typecheck and affected-file lint passed. Initial typecheck caught an incorrectly inferred zero-argument test mock; corrected its fetch type and reran successfully. No database migration, credential rotation, production/Tally operation or new architecture.
+- Source fix is not yet deployed to the private candidate. Candidate backend sync availability/credential match and signed-in Stock read still require verification after release preparation. Latest-source candidate publication and remaining pricing acceptance remain open; not pilot-ready.
+
 ### Five candidate acceptance checks — 30 September 2026
 
 - Starting HEAD `e2cd264`, clean working tree. Used existing private acceptance Site, not a replacement. Checked deployment identity/access, administrator sign-in, Stock read, customer price book and base-price workspace as one batch. No business mutation, Tally operation or publication.

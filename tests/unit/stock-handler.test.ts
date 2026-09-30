@@ -16,6 +16,17 @@ function makeHandler(overrides = {}) {
 }
 
 describe('stock API handler', () => {
+  it('reads the configured backend at request time without a production fallback', async () => {
+    const config: { endpoint?: string } = {};
+    const fetchFn = vi.fn<typeof fetch>(async () => Response.json({ rows: [] }));
+    const handler = makeHandler({ endpoint: () => config.endpoint, fetchFn });
+    expect((await handler()).status).toBe(503);
+    expect(fetchFn).not.toHaveBeenCalled();
+    config.endpoint = 'https://acceptance.example/functions/v1/stockflow-sync';
+    expect((await handler()).status).toBe(200);
+    expect(fetchFn.mock.calls[0]?.[0]).toBe(config.endpoint);
+  });
+
   it('denies unauthenticated requests before contacting stock storage', async () => {
     const fetchFn = vi.fn();
     const response = await makeHandler({

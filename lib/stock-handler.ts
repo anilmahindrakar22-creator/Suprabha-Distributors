@@ -1,5 +1,5 @@
 type StockHandlerDependencies<User> = {
-  endpoint: string;
+  endpoint: string | (() => string | undefined);
   fetchFn: typeof fetch;
   getUser: () => Promise<User | null>;
   hasAccess: (user: User) => boolean | Promise<boolean>;
@@ -58,13 +58,14 @@ export function createStockHandler<User>({
     if (!(await hasAccess(user))) return errorResponse('Access denied', 403);
 
     const key = readKey();
-    if (!key) return errorResponse('Stock service is not configured', 503);
+    const resolvedEndpoint = typeof endpoint === 'function' ? endpoint() : endpoint;
+    if (!key || !resolvedEndpoint) return errorResponse('Stock service is not configured', 503);
 
     try {
       const dashboardView = request && new URL(request.url).searchParams.get('view') === 'dashboard';
-      const upstream = new URL(endpoint);
+      const upstream = new URL(resolvedEndpoint);
       if (dashboardView) upstream.searchParams.set('view', 'dashboard');
-      const view = dashboardView ? 'dashboard' : 'legacy';
+      const view = upstream.toString();
       let entry = inFlight.get(view);
       if (!entry || entry.key !== key) {
         const result = (async () => {
