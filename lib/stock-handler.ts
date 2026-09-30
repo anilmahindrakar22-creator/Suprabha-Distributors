@@ -58,7 +58,10 @@ export function createStockHandler<User>({
     if (!key) return errorResponse('Stock service is not configured', 503);
 
     try {
-      const response = await fetchFn(endpoint, {
+      const dashboardView = request && new URL(request.url).searchParams.get('view') === 'dashboard';
+      const upstream = new URL(endpoint);
+      if (dashboardView) upstream.searchParams.set('view', 'dashboard');
+      const response = await fetchFn(upstream.toString(), {
         cache: 'no-store',
         headers: { 'x-dashboard-key': key },
       });
@@ -67,7 +70,7 @@ export function createStockHandler<User>({
       let body = text;
       try {
         const parsed = JSON.parse(text);
-        const projected = response.ok && request && new URL(request.url).searchParams.get('view') === 'dashboard'
+        const projected = response.ok && dashboardView
           ? projectDashboardStockPayload(parsed)
           : parsed;
         body = JSON.stringify(sanitizeStockPayload(projected));

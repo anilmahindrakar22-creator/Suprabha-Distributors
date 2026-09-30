@@ -116,6 +116,10 @@ describe('stock API handler', () => {
       sourceFetchedAtIso, groups: ['Sysmex'], rows: [{ item: 'Kit', closing: 2 }],
     });
     expect(response.headers.get('cache-control')).toBe('private, no-store');
+    expect(fetchFn).toHaveBeenCalledWith('https://stock.example/snapshot?view=dashboard', {
+      cache: 'no-store',
+      headers: { 'x-dashboard-key': 'server-only-key' },
+    });
   });
 
   it('preserves controlled upstream errors in the lightweight view', async () => {
