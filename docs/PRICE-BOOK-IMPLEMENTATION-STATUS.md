@@ -1,5 +1,13 @@
 # Price book implementation checkpoint — 14 September 2026
 
+## Latest private candidate publication — 30 September 2026
+
+- Merged validated implementation `f099977` into the existing private candidate, source `22b17fe62ef18c325db8d4d3397838bfdf4df0e4`, preserving its hosting manifest and custom owner/staff audience. No public production, main merge or Tally changes.
+- Saved private version 5 (`appgprj_6aae9b06bf4081919a1f08183fb02465~appgver_09eebd9c912481918f66ab82b9c75ad0`). Deployment `appgdep_6abd0f93020c819194784097ee605886` succeeded at 13:35:20 UTC, environment revision 2, at https://suprabha-pricing-acceptance.anil-mahindrakar22.chatgpt.site. Local publishing helper was unavailable; used the supported pushed-source remote-build fallback, which completed successfully.
+- Fresh candidate validation: stock-handler and release-preflight suites passed 37 tests; typecheck passed. Earlier full validation is recorded below, not claimed as rerun here.
+- Staff-reported signed-in mobile screenshot shows ₹100/₹170 approved and ₹335/₹800 fixed/protected, with no eligible bulk approval. Screenshot alone does not establish account identity or complete negative-role authorization. Latest deployed authenticated checks remain pending.
+- Remaining blockers: authenticated role/failure acceptance, private upload-path verification, two production migration deployments and final release evidence. Staff-device offline checks, measured performance, restore rehearsal and operational pilot remain outstanding; not pilot-ready.
+
 Branch: feature/customer-pricing-engine. Pricing checkpoint committed as f0d167f; unpublished.
 Approved requirements: CUSTOMER-PRICE-BOOK-AND-BASE-PRICE.md.
 Validation is batched to conserve usage; this checkpoint records remaining release work explicitly.
