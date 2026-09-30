@@ -15,6 +15,10 @@ Status: **HOLD; not released or pilot-ready.** The owner requested completion of
 
 Next dependency: secure owner configuration of the existing read/upload secrets, followed by verified candidate sync and pricing acceptance. User participation is also required for staff devices and the hidden database-password prompt; these are missing access/evidence, not routine approval requests.
 
+### Sync cutover follow-up, 30 September (15:17 IST)
+
+The owner configured both custom secrets; digest comparisons match the existing clients without revealing values. All 32 focused sync tests passed. A candidate deployed in the existing project returned expected 401/400 rejection responses without changing the snapshot. The exact same bundle is now live as `stockflow-sync` version 7, retaining custom-key authentication and existing database permissions. Live rejection probes passed and the snapshot remained unchanged at the final check. The last observed upload preceded cutover; successful post-cutover office upload and authenticated dashboard-read acceptance are still pending. The temporary candidate remains idle and needs later cleanup. No Tally operation or other public application release occurred. Pilot remains HOLD, not a completed first pilot day.
+
 ## Acceptance run — 11 September 2026
 
 Production order `SF-260911-00031` was created as `ZZ TEST - PRODUCTION ACCEPTANCE 11 SEP 2026` and completed through confirmation, fulfilment, pick and pack, Tally billing handoff, billed status, dispatch and delivery. The test references are deliberately labelled `TEST-ACCEPTANCE-00031`, `TEST-DOCKET-00031` and `TEST-POD-00031`. The invoice reference is not a Tally voucher and correctly remains “Invoice not found”. The order is retained as immutable operational evidence.
