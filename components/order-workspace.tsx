@@ -1220,6 +1220,7 @@ export function HydratedNewOrderPanel({ data, templateOrder, onClose, onCreated,
   const [priority, setPriority] = useState<'normal' | 'high' | 'urgent'>(initialPayload?.priority || 'normal');
   const [expectedDeliveryDate, setExpectedDeliveryDate] = useState(initialPayload?.expectedDeliveryDate || '');
   const [productQuery, setProductQuery] = useState('');
+  const [recentQuantities, setRecentQuantities] = useState<Record<string, string>>({});
   const [activeProductIndex, setActiveProductIndex] = useState(0);
   const focusQuantityKey = useRef<string | null>(null);
   const productInputRef = useRef<HTMLInputElement>(null);
@@ -1392,6 +1393,7 @@ export function HydratedNewOrderPanel({ data, templateOrder, onClose, onCreated,
   }, [canViewPrices, entryPriceKey, pricingKeys, selectedCustomerId]);
 
   function chooseCustomer(customer: CustomerDirectoryEntry) {
+    setRecentQuantities({});
     const customerKey = `${data.actor.email.trim().toLocaleLowerCase('en-IN')}:${customer.id}`;
     currentCustomerKeyRef.current = customerKey;
     setSelectedCustomerId(customer.id);
@@ -1405,8 +1407,9 @@ export function HydratedNewOrderPanel({ data, templateOrder, onClose, onCreated,
     productInputRef.current?.focus();
   }
 
-  function addProduct(item: CatalogItem) {
-    setLines((current) => current.length >= 50 || current.some((line) => line.tallyKey === item.tallyKey) ? current : [...current, { tallyKey: item.tallyKey, item, quantity: 1 }]);
+  function addProduct(item: CatalogItem, quantity = 1) {
+    if (!Number.isInteger(quantity) || quantity < 1 || quantity > 1000000) return;
+    setLines((current) => current.length >= 50 || current.some((line) => line.tallyKey === item.tallyKey) ? current : [...current, { tallyKey: item.tallyKey, item, quantity }]);
     setProductQuery('');
     setActiveProductIndex(0);
     focusQuantityKey.current = item.tallyKey;
@@ -1593,7 +1596,18 @@ export function HydratedNewOrderPanel({ data, templateOrder, onClose, onCreated,
 
             <fieldset className="rounded-2xl border border-[#dce7e5] bg-white p-5">
               <legend className="px-2 text-sm font-extrabold text-[#274b50]">Products</legend>
-              {recentProducts.length ? <section aria-label="Recently ordered products" className="mb-4"><p className="mb-2 text-xs font-bold text-[#587275]">Recently ordered by this customer</p><div className="flex gap-2 overflow-x-auto pb-1">{recentProducts.map((item) => <button key={item.tallyKey} type="button" onClick={() => addProduct(item)} title={item.item} className="min-h-10 max-w-56 shrink-0 truncate rounded-lg border border-[#cde1dc] bg-[#f2f8f5] px-3 text-sm font-bold text-[#31585d]">Add {item.item}</button>)}</div></section> : null}
+              {recentProducts.length ? <section aria-label="Recently ordered products" className="mb-4">
+                <p className="mb-2 text-xs font-bold text-[#587275]">Recently ordered · enter quantity and press Enter</p>
+                <div className="grid gap-2 sm:grid-cols-2">{recentProducts.map((item) => {
+                  const quantity = recentQuantities[item.tallyKey] ?? '1';
+                  const valid = Number.isInteger(Number(quantity)) && Number(quantity) >= 1 && Number(quantity) <= 1000000;
+                  return <div key={item.tallyKey} className="flex min-w-0 items-center gap-2 rounded-lg border border-[#cde1dc] bg-[#f2f8f5] p-2">
+                    <span title={item.item} className="min-w-0 flex-1 truncate text-sm font-bold text-[#31585d]">{item.item}</span>
+                    <input type="number" form="recent-product-quantities" aria-label={`Recent quantity for ${item.item}`} min="1" max="1000000" step="1" value={quantity} onChange={(event) => setRecentQuantities((current) => ({ ...current, [item.tallyKey]: event.target.value }))} onKeyDown={(event) => { if (event.key === 'Enter') { event.preventDefault(); if (valid) addProduct(item, Number(quantity)); } }} className="min-h-10 w-20 rounded-lg border border-[#cedfdd] bg-white px-2 text-right" />
+                    <button type="button" aria-label={`Add ${item.item}`} disabled={!valid} onClick={() => addProduct(item, Number(quantity))} className="min-h-10 rounded-lg px-2 text-sm font-bold text-[#31585d] disabled:opacity-50">Add</button>
+                  </div>;
+                })}</div>
+              </section> : null}
               <label className="text-sm font-bold text-[#456367]">Find product<input ref={productInputRef} maxLength={200} value={productQuery} onChange={(event) => { setProductQuery(event.target.value); setActiveProductIndex(0); }} onKeyDown={(event) => {
                 if (event.key === 'Enter') event.preventDefault();
                 if (matches.length === 0) return;

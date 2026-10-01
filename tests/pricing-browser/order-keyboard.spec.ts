@@ -101,8 +101,14 @@ test('recent customer products can be added from the existing history response',
   await expect(recent.getByRole('button', { name: 'Add Glucose B' })).toBeVisible();
   await expect(recent.getByRole('button', { name: 'Add CRP' })).toBeVisible();
   await expect(recent.getByRole('button', { name: 'Add Old item' })).toHaveCount(0);
-  await recent.getByRole('button', { name: 'Add Glucose B' }).click();
+  const quickQuantity = recent.getByRole('spinbutton', { name: 'Recent quantity for Glucose B' });
+  await quickQuantity.fill('0');
+  await quickQuantity.press('Enter');
+  await expect(page.getByRole('spinbutton', { name: 'Quantity for Glucose B', exact: true })).toHaveCount(0);
+  await quickQuantity.fill('4');
+  await quickQuantity.press('Enter');
   await expect(page.getByRole('spinbutton', { name: 'Quantity for Glucose B' })).toBeFocused();
+  await expect(page.getByRole('spinbutton', { name: 'Quantity for Glucose B' })).toHaveValue('4');
   await expect(recent.getByRole('button', { name: 'Add Glucose B' })).toHaveCount(0);
   expect(historyRequests).toBe(1);
   expect(submissions).toBe(0);

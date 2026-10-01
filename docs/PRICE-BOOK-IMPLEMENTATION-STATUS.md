@@ -1,5 +1,12 @@
 # Price book implementation checkpoint — 14 September 2026
 
+## Fast Order Desk: recent-product quantities — 1 October 2026
+
+- FEATURE, Milestone 1: recent customer products now accept quantity directly; Enter or Add inserts the selected quantity using the existing line path and focuses its quantity field. Whole-number bounds, duplicate prevention and 50-line limit remain unchanged. Customer selection resets unadded suggestion quantities. Unadded suggestion fields are not associated with the order form and cannot block its submission through native validation.
+- No API, pricing, permission, persistence, migration or Tally changes. Suggestions still derive from the existing five recent OMS orders, not comprehensive Tally sales history.
+- Regression first failed on desktop/mobile because the field was absent. Fresh keyboard suite: 12 desktop/mobile cases passed; final focused rerun: 2 passed. Typecheck, affected component lint and whitespace review passed before final form-association-only adjustment; that adjustment was covered by the focused browser rerun.
+- Not published. Next ticket: measure and test the complete five-product capture/save path. Staff 20–30-second acceptance remains unverified; controlled missing-product requests and release acceptance are still pending.
+
 ## Latest private candidate publication — 30 September 2026
 
 - Merged validated implementation `f099977` into the existing private candidate, source `22b17fe62ef18c325db8d4d3397838bfdf4df0e4`, preserving its hosting manifest and custom owner/staff audience. No public production, main merge or Tally changes.
