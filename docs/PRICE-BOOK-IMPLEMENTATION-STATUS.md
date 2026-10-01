@@ -1,5 +1,12 @@
 # Price book implementation checkpoint — 14 September 2026
 
+## Reported stock increase alerts — 1 October 2026
+
+- FEATURE, Milestone 3: a newer catalog-domain snapshot with a valid positive quantity increase records advisory notices for already-confirmed, unfulfilled order lines. Same-source refreshes, older versions, missing baselines, duplicate keys and invalid quantities do not invent arrivals. Initial imports/company changes establish a baseline only. Normal cached uploads exit before catalog parsing; comparisons are restricted to waiting-item keys. Connector polling and Tally remain unchanged.
+- Snapshot update, immutable order audit and transactional outbox insertion are atomic. A canonical source timestamp/item/order unique index prevents replay duplication, including stale-upload/replay cycles. No order state, pricing, reservation or allocation is changed. Added a bounded, authenticated operational read with no commercial fields and a manually opened recent-seven-day alert list linking to exact-item waiting orders. No browser/background polling or push delivery; outbox is groundwork, not a claim of external notification delivery.
+- Fresh integrated checks: 21 API/preflight unit tests and 16 desktop/mobile requirements/alert browser cases passed, with typecheck and targeted lint. Final database replay/ACID/concurrency passed, including duplicate-source, injected-outbox-failure rollback, alert pagination, catalog-time precedence and suspended-user tests. Fixed a test schema typo and a duplicate waiting-list display found during review. Delegate's broader 66-case pricing browser run passed before the final display correction; latest primary run is the 16 affected cases.
+- Limitations: increases may be adjustments, not purchase receipts; current availability must be checked. Alerts require successive timestamped full catalog snapshots and appear on manual read, not as device push. Office authenticated acceptance, operational pilot and release consolidation remain pending. Durable product-request browser-restart recovery remains open. Not deployed or merged.
+
 ## Waiting-order drilldown — 1 October 2026
 
 - FEATURE, Milestone 2/3 groundwork: each customer-demand item opens an explicit, read-only waiting-order list by exact canonical Tally key. Lists customer, order reference, operational status and remaining quantity; twenty orders per page with priority/age ordering. Excludes unconfirmed, closed, archived and fully fulfilled demand. No prices, allocations, stock reservations or Tally calls.

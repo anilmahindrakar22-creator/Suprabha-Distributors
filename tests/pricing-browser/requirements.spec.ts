@@ -90,3 +90,68 @@ test('incomplete quantities fail visibly instead of inventing zero stock', async
   await expect(page.getByRole('alert')).toContainText('incomplete');
   await expect(page.getByRole('heading', { name: 'Bad data' })).toHaveCount(0);
 });
+
+test('reported stock increases load only when expanded and show exact-key waiting orders', async ({ page }) => {
+  let alertReads = 0;
+  let waitingUrl = '';
+  await page.route('**/api/requirements?*', async (route) => {
+    const url = new URL(route.request().url());
+    if (url.searchParams.has('alerts')) {
+      alertReads += 1;
+      expect(url.searchParams.get('alerts')).toBe('1');
+      expect(url.searchParams.get('page')).toBe('1');
+      await route.fulfill({ json: { alerts: [{ tallyKey: itemKey, itemName: 'Reported reagent', stockBefore: 2, stockAfter: 7, sourceAt: '2026-10-01T00:00:00Z', affectedOrders: 3 }], pagination: { page: 1, pageCount: 1, total: 1 } } });
+      return;
+    }
+    if (url.searchParams.has('itemKey')) {
+      waitingUrl = url.toString();
+      await route.fulfill({ json: { orders: [{ orderId: 'alert-order', orderNumber: 'SO-alert', customerName: 'Alert customer', status: 'Open', remainingQuantity: 4, priority: 'high', createdAt: '2026-09-01T00:00:00Z' }], pagination: { page: 1, pageCount: 1, total: 1 } } });
+      return;
+    }
+    await route.fulfill({ json: { fetchedAt: null, rows: [{ tallyKey: itemKey, itemName: 'Same demand item', openDemand: 4, currentStock: 7, shortage: 0, affectedOrders: 1, priority: 'normal', oldestOrderAt: '2026-09-01T00:00:00Z' }], pagination: { page: 1, pageCount: 1, total: 1 } } });
+  });
+  await page.goto('/?view=requirements');
+  expect(alertReads).toBe(0);
+  await page.getByRole('button', { name: 'Customer demand / requirements' }).click();
+  expect(alertReads).toBe(0);
+  await page.getByRole('button', { name: 'Reported stock increases' }).click();
+  await expect(page.getByText('Reported reagent')).toBeVisible();
+  await expect(page.getByText('Tally reported 2 → 7')).toBeVisible();
+  await expect(page.getByText('3 affected waiting orders')).toBeVisible();
+  expect(alertReads).toBe(1);
+  await page.getByRole('button', { name: 'View waiting orders' }).first().click();
+  await expect(page.getByText('Alert customer · SO-alert')).toBeVisible();
+  await expect(page.getByText('Alert customer · SO-alert')).toHaveCount(1);
+  expect(new URL(waitingUrl).searchParams.get('itemKey')).toBe(itemKey);
+});
+
+test('invalid reported stock increases response fails visibly', async ({ page }) => {
+  await page.route('**/api/requirements?*', async (route) => {
+    const url = new URL(route.request().url());
+    if (url.searchParams.has('alerts')) {
+      await route.fulfill({ json: { alerts: [{ tallyKey: itemKey, itemName: 'Invalid increase', stockBefore: 4, stockAfter: 4, sourceAt: '2026-10-01T00:00:00Z', affectedOrders: 1 }], pagination: { page: 1, pageCount: 1, total: 1 } } });
+      return;
+    }
+    await route.fulfill({ json: { fetchedAt: null, rows: [], pagination: { page: 1, pageCount: 1, total: 0 } } });
+  });
+  await page.goto('/?view=requirements');
+  await page.getByRole('button', { name: 'Customer demand / requirements' }).click();
+  await page.getByRole('button', { name: 'Reported stock increases' }).click();
+  await expect(page.getByRole('alert')).toContainText('incomplete');
+  await expect(page.getByRole('heading', { name: 'Invalid increase' })).toHaveCount(0);
+});
+
+test('reported stock increase endpoint errors are visible', async ({ page }) => {
+  await page.route('**/api/requirements?*', async (route) => {
+    const url = new URL(route.request().url());
+    if (url.searchParams.has('alerts')) {
+      await route.fulfill({ status: 503, json: { error: 'Stock increase alerts unavailable.' } });
+      return;
+    }
+    await route.fulfill({ json: { fetchedAt: null, rows: [], pagination: { page: 1, pageCount: 1, total: 0 } } });
+  });
+  await page.goto('/?view=requirements');
+  await page.getByRole('button', { name: 'Customer demand / requirements' }).click();
+  await page.getByRole('button', { name: 'Reported stock increases' }).click();
+  await expect(page.getByRole('alert')).toContainText('Stock increase alerts unavailable.');
+});

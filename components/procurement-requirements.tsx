@@ -34,6 +34,20 @@ type WaitingOrdersResponse = {
   pagination: { page: number; pageCount: number; total: number };
 };
 
+type StockIncreaseAlert = {
+  tallyKey: string;
+  itemName: string;
+  stockBefore: number;
+  stockAfter: number;
+  sourceAt: string;
+  affectedOrders: number;
+};
+
+type StockIncreaseResponse = {
+  alerts: StockIncreaseAlert[];
+  pagination: { page: number; pageCount: number; total: number };
+};
+
 function quantity(value: number) {
   return Number(value).toLocaleString('en-IN', { maximumFractionDigits: 2 });
 }
@@ -62,16 +76,25 @@ export function ProcurementRequirements() {
   const requestRef = useRef<{ id: number; controller: AbortController } | null>(null);
   const requestIdRef = useRef(0);
   const [waitingKey, setWaitingKey] = useState<string | null>(null);
+  const [waitingOrigin, setWaitingOrigin] = useState<string | null>(null);
   const [waitingPage, setWaitingPage] = useState(1);
   const [waitingResult, setWaitingResult] = useState<WaitingOrdersResponse | null>(null);
   const [waitingLoading, setWaitingLoading] = useState(false);
   const [waitingError, setWaitingError] = useState('');
   const waitingRequestRef = useRef<{ id: number; controller: AbortController } | null>(null);
   const waitingRequestIdRef = useRef(0);
+  const [alertsOpen, setAlertsOpen] = useState(false);
+  const [alertsPage, setAlertsPage] = useState(1);
+  const [alertsResult, setAlertsResult] = useState<StockIncreaseResponse | null>(null);
+  const [alertsLoading, setAlertsLoading] = useState(false);
+  const [alertsError, setAlertsError] = useState('');
+  const alertsRequestRef = useRef<{ id: number; controller: AbortController } | null>(null);
+  const alertsRequestIdRef = useRef(0);
 
   useEffect(() => () => {
     requestRef.current?.controller.abort();
     waitingRequestRef.current?.controller.abort();
+    alertsRequestRef.current?.controller.abort();
   }, []);
 
   function resetWaitingOrders() {
@@ -80,6 +103,7 @@ export function ProcurementRequirements() {
     waitingRequestIdRef.current += 1;
     setWaitingLoading(false);
     setWaitingKey(null);
+    setWaitingOrigin(null);
     setWaitingResult(null);
     setWaitingError('');
   }
@@ -113,13 +137,14 @@ export function ProcurementRequirements() {
     }
   }
 
-  function toggleWaitingOrders(itemKey: string) {
-    if (waitingKey === itemKey) {
+  function toggleWaitingOrders(itemKey: string, origin = itemKey) {
+    if (waitingKey === itemKey && waitingOrigin === origin) {
       waitingRequestRef.current?.controller.abort();
       waitingRequestRef.current = null;
       waitingRequestIdRef.current += 1;
       setWaitingLoading(false);
       setWaitingKey(null);
+      setWaitingOrigin(null);
       setWaitingResult(null);
       setWaitingError('');
       return;
@@ -128,6 +153,7 @@ export function ProcurementRequirements() {
     waitingRequestRef.current = null;
     waitingRequestIdRef.current += 1;
     setWaitingKey(itemKey);
+    setWaitingOrigin(origin);
     setWaitingPage(1);
     setWaitingResult(null);
     setWaitingError('');
@@ -164,12 +190,92 @@ export function ProcurementRequirements() {
     }
   }
 
+  async function loadAlerts(nextPage: number) {
+    if (waitingOrigin?.startsWith('alert:')) resetWaitingOrders();
+    alertsRequestRef.current?.controller.abort();
+    const controller = new AbortController();
+    const id = ++alertsRequestIdRef.current;
+    alertsRequestRef.current = { id, controller };
+    setAlertsLoading(true);
+    setAlertsError('');
+    try {
+      const response = await fetch(`/api/requirements?alerts=1&page=${nextPage}`, { cache: 'no-store', signal: controller.signal });
+      const body = await response.json() as StockIncreaseResponse & { error?: string };
+      if (!response.ok) throw new Error(body.error || 'Reported stock increases could not be loaded.');
+      if (!Array.isArray(body.alerts) || body.alerts.length > 20 || !body.pagination
+        || !Number.isSafeInteger(body.pagination.page) || body.pagination.page !== nextPage
+        || !Number.isSafeInteger(body.pagination.pageCount) || body.pagination.pageCount < 1
+        || !Number.isSafeInteger(body.pagination.total) || body.pagination.total < 0
+        || body.alerts.some((alert) => !alert || typeof alert.tallyKey !== 'string' || !alert.tallyKey.trim()
+          || typeof alert.itemName !== 'string' || !alert.itemName.trim()
+          || typeof alert.stockBefore !== 'number' || !Number.isFinite(alert.stockBefore)
+          || typeof alert.stockAfter !== 'number' || !Number.isFinite(alert.stockAfter) || alert.stockAfter <= 0 || alert.stockAfter <= alert.stockBefore
+          || typeof alert.sourceAt !== 'string' || !alert.sourceAt.trim() || Number.isNaN(Date.parse(alert.sourceAt))
+          || !Number.isSafeInteger(alert.affectedOrders) || alert.affectedOrders < 1)) throw new Error('Reported stock increases response was incomplete.');
+      if (alertsRequestRef.current?.id !== id) return;
+      setAlertsResult(body);
+      setAlertsPage(body.pagination.page);
+    } catch (cause) {
+      if (alertsRequestRef.current?.id !== id || controller.signal.aborted) return;
+      setAlertsError(cause instanceof Error ? cause.message : 'Reported stock increases could not be loaded.');
+    } finally {
+      if (alertsRequestRef.current?.id === id) setAlertsLoading(false);
+    }
+  }
+
+  function toggleAlerts() {
+    if (alertsOpen) {
+      if (waitingOrigin?.startsWith('alert:')) resetWaitingOrders();
+      alertsRequestRef.current?.controller.abort();
+      alertsRequestRef.current = null;
+      alertsRequestIdRef.current += 1;
+      setAlertsLoading(false);
+      setAlertsOpen(false);
+      return;
+    }
+    setAlertsOpen(true);
+    void loadAlerts(1);
+  }
+
+  function renderWaitingOrders(itemKey: string, itemName: string, origin = itemKey) {
+    if (waitingKey !== itemKey || waitingOrigin !== origin) return null;
+    return <div className="mt-2 rounded-lg bg-[#f7faf9] p-3" aria-label={`Waiting orders for ${itemName}`}>
+      <div className="flex flex-wrap items-center justify-between gap-2">
+        <p className="text-xs font-semibold text-[#456367]">Waiting orders</p>
+        <button type="button" disabled={waitingLoading} onClick={() => void loadWaitingOrders(itemKey, waitingPage)} className="min-h-9 rounded-lg border border-[#cedfdd] bg-white px-3 text-xs font-bold text-[#31585d] disabled:opacity-50">{waitingLoading ? 'Loading…' : 'Refresh orders'}</button>
+      </div>
+      {waitingError ? <p role="alert" className="mt-2 text-sm text-[#8d3a34]">{waitingError}</p> : null}
+      {waitingLoading && !waitingResult ? <p className="mt-2 text-sm text-[#718487]">Loading waiting orders…</p> : null}
+      {waitingResult ? <>
+        <div className="mt-2 space-y-2">
+          {waitingResult.orders.map((order) => <div key={order.orderId} className="rounded-md border border-[#e3ecea] bg-white p-2 text-xs">
+            <p className="font-semibold text-[#173239]">{order.customerName} · {order.orderNumber}</p>
+            <p className="mt-1 text-[#587275]">{order.status} · Remaining: {quantity(order.remainingQuantity)}</p>
+          </div>)}
+          {!waitingResult.orders.length ? <p className="text-xs text-[#718487]">No waiting orders on this page.</p> : null}
+        </div>
+        <div className="mt-3 flex items-center justify-between gap-3 text-xs text-[#587275]">
+          <span>Page {waitingResult.pagination.page} of {waitingResult.pagination.pageCount}</span>
+          <div className="flex gap-2">
+            <button type="button" disabled={waitingLoading || waitingPage <= 1} onClick={() => void loadWaitingOrders(itemKey, waitingPage - 1)} className="min-h-9 rounded-lg border border-[#cedfdd] px-3 font-bold disabled:opacity-40">Previous</button>
+            <button type="button" disabled={waitingLoading || waitingPage >= waitingResult.pagination.pageCount} onClick={() => void loadWaitingOrders(itemKey, waitingPage + 1)} className="min-h-9 rounded-lg border border-[#cedfdd] px-3 font-bold disabled:opacity-40">Next</button>
+          </div>
+        </div>
+      </> : null}
+    </div>;
+  }
+
   function toggle() {
     if (open) {
       requestRef.current?.controller.abort();
       requestRef.current = null;
       requestIdRef.current += 1;
       setLoading(false);
+      alertsRequestRef.current?.controller.abort();
+      alertsRequestRef.current = null;
+      alertsRequestIdRef.current += 1;
+      setAlertsLoading(false);
+      setAlertsOpen(false);
       resetWaitingOrders();
       setOpen(false);
       return;
@@ -190,6 +296,39 @@ export function ProcurementRequirements() {
         <button type="button" disabled={loading} onClick={() => void load(page)} className="min-h-9 rounded-lg border border-[#cedfdd] bg-white px-3 text-xs font-bold text-[#31585d] disabled:opacity-50">{loading ? 'Loading…' : 'Refresh'}</button>
       </div>
       <p className="mt-2 text-xs text-[#805b20]">Catalog stock may be older than the latest upload. Check its date before procurement; picked but unbilled stock is not reserved here.</p>
+      <div className="mt-3 rounded-lg border border-[#e3ecea] bg-[#fbfcfb] p-3">
+        <button type="button" aria-expanded={alertsOpen} onClick={toggleAlerts} className="flex min-h-9 w-full items-center justify-between gap-2 text-left text-xs font-bold text-[#31585d]">
+          <span>Reported stock increases</span><span aria-hidden="true">{alertsOpen ? '−' : '+'}</span>
+        </button>
+        {alertsOpen ? <div className="mt-2 border-t border-[#e3ecea] pt-2">
+          <p className="text-xs leading-5 text-[#805b20]">Reports from the last seven days. Confirm current stock and waiting orders; no automatic allocation.</p>
+          <div className="mt-2 flex justify-end">
+            <button type="button" disabled={alertsLoading} onClick={() => void loadAlerts(alertsPage)} className="min-h-9 rounded-lg border border-[#cedfdd] bg-white px-3 text-xs font-bold text-[#31585d] disabled:opacity-50">{alertsLoading ? 'Loading…' : 'Refresh alerts'}</button>
+          </div>
+          {alertsError ? <p role="alert" className="mt-2 text-sm text-[#8d3a34]">{alertsError}</p> : null}
+          {alertsLoading && !alertsResult ? <p className="mt-2 text-sm text-[#718487]">Loading reported stock increases…</p> : null}
+          {alertsResult ? <>
+            <p className="mt-2 text-xs text-[#718487]">{quantity(alertsResult.pagination.total)} reported increases</p>
+            <div className="mt-2 space-y-2">
+              {alertsResult.alerts.map((alert, index) => <article key={`${alert.tallyKey}-${alert.sourceAt}-${index}`} className="rounded-lg border border-[#e3ecea] bg-white p-3">
+                <h3 className="break-words text-sm font-bold text-[#274b50]">{alert.itemName}</h3>
+                <p className="mt-1 text-xs text-[#587275]">Tally reported {quantity(alert.stockBefore)} → {quantity(alert.stockAfter)} · {displayDate(alert.sourceAt)}</p>
+                <p className="mt-1 text-xs text-[#587275]">{quantity(alert.affectedOrders)} affected waiting orders</p>
+                <button type="button" aria-expanded={waitingOrigin === `alert:${alert.tallyKey}:${alert.sourceAt}`} onClick={() => toggleWaitingOrders(alert.tallyKey, `alert:${alert.tallyKey}:${alert.sourceAt}`)} className="mt-2 min-h-9 rounded-lg border border-[#cedfdd] px-3 text-xs font-bold text-[#31585d]">{waitingOrigin === `alert:${alert.tallyKey}:${alert.sourceAt}` ? 'Hide waiting orders' : 'View waiting orders'}</button>
+                {renderWaitingOrders(alert.tallyKey, alert.itemName, `alert:${alert.tallyKey}:${alert.sourceAt}`)}
+              </article>)}
+              {!alertsResult.alerts.length ? <p className="rounded-lg p-2 text-xs text-[#718487]">No reported increases on this page.</p> : null}
+            </div>
+            <div className="mt-3 flex items-center justify-between gap-3 text-xs text-[#587275]">
+              <span>Page {alertsResult.pagination.page} of {alertsResult.pagination.pageCount}</span>
+              <div className="flex gap-2">
+                <button type="button" disabled={alertsLoading || alertsPage <= 1} onClick={() => void loadAlerts(alertsPage - 1)} className="min-h-9 rounded-lg border border-[#cedfdd] px-3 font-bold disabled:opacity-40">Previous</button>
+                <button type="button" disabled={alertsLoading || alertsPage >= alertsResult.pagination.pageCount} onClick={() => void loadAlerts(alertsPage + 1)} className="min-h-9 rounded-lg border border-[#cedfdd] px-3 font-bold disabled:opacity-40">Next</button>
+              </div>
+            </div>
+          </> : null}
+        </div> : null}
+      </div>
       {error ? <p role="alert" className="mt-2 text-sm text-[#8d3a34]">{error}</p> : null}
       {loading && !result ? <p className="mt-3 text-sm text-[#718487]">Loading customer demand…</p> : null}
       {result ? <>
@@ -207,33 +346,10 @@ export function ProcurementRequirements() {
               <div><dt className="text-[#718487]">Affected orders</dt><dd className="mt-0.5 font-semibold text-[#173239]">{quantity(row.affectedOrders)}</dd></div>
             </dl>
             <p className="mt-2 text-[11px] text-[#718487]">Oldest open order: {displayDate(row.oldestOrderAt)}</p>
-            <button type="button" aria-expanded={waitingKey === row.tallyKey} onClick={() => toggleWaitingOrders(row.tallyKey)} className="mt-3 min-h-9 rounded-lg border border-[#cedfdd] px-3 text-xs font-bold text-[#31585d]">
-              {waitingKey === row.tallyKey ? 'Hide waiting orders' : 'View waiting orders'}
+            <button type="button" aria-expanded={waitingOrigin === row.tallyKey} onClick={() => toggleWaitingOrders(row.tallyKey)} className="mt-3 min-h-9 rounded-lg border border-[#cedfdd] px-3 text-xs font-bold text-[#31585d]">
+              {waitingOrigin === row.tallyKey ? 'Hide waiting orders' : 'View waiting orders'}
             </button>
-            {waitingKey === row.tallyKey ? <div className="mt-2 rounded-lg bg-[#f7faf9] p-3" aria-label={`Waiting orders for ${row.itemName}`}>
-              <div className="flex flex-wrap items-center justify-between gap-2">
-                <p className="text-xs font-semibold text-[#456367]">Waiting orders</p>
-                <button type="button" disabled={waitingLoading} onClick={() => void loadWaitingOrders(row.tallyKey, waitingPage)} className="min-h-9 rounded-lg border border-[#cedfdd] bg-white px-3 text-xs font-bold text-[#31585d] disabled:opacity-50">{waitingLoading ? 'Loading…' : 'Refresh orders'}</button>
-              </div>
-              {waitingError ? <p role="alert" className="mt-2 text-sm text-[#8d3a34]">{waitingError}</p> : null}
-              {waitingLoading && !waitingResult ? <p className="mt-2 text-sm text-[#718487]">Loading waiting orders…</p> : null}
-              {waitingResult ? <>
-                <div className="mt-2 space-y-2">
-                  {waitingResult.orders.map((order) => <div key={order.orderId} className="rounded-md border border-[#e3ecea] bg-white p-2 text-xs">
-                    <p className="font-semibold text-[#173239]">{order.customerName} · {order.orderNumber}</p>
-                    <p className="mt-1 text-[#587275]">{order.status} · Remaining: {quantity(order.remainingQuantity)}</p>
-                  </div>)}
-                  {!waitingResult.orders.length ? <p className="text-xs text-[#718487]">No waiting orders on this page.</p> : null}
-                </div>
-                <div className="mt-3 flex items-center justify-between gap-3 text-xs text-[#587275]">
-                  <span>Page {waitingResult.pagination.page} of {waitingResult.pagination.pageCount}</span>
-                  <div className="flex gap-2">
-                    <button type="button" disabled={waitingLoading || waitingPage <= 1} onClick={() => void loadWaitingOrders(row.tallyKey, waitingPage - 1)} className="min-h-9 rounded-lg border border-[#cedfdd] px-3 font-bold disabled:opacity-40">Previous</button>
-                    <button type="button" disabled={waitingLoading || waitingPage >= waitingResult.pagination.pageCount} onClick={() => void loadWaitingOrders(row.tallyKey, waitingPage + 1)} className="min-h-9 rounded-lg border border-[#cedfdd] px-3 font-bold disabled:opacity-40">Next</button>
-                  </div>
-                </div>
-              </> : null}
-            </div> : null}
+            {renderWaitingOrders(row.tallyKey, row.itemName)}
           </article>)}
           {!result.rows.length ? <p className="rounded-lg bg-[#fbfcfb] p-3 text-sm text-[#718487]">No open customer demand on this page.</p> : null}
         </div>

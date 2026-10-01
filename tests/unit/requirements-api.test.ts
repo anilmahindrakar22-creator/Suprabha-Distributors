@@ -33,3 +33,11 @@ it.each(['', 'x'.repeat(221)])('rejects invalid item keys before gateway access'
   expect((await GET(new Request(`http://local/api/requirements?itemKey=${key}`))).status).toBe(400);
   expect(network).not.toHaveBeenCalled();
 });
+it('reads operational alerts for the authenticated actor', async () => {
+  expect((await GET(new Request('http://local/api/requirements?alerts=1&page=2'))).status).toBe(200);
+  expect(JSON.parse(network.mock.calls[0][1]?.body as string)).toEqual({ actorEmail: 'sales@example.test', action: 'get_stock_alerts', payload: { page: 2 } });
+});
+it.each(['alerts=0','alerts=1&itemKey=kit'])('rejects ambiguous alert query %s', async (query) => {
+  expect((await GET(new Request(`http://local/api/requirements?${query}`))).status).toBe(400);
+  expect(network).not.toHaveBeenCalled();
+});

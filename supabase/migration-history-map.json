@@ -632,6 +632,13 @@
       "remoteVersion": null,
       "remoteSha256": null,
       "status": "not_deployed"
+    },
+    {
+      "localFile": "20261001073000_reported_stock_increase_alerts.sql",
+      "localSha256": "34c57f26c92f92d9bf074c894fcaca5e7b2e970c7bbad4c49bde61b9d6ab1358",
+      "remoteVersion": null,
+      "remoteSha256": null,
+      "status": "not_deployed"
     }
   ]
 }

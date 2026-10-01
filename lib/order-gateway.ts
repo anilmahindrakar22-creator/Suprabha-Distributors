@@ -4,6 +4,7 @@ export type GatewayAction =
   | 'session'
   | 'get_requirements'
   | 'get_requirement_orders'
+  | 'get_stock_alerts'
   | 'bootstrap'
   | 'get_catalog'
   | 'get_customers'
