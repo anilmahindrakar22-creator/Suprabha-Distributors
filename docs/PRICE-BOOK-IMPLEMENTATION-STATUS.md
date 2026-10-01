@@ -1,5 +1,12 @@
 # Price book implementation checkpoint — 14 September 2026
 
+## Private authorization-loss retest — 1 October 2026
+
+- Published existing private acceptance version 8 from candidate `ca43f20c48f77982dc4a97e7f6e05a9f3020aeb9` (cherry-pick of implementation `7b78fe8`). Local production build passed. Saved version `appgprj_6aae9b06bf4081919a1f08183fb02465~appgver_ee19f57a9c5c8191a67a8b4206b2ad98`; deployment `appgdep_6abe582679c881918f052b0b8d48a129` succeeded, environment revision 2. Preserved the existing custom Anil/Nikitesh audience. GitHub main and public app unchanged.
+- Actual browser independently identified Nikitesh and loaded synthetic customer rates/costs and policy. Repeated the previously user-approved private Administrator→Sales→Administrator test. Denied pricing refresh removed the entire commercial workspace, including the previously loaded table and policy, leaving only the restriction message. Reload under Sales removed Pricing/Users navigation. No separately observed HTTP status/body claim; browser UI is the live evidence, with 401/403 covered by automated tests.
+- Both guarded role changes and immutable member-audit inserts were atomic. Restored active Administrator verified in database and browser navigation. No price/order/Tally mutation or connector setting change. Screenshot capture was unavailable; acceptance evidence is accessibility state plus database audit and deployment results.
+- Completed this concrete release-defect retest. Remaining acceptance still includes authenticated pricing mutation/recovery/failure cases and staff-device offline separation; full combined release/pilot readiness is not certified. This turn ran the candidate production build, not a repeated full test suite.
+
 ## Private restricted-role acceptance — 1 October 2026
 
 - User approved temporary Nikitesh Administrator→Sales→Administrator in isolated `ayrvhemxzizpkfcycvip`. Each guarded role change and member audit insertion was atomic, labelled `codex-private-acceptance:user-approved`; restored active Administrator was verified in database and reloaded browser navigation. No production role change or business transaction mutation.
