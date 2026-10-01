@@ -43,3 +43,26 @@ test('restricted pricing endpoint fails closed for an unapproved visitor', async
   expect(body).not.toHaveProperty('cost');
   expect(body).not.toHaveProperty('margin');
 });
+
+for (const endpoint of ['/api/product-requests', '/api/requirements', '/api/requirements?alerts=1', '/api/requirements?itemKey=TEST']) {
+  test(`${endpoint} fails closed for an unapproved visitor`, async ({ request }) => {
+    const response = await request.get(endpoint);
+    expect([401, 403]).toContain(response.status());
+    expect(response.headers()['cache-control']).toBe('private, no-store');
+    const body = await response.json();
+    expect(body).toMatchObject({ error: expect.stringMatching(/Sign in required|Access denied/) });
+    expect(body).not.toHaveProperty('requests');
+    expect(body).not.toHaveProperty('rows');
+    expect(body).not.toHaveProperty('alerts');
+    expect(body).not.toHaveProperty('orders');
+  });
+}
+
+test('product request mutation is denied before any command is accepted for a visitor', async ({ request }) => {
+  const response = await request.post('/api/product-requests', { data: { action: 'create_product_request', payload: {
+    productName: 'Acceptance request', details: '', idempotencyKey: '11111111-1111-4111-8111-111111111111',
+  } } });
+  expect([401, 403]).toContain(response.status());
+  expect(response.headers()['cache-control']).toBe('private, no-store');
+  expect(await response.json()).not.toHaveProperty('requestId');
+});

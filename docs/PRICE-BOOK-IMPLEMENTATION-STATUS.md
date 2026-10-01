@@ -1,5 +1,16 @@
 # Price book implementation checkpoint — 14 September 2026
 
+## Local consolidation and release boundary — 1 October 2026
+
+- LOCAL CONSOLIDATION PASS / OVERALL ACCEPTANCE PARTIAL. Consolidated the transactional/pricing and Milestones 1–3 candidate through `9c81036`, without adding features or changing production/Tally.
+- Patched the existing transitive Hono dependency from 4.13.5 to 4.13.11 in the lockfile after production dependency audit identified GHSA-hxh3-vqpv-xpqv. Fresh production dependency audit reports no known vulnerabilities. No architecture or package manifest changes.
+- Added anonymous runtime denial/no-store tests for product-request reads/mutations and requirements, stock-alert and exact-item waiting-order reads.
+- Fresh validation: lint, typecheck, 520 unit tests, production build, 34 access/runtime browser checks and 72 pricing/workflow desktop/mobile fixture browser checks passed. Connector fixture tests and the complete pricing deployment-order database replay passed, including ACID failure rollback, idempotency and two-session concurrency checks. Whitespace checks passed. Scoped independent review found no actionable regression. Fixture browser checks are not authenticated staff-device acceptance.
+- Read-only production migration listing confirms 84 deployed versions, ending at `20260928113956_customer_group_gross_margin`. Six mapped candidate migrations remain undeployed: catalog source version, partial-snapshot customer preservation, controlled product requests, customer demand requirements, waiting orders and reported stock increase alerts. Migration contents were not rechecked live; do not mark the release preflight live-history/content gate complete based on version listing alone.
+- Remaining gates: updated private candidate and migration rollout, live migration-content reconciliation, authenticated role/two-account acceptance, actual staff-device offline recovery/account separation and measured capture/loading/save latency, then the five-working-day operational pilot. No merge, publication, production migration or Tally write was performed. Not pilot-ready.
+- Known limits remain explicit: stock increases are advisory/manual in-app notices, not allocation or push delivery; catalog quantities can be cached; trusted-device storage is unencrypted and not cross-tab atomic; office product-review recovery remains in-memory. Keep Service deferred and avoid further feature expansion before acceptance.
+
+
 ## Trusted-device product-request retry recovery — 1 October 2026
 
 - HARDENING, Milestone 1/pilot recovery: missing-product create requests can explicitly opt into saving their pending command on a trusted device before the network write. Reopening restores the exact product/customer/details/idempotency reference for an explicit retry; there is no automatic submission. Successful confirmation or definitive rejection clears that reference. Cleanup failures retain the same command rather than encouraging a duplicate.
