@@ -1,5 +1,13 @@
 # Price book implementation checkpoint — 14 September 2026
 
+## Approved private acceptance rollout — 1 October 2026
+
+- User authorized the private candidate and pending migration rollout only. Private acceptance version 6 deployed successfully from `7a69b57e6a817bea064b80fb3e67936ab728227f`; deployment `appgdep_6abe1511ac7881918395919ea9b71908`. URL: https://suprabha-pricing-acceptance.anil-mahindrakar22.chatgpt.site. Existing custom audience remains owner Anil and approved external viewer Nikitesh. Source integration is on candidate/pricing-acceptance, not repository main.
+- Private database `ayrvhemxzizpkfcycvip` already contained catalog-source and partial-customer preservation migrations. Applied only the four missing migrations: controlled product requests, customer demand requirements, waiting orders and reported stock increase alerts. Verified new gateways deny anon/authenticated execution and permit service_role. Existing business-delete/event/command guards and order/outbox tables were checked before migration.
+- Deployed private stockflow-orders Edge function version 8 with existing custom gateway-key verification and bounded request gate preserved. Private candidate frozen-lockfile installation and production build passed. Public app, production database, Tally and repository main are unchanged.
+- Remaining gate: authenticated staff acceptance on deployed version 6, actual devices/offline/account separation and measured performance, then the operational pilot. Do not merge all work or add further feature builds merely because private deployment succeeded. Merge/release remains a separate approved gate after acceptance.
+
+
 ## Live migration-content reconciliation — 1 October 2026
 
 - Read-only production metadata check: all 84 deployed migration versions and normalized SHA-256 contents match the existing migration-history map; no missing, unexpected or changed deployed migration was found. Compared stored statements joined with newline, CR removal and surrounding whitespace trimming against the recorded remote hashes. No business rows, secrets or database writes were involved.
