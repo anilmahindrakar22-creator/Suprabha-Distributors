@@ -1,5 +1,11 @@
 # Price book implementation checkpoint — 14 September 2026
 
+## Verified second-account read acceptance — 1 October 2026
+
+- Private version 7 header independently identifies `nikitesh.am@gmail.com`. Orders, open product-request queue, customer-demand projection, Pricing and selected customer price book loaded successfully in this session. Four fixture price rows retained fixed/already-approved protection and bulk approval stayed disabled with zero eligible rows. No mutation or role change was submitted.
+- This closes second-administrator identity/read smoke only. Both acceptance members are administrators; deployed operational-role pricing denial still requires a separately authorized restricted-role check. Offline draft separation, authenticated pricing mutations/recovery and actual staff-device pilot remain open. Public/main/Tally unchanged.
+
+
 ## Private sign-out publication — 1 October 2026
 
 - At the user's explicit request, published private acceptance version 7 from `6752b12331c812d81c5030216fce46507d1ed092`; deployment `appgdep_6abe1b22431c81919890bbe3d65c9e27` succeeded. Retained the existing Anil/Nikitesh audience and runtime environment revision 2. Candidate production build passed; no database/Edge/Tally changes were required.
