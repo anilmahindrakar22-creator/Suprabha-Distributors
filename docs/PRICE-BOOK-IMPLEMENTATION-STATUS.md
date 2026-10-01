@@ -1,5 +1,12 @@
 # Price book implementation checkpoint — 14 September 2026
 
+## Private restricted-role acceptance — 1 October 2026
+
+- User approved temporary Nikitesh Administrator→Sales→Administrator in isolated `ayrvhemxzizpkfcycvip`. Each guarded role change and member audit insertion was atomic, labelled `codex-private-acceptance:user-approved`; restored active Administrator was verified in database and reloaded browser navigation. No production role change or business transaction mutation.
+- With Sales membership, the existing pricing screen refresh returned `Pricing access is restricted`. Full reload removed Pricing and Users navigation; Orders remained available. Direct API navigation was blocked by the browser client, so no claim of a separately observed HTTP status/body for that attempt.
+- Concrete release defect: previously fetched pricing rows/policy remained displayed in the already-open pricing screen after refresh was denied. This is stale previously-authorized UI data, not demonstrated fresh API leakage, but must clear on authorization loss. Next ticket: fail-closed removal of restricted pricing state on 401/403 across affected pricing reads, with regression tests. Not merge-ready.
+
+
 ## Verified second-account read acceptance — 1 October 2026
 
 - Private version 7 header independently identifies `nikitesh.am@gmail.com`. Orders, open product-request queue, customer-demand projection, Pricing and selected customer price book loaded successfully in this session. Four fixture price rows retained fixed/already-approved protection and bulk approval stayed disabled with zero eligible rows. No mutation or role change was submitted.
