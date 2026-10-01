@@ -1,5 +1,12 @@
 # Price book implementation checkpoint — 14 September 2026
 
+## Private product-request mutation acceptance — 1 October 2026
+
+- Through deployed version 6, submitted synthetic missing product `ACCEPTANCE REQUEST 20261001 READONLY-TALLY` without saving an order or consenting to device storage. Save confirmation appeared; the office queue displayed the request and creator email `anil.mahindrakar22@gmail.com`. This independently establishes that the current browser session was Anil, not a demonstrated second-account session; earlier user-reported second-account smoke must not be treated as two-account acceptance.
+- Entered an explicit synthetic-test review reason and rejected the request. It left the open queue; its business record remains preserved, not deleted. No canonical product, order, price, public data or Tally operation was performed.
+- Remaining: genuine second-account/operational-role deployed verification, recovery/failure acceptance and actual staff-device pilot. Do not claim merge readiness from this administrator create/review path alone.
+
+
 ## Refreshed acceptance session — 1 October 2026
 
 - After the user reported signing in to the second approved account, reloaded the private candidate and checked Pricing, base/default-price workbench and purchase-cost review. Reads succeeded. Cleaner fixture kept its fixed customer rate of 335 against cost 200, displayed missing comparable historic cost rather than inventing continuity, and marked monthly-volume economics unavailable.
