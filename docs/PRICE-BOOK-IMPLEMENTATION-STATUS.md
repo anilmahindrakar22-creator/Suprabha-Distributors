@@ -1,5 +1,11 @@
 # Price book implementation checkpoint — 14 September 2026
 
+## Controlled product requests: database boundary — 1 October 2026
+
+- FEATURE foundation, Milestone 1: new operational request/review records, role-controlled gateway, bounded open-request read, exact imported-catalog-name recheck, customer validation, idempotent command recovery, row-locked/version-checked review and immutable audit events. Requests do not create or modify Product Master or Tally data. Missing catalog fails closed. Business requests cannot be hard-deleted.
+- Database regression covers wrong gateway/viewer denial, same-command replay, changed-command rejection, existing catalog item rejection, immutable audit, stale review, hard-delete denial, no Product Master mutation, no authenticated RPC grant and injected audit-failure rollback of request/command receipt. Complete deployment-order migration replay and existing pricing ACID/two-session tests passed. One test-only ambiguous column reference was corrected and rerun. Eight release-preflight unit cases passed; new migration mapped as not deployed.
+- Foundation only: no user-facing request workflow or deployed migration yet. API/form/admin review integration and direct new-request concurrency coverage remain before declaring the capability complete. Existing pricing and Tally authority unchanged.
+
 ## Fast Order Desk: capture measurement — 1 October 2026
 
 - HARDENING, Milestone 1: added bounded browser-only `order_capture_ms` from explicit customer selection to accepted save, including accepted-command recovery. No names, identifiers, prices, storage or telemetry are attached. Existing save timing and transaction paths remain unchanged.

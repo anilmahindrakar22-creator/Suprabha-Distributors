@@ -611,6 +611,13 @@
       "remoteVersion": null,
       "remoteSha256": null,
       "status": "not_deployed"
+    },
+    {
+      "localFile": "20261001055456_controlled_product_requests.sql",
+      "localSha256": "97bcd51c98cdd1202565119ef4bc5e7fabeecf553d65bf8a60ba701b18f4e14d",
+      "remoteVersion": null,
+      "remoteSha256": null,
+      "status": "not_deployed"
     }
   ]
 }

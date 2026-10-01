@@ -135,6 +135,7 @@ create table public.test_upgrade_expected as select to_jsonb(o) as order_data,(s
   Invoke-DatabaseCommand $psqlProgram @('-U',$databaseUser,'-X','-q','-v','ON_ERROR_STOP=1','-d',$database,'-f',(Join-Path $repository 'supabase/tests/snapshot_upload_privilege.sql'))
   Write-Output 'PASS: service-role snapshot upload imports pricing evidence without broad grants'
   Invoke-DatabaseCommand $psqlProgram @('-U',$databaseUser,'-X','-q','-v','ON_ERROR_STOP=1','-d',$database,'-f',(Join-Path $repository 'supabase/tests/partial_customer_snapshot_integrity.sql'))
+  Invoke-DatabaseCommand $psqlProgram @('-U',$databaseUser,'-X','-q','-v','ON_ERROR_STOP=1','-d',$database,'-f',(Join-Path $repository 'supabase/tests/product_request_integrity.sql'))
   Write-Output 'PASS: partial snapshots preserve customers and complete lists retain soft-deactivation'
   Invoke-DatabaseCommand $psqlProgram @('-U',$databaseUser,'-X','-q','-v','ON_ERROR_STOP=1','-d',$database,'-f',(Join-Path $repository 'supabase/tests/catalog_source_version.sql'))
   Write-Output 'PASS: catalog source version and legacy fallback across all order gateways'
