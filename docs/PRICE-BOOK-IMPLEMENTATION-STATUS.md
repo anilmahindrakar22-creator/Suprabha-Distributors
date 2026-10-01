@@ -1,5 +1,12 @@
 # Price book implementation checkpoint — 14 September 2026
 
+## Refreshed acceptance session — 1 October 2026
+
+- After the user reported signing in to the second approved account, reloaded the private candidate and checked Pricing, base/default-price workbench and purchase-cost review. Reads succeeded. Cleaner fixture kept its fixed customer rate of 335 against cost 200, displayed missing comparable historic cost rather than inventing continuity, and marked monthly-volume economics unavailable.
+- No approval button was submitted and no order/business record changed. Browser identity is user-reported, not independently displayed by this UI. Both approved acceptance accounts currently have administrator membership: successful commercial reads cannot establish operational-role denial. Existing automated denial tests remain evidence only, not a deployed Sales/Warehouse check.
+- Still open: authenticated mutations/recovery/failure scenarios, deployed least-privilege role checks and actual staff-device acceptance/pilot. Read-only smoke success does not authorize or establish merge readiness.
+
+
 ## Deployed browser acceptance: read/capture smoke — 1 October 2026
 
 - Private version 6, using the actual signed-in in-app browser session: Orders loaded without an error; product-request inbox returned empty successfully; demand returned one fixture item with open demand 1, stock 12, shortage 0; exact-item waiting list returned its confirmed fixture order; reported-stock alert list returned zero with valid pagination. Old catalog timestamp remained visible rather than being presented as fresh stock.
