@@ -1,5 +1,13 @@
 # Price book implementation checkpoint — 14 September 2026
 
+## Deployed browser acceptance: read/capture smoke — 1 October 2026
+
+- Private version 6, using the actual signed-in in-app browser session: Orders loaded without an error; product-request inbox returned empty successfully; demand returned one fixture item with open demand 1, stock 12, shortage 0; exact-item waiting list returned its confirmed fixture order; reported-stock alert list returned zero with valid pagination. Old catalog timestamp remained visible rather than being presented as fresh stock.
+- Unsaved order-entry check: customer search selected Acceptance Laboratory, recent customer product loaded, quantity 2 plus Enter added exactly one line and enabled Save. Closed the form without saving; device draft consent stayed off. No order or pricing mutation was submitted.
+- Pricing page and selected customer price book loaded four fixture products with last rates, costs, GP percentages and recommended rates. Fixed/already-approved prices stayed protected and bulk approval remained disabled with zero eligible items. Existing commercial policy and group gross-margin preview controls remained visible.
+- This is a deployed read/capture smoke pass, not complete acceptance. The current browser identity was not independently verified; second-account role separation, mutation/recovery/failure scenarios, actual staff mobile/tablet offline behavior and measured performance remain unverified. No public/Tally change. Merge remains gated on acceptance.
+
+
 ## Approved private acceptance rollout — 1 October 2026
 
 - User authorized the private candidate and pending migration rollout only. Private acceptance version 6 deployed successfully from `7a69b57e6a817bea064b80fb3e67936ab728227f`; deployment `appgdep_6abe1511ac7881918395919ea9b71908`. URL: https://suprabha-pricing-acceptance.anil-mahindrakar22.chatgpt.site. Existing custom audience remains owner Anil and approved external viewer Nikitesh. Source integration is on candidate/pricing-acceptance, not repository main.
