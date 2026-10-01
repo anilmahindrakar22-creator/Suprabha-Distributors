@@ -1221,6 +1221,7 @@ export function HydratedNewOrderPanel({ data, templateOrder, onClose, onCreated,
   const [expectedDeliveryDate, setExpectedDeliveryDate] = useState(initialPayload?.expectedDeliveryDate || '');
   const [productQuery, setProductQuery] = useState('');
   const [recentQuantities, setRecentQuantities] = useState<Record<string, string>>({});
+  const customerSelectedAtRef = useRef<number | null>(null);
   const [activeProductIndex, setActiveProductIndex] = useState(0);
   const focusQuantityKey = useRef<string | null>(null);
   const productInputRef = useRef<HTMLInputElement>(null);
@@ -1393,6 +1394,7 @@ export function HydratedNewOrderPanel({ data, templateOrder, onClose, onCreated,
   }, [canViewPrices, entryPriceKey, pricingKeys, selectedCustomerId]);
 
   function chooseCustomer(customer: CustomerDirectoryEntry) {
+    customerSelectedAtRef.current = performance.now();
     setRecentQuantities({});
     const customerKey = `${data.actor.email.trim().toLocaleLowerCase('en-IN')}:${customer.id}`;
     currentCustomerKeyRef.current = customerKey;
@@ -1467,6 +1469,7 @@ export function HydratedNewOrderPanel({ data, templateOrder, onClose, onCreated,
       const result = await readOrderSubmission(response);
       removeOfflineOrderDraft(localStorage, data.actor.email);
       recordOrderClientTiming('order_save_ms', startedAt);
+      if (customerSelectedAtRef.current !== null) recordOrderClientTiming('order_capture_ms', customerSelectedAtRef.current);
       onCreated(result.orderNumber || 'Order', body, result);
     } catch (cause) {
       if (cause instanceof OrderSubmissionError && cause.kind === 'conflict') {
@@ -1474,6 +1477,7 @@ export function HydratedNewOrderPanel({ data, templateOrder, onClose, onCreated,
         if (accepted) {
           removeOfflineOrderDraft(localStorage, data.actor.email);
           recordOrderClientTiming('order_save_ms', startedAt);
+          if (customerSelectedAtRef.current !== null) recordOrderClientTiming('order_capture_ms', customerSelectedAtRef.current);
           onCreated(accepted);
           return;
         }

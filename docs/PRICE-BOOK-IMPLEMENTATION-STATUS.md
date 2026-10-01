@@ -1,5 +1,12 @@
 # Price book implementation checkpoint — 14 September 2026
 
+## Fast Order Desk: capture measurement — 1 October 2026
+
+- HARDENING, Milestone 1: added bounded browser-only `order_capture_ms` from explicit customer selection to accepted save, including accepted-command recovery. No names, identifiers, prices, storage or telemetry are attached. Existing save timing and transaction paths remain unchanged.
+- Added five-product keyboard capture/save regression for desktop/mobile: exact customer and quantities, one create command, capture measure recorded, no restricted pricing request for Sales. Extended only synthetic fixture catalog for two extra products.
+- Fresh results: 2 focused browser cases and 3 timing unit tests passed; typecheck, affected lint and whitespace check passed. Automated fixture timings are not evidence of staff completing production orders in 20–30 seconds.
+- Not deployed. Next: controlled missing-product request workflow; use the existing gateway/audit/idempotency conventions, never create a Product Master implicitly.
+
 ## Fast Order Desk: recent-product quantities — 1 October 2026
 
 - FEATURE, Milestone 1: recent customer products now accept quantity directly; Enter or Add inserts the selected quantity using the existing line path and focuses its quantity field. Whole-number bounds, duplicate prevention and 50-line limit remain unchanged. Customer selection resets unadded suggestion quantities. Unadded suggestion fields are not associated with the order form and cannot block its submission through native validation.

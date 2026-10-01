@@ -1,4 +1,4 @@
-export type OrderClientTiming = 'order_list_ms' | 'order_open_ms' | 'order_save_ms';
+export type OrderClientTiming = 'order_list_ms' | 'order_open_ms' | 'order_save_ms' | 'order_capture_ms';
 
 // Browser-only, bounded diagnostics. Nothing is sent to the server.
 export function recordOrderClientTiming(name: OrderClientTiming, startedAt: number) {

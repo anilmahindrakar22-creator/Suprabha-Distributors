@@ -24,6 +24,8 @@ function Fixture() {
         { tallyKey: 'GLUCOSE-A', item: 'Glucose A', group: 'Diasys', baseUnit: 'Nos', closing: 10, active: true },
         { tallyKey: 'GLUCOSE-B', item: 'Glucose B', group: 'Diasys', baseUnit: 'Nos', closing: 12, active: true },
         { tallyKey: 'CRP', item: 'CRP', group: 'Sysmex', baseUnit: 'Nos', closing: 8, active: true },
+        { tallyKey: 'HBA1C', item: 'HbA1c', group: 'Sysmex', baseUnit: 'Nos', closing: 8, active: true },
+        { tallyKey: 'CLEANER', item: 'Cleaner', group: 'Sysmex', baseUnit: 'Nos', closing: 8, active: true },
       ] },
       customers: [
         { id: '11111111-1111-4111-8111-111111111111', name: 'Test Alpha Laboratory', phone: null, city: null, tallyKey: 'ALPHA' },

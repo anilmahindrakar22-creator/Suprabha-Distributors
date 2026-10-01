@@ -1,5 +1,39 @@
 import { test, expect } from '@playwright/test';
 
+test('five-product keyboard capture saves exact quantities once and records local timing', async ({ page }) => {
+  const commands: Array<{ payload: { customerId: string; lines: Array<{ tallyKey: string; quantity: number }> } }> = [];
+  let pricingRequests = 0;
+  await page.route('**/api/pricing**', async (route) => { pricingRequests += 1; await route.fulfill({ status: 403, json: {} }); });
+  await page.route('**/api/orders**', async (route) => {
+    if (route.request().method() === 'POST') {
+      commands.push(route.request().postDataJSON());
+      await route.fulfill({ json: { orderNumber: 'SF-TEST-FIVE' } });
+    } else await route.fulfill({ json: { orders: [], pagination: { total: 0 } } });
+  });
+  await page.goto('/?view=order-entry');
+  const customer = page.getByRole('combobox', { name: 'Name' });
+  await customer.fill('Beta');
+  await customer.press('Enter');
+  const product = page.getByRole('combobox', { name: 'Find product' });
+  for (const [index, name] of ['Glucose A', 'Glucose B', 'CRP', 'HbA1c', 'Cleaner'].entries()) {
+    await product.fill(name);
+    await product.press('Enter');
+    const quantity = page.getByRole('spinbutton', { name: `Quantity for ${name}`, exact: true });
+    await expect(quantity).toBeFocused();
+    await quantity.fill(String(index + 1));
+    await quantity.press('Enter');
+  }
+  await page.getByRole('button', { name: 'Save order', exact: true }).click();
+  await expect.poll(() => commands.length).toBe(1);
+  expect(commands[0].payload.customerId).toBe('22222222-2222-4222-8222-222222222222');
+  expect(commands[0].payload.lines).toEqual([
+    { tallyKey: 'GLUCOSE-A', quantity: 1 }, { tallyKey: 'GLUCOSE-B', quantity: 2 },
+    { tallyKey: 'CRP', quantity: 3 }, { tallyKey: 'HBA1C', quantity: 4 }, { tallyKey: 'CLEANER', quantity: 5 },
+  ]);
+  await expect.poll(() => page.evaluate(() => performance.getEntriesByName('order_capture_ms', 'measure').length)).toBe(1);
+  expect(pricingRequests).toBe(0);
+});
+
 test('order desk can select customer and products, enter quantities, and keep the order unsent', async ({ page }) => {
   let submissions = 0;
   await page.route('**/api/orders**', async (route) => {

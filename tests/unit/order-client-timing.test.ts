@@ -5,9 +5,16 @@ afterEach(() => {
   performance.clearMeasures('order_open_ms');
   performance.clearMeasures('order_list_ms');
   performance.clearMeasures('order_save_ms');
+  performance.clearMeasures('order_capture_ms');
 });
 
 describe('browser order timings', () => {
+  it('records customer selection to accepted order without sensitive detail', () => {
+    recordOrderClientTiming('order_capture_ms', performance.now() - 25);
+    const [entry] = performance.getEntriesByName('order_capture_ms', 'measure') as PerformanceMeasure[];
+    expect(entry.duration).toBeGreaterThanOrEqual(25);
+    expect(entry.detail).toBeNull();
+  });
   it('records elapsed time without any network or storage dependency', () => {
     const startedAt = performance.now() - 10;
     recordOrderClientTiming('order_open_ms', startedAt);
