@@ -618,6 +618,13 @@
       "remoteVersion": null,
       "remoteSha256": null,
       "status": "not_deployed"
+    },
+    {
+      "localFile": "20261001061531_customer_demand_requirements.sql",
+      "localSha256": "2f529d9234a921a469cf554bf6bbdda7ff4d011e1f10a0feb8830452f5e19ab5",
+      "remoteVersion": null,
+      "remoteSha256": null,
+      "status": "not_deployed"
     }
   ]
 }

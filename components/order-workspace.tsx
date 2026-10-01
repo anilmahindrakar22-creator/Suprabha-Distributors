@@ -26,6 +26,7 @@ import { recordOrderClientTiming } from '@/lib/order-client-timing';
 import type { OrderPricingWorkspace, PricingLineResolution } from '@/lib/pricing-types';
 import { PricingOptions } from './pricing-options';
 import { ProductRequest, ProductRequestInbox } from './product-request';
+import { ProcurementRequirements } from './procurement-requirements';
 
 type DraftLine = { tallyKey: string; item: CatalogItem | null; quantity: number };
 type OrderEntryPrice = { tallyKey: string; currentPrice: number | null; currentPriceSource: string; riskStatus: 'GREEN' | 'AMBER' | 'RED'; recommendationReason?: string };
@@ -503,6 +504,7 @@ export function OrderWorkspace({ actorEmail, initialStatus = 'open' }: { actorEm
     <div ref={workspaceRef} className="h-full overflow-y-auto bg-[#f7f6f1]">
       <div className="mx-auto max-w-7xl px-3 py-3 sm:px-6 sm:py-6 lg:px-8">
         {['administrator', 'management', 'operations'].includes(data?.actor.role || '') ? <ProductRequestInbox /> : null}
+        {data ? <ProcurementRequirements /> : null}
         <header className="flex flex-col gap-4 sm:flex-row sm:items-end sm:justify-between">
           <div>
             <h1 className="text-2xl font-black tracking-tight text-[#092f36] sm:text-3xl">

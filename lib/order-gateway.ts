@@ -2,6 +2,7 @@ import type { OrderCommand } from './order-types';
 
 export type GatewayAction =
   | 'session'
+  | 'get_requirements'
   | 'bootstrap'
   | 'get_catalog'
   | 'get_customers'

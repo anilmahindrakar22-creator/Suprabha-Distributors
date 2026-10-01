@@ -1,5 +1,13 @@
 # Price book implementation checkpoint — 14 September 2026
 
+## Customer demand requirements — 1 October 2026
+
+- FEATURE, Milestone 2: added a read-only DB projection across all nonarchived post-confirmation open orders, aggregating remaining quantity by canonical Tally key. Confirmed demand is included even outside reorder rows; draft/unconfirmed/cancelled/delivered and fully fulfilled quantities are excluded. Shows total open demand, nonnegative shortage against reported available stock, affected-order count, priority and oldest order. Unknown/malformed/duplicate stock evidence stays unknown, never zero. No stock ledger/reservation/allocation write.
+- Added authenticated read-only API/Edge routing and lazy, manually refreshed, paginated requirements view within Orders. Twenty-five items per page; full demand aggregation precedes paging. Responses expose operational facts only. Frontend rejects incomplete quantities instead of fabricating values. Reused existing patterns; smaller-model UI work was directly reviewed/integrated.
+- Found catalog stock may be four hours old while upload/stock report is newer. Projection uses catalog-domain timestamp where supplied and UI explicitly warns about older catalog stock and picked-unbilled items. Did not increase connector polling or falsely claim latest upload means fresh full-catalog quantities.
+- Fresh checks: complete deployment-order replay and existing ACID/concurrency tests passed, including whole-demand pagination, catalog timestamp and duplicate/malformed stock regressions. Fifteen API/preflight unit cases, four desktop/mobile requirements browser cases, typecheck and targeted lint passed. Corrected a test count assumption to include pre-existing replay fixtures. No deployment/Tally operation.
+- Limitations: stock is advisory as-of catalog extraction, not current physical availability or reservation. Stock-arrival notification/affected-order drilldown still pending; requirements alone do not complete Milestone 3. Pilot/performance/release acceptance remain open.
+
 ## Controlled product requests: API and office workflow — 1 October 2026
 
 - FEATURE, Milestone 1: missing-catalog search offers a request form for permitted capture roles; no normal product-add dialog. Requests pass through authenticated bounded API validation and the existing Edge request gate to the new governed DB gateway. Office reviewer roles can open a lazy-loaded request queue, enter a reason and resolve/reject with version/idempotency controls. Operational responses contain no pricing. Production/Tally untouched.

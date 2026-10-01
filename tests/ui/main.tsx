@@ -5,6 +5,7 @@ import { PricingWorkspace } from '@/components/pricing-workspace';
 import { PricingOptions } from '@/components/pricing-options';
 import { HydratedNewOrderPanel, OrderWorkspace } from '@/components/order-workspace';
 import { ProductRequestInbox } from '@/components/product-request';
+import { ProcurementRequirements } from '@/components/procurement-requirements';
 import type { PricingLineResolution } from '@/lib/pricing-types';
 import type { OrderBootstrap } from '@/lib/order-types';
 import '@/app/globals.css';
@@ -20,6 +21,7 @@ function Fixture() {
   const [entry, setEntry] = useState({ rate: '445', reason: '' });
   const parameters = new URLSearchParams(location.search);
   if (parameters.get('view') === 'product-requests') return <ProductRequestInbox />;
+  if (parameters.get('view') === 'requirements') return <ProcurementRequirements />;
   const data: OrderBootstrap = {
       actor: { email: 'order-desk@example.test', role: 'sales' },
       snapshot: { company: 'TEST', fetchedAt: new Date().toISOString(), catalog: [
