@@ -1,5 +1,12 @@
 # Price book implementation checkpoint — 14 September 2026
 
+## Visible sign-out control — 1 October 2026
+
+- Added an always-visible header Sign out link for all roles, using the same Sites-owned full-navigation `/signout-with-chatgpt?return_to=/` route already used on the access-denied screen. Accessible name/title identify the signed-in email. Navigation remains horizontally scrollable without displacing the 44px sign-out target on mobile. No authentication bypass, new session implementation or deletion of saved business/draft data.
+- Six desktop/mobile administrator/sales/warehouse browser checks passed for visibility, session route and viewport bounds; typecheck, affected lint and whitespace passed. The isolated frame fixture uses the production Vinext image shim with an empty environment (no secrets). Initial fixture import/environment failures were corrected, not product-authentication failures.
+- Local UI change; actual hosting-session logout still requires private deployed verification. Public app/main/Tally unchanged.
+
+
 ## Private product-request mutation acceptance — 1 October 2026
 
 - Through deployed version 6, submitted synthetic missing product `ACCEPTANCE REQUEST 20261001 READONLY-TALLY` without saving an order or consenting to device storage. Save confirmation appeared; the office queue displayed the request and creator email `anil.mahindrakar22@gmail.com`. This independently establishes that the current browser session was Anil, not a demonstrated second-account session; earlier user-reported second-account smoke must not be treated as two-account acceptance.

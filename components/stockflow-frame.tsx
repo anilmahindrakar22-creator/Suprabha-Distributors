@@ -86,7 +86,7 @@ export function StockFlowFrame({ actorEmail, actorRole }: { actorEmail: string; 
 
   return (
     <main className="flex h-dvh w-full flex-col overflow-hidden bg-[#f7f6f1] text-[#173239]">
-      <header className="flex h-16 shrink-0 items-center justify-between border-b border-[#dce7e5] bg-white px-4 sm:px-6">
+      <header className="flex h-16 shrink-0 items-center justify-between gap-2 border-b border-[#dce7e5] bg-white px-4 sm:px-6">
         <div className="flex min-w-0 items-center gap-3">
           <Image src="/suprabha-logo.png" alt="" width={36} height={36} priority className="size-9 shrink-0 object-contain" />
           <div className="min-w-0">
@@ -94,7 +94,7 @@ export function StockFlowFrame({ actorEmail, actorRole }: { actorEmail: string; 
             <p className="hidden text-xs text-[#6b7e81] sm:block">Suprabha Distributors</p>
           </div>
         </div>
-        <nav aria-label="Application sections" className="flex max-w-[calc(100vw-5rem)] overflow-x-auto rounded-xl bg-[#edf3f1] p-1">
+        <nav aria-label="Application sections" className="flex min-w-0 overflow-x-auto rounded-xl bg-[#edf3f1] p-1">
           {(['stock', 'orders', ...(['administrator', 'management', 'accounts'].includes(actorRole) ? ['pricing' as const] : []), ...(['administrator', 'operations', 'sales', 'management'].includes(actorRole) ? ['service' as const] : []), ...(actorRole === 'administrator' ? ['users' as const] : [])] as const).map((item) => (
             <button
               key={item}
@@ -114,6 +114,9 @@ export function StockFlowFrame({ actorEmail, actorRole }: { actorEmail: string; 
             </button>
           ))}
         </nav>
+        {/* Sites owns the session cookie: use a full navigation, not a client router link. */}
+        {/* oxlint-disable-next-line next/no-html-link-for-pages */}
+        <a href="/signout-with-chatgpt?return_to=/" target="_top" aria-label={`Sign out ${actorEmail}`} title={`Signed in as ${actorEmail}`} className="inline-flex min-h-11 shrink-0 items-center rounded-lg border border-[#dce7e5] px-2 text-xs font-bold text-[#173239] hover:bg-[#edf3f1] sm:px-3 sm:text-sm">Sign out</a>
       </header>
       {deviceNotice ? <output className="flex shrink-0 items-center justify-between gap-3 border-b border-[#f0d7a5] bg-[#fff7e8] px-4 py-2 text-xs font-semibold text-[#805b20] sm:px-6"><span>{deviceNotice}</span><button type="button" onClick={() => setDeviceNotice('')} className="min-h-8 shrink-0 rounded-lg px-3 font-bold hover:bg-[#f7e8c8]">Dismiss</button></output> : null}
       <section className="min-h-0 flex-1">
