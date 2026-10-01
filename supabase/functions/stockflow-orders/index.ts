@@ -11,6 +11,8 @@ actions.push(...productRequestActions);
 readActions.add('list_product_requests');
 actions.push('get_requirements');
 readActions.add('get_requirements');
+actions.push('get_requirement_orders');
+readActions.add('get_requirement_orders');
 
 Deno.serve(async (request: Request) => {
   if (request.method !== "POST") return reply({ error: "Method not allowed" }, 405);
@@ -38,7 +40,7 @@ Deno.serve(async (request: Request) => {
     const gateway = ["session", "list_users", "list_assignable_users", "upsert_user"].includes(body.action) ? "stockflow_user_gateway" : body.action === "get_catalog" ? "stockflow_catalog_gateway" : body.action === "get_customers" ? "stockflow_customer_gateway" : body.action === "get_order_summary" ? "stockflow_order_summary_gateway" : body.action === "list_orders" ? "stockflow_order_list_gateway" : body.action === "get_order_events" ? "stockflow_order_activity_gateway" : body.action === "get_order_details" ? "stockflow_order_detail_gateway" : ["get_order_pricing", "submit_order_pricing", "apply_governed_order_pricing", "approve_price_exception", "reject_price_exception", "list_price_contracts", "create_price_contract", "approve_price_contract", "reject_price_contract", "list_pricing_policies", "create_pricing_policy", "get_customer_price_book", "preview_customer_prices", "preview_customer_group_margin", "get_product_price_impact", "apply_price_book", "approve_customer_price_book", "approve_customer_group_margin", "apply_product_price_impact", "list_standard_item_prices", "set_standard_item_price"].includes(body.action) ? "stockflow_pricing_gateway" : body.action === "recover_order_submission" ? "stockflow_submission_recovery_gateway" : ["get_service_workspace", "create_service_ticket", "resolve_service_ticket"].includes(body.action) ? "stockflow_service_gateway" : body.action === "record_billing_review" ? "stockflow_billing_review_gateway" : body.action === "add_order_note" ? "stockflow_order_note_gateway" : body.action === "set_order_priority" ? "stockflow_priority_gateway" : body.action === "set_order_assignee" ? "stockflow_assignment_gateway" : ["set_order_follow_up", "complete_order_follow_up"].includes(body.action) ? "stockflow_follow_up_gateway" : ["save_dispatch", "confirm_delivery"].includes(body.action) ? "stockflow_delivery_gateway" : body.action === "save_fulfilment" ? "stockflow_fulfilment_gateway" : body.action === "edit_order" ? "stockflow_edit_gateway" : ["create_exception", "resolve_exception"].includes(body.action) ? "stockflow_exception_gateway" : ["schedule_installation", "complete_installation"].includes(body.action) ? "stockflow_installation_gateway" : "stockflow_order_gateway";
     // Modern Supabase secret keys belong only in `apikey`. The supabase-js
     // default Authorization header treats them as JWTs and rejects the call.
-    const rpcGateway = body.action === 'get_requirements' ? 'stockflow_requirements_gateway' : productRequestActions.includes(body.action) ? 'stockflow_product_request_gateway' : gateway;
+    const rpcGateway = body.action === 'get_requirement_orders' ? 'stockflow_requirement_orders_gateway' : body.action === 'get_requirements' ? 'stockflow_requirements_gateway' : productRequestActions.includes(body.action) ? 'stockflow_product_request_gateway' : gateway;
     const response = await fetch(`${url}/rest/v1/rpc/${rpcGateway}`, {
       method: "POST",
       headers: { apikey: secretKey, "content-type": "application/json" },

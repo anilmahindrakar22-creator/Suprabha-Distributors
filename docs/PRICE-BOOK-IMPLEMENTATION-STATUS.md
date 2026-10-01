@@ -1,5 +1,12 @@
 # Price book implementation checkpoint — 14 September 2026
 
+## Waiting-order drilldown — 1 October 2026
+
+- FEATURE, Milestone 2/3 groundwork: each customer-demand item opens an explicit, read-only waiting-order list by exact canonical Tally key. Lists customer, order reference, operational status and remaining quantity; twenty orders per page with priority/age ordering. Excludes unconfirmed, closed, archived and fully fulfilled demand. No prices, allocations, stock reservations or Tally calls.
+- Reused the authenticated API/Edge boundary and service-role-only database pattern. Active membership is checked at every read. No background polling or prefetch; closing/changing the demand view cancels stale requests. Smaller-model display work is reviewed by the primary agent.
+- Fresh integrated checks: ten desktop/mobile browser cases, typecheck and targeted lint passed. Final database deployment replay, ACID/concurrency checks and eighteen API/preflight unit tests passed, including exact-key behavior, bounded pagination, bad gateway/nonmember/suspended denial and response field whitelist. Added a narrow partial index for unfulfilled item/order lookup. Corrected new migration evidence to use the repository's trimmed newline-normalized hash.
+- Still pending: actual stock-arrival detection/notifications, durable product-request recovery after browser restart, deployed authenticated acceptance and office pilot. A stock-advisory drilldown is not an arrival notification or a reservation. Production remains unchanged.
+
 ## Customer demand requirements — 1 October 2026
 
 - FEATURE, Milestone 2: added a read-only DB projection across all nonarchived post-confirmation open orders, aggregating remaining quantity by canonical Tally key. Confirmed demand is included even outside reorder rows; draft/unconfirmed/cancelled/delivered and fully fulfilled quantities are excluded. Shows total open demand, nonnegative shortage against reported available stock, affected-order count, priority and oldest order. Unknown/malformed/duplicate stock evidence stays unknown, never zero. No stock ledger/reservation/allocation write.

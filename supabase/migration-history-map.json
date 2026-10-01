@@ -625,6 +625,13 @@
       "remoteVersion": null,
       "remoteSha256": null,
       "status": "not_deployed"
+    },
+    {
+      "localFile": "20261001070000_requirement_waiting_orders.sql",
+      "localSha256": "2e93bfd1c0387cfff202bc9c5179d25d982fae11da70bc45240ac442f661b461",
+      "remoteVersion": null,
+      "remoteSha256": null,
+      "status": "not_deployed"
     }
   ]
 }

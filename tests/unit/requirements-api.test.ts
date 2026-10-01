@@ -23,3 +23,13 @@ it('uses the authenticated actor and private read action', async () => {
   expect(response.headers.get('cache-control')).toBe('private, no-store');
   expect(JSON.parse(network.mock.calls[0][1]?.body as string)).toEqual({ actorEmail: 'sales@example.test', action: 'get_requirements', payload: { page: 2 } });
 });
+it('uses an exact encoded item key for the bounded waiting-order read', async () => {
+  const key = 'Diasys / reagent & kit';
+  const response = await GET(new Request(`http://local/api/requirements?itemKey=${encodeURIComponent(key)}&page=2&actorEmail=attacker`));
+  expect(response.status).toBe(200);
+  expect(JSON.parse(network.mock.calls[0][1]?.body as string)).toEqual({ actorEmail: 'sales@example.test', action: 'get_requirement_orders', payload: { page: 2, itemKey: key } });
+});
+it.each(['', 'x'.repeat(221)])('rejects invalid item keys before gateway access', async (key) => {
+  expect((await GET(new Request(`http://local/api/requirements?itemKey=${key}`))).status).toBe(400);
+  expect(network).not.toHaveBeenCalled();
+});

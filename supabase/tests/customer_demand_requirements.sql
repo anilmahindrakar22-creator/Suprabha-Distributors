@@ -54,5 +54,29 @@ begin
   select value into row_b from jsonb_array_elements(result->'rows') where value->>'tallyKey'='DEMAND-B';
   if row_a->'currentStock' is distinct from 'null'::jsonb or row_a->'shortage' is distinct from 'null'::jsonb then raise exception 'Duplicate stock evidence fabricated availability'; end if;
   if row_b->'currentStock' is distinct from 'null'::jsonb or row_b->'shortage' is distinct from 'null'::jsonb then raise exception 'Malformed stock evidence fabricated availability'; end if;
+  result:=public.stockflow_requirement_orders_gateway('requirements-key','requirements@test.local','get_requirement_orders','{"itemKey":"DEMAND-A"}');
+  if (result->'pagination'->>'total')::integer<>2 or jsonb_array_length(result->'orders')<>2 then raise exception 'Waiting orders include unconfirmed/closed demand'; end if;
+  if result->'orders'->0->>'orderId'<>'10000000-0000-4000-8000-000000000001' or (result->'orders'->0->>'remainingQuantity')::numeric<>8 then raise exception 'Waiting quantities/priority wrong'; end if;
+  if exists(select 1 from jsonb_array_elements(result->'orders') r, jsonb_object_keys(r) k where k not in ('orderId','orderNumber','customerName','status','remainingQuantity','priority','createdAt')) then raise exception 'Waiting order response leaked extra fields'; end if;
+  if has_function_privilege('authenticated','public.stockflow_requirement_orders_gateway(text,text,text,jsonb)','EXECUTE') then raise exception 'Waiting order direct browser execution granted'; end if;
+  begin
+    perform public.stockflow_requirement_orders_gateway('wrong-key','requirements@test.local','get_requirement_orders','{"itemKey":"DEMAND-A"}'); raise exception 'Wrong key allowed';
+  exception when insufficient_privilege then null; end;
+  begin
+    perform public.stockflow_requirement_orders_gateway('requirements-key','not-member@test.local','get_requirement_orders','{"itemKey":"DEMAND-A"}'); raise exception 'Nonmember waiting read allowed';
+  exception when insufficient_privilege then null; end;
+  with added as (
+    insert into private.stockflow_orders(customer_name,status,priority,created_by_email,updated_by_email,idempotency_key)
+      select 'Page customer','confirmed','normal','test','test','waiting-page-'||n from generate_series(1,21) n returning id
+  ) insert into private.stockflow_order_lines(order_id,tally_item_key,item_name,quantity)
+    select id,'DEMAND-A','Demand A',1 from added;
+  result:=public.stockflow_requirement_orders_gateway('requirements-key','requirements@test.local','get_requirement_orders','{"itemKey":"DEMAND-A","page":2}');
+  if (result->'pagination'->>'total')::integer<>23 or (result->'pagination'->>'pageCount')::integer<>2 or jsonb_array_length(result->'orders')<>3 then raise exception 'Waiting pagination incorrect'; end if;
+  result:=public.stockflow_requirement_orders_gateway('requirements-key','requirements@test.local','get_requirement_orders','{"itemKey":"DEMAND"}');
+  if (result->'pagination'->>'total')::integer<>0 then raise exception 'Item key is not exact'; end if;
+  update public.stockflow_members set status='suspended' where email='requirements@test.local';
+  begin
+    perform public.stockflow_requirement_orders_gateway('requirements-key','requirements@test.local','get_requirement_orders','{"itemKey":"DEMAND-A"}'); raise exception 'Suspended waiting read allowed';
+  exception when insufficient_privilege then null; end;
 end $test$;
 rollback;

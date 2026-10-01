@@ -19,6 +19,21 @@ type RequirementsResponse = {
   pagination: { page: number; pageCount: number; total: number };
 };
 
+type WaitingOrder = {
+  orderId: string;
+  orderNumber: string;
+  customerName: string;
+  status: string;
+  remainingQuantity: number;
+  priority: string;
+  createdAt: string;
+};
+
+type WaitingOrdersResponse = {
+  orders: WaitingOrder[];
+  pagination: { page: number; pageCount: number; total: number };
+};
+
 function quantity(value: number) {
   return Number(value).toLocaleString('en-IN', { maximumFractionDigits: 2 });
 }
@@ -46,10 +61,81 @@ export function ProcurementRequirements() {
   const [error, setError] = useState('');
   const requestRef = useRef<{ id: number; controller: AbortController } | null>(null);
   const requestIdRef = useRef(0);
+  const [waitingKey, setWaitingKey] = useState<string | null>(null);
+  const [waitingPage, setWaitingPage] = useState(1);
+  const [waitingResult, setWaitingResult] = useState<WaitingOrdersResponse | null>(null);
+  const [waitingLoading, setWaitingLoading] = useState(false);
+  const [waitingError, setWaitingError] = useState('');
+  const waitingRequestRef = useRef<{ id: number; controller: AbortController } | null>(null);
+  const waitingRequestIdRef = useRef(0);
 
-  useEffect(() => () => requestRef.current?.controller.abort(), []);
+  useEffect(() => () => {
+    requestRef.current?.controller.abort();
+    waitingRequestRef.current?.controller.abort();
+  }, []);
+
+  function resetWaitingOrders() {
+    waitingRequestRef.current?.controller.abort();
+    waitingRequestRef.current = null;
+    waitingRequestIdRef.current += 1;
+    setWaitingLoading(false);
+    setWaitingKey(null);
+    setWaitingResult(null);
+    setWaitingError('');
+  }
+
+  async function loadWaitingOrders(itemKey: string, nextPage: number) {
+    waitingRequestRef.current?.controller.abort();
+    const controller = new AbortController();
+    const id = ++waitingRequestIdRef.current;
+    waitingRequestRef.current = { id, controller };
+    setWaitingLoading(true);
+    setWaitingError('');
+    try {
+      const response = await fetch(`/api/requirements?itemKey=${encodeURIComponent(itemKey)}&page=${nextPage}`, { cache: 'no-store', signal: controller.signal });
+      const body = await response.json() as WaitingOrdersResponse & { error?: string };
+      if (!response.ok) throw new Error(body.error || 'Waiting orders could not be loaded.');
+      if (!Array.isArray(body.orders) || !body.pagination || !Number.isSafeInteger(body.pagination.page) || body.pagination.page !== nextPage
+        || !Number.isSafeInteger(body.pagination.pageCount) || body.pagination.pageCount < 1 || !Number.isSafeInteger(body.pagination.total) || body.pagination.total < 0
+        || body.orders.length > 20 || body.orders.some((order) => !order || typeof order.orderId !== 'string' || !order.orderId.trim()
+          || typeof order.orderNumber !== 'string' || !order.orderNumber.trim() || typeof order.customerName !== 'string' || !order.customerName.trim()
+          || typeof order.status !== 'string' || !order.status.trim() || typeof order.priority !== 'string' || !order.priority.trim()
+          || typeof order.createdAt !== 'string' || !order.createdAt.trim() || Number.isNaN(Date.parse(order.createdAt))
+          || typeof order.remainingQuantity !== 'number' || !Number.isFinite(order.remainingQuantity) || order.remainingQuantity <= 0)) throw new Error('Waiting orders response was incomplete.');
+      if (waitingRequestRef.current?.id !== id) return;
+      setWaitingResult(body);
+      setWaitingPage(body.pagination.page);
+    } catch (cause) {
+      if (waitingRequestRef.current?.id !== id || controller.signal.aborted) return;
+      setWaitingError(cause instanceof Error ? cause.message : 'Waiting orders could not be loaded.');
+    } finally {
+      if (waitingRequestRef.current?.id === id) setWaitingLoading(false);
+    }
+  }
+
+  function toggleWaitingOrders(itemKey: string) {
+    if (waitingKey === itemKey) {
+      waitingRequestRef.current?.controller.abort();
+      waitingRequestRef.current = null;
+      waitingRequestIdRef.current += 1;
+      setWaitingLoading(false);
+      setWaitingKey(null);
+      setWaitingResult(null);
+      setWaitingError('');
+      return;
+    }
+    waitingRequestRef.current?.controller.abort();
+    waitingRequestRef.current = null;
+    waitingRequestIdRef.current += 1;
+    setWaitingKey(itemKey);
+    setWaitingPage(1);
+    setWaitingResult(null);
+    setWaitingError('');
+    void loadWaitingOrders(itemKey, 1);
+  }
 
   async function load(nextPage: number) {
+    resetWaitingOrders();
     requestRef.current?.controller.abort();
     const controller = new AbortController();
     const id = ++requestIdRef.current;
@@ -84,6 +170,7 @@ export function ProcurementRequirements() {
       requestRef.current = null;
       requestIdRef.current += 1;
       setLoading(false);
+      resetWaitingOrders();
       setOpen(false);
       return;
     }
@@ -120,6 +207,33 @@ export function ProcurementRequirements() {
               <div><dt className="text-[#718487]">Affected orders</dt><dd className="mt-0.5 font-semibold text-[#173239]">{quantity(row.affectedOrders)}</dd></div>
             </dl>
             <p className="mt-2 text-[11px] text-[#718487]">Oldest open order: {displayDate(row.oldestOrderAt)}</p>
+            <button type="button" aria-expanded={waitingKey === row.tallyKey} onClick={() => toggleWaitingOrders(row.tallyKey)} className="mt-3 min-h-9 rounded-lg border border-[#cedfdd] px-3 text-xs font-bold text-[#31585d]">
+              {waitingKey === row.tallyKey ? 'Hide waiting orders' : 'View waiting orders'}
+            </button>
+            {waitingKey === row.tallyKey ? <div className="mt-2 rounded-lg bg-[#f7faf9] p-3" aria-label={`Waiting orders for ${row.itemName}`}>
+              <div className="flex flex-wrap items-center justify-between gap-2">
+                <p className="text-xs font-semibold text-[#456367]">Waiting orders</p>
+                <button type="button" disabled={waitingLoading} onClick={() => void loadWaitingOrders(row.tallyKey, waitingPage)} className="min-h-9 rounded-lg border border-[#cedfdd] bg-white px-3 text-xs font-bold text-[#31585d] disabled:opacity-50">{waitingLoading ? 'Loading…' : 'Refresh orders'}</button>
+              </div>
+              {waitingError ? <p role="alert" className="mt-2 text-sm text-[#8d3a34]">{waitingError}</p> : null}
+              {waitingLoading && !waitingResult ? <p className="mt-2 text-sm text-[#718487]">Loading waiting orders…</p> : null}
+              {waitingResult ? <>
+                <div className="mt-2 space-y-2">
+                  {waitingResult.orders.map((order) => <div key={order.orderId} className="rounded-md border border-[#e3ecea] bg-white p-2 text-xs">
+                    <p className="font-semibold text-[#173239]">{order.customerName} · {order.orderNumber}</p>
+                    <p className="mt-1 text-[#587275]">{order.status} · Remaining: {quantity(order.remainingQuantity)}</p>
+                  </div>)}
+                  {!waitingResult.orders.length ? <p className="text-xs text-[#718487]">No waiting orders on this page.</p> : null}
+                </div>
+                <div className="mt-3 flex items-center justify-between gap-3 text-xs text-[#587275]">
+                  <span>Page {waitingResult.pagination.page} of {waitingResult.pagination.pageCount}</span>
+                  <div className="flex gap-2">
+                    <button type="button" disabled={waitingLoading || waitingPage <= 1} onClick={() => void loadWaitingOrders(row.tallyKey, waitingPage - 1)} className="min-h-9 rounded-lg border border-[#cedfdd] px-3 font-bold disabled:opacity-40">Previous</button>
+                    <button type="button" disabled={waitingLoading || waitingPage >= waitingResult.pagination.pageCount} onClick={() => void loadWaitingOrders(row.tallyKey, waitingPage + 1)} className="min-h-9 rounded-lg border border-[#cedfdd] px-3 font-bold disabled:opacity-40">Next</button>
+                  </div>
+                </div>
+              </> : null}
+            </div> : null}
           </article>)}
           {!result.rows.length ? <p className="rounded-lg bg-[#fbfcfb] p-3 text-sm text-[#718487]">No open customer demand on this page.</p> : null}
         </div>
