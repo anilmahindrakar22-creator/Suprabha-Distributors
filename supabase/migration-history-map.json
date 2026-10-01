@@ -1,9 +1,9 @@
 {
   "projectId": "aormuidjbdqruglmyseh",
-  "checkedAt": "2026-09-30T08:52:15Z",
+  "checkedAt": "2026-10-01T07:34:47Z",
   "purpose": "Read-only release evidence; NOT an executable migration plan or authority to repair history.",
   "normalization": "Remove CR characters and trim surrounding whitespace only; SHA-256 over UTF-8.",
-  "localGitHead": "dd791a9ff937feed4e667d687eec434dd8d0415b",
+  "localGitHead": "f824954068bf92d773e395392d4aca453a6f7612",
   "remoteOnly": [
     {
       "localFile": "20260829054025_create_stockflow_private_snapshots.sql",

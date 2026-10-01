@@ -1,5 +1,13 @@
 # Price book implementation checkpoint — 14 September 2026
 
+## Live migration-content reconciliation — 1 October 2026
+
+- Read-only production metadata check: all 84 deployed migration versions and normalized SHA-256 contents match the existing migration-history map; no missing, unexpected or changed deployed migration was found. Compared stored statements joined with newline, CR removal and surrounding whitespace trimming against the recorded remote hashes. No business rows, secrets or database writes were involved.
+- Refreshed evidence date and inspected candidate HEAD in the existing map; preserved every mapping, reviewed historical difference and six not-deployed entries. This evidence is time-specific and must be refreshed before a later release; the preflight intentionally continues to report releaseReady=false rather than infer acceptance from matching migration hashes.
+- Remaining: updated private candidate/migration rollout and authenticated staff/device acceptance, followed by the operational pilot. No publication, merge or Tally change.
+- Validation: eight release-preflight unit tests passed; whitespace check passed. Full suite was not repeated for this evidence-only update.
+
+
 ## Local consolidation and release boundary — 1 October 2026
 
 - LOCAL CONSOLIDATION PASS / OVERALL ACCEPTANCE PARTIAL. Consolidated the transactional/pricing and Milestones 1–3 candidate through `9c81036`, without adding features or changing production/Tally.
