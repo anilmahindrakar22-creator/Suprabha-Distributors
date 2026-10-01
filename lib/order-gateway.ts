@@ -44,6 +44,9 @@ export type GatewayAction =
   | 'edit_order'
   | 'save_dispatch'
   | 'confirm_delivery'
+  | 'list_product_requests'
+  | 'create_product_request'
+  | 'review_product_request'
   | OrderCommand['action'];
 
 export class OrderGatewayError extends Error {

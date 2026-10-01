@@ -1,5 +1,12 @@
 # Price book implementation checkpoint — 14 September 2026
 
+## Controlled product requests: API and office workflow — 1 October 2026
+
+- FEATURE, Milestone 1: missing-catalog search offers a request form for permitted capture roles; no normal product-add dialog. Requests pass through authenticated bounded API validation and the existing Edge request gate to the new governed DB gateway. Office reviewer roles can open a lazy-loaded request queue, enter a reason and resolve/reject with version/idempotency controls. Operational responses contain no pricing. Production/Tally untouched.
+- Primary reviewed the delegated API adapter and integrated it with the UI/Edge routing. Unknown-outcome create/review retries retain the exact payload/reference in the open screen. Definitive validation/permission errors permit correction; successful review removes its queue entry. No background polling. CI lint includes the new component.
+- Fresh checks: 18 desktop/mobile order-keyboard cases passed; latest request-focused rerun passed 4. Combined affected unit checks passed 31 (API auth/validation, timing, request gate, release preflight); typecheck/affected lint/whitespace passed after correcting React-ref rendering. Complete deployment-order replay passed including injected-failure rollback and real two-session product-review lock/stale rejection/replay, plus existing pricing concurrency. Test connection needed explicit current PostgreSQL user and was corrected before passing.
+- Limits: request retry receipts are in-memory, not durable across browser restart; open request queue is bounded to 100; signed-in deployed acceptance and production migration/Edge rollout not done. No claim of full request offline recovery, production readiness or pilot acceptance. Next capability: derived confirmed customer demand/shortage requirements using trusted Tally stock, without a second inventory ledger.
+
 ## Controlled product requests: database boundary — 1 October 2026
 
 - FEATURE foundation, Milestone 1: new operational request/review records, role-controlled gateway, bounded open-request read, exact imported-catalog-name recheck, customer validation, idempotent command recovery, row-locked/version-checked review and immutable audit events. Requests do not create or modify Product Master or Tally data. Missing catalog fails closed. Business requests cannot be hard-deleted.

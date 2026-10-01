@@ -1,5 +1,54 @@
 import { test, expect } from '@playwright/test';
 
+test('office request review loads on demand and retries the same versioned decision', async ({ page }) => {
+  const decisions: unknown[] = [];
+  let reads = 0;
+  await page.route('**/api/product-requests', async (route) => {
+    if (route.request().method() === 'GET') {
+      reads += 1;
+      await route.fulfill({ json: { requests: [{ id: '11111111-1111-4111-8111-111111111111', product_name: 'Missing reagent', details: '50-test pack', created_by_email: 'sales@example.test', version: 1 }] } });
+    } else {
+      decisions.push(route.request().postDataJSON());
+      await route.fulfill(decisions.length === 1 ? { status: 502, json: { error: 'Unknown outcome' } } : { json: { requestId: '11111111-1111-4111-8111-111111111111' } });
+    }
+  });
+  await page.goto('/?view=product-requests');
+  expect(reads).toBe(0);
+  await page.getByRole('button', { name: 'Product requests', exact: true }).click();
+  await expect(page.getByRole('button', { name: 'Resolve request' })).toBeDisabled();
+  await page.getByLabel('Review reason for Missing reagent').fill('Added in Tally; awaiting sync');
+  await page.getByRole('button', { name: 'Resolve request' }).click();
+  await expect(page.getByLabel('Review reason for Missing reagent')).toBeDisabled();
+  await page.getByRole('button', { name: 'Retry review' }).click();
+  await expect(page.getByText('No open product requests.')).toBeVisible();
+  expect(decisions).toHaveLength(2);
+  expect(decisions[0]).toEqual(decisions[1]);
+});
+
+test('missing-product request retries one command without creating an order', async ({ page }) => {
+  const requests: unknown[] = [];
+  let orders = 0;
+  await page.route('**/api/orders**', async (route) => {
+    if (route.request().method() === 'POST') orders += 1;
+    await route.fulfill({ json: { orders: [], pagination: { total: 0 } } });
+  });
+  await page.route('**/api/product-requests', async (route) => {
+    requests.push(route.request().postDataJSON());
+    await route.fulfill(requests.length === 1 ? { status: 502, json: { error: 'Connection unavailable' } } : { json: { requestId: 'request-test-1' } });
+  });
+  await page.goto('/?view=order-entry');
+  await page.getByRole('combobox', { name: 'Find product' }).fill('Missing reagent');
+  await page.getByRole('button', { name: 'Request new product' }).click();
+  await page.getByLabel('Product request details').fill('Customer asks for a 50-test pack');
+  await page.getByRole('button', { name: 'Send product request' }).click();
+  await expect(page.getByLabel('Product request details')).toBeDisabled();
+  await page.getByRole('button', { name: 'Retry product request' }).click();
+  await expect(page.getByText('Product request saved for office review. No product was added to Tally.')).toBeVisible();
+  expect(requests).toHaveLength(2);
+  expect(requests[0]).toEqual(requests[1]);
+  expect(orders).toBe(0);
+});
+
 test('five-product keyboard capture saves exact quantities once and records local timing', async ({ page }) => {
   const commands: Array<{ payload: { customerId: string; lines: Array<{ tallyKey: string; quantity: number }> } }> = [];
   let pricingRequests = 0;

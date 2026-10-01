@@ -4,6 +4,7 @@ import { CustomerPriceBook } from '@/components/customer-price-book';
 import { PricingWorkspace } from '@/components/pricing-workspace';
 import { PricingOptions } from '@/components/pricing-options';
 import { HydratedNewOrderPanel, OrderWorkspace } from '@/components/order-workspace';
+import { ProductRequestInbox } from '@/components/product-request';
 import type { PricingLineResolution } from '@/lib/pricing-types';
 import type { OrderBootstrap } from '@/lib/order-types';
 import '@/app/globals.css';
@@ -18,6 +19,7 @@ const row = {
 function Fixture() {
   const [entry, setEntry] = useState({ rate: '445', reason: '' });
   const parameters = new URLSearchParams(location.search);
+  if (parameters.get('view') === 'product-requests') return <ProductRequestInbox />;
   const data: OrderBootstrap = {
       actor: { email: 'order-desk@example.test', role: 'sales' },
       snapshot: { company: 'TEST', fetchedAt: new Date().toISOString(), catalog: [
