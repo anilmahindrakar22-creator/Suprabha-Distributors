@@ -1,5 +1,11 @@
 # Price book implementation checkpoint — 14 September 2026
 
+## Private sign-out publication — 1 October 2026
+
+- At the user's explicit request, published private acceptance version 7 from `6752b12331c812d81c5030216fce46507d1ed092`; deployment `appgdep_6abe1b22431c81919890bbe3d65c9e27` succeeded. Retained the existing Anil/Nikitesh audience and runtime environment revision 2. Candidate production build passed; no database/Edge/Tally changes were required.
+- Actual browser now displays the header sign-out link with authenticated identity `anil.mahindrakar22@gmail.com` and expected Sites session route. Left the session signed in for the user to switch accounts; platform cookie invalidation on click is still unverified. Public app and GitHub main unchanged.
+
+
 ## Visible sign-out control — 1 October 2026
 
 - Added an always-visible header Sign out link for all roles, using the same Sites-owned full-navigation `/signout-with-chatgpt?return_to=/` route already used on the access-denied screen. Accessible name/title identify the signed-in email. Navigation remains horizontally scrollable without displacing the 44px sign-out target on mobile. No authentication bypass, new session implementation or deletion of saved business/draft data.
