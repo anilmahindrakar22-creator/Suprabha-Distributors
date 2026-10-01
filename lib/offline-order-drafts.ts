@@ -15,6 +15,51 @@ const prefix = 'stockflow:order-draft:v1:';
 const consentPrefix = 'stockflow:order-draft-consent:v1:';
 const retentionMs = 7 * 24 * 60 * 60 * 1000;
 
+export type ProductRequestPayload = { productName: string; customerId?: string; details: string; idempotencyKey: string };
+const productRequestPrefix = 'stockflow:product-request-retry:v1:';
+const requestUuid = /^[0-9a-f]{8}-[0-9a-f]{4}-[1-8][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i;
+function validProductRequest(value: unknown): value is ProductRequestPayload {
+  if (!value || typeof value !== 'object' || Array.isArray(value)) return false;
+  const payload = value as Record<string, unknown>;
+  return Object.keys(payload).every((name) => ['productName', 'customerId', 'details', 'idempotencyKey'].includes(name))
+    && typeof payload.productName === 'string' && payload.productName.trim().length >= 2 && payload.productName.length <= 200
+    && typeof payload.details === 'string' && payload.details.length <= 1000
+    && typeof payload.idempotencyKey === 'string' && requestUuid.test(payload.idempotencyKey)
+    && (payload.customerId === undefined || typeof payload.customerId === 'string' && requestUuid.test(payload.customerId));
+}
+export function readPendingProductRequest(storage: DraftStorage, actorEmail: string): ProductRequestPayload | null {
+  try {
+    const email = actorEmail.trim().toLocaleLowerCase('en-IN');
+    if (!email) return null;
+    const value = JSON.parse(storage.getItem(`${productRequestPrefix}${email}`) || 'null');
+    if (!value || value.schemaVersion !== 1 || typeof value.actorEmail !== 'string'
+      || value.actorEmail.trim().toLocaleLowerCase('en-IN') !== email || !validProductRequest(value.payload)) return null;
+    return value.payload;
+  } catch { return null; }
+}
+export function writePendingProductRequest(storage: DraftStorage, actorEmail: string, payload: ProductRequestPayload) {
+  try {
+    const email = actorEmail.trim().toLocaleLowerCase('en-IN');
+    if (!email || !validProductRequest(payload)) return false;
+    const existing = storage.getItem(`${productRequestPrefix}${email}`);
+    if (existing !== null) {
+      const saved = readPendingProductRequest(storage, email);
+      if (!saved || saved.idempotencyKey !== payload.idempotencyKey || saved.productName !== payload.productName
+        || saved.customerId !== payload.customerId || saved.details !== payload.details) return false;
+    }
+    storage.setItem(`${productRequestPrefix}${email}`, JSON.stringify({ schemaVersion: 1, actorEmail: email, payload }));
+    return true;
+  } catch { return false; }
+}
+export function removePendingProductRequest(storage: DraftStorage, actorEmail: string, expectedKey?: string) {
+  try {
+    const storageKey = `${productRequestPrefix}${actorEmail.trim().toLocaleLowerCase('en-IN')}`;
+    if (expectedKey && storage.getItem(storageKey) !== null && readPendingProductRequest(storage, actorEmail)?.idempotencyKey !== expectedKey) return false;
+    storage.removeItem(storageKey); return true;
+  }
+  catch { return false; }
+}
+
 export function restoreOfflineDraftLines(
   catalog: CatalogItem[],
   lines: Array<{ tallyKey: string; quantity: number }>,

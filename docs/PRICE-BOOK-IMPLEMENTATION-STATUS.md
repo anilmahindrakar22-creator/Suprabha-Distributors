@@ -1,5 +1,12 @@
 # Price book implementation checkpoint — 14 September 2026
 
+## Trusted-device product-request retry recovery — 1 October 2026
+
+- HARDENING, Milestone 1/pilot recovery: missing-product create requests can explicitly opt into saving their pending command on a trusted device before the network write. Reopening restores the exact product/customer/details/idempotency reference for an explicit retry; there is no automatic submission. Successful confirmation or definitive rejection clears that reference. Cleanup failures retain the same command rather than encouraging a duplicate.
+- Reused the existing offline storage module with a separate account-scoped operational-only namespace, strict bounded payload/UUID validation and permitted fields. Other accounts cannot restore the command through this workflow; permitted-role mounting and actor-keyed component state prevent inherited account state. Pending references never silently expire. Writes cannot replace an existing different reference/payload, and cleanup checks the expected reference. No pricing fields are stored; browser storage failure prevents an opted-in unprotected network write. Default remains off, with separate request-specific consent.
+- Fresh checks: 33 affected storage/retry unit tests passed; six desktop/mobile restart/opt-in/account-separation/quota-failure browser checks and four existing product request/review browser checks passed, with typecheck/targeted lint. Smaller-model tests were inspected and rerun with the primary's overwrite/cleanup regressions. No database, Tally, production or deployment change.
+- Limitations: browser storage is not encrypted and must be used only on trusted devices. One pending create command per account/browser is supported; localStorage checks are not cross-tab atomic locking. Office-review retry state remains in-memory. Actual staff-device and authenticated deployed acceptance, pilot and release consolidation remain pending.
+
 ## Reported stock increase alerts — 1 October 2026
 
 - FEATURE, Milestone 3: a newer catalog-domain snapshot with a valid positive quantity increase records advisory notices for already-confirmed, unfulfilled order lines. Same-source refreshes, older versions, missing baselines, duplicate keys and invalid quantities do not invent arrivals. Initial imports/company changes establish a baseline only. Normal cached uploads exit before catalog parsing; comparisons are restricted to waiting-item keys. Connector polling and Tally remain unchanged.

@@ -1,32 +1,43 @@
 'use client';
 
 import { useState } from 'react';
+import { readPendingProductRequest, writePendingProductRequest, removePendingProductRequest, type ProductRequestPayload } from '@/lib/offline-order-drafts';
 
-type RequestPayload = { productName: string; customerId?: string; details: string; idempotencyKey: string };
-
-export function ProductRequest({ productName, customerId, visible }: { productName: string; customerId?: string; visible: boolean }) {
+export function ProductRequest({ productName, customerId, visible, actorEmail }: { productName: string; customerId?: string; visible: boolean; actorEmail: string }) {
+  const [recovered] = useState(() => {
+    try { return typeof window === 'undefined' ? null : readPendingProductRequest(localStorage, actorEmail); }
+    catch { return null; }
+  });
   const [opened, setOpened] = useState(false);
-  const [details, setDetails] = useState('');
+  const [details, setDetails] = useState(recovered?.details || '');
   const [busy, setBusy] = useState(false);
   const [message, setMessage] = useState('');
-  const [pending, setPending] = useState<RequestPayload | null>(null);
+  const [pending, setPending] = useState<ProductRequestPayload | null>(recovered);
+  const [saveRetry, setSaveRetry] = useState(Boolean(recovered));
 
   async function send() {
     if (busy) return;
     const command = pending ?? { productName: productName.trim(), customerId, details: details.trim(), idempotencyKey: crypto.randomUUID() };
-    setPending(command);
     setBusy(true);
     setMessage('');
-    let uncertain = true;
+    let uncertain = Boolean(pending);
     try {
+      if (saveRetry && !writePendingProductRequest(localStorage, actorEmail, command)) throw new Error('This browser could not protect the request retry. Free device storage and retry; nothing new was sent.');
+      setPending(command);
+      uncertain = true;
       const response = await fetch('/api/product-requests', {
         method: 'POST', headers: { 'content-type': 'application/json' },
         body: JSON.stringify({ action: 'create_product_request', payload: command }),
       });
       const result = await response.json() as { error?: string; requestId?: string };
-      if ([400, 401, 403, 404, 422].includes(response.status)) { setPending(null); uncertain = false; }
+      if ([400, 401, 403, 404, 422].includes(response.status)) {
+        if (saveRetry && !removePendingProductRequest(localStorage, actorEmail, command.idempotencyKey)) throw new Error('Local request recovery could not be cleared. Retry after fixing device storage.');
+        setPending(null); uncertain = false;
+      }
       if (!response.ok || !result.requestId) throw new Error(result.error || 'Request could not be confirmed. Retry the same request.');
+      if (saveRetry && !removePendingProductRequest(localStorage, actorEmail, command.idempotencyKey)) throw new Error('Request saved, but local recovery could not be cleared. Retry the same reference to clear it.');
       setPending(null);
+      setSaveRetry(false);
       setOpened(false);
       setDetails('');
       setMessage('Product request saved for office review. No product was added to Tally.');
@@ -42,6 +53,8 @@ export function ProductRequest({ productName, customerId, visible }: { productNa
       <p className="text-sm font-bold text-[#31585d]">Request: {pending?.productName || productName}</p>
       <p className="mt-1 text-xs text-[#718487]">Office staff will review this request. It will not create a catalog item.</p>
       <label className="mt-2 block text-sm">Product request details<textarea maxLength={1000} disabled={busy || Boolean(pending)} value={details} onChange={(event) => setDetails(event.target.value)} className="mt-1 w-full rounded-lg border border-[#cedfdd] p-2" /></label>
+      <label className="mt-2 flex items-center gap-2 text-xs"><input type="checkbox" checked={saveRetry} disabled={busy || Boolean(pending)} onChange={(event) => setSaveRetry(event.target.checked)} />Keep request retry on this trusted device</label>
+      {recovered && pending ? <p className="mt-1 text-xs text-[#805b20]">Recovered request for this account. Retry uses its original reference; nothing is sent automatically.</p> : null}
       <button type="button" disabled={busy || (!pending && productName.trim().length < 2)} onClick={() => void send()} className="mt-2 min-h-10 rounded-lg bg-[#073e46] px-3 text-sm font-bold text-white disabled:opacity-50">{busy ? 'Sending request…' : pending ? 'Retry product request' : 'Send product request'}</button>
       {!pending && !busy ? <button type="button" onClick={() => setOpened(false)} className="ml-3 min-h-10 text-sm">Cancel</button> : null}
     </>}
