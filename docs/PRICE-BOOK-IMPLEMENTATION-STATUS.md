@@ -1,5 +1,13 @@
 # Price book implementation checkpoint — 14 September 2026
 
+## Authorized production migration rollout — 2 October 2026
+
+- User explicitly requested completion of the six pending migrations. Fresh `pnpm test:pricing:deployment` passed immediately before rollout, including ACID, concurrent reviews, bulk rollback, catalog compatibility and partial-customer preservation. Existing backup waiver remains a limitation; no restore-tested backup was created.
+- Applied the six unchanged reviewed SQL files in dependency order to production `aormuidjbdqruglmyseh`. Remote versions: catalog source 20261002062743; partial customer preservation 20261002062744; product requests 20261002062746; demand requirements 20261002062748; waiting-order drilldown 20261002062750; stock increase alerts 20261002062752. All six recorded normalized hashes exactly match repository SQL. Updated the existing migration evidence map; no migration-history repair.
+- Before/after counts remained 30 orders, 33 order lines, 459 customers and 3 billing snapshots. Four new public gateways deny anon/authenticated execution and allow service_role, preserving gateway membership checks. This is count/privilege evidence, not a full content reconstruction or sustained performance measurement. No order transition, pricing mutation, Tally write or connector change.
+- Updated preflight expectations to 90 deployed mappings and zero pending; all 10 focused tests and evidence-only preflight passed, with whitespace validation. `releaseReady` correctly remains false; saved migration evidence cannot certify hosted/device acceptance. No public frontend deployment or main merge.
+- Actual staff-device instructions sent for offline unsent-draft recovery and second-account separation; awaiting observed device/browser results. Hosted uncertain-save/network-failure recovery remains unverified; the available browser interface does not provide a safe network-fault toggle. Do not manufacture an outage by altering backend secrets or service availability. Wait to merge until these acceptance gates are completed; no claim that all requested checks are finished.
+
 ## Release-gate negative regression checks — 2 October 2026
 
 - Started clean at `96433a4`; five-hour allowance 49% used / 51% remaining. Added two bounded existing-preflight tests: complete saved deployment evidence still cannot certify release readiness or live-history refresh, and a reviewed historical migration relabelled pending behind newer deployed history is rejected. No production code, migration, environment or Tally changes.

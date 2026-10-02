@@ -1,6 +1,6 @@
 {
   "projectId": "aormuidjbdqruglmyseh",
-  "checkedAt": "2026-10-01T07:34:47Z",
+  "checkedAt": "2026-10-02T06:27:52Z",
   "purpose": "Read-only release evidence; NOT an executable migration plan or authority to repair history.",
   "normalization": "Remove CR characters and trim surrounding whitespace only; SHA-256 over UTF-8.",
   "localGitHead": "f824954068bf92d773e395392d4aca453a6f7612",
@@ -601,44 +601,44 @@
     {
       "localFile": "20260929180000_catalog_source_version.sql",
       "localSha256": "2c8a3ce7a76fd89bafe06a7b7128536d33476f80ce17809b06cfb8e8c8d97e0b",
-      "remoteVersion": null,
-      "remoteSha256": null,
-      "status": "not_deployed"
+      "remoteVersion": "20261002062743",
+      "remoteSha256": "2c8a3ce7a76fd89bafe06a7b7128536d33476f80ce17809b06cfb8e8c8d97e0b",
+      "status": "exact_normalized_match"
     },
     {
       "localFile": "20260930125943_preserve_customers_on_partial_snapshot.sql",
       "localSha256": "d23c9e48b286f66927c6db54c52f77f39b7d4e22a1d8c6be4e6480c2c0c4d0f1",
-      "remoteVersion": null,
-      "remoteSha256": null,
-      "status": "not_deployed"
+      "remoteVersion": "20261002062744",
+      "remoteSha256": "d23c9e48b286f66927c6db54c52f77f39b7d4e22a1d8c6be4e6480c2c0c4d0f1",
+      "status": "exact_normalized_match"
     },
     {
       "localFile": "20261001055456_controlled_product_requests.sql",
       "localSha256": "97bcd51c98cdd1202565119ef4bc5e7fabeecf553d65bf8a60ba701b18f4e14d",
-      "remoteVersion": null,
-      "remoteSha256": null,
-      "status": "not_deployed"
+      "remoteVersion": "20261002062746",
+      "remoteSha256": "97bcd51c98cdd1202565119ef4bc5e7fabeecf553d65bf8a60ba701b18f4e14d",
+      "status": "exact_normalized_match"
     },
     {
       "localFile": "20261001061531_customer_demand_requirements.sql",
       "localSha256": "2f529d9234a921a469cf554bf6bbdda7ff4d011e1f10a0feb8830452f5e19ab5",
-      "remoteVersion": null,
-      "remoteSha256": null,
-      "status": "not_deployed"
+      "remoteVersion": "20261002062748",
+      "remoteSha256": "2f529d9234a921a469cf554bf6bbdda7ff4d011e1f10a0feb8830452f5e19ab5",
+      "status": "exact_normalized_match"
     },
     {
       "localFile": "20261001070000_requirement_waiting_orders.sql",
       "localSha256": "2e93bfd1c0387cfff202bc9c5179d25d982fae11da70bc45240ac442f661b461",
-      "remoteVersion": null,
-      "remoteSha256": null,
-      "status": "not_deployed"
+      "remoteVersion": "20261002062750",
+      "remoteSha256": "2e93bfd1c0387cfff202bc9c5179d25d982fae11da70bc45240ac442f661b461",
+      "status": "exact_normalized_match"
     },
     {
       "localFile": "20261001073000_reported_stock_increase_alerts.sql",
       "localSha256": "34c57f26c92f92d9bf074c894fcaca5e7b2e970c7bbad4c49bde61b9d6ab1358",
-      "remoteVersion": null,
-      "remoteSha256": null,
-      "status": "not_deployed"
+      "remoteVersion": "20261002062752",
+      "remoteSha256": "34c57f26c92f92d9bf074c894fcaca5e7b2e970c7bbad4c49bde61b9d6ab1358",
+      "status": "exact_normalized_match"
     }
   ]
 }
