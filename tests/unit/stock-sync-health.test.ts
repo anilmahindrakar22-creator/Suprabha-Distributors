@@ -1,4 +1,5 @@
 import { readFileSync } from 'node:fs';
+import { runInNewContext } from 'node:vm';
 import { describe, expect, it } from 'vitest';
 
 const dashboard = readFileSync(new URL('../../public/stockflow.html', import.meta.url), 'utf8');
@@ -13,6 +14,29 @@ const connectorControl = readFileSync(
 );
 
 describe('Tally stock sync health', () => {
+  it('clears an earlier cached warning when a fresh snapshot arrives', () => {
+    const nodes: Record<string, { value: string; innerHTML: string; textContent: string; className: string }> = {};
+    const node = (id: string) => nodes[id] ??= { value: '', innerHTML: '', textContent: '', className: '' };
+    const apply = dashboard.match(/^function applyData\(body,status\).*$/m)?.[0];
+    expect(apply).toBeTruthy();
+    const context = {
+      $: node, esc: (value: string) => value, snapshotAge: (body: { age: number }) => body.age,
+      TALLY_STALE_AFTER_MS: 20 * 60 * 1000, saveHistory: () => {}, render: () => {}, data: {},
+    };
+    const snapshot = { groups: [], company: 'SUPRABHA DISTRIBUTORS', fetchedAtShort: 'old extraction', age: 21 * 60 * 1000 };
+    runInNewContext(`${apply}; applyData(${JSON.stringify(snapshot)},'Opening saved snapshot')`, context);
+    expect(node('error').className).toBe('error show');
+    runInNewContext(`${apply}; applyData(${JSON.stringify({ ...snapshot, age: 0 })},'Cloud snapshot current')`, context);
+    expect(node('error').className).toBe('error');
+    expect(node('error').textContent).toBe('');
+    expect(node('liveText').textContent).toBe('Cloud snapshot current');
+    expect(node('dot').className).toBe('dot ok');
+    runInNewContext(`${apply}; applyData(${JSON.stringify(snapshot)},'Cloud snapshot current')`, context);
+    expect(node('error').className).toBe('error show');
+    expect(node('error').textContent).toContain('Tally stock extraction is overdue');
+    expect(node('liveText').textContent).toBe('Tally sync overdue');
+  });
+
   it('automatically checks the cloud snapshot every five minutes', () => {
     expect(dashboard).toContain('const CLOUD_REFRESH_INTERVAL_MS=5*60*1000');
     expect(dashboard).toContain('setInterval(()=>{if(!document.hidden)void refreshData()},CLOUD_REFRESH_INTERVAL_MS)');
@@ -25,7 +49,7 @@ describe('Tally stock sync health', () => {
   it('allows the normal fifteen-minute connector cycle before warning at twenty minutes', () => {
     expect(dashboard).toContain('const TALLY_STALE_AFTER_MS=20*60*1000');
     expect(dashboard).toContain("$('liveText').textContent='Tally sync overdue'");
-    expect(dashboard).toContain('Latest Tally upload is overdue');
+    expect(dashboard).toContain('Tally stock extraction is overdue');
   });
 
   it('publishes a machine-readable timestamp with every connector snapshot', () => {

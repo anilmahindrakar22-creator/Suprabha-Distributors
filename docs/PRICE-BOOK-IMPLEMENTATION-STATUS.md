@@ -1,5 +1,12 @@
 # Price book implementation checkpoint — 14 September 2026
 
+## Cached stale-warning recovery fix — 2 October 2026
+
+- Signed-in version-53 Stock loaded with current cloud status and a newer displayed sync time, but retained an older overdue banner. Code and executable regression demonstrate the mechanism: a cached snapshot can set the warning while the request is pending; fresh `applyData` updated status/dot without clearing that warning. No inference that cloud or Tally itself failed.
+- Fresh snapshot application now clears prior warning text/class. Genuine stale extraction still restores the warning. Clarified banner wording to “Tally stock extraction is overdue”, since its threshold uses source extraction time, not cloud upload time. Polling, source timestamps, offline fallback, account-separated cache and Tally remain unchanged.
+- Regression failed before the patch with `error show` retained after fresh data. Targeted sync-health and lightweight-summary suites passed 23 tests; affected test lint, typecheck and whitespace passed. Additional final stale-again check preserves genuine warnings. No full build/suite rerun or deployment for this bounded UI correction.
+- Returned live worker samples around the read-only browser check: `/api/stock` outcome ok, 6 ms CPU / 2,199 ms wall; `/api/orders` outcome ok, 3 ms CPU / 1,163 ms wall. These single samples do not establish p95 or response timing stages. Browser API does not expose response headers; per-request Server-Timing capture remains unverified. Public remains version 53, GitHub main unchanged; this fix is local pending release.
+
 ## Stock timing app publication — 2 October 2026
 
 - Fresh production build passed at clean `0c754404b445b6fc1ac298b9325fcc88d03092df`. Pushed exact source to the existing Sites repository main (not GitHub main), packaged existing hosting manifest plus build output, saved version 53 and deployed successfully: `appgdep_6abfb8b03b348191bbaaf92d9b726ed6`, runtime revision 4, 13:59:38 UTC. Public audience unchanged. GitHub main remains `6deb65b`; local timing commits have not been merged there.
