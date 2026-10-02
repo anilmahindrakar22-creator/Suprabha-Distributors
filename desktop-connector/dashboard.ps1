@@ -12,6 +12,7 @@ $salesPath = Join-Path $stateDirectory 'sales-history-v1.json'
 $purchasePath = Join-Path $stateDirectory 'purchase-history-v1.json'
 $customerPath = Join-Path $stateDirectory 'customer-master-v1.json'
 $catalogPath = Join-Path $stateDirectory 'catalog-master-v1.json'
+$uploadStatePath = Join-Path $stateDirectory 'cloud-upload-state-v1.json'
 $healthLogPath = Join-Path $stateDirectory 'connector-health.log'
 $script:tallyFailures = @{}
 # A held file handle prevents duplicate extraction across launches and ports.
@@ -21,7 +22,8 @@ try {
     Write-Host 'StockFlow connector is already running.'
     exit 0
 }
-$script:lastReorderData = Read-ConnectorSnapshot $snapshotPath $companyName
+$script:lastReorderData = Read-ConnectorSnapshotWithBackup $snapshotPath $companyName
+$script:lastReorderJson = if ($script:lastReorderData) { $script:lastReorderData | ConvertTo-Json -Depth 6 -Compress } else { $null }
 $script:lastPurchaseData = Get-TrustedPurchaseSnapshot (Read-ConnectorSnapshot $purchasePath $companyName) $companyName
 if (-not $script:lastPurchaseData) { $script:lastPurchaseData = Get-TrustedPurchaseSnapshot (Read-ConnectorSnapshot "$purchasePath.bak" $companyName) $companyName }
 $script:nextPurchaseRead = Get-Date
@@ -49,14 +51,30 @@ if ($RebuildSalesHistory) {
     $script:nextReorderRead = Get-Date
 }
 $script:pendingUpload = $script:lastReorderData
+$script:pendingUploadJson = $script:lastReorderJson
 $script:nextUpload = Get-Date
 $script:cloudUploadFailures = 0
+$script:uploadAuthBlocked = $false
 $diasysGroup = 'Diasys Diagnostic India Pvt Ltd'
 $allowedGroups = @($diasysGroup, 'SYS 480', 'SYS Aurora', 'Sysmex')
 $cloudSyncUrl = 'https://aormuidjbdqruglmyseh.supabase.co/functions/v1/stockflow-sync'
 $cloudUploadKey = [Environment]::GetEnvironmentVariable('STOCKFLOW_UPLOAD_KEY', 'User')
 if ([string]::IsNullOrWhiteSpace($cloudUploadKey)) {
     throw 'StockFlow cloud sync is not configured. Ask the administrator to set STOCKFLOW_UPLOAD_KEY for this Windows user.'
+}
+$script:uploadState = Read-ConnectorUploadState $uploadStatePath $companyName
+if (-not $script:uploadState) {
+    $script:uploadState = [ordered]@{ company = $companyName; kind = 'cloud_upload_state_v1'; ackedHash = $null; blockedKeyHash = $null; rejectedPayloadHash = $null }
+}
+if ($script:pendingUpload) {
+    $snapshotJson = $script:pendingUploadJson
+    if (Test-ConnectorUploadAcknowledged $script:uploadState $snapshotJson) { $script:pendingUpload = $null }
+}
+if (-not $script:pendingUpload) { $script:pendingUploadJson = $null }
+$script:uploadPayloadBlocked = Test-ConnectorUploadPayloadRejected $script:uploadState $script:pendingUploadJson
+$script:uploadAuthBlocked = Test-ConnectorUploadBlocked $script:uploadState $cloudUploadKey
+if ($script:uploadAuthBlocked) {
+    Write-Host 'Cloud upload is paused for the rejected upload key; correct the key and restart the connector.' -ForegroundColor DarkYellow
 }
 
 function Write-ConnectorHealth([string]$Message) {
@@ -67,23 +85,66 @@ function Write-ConnectorHealth([string]$Message) {
 }
 
 function Publish-CloudSnapshot([string]$Json) {
+    if (Test-ConnectorUploadPayloadRejected $script:uploadState $Json) {
+        $script:uploadPayloadBlocked = $true
+        return $false
+    }
     $watch = [Diagnostics.Stopwatch]::StartNew()
+    $payloadBytes = [Text.Encoding]::UTF8.GetByteCount($Json)
     try {
         Invoke-WebRequest -Uri $cloudSyncUrl -Method Post -ContentType 'application/json' -Headers @{ 'x-upload-key' = $cloudUploadKey } -Body $Json -UseBasicParsing -TimeoutSec 15 | Out-Null
         $watch.Stop()
-        $script:cloudUploadFailures = 0
-        Write-ConnectorHealth "$([datetimeoffset]::Now.ToString('o')) request=cloud_upload durationMs=$($watch.ElapsedMilliseconds) consecutiveFailures=0 status=ok"
-        Write-Host "Cloud snapshot updated." -ForegroundColor DarkGreen
-        return $true
     } catch {
         $watch.Stop()
         $script:cloudUploadFailures++
         $failureCode = Get-ConnectorUploadFailureCode $_
-        Write-ConnectorHealth "$([datetimeoffset]::Now.ToString('o')) request=cloud_upload durationMs=$($watch.ElapsedMilliseconds) consecutiveFailures=$($script:cloudUploadFailures) status=failed failure=$failureCode"
+        $script:uploadAuthBlocked = Test-ConnectorUploadAuthFailure $failureCode
+        $script:uploadPayloadBlocked = Test-ConnectorUploadPayloadFailure $failureCode
+        if ($script:uploadAuthBlocked) {
+            $script:uploadState.blockedKeyHash = Get-StableEvidenceVersion $cloudUploadKey
+        }
+        if ($script:uploadPayloadBlocked) {
+            $script:uploadState.rejectedPayloadHash = Get-StableEvidenceVersion $Json
+        }
+        if ($script:uploadAuthBlocked -or $script:uploadPayloadBlocked) {
+            try { Save-ConnectorUploadState $uploadStatePath $script:uploadState }
+            catch { Write-ConnectorHealth "$([datetimeoffset]::Now.ToString('o')) request=cloud_upload_state status=failed" }
+        }
+        Write-ConnectorHealth "$([datetimeoffset]::Now.ToString('o')) request=cloud_upload durationMs=$($watch.ElapsedMilliseconds) bytes=$payloadBytes consecutiveFailures=$($script:cloudUploadFailures) status=failed failure=$failureCode"
         # The local dashboard must remain usable even when the internet is down.
-        Write-Host 'Cloud upload pending; the saved snapshot will be retried.' -ForegroundColor DarkYellow
+        if ($script:uploadAuthBlocked) {
+            Write-Host 'Cloud upload authorization was rejected. The saved snapshot is retained; correct the upload key and restart the connector.' -ForegroundColor DarkYellow
+        } elseif ($script:uploadPayloadBlocked) {
+            Write-Host 'Cloud rejected the snapshot as invalid or too large. The local snapshot is retained; upload is paused until the data changes.' -ForegroundColor DarkYellow
+        } else {
+            Write-Host 'Cloud upload pending; the saved snapshot will be retried.' -ForegroundColor DarkYellow
+        }
         return $false
     }
+    # Cloud acceptance clears rejection flags even if saving the local receipt fails.
+    # Advance the acknowledgement only after its atomic disk write succeeds.
+    $script:uploadAuthBlocked = $false
+    $script:uploadPayloadBlocked = $false
+    $script:uploadState.blockedKeyHash = $null
+    $script:uploadState.rejectedPayloadHash = $null
+    $receipt = [ordered]@{
+        company = $script:uploadState.company; kind = 'cloud_upload_state_v1'
+        ackedHash = Get-StableEvidenceVersion $Json; blockedKeyHash = $null; rejectedPayloadHash = $null
+    }
+    try { Save-ConnectorUploadState $uploadStatePath $receipt }
+    catch {
+        $script:cloudUploadFailures++
+        Write-ConnectorHealth "$([datetimeoffset]::Now.ToString('o')) request=cloud_upload_receipt bytes=$payloadBytes status=failed"
+        Write-Host 'Cloud accepted the snapshot, but its local receipt could not be saved; the snapshot will be retried.' -ForegroundColor DarkYellow
+        return $false
+    }
+    $script:uploadState = $receipt
+    $script:cloudUploadFailures = 0
+    $script:uploadAuthBlocked = $false
+    $script:uploadPayloadBlocked = $false
+    Write-ConnectorHealth "$([datetimeoffset]::Now.ToString('o')) request=cloud_upload durationMs=$($watch.ElapsedMilliseconds) bytes=$payloadBytes consecutiveFailures=0 status=ok"
+    Write-Host "Cloud snapshot updated." -ForegroundColor DarkGreen
+    return $true
 }
 
 function Get-Number([string]$Text) {
@@ -191,7 +252,7 @@ function Get-TallySalesData {
         $invoiceFromDate = $today.AddDays(-180).ToString('yyyyMMdd')
         $financialYear = if ($today.Month -ge 4) { $today.Year } else { $today.Year - 1 }
         $fromDate = [datetime]::new($financialYear - 5, 4, 1).ToString('yyyyMMdd')
-        $cachedSales = Get-TrustedSalesSnapshot (Read-ConnectorSnapshot $salesPath $companyName) $companyName
+        $cachedSales = Read-TrustedSalesSnapshotWithBackup $salesPath $companyName
         if ($cachedSales -and $null -eq $cachedSales.records -and $cachedSales.document) {
             $cachedSales = @{
                 company = $companyName; fetchedAtIso = [string]$cachedSales.fetchedAtIso; sourceScope = 'sales_vouchers_v1'
@@ -270,15 +331,16 @@ function Get-TallySalesData {
         Write-Host "Last supplied details were not available in this refresh: $($_.Exception.Message)" -ForegroundColor DarkYellow
         throw # Do not replace a complete snapshot with empty invoice history.
     }
+    $salesFetchedAtIso = [datetimeoffset]::UtcNow.ToString('o')
     Save-ConnectorSnapshot $salesPath @{
-        company = $companyName; fetchedAtIso = [datetimeoffset]::UtcNow.ToString('o'); sourceScope = 'sales_vouchers_v1'
+        company = $companyName; fetchedAtIso = $salesFetchedAtIso; sourceScope = 'sales_vouchers_v1'
         catalog = @(); tallyInvoices = @(); records = @($salesRecords); baselineLastSupply = $baseline
         fullScannedAt = if ($fullScan) { [datetimeoffset]::UtcNow.ToString('o') } else { $cachedSales.fullScannedAt }
         reconciledAt = if ($fullScan -or ($salesWindow -and $salesWindow.reconciliation)) { [datetimeoffset]::UtcNow.ToString('o') } else { $cachedSales.reconciledAt }
     }
     Write-ConnectorHealth "$([datetimeoffset]::Now.ToString('o')) domain=sales records=$(@($salesRecords).Count) invoices=$(@($invoices).Count) status=accepted"
     $script:RebuildSalesHistory = $false
-    return [ordered]@{ lastSupply = $result; invoices = @($invoices); records = @($salesRecords) }
+    return [ordered]@{ lastSupply = $result; invoices = @($invoices); records = @($salesRecords); fetchedAtIso = $salesFetchedAtIso }
 }
 
 function Get-ReorderData {
@@ -290,14 +352,17 @@ function Get-ReorderData {
     $script:nextReorderRead = (Get-Date).AddMinutes($SyncMinutes)
     try {
         $fresh = Read-ReorderData
+        $freshJson = $fresh | ConvertTo-Json -Depth 6 -Compress
         Save-ConnectorSnapshot $snapshotPath $fresh
         $script:lastReorderData = $fresh
+        $script:lastReorderJson = $freshJson
         $script:pendingUpload = $fresh
+        $script:pendingUploadJson = $script:lastReorderJson
+        $script:uploadPayloadBlocked = Test-ConnectorUploadPayloadRejected $script:uploadState $script:pendingUploadJson
         return $fresh
     } catch {
         if ($script:lastReorderData) {
             Write-Host 'Tally refresh failed; retaining the last successful snapshot and its timestamp.' -ForegroundColor DarkYellow
-            return $script:lastReorderData
         }
         throw
     }
@@ -435,11 +500,15 @@ function Read-ReorderData {
     }
     $catalog = @($catalog | Sort-Object group, item)
     Write-ConnectorHealth "$([datetimeoffset]::Now.ToString('o')) domain=reorder rows=$($sorted.Count) catalog=$($catalog.Count) customers=$($customers.Count) status=accepted"
+    $fetchedAtIso = (Get-Date).ToUniversalTime().ToString('o')
+    $sourceFetchedAtIso = Get-ConnectorSourceFetchedAt $fetchedAtIso $script:lastCatalogData $script:lastCustomerData $salesData.fetchedAtIso $script:lastPurchaseData.fetchedAtIso
     return [ordered]@{
         company = $companyName
         fetchedAt = (Get-Date).ToString('dd MMM yyyy, hh:mm:ss tt')
         fetchedAtShort = (Get-Date).ToString('dd MMM, hh:mm tt')
-        fetchedAtIso = (Get-Date).ToUniversalTime().ToString('o')
+        fetchedAtIso = $fetchedAtIso
+        sourceFetchedAtIso = $sourceFetchedAtIso
+        catalogVersion = $sourceFetchedAtIso.catalog
         supplyHistoryFrom = $historyFrom.ToString('dd MMM yyyy')
         supplyHistoryTo = $today.ToString('dd MMM yyyy')
         supplyHistoryRange = "$($historyFrom.ToString('dd MMM yyyy')) to $($today.ToString('dd MMM yyyy'))"
@@ -520,20 +589,29 @@ Write-Host "Press Ctrl+C to stop." -ForegroundColor DarkGray
 if (-not $NoBrowser) { Start-Process "http://localhost:$Port" }
 
 $nextCloudSync = Get-Date
+$automaticTallyFailures = 0
+$requestsSinceBackground = 0
 try {
     while ($true) {
-        if (-not $listener.Pending()) {
+        $backgroundDue = (Get-Date) -ge $nextCloudSync -or ($script:pendingUpload -and -not $script:uploadAuthBlocked -and -not $script:uploadPayloadBlocked -and (Get-Date) -ge $script:nextUpload)
+        if (Test-ConnectorShouldRunBackground ($listener.Pending()) $requestsSinceBackground $backgroundDue) {
+            $requestsSinceBackground = 0
             if ((Get-Date) -ge $nextCloudSync) {
                 try {
                     $null = Get-ReorderData
+                    $automaticTallyFailures = 0
+                    $nextCloudSync = (Get-Date).AddMinutes($SyncMinutes)
                 } catch {
-                    Write-Host "Automatic sync will retry in $SyncMinutes minutes." -ForegroundColor DarkYellow
+                    $automaticTallyFailures++
+                    $retryMinutes = Get-TallyRetryDelayMinutes $SyncMinutes $automaticTallyFailures
+                    Write-Host "Automatic sync will retry in $retryMinutes minutes." -ForegroundColor DarkYellow
+                    $nextCloudSync = (Get-Date).AddMinutes($retryMinutes)
                 }
-                $nextCloudSync = (Get-Date).AddMinutes($SyncMinutes)
             }
-            if ($script:pendingUpload -and (Get-Date) -ge $script:nextUpload) {
-                if (Publish-CloudSnapshot ($script:pendingUpload | ConvertTo-Json -Depth 6 -Compress)) {
+            if ($script:pendingUpload -and -not $script:uploadAuthBlocked -and -not $script:uploadPayloadBlocked -and (Get-Date) -ge $script:nextUpload) {
+                if (Publish-CloudSnapshot $script:pendingUploadJson) {
                     $script:pendingUpload = $null
+                    $script:pendingUploadJson = $null
                 }
                 # Back off during an outage so retries stay lightweight. A successful
                 # upload resets the counter and the next new snapshot uploads immediately.
@@ -544,6 +622,7 @@ try {
             continue
         }
         $client = $listener.AcceptTcpClient()
+        $requestsSinceBackground++
         try {
             $client.ReceiveTimeout = 5000
             $client.GetStream().ReadTimeout = 5000
@@ -566,7 +645,7 @@ try {
             if ($path -like '/api/reorder*') {
                 try {
                     if (-not $script:lastReorderData) { throw 'First stock snapshot is not ready.' }
-                    $json = ($script:lastReorderData | ConvertTo-Json -Depth 6 -Compress)
+                    $json = $script:lastReorderJson
                     Send-Response $client 200 'application/json; charset=utf-8' ([Text.Encoding]::UTF8.GetBytes($json))
                 } catch {
                     $json = @{ error = 'TallyPrime is not reachable. Open TallyPrime, load SUPRABHA DISTRIBUTORS, and try Refresh.'; detail = $_.Exception.Message } | ConvertTo-Json -Compress

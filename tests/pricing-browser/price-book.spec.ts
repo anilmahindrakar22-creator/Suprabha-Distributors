@@ -1,5 +1,65 @@
 import { test, expect } from '@playwright/test';
 
+for (const status of [401, 403]) {
+  test(`authorization loss ${status} clears loaded workspace pricing`, async ({ page }) => {
+    let denied = false;
+    const errors: string[] = [];
+    page.on('pageerror', error => errors.push(error.message));
+    await page.route('**/api/orders?customers=1', route => route.fulfill({ json: { customers: [] } }));
+    await page.route('**/api/pricing**', route => route.fulfill(denied
+      ? { status, json: { error: 'Pricing access is restricted' } }
+      : { json: route.request().url().includes('policies=1') ? { policies: [] } : { contracts: [{ id: customerId, customerId, customerName: 'Test Laboratory', tallyKey: 'GLUCOSE', price: 445, validFrom: '2026-01-01', status: 'pending_approval', source: 'customer_contract', reason: 'Test', version: 1 }] } }));
+    await page.goto('/?view=workspace');
+    await expect(page.getByText('GLUCOSE · ₹445.00').first()).toBeVisible();
+    denied = true;
+    await page.getByRole('button', { name: 'Refresh', exact: true }).click();
+    await expect(page.getByRole('alert')).toContainText('Pricing access is restricted');
+    await expect(page.getByRole('region', { name: 'Pricing overview' })).toHaveCount(0);
+    await expect(page.getByText('GLUCOSE · ₹445.00')).toHaveCount(0);
+    await expect(page.getByRole('button', { name: 'Approve', exact: true })).toHaveCount(0);
+    expect(errors).toEqual([]);
+  });
+}
+
+test('authorization loss on price-book pagination clears the entire workspace', async ({ page }) => {
+  await page.route('**/api/orders?customers=1', route => route.fulfill({ json: { customers: [{ id: customerId, name: 'Test Laboratory' }] } }));
+  await page.route('**/api/pricing**', route => {
+    const url = new URL(route.request().url());
+    return route.fulfill(url.searchParams.get('offset') === '50'
+      ? { status: 403, json: { error: 'Pricing access is restricted' } }
+      : { json: url.searchParams.has('book') ? { rows: [row], offset: 0, hasMore: true } : url.searchParams.has('policies') ? { policies: [] } : { contracts: [] } });
+  });
+  await page.goto('/?view=workspace');
+  await page.getByLabel('Select customer').fill('Test');
+  await page.getByRole('button', { name: 'Test Laboratory', exact: true }).click();
+  await expect(page.getByText('Glucose reagent', { exact: true })).toBeVisible();
+  await page.getByRole('button', { name: 'Next', exact: true }).click();
+  await expect(page.getByRole('alert')).toContainText('Pricing access is restricted');
+  await expect(page.getByText('Glucose reagent', { exact: true })).toHaveCount(0);
+  await expect(page.getByLabel('Select customer')).toHaveCount(0);
+});
+
+test('authorization loss on mutation hides pricing and preserves only its recovery receipt', async ({ page }) => {
+  let posts = 0;
+  await page.route('**/api/orders?customers=1', route => route.fulfill({ json: { customers: [{ id: customerId, name: 'Test Laboratory' }] } }));
+  await page.route('**/api/pricing**', route => {
+    if (route.request().method() === 'POST') { posts++; return route.fulfill({ status: 403, json: { error: 'Pricing access is restricted' } }); }
+    return route.fulfill({ json: { rows: [row], offset: 0, hasMore: false } });
+  });
+  await page.goto('/');
+  await page.getByLabel('Select customer').fill('Test');
+  await page.getByRole('button', { name: 'Test Laboratory', exact: true }).click();
+  await page.getByRole('button', { name: 'Review item', exact: true }).click();
+  await page.getByLabel(/^Decision note/).fill('Sensitive commercial reason');
+  await page.getByRole('button', { name: 'Recommended ₹445.00' }).click();
+  await expect(page.getByRole('alert')).toContainText('Pricing access is restricted');
+  await expect(page.getByText('Glucose reagent', { exact: true })).toHaveCount(0);
+  const receipts = await page.evaluate(() => JSON.parse(sessionStorage.getItem('stockflow:pricing-recovery:fixture@example.test') || '[]'));
+  expect(receipts).toHaveLength(1);
+  expect(Object.keys(receipts[0]).sort()).toEqual(['action', 'idempotencyKey']);
+  expect(posts).toBe(1);
+});
+
 test('close unsaved recovery retains busy receipts and releases only confirmed outcomes', async ({ page }) => {
   const key = '11111111-1111-4111-8111-111111111111';
   let status = 'unresolved';
@@ -52,6 +112,10 @@ for (const action of ['approve_price_contract', 'reject_price_contract', 'create
       await page.getByLabel('Product', { exact: true }).fill('Glucose');
       await page.getByRole('button', { name: 'Glucose reagent Reagents', exact: true }).click();
       await page.getByLabel('Selling price (₹)').fill('445');
+      await page.getByLabel('Valid from', { exact: true }).fill('2030-04-01');
+      await page.getByLabel('Valid to', { exact: false }).fill('2031-03-31');
+      await expect(page.getByLabel('Valid from', { exact: true })).toHaveValue('2030-04-01');
+      await expect(page.getByLabel('Valid to', { exact: false })).toHaveValue('2031-03-31');
       reason = page.getByLabel('Business reason');
       buttonName = 'Send for approval';
     } else {
@@ -66,6 +130,9 @@ for (const action of ['approve_price_contract', 'reject_price_contract', 'create
     await expect.poll(() => commands.length).toBe(2);
     expect(commands[1]).toEqual(commands[0]);
     expect(commands[0].action).toBe(action);
+    if (action === 'create_price_contract') {
+      expect(commands[0].payload).toMatchObject({ validFrom: '2030-04-01', validTo: '2031-03-31' });
+    }
     await expect(save).toBeEnabled();
     await reason.fill('Changed decision reason');
     await save.click();

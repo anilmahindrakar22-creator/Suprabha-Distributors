@@ -145,6 +145,14 @@ function Get-TrustedSalesSnapshot($Snapshot, [string]$Company) {
     return $Snapshot
 }
 
+function Read-TrustedSalesSnapshotWithBackup([string]$Path, [string]$Company) {
+    foreach ($candidate in @($Path, "$Path.bak")) {
+        $snapshot = Get-TrustedSalesSnapshot (Read-ConnectorSnapshot $candidate $Company) $Company
+        if ($snapshot) { return $snapshot }
+    }
+    return $null
+}
+
 function Get-TrustedPurchaseSnapshot($Snapshot, [string]$Company) {
     if ($null -eq $Snapshot -or $Snapshot.company -ne $Company -or $Snapshot.sourceScope -ne 'purchase_vouchers_v1') { return $null }
     if ($null -eq $Snapshot.records) { return $null }
@@ -195,6 +203,44 @@ function Save-ConnectorSnapshot([string]$Path, $Snapshot) {
     }
 }
 
+function Save-ConnectorUploadState([string]$Path, $State) {
+    Save-ConnectorSnapshot $Path $State
+}
+
+function Read-ConnectorUploadState([string]$Path, [string]$Company) {
+    foreach ($candidate in @($Path, "$Path.bak")) {
+        try {
+            $saved = Read-ConnectorJson $candidate
+            $state = $saved.snapshot
+            if ($saved.schemaVersion -ne 1 -or $state.company -cne $Company -or $state.kind -ne 'cloud_upload_state_v1') { continue }
+            if ($null -ne $state.ackedHash -and [string]$state.ackedHash -cnotmatch '^[a-f0-9]{64}$') { continue }
+            if ($null -ne $state.blockedKeyHash -and [string]$state.blockedKeyHash -cnotmatch '^[a-f0-9]{64}$') { continue }
+            if ($null -ne $state.rejectedPayloadHash -and [string]$state.rejectedPayloadHash -cnotmatch '^[a-f0-9]{64}$') { continue }
+            if (-not $state.PSObject.Properties['rejectedPayloadHash']) {
+                $state | Add-Member -NotePropertyName rejectedPayloadHash -NotePropertyValue $null
+            }
+            return $state
+        } catch { }
+    }
+    return $null
+}
+
+function Test-ConnectorUploadAcknowledged($State, [string]$Json) {
+    return $null -ne $State -and [string]$State.ackedHash -ceq (Get-StableEvidenceVersion $Json)
+}
+
+function Test-ConnectorUploadBlocked($State, [string]$UploadKey) {
+    return $null -ne $State -and [string]$State.blockedKeyHash -ceq (Get-StableEvidenceVersion $UploadKey)
+}
+
+function Test-ConnectorUploadPayloadRejected($State, [string]$Json) {
+    return $null -ne $State -and -not [string]::IsNullOrEmpty($Json) -and [string]$State.rejectedPayloadHash -ceq (Get-StableEvidenceVersion $Json)
+}
+
+function Test-ConnectorShouldRunBackground([bool]$ClientPending, [int]$RequestsSinceBackground, [bool]$WorkDue) {
+    return -not $ClientPending -or ($RequestsSinceBackground -ge 1 -and $WorkDue)
+}
+
 function Write-BoundedConnectorLog([string]$Path, [string]$Message, [long]$MaximumBytes = 2MB) {
     try {
         if ([IO.File]::Exists($Path) -and ([IO.FileInfo]$Path).Length -ge $MaximumBytes) {
@@ -222,6 +268,26 @@ function Get-ConnectorUploadFailureCode($ErrorRecord) {
     return 'network'
 }
 
+function Test-ConnectorUploadAuthFailure([string]$FailureCode) {
+    return $FailureCode -in @('http_401', 'http_403')
+}
+
+function Test-ConnectorUploadPayloadFailure([string]$FailureCode) {
+    return $FailureCode -in @('http_400', 'http_413')
+}
+
+function Get-TallyRetryDelayMinutes([int]$NormalMinutes, [int]$ConsecutiveFailures) {
+    $maximum = [Math]::Max(60, $NormalMinutes)
+    $exponent = [Math]::Min(6, [Math]::Max(0, $ConsecutiveFailures - 1))
+    return [int][Math]::Min($maximum, $NormalMinutes * [Math]::Pow(2, $exponent))
+}
+
+function Get-ConnectorSourceFetchedAt([string]$StockFetchedAtIso, $CatalogSnapshot, $CustomerSnapshot, [string]$SalesFetchedAtIso = $null, [string]$PurchaseFetchedAtIso = $null) {
+    $catalogAt = if ($CatalogSnapshot) { [string]$CatalogSnapshot.fetchedAtIso } else { $null }
+    $customersAt = if ($CustomerSnapshot) { [string]$CustomerSnapshot.fetchedAtIso } else { $null }
+    return [ordered]@{ stock = $StockFetchedAtIso; catalog = $catalogAt; customers = $customersAt; sales = $SalesFetchedAtIso; purchase = $PurchaseFetchedAtIso }
+}
+
 function Read-ConnectorJson([string]$Path) {
     $json = [IO.File]::ReadAllText($Path)
     # PowerShell 7 otherwise converts ISO timestamps to DateTime before our
@@ -241,6 +307,12 @@ function Read-ConnectorSnapshot([string]$Path, [string]$Company) {
         if ($null -eq $saved.snapshot.catalog -or $null -eq $saved.snapshot.tallyInvoices) { return $null }
         return $saved.snapshot
     } catch { return $null }
+}
+
+function Read-ConnectorSnapshotWithBackup([string]$Path, [string]$Company) {
+    $snapshot = Read-ConnectorSnapshot $Path $Company
+    if ($snapshot) { return $snapshot }
+    return Read-ConnectorSnapshot "$Path.bak" $Company
 }
 
 function Read-CustomerSnapshot([string]$Path, [string]$Company) {

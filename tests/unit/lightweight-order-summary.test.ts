@@ -57,7 +57,7 @@ describe('lightweight order operations summary', () => {
   });
 
   it('avoids the full order bootstrap and suppresses focus refresh bursts', () => {
-    expect(dashboard).toContain("fetch('/api/orders?summary=1'");
+    expect(dashboard).toContain("fetchJsonWithTimeout('/api/orders?summary=1'");
     expect(dashboard).not.toContain("fetch('/api/orders',{cache:'no-store'})");
     expect(dashboard).toContain('const BACKGROUND_REFRESH_FLOOR_MS=15*1000');
     expect(dashboard).toContain('Date.now()-lastRefreshStarted<BACKGROUND_REFRESH_FLOOR_MS');

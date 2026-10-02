@@ -22,8 +22,11 @@ import { loadOrderBootstrap } from '@/lib/order-bootstrap-cache';
 import { retryPendingOfflineOrder } from '@/lib/offline-order-retry';
 import { acknowledgeOrderCommand, prepareOrderCommandRetry } from '@/lib/order-command-idempotency';
 import { loadOrderCatalog, loadOrderCustomers } from '@/lib/order-capture-masters';
+import { recordOrderClientTiming } from '@/lib/order-client-timing';
 import type { OrderPricingWorkspace, PricingLineResolution } from '@/lib/pricing-types';
 import { PricingOptions } from './pricing-options';
+import { ProductRequest, ProductRequestInbox } from './product-request';
+import { ProcurementRequirements } from './procurement-requirements';
 
 type DraftLine = { tallyKey: string; item: CatalogItem | null; quantity: number };
 type OrderEntryPrice = { tallyKey: string; currentPrice: number | null; currentPriceSource: string; riskStatus: 'GREEN' | 'AMBER' | 'RED'; recommendationReason?: string };
@@ -127,12 +130,14 @@ export function OrderWorkspace({ actorEmail, initialStatus = 'open' }: { actorEm
   const retryingDraftRef = useRef(false);
   const pendingCommandKeysRef = useRef(new Map<string, string>());
   const latestListRequestRef = useRef(0);
+  const openingOrderRequestRef = useRef(0);
 
   useEffect(() => {
     dataRef.current = data;
   }, [data]);
 
   const load = useCallback(async (showLoading = false, showRefreshing = false) => {
+    const startedAt = performance.now();
     const requestId = ++latestListRequestRef.current;
     if (showLoading) setLoading(true);
     if (showRefreshing) setRefreshing(true);
@@ -140,6 +145,7 @@ export function OrderWorkspace({ actorEmail, initialStatus = 'open' }: { actorEm
     try {
       const result = await readResponse<OrderBootstrap>(await fetch(orderListUrl({ page, query, status, captureDate, captureDateTo }), { cache: 'no-store' }));
       if (requestId !== latestListRequestRef.current) return;
+      recordOrderClientTiming('order_list_ms', startedAt);
       setData(result);
       setDeviceDraftState(readOfflineOrderDraft(localStorage, result.actor.email)?.state || null);
     } catch (cause) {
@@ -193,11 +199,13 @@ export function OrderWorkspace({ actorEmail, initialStatus = 'open' }: { actorEm
 
   useEffect(() => {
     if (initialStatus !== 'open') return;
+    const startedAt = performance.now();
     let active = true;
     const requestId = ++latestListRequestRef.current;
     loadOrderBootstrap(actorEmail)
       .then((result) => {
         if (active && requestId === latestListRequestRef.current) {
+          recordOrderClientTiming('order_list_ms', startedAt);
           setData(result);
           setDeviceDraftState(readOfflineOrderDraft(localStorage, result.actor.email)?.state || null);
         }
@@ -223,6 +231,7 @@ export function OrderWorkspace({ actorEmail, initialStatus = 'open' }: { actorEm
     }
     const controller = new AbortController();
     const timer = window.setTimeout(() => {
+      const startedAt = performance.now();
       const requestId = ++latestListRequestRef.current;
       setLoading(true);
       setError('');
@@ -230,6 +239,7 @@ export function OrderWorkspace({ actorEmail, initialStatus = 'open' }: { actorEm
         .then((response) => readResponse<OrderBootstrap>(response))
         .then((result) => {
           if (requestId !== latestListRequestRef.current) return;
+          recordOrderClientTiming('order_list_ms', startedAt);
           setData(result);
           setDeviceDraftState(readOfflineOrderDraft(localStorage, result.actor.email)?.state || null);
         })
@@ -282,19 +292,24 @@ export function OrderWorkspace({ actorEmail, initialStatus = 'open' }: { actorEm
 
   async function openNewOrder(template?: OrderSummary) {
     if (catalogLoading) return;
+    const requestId = ++openingOrderRequestRef.current;
+    const startedAt = performance.now();
     setError('');
     setCatalogLoading(true);
     let current = dataRef.current;
     try {
       if (!current) {
         current = await loadOrderBootstrap(actorEmail);
+        if (requestId !== openingOrderRequestRef.current) return;
         dataRef.current = current;
         setData(current);
         setDeviceDraftState(readOfflineOrderDraft(localStorage, current.actor.email)?.state || null);
       }
     } catch (cause) {
-      setError(cause instanceof Error ? cause.message : 'Unable to load order capture');
-      setCatalogLoading(false);
+      if (requestId === openingOrderRequestRef.current) {
+        setError(cause instanceof Error ? cause.message : 'Unable to load order capture');
+        setCatalogLoading(false);
+      }
       return;
     }
     try {
@@ -310,6 +325,7 @@ export function OrderWorkspace({ actorEmail, initialStatus = 'open' }: { actorEm
         ? Promise.resolve(null)
         : loadOrderCustomers(actorEmail, customerVersion);
       const [catalogResult, customerResult] = await Promise.all([catalogRequest, customerRequest]);
+      if (requestId !== openingOrderRequestRef.current) return;
       if (catalogResult) {
         catalog = catalogResult.catalog;
       }
@@ -338,11 +354,17 @@ export function OrderWorkspace({ actorEmail, initialStatus = 'open' }: { actorEm
         setRepeatOrder(template || null);
       }
       setCreating(true);
+      recordOrderClientTiming('order_open_ms', startedAt);
     } catch (cause) {
-      setError(cause instanceof Error ? cause.message : 'Unable to load Tally customers and products');
+      if (requestId === openingOrderRequestRef.current) setError(cause instanceof Error ? cause.message : 'Unable to load Tally customers and products');
     } finally {
-      setCatalogLoading(false);
+      if (requestId === openingOrderRequestRef.current) setCatalogLoading(false);
     }
+  }
+
+  function cancelOrderPreparation() {
+    openingOrderRequestRef.current += 1;
+    setCatalogLoading(false);
   }
 
   function warmOrderCapture() {
@@ -481,6 +503,8 @@ export function OrderWorkspace({ actorEmail, initialStatus = 'open' }: { actorEm
   return (
     <div ref={workspaceRef} className="h-full overflow-y-auto bg-[#f7f6f1]">
       <div className="mx-auto max-w-7xl px-3 py-3 sm:px-6 sm:py-6 lg:px-8">
+        {['administrator', 'management', 'operations'].includes(data?.actor.role || '') ? <ProductRequestInbox /> : null}
+        {data ? <ProcurementRequirements /> : null}
         <header className="flex flex-col gap-4 sm:flex-row sm:items-end sm:justify-between">
           <div>
             <h1 className="text-2xl font-black tracking-tight text-[#092f36] sm:text-3xl">
@@ -673,6 +697,7 @@ export function OrderWorkspace({ actorEmail, initialStatus = 'open' }: { actorEm
         </section>
       </div>
 
+      {catalogLoading && !creating ? <div className="fixed inset-0 z-50 flex items-center justify-center bg-[#092f36]/45 p-4" role="presentation"><dialog open aria-modal="true" aria-label="Preparing order" onKeyDown={(event) => { if (event.key === 'Escape') cancelOrderPreparation(); }} className="relative m-auto w-full max-w-sm rounded-2xl border border-[#dce7e5] bg-white p-6 shadow-2xl"><h2 className="text-lg font-black text-[#092f36]">Preparing order</h2><p className="mt-2 text-sm text-[#587275]">Loading customer and product lists…</p><button type="button" autoFocus onClick={cancelOrderPreparation} className="mt-5 min-h-10 rounded-xl border border-[#cedfdd] px-4 text-sm font-bold text-[#31585d]">Cancel</button></dialog></div> : null}
       {creating && data ? (
         <NewOrderPanel
           data={data}
@@ -1177,7 +1202,7 @@ function AssignmentControl({ order, onSave }: { order: OrderSummary; onSave: (or
   return <details onToggle={(event) => { if (event.currentTarget.open) void loadUsers(); }} className="mt-3 max-w-xl rounded-xl border border-[#dce7e5] bg-[#fbfcfb] px-3 py-2 text-xs"><summary className="cursor-pointer font-bold text-[#587275]">{order.assignedToEmail ? 'Change owner' : 'Assign owner'}</summary><div className="mt-2 flex flex-col gap-2 sm:flex-row"><label className="flex-1 font-bold text-[#587275]">Approved user<select value={value} disabled={loadState !== 'loaded'} onChange={(event) => setValue(event.target.value)} className="mt-1 min-h-10 w-full rounded-lg border border-[#cedfdd] bg-white px-3 font-normal text-[#173239]"><option value="">Unassigned</option>{order.assignedToEmail && !users.some((user) => user.email === order.assignedToEmail) ? <option value={order.assignedToEmail}>{order.assignedToEmail}</option> : null}{users.map((user) => <option key={user.email} value={user.email}>{user.email} · {user.role}</option>)}</select></label><div className="flex items-end"><button type="button" disabled={busy || loadState !== 'loaded' || value === (order.assignedToEmail || '')} onClick={async () => { setBusy(true); try { await onSave(order, value || undefined); } finally { setBusy(false); } }} className="min-h-10 rounded-lg bg-[#092f36] px-4 font-bold text-white disabled:opacity-50">{busy ? 'Saving…' : 'Save'}</button></div></div>{loadState === 'loading' ? <p className="mt-2 text-[#718487]">Loading approved users…</p> : loadState === 'error' ? <button type="button" onClick={() => { setLoadState('idle'); void loadUsers(); }} className="mt-2 font-bold text-[#9a4e47]">Could not load users · Retry</button> : <p className="mt-2 text-[#718487]">Only active StockFlow users are shown.</p>}</details>;
 }
 
-function HydratedNewOrderPanel({ data, templateOrder, onClose, onCreated, onViewCustomer }: { data: OrderBootstrap; templateOrder: OrderSummary | null; onClose: () => void; onCreated: (number: string, command?: CreatedOrderCommand, result?: CreatedOrderResult) => void; onViewCustomer: (customerName: string) => void }) {
+export function HydratedNewOrderPanel({ data, templateOrder, onClose, onCreated, onViewCustomer }: { data: OrderBootstrap; templateOrder: OrderSummary | null; onClose: () => void; onCreated: (number: string, command?: CreatedOrderCommand, result?: CreatedOrderResult) => void; onViewCustomer: (customerName: string) => void }) {
   const [initialDraft] = useState(() => readOfflineOrderDraft(localStorage, data.actor.email));
   const initialPayload = initialDraft?.command.payload;
   const templatePayload = templateOrder ? repeatOrderTemplate(templateOrder) : undefined;
@@ -1186,14 +1211,24 @@ function HydratedNewOrderPanel({ data, templateOrder, onClose, onCreated, onView
   const [customerCity, setCustomerCity] = useState(initialPayload?.customerCity || '');
   const [deliveryAddress, setDeliveryAddress] = useState(initialPayload?.deliveryAddress || '');
   const [selectedCustomerId, setSelectedCustomerId] = useState<string | undefined>(initialPayload?.customerId);
+  const selectedCustomerKey = selectedCustomerId ? `${data.actor.email.trim().toLocaleLowerCase('en-IN')}:${selectedCustomerId}` : '';
   const [customerSuggestionsOpen, setCustomerSuggestionsOpen] = useState(false);
-  const [customerHistory, setCustomerHistory] = useState<{ orders: OrderSummary[]; total: number } | null>(null);
+  const customerBlurTimerRef = useRef<number | null>(null);
+  const [activeCustomerIndex, setActiveCustomerIndex] = useState(0);
+  const [customerHistory, setCustomerHistory] = useState<{ ownerKey: string; orders: OrderSummary[]; total: number } | null>(null);
   const [customerHistoryState, setCustomerHistoryState] = useState<'idle' | 'loading' | 'error'>('idle');
+  const customerHistoryCacheRef = useRef(new Map<string, { ownerKey: string; orders: OrderSummary[]; total: number }>());
+  const currentCustomerKeyRef = useRef(selectedCustomerKey);
   const [notes, setNotes] = useState(initialPayload?.notes || '');
   const [source, setSource] = useState<'phone' | 'email' | 'whatsapp' | 'walk_in'>(initialPayload?.source || 'phone');
   const [priority, setPriority] = useState<'normal' | 'high' | 'urgent'>(initialPayload?.priority || 'normal');
   const [expectedDeliveryDate, setExpectedDeliveryDate] = useState(initialPayload?.expectedDeliveryDate || '');
   const [productQuery, setProductQuery] = useState('');
+  const [recentQuantities, setRecentQuantities] = useState<Record<string, string>>({});
+  const customerSelectedAtRef = useRef<number | null>(null);
+  const [activeProductIndex, setActiveProductIndex] = useState(0);
+  const focusQuantityKey = useRef<string | null>(null);
+  const productInputRef = useRef<HTMLInputElement>(null);
   const [restoredLines] = useState(() => restoreOfflineDraftLines(data.snapshot.catalog, initialPayload?.lines || templatePayload?.lines || []));
   const [lines, setLines] = useState<DraftLine[]>(restoredLines);
   const [submitting, setSubmitting] = useState(false);
@@ -1207,6 +1242,16 @@ function HydratedNewOrderPanel({ data, templateOrder, onClose, onCreated, onView
   const entryPriceKey = `${selectedCustomerId || ''}\u001e${pricingKeys}`;
   const entryPrices = entryPriceResult?.key === entryPriceKey ? entryPriceResult.prices : {};
   const entryPriceState = entryPriceResult?.key === entryPriceKey ? entryPriceResult.failed ? 'error' : 'idle' : 'loading';
+
+  useEffect(() => () => {
+    if (customerBlurTimerRef.current !== null) window.clearTimeout(customerBlurTimerRef.current);
+  }, []);
+
+  useEffect(() => {
+    if (!focusQuantityKey.current) return;
+    document.getElementById(`qty-${focusQuantityKey.current}`)?.focus();
+    focusQuantityKey.current = null;
+  }, [lines]);
 
   function changeTrustedDevice(allowed: boolean) {
     if (!writeOfflineDraftConsent(localStorage, data.actor.email, allowed)) {
@@ -1292,16 +1337,49 @@ function HydratedNewOrderPanel({ data, templateOrder, onClose, onCreated, onView
     [customerName, data.customers],
   );
   const selectedCustomer = data.customers.find((customer) => customer.id === selectedCustomerId);
+  const recentProducts = useMemo(() => {
+    if (!selectedCustomerId || customerHistory?.ownerKey !== selectedCustomerKey || lines.length >= 50) return [];
+    const catalogByKey = new Map(data.snapshot.catalog.filter((item) => item.active).map((item) => [item.tallyKey, item]));
+    const seen = new Set(lines.map((line) => line.tallyKey));
+    const products: CatalogItem[] = [];
+    for (const order of [...customerHistory.orders].sort((left, right) => Date.parse(right.createdAt) - Date.parse(left.createdAt))) {
+      for (const line of order.lines || []) {
+        const item = catalogByKey.get(line.tallyKey);
+        if (!item || seen.has(line.tallyKey)) continue;
+        seen.add(line.tallyKey);
+        products.push(item);
+        if (products.length === 5) return products;
+      }
+    }
+    return products;
+  }, [customerHistory, data.snapshot.catalog, lines, selectedCustomerId, selectedCustomerKey]);
 
   useEffect(() => {
     if (!selectedCustomer) return;
+    currentCustomerKeyRef.current = selectedCustomerKey;
+    const cached = customerHistoryCacheRef.current.get(selectedCustomerKey);
+    if (cached) {
+      setCustomerHistory(cached);
+      setCustomerHistoryState('idle');
+      return;
+    }
     const controller = new AbortController();
     fetch(orderListUrl({ page: 1, query: `customer:${selectedCustomer.name}`, status: 'all', captureDate: '' }), { cache: 'no-store', signal: controller.signal })
       .then((response) => readResponse<OrderBootstrap>(response))
-      .then((result) => { setCustomerHistory({ orders: result.orders.slice(0, 5), total: result.pagination?.total || result.orders.length }); setCustomerHistoryState('idle'); })
-      .catch((cause) => { if (cause instanceof DOMException && cause.name === 'AbortError') return; setCustomerHistory(null); setCustomerHistoryState('error'); });
+      .then((result) => {
+        if (controller.signal.aborted || currentCustomerKeyRef.current !== selectedCustomerKey) return;
+        const history = { ownerKey: selectedCustomerKey, orders: result.orders.slice(0, 5), total: result.pagination?.total || result.orders.length };
+        customerHistoryCacheRef.current.set(selectedCustomerKey, history);
+        setCustomerHistory(history);
+        setCustomerHistoryState('idle');
+      })
+      .catch((cause) => {
+        if (controller.signal.aborted || currentCustomerKeyRef.current !== selectedCustomerKey || cause instanceof DOMException && cause.name === 'AbortError') return;
+        setCustomerHistory(null);
+        setCustomerHistoryState('error');
+      });
     return () => controller.abort();
-  }, [selectedCustomer]);
+  }, [selectedCustomer, selectedCustomerKey]);
 
   useEffect(() => {
     if (!canViewPrices || !selectedCustomerId || !pricingKeys) return;
@@ -1320,13 +1398,27 @@ function HydratedNewOrderPanel({ data, templateOrder, onClose, onCreated, onView
   }, [canViewPrices, entryPriceKey, pricingKeys, selectedCustomerId]);
 
   function chooseCustomer(customer: CustomerDirectoryEntry) {
+    customerSelectedAtRef.current = performance.now();
+    setRecentQuantities({});
+    const customerKey = `${data.actor.email.trim().toLocaleLowerCase('en-IN')}:${customer.id}`;
+    currentCustomerKeyRef.current = customerKey;
     setSelectedCustomerId(customer.id);
     setCustomerName(customer.name);
     setCustomerPhone(customer.phone || '');
     setCustomerCity(customer.city || '');
     setCustomerSuggestionsOpen(false);
-    setCustomerHistory(null);
-    setCustomerHistoryState('loading');
+    const cached = customerHistoryCacheRef.current.get(customerKey);
+    setCustomerHistory(cached || null);
+    setCustomerHistoryState(cached ? 'idle' : 'loading');
+    productInputRef.current?.focus();
+  }
+
+  function addProduct(item: CatalogItem, quantity = 1) {
+    if (!Number.isInteger(quantity) || quantity < 1 || quantity > 1000000) return;
+    setLines((current) => current.length >= 50 || current.some((line) => line.tallyKey === item.tallyKey) ? current : [...current, { tallyKey: item.tallyKey, item, quantity }]);
+    setProductQuery('');
+    setActiveProductIndex(0);
+    focusQuantityKey.current = item.tallyKey;
   }
 
   function usePreviousOrder(order: OrderSummary) {
@@ -1352,6 +1444,7 @@ function HydratedNewOrderPanel({ data, templateOrder, onClose, onCreated, onView
       setError('Remove unavailable products and select their current Tally catalogue replacements before saving.');
       return;
     }
+    const startedAt = performance.now();
     setSubmitting(true);
     setError('');
     try {
@@ -1379,12 +1472,16 @@ function HydratedNewOrderPanel({ data, templateOrder, onClose, onCreated, onView
       const response = await fetch('/api/orders', { method: 'POST', headers: { 'content-type': 'application/json' }, body: JSON.stringify(body) });
       const result = await readOrderSubmission(response);
       removeOfflineOrderDraft(localStorage, data.actor.email);
+      recordOrderClientTiming('order_save_ms', startedAt);
+      if (customerSelectedAtRef.current !== null) recordOrderClientTiming('order_capture_ms', customerSelectedAtRef.current);
       onCreated(result.orderNumber || 'Order', body, result);
     } catch (cause) {
       if (cause instanceof OrderSubmissionError && cause.kind === 'conflict') {
         const accepted = await recoverAcceptedOrder(idempotencyKey);
         if (accepted) {
           removeOfflineOrderDraft(localStorage, data.actor.email);
+          recordOrderClientTiming('order_save_ms', startedAt);
+          if (customerSelectedAtRef.current !== null) recordOrderClientTiming('order_capture_ms', customerSelectedAtRef.current);
           onCreated(accepted);
           return;
         }
@@ -1399,6 +1496,13 @@ function HydratedNewOrderPanel({ data, templateOrder, onClose, onCreated, onView
       setSubmitting(false);
     }
   }
+
+  const orderDetailSummary = [
+    source === 'phone' ? '' : source === 'walk_in' ? 'Walk-in' : source === 'whatsapp' ? 'WhatsApp' : 'Email',
+    priority === 'normal' ? '' : priority === 'urgent' ? 'Urgent' : 'High priority',
+    expectedDeliveryDate ? `Promised delivery ${expectedDeliveryDate}` : '',
+    notes.trim() ? 'Notes added' : '',
+  ].filter(Boolean).join(' · ') || '(optional)';
 
   return (
     <div className="fixed inset-0 z-50 flex justify-end bg-[#092f36]/45 backdrop-blur-sm" role="presentation" onMouseDown={(event) => { if (event.target === event.currentTarget) onClose(); }}>
@@ -1420,14 +1524,46 @@ function HydratedNewOrderPanel({ data, templateOrder, onClose, onCreated, onView
                     maxLength={200}
                     value={customerName}
                     onChange={(event) => {
+                      currentCustomerKeyRef.current = '';
                       setCustomerName(event.target.value);
                       setSelectedCustomerId(undefined);
                       setCustomerHistory(null);
                       setCustomerHistoryState('idle');
                       setCustomerSuggestionsOpen(true);
+                      setActiveCustomerIndex(0);
                     }}
-                    onFocus={() => setCustomerSuggestionsOpen(true)}
-                    onBlur={() => window.setTimeout(() => setCustomerSuggestionsOpen(false), 120)}
+                    onFocus={() => {
+                      if (customerBlurTimerRef.current !== null) window.clearTimeout(customerBlurTimerRef.current);
+                      customerBlurTimerRef.current = null;
+                      setCustomerSuggestionsOpen(true);
+                    }}
+                    onBlur={() => {
+                      if (customerBlurTimerRef.current !== null) window.clearTimeout(customerBlurTimerRef.current);
+                      customerBlurTimerRef.current = window.setTimeout(() => {
+                        customerBlurTimerRef.current = null;
+                        setCustomerSuggestionsOpen(false);
+                      }, 120);
+                    }}
+                    onKeyDown={(event) => {
+                      if (event.key === 'Enter' && selectedCustomerId) {
+                        event.preventDefault();
+                        productInputRef.current?.focus();
+                        return;
+                      }
+                      if (!customerSuggestionsOpen || customerMatches.length === 0) {
+                        if (event.key === 'Enter') event.preventDefault();
+                        return;
+                      }
+                      if (event.key === 'ArrowDown' || event.key === 'ArrowUp') {
+                        event.preventDefault();
+                        setActiveCustomerIndex((index) => (index + (event.key === 'ArrowDown' ? 1 : -1) + customerMatches.length) % customerMatches.length);
+                      } else if (event.key === 'Enter') {
+                        event.preventDefault();
+                        chooseCustomer(customerMatches[Math.min(activeCustomerIndex, customerMatches.length - 1)]);
+                      } else if (event.key === 'Escape') {
+                        setCustomerSuggestionsOpen(false);
+                      }
+                    }}
                     role="combobox"
                     aria-autocomplete="list"
                     aria-expanded={customerSuggestionsOpen && customerMatches.length > 0}
@@ -1438,13 +1574,13 @@ function HydratedNewOrderPanel({ data, templateOrder, onClose, onCreated, onView
                   />
                   {customerSuggestionsOpen && customerMatches.length > 0 ? (
                     <ul id="customer-suggestions" aria-label="Matching Tally customer ledgers" className="absolute left-0 right-0 top-full z-20 mt-1 max-h-64 overflow-y-auto rounded-xl border border-[#cfe0dd] bg-white py-1 shadow-xl">
-                      {customerMatches.map((customer) => (
+                      {customerMatches.map((customer, index) => (
                         <li key={customer.id}>
                           <button
                             type="button"
                             onMouseDown={(event) => event.preventDefault()}
                             onClick={() => chooseCustomer(customer)}
-                            className="block min-h-12 w-full px-3 py-2 text-left font-normal hover:bg-[#f2faf7] focus:bg-[#f2faf7] focus:outline-none"
+                            className={`block min-h-12 w-full px-3 py-2 text-left font-normal hover:bg-[#f2faf7] focus:bg-[#f2faf7] focus:outline-none ${index === activeCustomerIndex ? 'bg-[#f2faf7]' : ''}`}
                           >
                             <strong className="block text-sm text-[#173239]">{customer.name}</strong>
                             <small className="block text-[#718487]">{[customer.city, customer.phone].filter(Boolean).join(' · ') || 'Tally customer ledger'}{customer.tallyBalance !== undefined && customer.tallyBalance !== null ? ` · Tally balance ₹${customer.tallyBalance.toLocaleString('en-IN', { maximumFractionDigits: 2 })}` : ''}</small>
@@ -1453,7 +1589,7 @@ function HydratedNewOrderPanel({ data, templateOrder, onClose, onCreated, onView
                       ))}
                     </ul>
                   ) : null}
-                  {selectedCustomer ? <CustomerAccountPreview customer={selectedCustomer} history={customerHistory} state={customerHistoryState} onViewOrders={() => onViewCustomer(selectedCustomer.name)} onUseOrder={usePreviousOrder} onUseAddress={usePreviousAddress} /> : null}
+                  {selectedCustomer ? <CustomerAccountPreview customer={selectedCustomer} history={customerHistory?.ownerKey === selectedCustomerKey ? customerHistory : null} state={customerHistoryState} onViewOrders={() => onViewCustomer(selectedCustomer.name)} onUseOrder={usePreviousOrder} onUseAddress={usePreviousAddress} /> : null}
                 </div>
                 <details className="sm:col-span-2 rounded-xl bg-[#f6f8f7] px-3 py-2 text-sm">
                   <summary className="cursor-pointer font-bold text-[#456367]">Contact details <span className="font-normal text-[#718487]">(optional)</span></summary>
@@ -1468,25 +1604,51 @@ function HydratedNewOrderPanel({ data, templateOrder, onClose, onCreated, onView
 
             <fieldset className="rounded-2xl border border-[#dce7e5] bg-white p-5">
               <legend className="px-2 text-sm font-extrabold text-[#274b50]">Products</legend>
-              <label className="text-sm font-bold text-[#456367]">Find product<input maxLength={200} value={productQuery} onChange={(event) => setProductQuery(event.target.value)} className="mt-2 min-h-11 w-full rounded-xl border border-[#cedfdd] px-3 font-normal outline-none focus:border-[#64d4ad]" placeholder="Type a product name" /></label>
-              {matches.length ? <div className="mt-2 overflow-hidden rounded-xl border border-[#dce7e5]">{matches.map((item) => <button key={item.tallyKey} type="button" onClick={() => { setLines((current) => [...current, { tallyKey: item.tallyKey, item, quantity: 1 }]); setProductQuery(''); }} className="flex min-h-12 w-full items-center justify-between gap-4 border-b border-[#edf2f0] px-3 text-left last:border-0 hover:bg-[#f2faf7]"><span><strong className="block text-sm text-[#173239]">{item.item}</strong><small className="text-[#718487]">{item.group}</small></span><span className="shrink-0 text-xs font-bold text-[#277b69]">Available {formatQuantity(item.closing)} {item.baseUnit}</span></button>)}</div> : null}
+              {recentProducts.length ? <section aria-label="Recently ordered products" className="mb-4">
+                <p className="mb-2 text-xs font-bold text-[#587275]">Recently ordered · enter quantity and press Enter</p>
+                <div className="grid gap-2 sm:grid-cols-2">{recentProducts.map((item) => {
+                  const quantity = recentQuantities[item.tallyKey] ?? '1';
+                  const valid = Number.isInteger(Number(quantity)) && Number(quantity) >= 1 && Number(quantity) <= 1000000;
+                  return <div key={item.tallyKey} className="flex min-w-0 items-center gap-2 rounded-lg border border-[#cde1dc] bg-[#f2f8f5] p-2">
+                    <span title={item.item} className="min-w-0 flex-1 truncate text-sm font-bold text-[#31585d]">{item.item}</span>
+                    <input type="number" form="recent-product-quantities" aria-label={`Recent quantity for ${item.item}`} min="1" max="1000000" step="1" value={quantity} onChange={(event) => setRecentQuantities((current) => ({ ...current, [item.tallyKey]: event.target.value }))} onKeyDown={(event) => { if (event.key === 'Enter') { event.preventDefault(); if (valid) addProduct(item, Number(quantity)); } }} className="min-h-10 w-20 rounded-lg border border-[#cedfdd] bg-white px-2 text-right" />
+                    <button type="button" aria-label={`Add ${item.item}`} disabled={!valid} onClick={() => addProduct(item, Number(quantity))} className="min-h-10 rounded-lg px-2 text-sm font-bold text-[#31585d] disabled:opacity-50">Add</button>
+                  </div>;
+                })}</div>
+              </section> : null}
+              <label className="text-sm font-bold text-[#456367]">Find product<input ref={productInputRef} maxLength={200} value={productQuery} onChange={(event) => { setProductQuery(event.target.value); setActiveProductIndex(0); }} onKeyDown={(event) => {
+                if (event.key === 'Enter') event.preventDefault();
+                if (matches.length === 0) return;
+                if (event.key === 'ArrowDown' || event.key === 'ArrowUp') {
+                  event.preventDefault();
+                  setActiveProductIndex((index) => (index + (event.key === 'ArrowDown' ? 1 : -1) + matches.length) % matches.length);
+                } else if (event.key === 'Enter') {
+                  event.preventDefault();
+                  addProduct(matches[Math.min(activeProductIndex, matches.length - 1)]);
+                }
+              }} role="combobox" aria-autocomplete="list" aria-expanded={matches.length > 0} aria-controls="product-suggestions" className="mt-2 min-h-11 w-full rounded-xl border border-[#cedfdd] px-3 font-normal outline-none focus:border-[#64d4ad]" placeholder="Type a product name" /></label>
+              {matches.length ? <div id="product-suggestions" aria-label="Matching Tally products" className="mt-2 overflow-hidden rounded-xl border border-[#dce7e5]">{matches.map((item, index) => <button key={item.tallyKey} type="button" onClick={() => addProduct(item)} className={`flex min-h-12 w-full items-center justify-between gap-4 border-b border-[#edf2f0] px-3 text-left last:border-0 hover:bg-[#f2faf7] ${index === activeProductIndex ? 'bg-[#f2faf7]' : ''}`}><span><strong className="block text-sm text-[#173239]">{item.item}</strong><small className="text-[#718487]">{item.group}</small></span><span className="shrink-0 text-xs font-bold text-[#277b69]">Available {formatQuantity(item.closing)} {item.baseUnit}</span></button>)}</div> : null}
               {productQuery.trim() && matches.length === 0 ? <p className="mt-2 rounded-xl bg-[#fff7e8] px-3 py-2 text-sm text-[#805b20]">No Tally products match “{productQuery.trim()}”.</p> : null}
-              <div className="mt-4 space-y-2">{lines.map((line) => { const price = entryPrices[line.tallyKey]; return <div key={line.tallyKey} className={`grid grid-cols-[1fr_90px_auto] items-center gap-3 rounded-xl p-3 ${line.item ? 'bg-[#f2f7f5]' : 'border border-[#efbbb6] bg-[#fff0ef]'}`}><div className="min-w-0"><strong className="block truncate text-sm text-[#173239]">{line.item?.item || `Unavailable Tally item (${line.tallyKey})`}</strong><small className={line.item ? 'text-[#718487]' : 'font-bold text-[#8d3a34]'}>{line.item ? `Closing ${formatQuantity(line.item.closing)} ${line.item.baseUnit}` : 'Remove and select its current catalogue replacement'}</small>{canViewPrices ? <small className={`mt-1 block font-bold ${price?.riskStatus === 'RED' ? 'text-[#8d3a34]' : price?.riskStatus === 'AMBER' ? 'text-[#805b20]' : 'text-[#176246]'}`}>{price ? `Current price ${price.currentPrice == null ? 'review required' : currency.format(price.currentPrice)} · ${price.riskStatus}` : entryPriceState === 'loading' ? 'Resolving customer price…' : 'Customer price unavailable · review required'}</small> : <small className="mt-1 block text-[#718487]">Pricing is checked at confirmation.</small>}</div><label className="sr-only" htmlFor={`qty-${line.tallyKey}`}>Quantity for {line.item?.item || line.tallyKey}</label><input id={`qty-${line.tallyKey}`} type="number" min="1" max="1000000" step="1" required value={line.quantity} onChange={(event) => setLines((current) => current.map((entry) => entry.tallyKey === line.tallyKey ? { ...entry, quantity: Number(event.target.value) } : entry))} className="min-h-10 rounded-lg border border-[#cedfdd] px-2 text-right" /><button type="button" onClick={() => setLines((current) => current.filter((entry) => entry.tallyKey !== line.tallyKey))} aria-label={`Remove ${line.item?.item || line.tallyKey}`} className="size-10 rounded-lg text-xl text-[#9a4e47] hover:bg-[#ffeae8]">×</button></div>; })}</div>
+              <div className="mt-4 space-y-2">{lines.map((line) => { const price = entryPrices[line.tallyKey]; return <div key={line.tallyKey} className={`grid grid-cols-[1fr_90px_auto] items-center gap-3 rounded-xl p-3 ${line.item ? 'bg-[#f2f7f5]' : 'border border-[#efbbb6] bg-[#fff0ef]'}`}><div className="min-w-0"><strong className="block truncate text-sm text-[#173239]">{line.item?.item || `Unavailable Tally item (${line.tallyKey})`}</strong><small className={line.item ? 'text-[#718487]' : 'font-bold text-[#8d3a34]'}>{line.item ? `Closing ${formatQuantity(line.item.closing)} ${line.item.baseUnit}` : 'Remove and select its current catalogue replacement'}</small>{canViewPrices ? <small className={`mt-1 block font-bold ${price?.riskStatus === 'RED' ? 'text-[#8d3a34]' : price?.riskStatus === 'AMBER' ? 'text-[#805b20]' : 'text-[#176246]'}`}>{price ? `Current price ${price.currentPrice == null ? 'review required' : currency.format(price.currentPrice)} · ${price.riskStatus}` : entryPriceState === 'loading' ? 'Resolving customer price…' : 'Customer price unavailable · review required'}</small> : <small className="mt-1 block text-[#718487]">Pricing is checked at confirmation.</small>}</div><label className="sr-only" htmlFor={`qty-${line.tallyKey}`}>Quantity for {line.item?.item || line.tallyKey}</label><input id={`qty-${line.tallyKey}`} type="number" min="1" max="1000000" step="1" required value={line.quantity} onChange={(event) => setLines((current) => current.map((entry) => entry.tallyKey === line.tallyKey ? { ...entry, quantity: Number(event.target.value) } : entry))} onKeyDown={(event) => { if (event.key === 'Enter') { event.preventDefault(); productInputRef.current?.focus(); } }} className="min-h-10 rounded-lg border border-[#cedfdd] px-2 text-right" /><button type="button" onClick={() => setLines((current) => current.filter((entry) => entry.tallyKey !== line.tallyKey))} aria-label={`Remove ${line.item?.item || line.tallyKey}`} className="size-10 rounded-lg text-xl text-[#9a4e47] hover:bg-[#ffeae8]">×</button></div>; })}</div>
+              {['administrator', 'management', 'operations', 'sales'].includes(data.actor.role) ? <ProductRequest key={data.actor.email} actorEmail={data.actor.email} productName={productQuery} customerId={selectedCustomerId} visible={productQuery.trim().length >= 2 && matches.length === 0 && lines.length < 50 && !data.snapshot.catalog.some((item) => item.item.toLocaleLowerCase('en-IN') === productQuery.trim().toLocaleLowerCase('en-IN'))} /> : null}
               {lines.length >= 50 ? <p className="mt-2 text-xs font-bold text-[#805b20]">Maximum 50 products per order.</p> : null}
               {lines.length === 0 ? <p className="mt-4 rounded-xl bg-[#f6f8f7] p-4 text-center text-sm text-[#718487]">Search and add the products requested on the call.</p> : null}
             </fieldset>
 
             <details className="rounded-2xl border border-[#dce7e5] bg-white p-4">
-              <summary className="cursor-pointer text-sm font-bold text-[#456367]">Add order notes <span className="font-normal text-[#718487]">(optional)</span></summary>
-              <label className="sr-only" htmlFor="order-notes">Order notes</label>
-              <textarea id="order-notes" value={notes} onChange={(event) => setNotes(event.target.value)} maxLength={2000} rows={3} className="mt-3 w-full rounded-xl border border-[#cedfdd] p-3 font-normal outline-none focus:border-[#64d4ad]" placeholder="Delivery instructions, contact person, or urgency" />
+              <summary className="cursor-pointer text-sm font-bold text-[#456367]">Order details <span className="font-normal text-[#718487]">{orderDetailSummary}</span></summary>
+              <div className="mt-3 grid gap-3 sm:grid-cols-3">
+                <label className="text-sm font-bold text-[#456367]">Received via<select value={source} onChange={(event) => setSource(event.target.value as 'phone' | 'email' | 'whatsapp' | 'walk_in')} className="mt-2 min-h-11 w-full rounded-xl border border-[#cedfdd] bg-white px-3 font-normal text-[#173239]"><option value="phone">Phone</option><option value="whatsapp">WhatsApp</option><option value="email">Email</option><option value="walk_in">Walk-in</option></select></label>
+                <label className="text-sm font-bold text-[#456367]">Order priority<select value={priority} onChange={(event) => setPriority(event.target.value as 'normal' | 'high' | 'urgent')} className="mt-2 min-h-11 w-full rounded-xl border border-[#cedfdd] bg-white px-3 font-normal text-[#173239]"><option value="normal">Normal</option><option value="high">High</option><option value="urgent">Urgent</option></select></label>
+                <label className="text-sm font-bold text-[#456367]">Promised delivery <span className="font-normal text-[#718487]">(optional)</span><input type="date" value={expectedDeliveryDate} onChange={(event) => setExpectedDeliveryDate(event.target.value)} className="mt-2 min-h-11 w-full rounded-xl border border-[#cedfdd] bg-white px-3 font-normal text-[#173239]" /></label>
+                <label htmlFor="order-notes" className="text-sm font-bold text-[#456367] sm:col-span-3">Order notes <span className="font-normal text-[#718487]">(optional)</span></label>
+                <textarea id="order-notes" value={notes} onChange={(event) => setNotes(event.target.value)} maxLength={2000} rows={3} className="w-full rounded-xl border border-[#cedfdd] p-3 font-normal outline-none focus:border-[#64d4ad] sm:col-span-3" placeholder="Delivery instructions, contact person, or urgency" />
+              </div>
             </details>
-            <div className="grid gap-3 sm:grid-cols-3">
-              <label className="rounded-2xl border border-[#dce7e5] bg-white p-4 text-sm font-bold text-[#456367]">Received via<select value={source} onChange={(event) => setSource(event.target.value as 'phone' | 'email' | 'whatsapp' | 'walk_in')} className="mt-2 min-h-11 w-full rounded-xl border border-[#cedfdd] bg-white px-3 font-normal text-[#173239]"><option value="phone">Phone</option><option value="whatsapp">WhatsApp</option><option value="email">Email</option><option value="walk_in">Walk-in</option></select></label>
-              <label className="rounded-2xl border border-[#dce7e5] bg-white p-4 text-sm font-bold text-[#456367]">Order priority<select value={priority} onChange={(event) => setPriority(event.target.value as 'normal' | 'high' | 'urgent')} className="mt-2 min-h-11 w-full rounded-xl border border-[#cedfdd] bg-white px-3 font-normal text-[#173239]"><option value="normal">Normal</option><option value="high">High</option><option value="urgent">Urgent</option></select></label>
-              <label className="rounded-2xl border border-[#dce7e5] bg-white p-4 text-sm font-bold text-[#456367]">Promised delivery <span className="font-normal text-[#718487]">(optional)</span><input type="date" value={expectedDeliveryDate} onChange={(event) => setExpectedDeliveryDate(event.target.value)} className="mt-2 min-h-11 w-full rounded-xl border border-[#cedfdd] bg-white px-3 font-normal text-[#173239]" /></label>
+            <div className="rounded-2xl border border-[#dce7e5] bg-white px-4 py-3 text-sm text-[#456367]">
+              <div className="flex min-h-10 items-center gap-3"><input id="save-device-draft" type="checkbox" checked={saveOnDevice} disabled={draftState === 'pending'} onChange={(event) => changeTrustedDevice(event.target.checked)} className="size-4 accent-[#277b69]" /><div><label htmlFor="save-device-draft" className="block font-bold text-[#274b50]">Save draft on this device</label><small className="text-[#718487]">{saveOnDevice ? 'On · recover after restart · trusted device only' : 'Off · enable only on a trusted device'}</small></div></div>
+              <details className="mt-1 text-xs text-[#718487]"><summary className="cursor-pointer">About device drafts</summary><p className="mt-2">Use this only on a trusted device.</p><p>Unsubmitted drafts expire after seven days.</p><p>Pending orders and orders needing attention stay saved until sent or discarded. Product and customer search is also retained for restart recovery.</p></details>
             </div>
-            <label className="flex items-start gap-3 rounded-2xl border border-[#dce7e5] bg-white p-4 text-sm text-[#456367]"><input type="checkbox" checked={saveOnDevice} disabled={draftState === 'pending'} onChange={(event) => changeTrustedDevice(event.target.checked)} className="mt-1 size-4 accent-[#277b69]" /><span><strong className="block text-[#274b50]">Save this draft on this device</strong>Use this only on a trusted device. Unsubmitted drafts expire after seven days. Pending orders and orders needing attention stay saved until sent or discarded. Product and customer search is also retained for restart recovery.</span></label>
             {customerName.trim() || lines.length > 0 ? <p aria-live="polite" className={`rounded-xl px-4 py-3 text-sm font-semibold ${draftState === 'error' ? 'bg-[#fff0ef] text-[#8d3a34]' : draftState === 'pending' ? 'bg-[#fff7e8] text-[#805b20]' : 'bg-[#edf7f4] text-[#456367]'}`}>{draftState === 'pending' ? 'Waiting to send. Your order is safe on this device.' : draftState === 'error' ? 'Draft needs attention before it can be sent.' : saveOnDevice ? 'Draft saved on this device.' : 'Draft is kept only while this form remains open.'}</p> : null}
             {initialDraft ? <button type="button" onClick={discardSavedOrder} className="min-h-10 rounded-xl px-4 text-sm font-bold text-[#9a4e47] hover:bg-[#fff0ef]">Discard saved order</button> : null}
             {error ? <p role="alert" className="rounded-xl border border-[#efbbb6] bg-[#fff0ef] px-4 py-3 text-sm text-[#8d3a34]">{error}</p> : null}

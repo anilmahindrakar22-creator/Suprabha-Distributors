@@ -1,7 +1,8 @@
-import { describe, expect, it, vi } from 'vitest';
+import { afterEach, describe, expect, it, vi } from 'vitest';
 import { createStockHandler, sanitizeStockPayload } from '../../lib/stock-handler';
 
 const user = { email: 'approved@example.com' };
+afterEach(() => vi.restoreAllMocks());
 
 function makeHandler(overrides = {}) {
   return createStockHandler({
@@ -15,6 +16,37 @@ function makeHandler(overrides = {}) {
 }
 
 describe('stock API handler', () => {
+  it.each([
+    {}, { rows: null, groups: null }, { rows: [], groups: null },
+    { rows: {}, groups: [] }, { rows: [], groups: [null] },
+    { rows: [null], groups: [] }, { rows: [{ item: null }], groups: [] },
+  ])('rejects unusable dashboard collections instead of reporting empty stock (%j)', async body => {
+    const response = await makeHandler({ fetchFn: vi.fn(async () => Response.json(body)) })(
+      new Request('https://stock.example/api/stock?view=dashboard'),
+    );
+    expect(response.status).toBe(502);
+    expect(await response.json()).toEqual({ error: 'Stock service is temporarily unavailable' });
+  });
+
+  it('accepts a genuinely empty dashboard snapshot', async () => {
+    const response = await makeHandler({ fetchFn: vi.fn(async () => Response.json({ rows: [], groups: [] })) })(
+      new Request('https://stock.example/api/stock?view=dashboard'),
+    );
+    expect(response.status).toBe(200);
+    expect(await response.json()).toEqual({ rows: [], groups: [] });
+  });
+
+  it('reads the configured backend at request time without a production fallback', async () => {
+    const config: { endpoint?: string } = {};
+    const fetchFn = vi.fn<typeof fetch>(async () => Response.json({ rows: [] }));
+    const handler = makeHandler({ endpoint: () => config.endpoint, fetchFn });
+    expect((await handler()).status).toBe(503);
+    expect(fetchFn).not.toHaveBeenCalled();
+    config.endpoint = 'https://acceptance.example/functions/v1/stockflow-sync';
+    expect((await handler()).status).toBe(200);
+    expect(fetchFn.mock.calls[0]?.[0]).toBe(config.endpoint);
+  });
+
   it('denies unauthenticated requests before contacting stock storage', async () => {
     const fetchFn = vi.fn();
     const response = await makeHandler({
@@ -59,7 +91,18 @@ describe('stock API handler', () => {
     expect(fetchFn).toHaveBeenCalledWith('https://stock.example/snapshot', {
       cache: 'no-store',
       headers: { 'x-dashboard-key': 'server-only-key' },
+      signal: expect.any(AbortSignal),
     });
+  });
+
+  it('preserves separate stock, catalog, and customer source timestamps', async () => {
+    const sourceFetchedAtIso = {
+      stock: '2026-09-29T12:00:00Z',
+      catalog: '2026-09-29T08:00:00Z',
+      customers: '2026-09-29T04:00:00Z',
+    };
+    const response = await makeHandler({ fetchFn: vi.fn(async () => Response.json({ fetchedAtIso: sourceFetchedAtIso.stock, sourceFetchedAtIso })) })();
+    expect(await response.json()).toEqual({ fetchedAtIso: sourceFetchedAtIso.stock, sourceFetchedAtIso });
   });
 
   it('returns a controlled error when stock storage is unavailable', async () => {
@@ -90,5 +133,106 @@ describe('stock API handler', () => {
   it('sanitizes proxied upstream JSON before returning it', async () => {
     const response = await makeHandler({ fetchFn: vi.fn(async () => Response.json({ rows: [1], pricingHistory: { sales: [{ rate: 485 }] } })) })();
     expect(await response.json()).toEqual({ rows: [1] });
+  });
+
+  it('sends only Stock dashboard fields for its opt-in lightweight view', async () => {
+    const sourceFetchedAtIso = { stock: '2026-09-29T12:00:00Z', catalog: '2026-09-29T08:00:00Z', sales: '2026-09-29T11:00:00Z' };
+    const fetchFn = vi.fn(async () => Response.json({
+      company: 'TEST', fetchedAt: '29 Sep', fetchedAtIso: sourceFetchedAtIso.stock,
+      sourceFetchedAtIso, groups: ['Sysmex'], rows: [{ item: 'Kit', closing: 2, purchaseCost: 300 }],
+      catalog: [{ tallyKey: 'Kit' }], customers: [{ name: 'Hospital' }],
+      tallyInvoices: [{ voucherNumber: '99' }], pricingHistory: { secret: true },
+    }));
+    const response = await makeHandler({ fetchFn })(new Request('https://stock.example/api/stock?view=dashboard'));
+    expect(await response.json()).toEqual({
+      company: 'TEST', fetchedAt: '29 Sep', fetchedAtIso: sourceFetchedAtIso.stock,
+      sourceFetchedAtIso, groups: ['Sysmex'], rows: [{ item: 'Kit', closing: 2 }],
+    });
+    expect(response.headers.get('cache-control')).toBe('private, no-store');
+    expect(fetchFn).toHaveBeenCalledWith('https://stock.example/snapshot?view=dashboard', {
+      cache: 'no-store',
+      headers: { 'x-dashboard-key': 'server-only-key' },
+      signal: expect.any(AbortSignal),
+    });
+  });
+
+  it('returns a controlled error for an unavailable upstream in the lightweight view', async () => {
+    const response = await makeHandler({ fetchFn: vi.fn(async () => Response.json({ error: 'Stock sync unavailable' }, { status: 503 })) })(new Request('https://stock.example/api/stock?view=dashboard'));
+    expect(response.status).toBe(503);
+    expect(await response.json()).toEqual({ error: 'Stock service is temporarily unavailable' });
+  });
+
+  it.each([
+    Response.json({ error: 'private upstream key and customer price 4450' }, { status: 500 }),
+    new Response('<html>private upstream key and customer price 4450</html>', { status: 502 }),
+    new Response('private upstream key and customer price 4450', { status: 200 }),
+    Response.json('private upstream key and customer price 4450'),
+    Response.json({ error: 'private upstream key and customer price 4450' }),
+  ])('never forwards raw upstream errors or malformed successful bodies to operational users (%j)', async upstream => {
+    const response = await makeHandler({ fetchFn: vi.fn(async () => upstream) })();
+    expect(response.status).toBe(upstream.ok ? 502 : upstream.status);
+    expect(await response.json()).toEqual({ error: 'Stock service is temporarily unavailable' });
+  });
+
+  it('shares concurrent authorized reads but does not cache a settled response', async () => {
+    let release!: (response: Response) => void;
+    const fetchFn = vi.fn<typeof fetch>(() => new Promise(resolve => { release = resolve; }));
+    const handler = makeHandler({ fetchFn });
+    const first = handler();
+    const second = handler();
+    await vi.waitFor(() => expect(fetchFn).toHaveBeenCalledTimes(1));
+    release(Response.json({ rows: [1], pricingHistory: { rate: 50 } }));
+    const responses = await Promise.all([first, second]);
+    for (const response of responses) expect(await response.json()).toEqual({ rows: [1] });
+    fetchFn.mockResolvedValueOnce(Response.json({ rows: [2] }));
+    expect(await (await handler()).json()).toEqual({ rows: [2] });
+    expect(fetchFn).toHaveBeenCalledTimes(2);
+  });
+
+  it('checks each caller before sharing work and keeps different views separate', async () => {
+    const hasAccess = vi.fn().mockResolvedValueOnce(true).mockResolvedValueOnce(false).mockResolvedValueOnce(true);
+    const fetchFn = vi.fn<typeof fetch>(async () => Response.json({ rows: [], groups: [], catalog: ['legacy'] }));
+    const handler = makeHandler({ hasAccess, fetchFn });
+    const [legacy, denied, dashboard] = await Promise.all([
+      handler(), handler(), handler(new Request('https://stock.example/api/stock?view=dashboard')),
+    ]);
+    expect(denied.status).toBe(403);
+    expect(await legacy.json()).toEqual({ rows: [], groups: [], catalog: ['legacy'] });
+    expect(await dashboard.json()).toEqual({ rows: [], groups: [] });
+    expect(fetchFn).toHaveBeenCalledTimes(2);
+    expect(hasAccess).toHaveBeenCalledTimes(3);
+  });
+
+  it('does not share an old credential request after key rotation', async () => {
+    let key = 'old-key';
+    let release!: (response: Response) => void;
+    const fetchFn = vi.fn<typeof fetch>(() => new Promise(resolve => { release = resolve; }));
+    const handler = makeHandler({ fetchFn, readKey: () => key });
+    const oldRequest = handler();
+    await vi.waitFor(() => expect(fetchFn).toHaveBeenCalledTimes(1));
+    key = 'new-key';
+    fetchFn.mockResolvedValueOnce(Response.json({ rows: ['new'] }));
+    expect(await (await handler()).json()).toEqual({ rows: ['new'] });
+    release(Response.json({ rows: ['old'] }));
+    expect(await (await oldRequest).json()).toEqual({ rows: ['old'] });
+    expect(fetchFn.mock.calls[1][1]?.headers).toEqual({ 'x-dashboard-key': 'new-key' });
+  });
+
+  it('bounds a stalled upstream read and allows the next refresh after abort', async () => {
+    const controller = new AbortController();
+    const timeout = vi.spyOn(AbortSignal, 'timeout').mockReturnValue(controller.signal);
+    const fetchFn = vi.fn<typeof fetch>((_url, init) => new Promise((_resolve, reject) => {
+      init?.signal?.addEventListener('abort', () => reject(new DOMException('Timed out', 'TimeoutError')), { once: true });
+    }));
+    const handler = makeHandler({ fetchFn });
+    const pending = handler();
+    await vi.waitFor(() => expect(fetchFn).toHaveBeenCalledOnce());
+    controller.abort();
+    const failed = await pending;
+    expect(failed.status).toBe(502);
+    expect(timeout).toHaveBeenCalledWith(15_000);
+    fetchFn.mockResolvedValueOnce(Response.json({ rows: ['recovered'] }));
+    expect(await (await handler()).json()).toEqual({ rows: ['recovered'] });
+    expect(fetchFn).toHaveBeenCalledTimes(2);
   });
 });

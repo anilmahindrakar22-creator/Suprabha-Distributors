@@ -43,4 +43,10 @@ describe('lightweight workspace boundaries', () => {
     expect(post).toContain('const startedAt = performance.now()');
     expect(post).toContain('return measuredJsonResponse(result, startedAt)');
   });
+
+  it('records order list, capture readiness and successful save timings locally', () => {
+    expect(orders).toContain("recordOrderClientTiming('order_list_ms', startedAt)");
+    expect(orders).toContain("recordOrderClientTiming('order_open_ms', startedAt)");
+    expect(orders).toContain("recordOrderClientTiming('order_save_ms', startedAt)");
+  });
 });

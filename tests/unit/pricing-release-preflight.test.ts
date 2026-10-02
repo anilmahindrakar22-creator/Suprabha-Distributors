@@ -11,8 +11,8 @@ const source = new Map(readdirSync(fileURLToPath(directory)).filter((name) => na
 describe('read-only pricing release preflight', () => {
   it('validates the saved production evidence after deployment', () => {
     const result = pricingReleasePreflight(original, source);
-    expect(result.pending).toEqual(['20260928110000_customer_group_gross_margin.sql']);
-    expect(result.deployed).toHaveLength(83);
+    expect(result.pending).toEqual([]);
+    expect(result.deployed).toHaveLength(90);
     const names = result.deployed.map((entry: { localFile: string }) => entry.localFile);
     expect(names.slice(0, 2)).toEqual([
       '20260829054025_create_stockflow_private_snapshots.sql',
@@ -25,7 +25,7 @@ describe('read-only pricing release preflight', () => {
   });
   it('accepts documented CRLF normalization without modifying source', () => {
     const crlf = new Map([...source].map(([name, sql]) => [name, sql.replace(/\r/g, '').replace(/\n/g, '\r\n')]));
-    expect(pricingReleasePreflight(original, crlf).pending).toEqual(['20260928110000_customer_group_gross_margin.sql']);
+    expect(pricingReleasePreflight(original, crlf).pending).toEqual([]);
   });
   it('rejects changed SQL including changes inside literals', () => {
     const files = new Map(source);
@@ -64,5 +64,28 @@ describe('read-only pricing release preflight', () => {
   });
   it('rejects evidence for another project', () => {
     expect(() => pricingReleasePreflight({ ...original, projectId: 'other' }, source)).toThrow('Unexpected evidence project');
+  });
+  it('does not certify release readiness merely because every migration is deployed', () => {
+    const evidence = structuredClone(original);
+    for (const entry of evidence.migrations) {
+      if (entry.status !== 'not_deployed') continue;
+      Object.assign(entry, {
+        status: 'exact_normalized_match',
+        remoteVersion: entry.localFile.slice(0, 14),
+        remoteSha256: entry.localSha256,
+      });
+    }
+    const result = pricingReleasePreflight(evidence, source);
+    expect(result.pending).toEqual([]);
+    expect(result.releaseReady).toBe(false);
+    expect(result.liveHistoryRechecked).toBe(false);
+    expect(result.blockers).toContain('Complete staff-login acceptance against an isolated deployed candidate.');
+  });
+  it('rejects reviewed pending SQL that predates the deployed history', () => {
+    const evidence = structuredClone(original);
+    const entry = evidence.migrations.find((item: { localFile: string }) => item.localFile === '20260927180000_snapshot_pricing_import_privilege.sql');
+    expect(entry).toBeDefined();
+    Object.assign(entry!, { status: 'not_deployed', remoteVersion: null, remoteSha256: null });
+    expect(() => pricingReleasePreflight(evidence, source)).toThrow('Pending migration predates deployed history');
   });
 });

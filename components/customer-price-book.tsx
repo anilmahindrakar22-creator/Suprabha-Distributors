@@ -1,6 +1,6 @@
 'use client';
 
-import { Fragment, useEffect, useRef, useState } from 'react';
+import { Fragment, useCallback, useEffect, useRef, useState } from 'react';
 import { loadOrderCatalog, loadOrderCustomers } from '@/lib/order-capture-masters';
 import type { CatalogItem, CustomerDirectoryEntry } from '@/lib/order-types';
 import { CUSTOMER_GROUP_MARGIN_GROUPS, type CustomerGroupMarginPreview, type PricingCommand } from '@/lib/pricing-types';
@@ -22,14 +22,16 @@ const percent = (value: number | null) => value == null ? 'Unavailable' : `${val
 const field = 'mt-1 min-h-11 w-full rounded-lg border border-[#cedfdd] bg-white px-3 text-sm';
 const button = 'min-h-11 rounded-xl border border-[#b9d5cd] bg-white px-4 text-sm font-bold text-[#174a43] disabled:opacity-40';
 
-async function read<T>(url: string, signal?: AbortSignal): Promise<T> {
+async function readPricing<T>(url: string, signal?: AbortSignal, onAccessDenied?: () => void): Promise<T> {
   const response = await fetch(url, { cache: 'no-store', signal });
+  if (response.status === 401 || response.status === 403) onAccessDenied?.();
   const data = await response.json() as T & { error?: string };
   if (!response.ok) throw new Error(data.error || 'Pricing could not load');
   return data;
 }
-async function send(command: PricingCommand) {
+async function send(command: PricingCommand, onAccessDenied?: () => void) {
   const response = await fetch('/api/pricing', { method: 'POST', headers: { 'content-type': 'application/json' }, body: JSON.stringify(command) });
+  if (response.status === 401 || response.status === 403) onAccessDenied?.();
   const data = await response.json() as { error?: string; applied?: number; skipped?: number; excluded?: number };
   if (!response.ok) throw new Error(data.error || 'Decision could not be saved');
   return data as { applied?: number; skipped?: number; excluded?: number };
@@ -43,7 +45,22 @@ export function savePricingReference(actorEmail: string, command: PricingCommand
   sessionStorage.setItem(key, JSON.stringify(remaining));
 }
 
-export function CustomerPriceBook({ actorEmail, actorRole, onRecoveryBlocked }: { actorEmail: string; actorRole: string; onRecoveryBlocked?: (blocked: boolean) => void }) {
+export function CustomerPriceBook({ actorEmail, actorRole, onRecoveryBlocked, onAccessDenied }: { actorEmail: string; actorRole: string; onRecoveryBlocked?: (blocked: boolean) => void; onAccessDenied?: () => void }) {
+  const [page, setPage] = useState<Page | null>(null); const [loading, setLoading] = useState(false);
+  const [reason, setReason] = useState(''); const [busy, setBusy] = useState(false);
+  const [basePrice, setBasePrice] = useState(''); const [validFrom, setValidFrom] = useState('');
+  const [groupPreview, setGroupPreview] = useState<CustomerGroupMarginPreview | null>(null);
+  // Memory only: never persist restricted commercial payloads in browser storage.
+  const pendingCommands = useRef(new Map<string, PricingCommand>());
+  const [accessDenied, setAccessDenied] = useState(false);
+  const accessRevoked = useRef(false);
+  const denyAccess = useCallback(() => {
+    accessRevoked.current = true;
+    pendingCommands.current.clear();
+    setPage(null); setGroupPreview(null); setBasePrice(''); setReason('');
+    setAccessDenied(true); onAccessDenied?.();
+  }, [onAccessDenied]);
+  const read = useCallback(<T,>(url: string, signal?: AbortSignal) => readPricing<T>(url, signal, denyAccess), [denyAccess]);
   const recoveryStorageKey = `stockflow:pricing-recovery:${actorEmail.trim().toLowerCase()}`;
   const [recovery, setRecovery] = useState<Array<{ action: string; idempotencyKey: string }>>([]);
   const [recoveryMessage, setRecoveryMessage] = useState('');
@@ -68,6 +85,7 @@ export function CustomerPriceBook({ actorEmail, actorRole, onRecoveryBlocked }: 
   async function checkRecovery(reference: { action: string; idempotencyKey: string }, closeUnresolved = false) {
     try {
       const response = closeUnresolved ? await fetch('/api/pricing', { method: 'POST', headers: { 'content-type': 'application/json' }, body: JSON.stringify({ action: 'close_unresolved_pricing', payload: { idempotencyKey: reference.idempotencyKey, pricingAction: reference.action } }) }) : null;
+      if (response?.status === 401 || response?.status === 403) denyAccess();
       if (response && !response.ok) throw new Error('Recovery failed');
       const result = response ? await response.json() as { status: string } : await read<{ status: string }>(`/api/pricing?${new URLSearchParams({ recoveryKey: reference.idempotencyKey, pricingAction: reference.action })}`);
       if (!['accepted','not_saved'].includes(result.status)) { setRecoveryMessage('This save is still unresolved. Check again later; do not assume it failed or enter a replacement.'); return; }
@@ -77,15 +95,14 @@ export function CustomerPriceBook({ actorEmail, actorRole, onRecoveryBlocked }: 
       setRecoveryMessage(result.status === 'not_saved' ? 'The server confirmed this request did not save and blocked late delivery. You may review current prices and enter a new decision.' : 'The server confirmed the earlier pricing save. Reload the price book to view current prices.');
     } catch { setRecoveryMessage('Unable to check this save. The recovery reference has been kept; try again when connected.'); }
   }
-  // Memory only: never persist restricted commercial payloads in browser storage.
-  const pendingCommands = useRef(new Map<string, PricingCommand>());
   async function mutate(command: PricingCommand) {
+    if (accessRevoked.current) throw new Error('Pricing access is restricted');
     const fingerprint = JSON.stringify([actorEmail, actorRole, command.action, { ...command.payload, idempotencyKey: undefined }]);
     const pending = pendingCommands.current.get(fingerprint) ?? command;
     pendingCommands.current.set(fingerprint, pending);
     // Persist only an opaque receipt before sending; no rates, reasons or customer data.
     saveReference(pending);
-    const result = await send(pending);
+    const result = await send(pending, denyAccess);
     saveReference(pending, true);
     pendingCommands.current.delete(fingerprint);
     return result;
@@ -95,14 +112,10 @@ export function CustomerPriceBook({ actorEmail, actorRole, onRecoveryBlocked }: 
   const [products, setProducts] = useState<CatalogItem[]>([]);
   const [query, setQuery] = useState(''); const [selected, setSelected] = useState('');
   const [tab, setTab] = useState('purchased'); const [offset, setOffset] = useState(0);
-  const [page, setPage] = useState<Page | null>(null); const [loading, setLoading] = useState(false);
   const [error, setError] = useState(''); const [notice, setNotice] = useState(''); const [revision, setRevision] = useState(0);
-  const [reason, setReason] = useState(''); const [busy, setBusy] = useState(false);
   const [acceptRecommended, setAcceptRecommended] = useState(true);
-  const [basePrice, setBasePrice] = useState(''); const [validFrom, setValidFrom] = useState('');
   const [group, setGroup] = useState<typeof CUSTOMER_GROUP_MARGIN_GROUPS[number]>(CUSTOMER_GROUP_MARGIN_GROUPS[0]);
   const [grossMargin, setGrossMargin] = useState('');
-  const [groupPreview, setGroupPreview] = useState<CustomerGroupMarginPreview | null>(null);
   const [groupPreviewKey, setGroupPreviewKey] = useState('');
   const [groupPreviewBusy, setGroupPreviewBusy] = useState(false);
   const [groupPreviewError, setGroupPreviewError] = useState('');
@@ -120,9 +133,10 @@ export function CustomerPriceBook({ actorEmail, actorRole, onRecoveryBlocked }: 
     setGroupPreviewBusy(true); setGroupPreview(null); setGroupPreviewKey(''); setGroupPreviewError('');
     try {
       const response = await fetch('/api/pricing', { method: 'POST', cache: 'no-store', headers: { 'content-type': 'application/json' }, body: JSON.stringify({ action: 'preview_customer_group_margin', payload: { customerId: selected, itemGroup: group, grossMarginPercent: Number(grossMargin) } }) });
+      if (response.status === 401 || response.status === 403) denyAccess();
       const data = await response.json() as CustomerGroupMarginPreview & { error?: string };
       if (!response.ok) throw new Error(data.error || 'Group margin preview could not load');
-      if (activeGroupRequest.current !== requestId) return;
+      if (activeGroupRequest.current !== requestId || accessRevoked.current) return;
       setGroupPreview(data); setGroupPreviewKey(requestKey);
     } catch (failure) {
       if (activeGroupRequest.current === requestId) setGroupPreviewError(failure instanceof Error ? failure.message : 'Group margin preview could not load');
@@ -150,9 +164,9 @@ export function CustomerPriceBook({ actorEmail, actorRole, onRecoveryBlocked }: 
     const controller = new AbortController();
     const loadingTimer = window.setTimeout(() => { setLoading(true); setError(''); setPage(null); }, 0);
     const params = new URLSearchParams(mode === 'customer' ? { book: '1', customerId: selected, tab, offset: String(offset) } : { impact: '1', tallyKey: selected, offset: String(offset) });
-    read<Page>(`/api/pricing?${params}`, controller.signal).then(setPage).catch((failure) => { if (!controller.signal.aborted) setError(failure.message); }).finally(() => { window.clearTimeout(loadingTimer); if (!controller.signal.aborted) setLoading(false); });
+    read<Page>(`/api/pricing?${params}`, controller.signal).then(result => { if (!accessRevoked.current && !controller.signal.aborted) setPage(result); }).catch((failure) => { if (!controller.signal.aborted) setError(failure.message); }).finally(() => { window.clearTimeout(loadingTimer); if (!controller.signal.aborted) setLoading(false); });
     return () => { window.clearTimeout(loadingTimer); controller.abort(); };
-  }, [selected, mode, tab, offset, revision]);
+  }, [selected, mode, tab, offset, revision, read]);
 
   async function apply(choice: 'continuity' | 'recommended') {
     if (!page?.previewHash || busy) return;
@@ -183,6 +197,7 @@ export function CustomerPriceBook({ actorEmail, actorRole, onRecoveryBlocked }: 
   const options = mode === 'customer' ? customers.map((c) => ({ id: c.id, name: c.name })) : products.filter((p) => p.active).map((p) => ({ id: p.tallyKey, name: p.item }));
   const matches = query.trim().length >= 2 && !selected ? options.filter((item) => item.name.toLowerCase().includes(query.toLowerCase())).slice(0, 10) : [];
 
+  if (accessDenied) return <p role="alert" className="p-4 text-sm font-bold">Pricing access is restricted. Reopen the app after your access is restored.</p>;
   return <section className="rounded-2xl border border-[#dce7e5] bg-white p-4 sm:p-5">
     <h2 className="text-xl font-extrabold">Price book</h2>
     {recovery.length > 0 ? <aside className="mt-3 rounded-lg bg-amber-50 p-3 text-sm"><p>An earlier pricing save needs checking before another approval. No prices were stored on this device.</p><p>Close only if unsaved checks the server first. A completed save is preserved; an unsaved request is blocked from arriving later.</p>{recovery.map(reference => <div key={reference.idempotencyKey} className="mt-2 flex flex-wrap gap-2"><button type="button" className={button} onClick={() => void checkRecovery(reference)}>Check earlier save {reference.idempotencyKey.slice(-6)}</button><button type="button" className={button} onClick={() => void checkRecovery(reference, true)}>Close only if unsaved {reference.idempotencyKey.slice(-6)}</button></div>)}</aside> : null}

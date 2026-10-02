@@ -1,6 +1,6 @@
 'use client';
 
-import { useEffect, useMemo, useRef, useState } from 'react';
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { CustomerPriceBook, savePricingReference } from './customer-price-book';
 import { loadOrderCatalog, loadOrderCustomers } from '@/lib/order-capture-masters';
 import type { CatalogItem, CustomerDirectoryEntry } from '@/lib/order-types';
@@ -9,14 +9,15 @@ import type { CustomerPriceContract, PricingCommand, PricingPolicy } from '@/lib
 const money = new Intl.NumberFormat('en-IN', { style: 'currency', currency: 'INR', maximumFractionDigits: 2 });
 const today = () => new Date().toISOString().slice(0, 10);
 
-async function readResponse<T>(response: Response): Promise<T> {
+async function readResponse<T>(response: Response, onAccessDenied?: () => void): Promise<T> {
+  if (response.status === 401 || response.status === 403) onAccessDenied?.();
   const body = await response.json() as T & { error?: string };
   if (!response.ok) throw new Error(body.error || 'Pricing could not be loaded');
   return body;
 }
 
-async function sendRequest(command: PricingCommand) {
-  return readResponse(await fetch('/api/pricing', { method: 'POST', headers: { 'content-type': 'application/json' }, body: JSON.stringify(command) }));
+async function sendRequest(command: PricingCommand, onAccessDenied?: () => void) {
+  return readResponse(await fetch('/api/pricing', { method: 'POST', headers: { 'content-type': 'application/json' }, body: JSON.stringify(command) }), onAccessDenied);
 }
 
 function Metric({ label, value, note, attention = false }: { label: string; value: string | number; note: string; attention?: boolean }) {
@@ -24,41 +25,51 @@ function Metric({ label, value, note, attention = false }: { label: string; valu
 }
 
 export function PricingWorkspace({ actorEmail, actorRole }: { actorEmail: string; actorRole: string }) {
+  const [contracts, setContracts] = useState<CustomerPriceContract[]>([]);
+  const [policies, setPolicies] = useState<PricingPolicy[]>([]);
   const [recoveryBlocked, setRecoveryBlocked] = useState(true);
   const pendingCommands = useRef(new Map<string, PricingCommand>());
+  const [accessDenied, setAccessDenied] = useState(false);
+  const accessRevoked = useRef(false);
+  const denyAccess = useCallback(() => {
+    accessRevoked.current = true;
+    pendingCommands.current.clear();
+    setContracts([]); setPolicies([]); setAccessDenied(true);
+  }, []);
   async function send(command: PricingCommand) {
+    if (accessRevoked.current) throw new Error('Pricing access is restricted');
     if (recoveryBlocked) throw new Error('Check the earlier pricing save before submitting another decision.');
     const fingerprint = JSON.stringify([actorEmail, actorRole, command.action, { ...command.payload, idempotencyKey: undefined }]);
     const pending = pendingCommands.current.get(fingerprint) ?? command;
     pendingCommands.current.set(fingerprint, pending);
     savePricingReference(actorEmail, pending);
-    const result = await sendRequest(pending);
+    const result = await sendRequest(pending, denyAccess);
     savePricingReference(actorEmail, pending, true);
     pendingCommands.current.delete(fingerprint);
     return result;
   }
-  const [contracts, setContracts] = useState<CustomerPriceContract[]>([]);
-  const [policies, setPolicies] = useState<PricingPolicy[]>([]);
   const [loading, setLoading] = useState(true);
   const [message, setMessage] = useState('');
 
-  async function refresh() {
+  const refresh = useCallback(async () => {
     setLoading(true); setMessage('');
     try {
       const [contractResult, policyResult] = await Promise.all([
-        readResponse<{ contracts: CustomerPriceContract[] }>(await fetch('/api/pricing?contracts=1', { cache: 'no-store' })),
-        readResponse<{ policies: PricingPolicy[] }>(await fetch('/api/pricing?policies=1', { cache: 'no-store' })),
+        fetch('/api/pricing?contracts=1', { cache: 'no-store' }).then(response => readResponse<{ contracts: CustomerPriceContract[] }>(response, denyAccess)),
+        fetch('/api/pricing?policies=1', { cache: 'no-store' }).then(response => readResponse<{ policies: PricingPolicy[] }>(response, denyAccess)),
       ]);
-      setContracts(contractResult.contracts); setPolicies(policyResult.policies);
+      if (!accessRevoked.current) { setContracts(contractResult.contracts); setPolicies(policyResult.policies); }
     } catch (error) { setMessage(error instanceof Error ? error.message : 'Pricing control centre could not load'); }
     finally { setLoading(false); }
-  }
+  }, [denyAccess]);
 
-  useEffect(() => { const timer = window.setTimeout(() => { void refresh(); }, 0); return () => window.clearTimeout(timer); }, []);
+  useEffect(() => { const timer = window.setTimeout(() => { void refresh(); }, 0); return () => window.clearTimeout(timer); }, [refresh]);
   const pending = contracts.filter((item) => item.status === 'pending_approval');
   const current = policies.find((item) => item.active && (!item.effectiveTo || item.effectiveTo >= today())) || policies[0];
   const expiryCutoff = new Date(); expiryCutoff.setDate(expiryCutoff.getDate() + 30);
   const expiring = contracts.filter((item) => item.status === 'approved' && item.validTo && item.validTo >= today() && item.validTo <= expiryCutoff.toISOString().slice(0, 10)).length;
+
+  if (accessDenied) return <div role="alert" className="p-6 text-sm font-bold">Pricing access is restricted. Reopen the app after your access is restored.</div>;
 
   return <div className="h-full overflow-y-auto">
     <div className="mx-auto max-w-7xl space-y-5 p-4 pb-24 sm:p-6 lg:p-8">
@@ -69,7 +80,7 @@ export function PricingWorkspace({ actorEmail, actorRole }: { actorEmail: string
         <Metric label="Expiring in 30 days" value={expiring} note="Renew before the end date" attention={expiring > 0} />
         <Metric label="Minimum gross margin" value={current ? `${current.minimumMarginPercent}%` : 'Not set'} note={current ? `Policy ${current.policyVersion}` : 'Management policy required'} attention={!current} />
       </section>
-      <CustomerPriceBook actorEmail={actorEmail} actorRole={actorRole} onRecoveryBlocked={setRecoveryBlocked} />
+      <CustomerPriceBook actorEmail={actorEmail} actorRole={actorRole} onRecoveryBlocked={setRecoveryBlocked} onAccessDenied={denyAccess} />
       <fieldset disabled={recoveryBlocked} className="space-y-5">
       <ApprovalInbox items={pending} actorRole={actorRole} onChanged={refresh} send={send} />
       <details className="rounded-2xl border border-[#dce7e5] bg-[#f7faf9] p-4"><summary className="cursor-pointer list-none"><span className="block text-lg font-extrabold text-[#173239]">Pricing administration</span><span className="mt-1 block text-xs font-normal text-[#718487]">Customer agreements, proposals and commercial policy</span></summary><div className="mt-4 space-y-5">

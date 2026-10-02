@@ -15,7 +15,7 @@ const connectorControl = readFileSync(
 describe('Tally stock sync health', () => {
   it('automatically checks the cloud snapshot every five minutes', () => {
     expect(dashboard).toContain('const CLOUD_REFRESH_INTERVAL_MS=5*60*1000');
-    expect(dashboard).toContain('setInterval(()=>void refreshData(),CLOUD_REFRESH_INTERVAL_MS)');
+    expect(dashboard).toContain('setInterval(()=>{if(!document.hidden)void refreshData()},CLOUD_REFRESH_INTERVAL_MS)');
     expect(dashboard).toContain("document.addEventListener('visibilitychange'");
     expect(dashboard).toContain("window.addEventListener('focus'");
     expect(dashboard).toContain("window.addEventListener('online'");
@@ -29,7 +29,17 @@ describe('Tally stock sync health', () => {
   });
 
   it('publishes a machine-readable timestamp with every connector snapshot', () => {
-    expect(connector).toContain("fetchedAtIso = (Get-Date).ToUniversalTime().ToString('o')");
+    expect(connector).toContain("$fetchedAtIso = (Get-Date).ToUniversalTime().ToString('o')");
+    expect(connector).toContain('fetchedAtIso = $fetchedAtIso');
+  });
+
+  it('keeps source-specific timestamps alongside the stock snapshot timestamp', () => {
+    expect(connector).toContain('$sourceFetchedAtIso = Get-ConnectorSourceFetchedAt $fetchedAtIso $script:lastCatalogData $script:lastCustomerData $salesData.fetchedAtIso $script:lastPurchaseData.fetchedAtIso');
+    expect(connector).toContain('sourceFetchedAtIso = $sourceFetchedAtIso');
+  });
+
+  it('versions the order catalog from its own master refresh, not each stock refresh', () => {
+    expect(connector).toContain('catalogVersion = $sourceFetchedAtIso.catalog');
   });
 
   it('records per-domain counts and consecutive Tally failures', () => {
@@ -67,6 +77,36 @@ describe('Tally stock sync health', () => {
     expect(connector).toContain('$script:cloudUploadFailures = 0');
     expect(connector).toContain('[Math]::Min(30, 5 * [Math]::Pow(2');
     expect(connector).toContain('$script:nextUpload = (Get-Date).AddMinutes($retryMinutes)');
+  });
+
+  it('pauses repeated cloud uploads after authorization rejection while retaining the pending snapshot', () => {
+    expect(connector).toContain('$script:uploadAuthBlocked = Test-ConnectorUploadAuthFailure $failureCode');
+    expect(connector).toContain('if ($script:pendingUpload -and -not $script:uploadAuthBlocked -and -not $script:uploadPayloadBlocked -and (Get-Date) -ge $script:nextUpload)');
+  });
+
+  it('remembers cloud upload receipts and rejected credentials across connector restarts', () => {
+    expect(connector).toContain('Read-ConnectorUploadState $uploadStatePath $companyName');
+    expect(connector).toContain('Test-ConnectorUploadAcknowledged $script:uploadState $snapshotJson');
+    expect(connector).toContain('Test-ConnectorUploadBlocked $script:uploadState $cloudUploadKey');
+    expect(connector).toContain('Save-ConnectorUploadState $uploadStatePath $script:uploadState');
+  });
+
+  it('records upload payload bytes without logging the upload key or body', () => {
+    expect(connector).toContain('bytes=$payloadBytes');
+    expect(connector).not.toContain('key=$cloudUploadKey');
+  });
+
+  it('serializes a stock snapshot once and reuses its JSON for LAN reads and cloud delivery', () => {
+    expect(connector).toContain('$freshJson = $fresh | ConvertTo-Json -Depth 6 -Compress');
+    expect(connector).toContain('$script:lastReorderJson = $freshJson');
+    expect(connector).toContain('Publish-CloudSnapshot $script:pendingUploadJson');
+    expect(connector).toContain('$json = $script:lastReorderJson');
+    expect(connector).not.toContain('$json = ($script:lastReorderData | ConvertTo-Json -Depth 6 -Compress)');
+  });
+
+  it('runs due background work despite a sustained queue of LAN readers', () => {
+    expect(connector).toContain('Test-ConnectorShouldRunBackground ($listener.Pending()) $requestsSinceBackground $backgroundDue');
+    expect(connector).toContain('$requestsSinceBackground++');
   });
 
   it('provides office-only status, pause, resume, restart, and schedule controls', () => {

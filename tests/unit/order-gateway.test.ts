@@ -32,6 +32,7 @@ describe('order gateway client', () => {
       actorEmail: 'user@example.com',
       action: 'bootstrap',
     });
+    expect(request?.signal).toBeInstanceOf(AbortSignal);
   });
 
   it('supports the lightweight session action used for dynamic membership', async () => {
@@ -50,6 +51,22 @@ describe('order gateway client', () => {
     await expect(callOrderGateway('user@example.com', 'bootstrap')).rejects.toMatchObject({
       status: 503,
     });
+  });
+
+  it('uses a bounded request without silently retrying an uncertain mutation', async () => {
+    configureEnvironment();
+    const controller = new AbortController();
+    const timeout = vi.spyOn(AbortSignal, 'timeout').mockReturnValue(controller.signal);
+    const fetchMock = vi.spyOn(globalThis, 'fetch').mockImplementation((_url, init) => new Promise((_resolve, reject) => {
+      init?.signal?.addEventListener('abort', () => reject(new DOMException('Timed out', 'TimeoutError')), { once: true });
+    }));
+    const pending = callOrderGateway('user@example.com', 'create_order', { idempotencyKey: 'original-key' });
+    const rejected = expect(pending).rejects.toMatchObject({ name: 'TimeoutError' });
+    controller.abort();
+    await rejected;
+    expect(timeout).toHaveBeenCalledWith(30_000);
+    expect(fetchMock).toHaveBeenCalledOnce();
+    expect(JSON.parse(String(fetchMock.mock.calls[0][1]?.body)).payload.idempotencyKey).toBe('original-key');
   });
 
   it.each([
