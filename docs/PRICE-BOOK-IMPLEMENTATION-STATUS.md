@@ -1,5 +1,12 @@
 # Price book implementation checkpoint — 14 September 2026
 
+## Stock-route timing visibility — 2 October 2026
+
+- Normal office upload confirmed on sync version 8: HTTP 200 POST in returned 12:31–12:37 UTC logs, 3,639 ms execution; snapshot refreshed at 12:35:17 UTC. This clears the previous post-cutover upload gap, not performance/pilot certification. Cumulative snapshot-write statistics show 1,099 calls averaging 239.95 ms, maximum 3,042.38 ms; these are not window-aligned or per-request comparisons. Function execution statistics were unavailable. Performance advisor returned INFO-only 19 unindexed-FK and 21 unused-index findings; no indexes removed or added without measured justification, especially integrity/overlap indexes.
+- Stock API previously discarded sync Server-Timing. Added per-request route duration and forwarding of the exact two numeric sync/database metrics under fixed names. Unknown metrics, descriptions, negative/non-numeric/oversized durations and arbitrary upstream headers are discarded. Authorization-denied responses expose no timing; response bodies retain existing commercial sanitization, no-store and independently authorized read coalescing.
+- Six timing regression cases failed on the prior route and passed after the change. Targeted stock/sync suite passed 70 tests; affected lint and typecheck passed. Final whitespace/targeted results recorded in completion. No full suite/build, schema or Tally changes. App-side timing forwarding is committed locally, not deployed; public frontend remains version 52.
+- Next: integrate this bounded diagnostic change through the normal release path and measure authenticated route timings. Raw Edge logs do not retain Server-Timing, so do not infer its values from function total duration. Hosted failure/device acceptance and sustained CPU/memory evidence remain outstanding.
+
 ## Sync timing production rollout — 2 October 2026
 
 - Published committed timing-only handler `62c30ec` to the existing production sync function. Supabase returned ACTIVE version 8, bundle SHA-256 `89e29589bdc9c027b0dd691279693b1713c77db541e00a8ba6288f00030357ae`. Existing custom read/upload authentication and `verify_jwt=false` are preserved; no credential/environment, SQL, Tally or connector change. Public frontend remains version 52/main `6deb65b`.
