@@ -1,5 +1,11 @@
 # Price book implementation checkpoint — 14 September 2026
 
+## Pilot handoff reconciliation — 2 October 2026
+
+- Corrected the existing pilot document's current status: version 52 is published, but operational pilot acceptance remains on hold. Historical observations are retained and explicitly superseded where migration/publication/authenticated-read blockers have since cleared.
+- Separated unsent-draft device testing from submitted-order testing and pre-send offline failures from lost responses after a committed mutation. Added the exact operator-dependent private network-test boundary; no fault-injection outage or business mutation.
+- Documentation only: `PRODUCTION-PILOT-2026-09.md` and this checkpoint. `git diff --check` is the affected validation; no suite/build rerun. Working tree was clean at start. Five-hour allowance reset to 0% used; no reset credit consumed. External device/network evidence remains the next blocker, not additional implementation.
+
 ## Version 52 restored and signed-in reads verified — 2 October 2026
 
 - Restored the existing saved version 52, unchanged merged source `6deb65b5db4c642bad0b5559f1176866fb098a2c`. Deployment `appgdep_6abf8711ca9c8191baaf38780a7f9453` succeeded at 10:27:51 UTC, runtime revision 4. Current public release is now version 52, superseding the version-51 containment checkpoint below. Access settings and Tally remain unchanged.

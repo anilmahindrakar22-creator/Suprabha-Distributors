@@ -1,5 +1,15 @@
 # StockFlow production acceptance and pilot
 
+## Current status — 2 October 2026
+
+**Published; operational pilot remains HOLD.** PR #35 merged to main at `6deb65b5db4c642bad0b5559f1176866fb098a2c`. All six pending production migrations were applied and reconciled. Public version 52 was restored successfully in deployment `appgdep_6abf8711ca9c8191baaf38780a7f9453`; Anil's existing signed-in session loaded Orders and Pricing, with Sign out visible. These results supersede the historical release/authentication blockers below, not the remaining acceptance gates. Full evidence is in `PRICE-BOOK-IMPLEMENTATION-STATUS.md`.
+
+Remaining: hosted uncertain-save recovery, actual staff-device offline/account separation, representative performance/resource measurements, five real working days of pilot evidence and a restore-tested backup. Normal save/reload success and local fault fixtures do not prove hosted uncertain-response recovery. A failed request while already offline proves pre-send handling only; do not count it as a response lost after a server commit.
+
+For the first staff-device check, use a trusted staff device and an approved account: enter an explicitly synthetic **unsent** order draft, disconnect, reload and verify recovery; reconnect, sign out and check that a second account cannot see the draft; return to the first account and discard it. Record device/browser, account role, date and each result. This first check needs no submitted order or Tally transaction. The submitted-order checklist below is a separate authorized pilot step.
+
+Hosted uncertain-save testing needs controlled client-network interruption on the private acceptance site, with one synthetic command and authoritative receipt/audit reconciliation. The current browser automation interface has no network-fault toggle. Do not interrupt production services, rotate credentials or weaken authorization to manufacture a failure. Operator-assisted network timing is required; if the command never reached the server, record that limitation rather than certifying post-commit recovery.
+
 ## Seven-gate release attempt — 30 September 2026
 
 Status: **HOLD; not released or pilot-ready.** The owner requested completion of sync, pricing acceptance, deployment, performance measurement, staff-device acceptance, the five-working-day pilot and recovery rehearsal. Existing local consolidation results do not substitute for these live gates.
