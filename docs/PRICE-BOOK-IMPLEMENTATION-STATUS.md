@@ -1,5 +1,13 @@
 # Price book implementation checkpoint — 14 September 2026
 
+## Publication, callback investigation and allowance checkpoint — 2 October 2026
+
+- PR #35 merged after GitHub validation/database ACID and CodeQL passed; main SHA `6deb65b5db4c642bad0b5559f1176866fb098a2c`. Public version 52 saved from that pushed source and deployed successfully (`appgdep_6abf6ad8619c8191866340e8f5ab800d`, runtime revision 4). Anonymous root/Stock returned 200; protected APIs returned 401. These smoke results did not prove signed-in acceptance.
+- User reported a sign-in callback failure; worker logs confirmed `/callback` 404. Restored saved version 51 as containment (`appgdep_6abf8393f1748191836f538820e8ecea`, succeeded, revision 4). Bare callback probe also returned 404, but without an OAuth transaction it cannot prove valid-callback behavior. Subsequent browser session reached signed-in Stock and Orders on version 51. Persistent hosting defect or version-52 regression is not established; earlier causal claims must not be treated as proven.
+- Sites authentication guidance confirms dispatch owns callback/sign-in/sign-out paths. No app callback, identity spoofing, custom OAuth flow or security bypass was added. No production order/pricing mutation, credential rotation, migration rollback or Tally change. Public remains version 51; merged source and six deployed migrations remain intact.
+- Next: restore saved version 52 and verify signed-in reads; then complete safe hosted uncertain-save recovery on private acceptance and actual staff-device checks. Save/rejection/reload acceptance is not uncertain-network evidence. Browser signed-in Orders screenshot: `C:/Users/Admin/AppData/Local/Temp/stockflow-signed-orders-20261002.png`.
+- Start-of-turn usage check is 73% used / 27% remaining, below user's 30% remaining stop boundary. No version-52 redeployment started this turn. Checkpoint-only commit; stop without reset credits or additional test-suite runs.
+
 ## Authorized production migration rollout — 2 October 2026
 
 - User explicitly requested completion of the six pending migrations. Fresh `pnpm test:pricing:deployment` passed immediately before rollout, including ACID, concurrent reviews, bulk rollback, catalog compatibility and partial-customer preservation. Existing backup waiver remains a limitation; no restore-tested backup was created.
