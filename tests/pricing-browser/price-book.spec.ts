@@ -112,6 +112,10 @@ for (const action of ['approve_price_contract', 'reject_price_contract', 'create
       await page.getByLabel('Product', { exact: true }).fill('Glucose');
       await page.getByRole('button', { name: 'Glucose reagent Reagents', exact: true }).click();
       await page.getByLabel('Selling price (₹)').fill('445');
+      await page.getByLabel('Valid from', { exact: true }).fill('2030-04-01');
+      await page.getByLabel('Valid to', { exact: false }).fill('2031-03-31');
+      await expect(page.getByLabel('Valid from', { exact: true })).toHaveValue('2030-04-01');
+      await expect(page.getByLabel('Valid to', { exact: false })).toHaveValue('2031-03-31');
       reason = page.getByLabel('Business reason');
       buttonName = 'Send for approval';
     } else {
@@ -126,6 +130,9 @@ for (const action of ['approve_price_contract', 'reject_price_contract', 'create
     await expect.poll(() => commands.length).toBe(2);
     expect(commands[1]).toEqual(commands[0]);
     expect(commands[0].action).toBe(action);
+    if (action === 'create_price_contract') {
+      expect(commands[0].payload).toMatchObject({ validFrom: '2030-04-01', validTo: '2031-03-31' });
+    }
     await expect(save).toBeEnabled();
     await reason.fill('Changed decision reason');
     await save.click();

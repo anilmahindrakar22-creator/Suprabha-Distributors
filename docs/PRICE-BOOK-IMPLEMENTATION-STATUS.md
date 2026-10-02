@@ -1,5 +1,12 @@
 # Price book implementation checkpoint — 14 September 2026
 
+## Pricing date-entry characterization — 2 October 2026
+
+- Extended the existing contract uncertain-response regression to enter explicit valid-from 2030-04-01 and valid-to 2031-03-31, assert both controlled input values, and assert the actual outgoing command retains those dates. Existing identical-command retry assertions also cover date preservation.
+- Fresh desktop/mobile focused Playwright checks passed 2/2, affected test lint and typecheck passed. Application code unchanged: local execution did not reproduce the prior deployed browser-fill discrepancy. Do not claim its cause established or deployed/manual date entry accepted; that remains a separate acceptance gap.
+- Files changed: `tests/pricing-browser/price-book.spec.ts` and this checkpoint only. No database, active pricing, deployment, production or Tally changes. Next: confirm date entry on the authenticated candidate before future-dated approval acceptance; deployed network-failure recovery and staff-device offline separation remain unverified.
+
+
 ## Authenticated proposal save/rejection acceptance — 1 October 2026
 
 - Private version 8, independently identified Nikitesh Administrator session: created one synthetic Acceptance Laboratory × ACCEPT-CLEANER proposal at ₹340 with reference `ACCEPTANCE-SAVE-20261001`. Save confirmation appeared; full reload retained the pending proposal. Rejected it with an explicit synthetic-test reason; approval inbox returned to zero. No approval, active-rate replacement, hard deletion, order or Tally mutation.
