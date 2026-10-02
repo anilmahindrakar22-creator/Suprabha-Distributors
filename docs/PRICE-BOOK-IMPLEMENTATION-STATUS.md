@@ -1,5 +1,11 @@
 # Price book implementation checkpoint — 14 September 2026
 
+## Cached-warning fix published — 2 October 2026
+
+- Production build passed at clean `5c30e06f28f2b6638a9bd9ae4a4e3815b5a5498e`. Exact source pushed to the existing Sites repository, not GitHub main; saved version 54 and deployed successfully as `appgdep_6abfbfa6e7e08191a715922a782d649c` at 14:29:20 UTC, runtime revision 4. Archive SHA-256 `9c5f7d0662c27a71e8d0a77ed87f7831e02e2a3e6fa980715ca0621c24e74c6c`. Public audience, connector schedule, database and Tally unchanged.
+- Existing Anil session loaded hosted Stock. Fresh DOM reads show matching “Tally sync overdue” and “Tally stock extraction is overdue” for 02 Oct 07:36 PM source extraction, genuinely beyond the 20-minute threshold at observation. This verifies new wording and truthful stale-state rendering, not a live fresh-extraction transition. Prior 23-test regression evidence covers stale-to-fresh clearing and fresh-to-stale restoration. Screenshot capture was unavailable; no screenshot evidence claimed.
+- Next: observe a normal fresh office extraction and confirm the banner clears; do not suppress genuine staleness or force Tally extraction to complete an acceptance check. Hosted failure/device checks remain deferred/unverified. Checkpoint only, whitespace validation before commit. GitHub main remains `6deb65b`; timing and warning commits remain local/Git-hosted-source pending normal GitHub integration.
+
 ## Cached stale-warning recovery fix — 2 October 2026
 
 - Signed-in version-53 Stock loaded with current cloud status and a newer displayed sync time, but retained an older overdue banner. Code and executable regression demonstrate the mechanism: a cached snapshot can set the warning while the request is pending; fresh `applyData` updated status/dot without clearing that warning. No inference that cloud or Tally itself failed.
