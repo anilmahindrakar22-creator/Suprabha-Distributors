@@ -1,5 +1,11 @@
 # Price book implementation checkpoint — 14 September 2026
 
+## Stock timing app publication — 2 October 2026
+
+- Fresh production build passed at clean `0c754404b445b6fc1ac298b9325fcc88d03092df`. Pushed exact source to the existing Sites repository main (not GitHub main), packaged existing hosting manifest plus build output, saved version 53 and deployed successfully: `appgdep_6abfb8b03b348191bbaaf92d9b726ed6`, runtime revision 4, 13:59:38 UTC. Public audience unchanged. GitHub main remains `6deb65b`; local timing commits have not been merged there.
+- Saved version `appgprj_6a9278d4a3b081918d9811fba983d54c~appgver_2852c9accfd08191944c8dc7f3e2f1d4`, archive SHA-256 `70e272f1875739990b762304f2eff585954e49f7493e1cab1db758088326ac3f`. No environment, Tally, database or permission change. The hosting skill package was unavailable; existing Sites connector contract and manifest were used without speculative configuration.
+- Anonymous deployed stock API smoke result is in the completion report. Signed-in per-request timing capture remains unverified; publication/build success is not performance or pilot certification. Existing source tests/type/lint from the previous timing ticket remain separate evidence, not rerun claims. Checkpoint whitespace validation before commit.
+
 ## Stock-route timing visibility — 2 October 2026
 
 - Normal office upload confirmed on sync version 8: HTTP 200 POST in returned 12:31–12:37 UTC logs, 3,639 ms execution; snapshot refreshed at 12:35:17 UTC. This clears the previous post-cutover upload gap, not performance/pilot certification. Cumulative snapshot-write statistics show 1,099 calls averaging 239.95 ms, maximum 3,042.38 ms; these are not window-aligned or per-request comparisons. Function execution statistics were unavailable. Performance advisor returned INFO-only 19 unindexed-FK and 21 unused-index findings; no indexes removed or added without measured justification, especially integrity/overlap indexes.
