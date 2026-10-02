@@ -1,5 +1,12 @@
 # Price book implementation checkpoint — 14 September 2026
 
+## Sync performance boundary instrumentation — 2 October 2026
+
+- Read-only production baseline: at approximately 12:21 UTC, latest snapshot upload was about 90 seconds old and snapshot JSON text was 594,549 bytes. Database sample showed one active diagnostic session, five idle and one null state. Returned logs for 11:20–12:20 UTC contained three sync requests, all HTTP 200, maximum execution 5,241 ms; eight PostgreSQL LOG events had SQLSTATE 00000. These sparse observations do not establish p95, CPU/memory health or browser/save latency. Initial message-based log query failed; corrected to discovered SQLSTATE/status attributes without reading credentials or customer payloads.
+- Added authenticated sync Server-Timing headers distinguishing handler duration from the database fetch-to-response-headers boundary. Successful reads/uploads and backend failures include bounded numeric timings only; unauthorized responses have no timings. Request bodies, keys and commercial values are not logged. Existing single-fetch behavior, atomic upsert/import triggers, timeout, authorization, no-store and response bodies remain unchanged. Database timing includes transport and excludes response-body decoding; it is not pure SQL execution time.
+- Added three deterministic timing regressions covering read/upload/thrown backend failure and retained unauthorized pre-database rejection coverage. Corrected the existing test helper's HeadersInit spread to handle Headers/tuple inputs through Headers normalization, resolving the test-file lint finding.
+- Targeted sync suite passed 35 tests; typecheck and handler lint passed before the helper correction. Final focused suite/lint/whitespace results recorded in the completion report. No full build/database replay required for timing-only response headers; no live deployment or Tally operation. Next: deploy this diagnostic-only function at an explicit release checkpoint and compare authenticated request-boundary timings before choosing a performance patch. Staff-device checks remain deferred by user.
+
 ## Pilot handoff reconciliation — 2 October 2026
 
 - Corrected the existing pilot document's current status: version 52 is published, but operational pilot acceptance remains on hold. Historical observations are retained and explicitly superseded where migration/publication/authenticated-read blockers have since cleared.
