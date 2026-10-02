@@ -1,5 +1,13 @@
 # Price book implementation checkpoint — 14 September 2026
 
+## Authenticated proposal save/rejection acceptance — 1 October 2026
+
+- Private version 8, independently identified Nikitesh Administrator session: created one synthetic Acceptance Laboratory × ACCEPT-CLEANER proposal at ₹340 with reference `ACCEPTANCE-SAVE-20261001`. Save confirmation appeared; full reload retained the pending proposal. Rejected it with an explicit synthetic-test reason; approval inbox returned to zero. No approval, active-rate replacement, hard deletion, order or Tally mutation.
+- Private database read confirmed one preserved rejected proposal (`6e416e7f-6b52-48db-922c-ae3378184502`), version 2, created by Nikitesh, with separate `customer_price_requested` and `customer_price_rejected` audit events. Existing approved cleaner rate remains ₹335. Browser screenshot capture unavailable; UI accessibility state and database results are the evidence.
+- The attempted future-date browser fill did not stick: actual DOM and stored proposal both retained 2026-10-01. Do not count future-date editing as accepted or diagnose an application defect without separating the automation input limitation from real user behavior. Proposal was never approved. Next bounded check: characterize date entry before additional approval acceptance.
+- Fresh focused retry/recovery Playwright run passed 20 desktop/mobile cases for contract/policy uncertain responses, stable customer/base/impact retries, receipt-only reload recovery, account separation and closing only confirmed-unsaved saves. These are local controlled-failure fixtures, not deployed network-loss acceptance or actual staff-device offline testing. No full suite/build rerun, source changes, merge or publication in this turn.
+
+
 ## Private authorization-loss retest — 1 October 2026
 
 - Published existing private acceptance version 8 from candidate `ca43f20c48f77982dc4a97e7f6e05a9f3020aeb9` (cherry-pick of implementation `7b78fe8`). Local production build passed. Saved version `appgprj_6aae9b06bf4081919a1f08183fb02465~appgver_ee19f57a9c5c8191a67a8b4206b2ad98`; deployment `appgdep_6abe582679c881918f052b0b8d48a129` succeeded, environment revision 2. Preserved the existing custom Anil/Nikitesh audience. GitHub main and public app unchanged.
