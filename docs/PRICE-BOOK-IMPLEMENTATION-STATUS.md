@@ -1,5 +1,13 @@
 # Price book implementation checkpoint — 14 September 2026
 
+## Sync timing production rollout — 2 October 2026
+
+- Published committed timing-only handler `62c30ec` to the existing production sync function. Supabase returned ACTIVE version 8, bundle SHA-256 `89e29589bdc9c027b0dd691279693b1713c77db541e00a8ba6288f00030357ae`. Existing custom read/upload authentication and `verify_jwt=false` are preserved; no credential/environment, SQL, Tally or connector change. Public frontend remains version 52/main `6deb65b`.
+- Entrypoint matches prior version 7. The bundled request-gate dependency differs elsewhere, but its only function consumed by sync, `readBoundedJson`, is byte-identical. No Orders function deployment. Stored previous function source in session for rollback if a concrete regression appears.
+- Fresh targeted sync tests passed 35/35. Live unauthenticated GET returned controlled 401 and no Server-Timing, proving rejection remains enforced. No valid synthetic upload or business mutation was issued.
+- Immediate read-only snapshot check still showed the pre-cutover 12:19:59 UTC upload, about 11 minutes old; returned post-cutover function logs were empty at observation time. This is not evidence of failure or successful post-cutover authenticated traffic. Await a normal upload before declaring live timing acceptance or performance improvement; do not poll continuously or change connector frequency. No full suite/build rerun.
+- Checkpoint whitespace validation before commit. Five-hour allowance last checked 18% used / 82% remaining, above the approved 50% remaining boundary. Hosted failure/device acceptance remains deferred/unverified; production timing capture is the next dependency.
+
 ## Sync performance boundary instrumentation — 2 October 2026
 
 - Read-only production baseline: at approximately 12:21 UTC, latest snapshot upload was about 90 seconds old and snapshot JSON text was 594,549 bytes. Database sample showed one active diagnostic session, five idle and one null state. Returned logs for 11:20–12:20 UTC contained three sync requests, all HTTP 200, maximum execution 5,241 ms; eight PostgreSQL LOG events had SQLSTATE 00000. These sparse observations do not establish p95, CPU/memory health or browser/save latency. Initial message-based log query failed; corrected to discovered SQLSTATE/status attributes without reading credentials or customer payloads.
