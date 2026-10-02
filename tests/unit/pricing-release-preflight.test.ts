@@ -65,4 +65,27 @@ describe('read-only pricing release preflight', () => {
   it('rejects evidence for another project', () => {
     expect(() => pricingReleasePreflight({ ...original, projectId: 'other' }, source)).toThrow('Unexpected evidence project');
   });
+  it('does not certify release readiness merely because every migration is deployed', () => {
+    const evidence = structuredClone(original);
+    for (const entry of evidence.migrations) {
+      if (entry.status !== 'not_deployed') continue;
+      Object.assign(entry, {
+        status: 'exact_normalized_match',
+        remoteVersion: entry.localFile.slice(0, 14),
+        remoteSha256: entry.localSha256,
+      });
+    }
+    const result = pricingReleasePreflight(evidence, source);
+    expect(result.pending).toEqual([]);
+    expect(result.releaseReady).toBe(false);
+    expect(result.liveHistoryRechecked).toBe(false);
+    expect(result.blockers).toContain('Complete staff-login acceptance against an isolated deployed candidate.');
+  });
+  it('rejects reviewed pending SQL that predates the deployed history', () => {
+    const evidence = structuredClone(original);
+    const entry = evidence.migrations.find((item: { localFile: string }) => item.localFile === '20260927180000_snapshot_pricing_import_privilege.sql');
+    expect(entry).toBeDefined();
+    Object.assign(entry!, { status: 'not_deployed', remoteVersion: null, remoteSha256: null });
+    expect(() => pricingReleasePreflight(evidence, source)).toThrow('Pending migration predates deployed history');
+  });
 });

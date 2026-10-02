@@ -1,5 +1,11 @@
 # Price book implementation checkpoint — 14 September 2026
 
+## Release-gate negative regression checks — 2 October 2026
+
+- Started clean at `96433a4`; five-hour allowance 49% used / 51% remaining. Added two bounded existing-preflight tests: complete saved deployment evidence still cannot certify release readiness or live-history refresh, and a reviewed historical migration relabelled pending behind newer deployed history is rejected. No production code, migration, environment or Tally changes.
+- Fresh focused Vitest passed 10/10 tests; affected oxlint and typecheck passed. Initial historical-case fixture incorrectly removed the latest deployed migration itself, so no newer history remained; corrected to an older migration and reran. This was a test setup error, not a demonstrated application defect.
+- Remaining release blockers are unchanged: six pending production migrations/release gate, deployed uncertain-network recovery acceptance, actual staff-device offline/account separation, measured performance and operational pilot. Full consolidation evidence is recorded below; no repeated full suite/build. Next executable step requires the appropriate release environment/device access, not additional speculative features.
+
 ## Consolidation and authenticated future-price acceptance — 2 October 2026
 
 - Started clean at `eee65e9` on `feature/keyboard-order-entry`; private candidate remains version 8 / `ca43f20`. No application source, public deployment, production schema, membership or Tally change in this batch.
