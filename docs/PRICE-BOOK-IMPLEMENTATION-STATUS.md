@@ -1,5 +1,13 @@
 # Price book implementation checkpoint — 14 September 2026
 
+## Version 52 restored and signed-in reads verified — 2 October 2026
+
+- Restored the existing saved version 52, unchanged merged source `6deb65b5db4c642bad0b5559f1176866fb098a2c`. Deployment `appgdep_6abf8711ca9c8191baaf38780a7f9453` succeeded at 10:27:51 UTC, runtime revision 4. Current public release is now version 52, superseding the version-51 containment checkpoint below. Access settings and Tally remain unchanged.
+- Fresh browser identified Anil's existing authenticated session. Orders loaded confirmation queues, product requests and customer requirements; Pricing loaded the restricted workspace and 25% general gross-margin policy. Sign out is visible. Stock snapshot shown in Orders was 02 Oct 2026, 03:48:53 PM. No business mutation was made. This checks existing-session reads, not a new OAuth callback transaction or full fulfilment acceptance.
+- Signed-in screenshot: `C:/Users/Admin/AppData/Local/Temp/stockflow-version52-pricing-20261002.png`. The earlier callback error did not recur in this existing session; its root cause remains unestablished.
+- Hosted uncertain-response recovery and actual staff-device offline/account separation still require controlled network/device access. No unsafe outage was manufactured and no local fixture result was relabelled hosted acceptance. Representative performance, operational pilot and restore-tested backup also remain unverified; not pilot-certified.
+- Checkpoint only; no application source changes or repeated full suite/build. Whitespace validation is the affected check. Latest five-hour check: 77% used / 23% remaining; user boundary is 10% remaining. Stop for the genuine external acceptance gap, not to spend the remaining allowance.
+
 ## Publication, callback investigation and allowance checkpoint — 2 October 2026
 
 - PR #35 merged after GitHub validation/database ACID and CodeQL passed; main SHA `6deb65b5db4c642bad0b5559f1176866fb098a2c`. Public version 52 saved from that pushed source and deployed successfully (`appgdep_6abf6ad8619c8191866340e8f5ab800d`, runtime revision 4). Anonymous root/Stock returned 200; protected APIs returned 401. These smoke results did not prove signed-in acceptance.
