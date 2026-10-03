@@ -9,7 +9,7 @@ import { POST, DELETE } from '@/app/api/staff-auth/route';
 
 beforeEach(() => {
   vi.stubEnv('STOCKFLOW_AUTH_MODE', 'supabase'); vi.stubEnv('STOCKFLOW_STAFF_ORIGIN', 'https://staff.example.test');
-  vi.stubEnv('SUPABASE_URL', 'https://db.example.test'); vi.stubEnv('STOCKFLOW_AUTH_PUBLISHABLE_KEY', 'test-publishable');
+  vi.stubEnv('SUPABASE_URL', 'https://db.example.test'); vi.stubEnv('STOCKFLOW_AUTH_PUBLISHABLE_KEY', 'sb_publishable_012345678901234567890');
   vi.clearAllMocks(); mocks.token = undefined; mocks.headers = new Headers();
   mocks.getUser.mockResolvedValue({ data: { user: { id: 'u1', email: 'staff@example.test', email_confirmed_at: '2026-01-01', is_anonymous: false } }, error: null });
   mocks.signInWithPassword.mockResolvedValue({ data: { session: { access_token: 'verified-token', expires_in: 3600 } }, error: null });
@@ -19,6 +19,20 @@ afterEach(() => vi.unstubAllEnvs());
 const request = (body: unknown, origin = 'https://staff.example.test') => new Request('https://staff.example.test/api/staff-auth', { method: 'POST', headers: { origin, 'content-type': 'application/json' }, body: JSON.stringify(body) });
 
 describe('isolated staff authentication', () => {
+  it.each([0, -1, NaN, Infinity])('rejects invalid provider session lifetime %s', async expires_in => {
+    mocks.signInWithPassword.mockResolvedValue({ data: { session: { access_token: 'verified-token', expires_in } }, error: null });
+    expect(await staffPasswordLogin('staff@example.test', 'password')).toBeNull();
+    expect(mocks.gateway).not.toHaveBeenCalled();
+  });
+  it('rejects Sites hosts in direct authentication mode', () => {
+    vi.stubEnv('STOCKFLOW_STAFF_ORIGIN', 'https://stockflow.chatgpt.site');
+    expect(() => sameStaffOrigin(null)).toThrow('direct host');
+  });
+  it('rejects secret auth keys without authenticating credentials', async () => {
+    vi.stubEnv('STOCKFLOW_AUTH_PUBLISHABLE_KEY', 'sb_secret_do-not-use-as-publishable');
+    expect((await POST(request({ email: 'staff@example.test', password: 'password' }))).status).toBe(401);
+    expect(mocks.signInWithPassword).not.toHaveBeenCalled();
+  });
   it('does not enable alternate auth by default', () => { vi.stubEnv('STOCKFLOW_AUTH_MODE', ''); expect(staffAuthEnabled()).toBe(false); });
   it('rejects unknown modes rather than trusting headers', () => { vi.stubEnv('STOCKFLOW_AUTH_MODE', 'typo'); expect(staffAuthEnabled).toThrow(); });
   it('ignores forged Sites identity without a verified cookie', async () => { mocks.headers = new Headers({ 'oai-authenticated-user-id': 'owner', 'oai-authenticated-user-email': 'admin@example.test' }); expect(await getChatGPTUser()).toBeNull(); });

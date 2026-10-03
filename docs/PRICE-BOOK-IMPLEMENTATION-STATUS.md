@@ -1,5 +1,13 @@
 # Price book implementation checkpoint — 14 September 2026
 
+## Five-part staff-login hardening batch — 3 October 2026
+
+- Runtime configuration now rejects Sites-host activation, secret/legacy/placeholder auth keys and malformed provider origins. SDK fetches have a 15-second abort deadline while preserving upstream cancellation; existing provider identity and membership enforcement remain unchanged.
+- Invalid non-finite/non-positive provider session lifetimes are rejected before issuing cookies. Login/account-switch/reset forms now guard duplicate in-flight submissions and bound browser requests to 15 seconds. Reset timeouts preserve the existing uncertain-outcome stop instead of retrying automatically. No refresh-token persistence or automatic retry added.
+- Five related tasks covered: runtime configuration enforcement, provider-request deadline, lifetime validation, duplicate-submit guards, browser stalled-request handling. These are one bounded auth-safety batch, not five major business features or a live release.
+- Targeted unit validation: 43 passed. Browser acceptance: 16 desktop/emulated-mobile cases passed, including four stalled-request/duplicate-submit cases. Initial affected lint found a test-only Request stringification issue; corrected to inspect Request.url/URL.href. Final typecheck, affected lint, four affected browser cases and diff check passed. No full build/suite repeated; no production, provider configuration, credential or Tally changes.
+- Isolated direct hosting, approved provider accounts, verified free SMTP/reset redirect, production abuse throttling and actual Android acceptance remain required. Mocked SDK/unit and local browser evidence do not demonstrate live provider timeouts, email delivery or device acceptance.
+
 ## Staff-auth configuration preflight — 3 October 2026
 
 - Added `pnpm check:staff-auth`: read-only environment-shape validation with credential-free output. Rejects non-HTTPS/path-bearing/credential-bearing origins, existing Sites hosts, incorrect modern publishable-key types/placeholders, missing server gateway/read keys and disabled recovery delivery. A complete configuration never claims deployment-ready; provisioning, disabled signup, SMTP/redirect, throttling/resource and real hosted/device acceptance remain mandatory.

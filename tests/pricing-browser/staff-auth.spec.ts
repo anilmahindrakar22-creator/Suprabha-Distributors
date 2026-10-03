@@ -1,5 +1,44 @@
 import { expect, test } from '@playwright/test';
 
+for (const view of ['staff-signin', 'staff-reset']) {
+  test(`${view} has a bounded wait and does not duplicate in-flight requests`, async ({ page }) => {
+    await page.addInitScript(() => {
+      const original = window.fetch;
+      Object.assign(window, { authRequestCount: 0 });
+      window.fetch = (input, init) => {
+        const url = input instanceof Request ? input.url : input instanceof URL ? input.href : input;
+        if (url.startsWith('/api/staff-')) {
+          const state = window as typeof window & { authRequestCount: number };
+          state.authRequestCount++;
+          return new Promise((_resolve, reject) => init?.signal?.addEventListener('abort', () => reject(new DOMException('Timed out', 'AbortError')), { once: true }));
+        }
+        return original(input, init);
+      };
+    });
+    await page.goto(`/?view=${view}${view === 'staff-reset' ? '#type=recovery&access_token=synthetic-recovery' : ''}`);
+    const button = page.getByRole('button', { name: view === 'staff-reset' ? 'Set password' : 'Sign in', exact: true });
+    await expect(button).toBeEnabled();
+    await page.clock.install();
+    if (view === 'staff-signin') {
+      await page.getByLabel('Email', { exact: true }).fill('staff@example.test');
+      await page.getByLabel('Password', { exact: true }).fill('synthetic-password');
+    } else {
+      await page.getByLabel('New password', { exact: true }).fill('synthetic-password');
+      await page.getByLabel('Confirm password', { exact: true }).fill('synthetic-password');
+    }
+    await button.click();
+    await page.locator('form').evaluate(form => {
+      form.dispatchEvent(new Event('submit', { bubbles: true, cancelable: true }));
+      form.dispatchEvent(new Event('submit', { bubbles: true, cancelable: true }));
+    });
+    expect(await page.evaluate(() => (window as typeof window & { authRequestCount: number }).authRequestCount)).toBe(1);
+    await page.clock.runFor(16000);
+    await expect(page.getByRole('alert')).toContainText(view === 'staff-reset' ? 'unknown' : 'Unable to sign in');
+    if (view === 'staff-reset') await expect(button).toBeDisabled();
+    else await expect(button).toBeEnabled();
+  });
+}
+
 test('staff login stays in browser, clears rejected password and fits mobile', async ({ page }) => {
   await page.route('**/api/staff-auth', route => route.fulfill({ status: 401, json: { error: 'denied' } }));
   await page.goto('/?view=staff-signin');

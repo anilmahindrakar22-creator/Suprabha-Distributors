@@ -8,6 +8,7 @@ export function StaffPasswordReset() {
   const [busy, setBusy] = useState(false);
   const [message, setMessage] = useState('');
   const capturedToken = useRef<string | null>(null);
+  const inFlight = useRef(false);
   useEffect(() => {
     const fragment = new URLSearchParams(window.location.hash.slice(1));
     if (capturedToken.current === null) capturedToken.current = fragment.get('type') === 'recovery' ? fragment.get('access_token') || '' : '';
@@ -21,11 +22,11 @@ export function StaffPasswordReset() {
     return () => window.clearTimeout(timer);
   }, []);
   async function submit(event: React.SyntheticEvent<HTMLFormElement>) {
-    event.preventDefault(); if (!token || busy) return;
+    event.preventDefault(); if (!token || inFlight.current) return;
     if (password !== confirmation) { setMessage('Passwords must match.'); return; }
-    setBusy(true); setMessage('');
+    inFlight.current = true; setBusy(true); setMessage('');
     try {
-      const response = await fetch('/api/staff-password-reset', { method: 'PUT', cache: 'no-store', headers: { 'content-type': 'application/json' }, body: JSON.stringify({ token, password }) });
+      const response = await fetch('/api/staff-password-reset', { method: 'PUT', cache: 'no-store', signal: AbortSignal.timeout(15000), headers: { 'content-type': 'application/json' }, body: JSON.stringify({ token, password }) });
       const result = await response.json() as { error?: string };
       if (!response.ok) {
         // An upstream failure may occur after the password was already changed.
@@ -38,7 +39,7 @@ export function StaffPasswordReset() {
       setToken(''); capturedToken.current = '';
       setMessage('Reset outcome is unknown. Contact your administrator before retrying.');
     }
-    finally { setPassword(''); setConfirmation(''); setBusy(false); }
+    finally { inFlight.current = false; setPassword(''); setConfirmation(''); setBusy(false); }
   }
   return <main className="grid min-h-dvh place-items-center bg-[#f7f6f1] p-5"><form onSubmit={submit} className="grid w-full max-w-md gap-4 rounded-2xl border bg-white p-6"><h1 className="text-2xl font-bold">Set your staff password</h1><label>New password<input required minLength={12} maxLength={1024} type="password" autoComplete="new-password" value={password} onChange={e => setPassword(e.target.value)} className="mt-2 min-h-11 w-full rounded-xl border px-3" /></label><label>Confirm password<input required minLength={12} maxLength={1024} type="password" autoComplete="new-password" value={confirmation} onChange={e => setConfirmation(e.target.value)} className="mt-2 min-h-11 w-full rounded-xl border px-3" /></label><button disabled={busy || !token} className="min-h-11 rounded-xl bg-[#092f36] font-bold text-white disabled:opacity-50">{busy ? 'Updating…' : 'Set password'}</button>{message && <p role="alert">{message}</p>}</form></main>;
 }

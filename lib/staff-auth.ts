@@ -11,6 +11,7 @@ export function staffAuthEnabled() {
 export function staffOrigin() {
   const url = new URL(process.env.STOCKFLOW_STAFF_ORIGIN || '');
   if (url.protocol !== 'https:' || url.username || url.password || url.pathname !== '/' || url.search || url.hash) throw new Error('Invalid staff origin');
+  if (url.hostname === 'chatgpt.site' || url.hostname.endsWith('.chatgpt.site')) throw new Error('Staff authentication requires a direct host');
   return url.origin;
 }
 
@@ -21,8 +22,13 @@ export function sameStaffOrigin(origin: string | null) {
 export function staffAuthClient() {
   const url = process.env.SUPABASE_URL;
   const key = process.env.STOCKFLOW_AUTH_PUBLISHABLE_KEY;
-  if (!url || !key || new URL(url).protocol !== 'https:') throw new Error('Staff authentication is not configured');
-  return createClient(url, key, { auth: { persistSession: false, autoRefreshToken: false, detectSessionInUrl: false } });
+  if (!url || !key || !key.startsWith('sb_publishable_') || key.length < 30 || /replace|example/i.test(key)) throw new Error('Staff authentication is not configured');
+  const project = new URL(url);
+  if (project.protocol !== 'https:' || project.username || project.password || project.pathname !== '/' || project.search || project.hash) throw new Error('Invalid authentication project origin');
+  return createClient(url, key, {
+    auth: { persistSession: false, autoRefreshToken: false, detectSessionInUrl: false },
+    global: { fetch: (input, init) => fetch(input, { ...init, signal: init?.signal ? AbortSignal.any([init.signal, AbortSignal.timeout(15000)]) : AbortSignal.timeout(15000) }) },
+  });
 }
 
 // Never derive identity or permissions from an unverified JWT or user_metadata.
@@ -38,6 +44,7 @@ export async function verifiedStaff(token: string | undefined) {
 export async function staffPasswordLogin(email: string, password: string) {
   const { data, error } = await staffAuthClient().auth.signInWithPassword({ email: email.trim().toLowerCase(), password });
   if (error || !data.session) return null;
+  if (!Number.isFinite(data.session.expires_in) || data.session.expires_in <= 0) return null;
   const user = await verifiedStaff(data.session.access_token);
   if (!user) return null;
   // Password authentication does not grant membership, pricing or administrator rights.
