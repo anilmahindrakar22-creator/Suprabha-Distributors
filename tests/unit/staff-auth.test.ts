@@ -3,7 +3,7 @@ const mocks = vi.hoisted(() => ({ getUser: vi.fn(), signInWithPassword: vi.fn(),
 vi.mock('@supabase/supabase-js', () => ({ createClient: () => ({ auth: { getUser: mocks.getUser, signInWithPassword: mocks.signInWithPassword } }) }));
 vi.mock('@/lib/order-gateway', () => ({ callOrderGateway: mocks.gateway }));
 vi.mock('next/headers', () => ({ headers: async () => mocks.headers, cookies: async () => ({ get: () => mocks.token ? { value: mocks.token } : undefined }) }));
-import { staffAuthEnabled, sameStaffOrigin, staffCookie, staffPasswordLogin, verifiedStaff } from '@/lib/staff-auth';
+import { staffAuthEnabled, sameStaffOrigin, staffCookie, staffInvitationClient, staffPasswordLogin, verifiedStaff } from '@/lib/staff-auth';
 import { getChatGPTUser } from '@/app/chatgpt-auth';
 import { POST, DELETE } from '@/app/api/staff-auth/route';
 
@@ -19,6 +19,14 @@ afterEach(() => vi.unstubAllEnvs());
 const request = (body: unknown, origin = 'https://staff.example.test') => new Request('https://staff.example.test/api/staff-auth', { method: 'POST', headers: { origin, 'content-type': 'application/json' }, body: JSON.stringify(body) });
 
 describe('isolated staff authentication', () => {
+  it.each(['', 'sb_publishable_012345678901234567890', 'sb_secret_replace-with-key'])('rejects missing or invalid provisioning secret %s', key => {
+    vi.stubEnv('STOCKFLOW_AUTH_ADMIN_KEY', key);
+    expect(() => staffInvitationClient()).toThrow('Staff provisioning is not configured');
+  });
+  it('accepts a separately configured server-only provisioning key', () => {
+    vi.stubEnv('STOCKFLOW_AUTH_ADMIN_KEY', 'sb_secret_012345678901234567890123456789');
+    expect(staffInvitationClient()).toBeDefined();
+  });
   it.each([0, -1, NaN, Infinity])('rejects invalid provider session lifetime %s', async expires_in => {
     mocks.signInWithPassword.mockResolvedValue({ data: { session: { access_token: 'verified-token', expires_in } }, error: null });
     expect(await staffPasswordLogin('staff@example.test', 'password')).toBeNull();

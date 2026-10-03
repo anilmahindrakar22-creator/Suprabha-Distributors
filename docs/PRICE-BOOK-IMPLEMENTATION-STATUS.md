@@ -1,5 +1,13 @@
 # Price book implementation checkpoint — 14 September 2026
 
+## App-based staff invitation implementation — 3 October 2026
+
+- Staff-mode Users now offers Add and invite, invitation/resend for active members, and visible password-reset actions. Sites mode retains Add user with no new provider calls. Membership is saved through the existing audited/idempotent gateway before requesting an invitation; email failure explicitly reports access saved, not atomic provisioning success. Suspended members are not invitation targets.
+- Added bounded, same-origin, no-store invitation API requiring verified actor and gateway-enforced administrator access. Only exact active-member email is passed to Supabase admin invitation API, with explicit `/staff-password-reset` redirect. Roles/passwords/provider user objects are not returned or sent as user metadata. New server-only modern `STOCKFLOW_AUTH_ADMIN_KEY` is separate from employee/publishable clients; placeholder, missing and wrong-type keys rejected. Delivery gate stays disabled.
+- No automatic provider retries. Client prevents duplicate in-flight actions and blocks invitation resubmission after uncertain failure; existing member controls remain usable. Membership and provider email are separate operations, not one ACID transaction or guaranteed exactly-once email delivery; provider audit logs cover invitation calls.
+- Targeted validation: 47 auth/invitation/reset unit tests and 4 desktop/emulated-mobile invitation UI cases passed; typecheck, affected lint and diff checks passed. Synthetic responses do not establish delivered email or actual Android acceptance.
+- Not deployed or enabled. Pending: configure server-only provisioning key in isolated Worker, verify SMTP delivery and first owner account bootstrap, then enable gated email actions and perform hosted/device checks. Public app, production data and Tally unchanged.
+
 ## Private staff gateway/read credential alignment — 3 October 2026
 
 - Supabase CLI authorization verified. Rotated only private acceptance project `ayrvhemxzizpkfcycvip` gateway/read credentials, uploaded matching Worker bindings, and updated the existing private database gateway verifier transactionally; verified the expected row matches. Production project and upload credential untouched.

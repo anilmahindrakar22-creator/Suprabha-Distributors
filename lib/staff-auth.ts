@@ -31,6 +31,18 @@ export function staffAuthClient() {
   });
 }
 
+export function staffInvitationClient() {
+  // Validate the configured project using the existing client before constructing
+  // a separate server-only admin client. Never attach an employee session to it.
+  staffAuthClient();
+  const key = process.env.STOCKFLOW_AUTH_ADMIN_KEY;
+  if (!key || !key.startsWith('sb_secret_') || key.length < 30 || /replace|example/i.test(key)) throw new Error('Staff provisioning is not configured');
+  return createClient(process.env.SUPABASE_URL!, key, {
+    auth: { persistSession: false, autoRefreshToken: false, detectSessionInUrl: false },
+    global: { fetch: (input, init) => fetch(input, { ...init, signal: init?.signal ? AbortSignal.any([init.signal, AbortSignal.timeout(15000)]) : AbortSignal.timeout(15000) }) },
+  });
+}
+
 // Never derive identity or permissions from an unverified JWT or user_metadata.
 export async function verifiedStaff(token: string | undefined) {
   if (!token || token.length > 8192) return null;
