@@ -1,5 +1,12 @@
 # Price book implementation checkpoint — 14 September 2026
 
+## Staff-login browser acceptance and reset retry safety — 3 October 2026
+
+- Added isolated desktop/emulated Pixel 7 tests for password-login rejection, password clearing, no token persistence, mobile overflow, missing recovery links, StrictMode recovery-token retention/removal from URL, confirmation mismatch, account-switch network failure and uncertain reset outcomes. The fixture uses synthetic responses, not production authentication or email delivery.
+- Demonstrated the concrete reset defect with four failing desktop/mobile checks: a network failure or provider partial reset left submission enabled. Recovery now discards the in-memory token after network/parse failures, server errors or expired-token responses, and guards submission against missing token/busy state. Ordinary definite validation errors remain visible; no provider, gateway, role or transaction changes.
+- Targeted validation: 12 browser cases passed, 25 authentication/reset unit tests passed, typecheck, affected oxlint and whitespace checks passed. No repeated full suite/build for this bounded client fix. Changed files: reset component, existing UI fixture, new staff-auth browser test and this checkpoint.
+- Deployment still blocked on separate direct host, approved Auth-account provisioning, verified free SMTP/reset redirect and throttling configuration, followed by real Android/hosted acceptance. Current Sites app and Tally unchanged; not live-ready.
+
 ## Reliability acceptance batch — 3 October 2026
 
 - Fresh targeted Vitest run passed 38 tests across pricing API authentication, offline order drafts/retry, order command idempotency and submission. Pricing API tests exercise real route functions with simulated gateway denials; they do not independently prove hosted database authorization. Preserve this distinction.

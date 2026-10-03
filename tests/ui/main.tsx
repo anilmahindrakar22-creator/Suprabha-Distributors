@@ -7,6 +7,8 @@ import { HydratedNewOrderPanel, OrderWorkspace } from '@/components/order-worksp
 import { ProductRequest, ProductRequestInbox } from '@/components/product-request';
 import { ProcurementRequirements } from '@/components/procurement-requirements';
 import { StockFlowFrame } from '@/components/stockflow-frame';
+import { StaffSignIn, StaffAccountSwitch } from '@/components/staff-sign-in';
+import { StaffPasswordReset } from '@/components/staff-password-reset';
 import type { PricingLineResolution } from '@/lib/pricing-types';
 import type { OrderBootstrap } from '@/lib/order-types';
 import '@/app/globals.css';
@@ -21,6 +23,9 @@ const row = {
 function Fixture() {
   const [entry, setEntry] = useState({ rate: '445', reason: '' });
   const parameters = new URLSearchParams(location.search);
+  if (parameters.get('view') === 'staff-signin') return <StaffSignIn />;
+  if (parameters.get('view') === 'staff-reset') return <React.StrictMode><StaffPasswordReset /></React.StrictMode>;
+  if (parameters.get('view') === 'staff-switch') return <StaffAccountSwitch />;
   if (parameters.get('view') === 'frame') return <StockFlowFrame actorEmail="staff@example.test" actorRole={parameters.get('role') || 'sales'} />;
   if (parameters.get('view') === 'product-requests') return <ProductRequestInbox />;
   if (parameters.get('view') === 'product-request-recovery') return <ProductRequest actorEmail={parameters.get('actor') || 'sales@example.test'} productName="Missing reagent" visible />;
