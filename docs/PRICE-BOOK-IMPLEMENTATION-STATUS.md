@@ -1,5 +1,12 @@
 # Price book implementation checkpoint — 14 September 2026
 
+## Reliability acceptance batch — 3 October 2026
+
+- Fresh targeted Vitest run passed 38 tests across pricing API authentication, offline order drafts/retry, order command idempotency and submission. Pricing API tests exercise real route functions with simulated gateway denials; they do not independently prove hosted database authorization. Preserve this distinction.
+- Fresh pricing browser subset passed 26 cases on desktop Chrome and emulated Pixel 7: 401/403 authorization-loss clearing, mutation/pagination denial, uncertain contract/policy responses, account-isolated receipts, reload recovery without resubmission, and customer/base/impact lost-response retry identity. Tests use the existing local UI fixture and intercepted responses, not the hosted acceptance server or an actual staff phone.
+- Read-only backup preflight found only zero-byte `production-2026-09-27.dump`. PostgreSQL restore/client tools are available, but no usable archive exists for a restore rehearsal. No credentials accessed or backups overwritten.
+- All five live gates remain partial/incomplete: hosted post-commit lost-response reconciliation, separately observed restricted-role API denial, actual staff-device recovery/separation, representative office latency/resource measurements, and restore-tested backup followed by five real working days. No production code/infrastructure changes, business mutations or Tally writes. Existing runtime/browser capabilities cannot inject a controlled response loss; owner-assisted device/network and hidden-input database credential access remain prerequisites. No full build/suite rerun for this verification-only batch.
+
 ## Private Viewer acceptance and recovery prerequisite — 3 October 2026
 
 - Owner authorized temporary Nikitesh Administrator→Viewer in isolated project `ayrvhemxzizpkfcycvip`. Guarded membership update and immutable member event were committed atomically; Viewer membership verified. Real signed-in Nikitesh navigation exposed only Stock/Orders, not Pricing/Users. Direct `/api/pricing` browser navigation was blocked by the client, so no separately observed API status/body or fresh payload denial is claimed.
