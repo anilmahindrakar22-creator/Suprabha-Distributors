@@ -1,5 +1,12 @@
 # Price book implementation checkpoint — 14 September 2026
 
+## Merged release published — 3 October 2026
+
+- PR #36 merged after GitHub quality/security, migration/ACID replay and CodeQL passed. Main/source SHA `aebdcbefeba523b4a1ec7a7e0d3e6f2f6146f5ce`. Published saved version 55 (`appgprj_6a9278d4a3b081918d9811fba983d54c~appgver_a8e8ac36fb48819198db376a6913ad4d`); deployment `appgdep_6ac0bfb979008191b87fbc13605b6a11` succeeded 2026-10-03 08:43:22 UTC (14:13 IST), runtime revision 4. Public URL unchanged: https://suprabha-stockflow.anil-mahindrakar22.chatgpt.site.
+- Used a clean publication checkout opened from existing Sites source, fast-forwarded to the exact merged commit. Fresh locked installation, mitigation-aware security gate (21 installed regressions) and production build passed. Bundled workflow could not launch Windows pnpm shim; retry through bundled Node CLI completed checks/build. Local packaging subsequently failed because its bundled helper requires unavailable Bash. Exact source had been pushed before packaging; native source-only save and remote-build fallback succeeded. Version 55 has no local archive-backed artifact; no local archive hash is claimed.
+- This publishes dependency containment and the explicit, expiring mitigation-aware audit policy alongside the already published stock timing/warning fixes. Registry advisory remains open; mitigation review expires 17 October. No database, Tally, connector schedule, access-policy or environment mutation. Native deployment success is publication evidence, not signed-in workflow, hosted uncertain-save recovery, actual staff-device acceptance or pilot certification. Those remaining checks are still outstanding.
+
+
 ## Mitigation-aware security gate — 3 October 2026
 
 - Upstream braces/micromatch/fast-glob still have no released fix. Added a narrowly scoped local mitigation decision for GHSA-vfj7-8cjw-p6xm, not an upstream-resolution claim. `security:audit:raw` retains the original failing registry audit; `security:audit` prints the full raw JSON and then verifies only the exact braces 3.0.3 advisory, known dependency paths, patch SHA-256 and workspace/lockfile registration, and runs installed-package security regressions before accepting that mitigated finding.
