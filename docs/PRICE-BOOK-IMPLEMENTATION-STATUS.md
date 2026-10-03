@@ -1,5 +1,11 @@
 # Price book implementation checkpoint — 14 September 2026
 
+## Private Viewer acceptance and recovery prerequisite — 3 October 2026
+
+- Owner authorized temporary Nikitesh Administrator→Viewer in isolated project `ayrvhemxzizpkfcycvip`. Guarded membership update and immutable member event were committed atomically; Viewer membership verified. Real signed-in Nikitesh navigation exposed only Stock/Orders, not Pricing/Users. Direct `/api/pricing` browser navigation was blocked by the client, so no separately observed API status/body or fresh payload denial is claimed.
+- Restored active Administrator using the same guarded transaction/audit pattern. First restoration returned transport HTTP 500; authoritative reread still showed Viewer, permitting one safe retry. Retry succeeded, database reread verified Administrator, and a newly opened private browser session exposed administrator navigation again. Production Nikitesh membership independently remained active Administrator. No business transactions, Tally data or production permissions changed.
+- Browser capability discovery exposes pageAssets and webmcp only, not network interception/offline/response-drop control. Hosted post-commit lost-response recovery remains untested; do not substitute a pre-send offline failure or local fixture. Actual staff-device checks and operational pilot remain open. Documentation-only diff check; no repeated full suite/build.
+
 ## Signed-in public read acceptance — 3 October 2026
 
 - Follow-up read checks: exceptions-only selected the 20 review-needed customer items as detailed cards (23 total articles including the three overview cards), with invoice/cost provenance, margin explanations and disabled empty custom-rate approvals. Base/default prices remained a separate workbench: exact product search distinguished two Widal products; selecting Widal Test 2+2x5 loaded current cost, while the unavailable target-margin price stayed explicitly unavailable and incomplete approval remained disabled. No approval was submitted. These observations do not certify mutation recovery or restricted-role denial.
