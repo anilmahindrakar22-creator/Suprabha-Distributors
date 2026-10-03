@@ -1,8 +1,10 @@
 # StockFlow production acceptance and pilot
 
-## Current status — 2 October 2026
+## Current status — 3 October 2026
 
-**Published; operational pilot remains HOLD.** PR #35 merged to main at `6deb65b5db4c642bad0b5559f1176866fb098a2c`. All six pending production migrations were applied and reconciled. Public version 52 was restored successfully in deployment `appgdep_6abf8711ca9c8191baaf38780a7f9453`; Anil's existing signed-in session loaded Orders and Pricing, with Sign out visible. These results supersede the historical release/authentication blockers below, not the remaining acceptance gates. Full evidence is in `PRICE-BOOK-IMPLEMENTATION-STATUS.md`.
+**Published; operational pilot remains HOLD.** PR #36 merged to main at `aebdcbefeba523b4a1ec7a7e0d3e6f2f6146f5ce`. Public version 55 deployed successfully as `appgdep_6ac0bfb979008191b87fbc13605b6a11`, runtime revision 4, on 3 October. All six pending production migrations were previously applied and reconciled. The earlier version-52 signed-in Orders/Pricing checks remain historical evidence, not version-55 acceptance. These results supersede historical publication blockers below, not the remaining acceptance gates. The dependency mitigation review expires on 17 October. Full evidence is in `PRICE-BOOK-IMPLEMENTATION-STATUS.md`.
+
+Read-only follow-up at 3 October 14:16 IST: source extraction 14:01:37 IST, cloud upload 14:01:38 IST, snapshot JSON text 596,354 bytes. Source age was about 15 minutes, within the 20-minute threshold; no live browser banner transition was observed. In the fixed 13:16–14:16 IST log window, three function POSTs returned HTTP 200, maximum execution 5,720 ms; eight PostgreSQL events were LOG-level. Four PostgREST events were counted but their timeout/error contents were not verified after the message aggregation query failed. These sparse results do not establish p95, CPU/memory health, full order-workflow acceptance or a completed working-day pilot.
 
 Remaining: hosted uncertain-save recovery, actual staff-device offline/account separation, representative performance/resource measurements, five real working days of pilot evidence and a restore-tested backup. Normal save/reload success and local fault fixtures do not prove hosted uncertain-response recovery. A failed request while already offline proves pre-send handling only; do not count it as a response lost after a server commit.
 

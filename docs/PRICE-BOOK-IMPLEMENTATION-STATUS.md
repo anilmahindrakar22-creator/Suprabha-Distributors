@@ -1,5 +1,12 @@
 # Price book implementation checkpoint — 14 September 2026
 
+## Post-publication read-only follow-up — 3 October 2026
+
+- Reconciled the pilot document with merged main `aebdcbe` and successful public version 55. Pilot remains HOLD for hosted uncertain-save, actual staff devices, representative performance, five real working days and restore-tested backup; no local fixture results promoted to hosted evidence.
+- At 08:46:44 UTC (14:16 IST), snapshot upload was 08:31:38.665 UTC and source extraction 08:31:37.9836772Z, approximately 15 minutes old; JSON text 596,354 bytes. No browser freshness transition was verified. Fixed 07:46:33–08:46:33 UTC logs returned three function POSTs, all HTTP 200, maximum execution 5,720 ms, and eight PostgreSQL LOG-level events. Four PostgREST entries exist; initial timeout-message aggregation failed with a backend error. Corrected source/attribute aggregates succeeded, but PostgREST timeout/error contents remain unverified. No claim of p95 or CPU/memory recovery.
+- Documentation-only reconciliation and bounded read diagnostics. Whitespace validation is the affected check; no repeat build/tests, database writes, orders, pricing decisions, connector settings, credentials or Tally operations. Actual device/controlled-network access remains unavailable here, so those acceptance gates are not marked complete.
+
+
 ## Merged release published — 3 October 2026
 
 - PR #36 merged after GitHub quality/security, migration/ACID replay and CodeQL passed. Main/source SHA `aebdcbefeba523b4a1ec7a7e0d3e6f2f6146f5ce`. Published saved version 55 (`appgprj_6a9278d4a3b081918d9811fba983d54c~appgver_a8e8ac36fb48819198db376a6913ad4d`); deployment `appgdep_6ac0bfb979008191b87fbc13605b6a11` succeeded 2026-10-03 08:43:22 UTC (14:13 IST), runtime revision 4. Public URL unchanged: https://suprabha-stockflow.anil-mahindrakar22.chatgpt.site.
