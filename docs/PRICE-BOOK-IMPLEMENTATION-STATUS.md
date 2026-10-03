@@ -1,5 +1,13 @@
 # Price book implementation checkpoint — 14 September 2026
 
+## Five-step isolated staff deployment check — 3 October 2026
+
+- Fresh `pnpm build:staff` passed; guarded generated configuration before deploying only `suprabha-staff-acceptance`. Invitation-compatible source `6074fd4` is now deployed as Worker version `3540beca-368c-4aae-b42b-a3c4a68b2016`. Recovery remains explicitly disabled. Startup 20 ms is not a per-request CPU/load measurement.
+- Hosted probes: `/staff-signin` and `/staff-password-reset` HTTP 200; anonymous `/api/orders` and `/api/pricing` HTTP 401. These do not establish authenticated or delivered-email acceptance.
+- Read-only Worker secret-name inventory confirms only origin, private Supabase URL and publishable key. Gateway/read bindings remain absent; no secret values printed or production keys copied.
+- Read-only private-project Auth query confirms zero accounts and zero confirmed accounts. Staff provisioning and subsequent email/password acceptance remain uncompleted, not silently inferred from existing OMS membership.
+- Checkpoint updated after these four execution steps. Next dependency: securely configure matching private gateway/read secrets, provision approved Auth accounts and verify delivered setup/recovery links, then actual Android testing. No new accounts, database mutations, public app/Tally changes, paid services or reset credits.
+
 ## Invitation password-setup compatibility — 3 October 2026
 
 - Fixed password-setup client rejecting Supabase invitation links: accepts `invite` alongside `recovery`, clears the fragment immediately and retains the bearer only in memory. Other link types remain rejected. Server provider verification, confirmed identity, active OMS membership, password constraints and revocation controls unchanged.
