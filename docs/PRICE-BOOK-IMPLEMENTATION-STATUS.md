@@ -1,5 +1,11 @@
 # Price book implementation checkpoint — 14 September 2026
 
+## Invitation password-setup compatibility — 3 October 2026
+
+- Fixed password-setup client rejecting Supabase invitation links: accepts `invite` alongside `recovery`, clears the fragment immediately and retains the bearer only in memory. Other link types remain rejected. Server provider verification, confirmed identity, active OMS membership, password constraints and revocation controls unchanged.
+- Regression demonstrated first: invitation setup button remained disabled. After fix, 20 desktop/emulated Pixel 7 browser checks and 31 affected authentication/reset unit tests passed. Typecheck, affected oxlint and diff check passed. Tests use synthetic provider responses, not delivered invitations or actual devices.
+- Changed component, existing auth browser tests and this checkpoint. Not yet deployed; private gateway/read bindings, account provisioning, recovery delivery and actual Android checks remain blockers. No production/Tally changes.
+
 ## Isolated staff authentication deployment setup — 3 October 2026
 
 - Isolated Worker deployed at `https://suprabha-staff-acceptance.anil-mahindrakar22.workers.dev`; root serves staff sign-in (HTTP 200), anonymous `/api/orders` returns HTTP 401. These probes do not prove authenticated workflows or free-tier load suitability.

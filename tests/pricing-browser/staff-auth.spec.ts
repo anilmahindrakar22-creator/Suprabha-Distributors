@@ -58,14 +58,15 @@ test('missing recovery link blocks submission', async ({ page }) => {
   await expect(page.getByRole('button', { name: 'Set password' })).toBeDisabled();
 });
 
-test('recovery survives StrictMode, removes fragment and validates confirmation before sending', async ({ page }) => {
+for (const linkType of ['recovery', 'invite']) {
+test(`${linkType} survives StrictMode, removes fragment and validates confirmation before sending`, async ({ page }) => {
   let requests = 0;
   await page.route('**/api/staff-password-reset', async route => {
     requests++;
     expect(route.request().postDataJSON()).toEqual({ token: 'synthetic-recovery', password: 'new-synthetic-password' });
     await route.fulfill({ status: 400, json: { error: 'Request a new recovery link' } });
   });
-  await page.goto('/?view=staff-reset#type=recovery&access_token=synthetic-recovery');
+  await page.goto(`/?view=staff-reset#type=${linkType}&access_token=synthetic-recovery`);
   const button = page.getByRole('button', { name: 'Set password' });
   await expect(button).toBeEnabled();
   expect(new URL(page.url()).hash).toBe('');
@@ -80,6 +81,13 @@ test('recovery survives StrictMode, removes fragment and validates confirmation 
   expect(requests).toBe(1);
   await expect(page.getByLabel('New password', { exact: true })).toHaveValue('');
   expect(await page.evaluate(() => [localStorage.length, sessionStorage.length])).toEqual([0, 0]);
+});
+}
+
+test('unrelated email-link type cannot enable password setup', async ({ page }) => {
+  await page.goto('/?view=staff-reset#type=signup&access_token=synthetic-token');
+  await expect(page.getByRole('button', { name: 'Set password' })).toBeDisabled();
+  expect(new URL(page.url()).hash).toBe('');
 });
 
 for (const failure of ['network', 'partial'] as const) {

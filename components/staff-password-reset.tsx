@@ -11,9 +11,11 @@ export function StaffPasswordReset() {
   const inFlight = useRef(false);
   useEffect(() => {
     const fragment = new URLSearchParams(window.location.hash.slice(1));
-    if (capturedToken.current === null) capturedToken.current = fragment.get('type') === 'recovery' ? fragment.get('access_token') || '' : '';
+    const linkType = fragment.get('type');
+    if (capturedToken.current === null) capturedToken.current = linkType === 'recovery' || linkType === 'invite' ? fragment.get('access_token') || '' : '';
     const accessToken = capturedToken.current;
-    // Keep the recovery bearer in memory only; remove it from history immediately.
+    // Invitation and recovery bearers use the same server verification and membership checks.
+    // Keep the bearer in memory only; remove it from history immediately.
     window.history.replaceState(null, '', '/staff-password-reset');
     const timer = window.setTimeout(() => {
       setToken(accessToken);
