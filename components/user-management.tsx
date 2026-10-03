@@ -11,18 +11,26 @@ async function read<T>(response: Response): Promise<T> {
   return value;
 }
 
-export function UserManagement() {
+export function UserManagement({ staffAuth = false }: { staffAuth?: boolean }) {
   const [members, setMembers] = useState<Member[]>([]);
   const [email, setEmail] = useState('');
   const [role, setRole] = useState('viewer');
   const [busy, setBusy] = useState(false);
   const [message, setMessage] = useState('');
+  async function resetPassword(email: string) {
+    setBusy(true); setMessage('');
+    try {
+      const result = await read<{ message: string }>(await fetch('/api/staff-password-reset', { method: 'POST', cache: 'no-store', headers: { 'content-type': 'application/json' }, body: JSON.stringify({ email }) }));
+      setMessage(result.message);
+    } catch (error) { setMessage(error instanceof Error ? error.message : 'Recovery request failed'); }
+    finally { setBusy(false); }
+  }
 
   const load = useCallback(async () => {
     try { setMembers((await read<{ users: Member[] }>(await fetch('/api/users', { cache: 'no-store' }))).users); }
     catch (error) { setMessage(error instanceof Error ? error.message : 'Unable to load users'); }
   }, []);
-  useEffect(() => { void load(); }, [load]);
+  useEffect(() => { const timer = window.setTimeout(() => void load(), 0); return () => window.clearTimeout(timer); }, [load]);
 
   async function saveUser(nextEmail: string, nextRole: string, status: string) {
     setBusy(true); setMessage('');
@@ -35,7 +43,8 @@ export function UserManagement() {
 
   return <div className="h-full overflow-y-auto"><div className="mx-auto max-w-5xl p-5 sm:p-8"><p className="text-xs font-extrabold uppercase tracking-[0.12em] text-[#277b69]">Administration</p><h1 className="mt-1 text-3xl font-black text-[#092f36]">Users</h1><p className="mt-2 text-sm text-[#64787b]">Approve company accounts, assign responsibilities, or suspend access.</p>
     <form onSubmit={(event) => { event.preventDefault(); void saveUser(email, role, 'active'); }} className="mt-6 grid gap-3 rounded-2xl border border-[#dce7e5] bg-white p-5 sm:grid-cols-[1fr_190px_auto] sm:items-end"><label className="text-sm font-bold text-[#456367]">Email<input required type="email" maxLength={254} value={email} onChange={(event) => setEmail(event.target.value)} placeholder="name@company.com" className="mt-2 min-h-11 w-full rounded-xl border border-[#cedfdd] px-3 font-normal" /></label><label className="text-sm font-bold text-[#456367]">Role<select value={role} onChange={(event) => setRole(event.target.value)} className="mt-2 min-h-11 w-full rounded-xl border border-[#cedfdd] bg-white px-3 font-normal">{stockFlowRoles.map((item) => <option key={item} value={item}>{item.replaceAll('_', ' ')}</option>)}</select></label><button disabled={busy} className="min-h-11 rounded-xl bg-[#092f36] px-5 font-bold text-white disabled:opacity-50">Add user</button></form>
-    {message ? <p role="status" className="mt-4 rounded-xl bg-[#edf7f3] px-4 py-3 text-sm text-[#31585d]">{message}</p> : null}
+    {staffAuth && <details className="mt-4 rounded-xl border bg-white p-4"><summary className="font-bold">Reset staff password</summary><p className="my-3 text-sm">Request a recovery email. Staff choose their own passwords; administrators cannot view them.</p>{members.filter(member => member.status === 'active').map(member => <button key={member.id} type="button" disabled={busy} onClick={() => void resetPassword(member.email)} className="mb-2 block min-h-11 rounded-lg border px-3">Send reset link to {member.email}</button>)}</details>}
+    {message ? <output className="mt-4 block rounded-xl bg-[#edf7f3] px-4 py-3 text-sm text-[#31585d]">{message}</output> : null}
     <div className="mt-6 overflow-hidden rounded-2xl border border-[#dce7e5] bg-white"><div className="divide-y divide-[#e8efed]">{members.map((member) => <div key={member.id} className="grid gap-3 p-4 sm:grid-cols-[1fr_180px_130px] sm:items-center"><div><strong className="text-[#173239]">{member.email}</strong><p className="mt-1 text-xs capitalize text-[#718487]">{member.status}</p></div><select aria-label={`Role for ${member.email}`} value={member.role} disabled={busy} onChange={(event) => void saveUser(member.email, event.target.value, member.status)} className="min-h-10 rounded-xl border border-[#cedfdd] bg-white px-3 capitalize">{stockFlowRoles.map((item) => <option key={item} value={item}>{item}</option>)}</select><button type="button" disabled={busy} onClick={() => void saveUser(member.email, member.role, member.status === 'active' ? 'suspended' : 'active')} className="min-h-10 rounded-xl border border-[#cedfdd] px-3 font-bold text-[#456367]">{member.status === 'active' ? 'Suspend' : 'Activate'}</button></div>)}</div></div>
   </div></div>;
 }

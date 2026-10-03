@@ -5,6 +5,8 @@ import {
   getChatGPTUser,
 } from './chatgpt-auth';
 import { getStockFlowSession } from '@/lib/stockflow-session';
+import { staffAuthEnabled } from '@/lib/staff-auth';
+import { StaffAccountSwitch, StaffSignIn } from '@/components/staff-sign-in';
 
 export const dynamic = 'force-dynamic';
 
@@ -12,6 +14,7 @@ export default async function Home() {
   const user = await getChatGPTUser();
 
   if (!user) {
+    if (staffAuthEnabled()) return <StaffSignIn />;
     return (
       <main className="grid min-h-dvh place-items-center bg-[#f7f6f1] px-5 text-[#173239]">
         <section className="w-full max-w-md rounded-3xl border border-[#dce7e5] bg-white p-8 shadow-[0_18px_55px_rgba(9,47,54,0.12)]">
@@ -53,6 +56,7 @@ export default async function Home() {
             You signed in as {user.email}. Ask a StockFlow administrator to add
             this address.
           </p>
+          {staffAuthEnabled() ? <StaffAccountSwitch /> : <>
           {/* The Sites dispatcher owns sign-out; this must remain a top-level browser navigation. */}
           {/* oxlint-disable-next-line next/no-html-link-for-pages */}
           <a
@@ -62,10 +66,11 @@ export default async function Home() {
           >
             Use another account
           </a>
+          </>}
         </section>
       </main>
     );
   }
 
-  return <StockFlowFrame actorEmail={session.email} actorRole={session.role} />;
+  return <StockFlowFrame actorEmail={session.email} actorRole={session.role} staffAuth={staffAuthEnabled()} />;
 }
