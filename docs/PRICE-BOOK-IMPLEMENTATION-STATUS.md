@@ -1,5 +1,12 @@
 # Price book implementation checkpoint — 14 September 2026
 
+## Staff-auth configuration preflight — 3 October 2026
+
+- Added `pnpm check:staff-auth`: read-only environment-shape validation with credential-free output. Rejects non-HTTPS/path-bearing/credential-bearing origins, existing Sites hosts, incorrect modern publishable-key types/placeholders, missing server gateway/read keys and disabled recovery delivery. A complete configuration never claims deployment-ready; provisioning, disabled signup, SMTP/redirect, throttling/resource and real hosted/device acceptance remain mandatory.
+- Extended `.env.example` with opt-in staff settings; default remains Sites and recovery remains disabled. No runtime authentication changes, deployment, credentials, provisioning, provider settings or Tally modifications. This diagnostic does not enforce hosting policy by itself or independently verify email delivery.
+- Changed files: `.env.example`, `package.json`, `tests/staff-auth-preflight.mjs`, `tests/unit/staff-auth-preflight.test.ts` and checkpoint. Targeted tests: 12 passed; typecheck, affected oxlint and diff check passed. Actual preflight exited 1 as expected in the unconfigured shell, with seven configuration blockers and no credential values. No full build/suite rerun for this diagnostic-only ticket.
+- Next external dependency remains an isolated direct-host account/environment and verified recovery-email setup. Do not activate this path on the public Sites app or treat fixtures as live acceptance.
+
 ## Staff-login browser acceptance and reset retry safety — 3 October 2026
 
 - Added isolated desktop/emulated Pixel 7 tests for password-login rejection, password clearing, no token persistence, mobile overflow, missing recovery links, StrictMode recovery-token retention/removal from URL, confirmation mismatch, account-switch network failure and uncertain reset outcomes. The fixture uses synthetic responses, not production authentication or email delivery.
