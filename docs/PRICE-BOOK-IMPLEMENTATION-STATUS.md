@@ -1,5 +1,11 @@
 # Price book implementation checkpoint — 14 September 2026
 
+## Signed-in public read acceptance — 3 October 2026
+
+- Browser sign-in completed as the approved administrator. Public Orders displayed the new-order control, zero confirmation items and five ready-to-dispatch queue records. Inspected loaded card DOM without performing transitions; queue membership includes billed orders still labelled Tally billing with a ready-for-dispatch action, not only orders already labelled Dispatch.
+- Pricing finished loading the existing 25% general gross-margin policy. Exact customer lookup selected Anugraha Diabetes & Endocrinology Center, distinct from its closed-name match. The customer price book loaded 32 purchased items: 12 ready and 20 protected/review-needed; all fit on page 1 with Previous/Next disabled. Cost-increase rows explicitly require review; a lower-cost row retains the prior selling rate. Diasys/Sysmex group-margin preview controls are present. No commercial values are copied into this checkpoint.
+- These are administrator read-path observations, not approval, pagination across multiple pages, restricted-role, hosted uncertain-save, actual-device or performance certification. No orders, pricing approvals, Tally operations, database writes or settings changed. Pilot remains HOLD. Documentation-only whitespace check; no repeated test suite/build.
+
 ## Post-publication read-only follow-up — 3 October 2026
 
 - Reconciled the pilot document with merged main `aebdcbe` and successful public version 55. Pilot remains HOLD for hosted uncertain-save, actual staff devices, representative performance, five real working days and restore-tested backup; no local fixture results promoted to hosted evidence.
