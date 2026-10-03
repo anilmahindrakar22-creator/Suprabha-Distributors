@@ -47,6 +47,31 @@ test('older stock payloads without source timestamps remain supported', async ({
   await expect(details.getByText('Not available')).toHaveCount(5);
 });
 
+test('fresh extraction clears the previous overdue warning and later stale data restores it', async ({ page }) => {
+  let stale = true;
+  await page.route('**/api/stock?view=dashboard', (route) => route.fulfill({ json: {
+    ...stockPayload(),
+    fetchedAtIso: new Date(Date.now() - (stale ? 30 * 60 * 1000 : 0)).toISOString(),
+  } }));
+  await page.route('**/api/orders?summary=1', (route) => route.fulfill({ json: {} }));
+  await page.goto('/stockflow.html');
+  await expect(page.locator('#liveText')).toHaveText('Tally sync overdue');
+  await expect(page.locator('#error')).toBeVisible();
+  await expect(page.locator('#error')).toContainText('Tally stock extraction is overdue');
+
+  stale = false;
+  await page.getByRole('button', { name: 'Refresh' }).click();
+  await expect(page.locator('#liveText')).toHaveText('Cloud snapshot current');
+  await expect(page.locator('#error')).toHaveText('');
+  await expect(page.locator('#error')).toBeHidden();
+
+  stale = true;
+  await page.getByRole('button', { name: 'Refresh' }).click();
+  await expect(page.locator('#liveText')).toHaveText('Tally sync overdue');
+  await expect(page.locator('#error')).toBeVisible();
+  await expect(page.locator('#error')).toContainText('Tally stock extraction is overdue');
+});
+
 test('hidden stock tabs stop polling and refresh when visible again', async ({ page }) => {
   await page.addInitScript(() => Object.defineProperty(document, 'hidden', { configurable: true, value: true }));
   await page.clock.install();
@@ -73,7 +98,7 @@ test('a stalled Stock response body times out and a later refresh recovers', asy
     const nativeFetch = window.fetch.bind(window);
     let stall = true;
     window.fetch = (input, init) => {
-      if (stall && String(input).includes('/api/stock?view=dashboard')) {
+      if (stall && (input instanceof Request ? input.url : String(input)).includes('/api/stock?view=dashboard')) {
         stall = false;
         const body = new ReadableStream({
           start(controller) {
@@ -100,7 +125,7 @@ test('a stalled order summary body times out without discarding Stock and refres
     const nativeFetch = window.fetch.bind(window);
     let stall = true;
     window.fetch = (input, init) => {
-      if (stall && String(input).includes('/api/orders?summary=1')) {
+      if (stall && (input instanceof Request ? input.url : String(input)).includes('/api/orders?summary=1')) {
         stall = false;
         const body = new ReadableStream({
           start(controller) {

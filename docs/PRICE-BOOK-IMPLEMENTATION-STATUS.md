@@ -1090,6 +1090,9 @@ Completed after the user requested one more slice:
 - No production, private deployment, database membership or Tally changes in this paused turn. Private acceptance retest remains pending after the completed fix is deployed.
 ### GitHub reconciliation security gate — 3 October 2026
 
+- Follow-up: `braces@3.0.4` is explicitly unavailable from npm; latest micromatch 4.0.8 still requires braces ^3.0.3, and latest vinext 1.0.1 retains the same commonjs/dynamic-import dependency path. No speculative runtime upgrade, library substitution or audit exclusion applied.
+- Added desktop/mobile browser coverage for stale extraction → fresh refresh (warning text cleared and hidden) → stale extraction (warning restored). Corrected two existing test-only fetch mocks to use Request.url instead of generic object stringification. Fresh affected Playwright file: 18 passed; typecheck, test-file oxlint and diff checking passed. This is local fixture evidence, not live connector or staff-device acceptance. Production code and deployments unchanged.
+
 - PR #36 reconciles the already published sync timing and stale-warning fixes. Head tested: `d46f322c332866cb40a5c847769e802666280350`; main remains `6deb65b5db4c642bad0b5559f1176866fb098a2c`. No merge or new deployment performed.
 - Fresh local targeted validation passed 93 tests, affected lint, typecheck and diff checking. GitHub CI passed 532 unit tests, production build, 34 general E2E cases, 86 pricing E2E cases, migration/ACID replay and CodeQL.
 - The quality gate failed solely at production dependency audit: `GHSA-vfj7-8cjw-p6xm`, transitive `braces@3.0.3` via shadcn/vinext. Local `pnpm security:audit` reproduced the failure. `pnpm view braces version` still returns 3.0.3; GitHub advisory lists no published patch although audit metadata suggests >=3.0.4. Do not pin a nonexistent version or suppress the security gate. Dependency remediation and fresh green CI are required before merge.
