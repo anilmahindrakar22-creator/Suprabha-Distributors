@@ -9,6 +9,7 @@
   "scripts": {
     "dev": "vinext dev",
     "build": "vinext build",
+    "build:staff": "vinext build --mode staff",
     "start": "wrangler dev --config dist/server/wrangler.json",
     "lint": "oxlint app components/stockflow-frame.tsx components/order-workspace.tsx components/product-request.tsx components/procurement-requirements.tsx components/service-workspace.tsx components/pricing-workspace.tsx components/customer-price-book.tsx components/pricing-options.tsx lib supabase/functions/stockflow-sync/handler.ts",
     "typecheck": "tsc --noEmit",

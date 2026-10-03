@@ -1,5 +1,12 @@
 # Price book implementation checkpoint — 14 September 2026
 
+## Isolated staff Worker build path — 3 October 2026
+
+- Cloudflare OAuth account authorization verified read-only. Added opt-in `pnpm build:staff` (`vinext build --mode staff`) using the existing app, vinext and Cloudflare plugin. Staff mode omits the Sites dispatcher plugin and uses Worker `suprabha-staff-acceptance`, no Sites resource bindings, Supabase authentication and recovery-email disabled. Ordinary `pnpm build` retains Sites behavior. No separate application or new dependencies.
+- Fresh staff build, typecheck, affected config lint and Wrangler deployment `--dry-run` passed. Generated name/auth/recovery variables verified; dry-run bundle 1,265.46 KiB raw / 344.67 KiB gzip. This is packaging evidence, not deployed startup CPU, live load or free-tier suitability. No upload or cloud resource creation occurred.
+- Fresh default build also passed and generated target `sites-project` with no staff-mode variables verified. Both commands reuse ignored `dist`; the latest artifact is the default Sites build. Rebuild with `pnpm build:staff` and recheck generated configuration before any later isolated deployment; never deploy a stale artifact.
+- Files changed: `vite.config.ts`, `package.json`, this checkpoint. No full unit/browser/database suite repeated for this opt-in build-path ticket. Pending: isolated Worker creation/configuration, private provider/gateway/read settings, approved Auth accounts, verified free SMTP/reset redirects, abuse protection and actual hosted/Android acceptance. Public app, database and Tally unchanged.
+
 ## Five-part staff-login hardening batch — 3 October 2026
 
 - Runtime configuration now rejects Sites-host activation, secret/legacy/placeholder auth keys and malformed provider origins. SDK fetches have a 15-second abort deadline while preserving upstream cancellation; existing provider identity and membership enforcement remain unchanged.
