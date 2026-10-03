@@ -29,12 +29,30 @@ function getRequest(url = 'https://edge.example/stockflow-sync', key?: string) {
 function postRequest(body: string, key?: string, headers: HeadersInit = {}) {
   return new Request('https://edge.example/stockflow-sync', {
     method: 'POST',
-    headers: { 'content-type': 'application/json', ...(key ? { 'x-upload-key': key } : {}), ...headers },
+    headers: { 'content-type': 'application/json', ...(key ? { 'x-upload-key': key } : {}), ...Object.fromEntries(new Headers(headers)) },
     body,
   });
 }
 
 describe('Stockflow sync edge handler', () => {
+  it.each(['read', 'upload', 'failure'] as const)('measures authenticated %s without exposing payloads or credentials', async mode => {
+    let clock = 100;
+    vi.spyOn(performance, 'now').mockImplementation(() => clock);
+    const fetchFn = vi.fn(async () => {
+      clock += 125;
+      if (mode === 'failure') throw new Error(databaseSecret);
+      return mode === 'read' ? Response.json([{ payload: validPayload, updated_at: '2026-10-02' }]) : new Response(null, { status: 204 });
+    });
+    const { handler } = makeHandler({ fetchFn });
+    const response = await handler(mode === 'read' ? getRequest('https://edge.example/stockflow-sync', 'read-key') : postRequest(JSON.stringify(validPayload), 'upload-key'));
+    expect(response.status).toBe(mode === 'failure' ? 502 : 200);
+    expect(response.headers.get('server-timing')).toBe('stockflow;dur=125.0, database;dur=125.0');
+    expect(response.headers.get('cache-control')).toBe('private, no-store');
+    expect(response.headers.get('server-timing')).not.toContain(databaseSecret);
+    expect(fetchFn).toHaveBeenCalledTimes(1);
+    if (mode === 'failure') expect(await response.json()).toEqual({ error: 'Stock service is temporarily unavailable' });
+  });
+
   it.each([
     ['GET', getRequest()],
     ['POST', postRequest(JSON.stringify(validPayload))],
@@ -43,6 +61,7 @@ describe('Stockflow sync edge handler', () => {
     const response = await handler(request);
 
     expect(response.status).toBe(401);
+    expect(response.headers.has('server-timing')).toBe(false);
     expect(await response.json()).toEqual({ error: 'Unauthorized' });
     expect(fetchFn).not.toHaveBeenCalled();
   });

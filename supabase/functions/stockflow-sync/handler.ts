@@ -27,6 +27,19 @@ export function createSyncHandler({ env, fetchFn }: Dependencies) {
     if (!key) return reply({ error: 'Stock service is not configured' }, 503);
     if (request.headers.get(reading ? 'x-dashboard-key' : 'x-upload-key') !== key) return reply({ error: 'Unauthorized' }, 401);
 
+    const startedAt = performance.now();
+    let databaseMs = 0;
+    const measuredReply = (body: unknown, status = 200) => {
+      const response = reply(body, status);
+      response.headers.set('server-timing', `stockflow;dur=${Math.max(0, performance.now() - startedAt).toFixed(1)}, database;dur=${databaseMs.toFixed(1)}`);
+      return response;
+    };
+    const databaseFetch: typeof fetch = async (input, init) => {
+      const databaseStartedAt = performance.now();
+      try { return await fetchFn(input, init); }
+      finally { databaseMs += Math.max(0, performance.now() - databaseStartedAt); }
+    };
+
     try {
       // Match the Orders function: modern backend secrets go in apikey, never a JWT header.
       const url = env('SUPABASE_URL');
@@ -42,11 +55,11 @@ export function createSyncHandler({ env, fetchFn }: Dependencies) {
           : 'payload,updated_at');
         target.searchParams.set('id', 'eq.suprabha');
         target.searchParams.set('limit', '1');
-        const response = await fetchFn(target.toString(), { headers: { apikey: secret }, cache: 'no-store', signal: AbortSignal.timeout(10_000) });
-        if (!response.ok) return reply({ error: 'Unable to load snapshot' }, 500);
+        const response = await databaseFetch(target.toString(), { headers: { apikey: secret }, cache: 'no-store', signal: AbortSignal.timeout(10_000) });
+        if (!response.ok) return measuredReply({ error: 'Unable to load snapshot' }, 500);
         const rows = await response.json() as Record<string, unknown>[];
         if (!rows.length) return reply({ error: 'No snapshot has been uploaded yet' }, 404);
-        return dashboard ? reply(rows[0]) : reply({ ...rows[0].payload as Record<string, unknown>, cloudUpdatedAt: rows[0].updated_at });
+        return dashboard ? measuredReply(rows[0]) : measuredReply({ ...rows[0].payload as Record<string, unknown>, cloudUpdatedAt: rows[0].updated_at });
       }
 
       let payload: Record<string, unknown>;
@@ -66,15 +79,15 @@ export function createSyncHandler({ env, fetchFn }: Dependencies) {
       if (typeof fetchedAt !== 'string' || !fetchedAt.trim()) return reply({ error: 'Invalid snapshot' }, 400);
       // Existing single-row atomic upsert and import triggers remain the write boundary.
       target.searchParams.set('on_conflict', 'id');
-      const response = await fetchFn(target.toString(), {
+      const response = await databaseFetch(target.toString(), {
         method: 'POST',
         signal: AbortSignal.timeout(10_000),
         headers: { apikey: secret, 'content-type': 'application/json', prefer: 'resolution=merge-duplicates,return=minimal' },
         body: JSON.stringify({ id: 'suprabha', company: payload.company, fetched_at: fetchedAt, payload, updated_at: new Date().toISOString() }),
       });
-      return response.ok ? reply({ ok: true }) : reply({ error: 'Unable to save snapshot' }, 500);
+      return response.ok ? measuredReply({ ok: true }) : measuredReply({ error: 'Unable to save snapshot' }, 500);
     } catch {
-      return reply({ error: 'Stock service is temporarily unavailable' }, 502);
+      return measuredReply({ error: 'Stock service is temporarily unavailable' }, 502);
     }
   };
 }

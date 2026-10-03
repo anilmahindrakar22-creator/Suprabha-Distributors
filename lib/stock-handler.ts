@@ -11,6 +11,14 @@ const privateJsonHeaders = {
   'content-type': 'application/json; charset=utf-8',
 };
 
+type StockResult = { body: string; status: number; timing?: string };
+
+// Reconstruct the known numeric metrics; never proxy descriptions or arbitrary headers.
+function syncTiming(value: string | null): string | undefined {
+  const match = value?.match(/^stockflow;dur=(\d{1,6}\.\d), database;dur=(\d{1,6}\.\d)$/);
+  return match ? `sync;dur=${match[1]}, database;dur=${match[2]}` : undefined;
+}
+
 function errorResponse(error: string, status: number): Response {
   return Response.json(
     { error },
@@ -51,8 +59,9 @@ export function createStockHandler<User>({
 }: StockHandlerDependencies<User>): (request?: Request) => Promise<Response> {
   // Coalesce reads for each view's current credential in this handler instance. No settled
   // responses are cached; every caller still passes its own authorization check.
-  const inFlight = new Map<string, { key: string; result: Promise<{ body: string; status: number }> }>();
+  const inFlight = new Map<string, { key: string; result: Promise<StockResult> }>();
   return async function getStock(request?: Request): Promise<Response> {
+    const startedAt = performance.now();
     const user = await getUser();
     if (!user) return errorResponse('Sign in required', 401);
     if (!(await hasAccess(user))) return errorResponse('Access denied', 403);
@@ -92,17 +101,20 @@ export function createStockHandler<User>({
             throw new Error('Invalid dashboard snapshot');
           }
           const projected = dashboardView ? projectDashboardStockPayload(parsed) : parsed;
-          return { body: JSON.stringify(sanitizeStockPayload(projected)), status: response.status };
+          return { body: JSON.stringify(sanitizeStockPayload(projected)), status: response.status, timing: syncTiming(response.headers.get('server-timing')) };
         })();
         entry = { key, result };
         inFlight.set(view, entry);
       }
-      let result: { body: string; status: number };
+      let result: StockResult;
       try { result = await entry.result; }
       finally { if (inFlight.get(view) === entry) inFlight.delete(view); }
       return new Response(result.body, {
         status: result.status,
-        headers: privateJsonHeaders,
+        headers: {
+          ...privateJsonHeaders,
+          'server-timing': `stockflow;dur=${Math.max(0, performance.now() - startedAt).toFixed(1)}${result.timing ? `, ${result.timing}` : ''}`,
+        },
       });
     } catch {
       return errorResponse('Stock service is temporarily unavailable', 502);

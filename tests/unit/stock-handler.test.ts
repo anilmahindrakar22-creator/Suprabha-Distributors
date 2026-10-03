@@ -16,6 +16,33 @@ function makeHandler(overrides = {}) {
 }
 
 describe('stock API handler', () => {
+  it('exposes only numeric sync timings alongside route duration', async () => {
+    let clock = 100;
+    vi.spyOn(performance, 'now').mockImplementation(() => clock);
+    const response = await makeHandler({ fetchFn: vi.fn(async () => {
+      clock += 50;
+      return Response.json({ rows: [], rate: 999 }, { headers: {
+        'server-timing': 'stockflow;dur=30.0, database;dur=20.0',
+        'x-secret': 'server-only-key',
+      } });
+    }) })();
+    expect(response.headers.get('server-timing')).toBe('stockflow;dur=50.0, sync;dur=30.0, database;dur=20.0');
+    expect(response.headers.has('x-secret')).toBe(false);
+    expect(await response.json()).toEqual({ rows: [] });
+  });
+
+  it.each([
+    'stockflow;dur=NaN, database;dur=20.0',
+    'stockflow;dur=-1.0, database;dur=20.0',
+    'stockflow;dur=30.0;desc="rate 999", database;dur=20.0',
+    'stockflow;dur=30.0, database;dur=20.0, secret;desc="server-only-key"',
+    'stockflow;dur=1000000.0, database;dur=20.0',
+  ])('discards untrusted timing metadata (%s)', async timing => {
+    vi.spyOn(performance, 'now').mockReturnValue(100);
+    const response = await makeHandler({ fetchFn: vi.fn(async () => Response.json({ rows: [] }, { headers: { 'server-timing': timing } })) })();
+    expect(response.headers.get('server-timing')).toBe('stockflow;dur=0.0');
+  });
+
   it.each([
     {}, { rows: null, groups: null }, { rows: [], groups: null },
     { rows: {}, groups: [] }, { rows: [], groups: [null] },
@@ -55,6 +82,7 @@ describe('stock API handler', () => {
     })();
 
     expect(response.status).toBe(401);
+    expect(response.headers.has('server-timing')).toBe(false);
     expect(await response.json()).toEqual({ error: 'Sign in required' });
     expect(response.headers.get('cache-control')).toBe('private, no-store');
     expect(fetchFn).not.toHaveBeenCalled();
@@ -63,6 +91,7 @@ describe('stock API handler', () => {
   it('denies authenticated users outside the allowlist', async () => {
     const response = await makeHandler({ hasAccess: vi.fn(() => false) })();
     expect(response.status).toBe(403);
+    expect(response.headers.has('server-timing')).toBe(false);
     expect(await response.json()).toEqual({ error: 'Access denied' });
   });
 
