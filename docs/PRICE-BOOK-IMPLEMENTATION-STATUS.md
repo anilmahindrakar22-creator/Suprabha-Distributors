@@ -1,5 +1,12 @@
 # Price book implementation checkpoint — 14 September 2026
 
+## Private staff gateway/read credential alignment — 3 October 2026
+
+- Supabase CLI authorization verified. Rotated only private acceptance project `ayrvhemxzizpkfcycvip` gateway/read credentials, uploaded matching Worker bindings, and updated the existing private database gateway verifier transactionally; verified the expected row matches. Production project and upload credential untouched.
+- Generated 256-bit random keys locally; saved DPAPI-encrypted copies in current-user-only protected `LocalAppData/Suprabha/StaffAcceptance`. Removed transient plaintext Edge env file after upload. No plaintext keys printed or committed. Operational helper remains in existing untracked `.codex/`, not application source.
+- Private backend verification passed: administrator `session` HTTP 200 and authenticated stock read HTTP 200. This is direct backend wiring evidence, not staff email/password login acceptance. Initial probe was blocked by repeated Windows ACL setter privilege error; replaced reapplication with strict verification of existing protected current-user-only ACL, then probe passed.
+- Previous private Sites acceptance deployment still has old gateway/read credentials and needs separate refresh before use; new Worker has current bindings. Auth accounts, delivered setup/recovery email, abuse/resource checks and actual Android acceptance remain pending. Recovery stays disabled. No production or Tally changes.
+
 ## Five-step isolated staff deployment check — 3 October 2026
 
 - Fresh `pnpm build:staff` passed; guarded generated configuration before deploying only `suprabha-staff-acceptance`. Invitation-compatible source `6074fd4` is now deployed as Worker version `3540beca-368c-4aae-b42b-a3c4a68b2016`. Recovery remains explicitly disabled. Startup 20 ms is not a per-request CPU/load measurement.
