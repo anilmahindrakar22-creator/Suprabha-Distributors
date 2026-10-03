@@ -1,5 +1,13 @@
 # Price book implementation checkpoint — 14 September 2026
 
+## Reproducible dependency containment — 3 October 2026
+
+- Added a pnpm version-bound patch for braces 3.0.3 rather than replacing glob libraries or upgrading unrelated runtime dependencies. The parser rejects brace/parenthesis AST nesting beyond 100 before adding another nested node; escapes, quoted text and bracket literals retain existing handling. The lockfile binds the patch hash and frozen installation succeeds. This follows the upstream issue's suggested parser depth guard: https://github.com/micromatch/braces/issues/70 and pnpm's documented patch mechanism: https://pnpm.io/cli/patch.
+- Initial guard regressions failed (10/14); after containment 14/14 passed. Added the third ts-morph dependency path and verified 21/21 focused tests through all three audit-reported dependency chains, including parse/compile/expand/stringify string inputs, parentheses/mixed nesting, boundary depth, ordinary alternatives/ranges and escaped/quoted/bracketed literals. Direct caller-supplied AST objects are not validated by this parser patch; no claim of general AST sanitization or upstream certification.
+- Fresh `pnpm install --frozen-lockfile` passed. `pnpm test:ci` passed lint, typecheck, connector fixtures, 546 unit tests and production build; the subsequently expanded focused suite passed 21 tests. Test-file lint and diff checking passed. General browser suite passed 36 tests and pricing browser suite passed 86 tests. These are local fixture checks, not hosted acceptance or staff-device certification.
+- `pnpm security:audit` still fails on GHSA-vfj7-8cjw-p6xm because the installed version remains 3.0.3. No advisory exclusions, severity reduction, version spoofing or CI bypass applied. This is tested local containment, not an audit-green release: merge/publication remains held pending a released fix or an explicitly reviewed security decision. No database, Tally, connector schedule, account or production change.
+
+
 ## Cached-warning fix published — 2 October 2026
 
 - Production build passed at clean `5c30e06f28f2b6638a9bd9ae4a4e3815b5a5498e`. Exact source pushed to the existing Sites repository, not GitHub main; saved version 54 and deployed successfully as `appgdep_6abfbfa6e7e08191a715922a782d649c` at 14:29:20 UTC, runtime revision 4. Archive SHA-256 `9c5f7d0662c27a71e8d0a77ed87f7831e02e2a3e6fa980715ca0621c24e74c6c`. Public audience, connector schedule, database and Tally unchanged.
