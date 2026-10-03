@@ -1,5 +1,12 @@
 # Price book implementation checkpoint — 14 September 2026
 
+## Isolated staff authentication deployment setup — 3 October 2026
+
+- Isolated Worker deployed at `https://suprabha-staff-acceptance.anil-mahindrakar22.workers.dev`; root serves staff sign-in (HTTP 200), anonymous `/api/orders` returns HTTP 401. These probes do not prove authenticated workflows or free-tier load suitability.
+- Configured private acceptance project URL, modern publishable key and exact staff origin as Worker bindings, without printing secret values. Gateway/read keys remain missing: Sites exposes their names but masks their values. No production credentials copied.
+- Private project `ayrvhemxzizpkfcycvip`: saved Worker Site URL and exact `/staff-password-reset` redirect, with no wildcard; disabled public signup, preserved email confirmation and disabled anonymous login. Saved state verified in dashboard. Brevo SMTP was previously stored, but actual delivery has not been verified.
+- Recovery remains disabled. Pending: private gateway/read bindings, Auth account provisioning (OMS memberships alone are insufficient), invitation/password-setup compatibility, real recovery delivery, abuse/resource checks and Android acceptance. Public app and Tally untouched; no paid plan enabled.
+
 ## Isolated staff Worker build path — 3 October 2026
 
 - Cloudflare OAuth account authorization verified read-only. Added opt-in `pnpm build:staff` (`vinext build --mode staff`) using the existing app, vinext and Cloudflare plugin. Staff mode omits the Sites dispatcher plugin and uses Worker `suprabha-staff-acceptance`, no Sites resource bindings, Supabase authentication and recovery-email disabled. Ordinary `pnpm build` retains Sites behavior. No separate application or new dependencies.
