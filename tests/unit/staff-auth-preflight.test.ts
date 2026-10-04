@@ -4,6 +4,7 @@ import { staffAuthPreflight } from '../staff-auth-preflight.mjs';
 const configured = {
   STOCKFLOW_AUTH_MODE: 'supabase', STOCKFLOW_STAFF_ORIGIN: 'https://staff.example.test',
   SUPABASE_URL: 'https://project.supabase.co', STOCKFLOW_AUTH_PUBLISHABLE_KEY: 'sb_publishable_012345678901234567890',
+  STOCKFLOW_AUTH_ADMIN_KEY: 'sb_secret_012345678901234567890123456789',
   STOCKFLOW_ORDER_GATEWAY_KEY: 'synthetic-gateway-private', STOCKFLOW_READ_KEY: 'synthetic-read-private',
   STOCKFLOW_AUTH_EMAIL_RESET_ENABLED: 'true',
 };
@@ -12,7 +13,7 @@ describe('staff-auth configuration preflight', () => {
     const report = staffAuthPreflight({});
     expect(report.configurationReady).toBe(false);
     expect(report.deploymentReady).toBe(false);
-    expect(report.blockers).toHaveLength(7);
+    expect(report.blockers).toHaveLength(8);
   });
   it('requires live acceptance even with a complete configuration shape', () => {
     const report = staffAuthPreflight(configured);
@@ -32,5 +33,14 @@ describe('staff-auth configuration preflight', () => {
   });
   it('keeps recovery disabled until configured', () => {
     expect(staffAuthPreflight({ ...configured, STOCKFLOW_AUTH_EMAIL_RESET_ENABLED: 'false' }).configurationReady).toBe(false);
+  });
+  it.each(['', 'sb_publishable_012345678901234567890', 'sb_secret_replace-with-secret', 'legacy-service-role-jwt'])('rejects invalid provisioning configuration without disclosing it', key => {
+    const report = staffAuthPreflight({ ...configured, STOCKFLOW_AUTH_ADMIN_KEY: key });
+    expect(report.configurationReady).toBe(false);
+    if (key) expect(JSON.stringify(report)).not.toContain(key);
+  });
+  it('blocks a production target configured against acceptance data', () => {
+    expect(staffAuthPreflight({ ...configured, STOCKFLOW_AUTH_EXPECTED_PROJECT: 'aormuidjbdqruglmyseh', SUPABASE_URL: 'https://ayrvhemxzizpkfcycvip.supabase.co' }).configurationReady).toBe(false);
+    expect(staffAuthPreflight({ ...configured, STOCKFLOW_AUTH_EXPECTED_PROJECT: 'aormuidjbdqruglmyseh', SUPABASE_URL: 'https://aormuidjbdqruglmyseh.supabase.co' }).configurationReady).toBe(true);
   });
 });

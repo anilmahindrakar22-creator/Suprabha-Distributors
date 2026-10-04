@@ -25,10 +25,13 @@ function Fixture() {
   const [entry, setEntry] = useState({ rate: '445', reason: '' });
   const parameters = new URLSearchParams(location.search);
   if (parameters.get('view') === 'staff-signin') return <StaffSignIn />;
+  if (parameters.get('view') === 'staff-signin-choice') return <StaffSignIn chatGPTSignInUrl="https://stockflow.chatgpt.site/signin-with-chatgpt?return_to=%2F" />;
   if (parameters.get('view') === 'staff-reset') return <React.StrictMode><StaffPasswordReset /></React.StrictMode>;
   if (parameters.get('view') === 'staff-switch') return <StaffAccountSwitch />;
-  if (parameters.get('view') === 'staff-users') return <UserManagement staffAuth />;
+  if (parameters.get('view') === 'staff-users') return <UserManagement staffAuth emailActionsEnabled />;
+  if (parameters.get('view') === 'staff-users-disabled') return <UserManagement staffAuth />;
   if (parameters.get('view') === 'frame') return <StockFlowFrame actorEmail="staff@example.test" actorRole={parameters.get('role') || 'sales'} />;
+  if (parameters.get('view') === 'staff-frame') return <StockFlowFrame actorEmail="staff@example.test" actorRole="administrator" staffAuth />;
   if (parameters.get('view') === 'product-requests') return <ProductRequestInbox />;
   if (parameters.get('view') === 'product-request-recovery') return <ProductRequest actorEmail={parameters.get('actor') || 'sales@example.test'} productName="Missing reagent" visible />;
   if (parameters.get('view') === 'requirements') return <ProcurementRequirements />;

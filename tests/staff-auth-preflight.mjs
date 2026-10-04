@@ -16,8 +16,11 @@ export function staffAuthPreflight(env) {
   if (!origin) blockers.push('Configure an exact HTTPS staff origin');
   else if (origin.hostname.endsWith('.chatgpt.site') || origin.hostname === 'chatgpt.site') blockers.push('Staff mode requires an isolated direct host, not the Sites host');
   if (!httpsOrigin(env.SUPABASE_URL)) blockers.push('Configure an HTTPS Supabase project origin');
+  if (env.STOCKFLOW_AUTH_EXPECTED_PROJECT && (!/^[a-z0-9]{20}$/.test(env.STOCKFLOW_AUTH_EXPECTED_PROJECT) || httpsOrigin(env.SUPABASE_URL)?.origin !== `https://${env.STOCKFLOW_AUTH_EXPECTED_PROJECT}.supabase.co`)) blockers.push('Authentication project does not match the deployment target');
   const key = env.STOCKFLOW_AUTH_PUBLISHABLE_KEY || '';
   if (!key.startsWith('sb_publishable_') || key.length < 30 || /replace|example/i.test(key)) blockers.push('Configure a modern publishable key, never a secret/service-role key');
+  const adminKey = env.STOCKFLOW_AUTH_ADMIN_KEY || '';
+  if (!adminKey.startsWith('sb_secret_') || adminKey.length < 30 || /replace|example/i.test(adminKey)) blockers.push('Configure a separate modern server-only staff provisioning secret');
   for (const name of ['STOCKFLOW_ORDER_GATEWAY_KEY', 'STOCKFLOW_READ_KEY']) {
     if (!env[name] || /replace|example/i.test(env[name])) blockers.push(`Configure ${name} securely`);
   }

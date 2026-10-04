@@ -8,6 +8,29 @@ export function staffAuthEnabled() {
   return mode === 'supabase';
 }
 
+// Navigation only: never changes the active deployment's authentication provider.
+// Configure peers only after verifying they use the same backend/environment.
+function publicSignInOrigin(value: string | undefined) {
+  if (!value?.trim()) return null;
+  try {
+    const url = new URL(value.trim());
+    if (url.protocol !== 'https:' || url.username || url.password || url.pathname !== '/' || url.search || url.hash || url.port) return null;
+    return url;
+  } catch { return null; }
+}
+
+export function publicStaffSignInUrl() {
+  const url = publicSignInOrigin(process.env.STOCKFLOW_PUBLIC_STAFF_ORIGIN);
+  if (!url || url.hostname === 'localhost' || url.hostname.endsWith('.localhost') || url.hostname.includes(':') || /^\[|^[\d.]+$/.test(url.hostname) || url.hostname === 'chatgpt.site' || url.hostname.endsWith('.chatgpt.site')) return null;
+  return `${url.origin}/staff-signin`;
+}
+
+export function publicChatGPTSignInUrl() {
+  const url = publicSignInOrigin(process.env.STOCKFLOW_PUBLIC_CHATGPT_ORIGIN);
+  if (!url || !url.hostname.endsWith('.chatgpt.site')) return null;
+  return `${url.origin}/signin-with-chatgpt?return_to=%2F`;
+}
+
 export function staffOrigin() {
   const url = new URL(process.env.STOCKFLOW_STAFF_ORIGIN || '');
   if (url.protocol !== 'https:' || url.username || url.password || url.pathname !== '/' || url.search || url.hash) throw new Error('Invalid staff origin');
@@ -25,6 +48,8 @@ export function staffAuthClient() {
   if (!url || !key || !key.startsWith('sb_publishable_') || key.length < 30 || /replace|example/i.test(key)) throw new Error('Staff authentication is not configured');
   const project = new URL(url);
   if (project.protocol !== 'https:' || project.username || project.password || project.pathname !== '/' || project.search || project.hash) throw new Error('Invalid authentication project origin');
+  const expectedProject = process.env.STOCKFLOW_AUTH_EXPECTED_PROJECT;
+  if (expectedProject && (!/^[a-z0-9]{20}$/.test(expectedProject) || project.origin !== `https://${expectedProject}.supabase.co`)) throw new Error('Authentication project does not match this deployment');
   return createClient(url, key, {
     auth: { persistSession: false, autoRefreshToken: false, detectSessionInUrl: false },
     global: { fetch: (input, init) => fetch(input, { ...init, signal: init?.signal ? AbortSignal.any([init.signal, AbortSignal.timeout(15000)]) : AbortSignal.timeout(15000) }) },

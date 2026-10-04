@@ -28,6 +28,36 @@ for (const invitationFails of [false, true]) {
   });
 }
 
+test('staff user membership remains available while email actions are disabled', async ({ page }) => {
+  const calls: string[] = [];
+  await page.route('**/api/users', async route => {
+    if (route.request().method() === 'POST') {
+      calls.push('save');
+      expect(route.request().postDataJSON()).toMatchObject({ email: 'staff@example.test', role: 'viewer', status: 'active' });
+      await route.fulfill({ json: { ok: true } });
+    } else await route.fulfill({ json: { users: [{ id: 1, email: 'staff@example.test', role: 'viewer', status: 'active' }] } });
+  });
+  await page.route('**/api/staff-invitation', async route => {
+    calls.push('invite');
+    await route.fulfill({ json: { message: 'Invitation requested.' } });
+  });
+  await page.route('**/api/staff-password-reset', async route => {
+    calls.push('reset');
+    await route.fulfill({ json: { message: 'Reset requested.' } });
+  });
+
+  await page.goto('/?view=staff-users-disabled');
+  await expect(page.getByText('Staff invitation and reset emails are not enabled yet.')).toBeVisible();
+  await page.getByLabel('Email', { exact: true }).fill('staff@example.test');
+  await page.getByRole('button', { name: 'Add user', exact: true }).click();
+  await expect(page.locator('output')).toContainText('User access updated.');
+  await expect(page.getByRole('button', { name: 'Invite / resend to staff@example.test' })).toBeDisabled();
+  await expect(page.getByRole('button', { name: 'Send reset link to staff@example.test' })).toBeDisabled();
+  await expect(page.getByRole('combobox', { name: 'Role for staff@example.test' })).toBeEnabled();
+  await expect(page.getByRole('button', { name: 'Suspend', exact: true })).toBeEnabled();
+  expect(calls).toEqual(['save']);
+});
+
 for (const view of ['staff-signin', 'staff-reset']) {
   test(`${view} has a bounded wait and does not duplicate in-flight requests`, async ({ page }) => {
     await page.addInitScript(() => {

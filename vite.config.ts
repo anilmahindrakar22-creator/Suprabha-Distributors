@@ -35,7 +35,8 @@ const localBindingConfig = {
 };
 
 export default defineConfig(async ({ mode }) => {
-  const staffBuild = mode === 'staff';
+  const productionStaffBuild = mode === 'staff-production';
+  const staffBuild = mode === 'staff' || productionStaffBuild;
   // Keep Wrangler and Miniflare state project-local. These are non-secret tool
   // settings; application environment belongs in ignored `.env*` files.
   process.env.WRANGLER_WRITE_LOGS ??= 'false';
@@ -57,12 +58,17 @@ export default defineConfig(async ({ mode }) => {
         viteEnvironment: { name: 'rsc', childEnvironments: ['ssr'] },
         config: staffBuild ? {
           main: 'vinext/server/fetch-handler',
-          name: 'suprabha-staff-acceptance',
+          // Separate artifact targets; never reuse acceptance bindings in production.
+          name: productionStaffBuild ? 'suprabha-staff' : 'suprabha-staff-acceptance',
           compatibility_date: '2026-05-15',
           compatibility_flags: ['nodejs_compat'],
           workers_dev: true,
           preview_urls: false,
-          vars: { STOCKFLOW_AUTH_MODE: 'supabase', STOCKFLOW_AUTH_EMAIL_RESET_ENABLED: 'false' },
+          vars: {
+            STOCKFLOW_AUTH_MODE: 'supabase',
+            STOCKFLOW_AUTH_EMAIL_RESET_ENABLED: 'false',
+            STOCKFLOW_AUTH_EXPECTED_PROJECT: productionStaffBuild ? 'aormuidjbdqruglmyseh' : 'ayrvhemxzizpkfcycvip',
+          },
         } : localBindingConfig,
       }),
     ],

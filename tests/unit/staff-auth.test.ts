@@ -3,13 +3,14 @@ const mocks = vi.hoisted(() => ({ getUser: vi.fn(), signInWithPassword: vi.fn(),
 vi.mock('@supabase/supabase-js', () => ({ createClient: () => ({ auth: { getUser: mocks.getUser, signInWithPassword: mocks.signInWithPassword } }) }));
 vi.mock('@/lib/order-gateway', () => ({ callOrderGateway: mocks.gateway }));
 vi.mock('next/headers', () => ({ headers: async () => mocks.headers, cookies: async () => ({ get: () => mocks.token ? { value: mocks.token } : undefined }) }));
-import { staffAuthEnabled, sameStaffOrigin, staffCookie, staffInvitationClient, staffPasswordLogin, verifiedStaff } from '@/lib/staff-auth';
+import { staffAuthClient, staffAuthEnabled, sameStaffOrigin, staffCookie, staffInvitationClient, staffPasswordLogin, verifiedStaff } from '@/lib/staff-auth';
 import { getChatGPTUser } from '@/app/chatgpt-auth';
 import { POST, DELETE } from '@/app/api/staff-auth/route';
 
 beforeEach(() => {
   vi.stubEnv('STOCKFLOW_AUTH_MODE', 'supabase'); vi.stubEnv('STOCKFLOW_STAFF_ORIGIN', 'https://staff.example.test');
   vi.stubEnv('SUPABASE_URL', 'https://db.example.test'); vi.stubEnv('STOCKFLOW_AUTH_PUBLISHABLE_KEY', 'sb_publishable_012345678901234567890');
+  vi.stubEnv('STOCKFLOW_AUTH_EXPECTED_PROJECT', '');
   vi.clearAllMocks(); mocks.token = undefined; mocks.headers = new Headers();
   mocks.getUser.mockResolvedValue({ data: { user: { id: 'u1', email: 'staff@example.test', email_confirmed_at: '2026-01-01', is_anonymous: false } }, error: null });
   mocks.signInWithPassword.mockResolvedValue({ data: { session: { access_token: 'verified-token', expires_in: 3600 } }, error: null });
@@ -19,6 +20,19 @@ afterEach(() => vi.unstubAllEnvs());
 const request = (body: unknown, origin = 'https://staff.example.test') => new Request('https://staff.example.test/api/staff-auth', { method: 'POST', headers: { origin, 'content-type': 'application/json' }, body: JSON.stringify(body) });
 
 describe('isolated staff authentication', () => {
+  it('rejects acceptance credentials configured in a production build', () => {
+    vi.stubEnv('STOCKFLOW_AUTH_EXPECTED_PROJECT', 'aormuidjbdqruglmyseh');
+    vi.stubEnv('SUPABASE_URL', 'https://ayrvhemxzizpkfcycvip.supabase.co');
+    expect(staffAuthClient).toThrow('does not match this deployment');
+    expect(mocks.signInWithPassword).not.toHaveBeenCalled();
+  });
+  it('accepts the exact expected project and rejects malformed project guards', () => {
+    vi.stubEnv('STOCKFLOW_AUTH_EXPECTED_PROJECT', 'aormuidjbdqruglmyseh');
+    vi.stubEnv('SUPABASE_URL', 'https://aormuidjbdqruglmyseh.supabase.co');
+    expect(staffAuthClient()).toBeDefined();
+    vi.stubEnv('STOCKFLOW_AUTH_EXPECTED_PROJECT', 'aormuidjbdqruglmyseh/path');
+    expect(staffAuthClient).toThrow('does not match this deployment');
+  });
   it.each(['', 'sb_publishable_012345678901234567890', 'sb_secret_replace-with-key'])('rejects missing or invalid provisioning secret %s', key => {
     vi.stubEnv('STOCKFLOW_AUTH_ADMIN_KEY', key);
     expect(() => staffInvitationClient()).toThrow('Staff provisioning is not configured');
