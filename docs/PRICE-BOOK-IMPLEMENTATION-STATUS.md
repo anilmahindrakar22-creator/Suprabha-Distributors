@@ -1,5 +1,12 @@
 # Price book implementation checkpoint — 14 September 2026
 
+## Staff welcome email and owner bootstrap — 4 October 2026
+
+- Configured the isolated Worker's server-only provisioning key from the private project's existing modern secret, without printing or committing its value. Supabase accepted the explicitly authorized invitation to `anil.mahindrakar22@gmail.com`, with the exact isolated `/staff-password-reset` redirect. Authoritative provider readback showed invited but not confirmed; acceptance of the send request is not proof of inbox delivery.
+- Replaced the private project's default invitation subject/body with “Welcome to Suprabha Distributors” staff onboarding: personal invited email, password setup (minimum 12 characters), browser-based first sign-in, role guidance, administrator help and invitation/password safety. Preserved provider confirmation-link placeholders and configured-site sign-in link. Dashboard save succeeded and rendered preview was checked; removed the default text that the editor initially retained. No invitation resent. Existing emails are not retroactively changed.
+- Email-action gate remains false. Next: recipient verifies actual receipt, completes their own password setup and signs in to the isolated Worker; then verify recovery delivery before enabling app email actions and perform authenticated Users/actual Android acceptance. No password requested in chat, production change, Tally change or paid service.
+- Documentation-only repository change; no application code or migration changed and no code tests/build repeated. Template preview does not prove rendering in a recipient's email client or successful link completion.
+
 ## Isolated invitation-controls rollout — 4 October 2026
 
 - Source `33a4687` rebuilt and deployed only to `suprabha-staff-acceptance`, Worker version `9a406b9f-23c5-4f43-8b1c-3531ebdd1f0e`. Guarded target/auth mode and preserved email-delivery gate false. Fresh affected auth/invitation/reset tests: 47 passed; staff production build passed.
