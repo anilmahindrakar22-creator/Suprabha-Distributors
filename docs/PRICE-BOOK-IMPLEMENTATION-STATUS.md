@@ -4,6 +4,7 @@
 
 - Owner reported successful recovery completion; signed-in production Users view remains accessible as Administrator. SMTP was already persisted enabled and production provisioning secret presence verified. Enabled the production staff build's email-action gate, while acceptance remains false and default Sites unchanged. This exposes the existing explicit Invite / resend and Reset password buttons; email labels remain labels, not disguised actions.
 - No email sent, new user provisioned, role changed or Tally mutation performed in this activation. Provisioning credential validity and multi-account invitation acceptance still require a real invitation check; owner recovery is user-confirmed, not an independently observed password-update audit sequence.
+- Fresh affected invitation/reset/preflight tests: 40 passed; typecheck, whitespace check and staff-production build passed. Source `f81756e` deployed to production staff Worker version `7126855c-157c-4f81-8fbd-02f5fbe4735a` with gate true. Browser reload returned sign-in (consistent with reset session revocation); live post-activation button readback awaits private sign-in. No credential requested in chat.
 
 ## Compact staff controls and recovery clarification — 4 October 2026
 
