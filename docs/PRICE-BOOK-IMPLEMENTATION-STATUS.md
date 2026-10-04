@@ -1,5 +1,11 @@
 # Price book implementation checkpoint — 14 September 2026
 
+## Production staff host staged — 4 October 2026
+
+- Built the existing source with `pnpm build:staff:production` and deployed `suprabha-staff` to `https://suprabha-staff.anil-mahindrakar22.workers.dev` (initial version `b1990a0e-e12c-4d78-ba6e-e8b7a8f27534`, then six server bindings applied). Verified production project guard `aormuidjbdqruglmyseh` and email-action gate false. Production gateway/read keys came only from the protected production vault; publishable key came from the production project. Acceptance secrets/accounts were not reused.
+- Hosted root/sign-in returned HTTP 200 with email/password form and configured ChatGPT peer choice. Anonymous Users returned 401; cross-origin invitation returned 403. Targeted staff-auth/public-sign-in/preflight suites: 71 tests passed; production build passed. No authenticated production account or actual Android acceptance claimed.
+- Public Sites remains unchanged and has no staff peer link yet. Provisioning secret, production Auth URL/signup settings, approved account bootstrap and SMTP/recovery verification remain required before enabling invitations or linking the staff host publicly. No email sent, account created, Tally change or paid service used. This is staged infrastructure, not a completed login rollout.
+
 ## Coordinated production key rotation — 4 October 2026
 
 - Owner approved rotation of both production gateway/read keys. Fresh random replacements are stored locally with current-user-only ACLs and DPAPI encryption; no raw credential is committed. Production Orders Edge version 28 differs from deployed version 27 only by reading the configured gateway hash, retaining the existing custom authentication and request gate.
