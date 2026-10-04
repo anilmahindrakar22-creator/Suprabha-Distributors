@@ -1,5 +1,11 @@
 # Price book implementation checkpoint — 14 September 2026
 
+## Isolated invitation-controls rollout — 4 October 2026
+
+- Source `33a4687` rebuilt and deployed only to `suprabha-staff-acceptance`, Worker version `9a406b9f-23c5-4f43-8b1c-3531ebdd1f0e`. Guarded target/auth mode and preserved email-delivery gate false. Fresh affected auth/invitation/reset tests: 47 passed; staff production build passed.
+- Hosted verification: sign-in HTTP 200, anonymous invitation POST HTTP 401, cross-origin invitation POST HTTP 403. No invitation sent, user created or provider key added. Authenticated Users acceptance remains unverified.
+- Next setup requires explicit server-only provisioning-key configuration and first owner invitation/bootstrap, followed by delivered email and actual Android checks. Email actions are deployed but not enabled/usable yet. Production and Tally unchanged.
+
 ## App-based staff invitation implementation — 3 October 2026
 
 - Staff-mode Users now offers Add and invite, invitation/resend for active members, and visible password-reset actions. Sites mode retains Add user with no new provider calls. Membership is saved through the existing audited/idempotent gateway before requesting an invitation; email failure explicitly reports access saved, not atomic provisioning success. Suspended members are not invitation targets.
