@@ -1,5 +1,10 @@
 # Price book implementation checkpoint — 14 September 2026
 
+## Production Auth configuration — 4 October 2026
+
+- Production dashboard inspection found the default Site URL `http://localhost:3000`, no redirect allowlist and public signup enabled. Saved and read back the production staff Site URL and the single exact `/staff-password-reset` redirect; disabled public signup while retaining email confirmation and disabled anonymous sign-in/manual linking. Existing ChatGPT authentication is separate and unchanged.
+- Custom SMTP is disabled in production. No production provisioning secret is present in the protected local vault. Account invitation, recovery delivery and authenticated staff acceptance are therefore still blocked on private credential configuration. No provider account created, email sent, password handled or email gate enabled. No source/runtime application code changed; dashboard readback verified settings, not email delivery.
+
 ## Production staff host staged — 4 October 2026
 
 - Built the existing source with `pnpm build:staff:production` and deployed `suprabha-staff` to `https://suprabha-staff.anil-mahindrakar22.workers.dev` (initial version `b1990a0e-e12c-4d78-ba6e-e8b7a8f27534`, then six server bindings applied). Verified production project guard `aormuidjbdqruglmyseh` and email-action gate false. Production gateway/read keys came only from the protected production vault; publishable key came from the production project. Acceptance secrets/accounts were not reused.
