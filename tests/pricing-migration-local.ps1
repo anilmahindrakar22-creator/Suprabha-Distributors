@@ -160,6 +160,8 @@ end$$;
   Write-Output 'PASS: combined-role internal policy union and fail-closed security checks'
   Invoke-DatabaseCommand $psqlProgram @('-U',$databaseUser,'-X','-q','-v','ON_ERROR_STOP=1','-d',$database,'-f',(Join-Path $repository 'supabase/tests/combined_role_order_gateway.sql'))
   Write-Output 'PASS: combined-role order mutation, audit, replay and stale-version checks'
+  Invoke-DatabaseCommand $psqlProgram @('-U',$databaseUser,'-X','-q','-v','ON_ERROR_STOP=1','-d',$database,'-f',(Join-Path $repository 'supabase/tests/combined_role_order_reads.sql'))
+  Write-Output 'PASS: combined-role list/detail scopes and operational invoice projection'
   Write-Output 'PASS: complete migration replay, pricing ACID and role-storage tests'
   Invoke-DatabaseCommand $psqlProgram @('-U',$databaseUser,'-X','-q','-v','ON_ERROR_STOP=1','-d',$database,'-f',(Join-Path $repository 'supabase/tests/product_request_concurrency.sql'))
   Write-Output 'PASS: two-session product request review and replay'
