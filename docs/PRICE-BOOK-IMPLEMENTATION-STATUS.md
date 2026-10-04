@@ -1,5 +1,11 @@
 # Price book implementation checkpoint — 14 September 2026
 
+## Combined-role implementation start — 4 October 2026
+
+- Owner approved simultaneous combined permissions, not active-role switching. Added a strict deterministic role-set contract in existing user types, retaining legacy scalar role compatibility and rejecting empty, duplicate, unknown or oversized sets. Unit tests cover union semantics and ensure Sales + Warehouse cannot gain pricing or Administrator access. This helper is not yet wired to live authorization; existing user mutation still accepts only one role.
+- Fresh targeted user-type suite: 17 passed; affected lint and typecheck passed. No migration, account permission change or deployment performed. Combined roles are NOT complete or available in the app yet.
+- Next required ticket: audited database role assignments and gateway authorization integration, preserving old singleton access and suspension/idempotency/concurrency controls. Inspection found membership reads in numerous order, pricing, recovery and operations gateways, plus independent frontend guards in frame/order workspace/pricing workspace/customer price book. Do not deploy a checkbox-only picker or choose a highest role as a substitute for a real permission union. Finish server enforcement/security tests before connecting the UI.
+
 ## Production staff email gate activation — 4 October 2026
 
 - Owner reported successful recovery completion; signed-in production Users view remains accessible as Administrator. SMTP was already persisted enabled and production provisioning secret presence verified. Enabled the production staff build's email-action gate, while acceptance remains false and default Sites unchanged. This exposes the existing explicit Invite / resend and Reset password buttons; email labels remain labels, not disguised actions.
