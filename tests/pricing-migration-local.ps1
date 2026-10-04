@@ -165,6 +165,8 @@ end$$;
   Invoke-DatabaseCommand $psqlProgram @('-U',$databaseUser,'-X','-q','-v','ON_ERROR_STOP=1','-d',$database,'-f',(Join-Path $repository 'supabase/tests/combined_role_operational_gateways.sql'))
   Invoke-DatabaseCommand $psqlProgram @('-U',$databaseUser,'-X','-q','-v','ON_ERROR_STOP=1','-d',$database,'-f',(Join-Path $repository 'supabase/tests/transactional_command_integrity.sql'))
   Write-Output 'PASS: combined operational actions and existing edit/fulfilment transaction tests'
+  Invoke-DatabaseCommand $psqlProgram @('-U',$databaseUser,'-X','-q','-v','ON_ERROR_STOP=1','-d',$database,'-f',(Join-Path $repository 'supabase/tests/combined_role_pricing_authorization.sql'))
+  Write-Output 'PASS: combined-role commercial reads, proposals and approval separation'
   Write-Output 'PASS: complete migration replay, pricing ACID and role-storage tests'
   Invoke-DatabaseCommand $psqlProgram @('-U',$databaseUser,'-X','-q','-v','ON_ERROR_STOP=1','-d',$database,'-f',(Join-Path $repository 'supabase/tests/product_request_concurrency.sql'))
   Write-Output 'PASS: two-session product request review and replay'
