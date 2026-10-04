@@ -9,6 +9,8 @@ values('50000000-0000-4000-8000-000000000001','Combined read sentinel','confirme
 do $$
 declare result jsonb; evidence jsonb; summary jsonb; bootstrap jsonb;
 begin
+  result:=public.stockflow_user_gateway('combined-read-key','combined-read@test.local','session','{"roles":["administrator"]}');
+  if result->'roles'<>'["sales","warehouse"]'::jsonb or result->>'role'<>'sales' then raise exception 'Session roles not authoritative'; end if;
   result:=public.stockflow_order_list_gateway('combined-read-key','combined-read@test.local','list_orders','{"query":"Combined read sentinel"}');
   if result->'pagination'->>'total'<>'1' or jsonb_array_length(result->'orders')<>1 then raise exception 'Combined list scope/count failed'; end if;
   summary:=public.stockflow_order_summary_gateway('combined-read-key','combined-read@test.local','get_order_summary','{}');
