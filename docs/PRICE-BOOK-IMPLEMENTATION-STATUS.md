@@ -1,5 +1,10 @@
 # Price book implementation checkpoint — 14 September 2026
 
+## Production staff setup prerequisite check — 4 October 2026
+
+- Following the owner's instruction to proceed with production setup, read-only checks found no `suprabha-staff` Worker and zero production Supabase Auth accounts. Existing ChatGPT login remains unchanged. Sites runtime metadata confirms production gateway/read secrets exist but values are masked; only acceptance credentials are saved in the known local protected vault. Do not reuse them or derive a raw key from its database hash.
+- Production setup is blocked on securely supplied existing gateway/read values or explicit approval of coordinated rotation across production Edge/database verification, existing Sites host and the new staff host. Rotation was not performed; owner decision requested, with potential brief Orders/Stock interruption disclosed. No production Auth configuration, provider account, Worker, credential, Tally setting or public link changed. Source remains `18b0631`; no repeated build/tests for this read-only prerequisite check.
+
 ## Dual public login preparation and staff safety batch — 4 October 2026
 
 - Implemented optional peer login links: Sites retains “Sign in with ChatGPT” and can offer “Staff email / password”; staff root and `/staff-signin` can offer the configured ChatGPT peer. Server-only origin configuration validates HTTPS/origin-only destinations, rejects unsafe origins and fails closed for the optional link without disabling the existing login. No inferred acceptance link, provider fallback, shared cookie, token forwarding or automatic configuration. Operators must verify both hosts use the same production backend before setting peer origins.
