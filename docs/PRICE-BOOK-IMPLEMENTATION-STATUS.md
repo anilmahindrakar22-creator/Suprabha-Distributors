@@ -1,5 +1,12 @@
 # Price book implementation checkpoint — 14 September 2026
 
+## Coordinated production key rotation — 4 October 2026
+
+- Owner approved rotation of both production gateway/read keys. Fresh random replacements are stored locally with current-user-only ACLs and DPAPI encryption; no raw credential is committed. Production Orders Edge version 28 differs from deployed version 27 only by reading the configured gateway hash, retaining the existing custom authentication and request gate.
+- Rotated the guarded database gateway hash and the two relevant Edge settings, then republished existing Sites version 55 with environment revision 5. Deployment `appgdep_6ac1e912f8e481918000460ee2b157e0` succeeded; no new application features or audience changes deployed.
+- New-key read-only gateway session and stock dashboard probes both returned HTTP 200. Business counts remain 30 orders, 459 customers and 3 billing snapshots. Tally upload-key digest is unchanged. Targeted request-gate suite: 9 tests passed. These checks do not prove signed-in browser workflow acceptance.
+- Production staff Worker, provider accounts, SMTP/recovery delivery and dual public-login activation remain pending. Acceptance credentials were not copied into production; Tally remains untouched. Supersedes the credential blocker below.
+
 ## Production staff setup prerequisite check — 4 October 2026
 
 - Following the owner's instruction to proceed with production setup, read-only checks found no `suprabha-staff` Worker and zero production Supabase Auth accounts. Existing ChatGPT login remains unchanged. Sites runtime metadata confirms production gateway/read secrets exist but values are masked; only acceptance credentials are saved in the known local protected vault. Do not reuse them or derive a raw key from its database hash.
