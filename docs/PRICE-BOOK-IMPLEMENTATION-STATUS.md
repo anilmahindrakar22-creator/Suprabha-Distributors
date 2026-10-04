@@ -1,5 +1,12 @@
 # Price book implementation checkpoint — 14 September 2026
 
+## Verified owner login and approved dual public sign-in — 4 October 2026
+
+- Actual isolated Worker browser session showed `anil.mahindrakar22@gmail.com` signed in; Users loaded active Administrator membership and existing invitation/reset controls. This proves owner email/password login and administrator read access, not recovery delivery or actual Android acceptance. No membership/order mutation was performed.
+- Owner requires both ChatGPT and email/password sign-in to remain available publicly. Preserve the existing Sites path. A production staff path must use the production backend and its independently provisioned Auth accounts, with the same gateway-enforced roles. Acceptance credentials, accounts and data must not become the production staff path.
+- Current architecture deliberately selects Sites or Supabase authentication by deployment. The direct Worker must not accept spoofable Sites identity headers; do not enable a fallback that trusts those headers there. Two public entry points can serve the same production data once the production staff deployment is separately configured and verified; one-host dual-provider login is not implemented.
+- Pending rollout: production staff hosting/configuration, exact provider redirects and SMTP delivery/recovery checks, approved account provisioning, authenticated permission/device checks, then production login-choice links. No production deployment or credentials changed. Recovery-email gate remains false. This checkpoint records the approved behavior, not completion of dual public login.
+
 ## Staff welcome email and owner bootstrap — 4 October 2026
 
 - Configured the isolated Worker's server-only provisioning key from the private project's existing modern secret, without printing or committing its value. Supabase accepted the explicitly authorized invitation to `anil.mahindrakar22@gmail.com`, with the exact isolated `/staff-password-reset` redirect. Authoritative provider readback showed invited but not confirmed; acceptance of the send request is not proof of inbox delivery.
