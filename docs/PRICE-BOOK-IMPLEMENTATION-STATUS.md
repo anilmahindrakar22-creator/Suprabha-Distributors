@@ -1,5 +1,11 @@
 # Price book implementation checkpoint — 14 September 2026
 
+## Compact staff controls and recovery clarification — 4 October 2026
+
+- Production owner login and Administrator Users access were observed in the signed-in staff browser. Production SMTP persisted enabled after reload; provisioning secret presence was verified through Worker metadata, not its value. One owner recovery request was accepted. Owner clarified that they opened the link once without changing the password, then reopened it: the consumed single-use link cannot restore the in-memory bearer. No authentication bypass or bearer persistence added.
+- Staff login now shows each email once with short, individually labelled actions; while email actions are disabled, redundant disabled buttons are replaced by one panel status. Existing authorization, invitation uncertainty and mutation controls unchanged. Recovery page explains single-use completion and distinguishes provider `otp_expired` from missing link without reflecting provider payloads.
+- A hosted synthetic-fragment probe enabled the reset form without submitting a password; production template uses standard `ConfirmationURL`. This does not demonstrate a real completed reset. Email gate remains false pending actual recovery completion; public Sites/Tally unchanged.
+
 ## Production Auth configuration — 4 October 2026
 
 - Production dashboard inspection found the default Site URL `http://localhost:3000`, no redirect allowlist and public signup enabled. Saved and read back the production staff Site URL and the single exact `/staff-password-reset` redirect; disabled public signup while retaining email confirmation and disabled anonymous sign-in/manual linking. Existing ChatGPT authentication is separate and unchanged.

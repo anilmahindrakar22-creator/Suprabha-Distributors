@@ -22,8 +22,8 @@ for (const invitationFails of [false, true]) {
     expect(calls).toEqual(['save', 'invite']);
     if (invitationFails) {
       await expect(page.getByRole('button', { name: 'Add and invite' })).toBeDisabled();
-      await expect(page.getByRole('button', { name: 'Invite / resend to staff@example.test' })).toBeDisabled();
-      await expect(page.getByRole('button', { name: 'Send reset link to staff@example.test' })).toBeEnabled();
+      await expect(page.getByRole('button', { name: 'Invite or resend invitation to staff@example.test' })).toBeDisabled();
+      await expect(page.getByRole('button', { name: 'Reset password for staff@example.test' })).toBeEnabled();
     }
   });
 }
@@ -47,12 +47,15 @@ test('staff user membership remains available while email actions are disabled',
   });
 
   await page.goto('/?view=staff-users-disabled');
-  await expect(page.getByText('Staff invitation and reset emails are not enabled yet.')).toBeVisible();
+  await expect(page.getByText('Staff invitation and password reset emails are not enabled.')).toBeVisible();
   await page.getByLabel('Email', { exact: true }).fill('staff@example.test');
   await page.getByRole('button', { name: 'Add user', exact: true }).click();
   await expect(page.locator('output')).toContainText('User access updated.');
-  await expect(page.getByRole('button', { name: 'Invite / resend to staff@example.test' })).toBeDisabled();
-  await expect(page.getByRole('button', { name: 'Send reset link to staff@example.test' })).toBeDisabled();
+  await expect(page.getByRole('button', { name: 'Invite / resend', exact: true })).toHaveCount(0);
+  await expect(page.getByRole('button', { name: 'Reset password', exact: true })).toHaveCount(0);
+  const staffLogin = page.getByRole('heading', { name: 'Staff login' }).locator('..');
+  await expect(staffLogin.getByText('staff@example.test', { exact: true })).toHaveCount(1);
+  await expect(staffLogin.getByText('Staff invitation and password reset emails are not enabled.')).toHaveCount(1);
   await expect(page.getByRole('combobox', { name: 'Role for staff@example.test' })).toBeEnabled();
   await expect(page.getByRole('button', { name: 'Suspend', exact: true })).toBeEnabled();
   expect(calls).toEqual(['save']);
@@ -114,6 +117,14 @@ test('missing recovery link blocks submission', async ({ page }) => {
   await page.goto('/?view=staff-reset');
   await expect(page.getByRole('alert')).toContainText('Recovery link is missing');
   await expect(page.getByRole('button', { name: 'Set password' })).toBeDisabled();
+});
+
+test('expired recovery link explains the provider error without displaying its payload', async ({ page }) => {
+  await page.goto('/?view=staff-reset#error_code=otp_expired&error_description=sensitive-provider-detail');
+  await expect(page.getByRole('alert')).toContainText('expired or was already used');
+  await expect(page.getByRole('button', { name: 'Set password' })).toBeDisabled();
+  await expect(page.locator('body')).not.toContainText('sensitive-provider-detail');
+  expect(new URL(page.url()).hash).toBe('');
 });
 
 for (const linkType of ['recovery', 'invite']) {

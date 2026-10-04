@@ -8,18 +8,27 @@ export function StaffPasswordReset() {
   const [busy, setBusy] = useState(false);
   const [message, setMessage] = useState('');
   const capturedToken = useRef<string | null>(null);
+  const capturedError = useRef('');
   const inFlight = useRef(false);
   useEffect(() => {
     const fragment = new URLSearchParams(window.location.hash.slice(1));
     const linkType = fragment.get('type');
-    if (capturedToken.current === null) capturedToken.current = linkType === 'recovery' || linkType === 'invite' ? fragment.get('access_token') || '' : '';
+    if (capturedToken.current === null) {
+      capturedToken.current = linkType === 'recovery' || linkType === 'invite' ? fragment.get('access_token') || '' : '';
+      const query = new URLSearchParams(window.location.search);
+      const errorCode = fragment.get('error_code') || query.get('error_code');
+      capturedError.current = errorCode === 'otp_expired'
+        ? 'This recovery link has expired or was already used. Ask your administrator for a fresh email and open only the newest link.'
+        : 'Recovery link is missing. Open the Reset password button in your latest email, not a saved or copied page address.';
+    }
     const accessToken = capturedToken.current;
     // Invitation and recovery bearers use the same server verification and membership checks.
     // Keep the bearer in memory only; remove it from history immediately.
     window.history.replaceState(null, '', '/staff-password-reset');
     const timer = window.setTimeout(() => {
       setToken(accessToken);
-      if (!accessToken) setMessage('Recovery link is missing or expired. Ask your administrator for a new link.');
+      if (accessToken) setMessage('Complete your password setup now. This link is single-use; closing or reloading this page requires a new email.');
+      if (!accessToken) setMessage(capturedError.current);
     }, 0);
     return () => window.clearTimeout(timer);
   }, []);
