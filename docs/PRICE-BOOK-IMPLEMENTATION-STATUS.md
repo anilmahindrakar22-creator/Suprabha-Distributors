@@ -1,5 +1,10 @@
 # Price book implementation checkpoint — 14 September 2026
 
+## Production staff email gate activation — 4 October 2026
+
+- Owner reported successful recovery completion; signed-in production Users view remains accessible as Administrator. SMTP was already persisted enabled and production provisioning secret presence verified. Enabled the production staff build's email-action gate, while acceptance remains false and default Sites unchanged. This exposes the existing explicit Invite / resend and Reset password buttons; email labels remain labels, not disguised actions.
+- No email sent, new user provisioned, role changed or Tally mutation performed in this activation. Provisioning credential validity and multi-account invitation acceptance still require a real invitation check; owner recovery is user-confirmed, not an independently observed password-update audit sequence.
+
 ## Compact staff controls and recovery clarification — 4 October 2026
 
 - Production owner login and Administrator Users access were observed in the signed-in staff browser. Production SMTP persisted enabled after reload; provisioning secret presence was verified through Worker metadata, not its value. One owner recovery request was accepted. Owner clarified that they opened the link once without changing the password, then reopened it: the consumed single-use link cannot restore the in-memory bearer. No authentication bypass or bearer persistence added.

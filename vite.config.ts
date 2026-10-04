@@ -66,7 +66,9 @@ export default defineConfig(async ({ mode }) => {
           preview_urls: false,
           vars: {
             STOCKFLOW_AUTH_MODE: 'supabase',
-            STOCKFLOW_AUTH_EMAIL_RESET_ENABLED: 'false',
+            // Production owner completed SMTP recovery on 4 Oct 2026.
+            // Keep the separate acceptance environment gated independently.
+            STOCKFLOW_AUTH_EMAIL_RESET_ENABLED: productionStaffBuild ? 'true' : 'false',
             STOCKFLOW_AUTH_EXPECTED_PROJECT: productionStaffBuild ? 'aormuidjbdqruglmyseh' : 'ayrvhemxzizpkfcycvip',
           },
         } : localBindingConfig,
