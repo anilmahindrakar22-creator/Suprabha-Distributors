@@ -9,6 +9,8 @@
   "scripts": {
     "dev": "vinext dev",
     "build": "vinext build",
+    "build:staff": "vinext build --mode staff",
+    "build:staff:production": "vinext build --mode staff-production",
     "start": "wrangler dev --config dist/server/wrangler.json",
     "lint": "oxlint app components/stockflow-frame.tsx components/order-workspace.tsx components/product-request.tsx components/procurement-requirements.tsx components/service-workspace.tsx components/pricing-workspace.tsx components/customer-price-book.tsx components/pricing-options.tsx lib supabase/functions/stockflow-sync/handler.ts",
     "typecheck": "tsc --noEmit",
@@ -16,6 +18,7 @@
     "test:connector": "pwsh -NoProfile -File tests/connector-recovery.ps1 && pwsh -NoProfile -File tests/connector-sales-window.ps1 && pwsh -NoProfile -File tests/connector-control-status.ps1",
     "test:pricing:db": "pwsh -NoProfile -File tests/pricing-migration-local.ps1",
     "test:pricing:deployment": "pwsh -NoProfile -File tests/pricing-migration-local.ps1 -DeploymentOrder",
+    "check:staff-auth": "node tests/staff-auth-preflight.mjs",
     "test:watch": "vitest",
     "test:e2e": "playwright test",
     "test:pricing:e2e": "playwright test --config playwright.pricing.config.ts",
@@ -28,6 +31,7 @@
   "dependencies": {
     "@base-ui/react": "1.7.0",
     "@shadcn/react": "0.3.0",
+    "@supabase/supabase-js": "2.117.2",
     "class-variance-authority": "0.7.1",
     "clsx": "2.1.1",
     "cmdk": "1.1.1",

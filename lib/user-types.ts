@@ -1,11 +1,29 @@
 export const stockFlowRoles = ['administrator', 'sales', 'operations', 'warehouse', 'accounts', 'management', 'viewer'] as const;
 export const stockFlowUserStatuses = ['active', 'suspended'] as const;
+export type StockFlowRole = typeof stockFlowRoles[number];
+
+// Strict role-set boundary. Invalid assignments fail closed; never silently
+// discard an unknown role or infer a more privileged replacement role.
+export function normalizeStockFlowRoles(value: unknown): StockFlowRole[] | null {
+  const roles = typeof value === 'string' ? [value] : value;
+  if (!Array.isArray(roles) || roles.length === 0 || roles.length > stockFlowRoles.length ||
+    roles.some(role => typeof role !== 'string' || !stockFlowRoles.includes(role as StockFlowRole)) ||
+    new Set(roles).size !== roles.length) return null;
+  return stockFlowRoles.filter(role => roles.includes(role));
+}
+
+export function hasAnyStockFlowRole(assigned: unknown, allowed: readonly StockFlowRole[]): boolean {
+  const roles = normalizeStockFlowRoles(assigned);
+  return roles !== null && roles.some(role => allowed.includes(role));
+}
 
 export type UserMutation = {
   idempotencyKey: string;
   email: string;
   role: typeof stockFlowRoles[number];
   status: typeof stockFlowUserStatuses[number];
+  roles?: StockFlowRole[];
+  expectedUpdatedAt?: string;
 };
 
 export function validateUserMutation(value: unknown): UserMutation | null {
@@ -17,5 +35,14 @@ export function validateUserMutation(value: unknown): UserMutation | null {
     typeof payload.role !== 'string' || !stockFlowRoles.includes(payload.role as UserMutation['role']) ||
     typeof payload.status !== 'string' || !stockFlowUserStatuses.includes(payload.status as UserMutation['status'])
   ) return null;
-  return payload as UserMutation;
+  const roles = payload.roles === undefined ? undefined : normalizeStockFlowRoles(payload.roles);
+  if (payload.roles !== undefined && (!Array.isArray(payload.roles) || !roles || !roles.includes(payload.role as StockFlowRole))) return null;
+  if (payload.expectedUpdatedAt !== undefined && (typeof payload.expectedUpdatedAt !== 'string' ||
+    payload.expectedUpdatedAt.length > 64 || !Number.isFinite(Date.parse(payload.expectedUpdatedAt)))) return null;
+  return {
+    idempotencyKey: payload.idempotencyKey as string, email: payload.email as string,
+    role: payload.role as StockFlowRole, status: payload.status as UserMutation['status'],
+    ...(roles ? { roles } : {}),
+    ...(payload.expectedUpdatedAt !== undefined ? { expectedUpdatedAt: payload.expectedUpdatedAt as string } : {}),
+  };
 }

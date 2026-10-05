@@ -27,6 +27,7 @@ import type { OrderPricingWorkspace, PricingLineResolution } from '@/lib/pricing
 import { PricingOptions } from './pricing-options';
 import { ProductRequest, ProductRequestInbox } from './product-request';
 import { ProcurementRequirements } from './procurement-requirements';
+import { hasAnyStockFlowRole, type StockFlowRole } from '@/lib/user-types';
 
 type DraftLine = { tallyKey: string; item: CatalogItem | null; quantity: number };
 type OrderEntryPrice = { tallyKey: string; currentPrice: number | null; currentPriceSource: string; riskStatus: 'GREEN' | 'AMBER' | 'RED'; recommendationReason?: string };
@@ -503,7 +504,7 @@ export function OrderWorkspace({ actorEmail, initialStatus = 'open' }: { actorEm
   return (
     <div ref={workspaceRef} className="h-full overflow-y-auto bg-[#f7f6f1]">
       <div className="mx-auto max-w-7xl px-3 py-3 sm:px-6 sm:py-6 lg:px-8">
-        {['administrator', 'management', 'operations'].includes(data?.actor.role || '') ? <ProductRequestInbox /> : null}
+        {hasAnyStockFlowRole(data?.actor.roles ?? data?.actor.role, ['administrator', 'management', 'operations']) ? <ProductRequestInbox /> : null}
         {data ? <ProcurementRequirements /> : null}
         <header className="flex flex-col gap-4 sm:flex-row sm:items-end sm:justify-between">
           <div>
@@ -532,11 +533,11 @@ export function OrderWorkspace({ actorEmail, initialStatus = 'open' }: { actorEm
         </header>
 
         <section aria-label="Order handoff queues" className="mt-3 flex snap-x gap-1.5 overflow-x-auto rounded-2xl border border-[#dce7e5] bg-white p-2 sm:mt-5 sm:gap-2">
-          <SummaryCard label="Confirm orders" value={operations.awaitingConfirmation} focus={['administrator', 'management'].includes(data?.actor.role || '')} onOpen={() => { setStatus('awaiting_confirmation'); setQuery(''); setCaptureDate(''); setCaptureDateTo(''); setPage(1); }} />
-          <SummaryCard label="Pick & pack" focus={['warehouse', 'operations'].includes(data?.actor.role || '')} onOpen={() => { setStatus('picking'); setQuery(''); setCaptureDate(''); setCaptureDateTo(''); setPage(1); }} />
-          <SummaryCard label="Tally billing" value={operations.awaitingTallyBilling} focus={['accounts'].includes(data?.actor.role || '')} onOpen={() => { setStatus('billing'); setQuery(''); setCaptureDate(''); setCaptureDateTo(''); setPage(1); }} />
-          <SummaryCard label="Ready to dispatch" value={operations.billedNotDispatched} focus={['operations'].includes(data?.actor.role || '')} onOpen={() => { setStatus('dispatch_ready'); setQuery(''); setCaptureDate(''); setCaptureDateTo(''); setPage(1); }} />
-          <SummaryCard label="Delivery attention" value={operations.deliveryAttention} tone="watch" focus={['operations'].includes(data?.actor.role || '')} onOpen={() => { setStatus('delivery_attention'); setQuery(''); setCaptureDate(''); setCaptureDateTo(''); setPage(1); }} />
+          <SummaryCard label="Confirm orders" value={operations.awaitingConfirmation} focus={hasAnyStockFlowRole(data?.actor.roles ?? data?.actor.role, ['administrator', 'management'])} onOpen={() => { setStatus('awaiting_confirmation'); setQuery(''); setCaptureDate(''); setCaptureDateTo(''); setPage(1); }} />
+          <SummaryCard label="Pick & pack" focus={hasAnyStockFlowRole(data?.actor.roles ?? data?.actor.role, ['warehouse', 'operations'])} onOpen={() => { setStatus('picking'); setQuery(''); setCaptureDate(''); setCaptureDateTo(''); setPage(1); }} />
+          <SummaryCard label="Tally billing" value={operations.awaitingTallyBilling} focus={hasAnyStockFlowRole(data?.actor.roles ?? data?.actor.role, ['accounts'])} onOpen={() => { setStatus('billing'); setQuery(''); setCaptureDate(''); setCaptureDateTo(''); setPage(1); }} />
+          <SummaryCard label="Ready to dispatch" value={operations.billedNotDispatched} focus={hasAnyStockFlowRole(data?.actor.roles ?? data?.actor.role, ['operations'])} onOpen={() => { setStatus('dispatch_ready'); setQuery(''); setCaptureDate(''); setCaptureDateTo(''); setPage(1); }} />
+          <SummaryCard label="Delivery attention" value={operations.deliveryAttention} tone="watch" focus={hasAnyStockFlowRole(data?.actor.roles ?? data?.actor.role, ['operations'])} onOpen={() => { setStatus('delivery_attention'); setQuery(''); setCaptureDate(''); setCaptureDateTo(''); setPage(1); }} />
         </section>
 
         <div className="sticky top-0 z-20 -mx-1 mt-3 flex flex-col gap-2 rounded-2xl border border-[#dce7e5] bg-white/95 p-2 shadow-sm backdrop-blur sm:static sm:mx-0 sm:mt-5 sm:flex-row sm:items-center sm:gap-3 sm:bg-white sm:p-3 sm:shadow-none">
@@ -645,6 +646,7 @@ export function OrderWorkspace({ actorEmail, initialStatus = 'open' }: { actorEm
                   key={selectedOrder.id}
                   order={selectedOrder}
                   actorRole={data?.actor.role || ''}
+                  actorRoles={data?.actor.roles}
                   actorEmail={data?.actor.email || actorEmail}
                   tallyInvoices={data?.snapshot.tallyInvoices}
                   tallySnapshotFetchedAt={data?.snapshot.fetchedAt}
@@ -672,6 +674,7 @@ export function OrderWorkspace({ actorEmail, initialStatus = 'open' }: { actorEm
                   key={order.id}
                   order={order}
                   actorRole={data?.actor.role || ''}
+                  actorRoles={data?.actor.roles}
                   actorEmail={data?.actor.email || actorEmail}
                   tallyInvoices={data?.snapshot.tallyInvoices}
                   tallySnapshotFetchedAt={data?.snapshot.fetchedAt}
@@ -750,6 +753,7 @@ function SummaryCard({ label, value, tone = 'normal', focus = false, onOpen }: {
 function OrderRow({
   order,
   actorRole,
+  actorRoles,
   actorEmail,
   tallyInvoices,
   tallySnapshotFetchedAt,
@@ -771,6 +775,7 @@ function OrderRow({
 }: {
   order: OrderSummary;
   actorRole: string;
+  actorRoles?: readonly StockFlowRole[];
   actorEmail: string;
   tallyInvoices: OrderBootstrap['snapshot']['tallyInvoices'];
   tallySnapshotFetchedAt?: string;
@@ -790,6 +795,7 @@ function OrderRow({
   onFollowUp: (order: OrderSummary, command: Extract<OrderCommand, { action: 'set_order_follow_up' | 'complete_order_follow_up' }>) => Promise<void>;
   onPricingChanged: () => Promise<void>;
 }) {
+  const roles = actorRoles ?? [actorRole as StockFlowRole];
   const [busy, setBusy] = useState(false);
   const [invoiceNumber, setInvoiceNumber] = useState(order.tallyInvoiceNumber || '');
   const [cancelling, setCancelling] = useState(false);
@@ -798,13 +804,13 @@ function OrderRow({
   const [detailHistory, setDetailHistory] = useState<{ exceptions: DeliveryException[]; installations: EquipmentInstallation[] } | null>(null);
   const [detailState, setDetailState] = useState<'idle' | 'loading' | 'error'>('idle');
   const action = nextStatus[order.status];
-  const canAdvance = Boolean(action && canRoleTransitionOrder(actorRole, order.status, action.status)
+  const canAdvance = Boolean(action && canRoleTransitionOrder(roles, order.status, action.status)
     && (action.status !== 'awaiting_tally_billing' || order.pricingState === 'approved'));
   const nextOwner = orderNextOwnerLabel(order.status);
   const total = Number(order.totalQuantity || 0);
   const requiresInvoice = order.status === 'awaiting_tally_billing';
-  const canCancel = actorRole === 'administrator' && !['cancelled', 'delivered'].includes(order.status);
-  const canRepeat = ['administrator', 'sales', 'operations', 'management'].includes(actorRole);
+  const canCancel = hasAnyStockFlowRole(roles, ['administrator']) && !['cancelled', 'delivered'].includes(order.status);
+  const canRepeat = hasAnyStockFlowRole(roles, ['administrator', 'sales', 'operations', 'management']);
   const attention = orderAttentionReasons(order);
   const backOrderedQuantity = attention.includes('Partial fulfilment or back-order') ? orderBackOrderedQuantity(order) : 0;
   const invoiceMatch = tallyInvoiceReconciliationDetail(order, tallyInvoices, new Date(), tallySnapshotFetchedAt);
@@ -876,10 +882,10 @@ function OrderRow({
         </summary>
         <div className="border-t border-[#e3ecea] p-3">
           <div className="flex flex-wrap gap-2"><button type="button" onClick={() => onFindCustomer(order)} className="min-h-9 rounded-lg border border-[#cedfdd] px-3 text-xs font-bold text-[#31585d] hover:bg-[#f1f6f4]">Customer orders</button>{canRepeat ? <button type="button" onClick={() => onRepeat(order)} className="min-h-9 rounded-lg border border-[#cedfdd] px-3 text-xs font-bold text-[#31585d] hover:bg-[#f1f6f4]">Repeat as new order</button> : null}<OrderSummaryCopy order={order} /></div>
-          {!['delivered', 'cancelled'].includes(order.status) && ['administrator', 'sales', 'operations', 'management'].includes(actorRole) ? <PriorityControl order={order} onSave={onSetPriority} /> : null}
-          {!order.assignedToEmail && !['delivered', 'cancelled'].includes(order.status) && ['administrator', 'operations', 'management'].includes(actorRole) ? <button type="button" disabled={busy} onClick={async () => { setBusy(true); try { await onSetAssignee(order, actorEmail); } finally { setBusy(false); } }} className="mt-3 min-h-9 rounded-lg border border-[#9ddbc5] bg-[#edf9f4] px-3 text-xs font-bold text-[#277b69] disabled:opacity-50">{busy ? 'Taking…' : 'Take this order'}</button> : null}
-          {!['delivered', 'cancelled'].includes(order.status) && ['administrator', 'operations', 'management'].includes(actorRole) ? <AssignmentControl order={order} onSave={onSetAssignee} /> : null}
-          {!['delivered', 'cancelled'].includes(order.status) ? <OrderFollowUpPanel order={order} actorRole={actorRole} onSave={onFollowUp} /> : null}
+          {!['delivered', 'cancelled'].includes(order.status) && hasAnyStockFlowRole(roles, ['administrator', 'sales', 'operations', 'management']) ? <PriorityControl order={order} onSave={onSetPriority} /> : null}
+          {!order.assignedToEmail && !['delivered', 'cancelled'].includes(order.status) && hasAnyStockFlowRole(roles, ['administrator', 'operations', 'management']) ? <button type="button" disabled={busy} onClick={async () => { setBusy(true); try { await onSetAssignee(order, actorEmail); } finally { setBusy(false); } }} className="mt-3 min-h-9 rounded-lg border border-[#9ddbc5] bg-[#edf9f4] px-3 text-xs font-bold text-[#277b69] disabled:opacity-50">{busy ? 'Taking…' : 'Take this order'}</button> : null}
+          {!['delivered', 'cancelled'].includes(order.status) && hasAnyStockFlowRole(roles, ['administrator', 'operations', 'management']) ? <AssignmentControl order={order} onSave={onSetAssignee} /> : null}
+          {!['delivered', 'cancelled'].includes(order.status) ? <OrderFollowUpPanel order={order} actorRole={actorRole} actorRoles={roles} onSave={onFollowUp} /> : null}
           {canCancel ? <button type="button" disabled={busy} onClick={() => setCancelling(true)} className="mt-3 min-h-9 rounded-lg px-3 text-xs font-bold text-[#9a4e47] hover:bg-[#fff0ef] disabled:opacity-50">Cancel order</button> : null}
           {cancelling ? <div className="mt-3 rounded-xl border border-[#efbbb6] bg-[#fff8f7] p-3"><label className="text-sm font-bold text-[#7d413c]">Why is this order being cancelled?<textarea value={cancelReason} onChange={(event) => setCancelReason(event.target.value)} rows={2} maxLength={500} className="mt-2 w-full rounded-xl border border-[#dfbbb7] bg-white p-3 font-normal text-[#173239] outline-none focus:border-[#d06a61]" placeholder="Cancellation reason is required" /></label><div className="mt-3 flex justify-end gap-2"><button type="button" onClick={() => { setCancelling(false); setCancelReason(''); }} className="min-h-10 rounded-xl px-4 font-bold text-[#557174]">Keep order</button><button type="button" disabled={busy || !cancelReason.trim()} onClick={async () => { setBusy(true); try { await onCancel(order, cancelReason); setCancelling(false); } finally { setBusy(false); } }} className="min-h-10 rounded-xl bg-[#a54c44] px-4 font-bold text-white disabled:opacity-50">{busy ? 'Cancelling…' : 'Confirm cancellation'}</button></div></div> : null}
         </div>
@@ -903,16 +909,16 @@ function OrderRow({
             <dt className="font-bold text-[#708386]">Notes</dt><dd>{order.notes || 'No notes'}</dd>
           </dl>
         </div>
-        {lineMatch.state === 'mismatch' ? <div className="mt-3 rounded-xl border border-[#efc6c2] bg-[#fff8f7] p-3"><p className="text-xs font-extrabold uppercase tracking-wide text-[#8d3a34]">Tally invoice differences</p><ul className="mt-2 space-y-1 text-sm text-[#6f3f3b]">{lineMatch.differences.map((difference) => <li key={difference.itemName}>{difference.itemName}: ordered {formatQuantity(difference.orderedQuantity)}, invoiced {formatQuantity(difference.invoicedQuantity)}</li>)}</ul><BillingReviewPanel order={order} actorRole={actorRole} onSave={onBillingReview} /></div> : null}
-        {['administrator', 'accounts', 'management'].includes(actorRole) && !['billed_in_tally','ready_for_dispatch','dispatched','delivered','cancelled'].includes(order.status) ? <PricingPanel order={order} actorRole={actorRole} onChanged={onPricingChanged} /> : null}
+          {lineMatch.state === 'mismatch' ? <div className="mt-3 rounded-xl border border-[#efc6c2] bg-[#fff8f7] p-3"><p className="text-xs font-extrabold uppercase tracking-wide text-[#8d3a34]">Tally invoice differences</p><ul className="mt-2 space-y-1 text-sm text-[#6f3f3b]">{lineMatch.differences.map((difference) => <li key={difference.itemName}>{difference.itemName}: ordered {formatQuantity(difference.orderedQuantity)}, invoiced {formatQuantity(difference.invoicedQuantity)}</li>)}</ul><BillingReviewPanel order={order} actorRole={actorRole} actorRoles={roles} onSave={onBillingReview} /></div> : null}
+        {hasAnyStockFlowRole(roles, ['administrator', 'accounts', 'management']) && !['billed_in_tally','ready_for_dispatch','dispatched','delivered','cancelled'].includes(order.status) ? <PricingPanel order={order} actorRole={actorRole} actorRoles={roles} onChanged={onPricingChanged} /> : null}
         {!['cancelled', 'delivered'].includes(order.status) ? <FulfilmentEditor order={order} onSave={onSaveFulfilment} /> : null}
-        {['ready_for_dispatch', 'dispatched', 'delivered'].includes(order.status) ? <DispatchPanel order={order} actorRole={actorRole} onSave={onDelivery} /> : null}
+        {['ready_for_dispatch', 'dispatched', 'delivered'].includes(order.status) ? <DispatchPanel order={order} actorRole={actorRole} actorRoles={roles} onSave={onDelivery} /> : null}
         {['phone_order_received','awaiting_confirmation','awaiting_approval','confirmed','partially_reserved','fully_reserved','ready_for_picking','picked','packed'].includes(order.status) ? <OrderEditPanel order={order} onSave={onEdit} /> : null}
         {detailState === 'loading' ? <p className="mt-4 text-xs text-[#718487]">Loading operational history…</p> : detailState === 'error' ? <button type="button" onClick={() => void loadDetails()} className="mt-4 text-xs font-bold text-[#9a4e47]">Operational history could not load · Retry</button> : null}
         <DeliveryExceptionPanel order={detailedOrder} onSave={onException} />
         <InstallationPanel order={detailedOrder} onSave={onInstallation} />
         {order.status === 'awaiting_tally_billing' ? <BillingHandoff order={order} /> : null}
-        {['administrator', 'sales', 'operations', 'warehouse', 'accounts', 'management'].includes(actorRole) ? <OrderNotePanel order={order} onSave={onAddNote} /> : null}
+        {hasAnyStockFlowRole(roles, ['administrator', 'sales', 'operations', 'warehouse', 'accounts', 'management']) ? <OrderNotePanel order={order} onSave={onAddNote} /> : null}
         <OrderActivityLog key={`${order.id}-${order.version}`} orderId={order.id} initialEvents={order.events || []} />
         </> : null}
       </details>
@@ -920,16 +926,16 @@ function OrderRow({
   );
 }
 
-function BillingReviewPanel({ order, actorRole, onSave }: { order: OrderSummary; actorRole: string; onSave: (order: OrderSummary, command: Extract<OrderCommand, { action: 'record_billing_review' }>) => Promise<void> }) {
+function BillingReviewPanel({ order, actorRole, actorRoles, onSave }: { order: OrderSummary; actorRole: string; actorRoles?: readonly StockFlowRole[]; onSave: (order: OrderSummary, command: Extract<OrderCommand, { action: 'record_billing_review' }>) => Promise<void> }) {
   const [open, setOpen] = useState(false); const [busy, setBusy] = useState(false);
   const [outcome, setOutcome] = useState<'investigating' | 'accepted_difference' | 'tally_corrected'>('investigating'); const [note, setNote] = useState('');
-  if (!['administrator', 'accounts', 'operations', 'management'].includes(actorRole)) return <p className="mt-3 text-xs text-[#718487]">Accounts or operations must review this difference.</p>;
+  if (!hasAnyStockFlowRole(actorRoles ?? [actorRole as StockFlowRole], ['administrator', 'accounts', 'operations', 'management'])) return <p className="mt-3 text-xs text-[#718487]">Accounts or operations must review this difference.</p>;
   return <div className="mt-3 border-t border-[#efcfcc] pt-3"><button type="button" onClick={() => setOpen((value) => !value)} className="text-xs font-extrabold text-[#7d413c]">{open ? '− Hide review' : '+ Record review'}</button>{open ? <div className="mt-2 grid gap-2 sm:grid-cols-[180px_1fr_auto]"><select value={outcome} onChange={(event) => setOutcome(event.target.value as typeof outcome)} className="min-h-10 rounded-lg border border-[#dfbbb7] bg-white px-2 text-xs"><option value="investigating">Investigating</option><option value="tally_corrected">Corrected in Tally</option><option value="accepted_difference">Accepted difference</option></select><input value={note} onChange={(event) => setNote(event.target.value)} minLength={3} maxLength={1000} placeholder="What was checked or corrected?" className="min-h-10 rounded-lg border border-[#dfbbb7] bg-white px-3 text-xs"/><button type="button" disabled={busy || note.trim().length < 3} onClick={async () => { setBusy(true); try { await onSave(order, { action: 'record_billing_review', payload: { orderId: order.id, expectedVersion: order.version, outcome, note: note.trim() } }); setNote(''); setOpen(false); } finally { setBusy(false); } }} className="min-h-10 rounded-lg bg-[#7d413c] px-3 text-xs font-bold text-white disabled:opacity-50">{busy ? 'Saving…' : 'Save review'}</button></div> : null}</div>;
 }
 
 const currency = new Intl.NumberFormat('en-IN', { style: 'currency', currency: 'INR', maximumFractionDigits: 2 });
 
-function PricingPanel({ order, actorRole, onChanged }: { order: OrderSummary; actorRole: string; onChanged: () => Promise<void> }) {
+function PricingPanel({ order, actorRole, actorRoles, onChanged }: { order: OrderSummary; actorRole: string; actorRoles?: readonly StockFlowRole[]; onChanged: () => Promise<void> }) {
   const [workspace, setWorkspace] = useState<OrderPricingWorkspace | null>(null);
   const [entries, setEntries] = useState<Record<string, { rate: string; reason: string }>>({});
   const [state, setState] = useState<'idle' | 'loading' | 'saving' | 'error'>('idle');
@@ -995,7 +1001,7 @@ function PricingPanel({ order, actorRole, onChanged }: { order: OrderSummary; ac
     {state === 'loading' ? <p className="mt-3 text-xs text-[#718487]">Loading governed pricing evidence…</p> : null}
     {message ? <output className={`mt-3 block rounded-lg px-3 py-2 text-xs font-bold ${state === 'error' ? 'bg-[#fff0ef] text-[#8d3a34]' : 'bg-[#edf7f3] text-[#31585d]'}`}>{message}</output> : null}
     {workspace ? <div className="mt-3 space-y-3">
-      {workspace.exceptions.map((exception) => <PriceExceptionDecision key={exception.id} exception={exception} actorRole={actorRole} onChanged={async () => { setWorkspace(null); await onChanged(); await loadPricing(true); }} />)}
+      {workspace.exceptions.map((exception) => <PriceExceptionDecision key={exception.id} exception={exception} actorRole={actorRole} actorRoles={actorRoles} onChanged={async () => { setWorkspace(null); await onChanged(); await loadPricing(true); }} />)}
       {workspace.lines.map((line) => <PricingLineCard key={line.lineId} line={line} compact={governedReady && !manualReview} entry={entries[line.lineId] || { rate: '', reason: '' }} onChange={(entry) => setEntries((current) => ({ ...current, [line.lineId]: entry }))} />)}
       {workspace.exceptions.length === 0 && workspace.pricingState !== 'approved' && governedReady && !manualReview ? <div className="flex flex-wrap items-center gap-3">{order.status === 'awaiting_confirmation' || order.status === 'phone_order_received' ? <p className="text-xs font-bold text-[#176246]">Governed prices will apply when this order is confirmed.</p> : <button type="button" disabled={state === 'saving'} onClick={() => void applyGoverned()} className="min-h-10 rounded-xl bg-[#073e46] px-4 text-sm font-bold text-white disabled:opacity-50">{state === 'saving' ? 'Applying prices…' : 'Apply governed prices'}</button>}<button type="button" disabled={state === 'saving'} onClick={() => setManualReview(true)} className="min-h-10 rounded-xl border border-[#b9d5cd] px-4 text-sm font-bold text-[#31585d]">Review price exception</button></div> : null}
       {workspace.exceptions.length === 0 && workspace.pricingState !== 'approved' && (!governedReady || manualReview) ? <button type="button" disabled={state === 'saving' || workspace.lines.some((line) => !Number(entries[line.lineId]?.rate))} onClick={() => void submit()} className="min-h-10 rounded-xl bg-[#073e46] px-4 text-sm font-bold text-white disabled:opacity-50">{state === 'saving' ? 'Saving pricing…' : governedReady ? 'Submit price override' : 'Submit price exception'}</button> : null}
@@ -1018,7 +1024,8 @@ function PricingLineCard({ line, entry, compact, onChange }: { line: PricingLine
   </section>;
 }
 
-function PriceExceptionDecision({ exception, actorRole, onChanged }: { exception: OrderPricingWorkspace['exceptions'][number]; actorRole: string; onChanged: () => Promise<void> }) {
+function PriceExceptionDecision({ exception, actorRole, actorRoles, onChanged }: { exception: OrderPricingWorkspace['exceptions'][number]; actorRole: string; actorRoles?: readonly StockFlowRole[]; onChanged: () => Promise<void> }) {
+  const canApprove = hasAnyStockFlowRole(actorRoles ?? [actorRole as StockFlowRole], ['administrator', 'management']);
   const [reason, setReason] = useState(''); const [busy, setBusy] = useState(false); const [message, setMessage] = useState('');
   async function decide(action: 'approve_price_exception' | 'reject_price_exception') {
     setBusy(true); setMessage('');
@@ -1028,7 +1035,7 @@ function PriceExceptionDecision({ exception, actorRole, onChanged }: { exception
     } catch (error) { setMessage(error instanceof Error ? error.message : 'Decision could not be saved'); }
     finally { setBusy(false); }
   }
-  return <section className="rounded-xl border border-[#efcf9c] bg-[#fff9ec] p-3 text-xs"><div className="flex flex-wrap items-center justify-between gap-2"><strong className="text-[#7a520e]">Approve price · {currency.format(exception.enteredRate)}</strong>{['administrator','management'].includes(actorRole) ? <button type="button" disabled={busy} onClick={() => void decide('approve_price_exception')} className="min-h-9 rounded-lg bg-[#176246] px-4 font-bold text-white disabled:opacity-50">{busy ? 'Saving…' : 'Approve'}</button> : null}</div><p className="mt-1 text-[#6f5b36]">{exception.reason}</p>{['administrator','management'].includes(actorRole) ? <><input aria-label="Price decision note" value={reason} onChange={(event) => setReason(event.target.value)} maxLength={1000} placeholder="Optional approval note · required to reject" className="mt-2 min-h-10 w-full rounded-lg border border-[#e2c98d] bg-white px-3"/><button type="button" disabled={busy || reason.trim().length < 3} onClick={() => void decide('reject_price_exception')} className="mt-2 min-h-9 rounded-lg border border-[#d59c91] px-3 font-bold text-[#8d3a34] disabled:opacity-50">Reject</button></> : <p className="mt-2 font-bold text-[#7a520e]">Management approval pending.</p>}{message ? <p role="alert" className="mt-2 text-[#8d3a34]">{message}</p> : null}</section>;
+  return <section className="rounded-xl border border-[#efcf9c] bg-[#fff9ec] p-3 text-xs"><div className="flex flex-wrap items-center justify-between gap-2"><strong className="text-[#7a520e]">Approve price · {currency.format(exception.enteredRate)}</strong>{canApprove ? <button type="button" disabled={busy} onClick={() => void decide('approve_price_exception')} className="min-h-9 rounded-lg bg-[#176246] px-4 font-bold text-white disabled:opacity-50">{busy ? 'Saving…' : 'Approve'}</button> : null}</div><p className="mt-1 text-[#6f5b36]">{exception.reason}</p>{canApprove ? <><input aria-label="Price decision note" value={reason} onChange={(event) => setReason(event.target.value)} maxLength={1000} placeholder="Optional approval note · required to reject" className="mt-2 min-h-10 w-full rounded-lg border border-[#e2c98d] bg-white px-3"/><button type="button" disabled={busy || reason.trim().length < 3} onClick={() => void decide('reject_price_exception')} className="mt-2 min-h-9 rounded-lg border border-[#d59c91] px-3 font-bold text-[#8d3a34] disabled:opacity-50">Reject</button></> : <p className="mt-2 font-bold text-[#7a520e]">Management approval pending.</p>}{message ? <p role="alert" className="mt-2 text-[#8d3a34]">{message}</p> : null}</section>;
 }
 
 function OrderNotePanel({ order, onSave }: { order: OrderSummary; onSave: (order: OrderSummary, note: string) => Promise<void> }) {
@@ -1132,7 +1139,7 @@ function localDateTimeValue(date = new Date()) {
   return new Date(date.getTime() - offset).toISOString().slice(0, 16);
 }
 
-function DispatchPanel({ order, actorRole, onSave }: { order: OrderSummary; actorRole: string; onSave: (order: OrderSummary, command: Extract<OrderCommand, { action: 'save_dispatch' | 'confirm_delivery' }>) => Promise<void> }) {
+function DispatchPanel({ order, actorRole, actorRoles, onSave }: { order: OrderSummary; actorRole: string; actorRoles?: readonly StockFlowRole[]; onSave: (order: OrderSummary, command: Extract<OrderCommand, { action: 'save_dispatch' | 'confirm_delivery' }>) => Promise<void> }) {
   const [busy, setBusy] = useState(false);
   const [courierName, setCourierName] = useState(order.courierName || '');
   const [trackingNumber, setTrackingNumber] = useState(order.trackingNumber || '');
@@ -1141,7 +1148,7 @@ function DispatchPanel({ order, actorRole, onSave }: { order: OrderSummary; acto
   const [deliveredAt, setDeliveredAt] = useState(order.deliveredAt ? localDateTimeValue(new Date(order.deliveredAt)) : localDateTimeValue());
   const [receivedBy, setReceivedBy] = useState(order.receivedBy || '');
   const [podReference, setPodReference] = useState(order.podReference || '');
-  const canUpdate = ['administrator', 'operations'].includes(actorRole);
+  const canUpdate = hasAnyStockFlowRole(actorRoles ?? [actorRole as StockFlowRole], ['administrator', 'operations']);
   if (order.status === 'delivered') return <div className="mt-5 border-t border-[#dfe9e7] pt-4"><p className="font-bold text-[#31585d]">Delivery confirmation</p><p className="mt-2 text-sm text-[#587275]">Received by {order.receivedBy} on {order.deliveredAt ? new Date(order.deliveredAt).toLocaleString('en-IN') : '—'}{order.podReference ? ` · POD ${order.podReference}` : ''}</p></div>;
   return <div className="mt-5 border-t border-[#dfe9e7] pt-4"><p className="font-bold text-[#31585d]">{order.status === 'ready_for_dispatch' ? 'Dispatch details' : 'Delivery confirmation'}</p>{order.status === 'ready_for_dispatch' ? <div className="mt-3 grid gap-3 rounded-xl bg-white p-4 sm:grid-cols-2"><label className="text-sm font-bold">Courier / transporter<input maxLength={160} value={courierName} onChange={(event) => setCourierName(event.target.value)} className="mt-1 min-h-11 w-full rounded-lg border px-3 font-normal" /></label><label className="text-sm font-bold">Tracking / docket number<input maxLength={160} value={trackingNumber} onChange={(event) => setTrackingNumber(event.target.value)} className="mt-1 min-h-11 w-full rounded-lg border px-3 font-normal" /></label><label className="text-sm font-bold">Dispatch date<input type="date" value={dispatchDate} onChange={(event) => setDispatchDate(event.target.value)} className="mt-1 min-h-11 w-full rounded-lg border px-3 font-normal" /></label><label className="text-sm font-bold">Vehicle number <span className="font-normal text-[#718487]">(optional)</span><input value={vehicleNumber} onChange={(event) => setVehicleNumber(event.target.value)} maxLength={40} className="mt-1 min-h-11 w-full rounded-lg border px-3 font-normal" /></label><div className="sm:col-span-2 flex justify-end"><button type="button" disabled={!canUpdate || busy || courierName.trim().length < 2 || trackingNumber.trim().length < 2 || !dispatchDate} onClick={async () => { setBusy(true); try { await onSave(order, { action: 'save_dispatch', payload: { orderId: order.id, expectedVersion: order.version, courierName: courierName.trim(), trackingNumber: trackingNumber.trim(), dispatchDate, vehicleNumber: vehicleNumber.trim() } }); } finally { setBusy(false); } }} className="min-h-11 rounded-xl bg-[#092f36] px-5 font-bold text-white disabled:opacity-50">{busy ? 'Saving…' : 'Mark dispatched'}</button></div></div> : <div className="mt-3 grid gap-3 rounded-xl bg-white p-4 sm:grid-cols-2"><p className="sm:col-span-2 text-sm text-[#587275]">{order.courierName} · {order.trackingNumber}{order.vehicleNumber ? ` · ${order.vehicleNumber}` : ''}</p><label className="text-sm font-bold">Delivered at<input type="datetime-local" value={deliveredAt} onChange={(event) => setDeliveredAt(event.target.value)} className="mt-1 min-h-11 w-full rounded-lg border px-3 font-normal" /></label><label className="text-sm font-bold">Received by<input value={receivedBy} onChange={(event) => setReceivedBy(event.target.value)} maxLength={160} className="mt-1 min-h-11 w-full rounded-lg border px-3 font-normal" /></label><label className="text-sm font-bold sm:col-span-2">Proof of delivery reference <span className="font-normal text-[#718487]">(optional)</span><input value={podReference} onChange={(event) => setPodReference(event.target.value)} maxLength={160} className="mt-1 min-h-11 w-full rounded-lg border px-3 font-normal" /></label><div className="sm:col-span-2 flex justify-end"><button type="button" disabled={!canUpdate || busy || receivedBy.trim().length < 2 || !deliveredAt} onClick={async () => { setBusy(true); try { await onSave(order, { action: 'confirm_delivery', payload: { orderId: order.id, expectedVersion: order.version, deliveredAt: new Date(deliveredAt).toISOString(), receivedBy: receivedBy.trim(), podReference: podReference.trim() } }); } finally { setBusy(false); } }} className="min-h-11 rounded-xl bg-[#092f36] px-5 font-bold text-white disabled:opacity-50">{busy ? 'Saving…' : 'Confirm delivery'}</button></div></div>}</div>;
 }
@@ -1152,8 +1159,8 @@ function NewOrderPanel({ data, templateOrder, onClose, onCreated, onViewCustomer
   return <HydratedNewOrderPanel data={data} templateOrder={templateOrder} onClose={onClose} onCreated={onCreated} onViewCustomer={onViewCustomer} />;
 }
 
-function OrderFollowUpPanel({ order, actorRole, onSave }: { order: OrderSummary; actorRole: string; onSave: (order: OrderSummary, command: Extract<OrderCommand, { action: 'set_order_follow_up' | 'complete_order_follow_up' }>) => Promise<void> }) {
-  const canManage = ['administrator', 'sales', 'operations', 'accounts', 'management'].includes(actorRole);
+function OrderFollowUpPanel({ order, actorRole, actorRoles, onSave }: { order: OrderSummary; actorRole: string; actorRoles?: readonly StockFlowRole[]; onSave: (order: OrderSummary, command: Extract<OrderCommand, { action: 'set_order_follow_up' | 'complete_order_follow_up' }>) => Promise<void> }) {
+  const canManage = hasAnyStockFlowRole(actorRoles ?? [actorRole as StockFlowRole], ['administrator', 'sales', 'operations', 'accounts', 'management']);
   const [open, setOpen] = useState(false);
   const [busy, setBusy] = useState(false);
   const [followUpDate, setFollowUpDate] = useState(order.followUpDate || '');
@@ -1237,7 +1244,7 @@ export function HydratedNewOrderPanel({ data, templateOrder, onClose, onCreated,
   const [draftState, setDraftState] = useState<OfflineDraftState>(initialDraft?.state || 'draft');
   const [saveOnDevice, setSaveOnDevice] = useState(() => Boolean(initialDraft) || readOfflineDraftConsent(localStorage, data.actor.email));
   const [entryPriceResult, setEntryPriceResult] = useState<{ key: string; prices: Record<string, OrderEntryPrice>; failed: boolean } | null>(null);
-  const canViewPrices = ['administrator', 'accounts', 'management'].includes(data.actor.role);
+  const canViewPrices = hasAnyStockFlowRole(data.actor.roles ?? data.actor.role, ['administrator', 'accounts', 'management']);
   const pricingKeys = lines.map((line) => line.tallyKey).sort().join('\u001f');
   const entryPriceKey = `${selectedCustomerId || ''}\u001e${pricingKeys}`;
   const entryPrices = entryPriceResult?.key === entryPriceKey ? entryPriceResult.prices : {};
@@ -1630,7 +1637,7 @@ export function HydratedNewOrderPanel({ data, templateOrder, onClose, onCreated,
               {matches.length ? <div id="product-suggestions" aria-label="Matching Tally products" className="mt-2 overflow-hidden rounded-xl border border-[#dce7e5]">{matches.map((item, index) => <button key={item.tallyKey} type="button" onClick={() => addProduct(item)} className={`flex min-h-12 w-full items-center justify-between gap-4 border-b border-[#edf2f0] px-3 text-left last:border-0 hover:bg-[#f2faf7] ${index === activeProductIndex ? 'bg-[#f2faf7]' : ''}`}><span><strong className="block text-sm text-[#173239]">{item.item}</strong><small className="text-[#718487]">{item.group}</small></span><span className="shrink-0 text-xs font-bold text-[#277b69]">Available {formatQuantity(item.closing)} {item.baseUnit}</span></button>)}</div> : null}
               {productQuery.trim() && matches.length === 0 ? <p className="mt-2 rounded-xl bg-[#fff7e8] px-3 py-2 text-sm text-[#805b20]">No Tally products match “{productQuery.trim()}”.</p> : null}
               <div className="mt-4 space-y-2">{lines.map((line) => { const price = entryPrices[line.tallyKey]; return <div key={line.tallyKey} className={`grid grid-cols-[1fr_90px_auto] items-center gap-3 rounded-xl p-3 ${line.item ? 'bg-[#f2f7f5]' : 'border border-[#efbbb6] bg-[#fff0ef]'}`}><div className="min-w-0"><strong className="block truncate text-sm text-[#173239]">{line.item?.item || `Unavailable Tally item (${line.tallyKey})`}</strong><small className={line.item ? 'text-[#718487]' : 'font-bold text-[#8d3a34]'}>{line.item ? `Closing ${formatQuantity(line.item.closing)} ${line.item.baseUnit}` : 'Remove and select its current catalogue replacement'}</small>{canViewPrices ? <small className={`mt-1 block font-bold ${price?.riskStatus === 'RED' ? 'text-[#8d3a34]' : price?.riskStatus === 'AMBER' ? 'text-[#805b20]' : 'text-[#176246]'}`}>{price ? `Current price ${price.currentPrice == null ? 'review required' : currency.format(price.currentPrice)} · ${price.riskStatus}` : entryPriceState === 'loading' ? 'Resolving customer price…' : 'Customer price unavailable · review required'}</small> : <small className="mt-1 block text-[#718487]">Pricing is checked at confirmation.</small>}</div><label className="sr-only" htmlFor={`qty-${line.tallyKey}`}>Quantity for {line.item?.item || line.tallyKey}</label><input id={`qty-${line.tallyKey}`} type="number" min="1" max="1000000" step="1" required value={line.quantity} onChange={(event) => setLines((current) => current.map((entry) => entry.tallyKey === line.tallyKey ? { ...entry, quantity: Number(event.target.value) } : entry))} onKeyDown={(event) => { if (event.key === 'Enter') { event.preventDefault(); productInputRef.current?.focus(); } }} className="min-h-10 rounded-lg border border-[#cedfdd] px-2 text-right" /><button type="button" onClick={() => setLines((current) => current.filter((entry) => entry.tallyKey !== line.tallyKey))} aria-label={`Remove ${line.item?.item || line.tallyKey}`} className="size-10 rounded-lg text-xl text-[#9a4e47] hover:bg-[#ffeae8]">×</button></div>; })}</div>
-              {['administrator', 'management', 'operations', 'sales'].includes(data.actor.role) ? <ProductRequest key={data.actor.email} actorEmail={data.actor.email} productName={productQuery} customerId={selectedCustomerId} visible={productQuery.trim().length >= 2 && matches.length === 0 && lines.length < 50 && !data.snapshot.catalog.some((item) => item.item.toLocaleLowerCase('en-IN') === productQuery.trim().toLocaleLowerCase('en-IN'))} /> : null}
+              {hasAnyStockFlowRole(data.actor.roles ?? data.actor.role, ['administrator', 'management', 'operations', 'sales']) ? <ProductRequest key={data.actor.email} actorEmail={data.actor.email} productName={productQuery} customerId={selectedCustomerId} visible={productQuery.trim().length >= 2 && matches.length === 0 && lines.length < 50 && !data.snapshot.catalog.some((item) => item.item.toLocaleLowerCase('en-IN') === productQuery.trim().toLocaleLowerCase('en-IN'))} /> : null}
               {lines.length >= 50 ? <p className="mt-2 text-xs font-bold text-[#805b20]">Maximum 50 products per order.</p> : null}
               {lines.length === 0 ? <p className="mt-4 rounded-xl bg-[#f6f8f7] p-4 text-center text-sm text-[#718487]">Search and add the products requested on the call.</p> : null}
             </fieldset>

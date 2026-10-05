@@ -5,6 +5,19 @@ import { resolve } from 'node:path';
 
 // Evidence-only: no database connection, SQL execution or migration-history repair.
 const pricingReleaseFiles = new Set([
+  '20261004070312_combined_member_role_assignments.sql',
+  '20261004071246_combined_role_policy_helpers.sql',
+  '20261004071720_combined_role_order_mutation_checks.sql',
+  '20261004072232_combined_role_order_reads.sql',
+  '20261004072544_combined_role_order_summary.sql',
+  '20261004072837_combined_role_session_contract.sql',
+  '20261004073444_combined_role_operational_gateways.sql',
+  '20261004073931_combined_role_pricing_authorization.sql',
+  '20261004074430_combined_role_recovery_billing_review.sql',
+  '20261005053332_combined_billing_review_order_scope.sql',
+  '20261005053856_governed_member_role_sets.sql',
+  '20261005054431_remaining_role_union_gateways.sql',
+  '20261005055748_activate_governed_role_union.sql',
   '20260912193000_customer_pricing_engine.sql',
   '20260913130000_customer_price_book.sql',
   '20260913131000_customer_price_book_resolution.sql',

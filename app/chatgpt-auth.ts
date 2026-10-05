@@ -1,4 +1,5 @@
-import { headers } from 'next/headers';
+import { cookies, headers } from 'next/headers';
+import { sameStaffOrigin, STAFF_COOKIE, staffAuthEnabled, verifiedStaff } from '@/lib/staff-auth';
 import { chatGPTSignInPath, normalizeEmail } from '@/lib/access-control.mjs';
 
 export { chatGPTSignInPath };
@@ -11,6 +12,12 @@ export type ChatGPTUser = {
 
 export async function getChatGPTUser(): Promise<ChatGPTUser | null> {
   const requestHeaders = await headers();
+  if (staffAuthEnabled()) {
+    // Direct Workers must never trust client-supplied Sites identity headers.
+    const origin = requestHeaders.get('origin');
+    if (origin && !sameStaffOrigin(origin)) return null;
+    return verifiedStaff((await cookies()).get(STAFF_COOKIE)?.value);
+  }
   const userId = requestHeaders.get('oai-authenticated-user-id');
   const email = normalizeEmail(
     requestHeaders.get('oai-authenticated-user-email'),
@@ -20,4 +27,3 @@ export async function getChatGPTUser(): Promise<ChatGPTUser | null> {
 
   return { userId, email, displayName: email.split('@')[0] };
 }
-

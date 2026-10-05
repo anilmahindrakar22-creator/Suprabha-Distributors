@@ -1,9 +1,10 @@
 'use client';
 
-import { lazy, Suspense, useEffect, useState } from 'react';
+import { lazy, Suspense, useEffect, useRef, useState } from 'react';
 import Image from 'next/image';
 import { defaultOrderFilterForRole, readOrderDashboardMessage } from '@/lib/stockflow-navigation';
 import { prepareDeviceForAccount } from '@/lib/device-account-privacy';
+import { hasAnyStockFlowRole, type StockFlowRole } from '@/lib/user-types';
 
 const loadOrderWorkspace = () => import('./order-workspace').then((module) => ({ default: module.OrderWorkspace }));
 const OrderWorkspace = lazy(loadOrderWorkspace);
@@ -22,11 +23,25 @@ function SectionLoading() {
   return <div className="grid h-full place-items-center text-sm font-semibold text-[#61777a]">Opening section…</div>;
 }
 
-export function StockFlowFrame({ actorEmail, actorRole }: { actorEmail: string; actorRole: string }) {
+export function StockFlowFrame({ actorEmail, actorRole, actorRoles, staffAuth = false, staffEmailActionsEnabled = false }: { actorEmail: string; actorRole: string; actorRoles?: StockFlowRole[]; staffAuth?: boolean; staffEmailActionsEnabled?: boolean }) {
+  const roles = actorRoles ?? [actorRole as StockFlowRole];
   const [surface, setSurface] = useState<Surface>('stock');
   const [orderFilter, setOrderFilter] = useState('open');
   const [deviceNotice, setDeviceNotice] = useState('');
   const [readyEmail, setReadyEmail] = useState('');
+  const signOutInFlight = useRef(false);
+  const [signingOut, setSigningOut] = useState(false);
+  async function staffSignOut() {
+    if (signOutInFlight.current) return;
+    signOutInFlight.current = true;
+    setSigningOut(true);
+    try {
+      const response = await fetch('/api/staff-auth', { method: 'DELETE', cache: 'no-store', signal: AbortSignal.timeout(15000) });
+      if (response.ok) window.location.assign('/staff-signin');
+      else setDeviceNotice('Sign-out failed. Please retry before sharing this device.');
+    } catch { setDeviceNotice('Sign-out failed. Please retry before sharing this device.'); }
+    finally { signOutInFlight.current = false; setSigningOut(false); }
+  }
 
   useEffect(() => {
     if ('serviceWorker' in navigator) {
@@ -95,7 +110,7 @@ export function StockFlowFrame({ actorEmail, actorRole }: { actorEmail: string; 
           </div>
         </div>
         <nav aria-label="Application sections" className="flex min-w-0 overflow-x-auto rounded-xl bg-[#edf3f1] p-1">
-          {(['stock', 'orders', ...(['administrator', 'management', 'accounts'].includes(actorRole) ? ['pricing' as const] : []), ...(['administrator', 'operations', 'sales', 'management'].includes(actorRole) ? ['service' as const] : []), ...(actorRole === 'administrator' ? ['users' as const] : [])] as const).map((item) => (
+          {(['stock', 'orders', ...(hasAnyStockFlowRole(roles, ['administrator', 'management', 'accounts']) ? ['pricing' as const] : []), ...(hasAnyStockFlowRole(roles, ['administrator', 'operations', 'sales', 'management']) ? ['service' as const] : []), ...(hasAnyStockFlowRole(roles, ['administrator']) ? ['users' as const] : [])] as const).map((item) => (
             <button
               key={item}
               type="button"
@@ -116,7 +131,7 @@ export function StockFlowFrame({ actorEmail, actorRole }: { actorEmail: string; 
         </nav>
         {/* Sites owns the session cookie: use a full navigation, not a client router link. */}
         {/* oxlint-disable-next-line next/no-html-link-for-pages */}
-        <a href="/signout-with-chatgpt?return_to=/" target="_top" aria-label={`Sign out ${actorEmail}`} title={`Signed in as ${actorEmail}`} className="inline-flex min-h-11 shrink-0 items-center rounded-lg border border-[#dce7e5] px-2 text-xs font-bold text-[#173239] hover:bg-[#edf3f1] sm:px-3 sm:text-sm">Sign out</a>
+        {staffAuth ? <button type="button" disabled={signingOut} onClick={() => void staffSignOut()} aria-label={`Sign out ${actorEmail}`} className="min-h-11 rounded-lg border px-3 text-sm font-bold disabled:opacity-50">{signingOut ? 'Signing out…' : 'Sign out'}</button> : <a href="/signout-with-chatgpt?return_to=/" target="_top" aria-label={`Sign out ${actorEmail}`} title={`Signed in as ${actorEmail}`} className="inline-flex min-h-11 shrink-0 items-center rounded-lg border border-[#dce7e5] px-2 text-xs font-bold text-[#173239] hover:bg-[#edf3f1] sm:px-3 sm:text-sm">Sign out</a>}
       </header>
       {deviceNotice ? <output className="flex shrink-0 items-center justify-between gap-3 border-b border-[#f0d7a5] bg-[#fff7e8] px-4 py-2 text-xs font-semibold text-[#805b20] sm:px-6"><span>{deviceNotice}</span><button type="button" onClick={() => setDeviceNotice('')} className="min-h-8 shrink-0 rounded-lg px-3 font-bold hover:bg-[#f7e8c8]">Dismiss</button></output> : null}
       <section className="min-h-0 flex-1">
@@ -131,10 +146,10 @@ export function StockFlowFrame({ actorEmail, actorRole }: { actorEmail: string; 
         ) : surface === 'orders' ? (
           <Suspense fallback={<SectionLoading />}><OrderWorkspace key={orderFilter} actorEmail={actorEmail} initialStatus={orderFilter} /></Suspense>
         ) : surface === 'pricing' ? (
-          <Suspense fallback={<SectionLoading />}><PricingWorkspace actorEmail={actorEmail} actorRole={actorRole} /></Suspense>
+          <Suspense fallback={<SectionLoading />}><PricingWorkspace actorEmail={actorEmail} actorRole={actorRole} actorRoles={roles} /></Suspense>
         ) : surface === 'service' ? (
           <Suspense fallback={<SectionLoading />}><ServiceWorkspace /></Suspense>
-        ) : <Suspense fallback={<SectionLoading />}><UserManagement /></Suspense>}
+        ) : <Suspense fallback={<SectionLoading />}><UserManagement staffAuth={staffAuth} emailActionsEnabled={staffEmailActionsEnabled} /></Suspense>}
       </section>
     </main>
   );

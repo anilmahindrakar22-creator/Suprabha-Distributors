@@ -34,7 +34,9 @@ const localBindingConfig = {
     : [],
 };
 
-export default defineConfig(async () => {
+export default defineConfig(async ({ mode }) => {
+  const productionStaffBuild = mode === 'staff-production';
+  const staffBuild = mode === 'staff' || productionStaffBuild;
   // Keep Wrangler and Miniflare state project-local. These are non-secret tool
   // settings; application environment belongs in ignored `.env*` files.
   process.env.WRANGLER_WRITE_LOGS ??= 'false';
@@ -51,10 +53,25 @@ export default defineConfig(async () => {
       : undefined,
     plugins: [
       vinext(),
-      sites(),
+      ...(staffBuild ? [] : [sites()]),
       cloudflare({
         viteEnvironment: { name: 'rsc', childEnvironments: ['ssr'] },
-        config: localBindingConfig,
+        config: staffBuild ? {
+          main: 'vinext/server/fetch-handler',
+          // Separate artifact targets; never reuse acceptance bindings in production.
+          name: productionStaffBuild ? 'suprabha-staff' : 'suprabha-staff-acceptance',
+          compatibility_date: '2026-05-15',
+          compatibility_flags: ['nodejs_compat'],
+          workers_dev: true,
+          preview_urls: false,
+          vars: {
+            STOCKFLOW_AUTH_MODE: 'supabase',
+            // Production owner completed SMTP recovery on 4 Oct 2026.
+            // Keep the separate acceptance environment gated independently.
+            STOCKFLOW_AUTH_EMAIL_RESET_ENABLED: productionStaffBuild ? 'true' : 'false',
+            STOCKFLOW_AUTH_EXPECTED_PROJECT: productionStaffBuild ? 'aormuidjbdqruglmyseh' : 'ayrvhemxzizpkfcycvip',
+          },
+        } : localBindingConfig,
       }),
     ],
   };
