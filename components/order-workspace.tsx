@@ -17,7 +17,7 @@ import { offlineDraftRecoveryError, readOfflineDraftConsent, readOfflineOrderDra
 import { readCatalogCache, removeCatalogCache, writeCatalogCache } from '@/lib/catalog-cache';
 import { readCustomerCache, removeCustomerCache, writeCustomerCache } from '@/lib/customer-cache';
 import { applyCreatedOrderAcknowledgement, applyOrderAcknowledgement } from '@/lib/order-acknowledgement';
-import { OrderSubmissionError, orderSubmissionError, recoverAcceptedOrder } from '@/lib/order-submission';
+import { confirmedOrderNumber, OrderSubmissionError, orderSubmissionError, orderSubmissionTimeoutMs, recoverAcceptedOrder, retryableOrderSubmissionFailure } from '@/lib/order-submission';
 import { loadOrderBootstrap } from '@/lib/order-bootstrap-cache';
 import { retryPendingOfflineOrder } from '@/lib/offline-order-retry';
 import { acknowledgeOrderCommand, prepareOrderCommandRetry } from '@/lib/order-command-idempotency';
@@ -1081,8 +1081,10 @@ function activityEventForDisplay(event: OrderEvent): OrderEvent {
 
 async function readOrderSubmission(response: Response) {
   const body = (await response.json().catch(() => ({}))) as CreatedOrderResult & { error?: string };
-  if (!response.ok) throw orderSubmissionError(response.status, body.error);
-  return body;
+  if (!response.ok) throw orderSubmissionError(response.status, body?.error);
+  const orderNumber = confirmedOrderNumber(body);
+  if (!orderNumber) throw new OrderSubmissionError('Order acknowledgement is incomplete. Retry the saved submission.', 'retryable');
+  return { ...body, orderNumber };
 }
 
 function InstallationPanel({ order, onSave }: { order: OrderSummary; onSave: (order: OrderSummary, command: Extract<OrderCommand, { action: 'schedule_installation' | 'complete_installation' }>) => Promise<void> }) {
@@ -1239,6 +1241,9 @@ export function HydratedNewOrderPanel({ data, templateOrder, onClose, onCreated,
   const [restoredLines] = useState(() => restoreOfflineDraftLines(data.snapshot.catalog, initialPayload?.lines || templatePayload?.lines || []));
   const [lines, setLines] = useState<DraftLine[]>(restoredLines);
   const [submitting, setSubmitting] = useState(false);
+  const submissionInFlightRef = useRef(false);
+  const pendingSubmissionRef = useRef<Extract<OrderCommand, { action: 'create_order' }> | null>(initialDraft?.state === 'pending' ? initialDraft.command : null);
+  const [pendingSubmissionLocked, setPendingSubmissionLocked] = useState(initialDraft?.state === 'pending');
   const [error, setError] = useState(() => offlineDraftRecoveryError(initialDraft, restoredLines.some((line) => !line.item)));
   const [idempotencyKey] = useState(() => initialPayload?.idempotencyKey || crypto.randomUUID());
   const [draftState, setDraftState] = useState<OfflineDraftState>(initialDraft?.state || 'draft');
@@ -1300,39 +1305,46 @@ export function HydratedNewOrderPanel({ data, templateOrder, onClose, onCreated,
     return () => window.clearTimeout(timer);
   }, [customerCity, customerName, customerPhone, data.actor.email, deliveryAddress, draftState, expectedDeliveryDate, idempotencyKey, lines, notes, priority, saveOnDevice, selectedCustomerId, source]);
 
+  const notifyRetryCreated = useEffectEvent((number: string) => onCreated(number));
   useEffect(() => {
     let active = true;
     async function retryPending() {
       const saved = readOfflineOrderDraft(localStorage, data.actor.email);
-      if (!saved || saved.state !== 'pending' || !navigator.onLine) return;
+      if (!saved || saved.state !== 'pending' || !navigator.onLine || submissionInFlightRef.current) return;
+      submissionInFlightRef.current = true;
+      pendingSubmissionRef.current = saved.command;
+      setPendingSubmissionLocked(true);
       setSubmitting(true);
       try {
-        const response = await fetch('/api/orders', { method: 'POST', headers: { 'content-type': 'application/json' }, body: JSON.stringify(saved.command) });
+        const response = await fetch('/api/orders', { method: 'POST', headers: { 'content-type': 'application/json' }, body: JSON.stringify(saved.command), signal: AbortSignal.timeout(orderSubmissionTimeoutMs) });
         const result = await readOrderSubmission(response);
         removeOfflineOrderDraft(localStorage, data.actor.email);
-        if (active) onCreated(result.orderNumber || 'Order');
+        if (active) notifyRetryCreated(result.orderNumber);
       } catch (cause) {
         if (cause instanceof OrderSubmissionError && cause.kind === 'conflict') {
           const accepted = await recoverAcceptedOrder(saved.command.payload.idempotencyKey);
           if (accepted) {
             removeOfflineOrderDraft(localStorage, data.actor.email);
-            if (active) onCreated(accepted);
+            if (active) notifyRetryCreated(accepted);
             return;
           }
         }
-        if (!(cause instanceof TypeError) && !(cause instanceof OrderSubmissionError && cause.retryable) && navigator.onLine) {
+        if (!retryableOrderSubmissionFailure(cause) && navigator.onLine) {
+          pendingSubmissionRef.current = null;
+          if (active) setPendingSubmissionLocked(false);
           const message = cause instanceof Error ? cause.message : 'Unable to create order';
           updateOfflineDraftState(localStorage, data.actor.email, 'error', message);
           if (active) { setDraftState('error'); setError(message); }
         }
       } finally {
+        submissionInFlightRef.current = false;
         if (active) setSubmitting(false);
       }
     }
     window.addEventListener('online', retryPending);
     const initialRetry = window.setTimeout(retryPending, 0);
     return () => { active = false; window.clearTimeout(initialRetry); window.removeEventListener('online', retryPending); };
-  }, [data.actor.email, onCreated]);
+  }, [data.actor.email]);
 
   const matches = useMemo(() => {
     const selected = new Set(lines.map((line) => line.tallyKey));
@@ -1443,6 +1455,7 @@ export function HydratedNewOrderPanel({ data, templateOrder, onClose, onCreated,
 
   async function submit(event: React.SyntheticEvent<HTMLFormElement>) {
     event.preventDefault();
+    if (submissionInFlightRef.current) return;
     if (customerName.trim().length < 2 || lines.length === 0) {
       setError('Add a customer and at least one product.');
       return;
@@ -1452,13 +1465,14 @@ export function HydratedNewOrderPanel({ data, templateOrder, onClose, onCreated,
       return;
     }
     const startedAt = performance.now();
+    submissionInFlightRef.current = true;
     setSubmitting(true);
     setError('');
     try {
       const existing = data.customers.find(
         (item) => item.id === selectedCustomerId || item.name === customerName.trim(),
       );
-      const body: Extract<OrderCommand, { action: 'create_order' }> = {
+      const body: Extract<OrderCommand, { action: 'create_order' }> = pendingSubmissionRef.current ?? {
         action: 'create_order',
         payload: {
           idempotencyKey,
@@ -1475,8 +1489,10 @@ export function HydratedNewOrderPanel({ data, templateOrder, onClose, onCreated,
         },
       };
       if (saveOnDevice && !writeOfflineOrderDraft(localStorage, { schemaVersion: 1, actorEmail: data.actor.email, state: 'pending', command: body, updatedAt: new Date().toISOString() })) throw new Error('This browser could not save the pending order. Free device storage and retry.');
+      pendingSubmissionRef.current = body;
+      setPendingSubmissionLocked(true);
       setDraftState('pending');
-      const response = await fetch('/api/orders', { method: 'POST', headers: { 'content-type': 'application/json' }, body: JSON.stringify(body) });
+      const response = await fetch('/api/orders', { method: 'POST', headers: { 'content-type': 'application/json' }, body: JSON.stringify(body), signal: AbortSignal.timeout(orderSubmissionTimeoutMs) });
       const result = await readOrderSubmission(response);
       removeOfflineOrderDraft(localStorage, data.actor.email);
       recordOrderClientTiming('order_save_ms', startedAt);
@@ -1494,12 +1510,14 @@ export function HydratedNewOrderPanel({ data, templateOrder, onClose, onCreated,
         }
       }
       const message = cause instanceof Error ? cause.message : 'Unable to create order';
-      const waiting = !navigator.onLine || cause instanceof TypeError || cause instanceof OrderSubmissionError && cause.retryable;
+      const waiting = !navigator.onLine || retryableOrderSubmissionFailure(cause);
+      if (!waiting) { pendingSubmissionRef.current = null; setPendingSubmissionLocked(false); }
       const savedForRetry = waiting && saveOnDevice && Boolean(updateOfflineDraftState(localStorage, data.actor.email, 'pending'));
       if (!waiting && saveOnDevice) updateOfflineDraftState(localStorage, data.actor.email, 'error', message);
       setDraftState(savedForRetry ? 'pending' : 'error');
       setError(savedForRetry ? 'Order saved on this device. Retry when the connection returns.' : waiting ? 'Connection lost. This order was not stored because device saving is off.' : message);
     } finally {
+      submissionInFlightRef.current = false;
       setSubmitting(false);
     }
   }
@@ -1520,6 +1538,7 @@ export function HydratedNewOrderPanel({ data, templateOrder, onClose, onCreated,
             <button type="button" onClick={onClose} className="min-h-10 rounded-xl border border-[#d1dfdd] px-3 font-bold text-[#557174]">Close</button>
           </header>
           <div className="space-y-5 p-5 sm:p-7">
+            <fieldset disabled={submitting || pendingSubmissionLocked} className="contents">
             <fieldset className="rounded-2xl border border-[#dce7e5] bg-white p-5">
               <legend className="px-2 text-sm font-extrabold text-[#274b50]">Customer</legend>
               <div className="grid gap-4 sm:grid-cols-2">
@@ -1652,6 +1671,8 @@ export function HydratedNewOrderPanel({ data, templateOrder, onClose, onCreated,
                 <textarea id="order-notes" value={notes} onChange={(event) => setNotes(event.target.value)} maxLength={2000} rows={3} className="w-full rounded-xl border border-[#cedfdd] p-3 font-normal outline-none focus:border-[#64d4ad] sm:col-span-3" placeholder="Delivery instructions, contact person, or urgency" />
               </div>
             </details>
+            </fieldset>
+            {pendingSubmissionLocked ? <p className="text-sm font-semibold text-[#805b20]">Submission outcome is not confirmed. Retry sends the original details unchanged.</p> : null}
             <div className="rounded-2xl border border-[#dce7e5] bg-white px-4 py-3 text-sm text-[#456367]">
               <div className="flex min-h-10 items-center gap-3"><input id="save-device-draft" type="checkbox" checked={saveOnDevice} disabled={draftState === 'pending'} onChange={(event) => changeTrustedDevice(event.target.checked)} className="size-4 accent-[#277b69]" /><div><label htmlFor="save-device-draft" className="block font-bold text-[#274b50]">Save draft on this device</label><small className="text-[#718487]">{saveOnDevice ? 'On · recover after restart · trusted device only' : 'Off · enable only on a trusted device'}</small></div></div>
               <details className="mt-1 text-xs text-[#718487]"><summary className="cursor-pointer">About device drafts</summary><p className="mt-2">Use this only on a trusted device.</p><p>Unsubmitted drafts expire after seven days.</p><p>Pending orders and orders needing attention stay saved until sent or discarded. Product and customer search is also retained for restart recovery.</p></details>

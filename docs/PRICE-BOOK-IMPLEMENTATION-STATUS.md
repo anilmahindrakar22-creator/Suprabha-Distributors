@@ -1,5 +1,12 @@
 # Price book implementation checkpoint — 14 September 2026
 
+## Offline order recovery acceptance — 5 October 2026
+
+- Fixed demonstrated client defects: repeated reconnect events launched concurrent submissions; manual retry rebuilt an unresolved command from editable fields; incomplete success acknowledgements discarded drafts; parent callback changes suppressed successful retry notification. Retries now serialize, retain the exact original command/idempotency key, lock unresolved details and clear drafts only after a confirmed order number. Permanent rejection still permits correction.
+- Added a 15-second submission/receipt deadline using the existing staff-auth timeout pattern. Timeout and cancellation preserve pending commands for unchanged retry; server-side idempotency remains authoritative if the server commits after client timeout. No database, pricing, permissions, billing snapshot or Tally changes.
+- Fresh validation: 28 targeted unit tests passed; typecheck, affected lint and diff whitespace checks passed. Sixteen desktop/emulated-mobile recovery browser checks and 18 existing order-entry regression checks passed, covering restoration, account separation, reconnect storms, immutable retry, malformed acknowledgement, revoked access, missing catalogue items and parent rerender. These HTTP-boundary fixtures are not actual Android or production office acceptance.
+- This slice is local only, not deployed. Backup/restore remains deferred by the owner; actual staff-device order hand-off/offline checks and the five-working-day pilot remain outstanding. Do not certify pilot readiness from these local checks.
+
 ## Multi-role activation and staff publication — 5 October 2026
 
 - Owner reported the updated staff link worked on the device, then confirmed Users password-reset and multiple-role checks completed while signed in as Nikitesh, and authorized publication/merge. This is user-reported device evidence, not agent-observed full order hand-off, offline or five-day pilot acceptance.

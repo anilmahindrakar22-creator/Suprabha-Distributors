@@ -3,7 +3,7 @@ import {
   removeOfflineOrderDraft,
   updateOfflineDraftState,
 } from './offline-order-drafts';
-import { OrderSubmissionError, orderSubmissionError, recoverAcceptedOrder } from './order-submission';
+import { confirmedOrderNumber, OrderSubmissionError, orderSubmissionError, orderSubmissionTimeoutMs, recoverAcceptedOrder, retryableOrderSubmissionFailure } from './order-submission';
 
 type DraftStorage = Pick<Storage, 'getItem' | 'setItem' | 'removeItem'>;
 
@@ -26,14 +26,17 @@ export async function retryPendingOfflineOrder(
       method: 'POST',
       headers: { 'content-type': 'application/json' },
       body: JSON.stringify(draft.command),
+      signal: AbortSignal.timeout(orderSubmissionTimeoutMs),
     });
     const body = (await response.json().catch(() => ({}))) as {
       error?: string;
       orderNumber?: string;
     };
-    if (!response.ok) throw orderSubmissionError(response.status, body.error);
+    if (!response.ok) throw orderSubmissionError(response.status, body?.error);
+    const orderNumber = confirmedOrderNumber(body);
+    if (!orderNumber) throw new OrderSubmissionError('Order acknowledgement is incomplete. Retry the saved submission.', 'retryable');
     removeOfflineOrderDraft(storage, actorEmail);
-    return { status: 'sent', orderNumber: body.orderNumber || 'Order' };
+    return { status: 'sent', orderNumber };
   } catch (cause) {
     if (cause instanceof OrderSubmissionError && cause.kind === 'conflict') {
       const accepted = await recoverAcceptedOrder(draft.command.payload.idempotencyKey, fetchFn);
@@ -42,10 +45,7 @@ export async function retryPendingOfflineOrder(
         return { status: 'sent', orderNumber: accepted };
       }
     }
-    const retryable =
-      cause instanceof TypeError ||
-      (cause instanceof OrderSubmissionError && cause.retryable);
-    if (retryable) return { status: 'retry_later' };
+    if (retryableOrderSubmissionFailure(cause)) return { status: 'retry_later' };
 
     const message =
       cause instanceof Error ? cause.message : 'Check the order details and retry.';

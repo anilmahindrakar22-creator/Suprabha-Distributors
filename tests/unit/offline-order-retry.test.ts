@@ -16,6 +16,25 @@ const pending: OfflineOrderDraft = {
 };
 
 describe('pending offline order recovery', () => {
+  it.each(['TimeoutError', 'AbortError'])('preserves a timed-out or cancelled submission (%s) with a bounded request signal', async name => {
+    const storage = memoryStorage();
+    writeOfflineOrderDraft(storage, pending);
+    let signal: AbortSignal | null | undefined;
+    const result = await retryPendingOfflineOrder(storage, pending.actorEmail, async (_input, init) => {
+      signal = init?.signal;
+      throw new DOMException('Response did not arrive', name);
+    });
+    expect(result).toEqual({ status: 'retry_later' });
+    expect(signal).toBeInstanceOf(AbortSignal);
+    expect(readOfflineOrderDraft(storage, pending.actorEmail)?.command).toEqual(pending.command);
+    expect(readOfflineOrderDraft(storage, pending.actorEmail)?.state).toBe('pending');
+  });
+  it('retains the pending command when HTTP success has no order acknowledgement', async () => {
+    const storage = memoryStorage();
+    writeOfflineOrderDraft(storage, pending);
+    await expect(retryPendingOfflineOrder(storage, pending.actorEmail, async () => Response.json({}))).resolves.toEqual({ status: 'retry_later' });
+    expect(readOfflineOrderDraft(storage, pending.actorEmail)?.command).toEqual(pending.command);
+  });
   it('submits the saved command unchanged and removes it after acknowledgement', async () => {
     const storage = memoryStorage();
     writeOfflineOrderDraft(storage, pending);
