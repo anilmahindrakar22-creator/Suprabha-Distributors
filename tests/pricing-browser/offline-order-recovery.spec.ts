@@ -4,6 +4,28 @@ const actor = 'order-desk@example.test';
 const key = `stockflow:order-draft:v1:${actor}`;
 const command = { action: 'create_order', payload: { idempotencyKey: '11111111-1111-4111-8111-111111111111', customerName: 'Test Alpha Laboratory', source: 'phone', lines: [{ tallyKey: 'CRP', quantity: 3 }] } };
 
+test('real submission deadline retains the original command for successful retry', async ({ page }) => {
+  test.setTimeout(40_000);
+  const writes: unknown[] = [];
+  await page.route('**/api/orders', async route => {
+    writes.push(route.request().postDataJSON());
+    // Leave the first HTTP request unanswered: the application deadline must abort it.
+    if (writes.length > 1) await route.fulfill({ json: { orderNumber: 'SF-TIMEOUT-RECOVERED' } });
+  });
+  await page.addInitScript(({ key, actor, command }) => {
+    localStorage.setItem(key, JSON.stringify({ schemaVersion: 1, actorEmail: actor, state: 'pending', updatedAt: new Date().toISOString(), command }));
+  }, { key, actor, command });
+  await page.goto('/?view=order-recovery');
+  await expect.poll(() => writes.length).toBe(1);
+  await expect(page.getByRole('button', { name: 'Retry order', exact: true })).toBeEnabled({ timeout: 20_000 });
+  await expect(page.getByRole('spinbutton', { name: 'Quantity for CRP', exact: true })).toBeDisabled();
+  expect(await page.evaluate(key => JSON.parse(localStorage.getItem(key)!), key)).toMatchObject({ state: 'pending', command });
+  await page.getByRole('button', { name: 'Retry order', exact: true }).click();
+  await expect(page.getByText('Accepted SF-TIMEOUT-RECOVERED')).toBeVisible();
+  expect(writes).toEqual([command, command]);
+  expect(await page.evaluate(key => localStorage.getItem(key), key)).toBeNull();
+});
+
 test('saved draft restores customer and quantities without submitting on reload', async ({ page }) => {
   let writes = 0;
   await page.route('**/api/orders**', async route => {
