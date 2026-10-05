@@ -54,6 +54,32 @@ body {
   overflow: hidden;
 }
 
+/* Short interaction feedback only: no looping effects or layout changes. */
+button:not([data-slot='button']) {
+  transition: translate 120ms ease-out, filter 120ms ease-out,
+    background-color 120ms ease-out, border-color 120ms ease-out;
+  touch-action: manipulation;
+}
+button:enabled:not([aria-disabled='true']) { cursor: pointer; }
+button:disabled, button[aria-disabled='true'] { cursor: not-allowed; }
+button:not([data-slot='button']):focus-visible {
+  outline: 2px solid #277b69;
+  outline-offset: 3px;
+}
+@media (hover: hover) and (pointer: fine) {
+  button:not([data-slot='button']):enabled:not([aria-disabled='true']):hover {
+    filter: brightness(0.96);
+  }
+}
+@media (prefers-reduced-motion: no-preference) {
+  button:not([data-slot='button']):enabled:not([aria-disabled='true']):active {
+    translate: 0 1px;
+  }
+}
+@media (prefers-reduced-motion: reduce) {
+  button:not([data-slot='button']) { transition: none; }
+}
+
 :root {
   --background: #f7f6f1;
   --foreground: #173239;
