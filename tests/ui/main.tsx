@@ -22,6 +22,11 @@ const row = {
   continuityGP: 120, continuityMargin: 27.91, recommendedGP: 135, recommendedMargin: 30.34,
   differenceToCustomer: 25, additionalGP: 15,
 } as PricingLineResolution;
+function OrderRecoveryFixture({ data }: { data: OrderBootstrap }) {
+  const [result, setResult] = useState('');
+  const [revision, setRevision] = useState(0);
+  return result ? <output>Accepted {result}</output> : <><button onClick={() => setRevision(current => current + 1)}>Refresh fixture props {revision}</button><HydratedNewOrderPanel data={data} templateOrder={null} onClose={() => setResult('discarded')} onCreated={number => setResult(number)} onViewCustomer={() => undefined} /></>;
+}
 function Fixture() {
   const [entry, setEntry] = useState({ rate: '445', reason: '' });
   const parameters = new URLSearchParams(location.search);
@@ -37,7 +42,7 @@ function Fixture() {
   if (parameters.get('view') === 'product-request-recovery') return <ProductRequest actorEmail={parameters.get('actor') || 'sales@example.test'} productName="Missing reagent" visible />;
   if (parameters.get('view') === 'requirements') return <ProcurementRequirements />;
   const data: OrderBootstrap = {
-      actor: { email: 'order-desk@example.test', role: 'sales' },
+      actor: { email: parameters.get('actor') || 'order-desk@example.test', role: 'sales' },
       snapshot: { company: 'TEST', fetchedAt: new Date().toISOString(), catalog: [
         { tallyKey: 'GLUCOSE-A', item: 'Glucose A', group: 'Diasys', baseUnit: 'Nos', closing: 10, active: true },
         { tallyKey: 'GLUCOSE-B', item: 'Glucose B', group: 'Diasys', baseUnit: 'Nos', closing: 12, active: true },
@@ -51,6 +56,7 @@ function Fixture() {
       ],
       orders: [], operations: {},
   };
+  if (parameters.get('view') === 'order-recovery') return <OrderRecoveryFixture data={data} />;
   if (parameters.get('view') === 'orders-workspace') return <OrderWorkspace actorEmail={data.actor.email} />;
   if (parameters.get('view') === 'order-entry') {
     return <HydratedNewOrderPanel data={data} templateOrder={null} onClose={() => undefined} onCreated={() => undefined} onViewCustomer={() => undefined} />;

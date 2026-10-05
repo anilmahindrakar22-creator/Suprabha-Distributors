@@ -2,6 +2,9 @@ import { describe, expect, it, vi } from 'vitest';
 import { orderSubmissionError, recoverAcceptedOrder } from '../../lib/order-submission';
 
 describe('offline order submission failures', () => {
+  it('does not invent an order number for an incomplete accepted recovery receipt', async () => {
+    await expect(recoverAcceptedOrder('1234567890abcdef', async () => Response.json({ status: 'accepted' }))).resolves.toBeNull();
+  });
   it.each([429, 500, 503])('keeps status %s eligible for reconnect retry', (status) => {
     expect(orderSubmissionError(status).retryable).toBe(true);
   });

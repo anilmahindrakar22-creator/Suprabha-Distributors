@@ -1,5 +1,18 @@
 # Price book implementation checkpoint — 14 September 2026
 
+## Offline order recovery acceptance — 5 October 2026
+
+- Broader release validation: all 36 general browser checks and all 146 pricing/UI browser checks passed freshly with retries disabled, including authorization loss, account isolation, staff invitation/reset/sign-out, commercial recovery and real submission deadlines. Dependency security gate passed its 21 exact-patch mitigation tests; upstream braces advisory GHSA-vfj7-8cjw-p6xm remains open and the existing mitigation review expires 17 October 2026. No dependency changes, database activity, production deployment or Tally access. Local validation is green; hosted/actual-device acceptance, deferred backup and operational pilot remain separate outstanding gates.
+
+- Consolidation of commits a1cb58a and ed53dcf: fresh repository lint, typecheck, all 700 unit tests (99 files), production staff build, and 36 desktop/emulated-mobile recovery/order-entry browser checks passed. Scoped diff review found no confirmed additional defect; a proposed restored-key mismatch was rejected after tracing initialPayload directly to initialDraft.command.payload. No migration or database change, deployment, merge, actual staff-device acceptance or pilot certification was performed in this checkpoint.
+
+- Follow-up deadline acceptance: two fresh desktop/emulated-mobile checks held the first HTTP request unanswered until the real 15-second application deadline expired (no clock mock or injected exception). Pending state and original command survived; manual retry sent identical details and removed the draft only after a confirmed order number. Typecheck, affected test lint and whitespace checks passed. Test/checkpoint only; no additional production change or deployment. Actual staff-device acceptance remains unverified.
+
+- Fixed demonstrated client defects: repeated reconnect events launched concurrent submissions; manual retry rebuilt an unresolved command from editable fields; incomplete success acknowledgements discarded drafts; parent callback changes suppressed successful retry notification. Retries now serialize, retain the exact original command/idempotency key, lock unresolved details and clear drafts only after a confirmed order number. Permanent rejection still permits correction.
+- Added a 15-second submission/receipt deadline using the existing staff-auth timeout pattern. Timeout and cancellation preserve pending commands for unchanged retry; server-side idempotency remains authoritative if the server commits after client timeout. No database, pricing, permissions, billing snapshot or Tally changes.
+- Fresh validation: 28 targeted unit tests passed; typecheck, affected lint and diff whitespace checks passed. Sixteen desktop/emulated-mobile recovery browser checks and 18 existing order-entry regression checks passed, covering restoration, account separation, reconnect storms, immutable retry, malformed acknowledgement, revoked access, missing catalogue items and parent rerender. These HTTP-boundary fixtures are not actual Android or production office acceptance.
+- This slice is local only, not deployed. Backup/restore remains deferred by the owner; actual staff-device order hand-off/offline checks and the five-working-day pilot remain outstanding. Do not certify pilot readiness from these local checks.
+
 ## Multi-role activation and staff publication — 5 October 2026
 
 - Owner reported the updated staff link worked on the device, then confirmed Users password-reset and multiple-role checks completed while signed in as Nikitesh, and authorized publication/merge. This is user-reported device evidence, not agent-observed full order hand-off, offline or five-day pilot acceptance.

@@ -1,4 +1,5 @@
 export type OrderSubmissionFailureKind = 'retryable' | 'conflict' | 'sign_in' | 'access' | 'invalid';
+export const orderSubmissionTimeoutMs = 15_000;
 
 export class OrderSubmissionError extends Error {
   constructor(message: string, public readonly kind: OrderSubmissionFailureKind) {
@@ -8,6 +9,17 @@ export class OrderSubmissionError extends Error {
   get retryable() {
     return this.kind === 'retryable';
   }
+}
+
+export function confirmedOrderNumber(value: unknown): string | null {
+  if (!value || typeof value !== 'object' || Array.isArray(value)) return null;
+  const number = (value as { orderNumber?: unknown }).orderNumber;
+  return typeof number === 'string' && number.trim().length > 0 && number.length <= 160 ? number.trim() : null;
+}
+
+export function retryableOrderSubmissionFailure(cause: unknown) {
+  return cause instanceof TypeError || (cause instanceof OrderSubmissionError && cause.retryable)
+    || (cause instanceof DOMException && ['AbortError', 'TimeoutError'].includes(cause.name));
 }
 
 export function orderSubmissionError(status: number, serverMessage?: string) {
@@ -20,10 +32,10 @@ export function orderSubmissionError(status: number, serverMessage?: string) {
 
 export async function recoverAcceptedOrder(idempotencyKey: string, fetchFn: typeof fetch = fetch) {
   try {
-    const response = await fetchFn('/api/orders/recovery', { method: 'POST', headers: { 'content-type': 'application/json' }, body: JSON.stringify({ idempotencyKey }) });
+    const response = await fetchFn('/api/orders/recovery', { method: 'POST', headers: { 'content-type': 'application/json' }, body: JSON.stringify({ idempotencyKey }), signal: AbortSignal.timeout(orderSubmissionTimeoutMs) });
     if (!response.ok) return null;
     const result = (await response.json()) as { status?: string; orderNumber?: string };
-    return result.status === 'accepted' ? result.orderNumber || 'Order' : null;
+    return result?.status === 'accepted' ? confirmedOrderNumber(result) : null;
   } catch {
     return null;
   }
