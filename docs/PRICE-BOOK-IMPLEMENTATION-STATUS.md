@@ -1,5 +1,11 @@
 # Price book implementation checkpoint — 14 September 2026
 
+## ChatGPT sign-in hand-off feedback — 5 October 2026
+
+- Staff email/password remains the primary direct login. Both options remain available, but ChatGPT is explicitly identified as opening the legacy site, not creating a staff Worker session. External navigation remains a native top-level link with no credential forwarding or authentication bypass.
+- Warm legacy-host/OpenAI connections only on focus/hover or intentional navigation; show immediate opening feedback, prevent repeated plain clicks, retain modified-click behavior and show a usable staff-login/retry fallback after eight seconds if navigation has not left the page. Timer is cleaned up on unmount. OpenAI-provider delay and Android app interception are not claimed fixed; end-to-end authentication speed improvement is unmeasured.
+- Fresh targeted validation: six desktop/emulated-mobile browser checks and 33 unit tests passed. Initial lint flagged a paragraph with status role; replaced it with native output and reran affected lint/typecheck successfully. No server authentication, permissions, database or Tally changes. Local implementation only; not published.
+
 ## Offline order recovery acceptance — 5 October 2026
 
 - Broader release validation: all 36 general browser checks and all 146 pricing/UI browser checks passed freshly with retries disabled, including authorization loss, account isolation, staff invitation/reset/sign-out, commercial recovery and real submission deadlines. Dependency security gate passed its 21 exact-patch mitigation tests; upstream braces advisory GHSA-vfj7-8cjw-p6xm remains open and the existing mitigation review expires 17 October 2026. No dependency changes, database activity, production deployment or Tally access. Local validation is green; hosted/actual-device acceptance, deferred backup and operational pilot remain separate outstanding gates.

@@ -10,7 +10,24 @@ test('staff sign-in offers a top-level ChatGPT peer without submitting credentia
   await expect(page.getByLabel('Email', { exact: true })).toBeVisible();
   await expect(page.getByRole('button', { name: 'Sign in', exact: true })).toBeVisible();
   expect(requests).toBe(0);
+  await expect(page.getByText('Opens the older StockFlow site. It does not sign you into this staff site.')).toBeVisible();
   expect(await page.evaluate(() => document.documentElement.scrollWidth <= window.innerWidth)).toBe(true);
+});
+
+test('ChatGPT handoff responds immediately, blocks duplicate clicks and offers a timed fallback', async ({ page }) => {
+  await page.clock.install();
+  await page.goto('/?view=staff-signin-choice');
+  // Simulate a stalled external navigation without invoking the real identity provider.
+  await page.evaluate(() => document.addEventListener('click', event => event.preventDefault()));
+  await page.getByRole('link', { name: 'Sign in with ChatGPT', exact: true }).click();
+  const opening = page.getByRole('link', { name: 'Opening ChatGPT…', exact: true });
+  await expect(opening).toHaveAttribute('aria-disabled', 'true');
+  await expect(page.getByRole('status')).toContainText('Your staff email and password are not sent');
+  await opening.dispatchEvent('click');
+  await page.clock.fastForward(8000);
+  await expect(page.getByRole('status')).toContainText('Use staff email and password above');
+  await expect(page.getByRole('link', { name: 'Sign in with ChatGPT', exact: true })).toHaveAttribute('aria-disabled', 'false');
+  await expect(page.getByRole('button', { name: 'Sign in', exact: true })).toBeEnabled();
 });
 
 test('staff sign-out waits at most 15 seconds, blocks duplicate clicks and preserves failure notice', async ({ page }) => {
