@@ -5,6 +5,7 @@ import { CustomerPriceBook, savePricingReference } from './customer-price-book';
 import { loadOrderCatalog, loadOrderCustomers } from '@/lib/order-capture-masters';
 import type { CatalogItem, CustomerDirectoryEntry } from '@/lib/order-types';
 import type { CustomerPriceContract, PricingCommand, PricingPolicy } from '@/lib/pricing-types';
+import { hasAnyStockFlowRole, type StockFlowRole } from '@/lib/user-types';
 
 const money = new Intl.NumberFormat('en-IN', { style: 'currency', currency: 'INR', maximumFractionDigits: 2 });
 const today = () => new Date().toISOString().slice(0, 10);
@@ -24,7 +25,8 @@ function Metric({ label, value, note, attention = false }: { label: string; valu
   return <article className={`rounded-2xl border p-4 ${attention ? 'border-[#efcf9c] bg-[#fff9ec]' : 'border-[#dce7e5] bg-white'}`}><p className="text-xs font-bold text-[#61777a]">{label}</p><p className="mt-2 text-3xl font-black text-[#092f36]">{value}</p><p className="mt-1 text-xs text-[#718487]">{note}</p></article>;
 }
 
-export function PricingWorkspace({ actorEmail, actorRole }: { actorEmail: string; actorRole: string }) {
+export function PricingWorkspace({ actorEmail, actorRole, actorRoles }: { actorEmail: string; actorRole: string; actorRoles?: StockFlowRole[] }) {
+  const roles = actorRoles ?? [actorRole as StockFlowRole];
   const [contracts, setContracts] = useState<CustomerPriceContract[]>([]);
   const [policies, setPolicies] = useState<PricingPolicy[]>([]);
   const [recoveryBlocked, setRecoveryBlocked] = useState(true);
@@ -39,7 +41,7 @@ export function PricingWorkspace({ actorEmail, actorRole }: { actorEmail: string
   async function send(command: PricingCommand) {
     if (accessRevoked.current) throw new Error('Pricing access is restricted');
     if (recoveryBlocked) throw new Error('Check the earlier pricing save before submitting another decision.');
-    const fingerprint = JSON.stringify([actorEmail, actorRole, command.action, { ...command.payload, idempotencyKey: undefined }]);
+    const fingerprint = JSON.stringify([actorEmail, [...roles].sort(), command.action, { ...command.payload, idempotencyKey: undefined }]);
     const pending = pendingCommands.current.get(fingerprint) ?? command;
     pendingCommands.current.set(fingerprint, pending);
     savePricingReference(actorEmail, pending);
@@ -80,21 +82,21 @@ export function PricingWorkspace({ actorEmail, actorRole }: { actorEmail: string
         <Metric label="Expiring in 30 days" value={expiring} note="Renew before the end date" attention={expiring > 0} />
         <Metric label="Minimum gross margin" value={current ? `${current.minimumMarginPercent}%` : 'Not set'} note={current ? `Policy ${current.policyVersion}` : 'Management policy required'} attention={!current} />
       </section>
-      <CustomerPriceBook actorEmail={actorEmail} actorRole={actorRole} onRecoveryBlocked={setRecoveryBlocked} onAccessDenied={denyAccess} />
+      <CustomerPriceBook actorEmail={actorEmail} actorRole={actorRole} actorRoles={roles} onRecoveryBlocked={setRecoveryBlocked} onAccessDenied={denyAccess} />
       <fieldset disabled={recoveryBlocked} className="space-y-5">
-      <ApprovalInbox items={pending} actorRole={actorRole} onChanged={refresh} send={send} />
+      <ApprovalInbox items={pending} actorRole={actorRole} actorRoles={roles} onChanged={refresh} send={send} />
       <details className="rounded-2xl border border-[#dce7e5] bg-[#f7faf9] p-4"><summary className="cursor-pointer list-none"><span className="block text-lg font-extrabold text-[#173239]">Pricing administration</span><span className="mt-1 block text-xs font-normal text-[#718487]">Customer agreements, proposals and commercial policy</span></summary><div className="mt-4 space-y-5">
-        <ContractWorkbench items={contracts} actorEmail={actorEmail} actorRole={actorRole} onChanged={refresh} send={send} />
-        <PolicyWorkbench policies={policies} actorRole={actorRole} onChanged={refresh} send={send} />
+        <ContractWorkbench items={contracts} actorEmail={actorEmail} actorRole={actorRole} actorRoles={roles} onChanged={refresh} send={send} />
+        <PolicyWorkbench policies={policies} actorRole={actorRole} actorRoles={roles} onChanged={refresh} send={send} />
       </div></details>
       </fieldset>
     </div>
   </div>;
 }
 
-function ApprovalInbox({ items, actorRole, onChanged, send }: { items: CustomerPriceContract[]; actorRole: string; onChanged: () => Promise<void>; send: typeof sendRequest }) {
+function ApprovalInbox({ items, actorRole, actorRoles, onChanged, send }: { items: CustomerPriceContract[]; actorRole: string; actorRoles?: readonly StockFlowRole[]; onChanged: () => Promise<void>; send: typeof sendRequest }) {
   const [reasons, setReasons] = useState<Record<string, string>>({}); const [busy, setBusy] = useState(''); const [message, setMessage] = useState('');
-  const canApprove = ['administrator', 'management'].includes(actorRole);
+  const canApprove = hasAnyStockFlowRole(actorRoles ?? [actorRole as StockFlowRole], ['administrator', 'management']);
   async function decide(item: CustomerPriceContract, action: 'approve_price_contract' | 'reject_price_contract') {
     setBusy(item.id); setMessage('');
     const decisionReason = action === 'approve_price_contract'
@@ -110,7 +112,7 @@ function ApprovalInbox({ items, actorRole, onChanged, send }: { items: CustomerP
   </section>;
 }
 
-function ContractWorkbench({ items, actorEmail, onChanged, send }: { items: CustomerPriceContract[]; actorEmail: string; actorRole: string; onChanged: () => Promise<void>; send: typeof sendRequest }) {
+function ContractWorkbench({ items, actorEmail, onChanged, send }: { items: CustomerPriceContract[]; actorEmail: string; actorRole: string; actorRoles?: readonly StockFlowRole[]; onChanged: () => Promise<void>; send: typeof sendRequest }) {
   const [open, setOpen] = useState(false); const [mastersLoaded, setMastersLoaded] = useState(false); const [busy, setBusy] = useState(false); const [message, setMessage] = useState('');
   const [customers, setCustomers] = useState<CustomerDirectoryEntry[]>([]); const [catalog, setCatalog] = useState<CatalogItem[]>([]); const [customerQuery, setCustomerQuery] = useState(''); const [productQuery, setProductQuery] = useState(''); const [customer, setCustomer] = useState<CustomerDirectoryEntry | null>(null); const [product, setProduct] = useState<CatalogItem | null>(null);
   const [price, setPrice] = useState(''); const [validFrom, setValidFrom] = useState(today); const [validTo, setValidTo] = useState(''); const [source, setSource] = useState<'customer_contract' | 'quotation' | 'scheme' | 'tender' | 'manual_governed'>('customer_contract'); const [reference, setReference] = useState(''); const [reason, setReason] = useState(''); const [search, setSearch] = useState('');
@@ -130,9 +132,9 @@ function SearchPicker({ label, value, onChange, options, onPick }: { label: stri
   return <label className="relative text-xs font-bold">{label}<input value={value} onChange={(event) => onChange(event.target.value)} placeholder={`Type at least 2 letters`} className="mt-1 min-h-11 w-full rounded-lg border border-[#cedfdd] px-3 font-normal"/>{options.length ? <span className="absolute z-10 mt-1 block max-h-60 w-full overflow-y-auto rounded-lg border border-[#cbdedb] bg-white p-1 shadow-lg">{options.map((item) => <button key={item.id} type="button" onClick={() => onPick(item.id)} className="block min-h-11 w-full rounded-md px-3 py-2 text-left hover:bg-[#edf7f3]"><strong className="block text-xs text-[#173239]">{item.label}</strong>{item.note ? <small className="text-[#718487]">{item.note}</small> : null}</button>)}</span> : null}</label>;
 }
 
-function PolicyWorkbench({ policies, actorRole, onChanged, send }: { policies: PricingPolicy[]; actorRole: string; onChanged: () => Promise<void>; send: typeof sendRequest }) {
+function PolicyWorkbench({ policies, actorRole, actorRoles, onChanged, send }: { policies: PricingPolicy[]; actorRole: string; actorRoles?: readonly StockFlowRole[]; onChanged: () => Promise<void>; send: typeof sendRequest }) {
   const [open, setOpen] = useState(false); const [busy, setBusy] = useState(false); const [message, setMessage] = useState(''); const [policyVersion, setPolicyVersion] = useState(''); const [minimumMargin, setMinimumMargin] = useState(''); const [targetMargin, setTargetMargin] = useState(''); const [overrideThreshold, setOverrideThreshold] = useState(''); const [roundingIncrement, setRoundingIncrement] = useState('1'); const [roundingVersion, setRoundingVersion] = useState('ceil-rupee-v1'); const [effectiveFrom, setEffectiveFrom] = useState(today); const [reason, setReason] = useState('');
-  const current = policies[0]; const canManage = ['administrator', 'management'].includes(actorRole); const valid = policyVersion.trim().length >= 3 && minimumMargin !== '' && overrideThreshold !== '' && Number(roundingIncrement) > 0 && (!targetMargin || Number(targetMargin) >= Math.max(0, Number(minimumMargin))) && reason.trim().length >= 3;
+  const current = policies[0]; const canManage = hasAnyStockFlowRole(actorRoles ?? [actorRole as StockFlowRole], ['administrator', 'management']); const valid = policyVersion.trim().length >= 3 && minimumMargin !== '' && overrideThreshold !== '' && Number(roundingIncrement) > 0 && (!targetMargin || Number(targetMargin) >= Math.max(0, Number(minimumMargin))) && reason.trim().length >= 3;
   async function save() { setBusy(true); setMessage(''); try { await send({ action: 'create_pricing_policy', payload: { policyVersion: policyVersion.trim(), minimumMarginPercent: Number(minimumMargin), ...(targetMargin ? { targetMarginPercent: Number(targetMargin) } : {}), overrideApprovalPercent: Number(overrideThreshold), roundingIncrement: Number(roundingIncrement), roundingRuleVersion: roundingVersion.trim(), effectiveFrom, reason: reason.trim(), idempotencyKey: crypto.randomUUID() } }); setMessage('New policy activated; the previous policy remains in history.'); setOpen(false); await onChanged(); } catch (error) { setMessage(error instanceof Error ? error.message : 'Policy could not be saved'); } finally { setBusy(false); } }
   return <section className="rounded-2xl border border-[#dce7e5] bg-white p-4"><div className="flex flex-wrap items-start justify-between gap-3"><div><h2 className="text-lg font-extrabold text-[#173239]">Commercial policy</h2>{current ? <p className="mt-1 text-sm text-[#456367]"><b>{current.policyVersion}</b> · minimum GP {current.minimumMarginPercent}% · target {current.targetMarginPercent == null ? 'not set' : `${current.targetMarginPercent}%`} · approval beyond {current.overrideApprovalPercent}% · round up by {money.format(current.roundingIncrement)}</p> : <p className="mt-1 text-sm text-[#8a5a0a]">No active commercial policy.</p>}</div>{canManage ? <button type="button" onClick={() => setOpen((value) => !value)} className="min-h-10 rounded-xl border border-[#cbdedb] px-4 text-sm font-bold text-[#31585d]">{open ? 'Close' : 'New policy'}</button> : null}</div>{message ? <output className="mt-3 block rounded-lg bg-[#edf7f3] p-3 text-xs font-bold text-[#31585d]">{message}</output> : null}
     {open ? <div className="mt-4 rounded-xl bg-[#f7faf9] p-4"><div className="rounded-lg border border-[#dce7e5] bg-white p-3 text-xs text-[#456367]"><strong className="text-[#173239]">How the guardrail works</strong><p className="mt-1">A gross margin below the minimum requires review. The target drives the cost-aware suggestion. A change beyond the override threshold requires an Administrator or Management decision. No price is invented when evidence is missing.</p></div><div className="mt-4 grid gap-3 sm:grid-cols-2 lg:grid-cols-3"><Field label="Policy version" value={policyVersion} onChange={setPolicyVersion}/><Field label="Minimum gross margin %" value={minimumMargin} onChange={setMinimumMargin} number/><Field label="Target gross margin % (optional)" value={targetMargin} onChange={setTargetMargin} number/><Field label="Override approval threshold %" value={overrideThreshold} onChange={setOverrideThreshold} number/><Field label="Round-up increment ₹" value={roundingIncrement} onChange={setRoundingIncrement} number/><Field label="Rounding rule version" value={roundingVersion} onChange={setRoundingVersion}/><label className="text-xs font-bold">Effective from<input type="date" value={effectiveFrom} onChange={(event) => setEffectiveFrom(event.target.value)} className="mt-1 min-h-11 w-full rounded-lg border border-[#cedfdd] px-3 font-normal"/></label><label className="text-xs font-bold sm:col-span-2">Management reason<input value={reason} onChange={(event) => setReason(event.target.value)} maxLength={1000} className="mt-1 min-h-11 w-full rounded-lg border border-[#cedfdd] px-3 font-normal"/></label></div><div className="mt-4 flex justify-end"><button type="button" disabled={busy || !valid} onClick={() => void save()} className="min-h-11 rounded-xl bg-[#073e46] px-5 text-sm font-bold text-white disabled:opacity-50">{busy ? 'Activating…' : 'Activate policy'}</button></div></div> : null}

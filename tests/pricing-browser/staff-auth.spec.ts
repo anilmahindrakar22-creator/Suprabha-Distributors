@@ -56,9 +56,60 @@ test('staff user membership remains available while email actions are disabled',
   const staffLogin = page.getByRole('heading', { name: 'Staff login' }).locator('..');
   await expect(staffLogin.getByText('staff@example.test', { exact: true })).toHaveCount(1);
   await expect(staffLogin.getByText('Staff invitation and password reset emails are not enabled.')).toHaveCount(1);
-  await expect(page.getByRole('combobox', { name: 'Role for staff@example.test' })).toBeEnabled();
+  await expect(page.getByText('Roles: viewer')).toBeVisible();
+  await expect(page.getByLabel('viewer', { exact: true }).first()).toBeChecked();
   await expect(page.getByRole('button', { name: 'Suspend', exact: true })).toBeEnabled();
   expect(calls).toEqual(['save']);
+});
+
+test('role edits retain the primary role and suspend uses saved roles, not an unsaved draft', async ({ page }) => {
+  const originalUpdatedAt = '2026-10-05T10:00:00.000Z';
+  const rolesSavedUpdatedAt = '2026-10-05T10:05:00.000Z';
+  let member = { id: 1, email: 'staff@example.test', role: 'sales', roles: ['sales', 'warehouse'], status: 'active', updatedAt: originalUpdatedAt };
+  let postCount = 0;
+  await page.route('**/api/users', async route => {
+    if (route.request().method() !== 'POST') {
+      await route.fulfill({ json: { users: [member] } });
+      return;
+    }
+
+    const payload = route.request().postDataJSON();
+    postCount++;
+    if (postCount === 1) {
+      expect(payload).toMatchObject({
+        email: 'staff@example.test',
+        role: 'sales',
+        roles: ['sales', 'warehouse', 'accounts'],
+        status: 'active',
+        expectedUpdatedAt: originalUpdatedAt,
+      });
+      member = { ...member, roles: payload.roles, updatedAt: rolesSavedUpdatedAt };
+    } else {
+      expect(payload).toMatchObject({
+        email: 'staff@example.test',
+        role: 'sales',
+        roles: ['sales', 'warehouse', 'accounts'],
+        status: 'suspended',
+        expectedUpdatedAt: rolesSavedUpdatedAt,
+      });
+      member = { ...member, status: 'suspended' };
+    }
+    await route.fulfill({ json: { ok: true } });
+  });
+
+  await page.goto('/?view=staff-users');
+  await page.getByText('Roles: sales, warehouse').click();
+  const roleGroup = page.getByRole('group', { name: 'Roles for staff@example.test' });
+  await roleGroup.getByLabel('accounts', { exact: true }).check();
+  await page.getByRole('button', { name: 'Save roles' }).click();
+  await expect(page.getByText('User access updated.')).toBeVisible();
+  await expect(page.getByText('Roles: sales, warehouse, accounts')).toBeVisible();
+
+  await roleGroup.getByLabel('management', { exact: true }).check();
+  await page.getByRole('button', { name: 'Suspend', exact: true }).click();
+  await expect(page.getByText('User access updated.')).toBeVisible();
+  await expect(page.getByText('suspended', { exact: true })).toBeVisible();
+  expect(postCount).toBe(2);
 });
 
 for (const view of ['staff-signin', 'staff-reset']) {

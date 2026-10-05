@@ -11,8 +11,8 @@ begin
     raise exception 'Legacy update did not synchronize roles';
   end if;
   begin
-    update public.stockflow_members set roles=array['warehouse','administrator'] where email='role-storage@test.local';
-    raise exception 'Premature combined permissions accepted';
+    update public.stockflow_members set roles=array['warehouse','invented'] where email='role-storage@test.local';
+    raise exception 'Invalid combined permissions accepted';
   exception when check_violation then null;
   end;
   if has_table_privilege('authenticated','public.stockflow_members','UPDATE')

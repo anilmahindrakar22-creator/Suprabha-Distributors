@@ -4,6 +4,7 @@ import { Fragment, useCallback, useEffect, useRef, useState } from 'react';
 import { loadOrderCatalog, loadOrderCustomers } from '@/lib/order-capture-masters';
 import type { CatalogItem, CustomerDirectoryEntry } from '@/lib/order-types';
 import { CUSTOMER_GROUP_MARGIN_GROUPS, type CustomerGroupMarginPreview, type PricingCommand } from '@/lib/pricing-types';
+import { hasAnyStockFlowRole, type StockFlowRole } from '@/lib/user-types';
 
 type Row = {
   currentDecisionId: string | null; customerId: string; customerName: string; tallyKey: string; itemName: string; evidenceHash: string;
@@ -45,7 +46,8 @@ export function savePricingReference(actorEmail: string, command: PricingCommand
   sessionStorage.setItem(key, JSON.stringify(remaining));
 }
 
-export function CustomerPriceBook({ actorEmail, actorRole, onRecoveryBlocked, onAccessDenied }: { actorEmail: string; actorRole: string; onRecoveryBlocked?: (blocked: boolean) => void; onAccessDenied?: () => void }) {
+export function CustomerPriceBook({ actorEmail, actorRole, actorRoles, onRecoveryBlocked, onAccessDenied }: { actorEmail: string; actorRole: string; actorRoles?: readonly StockFlowRole[]; onRecoveryBlocked?: (blocked: boolean) => void; onAccessDenied?: () => void }) {
+  const roles = actorRoles ?? [actorRole as StockFlowRole];
   const [page, setPage] = useState<Page | null>(null); const [loading, setLoading] = useState(false);
   const [reason, setReason] = useState(''); const [busy, setBusy] = useState(false);
   const [basePrice, setBasePrice] = useState(''); const [validFrom, setValidFrom] = useState('');
@@ -97,7 +99,7 @@ export function CustomerPriceBook({ actorEmail, actorRole, onRecoveryBlocked, on
   }
   async function mutate(command: PricingCommand) {
     if (accessRevoked.current) throw new Error('Pricing access is restricted');
-    const fingerprint = JSON.stringify([actorEmail, actorRole, command.action, { ...command.payload, idempotencyKey: undefined }]);
+    const fingerprint = JSON.stringify([actorEmail, [...roles].sort(), command.action, { ...command.payload, idempotencyKey: undefined }]);
     const pending = pendingCommands.current.get(fingerprint) ?? command;
     pendingCommands.current.set(fingerprint, pending);
     // Persist only an opaque receipt before sending; no rates, reasons or customer data.
@@ -120,7 +122,7 @@ export function CustomerPriceBook({ actorEmail, actorRole, onRecoveryBlocked, on
   const [groupPreviewBusy, setGroupPreviewBusy] = useState(false);
   const [groupPreviewError, setGroupPreviewError] = useState('');
   const activeGroupRequest = useRef(0);
-  const canApprove = ['administrator', 'management'].includes(actorRole) && recovery.length === 0 && recoveryOwner === recoveryStorageKey;
+  const canApprove = hasAnyStockFlowRole(roles, ['administrator', 'management']) && recovery.length === 0 && recoveryOwner === recoveryStorageKey;
   const currentGroupPreviewKey = JSON.stringify([selected, group, Number(grossMargin)]);
   function invalidateGroupPreview() {
     activeGroupRequest.current += 1;

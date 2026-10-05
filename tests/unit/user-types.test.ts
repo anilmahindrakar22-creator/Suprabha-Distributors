@@ -25,6 +25,16 @@ describe('user administration request validation', () => {
   it('accepts a bounded known role and status', () => {
     expect(validateUserMutation(valid)).toEqual(valid);
   });
+  it('accepts a validated role set and bounded optimistic timestamp without forwarding extra claims', () => {
+    expect(validateUserMutation({ ...valid, roles: ['accounts', 'operations'], expectedUpdatedAt: '2026-10-05T00:00:00.000Z', admin: true }))
+      .toEqual({ ...valid, roles: ['operations', 'accounts'], expectedUpdatedAt: '2026-10-05T00:00:00.000Z' });
+  });
+  it.each([[], ['sales'], ['operations', 'operations'], ['operations', 'owner'], 'operations', null])('rejects invalid assigned roles %#', roles => {
+    expect(validateUserMutation({ ...valid, roles })).toBeNull();
+  });
+  it('rejects an invalid timestamp', () => {
+    expect(validateUserMutation({ ...valid, expectedUpdatedAt: 'not-a-date' })).toBeNull();
+  });
 
   it.each([
     { ...valid, email: 'not-an-email' },

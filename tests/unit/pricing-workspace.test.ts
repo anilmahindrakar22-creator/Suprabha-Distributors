@@ -8,7 +8,7 @@ const orders = readFileSync('components/order-workspace.tsx', 'utf8');
 describe('dedicated pricing control centre', () => {
   it('is lazy-loaded and offered only to pricing roles', () => {
     expect(frame).toContain("const PricingWorkspace = lazy(");
-    expect(frame).toContain("['administrator', 'management', 'accounts'].includes(actorRole)");
+    expect(frame).toContain("hasAnyStockFlowRole(roles, ['administrator', 'management', 'accounts'])");
     expect(frame).not.toContain("import { PricingWorkspace } from './pricing-workspace'");
   });
 

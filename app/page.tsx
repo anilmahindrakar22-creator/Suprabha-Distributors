@@ -79,5 +79,5 @@ export default async function Home() {
     );
   }
 
-  return <StockFlowFrame actorEmail={session.email} actorRole={session.role} staffAuth={staffAuthEnabled()} staffEmailActionsEnabled={process.env.STOCKFLOW_AUTH_EMAIL_RESET_ENABLED === 'true'} />;
+  return <StockFlowFrame actorEmail={session.email} actorRole={session.role} actorRoles={session.roles} staffAuth={staffAuthEnabled()} staffEmailActionsEnabled={process.env.STOCKFLOW_AUTH_EMAIL_RESET_ENABLED === 'true'} />;
 }

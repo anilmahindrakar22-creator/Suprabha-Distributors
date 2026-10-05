@@ -4,6 +4,7 @@ import { lazy, Suspense, useEffect, useRef, useState } from 'react';
 import Image from 'next/image';
 import { defaultOrderFilterForRole, readOrderDashboardMessage } from '@/lib/stockflow-navigation';
 import { prepareDeviceForAccount } from '@/lib/device-account-privacy';
+import { hasAnyStockFlowRole, type StockFlowRole } from '@/lib/user-types';
 
 const loadOrderWorkspace = () => import('./order-workspace').then((module) => ({ default: module.OrderWorkspace }));
 const OrderWorkspace = lazy(loadOrderWorkspace);
@@ -22,7 +23,8 @@ function SectionLoading() {
   return <div className="grid h-full place-items-center text-sm font-semibold text-[#61777a]">Opening section…</div>;
 }
 
-export function StockFlowFrame({ actorEmail, actorRole, staffAuth = false, staffEmailActionsEnabled = false }: { actorEmail: string; actorRole: string; staffAuth?: boolean; staffEmailActionsEnabled?: boolean }) {
+export function StockFlowFrame({ actorEmail, actorRole, actorRoles, staffAuth = false, staffEmailActionsEnabled = false }: { actorEmail: string; actorRole: string; actorRoles?: StockFlowRole[]; staffAuth?: boolean; staffEmailActionsEnabled?: boolean }) {
+  const roles = actorRoles ?? [actorRole as StockFlowRole];
   const [surface, setSurface] = useState<Surface>('stock');
   const [orderFilter, setOrderFilter] = useState('open');
   const [deviceNotice, setDeviceNotice] = useState('');
@@ -108,7 +110,7 @@ export function StockFlowFrame({ actorEmail, actorRole, staffAuth = false, staff
           </div>
         </div>
         <nav aria-label="Application sections" className="flex min-w-0 overflow-x-auto rounded-xl bg-[#edf3f1] p-1">
-          {(['stock', 'orders', ...(['administrator', 'management', 'accounts'].includes(actorRole) ? ['pricing' as const] : []), ...(['administrator', 'operations', 'sales', 'management'].includes(actorRole) ? ['service' as const] : []), ...(actorRole === 'administrator' ? ['users' as const] : [])] as const).map((item) => (
+          {(['stock', 'orders', ...(hasAnyStockFlowRole(roles, ['administrator', 'management', 'accounts']) ? ['pricing' as const] : []), ...(hasAnyStockFlowRole(roles, ['administrator', 'operations', 'sales', 'management']) ? ['service' as const] : []), ...(hasAnyStockFlowRole(roles, ['administrator']) ? ['users' as const] : [])] as const).map((item) => (
             <button
               key={item}
               type="button"
@@ -144,7 +146,7 @@ export function StockFlowFrame({ actorEmail, actorRole, staffAuth = false, staff
         ) : surface === 'orders' ? (
           <Suspense fallback={<SectionLoading />}><OrderWorkspace key={orderFilter} actorEmail={actorEmail} initialStatus={orderFilter} /></Suspense>
         ) : surface === 'pricing' ? (
-          <Suspense fallback={<SectionLoading />}><PricingWorkspace actorEmail={actorEmail} actorRole={actorRole} /></Suspense>
+          <Suspense fallback={<SectionLoading />}><PricingWorkspace actorEmail={actorEmail} actorRole={actorRole} actorRoles={roles} /></Suspense>
         ) : surface === 'service' ? (
           <Suspense fallback={<SectionLoading />}><ServiceWorkspace /></Suspense>
         ) : <Suspense fallback={<SectionLoading />}><UserManagement staffAuth={staffAuth} emailActionsEnabled={staffEmailActionsEnabled} /></Suspense>}

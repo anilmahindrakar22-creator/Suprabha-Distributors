@@ -170,6 +170,10 @@ end$$;
   Invoke-DatabaseCommand $psqlProgram @('-U',$databaseUser,'-X','-q','-v','ON_ERROR_STOP=1','-d',$database,'-f',(Join-Path $repository 'supabase/tests/combined_role_recovery.sql'))
   Invoke-DatabaseCommand $psqlProgram @('-U',$databaseUser,'-X','-q','-v','ON_ERROR_STOP=1','-d',$database,'-f',(Join-Path $repository 'supabase/tests/combined_role_billing_review.sql'))
   Write-Output 'PASS: combined-role billing review, scope, audit, replay and stale checks'
+  Invoke-DatabaseCommand $psqlProgram @('-U',$databaseUser,'-X','-q','-v','ON_ERROR_STOP=1','-d',$database,'-f',(Join-Path $repository 'supabase/tests/governed_member_role_sets.sql'))
+  Write-Output 'PASS: governed member role sets, audit, replay and stale edit checks'
+  Invoke-DatabaseCommand $psqlProgram @('-U',$databaseUser,'-X','-q','-v','ON_ERROR_STOP=1','-d',$database,'-f',(Join-Path $repository 'supabase/tests/remaining_role_union_gateways.sql'))
+  Write-Output 'PASS: remaining domain combined-role admission and denial checks'
   Write-Output 'PASS: combined-role pricing recovery remains status-only and permission-controlled'
   Write-Output 'PASS: complete migration replay, pricing ACID and role-storage tests'
   Invoke-DatabaseCommand $psqlProgram @('-U',$databaseUser,'-X','-q','-v','ON_ERROR_STOP=1','-d',$database,'-f',(Join-Path $repository 'supabase/tests/product_request_concurrency.sql'))

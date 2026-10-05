@@ -1,3 +1,5 @@
+import { normalizeStockFlowRoles, type StockFlowRole } from './user-types';
+
 export type CatalogItem = {
   tallyKey: string;
   item: string;
@@ -149,7 +151,7 @@ export type OrderLineSummary = {
 };
 
 export type OrderBootstrap = {
-  actor: { email: string; role: string };
+  actor: { email: string; role: string; roles?: StockFlowRole[] };
   snapshot: { company: string; fetchedAt: string; catalogVersion?: string; catalog: CatalogItem[]; tallyInvoices?: TallyInvoice[] };
   customerVersion?: string;
   customers: CustomerDirectoryEntry[];
@@ -320,8 +322,9 @@ const visibleTransitionRoles: Record<string, readonly string[]> = {
   'billed_in_tally->ready_for_dispatch': ['administrator', 'operations'],
 };
 
-export function canRoleTransitionOrder(role: string, fromStatus: string, toStatus: string) {
-  return visibleTransitionRoles[`${fromStatus}->${toStatus}`]?.includes(role) ?? false;
+export function canRoleTransitionOrder(role: string | readonly string[], fromStatus: string, toStatus: string) {
+  const roles = normalizeStockFlowRoles(role);
+  return roles !== null && (visibleTransitionRoles[`${fromStatus}->${toStatus}`]?.some(allowed => roles.includes(allowed as StockFlowRole)) ?? false);
 }
 
 export function orderNextOwnerLabel(status: string) {

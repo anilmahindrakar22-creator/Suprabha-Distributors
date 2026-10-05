@@ -236,6 +236,9 @@ describe('order workflow and history', () => {
     expect(canRoleTransitionOrder('accounts', 'phone_order_received', 'awaiting_confirmation')).toBe(false);
     expect(canRoleTransitionOrder('warehouse', 'confirmed', 'packed')).toBe(true);
     expect(canRoleTransitionOrder('sales', 'confirmed', 'packed')).toBe(false);
+    expect(canRoleTransitionOrder(['sales', 'warehouse'], 'confirmed', 'packed')).toBe(true);
+    expect(canRoleTransitionOrder(['sales', 'warehouse'], 'awaiting_tally_billing', 'billed_in_tally')).toBe(false);
+    expect(canRoleTransitionOrder(['administrator', 'invented'], 'confirmed', 'packed')).toBe(false);
     expect(canRoleTransitionOrder('accounts', 'awaiting_tally_billing', 'billed_in_tally')).toBe(true);
     expect(canRoleTransitionOrder('warehouse', 'awaiting_tally_billing', 'billed_in_tally')).toBe(false);
     expect(canRoleTransitionOrder('operations', 'billed_in_tally', 'ready_for_dispatch')).toBe(true);

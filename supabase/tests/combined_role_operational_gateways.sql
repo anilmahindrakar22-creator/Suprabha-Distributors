@@ -1,5 +1,5 @@
 begin;
-alter table public.stockflow_members drop constraint stockflow_members_roles_pending_union;
+alter table public.stockflow_members drop constraint if exists stockflow_members_roles_pending_union;
 insert into public.stockflow_members(email,role,status) values('combined-ops@test.local','viewer','active'),('combined-warehouse@test.local','warehouse','active');
 update public.stockflow_members set roles=array['operations','viewer'] where email='combined-ops@test.local';
 update private.stockflow_gateway_config set secret_sha256=encode(extensions.digest('combined-ops-key','sha256'),'hex') where name='orders';

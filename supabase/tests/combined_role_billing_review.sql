@@ -1,5 +1,5 @@
 begin;
-alter table public.stockflow_members drop constraint stockflow_members_roles_pending_union;
+alter table public.stockflow_members drop constraint if exists stockflow_members_roles_pending_union;
 insert into public.stockflow_members(email,role,status) values
  ('combined-billing@test.local','sales','active'),('combined-billing-denied@test.local','warehouse','active');
 update public.stockflow_members set roles=array['sales','accounts'] where email='combined-billing@test.local';

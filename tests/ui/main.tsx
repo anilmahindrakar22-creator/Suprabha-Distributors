@@ -12,6 +12,7 @@ import { StaffPasswordReset } from '@/components/staff-password-reset';
 import { UserManagement } from '@/components/user-management';
 import type { PricingLineResolution } from '@/lib/pricing-types';
 import type { OrderBootstrap } from '@/lib/order-types';
+import { normalizeStockFlowRoles } from '@/lib/user-types';
 import '@/app/globals.css';
 
 const row = {
@@ -30,7 +31,7 @@ function Fixture() {
   if (parameters.get('view') === 'staff-switch') return <StaffAccountSwitch />;
   if (parameters.get('view') === 'staff-users') return <UserManagement staffAuth emailActionsEnabled />;
   if (parameters.get('view') === 'staff-users-disabled') return <UserManagement staffAuth />;
-  if (parameters.get('view') === 'frame') return <StockFlowFrame actorEmail="staff@example.test" actorRole={parameters.get('role') || 'sales'} />;
+  if (parameters.get('view') === 'frame') return <StockFlowFrame actorEmail="staff@example.test" actorRole={parameters.get('role') || 'sales'} actorRoles={parameters.has('roles') ? normalizeStockFlowRoles(parameters.get('roles')?.split(',')) ?? [] : undefined} />;
   if (parameters.get('view') === 'staff-frame') return <StockFlowFrame actorEmail="staff@example.test" actorRole="administrator" staffAuth />;
   if (parameters.get('view') === 'product-requests') return <ProductRequestInbox />;
   if (parameters.get('view') === 'product-request-recovery') return <ProductRequest actorEmail={parameters.get('actor') || 'sales@example.test'} productName="Missing reagent" visible />;

@@ -639,6 +639,97 @@
       "remoteVersion": "20261002062752",
       "remoteSha256": "34c57f26c92f92d9bf074c894fcaca5e7b2e970c7bbad4c49bde61b9d6ab1358",
       "status": "exact_normalized_match"
+    },
+    {
+      "localFile": "20261004070312_combined_member_role_assignments.sql",
+      "localSha256": "160a8284742908e29e6d33e20da3c2025880a89a848b9c8c70f101abd2edcfa9",
+      "remoteVersion": "20261005061157",
+      "remoteSha256": "160a8284742908e29e6d33e20da3c2025880a89a848b9c8c70f101abd2edcfa9",
+      "status": "exact_normalized_match"
+    },
+    {
+      "localFile": "20261004071246_combined_role_policy_helpers.sql",
+      "localSha256": "cbffa3ec11cebe5a5ab2da9187f7639597400be5e31fa7d22d17529a646ddf98",
+      "remoteVersion": "20261005061200",
+      "remoteSha256": "cbffa3ec11cebe5a5ab2da9187f7639597400be5e31fa7d22d17529a646ddf98",
+      "status": "exact_normalized_match"
+    },
+    {
+      "localFile": "20261004071720_combined_role_order_mutation_checks.sql",
+      "localSha256": "8a6fa0bfc7c5427181f16086fb3c45f237652b483cdcb7ea6a84501a72736329",
+      "remoteVersion": "20261005061201",
+      "remoteSha256": "8a6fa0bfc7c5427181f16086fb3c45f237652b483cdcb7ea6a84501a72736329",
+      "status": "exact_normalized_match"
+    },
+    {
+      "localFile": "20261004072232_combined_role_order_reads.sql",
+      "localSha256": "4a32f74951593701bc99dae47d442d21b0107d81922507459f66f3eedaac7215",
+      "remoteVersion": "20261005061206",
+      "remoteSha256": "4a32f74951593701bc99dae47d442d21b0107d81922507459f66f3eedaac7215",
+      "status": "exact_normalized_match"
+    },
+    {
+      "localFile": "20261004072544_combined_role_order_summary.sql",
+      "localSha256": "6403e1ef69b06dfcb2ecf2a21a7454f863b76d61519aa3790972c20fb7a2909c",
+      "remoteVersion": "20261005061208",
+      "remoteSha256": "6403e1ef69b06dfcb2ecf2a21a7454f863b76d61519aa3790972c20fb7a2909c",
+      "status": "exact_normalized_match"
+    },
+    {
+      "localFile": "20261004072837_combined_role_session_contract.sql",
+      "localSha256": "62ca59b0e9e4413814a73b61fc62ac150da614dfa1ff3b108f74d2d828d3b182",
+      "remoteVersion": "20261005061210",
+      "remoteSha256": "62ca59b0e9e4413814a73b61fc62ac150da614dfa1ff3b108f74d2d828d3b182",
+      "status": "exact_normalized_match"
+    },
+    {
+      "localFile": "20261004073444_combined_role_operational_gateways.sql",
+      "localSha256": "a929cb200249d2d94e3280a578ccf49cf05c12fb4f461fda8f821494d2fd952c",
+      "remoteVersion": "20261005061212",
+      "remoteSha256": "a929cb200249d2d94e3280a578ccf49cf05c12fb4f461fda8f821494d2fd952c",
+      "status": "exact_normalized_match"
+    },
+    {
+      "localFile": "20261004073931_combined_role_pricing_authorization.sql",
+      "localSha256": "9bd9c7b074fe615083469807ca0252070f15e309908eaaaf81619bd49ee318ea",
+      "remoteVersion": "20261005061215",
+      "remoteSha256": "9bd9c7b074fe615083469807ca0252070f15e309908eaaaf81619bd49ee318ea",
+      "status": "exact_normalized_match"
+    },
+    {
+      "localFile": "20261004074430_combined_role_recovery_billing_review.sql",
+      "localSha256": "904429bc7045165639753630afe98ede71ba249886a263e8a37ce6ad8a530bd3",
+      "remoteVersion": "20261005061217",
+      "remoteSha256": "904429bc7045165639753630afe98ede71ba249886a263e8a37ce6ad8a530bd3",
+      "status": "exact_normalized_match"
+    },
+    {
+      "localFile": "20261005053332_combined_billing_review_order_scope.sql",
+      "localSha256": "5eb7da4261c45eb951c590dd682459b5b5fcf30d7306a79adc100ceefb92cb74",
+      "remoteVersion": "20261005061219",
+      "remoteSha256": "5eb7da4261c45eb951c590dd682459b5b5fcf30d7306a79adc100ceefb92cb74",
+      "status": "exact_normalized_match"
+    },
+    {
+      "localFile": "20261005053856_governed_member_role_sets.sql",
+      "localSha256": "d9103c8cf31ad92e3e32ea4f8a206877d3b03aafe10f2507dc498073cb6dc7d8",
+      "remoteVersion": "20261005061358",
+      "remoteSha256": "d9103c8cf31ad92e3e32ea4f8a206877d3b03aafe10f2507dc498073cb6dc7d8",
+      "status": "exact_normalized_match"
+    },
+    {
+      "localFile": "20261005054431_remaining_role_union_gateways.sql",
+      "localSha256": "3bdbf9733ab1d6d1b024fd734036e1da0ca23c9f3259dc28a3baeed3f5462ce3",
+      "remoteVersion": "20261005061359",
+      "remoteSha256": "3bdbf9733ab1d6d1b024fd734036e1da0ca23c9f3259dc28a3baeed3f5462ce3",
+      "status": "exact_normalized_match"
+    },
+    {
+      "localFile": "20261005055748_activate_governed_role_union.sql",
+      "localSha256": "c25fe1e0cb4532c362504e5c9969ad736db31eff3054b076fde425f85efa766c",
+      "remoteVersion": "20261005061401",
+      "remoteSha256": "c25fe1e0cb4532c362504e5c9969ad736db31eff3054b076fde425f85efa766c",
+      "status": "exact_normalized_match"
     }
   ]
 }

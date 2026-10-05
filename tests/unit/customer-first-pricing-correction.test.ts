@@ -36,7 +36,7 @@ describe('customer-first pricing correction', () => {
   });
 
   it('shows governed prices during order entry only to commercial roles', () => {
-    expect(orders).toContain("const canViewPrices = ['administrator', 'accounts', 'management'].includes(data.actor.role)");
+    expect(orders).toContain("const canViewPrices = hasAnyStockFlowRole(data.actor.roles ?? data.actor.role, ['administrator', 'accounts', 'management'])");
     expect(orders).toContain('Governed price');
     expect(orders).toContain('Pricing is checked at confirmation');
     expect(orders).not.toContain('Use governed prices');

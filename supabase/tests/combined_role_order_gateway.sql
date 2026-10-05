@@ -1,6 +1,6 @@
 -- Test-only combined assignment; singleton activation gate is restored by rollback.
 begin;
-alter table public.stockflow_members drop constraint stockflow_members_roles_pending_union;
+alter table public.stockflow_members drop constraint if exists stockflow_members_roles_pending_union;
 insert into public.stockflow_members(email,role,status) values('combined-orders@test.local','sales','active');
 insert into public.stockflow_members(email,role,status) values('combined-capture@test.local','warehouse','active');
 update public.stockflow_members set roles=array['sales','warehouse'] where email='combined-orders@test.local';

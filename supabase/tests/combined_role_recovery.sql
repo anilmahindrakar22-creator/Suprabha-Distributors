@@ -1,5 +1,5 @@
 begin;
-alter table public.stockflow_members drop constraint stockflow_members_roles_pending_union;
+alter table public.stockflow_members drop constraint if exists stockflow_members_roles_pending_union;
 insert into public.stockflow_members(email,role,status) values
  ('combined-recovery-accounts@test.local','sales','active'),
  ('combined-recovery-management@test.local','viewer','active'),
