@@ -2,6 +2,8 @@
 
 ## Offline order recovery acceptance — 5 October 2026
 
+- Consolidation of commits a1cb58a and ed53dcf: fresh repository lint, typecheck, all 700 unit tests (99 files), production staff build, and 36 desktop/emulated-mobile recovery/order-entry browser checks passed. Scoped diff review found no confirmed additional defect; a proposed restored-key mismatch was rejected after tracing initialPayload directly to initialDraft.command.payload. No migration or database change, deployment, merge, actual staff-device acceptance or pilot certification was performed in this checkpoint.
+
 - Follow-up deadline acceptance: two fresh desktop/emulated-mobile checks held the first HTTP request unanswered until the real 15-second application deadline expired (no clock mock or injected exception). Pending state and original command survived; manual retry sent identical details and removed the draft only after a confirmed order number. Typecheck, affected test lint and whitespace checks passed. Test/checkpoint only; no additional production change or deployment. Actual staff-device acceptance remains unverified.
 
 - Fixed demonstrated client defects: repeated reconnect events launched concurrent submissions; manual retry rebuilt an unresolved command from editable fields; incomplete success acknowledgements discarded drafts; parent callback changes suppressed successful retry notification. Retries now serialize, retain the exact original command/idempotency key, lock unresolved details and clear drafts only after a confirmed order number. Permanent rejection still permits correction.
