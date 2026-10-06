@@ -1332,6 +1332,11 @@ Completed after the user requested one more slice:
 - Fresh local targeted validation passed 93 tests, affected lint, typecheck and diff checking. GitHub CI passed 532 unit tests, production build, 34 general E2E cases, 86 pricing E2E cases, migration/ACID replay and CodeQL.
 - The quality gate failed solely at production dependency audit: `GHSA-vfj7-8cjw-p6xm`, transitive `braces@3.0.3` via shadcn/vinext. Local `pnpm security:audit` reproduced the failure. `pnpm view braces version` still returns 3.0.3; GitHub advisory lists no published patch although audit metadata suggests >=3.0.4. Do not pin a nonexistent version or suppress the security gate. Dependency remediation and fresh green CI are required before merge.
 - Hosted uncertain-save recovery, actual staff-device checks, representative performance evidence and operational pilot remain incomplete. Tally and production data were not changed.
+### Sign-in release dependency gate — 6 October 2026
+
+- PR #40 initial validation passed application/browser tests and database replay but failed dependency audit on newly reported source-map-js, proxy-addr and postcss-selector-parser advisories. Applied upstream patch versions 1.2.2, 2.0.8 and 7.1.6 through existing scoped overrides; no security-gate relaxation or unrelated dependency upgrade.
+- Fresh local validation: 700 unit tests passed, mitigation-aware security audit passed (21 braces patch regressions), and staff production build passed. Existing braces mitigation/review deadline remains unchanged. Fresh hosted CI, merge and publication still pending at this checkpoint; no database or Tally changes.
+
 ### Gated staff password login implementation — 3 October 2026
 
 - Added Supabase email/password login, verified server-side identity, secure HttpOnly/Secure/SameSite=Strict host-only access-token cookie, sign-out and restricted-account switching. Existing Sites authentication remains the default. Alternative mode ignores Sites identity headers; existing membership gateway still enforces roles and active status. No database migration, production configuration or Tally change.
