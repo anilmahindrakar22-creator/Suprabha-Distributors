@@ -1,5 +1,11 @@
 # Price book implementation checkpoint — 14 September 2026
 
+## Installed staff-app session investigation — 7 October 2026
+
+- Owner reports normal Chrome remains signed in but the installed app returns to login; latest confirmed installed URL is the production staff Worker. Earlier offline/draft test used the legacy ChatGPT site, so it does not establish staff-session expiry or staff offline acceptance. Preserve that unsent draft; browser origins do not share drafts.
+- Reproduced a separate concrete entry-route defect: `/staff-signin` displayed login even for a verified staff session. The route now verifies through the existing server authentication helper and redirects valid identity to `/`, where membership/workspace checks remain authoritative. No cookie, lifetime, provider configuration, permissions, database or Tally changes.
+- Regression failed against the original page because it rendered StaffSignIn for verified identity; fixed route passes 61 focused sign-in/auth tests. First test attempt incorrectly required a Promise from the old synchronous page; corrected the test wrapper before demonstrating the behavioral failure. Publication and actual installed-device retest remain pending; this is not a confirmed explanation or fix for installed-app session loss. Offline app reopening, hosted post-commit recovery, representative performance and the owner-led test-order pilot remain unverified.
+
 ## ChatGPT sign-in hand-off feedback — 5 October 2026
 
 - Staff email/password remains the primary direct login. Both options remain available, but ChatGPT is explicitly identified as opening the legacy site, not creating a staff Worker session. External navigation remains a native top-level link with no credential forwarding or authentication bypass.
