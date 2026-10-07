@@ -1,7 +1,10 @@
 'use client';
 import { useEffect, useRef, useState } from 'react';
-import { loadOfflineVault, saveOfflineVault } from '@/lib/offline-vault-storage';
-import { readOfflineOrderDraft } from '@/lib/offline-order-drafts';
+import { loadOfflineVault } from '@/lib/offline-vault-storage';
+import { saveOfflineOrderDocument } from '@/lib/offline-order-device';
+import { finishEncryptedDraftMigration, readOfflineOrderDraft } from '@/lib/offline-order-drafts';
+import { removeCatalogCache } from '@/lib/catalog-cache';
+import { removeCustomerCache } from '@/lib/customer-cache';
 import { offlineOrderDocument } from '@/lib/offline-order-document';
 
 export function OfflineOrderPreparation({ actorEmail }: { actorEmail: string }) {
@@ -46,12 +49,14 @@ export function OfflineOrderPreparation({ actorEmail }: { actorEmail: string }) 
       }
       if (legacy && !copied) drafts.push(legacy);
       const value = offlineOrderDocument({ version: 1, actorEmail, preparedAt: new Date().toISOString(), products, customers, drafts }, actorEmail);
-      await saveOfflineVault(localStorage, value, pin, existing?.revision ?? null);
+      await saveOfflineOrderDocument(localStorage, value, pin, existing?.revision ?? null, true);
       const verified = await loadOfflineVault(localStorage, pin);
       if (!verified || JSON.stringify(verified.value) !== JSON.stringify(value)) throw new Error('Saved data could not be verified. Keep the original draft.');
+      finishEncryptedDraftMigration(localStorage, actorEmail, legacy);
+      if (![localStorage, sessionStorage].every((storage) => removeCatalogCache(storage, actorEmail) && removeCustomerCache(storage, actorEmail))) throw new Error('Encrypted data saved, but old directory cleanup failed. Do not share this device.');
       if (current !== generation.current) return;
       setPin('');
-      setMessage(`Encrypted copy verified: ${value.customers.length} customers, ${value.products.length} products, ${value.drafts.length} drafts. Existing original drafts have not been deleted. Offline reopening is not enabled yet.`);
+      setMessage(`Encrypted copy verified: ${value.customers.length} customers, ${value.products.length} products, ${value.drafts.length} drafts. Old unencrypted draft storage is now disabled on this device.`);
     } catch (error) {
       if (current === generation.current) setMessage(error instanceof Error ? error.message : 'Preparation failed. Existing drafts were retained.');
     } finally { if (current === generation.current) setBusy(false); }
@@ -64,5 +69,8 @@ export function OfflineOrderPreparation({ actorEmail }: { actorEmail: string }) 
     <label className="flex gap-2"><input type="checkbox" checked={consent} onChange={(event) => setConsent(event.target.checked)} />I approve encrypted offline storage on this device.</label>
     <button type="button" disabled={busy || !consent || !/^\d{6,64}$/.test(pin)} onClick={() => void prepare()} className="min-h-11 rounded-lg bg-[#092f36] px-4 font-bold text-white disabled:opacity-50">{busy ? 'Preparing…' : 'Prepare / refresh encrypted copy'}</button>
     <output className="block" aria-live="polite">{message}</output>
+    {/* Public static document: requires full navigation, not the authenticated router. */}
+    {/* oxlint-disable-next-line next/no-html-link-for-pages */}
+    <a href="/offline.html" className="block min-h-11 underline">Open offline orders</a>
   </section>;
 }

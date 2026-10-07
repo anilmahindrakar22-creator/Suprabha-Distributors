@@ -1,7 +1,7 @@
 const CACHE_PREFIX = 'suprabha-stockflow-static-';
-const CACHE = `${CACHE_PREFIX}v5`;
+const CACHE = `${CACHE_PREFIX}v6`;
 const OWNED_CACHE_PREFIXES = [CACHE_PREFIX, 'suprabha-stockflow-v'];
-const PUBLIC_ASSETS = ['/stockflow.html', '/manifest.webmanifest', '/suprabha-logo.png', '/app-icon.svg', '/favicon.svg'];
+const PUBLIC_ASSETS = ['/stockflow.html', '/manifest.webmanifest', '/suprabha-logo.png', '/app-icon.svg', '/favicon.svg', '/offline.html', '/offline.css', '/generated-offline/offline-app.js'];
 
 async function cachePublicAsset(cache, path) {
   const response = await fetch(new Request(path, { cache: 'reload', credentials: 'omit' }));
@@ -20,6 +20,12 @@ self.addEventListener('activate', (event) => {
 self.addEventListener('fetch', (event) => {
   if (event.request.method !== 'GET') return;
   const url = new URL(event.request.url);
+  if (url.origin === self.location.origin && event.request.mode === 'navigate' && url.pathname === '/' && !url.search) {
+    // Network-only authenticated navigation; cache only the public fallback.
+    // HTTP authentication/errors are not network failures and are returned unchanged.
+    event.respondWith(fetch(event.request).catch(() => caches.open(CACHE).then((cache) => cache.match('/offline.html'))));
+    return;
+  }
   if (url.origin !== self.location.origin || !PUBLIC_ASSETS.includes(url.pathname) || url.search) return;
   event.respondWith(caches.open(CACHE).then((cache) => cache.match(url.pathname)).then((cached) => cached || fetch(event.request)));
 });

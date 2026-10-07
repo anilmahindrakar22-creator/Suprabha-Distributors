@@ -1,5 +1,5 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
-import { loadOfflineVault, saveOfflineVault } from '../../lib/offline-vault-storage';
+import { loadOfflineVault, saveOfflineVault, revokeOfflineVault } from '../../lib/offline-vault-storage';
 function storage() {
   let raw: string | null = null;
   return { getItem: () => raw, setItem: (_key: string, value: string) => { raw = value; } };
@@ -14,6 +14,17 @@ beforeEach(() => {
 });
 afterEach(() => vi.unstubAllGlobals());
 describe('encrypted offline persistence', () => {
+  it('sign-out removes catalogue access but preserves encrypted draft data for online re-preparation', async () => {
+    const device = storage();
+    const full = { customers: ['Private customer'], drafts: ['pending-key'] };
+    await saveOfflineVault(device, full, '123456', null, { retainedValue: { customers: [], drafts: ['pending-key'] } });
+    expect(await loadOfflineVault(device, '123456', true)).not.toBeNull();
+    await revokeOfflineVault(device);
+    await expect(loadOfflineVault(device, '123456', true)).rejects.toThrow('prepare');
+    expect((await loadOfflineVault(device, '123456'))?.value).toEqual({ customers: [], drafts: ['pending-key'] });
+    const saved = await loadOfflineVault(device, '123456');
+    await expect(saveOfflineVault(device, full, '123456', saved!.revision, { retainedValue: {}, requireEnabled: true })).rejects.toThrow('disabled');
+  });
   it('allows only one concurrent first save', async () => {
     const device = storage();
     const results = await Promise.allSettled([

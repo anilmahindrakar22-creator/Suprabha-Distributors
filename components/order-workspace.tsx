@@ -13,7 +13,7 @@ import type {
 } from '@/lib/order-types';
 import { billingHandoffText, canRoleTransitionOrder, customerBalanceFreshness, customerDeliveryAddresses, customerPhoneHref, filterOrders, orderAttentionReasons, orderBackOrderedQuantity, orderDeliveryReminder, orderEventDescription, orderFollowUpReminder, orderMatchesCaptureDateRange, orderNextOwnerLabel, orderNotificationGroups, orderOperationsText, orderStage, repeatOrderTemplate, searchCatalog, searchCustomers, tallyInvoiceLineReconciliation, tallyInvoiceReconciliationDetail } from '@/lib/order-types';
 import { orderListUrl } from '@/lib/order-list-query';
-import { offlineDraftRecoveryError, readOfflineDraftConsent, readOfflineOrderDraft, removeOfflineOrderDraft, restoreOfflineDraftLines, updateOfflineDraftState, writeOfflineDraftConsent, writeOfflineOrderDraft, type OfflineDraftState } from '@/lib/offline-order-drafts';
+import { offlineDraftRecoveryError, pinProtectedOfflineDevice, readOfflineDraftConsent, readOfflineOrderDraft, removeOfflineOrderDraft, restoreOfflineDraftLines, updateOfflineDraftState, writeOfflineDraftConsent, writeOfflineOrderDraft, type OfflineDraftState } from '@/lib/offline-order-drafts';
 import { readCatalogCache, removeCatalogCache, writeCatalogCache } from '@/lib/catalog-cache';
 import { readCustomerCache, removeCustomerCache, writeCustomerCache } from '@/lib/customer-cache';
 import { applyCreatedOrderAcknowledgement, applyOrderAcknowledgement } from '@/lib/order-acknowledgement';
@@ -1247,7 +1247,8 @@ export function HydratedNewOrderPanel({ data, templateOrder, onClose, onCreated,
   const [error, setError] = useState(() => offlineDraftRecoveryError(initialDraft, restoredLines.some((line) => !line.item)));
   const [idempotencyKey] = useState(() => initialPayload?.idempotencyKey || crypto.randomUUID());
   const [draftState, setDraftState] = useState<OfflineDraftState>(initialDraft?.state || 'draft');
-  const [saveOnDevice, setSaveOnDevice] = useState(() => Boolean(initialDraft) || readOfflineDraftConsent(localStorage, data.actor.email));
+  const [pinProtectedDevice] = useState(() => pinProtectedOfflineDevice(localStorage));
+  const [saveOnDevice, setSaveOnDevice] = useState(() => !pinProtectedOfflineDevice(localStorage) && (Boolean(initialDraft) || readOfflineDraftConsent(localStorage, data.actor.email)));
   const [entryPriceResult, setEntryPriceResult] = useState<{ key: string; prices: Record<string, OrderEntryPrice>; failed: boolean } | null>(null);
   const canViewPrices = hasAnyStockFlowRole(data.actor.roles ?? data.actor.role, ['administrator', 'accounts', 'management']);
   const pricingKeys = lines.map((line) => line.tallyKey).sort().join('\u001f');
@@ -1673,10 +1674,10 @@ export function HydratedNewOrderPanel({ data, templateOrder, onClose, onCreated,
             </details>
             </fieldset>
             {pendingSubmissionLocked ? <p className="text-sm font-semibold text-[#805b20]">Submission outcome is not confirmed. Retry sends the original details unchanged.</p> : null}
-            <div className="rounded-2xl border border-[#dce7e5] bg-white px-4 py-3 text-sm text-[#456367]">
+            {pinProtectedDevice ? <p className="rounded-xl border p-3 text-sm">This device uses PIN-protected offline orders. Use Offline in the main menu for saved drafts. This online form is not saved locally.</p> : <div className="rounded-2xl border border-[#dce7e5] bg-white px-4 py-3 text-sm text-[#456367]">
               <div className="flex min-h-10 items-center gap-3"><input id="save-device-draft" type="checkbox" checked={saveOnDevice} disabled={draftState === 'pending'} onChange={(event) => changeTrustedDevice(event.target.checked)} className="size-4 accent-[#277b69]" /><div><label htmlFor="save-device-draft" className="block font-bold text-[#274b50]">Save draft on this device</label><small className="text-[#718487]">{saveOnDevice ? 'On · recover after restart · trusted device only' : 'Off · enable only on a trusted device'}</small></div></div>
               <details className="mt-1 text-xs text-[#718487]"><summary className="cursor-pointer">About device drafts</summary><p className="mt-2">Use this only on a trusted device.</p><p>Unsubmitted drafts expire after seven days.</p><p>Pending orders and orders needing attention stay saved until sent or discarded. Product and customer search is also retained for restart recovery.</p></details>
-            </div>
+            </div>}
             {customerName.trim() || lines.length > 0 ? <p aria-live="polite" className={`rounded-xl px-4 py-3 text-sm font-semibold ${draftState === 'error' ? 'bg-[#fff0ef] text-[#8d3a34]' : draftState === 'pending' ? 'bg-[#fff7e8] text-[#805b20]' : 'bg-[#edf7f4] text-[#456367]'}`}>{draftState === 'pending' ? 'Waiting to send. Your order is safe on this device.' : draftState === 'error' ? 'Draft needs attention before it can be sent.' : saveOnDevice ? 'Draft saved on this device.' : 'Draft is kept only while this form remains open.'}</p> : null}
             {initialDraft ? <button type="button" onClick={discardSavedOrder} className="min-h-10 rounded-xl px-4 text-sm font-bold text-[#9a4e47] hover:bg-[#fff0ef]">Discard saved order</button> : null}
             {error ? <p role="alert" className="rounded-xl border border-[#efbbb6] bg-[#fff0ef] px-4 py-3 text-sm text-[#8d3a34]">{error}</p> : null}

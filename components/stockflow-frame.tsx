@@ -5,6 +5,7 @@ import Image from 'next/image';
 import { defaultOrderFilterForRole, readOrderDashboardMessage } from '@/lib/stockflow-navigation';
 import { prepareDeviceForAccount } from '@/lib/device-account-privacy';
 import { hasAnyStockFlowRole, type StockFlowRole } from '@/lib/user-types';
+import { revokeOfflineVault } from '@/lib/offline-vault-storage';
 
 const loadOrderWorkspace = () => import('./order-workspace').then((module) => ({ default: module.OrderWorkspace }));
 const OrderWorkspace = lazy(loadOrderWorkspace);
@@ -36,6 +37,7 @@ export function StockFlowFrame({ actorEmail, actorRole, actorRoles, staffAuth = 
     signOutInFlight.current = true;
     setSigningOut(true);
     try {
+      await revokeOfflineVault(localStorage);
       const response = await fetch('/api/staff-auth', { method: 'DELETE', cache: 'no-store', signal: AbortSignal.timeout(15000) });
       if (response.ok) window.location.assign('/staff-signin');
       else setDeviceNotice('Sign-out failed. Please retry before sharing this device.');
@@ -54,6 +56,7 @@ export function StockFlowFrame({ actorEmail, actorRole, actorRoles, staffAuth = 
     const readyTimer = window.setTimeout(() => setReadyEmail(actorEmail), 0);
     let noticeTimer: number | undefined;
     if (account.switched) {
+      void revokeOfflineVault(localStorage).catch(() => setDeviceNotice('Offline device lock failed. Do not share this device; retry sign-out.'));
       void Promise.all([
         import('@/lib/order-bootstrap-cache').then((module) => module.clearOrderBootstrapCache()),
         import('@/lib/order-capture-masters').then((module) => module.clearOrderCaptureMasterCache()),
@@ -128,6 +131,9 @@ export function StockFlowFrame({ actorEmail, actorRole, actorRoles, staffAuth = 
               {item}
             </button>
           ))}
+          {/* Full navigation re-verifies the staff session before local preparation. */}
+          {/* oxlint-disable-next-line next/no-html-link-for-pages */}
+          {staffAuth && hasAnyStockFlowRole(roles, ['administrator', 'management', 'sales', 'operations']) ? <a href="/offline-preparation" className="min-h-10 shrink-0 rounded-lg px-3 py-2 text-sm font-bold text-[#61777a]">Offline</a> : null}
         </nav>
         {/* Sites owns the session cookie: use a full navigation, not a client router link. */}
         {/* oxlint-disable-next-line next/no-html-link-for-pages */}

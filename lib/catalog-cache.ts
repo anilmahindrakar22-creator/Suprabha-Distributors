@@ -1,4 +1,5 @@
 import type { CatalogItem } from './order-types';
+import { pinProtectedOfflineDevice } from './offline-order-drafts';
 
 type CatalogStorage = Pick<Storage, 'getItem' | 'setItem' | 'removeItem'>;
 
@@ -21,6 +22,7 @@ export function readCatalogCache(
   catalogVersion: string,
 ) {
   try {
+    if (pinProtectedOfflineDevice(storage)) return null;
     const cacheKey = key(actorEmail);
     const cached = JSON.parse(
       storage.getItem(cacheKey) || 'null',
@@ -51,6 +53,7 @@ export function writeCatalogCache(
   catalog: CatalogItem[],
 ) {
   try {
+    if (pinProtectedOfflineDevice(storage)) return false;
     const cached: CachedCatalog = {
       schemaVersion: 1,
       actorEmail: actorEmail.trim().toLocaleLowerCase('en-IN'),

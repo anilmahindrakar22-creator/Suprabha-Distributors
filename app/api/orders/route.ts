@@ -151,6 +151,8 @@ export async function POST(request: Request) {
   const startedAt = performance.now();
   try {
     const user = await authorizedUser();
+    const expectedActor = request.headers.get('x-stockflow-actor');
+    if (expectedActor !== null && expectedActor !== user.email) return failure('Sign in with the account that saved this order.', 403);
     const command = validateOrderCommand(await readBoundedJsonRequest(request));
     if (!command) return failure('Invalid order request', 400);
 

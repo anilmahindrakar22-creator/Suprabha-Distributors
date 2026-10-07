@@ -7,7 +7,7 @@ const source = readFileSync(fileURLToPath(new URL('../../public/sw.js', import.m
 
 type RuntimeEvent = { request?: Request; respondWith?: (value: Promise<Response | undefined>) => void; waitUntil?: (value: Promise<unknown>) => void };
 
-function workerRuntime(cached?: Response) {
+function workerRuntime(cached?: Response, fetchFn = vi.fn()) {
   const listeners = new Map<string, (event: RuntimeEvent) => void>();
   const deleted: string[] = [];
   const claim = vi.fn(async () => undefined);
@@ -23,7 +23,7 @@ function workerRuntime(cached?: Response) {
     skipWaiting: vi.fn(async () => undefined),
     addEventListener: (name: string, listener: (event: RuntimeEvent) => void) => listeners.set(name, listener),
   };
-  runInNewContext(source, { self, caches, fetch: vi.fn(), Request, Response, URL, Error, Promise });
+  runInNewContext(source, { self, caches, fetch: fetchFn, Request, Response, URL, Error, Promise });
   return { listeners, caches, cache, deleted, claim };
 }
 
@@ -34,6 +34,25 @@ function dispatchFetch(listeners: Map<string, (event: RuntimeEvent) => void>, re
 }
 
 describe('service worker runtime boundary', () => {
+  function navigation() {
+    const request = new Request('https://stockflow.example/');
+    Object.defineProperty(request, 'mode', { value: 'navigate' });
+    return request;
+  }
+  it('falls back only to the public shell on network failure', async () => {
+    const fallback = new Response('public offline shell');
+    const runtime = workerRuntime(fallback, vi.fn().mockRejectedValue(new TypeError('offline')));
+    expect(await dispatchFetch(runtime.listeners, navigation())).toBe(fallback);
+    expect(runtime.cache.match).toHaveBeenCalledWith('/offline.html');
+    expect(runtime.cache.put).not.toHaveBeenCalled();
+  });
+  it.each([200, 401, 403, 500])('returns network navigation status %s unchanged without caching', async (status) => {
+    const response = new Response('not cached', { status });
+    const runtime = workerRuntime(undefined, vi.fn().mockResolvedValue(response));
+    expect(await dispatchFetch(runtime.listeners, navigation())).toBe(response);
+    expect(runtime.cache.put).not.toHaveBeenCalled();
+    expect(runtime.cache.match).not.toHaveBeenCalled();
+  });
   it.each(['/api/orders', '/', '/orders?view=active'])('does not intercept protected request %s', (path) => {
     const runtime = workerRuntime();
     expect(dispatchFetch(runtime.listeners, new Request(`https://stockflow.example${path}`))).toBeUndefined();
