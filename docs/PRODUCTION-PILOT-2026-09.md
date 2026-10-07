@@ -1,5 +1,14 @@
 # StockFlow production acceptance and pilot
 
+## Offline candidate checkpoint — 7 October 2026
+
+- PR #41 remains a draft; no merge or production deployment in this checkpoint.
+- Owner reports installed Android email/password sign-in immediately reloads an empty login form without an error. Chrome stays signed in. This is an unresolved actual-device blocker, not proven expiry; no cookie security or session lifetime was weakened.
+- Updated the transitive MCP SDK from 1.30.0 to patched 1.31.0 for GHSA-6qxp-vccf-f47h. The security gate passes with the existing exact, tested braces mitigation (review expiry 17 October); the audit is not advisory-free.
+- Fresh isolated candidate checks: lint and typecheck passed; 45 affected auth/audit tests passed; all 16 desktop/mobile-emulated offline browser checks passed; staff production build passed. Emulation does not certify actual installed Android behavior.
+- Earlier clean 4192ad4 consolidation passed 746 unit tests, 36 general and 148 pricing/workflow browser checks, plus deployment-order database replay. Its audit failed on the newly discovered SDK advisory, fixed above. These earlier results are not a fresh full-suite run of the dependency update.
+- Remaining gates: demonstrate and repair installed Android sign-in, actual-device offline/reconnect acceptance, final combined CI, hosted critical office workflow and backup/restore requirements before real business use. Tally remains untouched.
+
 ## Current status — 3 October 2026
 
 **Published; operational pilot remains HOLD.** PR #36 merged to main at `aebdcbefeba523b4a1ec7a7e0d3e6f2f6146f5ce`. Public version 55 deployed successfully as `appgdep_6ac0bfb979008191b87fbc13605b6a11`, runtime revision 4, on 3 October. All six pending production migrations were previously applied and reconciled. The earlier version-52 signed-in Orders/Pricing checks remain historical evidence, not version-55 acceptance. These results supersede historical publication blockers below, not the remaining acceptance gates. The dependency mitigation review expires on 17 October. Full evidence is in `PRICE-BOOK-IMPLEMENTATION-STATUS.md`.
