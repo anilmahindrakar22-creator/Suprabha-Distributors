@@ -4,7 +4,7 @@ async function prepare(page: Page) {
   await page.route('**/api/offline-catalog?kind=*', (route) => route.fulfill({ json: {
     actorEmail: 'staff@example.test', rows: route.request().url().includes('products')
       ? [{ tallyKey: 'GLUCOSE', item: 'Glucose', group: 'Diasys', baseUnit: 'Nos' }]
-      : [{ id: '11111111-1111-4111-8111-111111111111', name: 'Test Laboratory' }],
+      : [{ id: '11111111-1111-4111-8111-111111111111', name: 'Test Laboratory' }, { id: '22222222-2222-4222-8222-222222222222', name: 'Other Laboratory' }],
   } }));
   await page.goto('/?view=offline-preparation');
   await page.getByLabel('Offline PIN').fill('123456');
@@ -110,4 +110,24 @@ test('migrates an original pending draft only after encrypted verification', asy
   await expect(page.locator('#drafts')).toContainText('Submission unresolved');
   expect(await page.evaluate(() => localStorage.getItem('stockflow:order-draft:v1:staff@example.test'))).toBeNull();
   await expect(page.getByRole('button', { name: 'Edit draft' })).toHaveCount(0);
+});
+test('changing a draft customer does not reuse the previous customer contact or address', async ({ page }) => {
+  await page.addInitScript(() => {
+    if (!localStorage.getItem('stockflow:encrypted-offline:v1')) localStorage.setItem('stockflow:order-draft:v1:staff@example.test', JSON.stringify({ schemaVersion: 1, actorEmail: 'staff@example.test', state: 'draft', updatedAt: new Date().toISOString(), command: { action: 'create_order', payload: { idempotencyKey: 'never-submitted-original-key', customerId: '11111111-1111-4111-8111-111111111111', customerName: 'Test Laboratory', customerPhone: 'old-phone', customerCity: 'old-city', deliveryAddress: 'old-address', source: 'whatsapp', priority: 'urgent', lines: [{ tallyKey: 'GLUCOSE', quantity: 2 }] } } }));
+  });
+  await prepare(page);
+  await page.getByRole('button', { name: 'Edit draft' }).click();
+  await page.getByLabel('Search customer', { exact: true }).fill('Other');
+  await page.getByRole('combobox', { name: 'Customer', exact: true }).selectOption('22222222-2222-4222-8222-222222222222');
+  await page.getByRole('button', { name: 'Save encrypted draft — not submitted' }).click();
+  await expect(page.getByRole('status')).toContainText('Encrypted draft saved');
+  await page.route('**/api/offline-session', (route) => route.fulfill({ json: { actorEmail: 'staff@example.test' } }));
+  let submitted: { payload: Record<string, unknown> } | undefined;
+  await page.route('**/api/orders', (route) => { submitted = route.request().postDataJSON(); return route.fulfill({ json: { orderNumber: 'SF-CHANGED-CUSTOMER' } }); });
+  await page.getByRole('button', { name: 'Verify account and submit' }).click();
+  await expect(page.getByRole('status')).toContainText('SF-CHANGED-CUSTOMER');
+  expect(submitted?.payload.customerName).toBe('Other Laboratory');
+  for (const field of ['customerPhone', 'customerCity', 'deliveryAddress']) expect(submitted?.payload).not.toHaveProperty(field);
+  expect(submitted?.payload.priority).toBe('urgent');
+  expect(submitted?.payload.source).toBe('whatsapp');
 });
