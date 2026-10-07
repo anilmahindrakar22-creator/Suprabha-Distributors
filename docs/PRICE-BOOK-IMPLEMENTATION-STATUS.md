@@ -1,5 +1,13 @@
 # Price book implementation checkpoint — 14 September 2026
 
+## PIN-protected offline release implementation — 7 October 2026
+
+- Added `/api/offline-catalog`: verifies online identity and active membership, supports combined order-entry roles, reuses existing directory gateways and explicitly projects only customer ID/name and product key/name/group/unit. Private/no-store response; no stock, balances, pricing or contacts. One directory fetch per explicit preparation request, no polling or repeated whole-directory pagination. Refuses more than 10,000 rows or 4 MB instead of silently truncating.
+- Added encrypted persistence with a required revision and cross-tab Web Lock. Concurrent first saves cannot overwrite each other; stale writes and storage failures retain prior data. Browsers without Web Locks fail closed. Fresh validation: 21 tests across encryption, storage and catalogue API passed; typecheck and affected lint passed. No UI integration or legacy migration yet; existing draft storage remains unchanged.
+- Started the approved expanded offline scope with a browser-cryptography envelope: PBKDF2-SHA256 (600,000 iterations), random 128-bit salt, AES-256-GCM with fresh 96-bit nonce and authenticated format context. PIN requires 6–64 digits. No PIN or encryption key is serialized. Wrong PIN, malformed data and authentication failures return the same non-sensitive error.
+- Fresh validation: seven encryption boundary tests passed; repository typecheck passed. This helper is not connected to production storage or UI yet. Existing drafts are still using the existing storage path; do not describe them as encrypted.
+- Remaining implementation: authorized minimal catalogue download, encrypted account-scoped persistence and legacy migration, offline editor/public navigation fallback, foreground lock/sign-out/reset handling, reconnect verification and unchanged idempotent submission integration. Then browser/security recovery tests, installed Android reproduction/retest, measured performance and final release gate. No installed-app root cause is yet proven; no merge, deployment or pilot-readiness claim.
+
 ## Installed staff-app session investigation — 7 October 2026
 
 - Release attempt: staff production build passed. Two GitHub pushes were rejected with remote Internal Server Error; PR creation also returned an internal error, and readback found no open PR for this branch. No CI, merge or publication occurred. GitHub's public status reported operational, so no platform-wide outage is established. Retry the existing branch release when repository writes recover; do not bypass validation or certify installed-device recovery.
