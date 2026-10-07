@@ -30,7 +30,7 @@ async function operation(callback: (ticket: number) => Promise<void>) {
   if (busy) return;
   busy = true;
   const ticket = generation;
-  document.querySelectorAll('button').forEach((button) => { button.disabled = true; });
+  document.querySelectorAll('button').forEach((button) => { button.disabled = button.id !== 'lock'; });
   try { await callback(ticket); }
   catch (error) { if (ticket === generation) message.textContent = error instanceof Error ? error.message : 'Unable to complete this action. Saved drafts were retained.'; }
   finally {
@@ -146,7 +146,8 @@ element<HTMLFormElement>('order').onsubmit = (event) => {
     if (editingKey && (!prior || prior.state !== 'draft')) throw new Error('Unresolved submissions cannot be edited.');
     if (!editingKey && vault.drafts.length >= 100) throw new Error('Submit existing drafts before adding more (limit 100).');
     const draft: OfflineOrderDraft = { schemaVersion: 1, actorEmail: vault.actorEmail, state: 'draft', updatedAt: new Date().toISOString(), command: { action: 'create_order', payload: {
-      ...prior?.command.payload, idempotencyKey: editingKey || crypto.randomUUID(), customerId: selected.id, customerName: selected.name, source: prior?.command.payload.source || 'phone', lines: lines.map((line) => ({ ...line })), notes: element<HTMLTextAreaElement>('notes').value,
+      ...(prior?.command.payload.customerId === selected.id ? prior.command.payload : { priority: prior?.command.payload.priority, expectedDeliveryDate: prior?.command.payload.expectedDeliveryDate }),
+      idempotencyKey: editingKey || crypto.randomUUID(), customerId: selected.id, customerName: selected.name, source: prior?.command.payload.source || 'phone', lines: lines.map((line) => ({ ...line })), notes: element<HTMLTextAreaElement>('notes').value,
     } } };
     const next = offlineOrderDocument({ ...vault, drafts: [...vault.drafts.filter((row) => row.command.payload.idempotencyKey !== editingKey), draft] }, vault.actorEmail);
     if (!await persist(next, ticket)) return;
