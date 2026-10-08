@@ -1,5 +1,12 @@
 # StockFlow production acceptance and pilot
 
+## Hosted offline acceptance candidate — 8 October 2026
+
+- GitHub checks for source `15a94a1` all passed: release validation (full CI), migration/ACID replay, and CodeQL. Acceptance-mode build passed independently.
+- Deployed only `suprabha-staff-acceptance`, version `01b0d1ff-ef56-4ebc-84ed-292cda7e3fb2`, preserving existing variables and secrets. Artifact explicitly verified the acceptance project guard `ayrvhemxzizpkfcycvip`. Prior acceptance version `60386c39-c91a-431b-a372-d60c9cc4fb43` remains the rollback reference. Production, database schema and Tally unchanged; PR #41 remains unmerged.
+- Hosted sign-in page loaded visibly. Unauthenticated session confirmation and catalogue requests returned 401 with private/no-store; public offline shell and bundled editor returned 200. Two first-attempt network probes timed out; each passed on one bounded repeat. This is not authenticated or device acceptance.
+- Awaiting private acceptance sign-in with Anil's account to distinguish failed cookie/session handoff from successful workspace navigation. Actual installed Android and critical office-workflow gates remain open. No pilot-ready claim.
+
 ## Sign-in handoff checkpoint — 8 October 2026
 
 - Added a single no-store, provider-verified session confirmation after password login, before navigation. Missing/rejected cookies now leave a visible session-handoff error on the populated email form instead of silently navigating back to empty login. No tokens or identities are returned by confirmation; cookie security and lifetime are unchanged. This prevents silent failure, not a claim that the actual Android cause is fixed.
