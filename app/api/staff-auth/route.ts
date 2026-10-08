@@ -1,8 +1,21 @@
 import { BoundedJsonRequestError, readBoundedJsonRequest } from '@/lib/bounded-json-request';
+import { getChatGPTUser } from '@/app/chatgpt-auth';
 import { sameStaffOrigin, staffAuthEnabled, staffCookie, staffPasswordLogin } from '@/lib/staff-auth';
 
 const headers = { 'cache-control': 'private, no-store' };
 const fail = (status: number, error: string) => Response.json({ error }, { status, headers });
+
+// A successful password POST does not prove the browser accepted its cookie.
+// Verify the next authenticated request before the client leaves the login form.
+export async function GET(request: Request) {
+  try {
+    if (!staffAuthEnabled()) return fail(404, 'Staff sign-in is not enabled');
+    if (!sameStaffOrigin(new URL(request.url).origin) ||
+        (request.headers.has('origin') && !sameStaffOrigin(request.headers.get('origin')))) return fail(403, 'Request denied');
+    if (!await getChatGPTUser()) return fail(401, 'Sign-in session could not be verified');
+    return Response.json({ ok: true }, { headers });
+  } catch { return fail(503, 'Sign-in verification is temporarily unavailable'); }
+}
 
 export async function POST(request: Request) {
   try {

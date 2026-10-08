@@ -44,8 +44,14 @@ export function StaffSignIn({ chatGPTSignInUrl = null }: { chatGPTSignInUrl?: st
     event.preventDefault(); if (inFlight.current) return;
     inFlight.current = true; setBusy(true); setMessage('');
     try {
-      const response = await fetch('/api/staff-auth', { method: 'POST', headers: { 'content-type': 'application/json' }, body: JSON.stringify({ email, password }), cache: 'no-store', signal: AbortSignal.timeout(15000) });
+      const response = await fetch('/api/staff-auth', { method: 'POST', credentials: 'same-origin', headers: { 'content-type': 'application/json' }, body: JSON.stringify({ email, password }), cache: 'no-store', signal: AbortSignal.timeout(15000) });
       if (!response.ok) throw new Error('Unable to sign in. Check your details or contact your administrator.');
+      const confirmation = await fetch('/api/staff-auth', { credentials: 'same-origin', cache: 'no-store', signal: AbortSignal.timeout(15000) });
+      const confirmed: unknown = confirmation.ok ? await confirmation.json() : null;
+      if (!confirmed || typeof confirmed !== 'object' || !('ok' in confirmed) || confirmed.ok !== true) {
+        setMessage('Your password was accepted, but this app could not verify the sign-in session. Please open the staff site in Chrome and contact your administrator if this continues.');
+        return;
+      }
       window.location.assign('/');
     } catch { setMessage('Unable to sign in. Check your details or contact your administrator.'); }
     finally { inFlight.current = false; setPassword(''); setBusy(false); }

@@ -5,7 +5,7 @@ vi.mock('@/lib/order-gateway', () => ({ callOrderGateway: mocks.gateway }));
 vi.mock('next/headers', () => ({ headers: async () => mocks.headers, cookies: async () => ({ get: () => mocks.token ? { value: mocks.token } : undefined }) }));
 import { staffAuthClient, staffAuthEnabled, sameStaffOrigin, staffCookie, staffInvitationClient, staffPasswordLogin, verifiedStaff } from '@/lib/staff-auth';
 import { getChatGPTUser } from '@/app/chatgpt-auth';
-import { POST, DELETE } from '@/app/api/staff-auth/route';
+import { GET, POST, DELETE } from '@/app/api/staff-auth/route';
 
 beforeEach(() => {
   vi.stubEnv('STOCKFLOW_AUTH_MODE', 'supabase'); vi.stubEnv('STOCKFLOW_STAFF_ORIGIN', 'https://staff.example.test');
@@ -20,6 +20,28 @@ afterEach(() => vi.unstubAllEnvs());
 const request = (body: unknown, origin = 'https://staff.example.test') => new Request('https://staff.example.test/api/staff-auth', { method: 'POST', headers: { origin, 'content-type': 'application/json' }, body: JSON.stringify(body) });
 
 describe('isolated staff authentication', () => {
+  it('confirms only a provider-verified cookie without returning identity or credentials', async () => {
+    const check = () => GET(new Request('https://staff.example.test/api/staff-auth'));
+    expect((await check()).status).toBe(401);
+    expect(mocks.getUser).not.toHaveBeenCalled();
+    mocks.token = 'verified-token';
+    const response = await check();
+    expect(response.status).toBe(200);
+    expect(await response.json()).toEqual({ ok: true });
+    expect(response.headers.get('cache-control')).toContain('no-store');
+    expect(response.headers.get('set-cookie')).toBeNull();
+  });
+  it('rejects failed, cross-origin and unavailable session confirmations', async () => {
+    mocks.token = 'verified-token';
+    expect((await GET(new Request('https://staff.example.test/api/staff-auth', { headers: { origin: 'https://evil.example.test' } }))).status).toBe(403);
+    expect(mocks.getUser).not.toHaveBeenCalled();
+    mocks.getUser.mockResolvedValue({ data: { user: null }, error: new Error('private provider error') });
+    expect((await GET(new Request('https://staff.example.test/api/staff-auth'))).status).toBe(401);
+    mocks.getUser.mockRejectedValue(new Error('private provider error'));
+    const response = await GET(new Request('https://staff.example.test/api/staff-auth'));
+    expect(response.status).toBe(503);
+    expect(await response.text()).not.toContain('private provider error');
+  });
   it('rejects acceptance credentials configured in a production build', () => {
     vi.stubEnv('STOCKFLOW_AUTH_EXPECTED_PROJECT', 'aormuidjbdqruglmyseh');
     vi.stubEnv('SUPABASE_URL', 'https://ayrvhemxzizpkfcycvip.supabase.co');

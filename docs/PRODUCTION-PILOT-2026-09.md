@@ -1,5 +1,11 @@
 # StockFlow production acceptance and pilot
 
+## Sign-in handoff checkpoint — 8 October 2026
+
+- Added a single no-store, provider-verified session confirmation after password login, before navigation. Missing/rejected cookies now leave a visible session-handoff error on the populated email form instead of silently navigating back to empty login. No tokens or identities are returned by confirmation; cookie security and lifetime are unchanged. This prevents silent failure, not a claim that the actual Android cause is fixed.
+- Fresh validation: 35 auth/page unit tests and 10 desktop/mobile-emulated sign-in browser checks passed; lint, typecheck and staff production build passed. Actual installed Android verification remains required. A live unauthenticated probe failed at the local TLS connection boundary, so no live-session conclusion was drawn.
+- The new confirmation performs one bounded request per successful password submission, with no polling or automatic retries. No database, Tally or production deployment changes.
+
 ## Offline candidate checkpoint — 7 October 2026
 
 - PR #41 remains a draft; no merge or production deployment in this checkpoint.

@@ -1,5 +1,36 @@
 import { expect, test } from '@playwright/test';
 
+test('accepted password with missing session stays on the form with a visible handoff error', async ({ page }) => {
+  const methods: string[] = [];
+  await page.route('**/api/staff-auth', route => {
+    methods.push(route.request().method());
+    return route.fulfill({ status: route.request().method() === 'POST' ? 200 : 401, json: { ok: route.request().method() === 'POST' } });
+  });
+  await page.goto('/?view=staff-signin');
+  await page.getByLabel('Email', { exact: true }).fill('staff@example.test');
+  await page.getByLabel('Password', { exact: true }).fill('test-only-password');
+  await page.getByRole('button', { name: 'Sign in', exact: true }).click();
+  await expect(page.getByRole('alert')).toContainText('could not verify the sign-in session');
+  await expect(page.getByLabel('Email', { exact: true })).toHaveValue('staff@example.test');
+  await expect(page.getByLabel('Password', { exact: true })).toHaveValue('');
+  expect(methods).toEqual(['POST', 'GET']);
+  expect(new URL(page.url()).searchParams.get('view')).toBe('staff-signin');
+});
+
+test('verified session completes the sign-in handoff', async ({ page }) => {
+  const methods: string[] = [];
+  await page.route('**/api/staff-auth', route => {
+    methods.push(route.request().method());
+    return route.fulfill({ json: { ok: true } });
+  });
+  await page.goto('/?view=staff-signin');
+  await page.getByLabel('Email', { exact: true }).fill('staff@example.test');
+  await page.getByLabel('Password', { exact: true }).fill('test-only-password');
+  await page.getByRole('button', { name: 'Sign in', exact: true }).click();
+  await expect(page).toHaveURL('http://127.0.0.1:3100/');
+  expect(methods).toEqual(['POST', 'GET']);
+});
+
 test('staff sign-in offers a top-level ChatGPT peer without submitting credentials', async ({ page }) => {
   let requests = 0;
   await page.route('**/api/staff-auth', route => { requests++; return route.abort(); });
