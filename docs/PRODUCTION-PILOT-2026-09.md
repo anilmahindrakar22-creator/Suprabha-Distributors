@@ -1,5 +1,11 @@
 # StockFlow production acceptance and pilot
 
+## Staff testing release published — 9 October 2026
+
+- Owner explicitly requested publication. Source equivalent to `b342c18` deployed to production Worker `suprabha-staff`, version `4f384b9b-3c77-48bf-885c-3a819526b78c`. All hosted checks for that source passed: full release validation, database/ACID replay and CodeQL. Fresh production-mode build passed; target/project/email-reset guards verified before deployment. Existing variables/secrets preserved.
+- Rollback reference: `fec65d96-544a-4db5-af81-61ae1701be29`. Post-deployment unauthenticated smoke: staff sign-in 200/no-store, session confirmation and offline catalogue 401/private/no-store, public offline shell 200. No database migration, Tally modification or main merge performed.
+- Release includes PIN-protected offline draft preparation/editor and the verified session-handoff/outage fixes. Actual installed Android acceptance, signed-in critical office workflow and backup/restore remain incomplete. Publication is not V1 Pilot Candidate certification; real business use remains blocked by the pilot gates. Session still expires within one hour without renewal.
+
 ## Verification-outage false sign-out fix — 9 October 2026
 
 - Confirmed code defect: provider verification errors were all converted to a null identity, so network/throttling/provider outages rendered a password form like expired login. Verification now distinguishes authoritative 400/401/403 rejection from unavailable verification, fails closed for protected data, and presents a manual connection retry on both workspace entry and staff sign-in. Cookie contents, security attributes and one-hour lifetime unchanged; no automatic retry or refresh-token storage added.
