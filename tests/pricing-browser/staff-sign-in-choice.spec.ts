@@ -29,6 +29,8 @@ for (const width of [320, 375, 768, 1280]) {
     await expect(page.getByRole('button', { name: 'Sign out staff@example.test', exact: true })).toBeInViewport();
     expect(await page.evaluate(() => document.documentElement.scrollWidth <= innerWidth && document.documentElement.scrollHeight <= innerHeight)).toBe(true);
     const frame = page.frameLocator('iframe');
+    await expect(frame.getByRole('heading', { name: 'Stock & reorder', exact: true })).toBeVisible();
+    await expect(frame.getByLabel('Find an item', { exact: true })).toBeInViewport();
     await expect(frame.locator('.mobile-nav')).toHaveCount(0);
     const stockViews = frame.getByRole('navigation', { name: 'Stock views' });
     for (const [label, view] of [['Daily', 'operations'], ['Insights', 'insights'], ['Groups', 'groups'], ['Reorder list', 'orders']]) {
