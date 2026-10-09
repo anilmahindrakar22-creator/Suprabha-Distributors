@@ -14,7 +14,7 @@ function workerRuntime(cached?: Response, fetchFn = vi.fn()) {
   const cache = { match: vi.fn(async () => cached), put: vi.fn(async () => undefined) };
   const caches = {
     open: vi.fn(async () => cache),
-    keys: vi.fn(async () => ['suprabha-stockflow-v2', 'suprabha-stockflow-static-v1', 'suprabha-stockflow-static-v6', 'unrelated-cache']),
+    keys: vi.fn(async () => ['suprabha-stockflow-v2', 'suprabha-stockflow-static-v1', 'suprabha-stockflow-static-v6', 'suprabha-stockflow-static-v7', 'unrelated-cache']),
     delete: vi.fn(async (key: string) => { deleted.push(key); return true; }),
   };
   const self = {
@@ -78,7 +78,7 @@ describe('service worker runtime boundary', () => {
     let activation: Promise<unknown> | undefined;
     runtime.listeners.get('activate')?.({ waitUntil: (value) => { activation = value; } });
     await activation;
-    expect(runtime.deleted).toEqual(['suprabha-stockflow-v2', 'suprabha-stockflow-static-v1', 'suprabha-stockflow-static-v6']);
+    expect(runtime.deleted).toEqual(['suprabha-stockflow-v2', 'suprabha-stockflow-static-v1', 'suprabha-stockflow-static-v6', 'suprabha-stockflow-static-v7']);
     expect(runtime.claim).toHaveBeenCalledOnce();
   });
 });

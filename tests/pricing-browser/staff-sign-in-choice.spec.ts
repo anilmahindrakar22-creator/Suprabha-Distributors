@@ -1,4 +1,41 @@
 import { expect, test } from '@playwright/test';
+import { readFileSync } from 'node:fs';
+
+test('session restoration hides the login form until a decision is available', async ({ page }) => {
+  let release!: () => void;
+  await page.route('**/api/staff-auth/refresh', async route => {
+    await new Promise<void>(resolve => { release = resolve; });
+    await route.fulfill({ status: 401, json: { error: 'Sign in required' } });
+  });
+  await page.goto('/?view=staff-signin-resume');
+  await expect(page.getByRole('status')).toHaveText('Opening StockFlow…');
+  await expect(page.getByLabel('Email', { exact: true })).toHaveCount(0);
+  await expect.poll(() => typeof release).toBe('function');
+  release();
+  await expect(page.getByLabel('Email', { exact: true })).toBeVisible();
+});
+
+for (const width of [320, 375, 768, 1280]) {
+  test(`app header and stock footer remain reachable at ${width}px`, async ({ page }) => {
+    await page.setViewportSize({ width, height: 532 });
+    await page.route('**/api/staff-auth', route => route.fulfill({ json: { ok: true, renewAfterSeconds: 3000 } }));
+    await page.route('**/api/stock', route => route.fulfill({ json: { rows: [], groups: [] } }));
+    await page.route('**/stockflow.html', route => route.fulfill({ contentType: 'text/html', body: readFileSync('public/stockflow.html', 'utf8') }));
+    await page.goto('/?view=staff-frame');
+    const header = page.locator('header').first();
+    const box = await header.boundingBox();
+    expect(box?.y).toBeGreaterThanOrEqual(0);
+    expect((box?.x ?? 0) + (box?.width ?? 0)).toBeLessThanOrEqual(width);
+    await expect(page.getByRole('button', { name: 'Sign out staff@example.test', exact: true })).toBeInViewport();
+    expect(await page.evaluate(() => document.documentElement.scrollWidth <= innerWidth && document.documentElement.scrollHeight <= innerHeight)).toBe(true);
+    const frame = page.frameLocator('iframe');
+    await frame.locator('.footer').scrollIntoViewIfNeeded();
+    if (width <= 800) {
+      const bounds = await frame.locator('.footer').evaluate(footer => ({ bottom: footer.getBoundingClientRect().bottom, navTop: document.querySelector('.mobile-nav')!.getBoundingClientRect().top }));
+      expect(bounds.bottom).toBeLessThanOrEqual(bounds.navTop);
+    }
+  });
+}
 
 test('active staff app renews on schedule without returning to login', async ({ page }) => {
   let renewals = 0;
@@ -32,7 +69,7 @@ test('reopening restores a renewable session without entering a password', async
   await page.route('**/api/staff-auth/refresh', route => { renewals++; return route.fulfill({ json: { ok: true } }); });
   await page.route('**/api/staff-auth', route => route.fulfill({ json: { ok: true } }));
   await page.goto('/?view=staff-signin-resume');
-  await expect(page).toHaveURL('http://127.0.0.1:3100/');
+  await expect(page).toHaveURL(new URL('/', test.info().project.use.baseURL).href);
   expect(renewals).toBe(1);
 });
 
@@ -81,7 +118,7 @@ test('verified session completes the sign-in handoff', async ({ page }) => {
   await page.getByLabel('Email', { exact: true }).fill('staff@example.test');
   await page.getByLabel('Password', { exact: true }).fill('test-only-password');
   await page.getByRole('button', { name: 'Sign in', exact: true }).click();
-  await expect(page).toHaveURL('http://127.0.0.1:3100/');
+  await expect(page).toHaveURL(new URL('/', test.info().project.use.baseURL).href);
   expect(methods).toEqual(['POST', 'GET']);
 });
 

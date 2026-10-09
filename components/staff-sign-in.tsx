@@ -43,6 +43,7 @@ export function StaffSignIn({ chatGPTSignInUrl = null, resume = false }: { chatG
   const [email, setEmail] = useState('');
   const [password, setPassword] = useState('');
   const [busy, setBusy] = useState(false);
+  const [restoring, setRestoring] = useState(resume);
   const [message, setMessage] = useState('');
   const inFlight = useRef(false);
   useEffect(() => {
@@ -52,13 +53,18 @@ export function StaffSignIn({ chatGPTSignInUrl = null, resume = false }: { chatG
     const timer = setTimeout(() => setBusy(true), 0);
     void resumeStaffSession().then(restored => {
       if (!cancelled && restored) window.location.assign('/');
+      if (!cancelled && !restored) setRestoring(false);
     }).catch(() => {
-      if (!cancelled) setMessage('Unable to restore your sign-in right now. Reconnect and reopen the app, or sign in below. Your drafts remain unchanged.');
+      if (!cancelled) {
+        setRestoring(false);
+        setMessage('Unable to restore your sign-in right now. Reconnect and reopen the app, or sign in below. Your drafts remain unchanged.');
+      }
     }).finally(() => {
       if (!cancelled) { inFlight.current = false; setBusy(false); }
     });
     return () => { cancelled = true; clearTimeout(timer); };
   }, [resume]);
+  if (restoring) return <main className="grid min-h-dvh place-items-center bg-[#f7f6f1] p-5 text-[#173239]"><output aria-live="polite">Opening StockFlow…</output></main>;
   async function submit(event: React.SyntheticEvent<HTMLFormElement>) {
     event.preventDefault(); if (inFlight.current) return;
     inFlight.current = true; setBusy(true); setMessage('');

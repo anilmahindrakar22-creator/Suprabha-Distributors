@@ -1372,6 +1372,12 @@ Completed after the user requested one more slice:
 
 ### Original staff-login implementation (historical)
 
+### Mobile clipping and restoration feedback — 9 October 2026
+
+- Owner reports reopening the installed app reaches Home but briefly flashes the login form. The restoration view now renders an accessible “Opening StockFlow…” status immediately, retaining it through successful navigation; credentials appear only after renewal is rejected or fails.
+- Mobile application header wraps navigation onto a separate row; safe-area padding, a block iframe and a bounded workspace remove outer-page overflow. Stock dashboard reserves bottom clearance for its fixed navigation. Orders, Pricing, Users and Service retain their own existing scroll containers; no broad workspace redesign or permission change.
+- Thirty targeted desktop/mobile browser cases passed, including 320/375/768/1280px widths at 532px height and footer/header geometry. Typecheck and affected component lint passed. Public cache version v8 refreshes changed stock assets without deleting local drafts. Actual-device clipping acceptance remains unverified; these changes await CI/publication.
+
 ### Offline reconnect follow-up — 9 October 2026
 
 - Offline submission now attempts one coordinated staff-session renewal only after an authoritative 401, then re-verifies the saved account and order-entry permission before any order POST. Rejected membership, another account and uncertain renewal do not submit or change the draft command/idempotency key.
