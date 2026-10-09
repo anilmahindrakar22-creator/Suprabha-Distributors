@@ -8,6 +8,7 @@ vi.mock('@/components/stockflow-frame', () => ({ StockFlowFrame: (props: unknown
 vi.mock('next/image', () => ({ default: () => <span>Suprabha Distributors</span> }));
 import Home from '@/app/page';
 import StaffSignInPage from '@/app/staff-signin/page';
+import { StaffSessionUnavailableError } from '@/lib/staff-auth';
 
 beforeEach(() => {
   vi.clearAllMocks();
@@ -20,6 +21,17 @@ beforeEach(() => {
 afterEach(() => vi.unstubAllEnvs());
 
 describe('public sign-in choice rendering', () => {
+  it('offers connection retry instead of a password form during a verification outage', async () => {
+    vi.stubEnv('STOCKFLOW_AUTH_MODE', 'supabase');
+    mocks.user.mockRejectedValue(new StaffSessionUnavailableError());
+    for (const page of [await Home(), await StaffSignInPage()]) {
+      const html = renderToStaticMarkup(page);
+      expect(html).toContain('Retry connection');
+      expect(html).not.toContain('type="password"');
+    }
+    expect(mocks.redirect).not.toHaveBeenCalled();
+    expect(mocks.session).not.toHaveBeenCalled();
+  });
   it('keeps ChatGPT sign-in when staff hosting is not configured', async () => {
     const html = renderToStaticMarkup(await Home());
     expect(html).toContain('Sign in with ChatGPT');

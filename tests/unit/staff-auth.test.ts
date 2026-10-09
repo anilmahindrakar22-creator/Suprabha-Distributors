@@ -35,7 +35,7 @@ describe('isolated staff authentication', () => {
     mocks.token = 'verified-token';
     expect((await GET(new Request('https://staff.example.test/api/staff-auth', { headers: { origin: 'https://evil.example.test' } }))).status).toBe(403);
     expect(mocks.getUser).not.toHaveBeenCalled();
-    mocks.getUser.mockResolvedValue({ data: { user: null }, error: new Error('private provider error') });
+    mocks.getUser.mockResolvedValue({ data: { user: null }, error: { status: 401, message: 'private provider error' } });
     expect((await GET(new Request('https://staff.example.test/api/staff-auth'))).status).toBe(401);
     mocks.getUser.mockRejectedValue(new Error('private provider error'));
     const response = await GET(new Request('https://staff.example.test/api/staff-auth'));
@@ -83,7 +83,11 @@ describe('isolated staff authentication', () => {
   it('uses the verified provider identity, not metadata or headers', async () => { mocks.token = 'verified-token'; mocks.headers.set('oai-authenticated-user-email', 'admin@example.test'); expect((await getChatGPTUser())?.email).toBe('staff@example.test'); expect(mocks.getUser).toHaveBeenCalledWith('verified-token'); });
   it('rejects cross-origin authenticated requests', async () => { mocks.token = 'verified-token'; mocks.headers.set('origin', 'https://evil.example.test'); expect(await getChatGPTUser()).toBeNull(); expect(mocks.getUser).not.toHaveBeenCalled(); });
   it('requires exact HTTPS configured origin', () => { expect(sameStaffOrigin('https://staff.example.test.evil.test')).toBe(false); vi.stubEnv('STOCKFLOW_STAFF_ORIGIN', 'http://staff.example.test'); expect(() => sameStaffOrigin(null)).toThrow(); });
-  it('rejects invalid provider tokens and unconfirmed email', async () => { mocks.getUser.mockResolvedValue({ data: { user: null }, error: new Error('bad') }); expect(await verifiedStaff('bad')).toBeNull(); mocks.getUser.mockResolvedValue({ data: { user: { id: 'u1', email: 'staff@example.test' } }, error: null }); expect(await verifiedStaff('token')).toBeNull(); });
+  it.each([0, 429, 500, 503])('does not turn provider failure %s into a signed-out identity', async status => {
+    mocks.getUser.mockResolvedValue({ data: { user: null }, error: { status, message: 'private details' } });
+    await expect(verifiedStaff('verified-token')).rejects.toThrow('temporarily unavailable');
+  });
+  it('rejects invalid provider tokens and unconfirmed email', async () => { mocks.getUser.mockResolvedValue({ data: { user: null }, error: { status: 401 } }); expect(await verifiedStaff('bad')).toBeNull(); mocks.getUser.mockResolvedValue({ data: { user: { id: 'u1', email: 'staff@example.test' } }, error: null }); expect(await verifiedStaff('token')).toBeNull(); });
   it('does not authenticate inactive membership', async () => { mocks.gateway.mockRejectedValue(new Error('Membership is not active')); const response = await POST(request({ email: 'staff@example.test', password: 'secret-not-logged' })); expect(response.status).toBe(401); expect(response.headers.get('set-cookie')).toBeNull(); expect(await response.text()).not.toContain('Membership'); });
   it('bounds session expiry and never returns tokens in JSON', async () => { mocks.signInWithPassword.mockResolvedValue({ data: { session: { access_token: 'verified-token', expires_in: 99999 } }, error: null }); const response = await POST(request({ email: 'staff@example.test', password: 'secret-not-logged' })); expect(await response.json()).toEqual({ ok: true }); expect(response.headers.get('set-cookie')).toContain('Max-Age=3600'); expect(response.headers.get('set-cookie')).toContain('HttpOnly; Secure; SameSite=Strict'); expect(response.headers.get('cache-control')).toContain('no-store'); });
   it('rejects cross-origin login before credential verification', async () => { expect((await POST(request({ email: 'staff@example.test', password: 'password' }, 'https://evil.example.test'))).status).toBe(403); expect(mocks.signInWithPassword).not.toHaveBeenCalled(); });

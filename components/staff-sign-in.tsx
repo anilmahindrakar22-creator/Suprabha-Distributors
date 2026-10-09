@@ -2,6 +2,10 @@
 import { useEffect, useRef, useState } from 'react';
 import { preconnect } from 'react-dom';
 
+export function StaffSessionUnavailable() {
+  return <main className="grid min-h-dvh place-items-center p-5"><section className="grid max-w-md gap-4"><h1 className="text-2xl font-bold">Connection interrupted</h1><p>We could not verify your sign-in. This does not mean you have signed out. Reconnect and retry; your saved drafts remain unchanged.</p><button className="min-h-11 rounded-xl border px-5 font-semibold" onClick={() => window.location.reload()}>Retry connection</button></section></main>;
+}
+
 export function StaffAccountSwitch() {
   const [message, setMessage] = useState('');
   const inFlight = useRef(false);

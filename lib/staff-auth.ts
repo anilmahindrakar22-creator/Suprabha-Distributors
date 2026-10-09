@@ -2,6 +2,9 @@ import { createClient } from '@supabase/supabase-js';
 import { callOrderGateway } from './order-gateway';
 
 export const STAFF_COOKIE = '__Host-stockflow-staff';
+export class StaffSessionUnavailableError extends Error {
+  constructor() { super('Sign-in verification is temporarily unavailable'); }
+}
 export function staffAuthEnabled() {
   const mode = process.env.STOCKFLOW_AUTH_MODE;
   if (mode && mode !== 'sites' && mode !== 'supabase') throw new Error('Invalid authentication mode');
@@ -71,9 +74,18 @@ export function staffInvitationClient() {
 // Never derive identity or permissions from an unverified JWT or user_metadata.
 export async function verifiedStaff(token: string | undefined) {
   if (!token || token.length > 8192) return null;
-  const { data, error } = await staffAuthClient().auth.getUser(token);
+  let result;
+  try { result = await staffAuthClient().auth.getUser(token); }
+  catch { throw new StaffSessionUnavailableError(); }
+  const { data, error } = result;
+  // Only an authoritative credential rejection means signed out. Network,
+  // throttling and provider failures must never masquerade as expired login.
+  if (error) {
+    if ([400, 401, 403].includes(error.status ?? 0)) return null;
+    throw new StaffSessionUnavailableError();
+  }
   const user = data.user;
-  if (error || !user?.id || !user.email || !user.email_confirmed_at || user.is_anonymous) return null;
+  if (!user?.id || !user.email || !user.email_confirmed_at || user.is_anonymous) return null;
   const email = user.email.trim().toLowerCase();
   return { userId: user.id, email, displayName: email.split('@')[0] };
 }

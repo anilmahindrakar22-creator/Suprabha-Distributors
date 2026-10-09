@@ -1,5 +1,11 @@
 # StockFlow production acceptance and pilot
 
+## Verification-outage false sign-out fix — 9 October 2026
+
+- Confirmed code defect: provider verification errors were all converted to a null identity, so network/throttling/provider outages rendered a password form like expired login. Verification now distinguishes authoritative 400/401/403 rejection from unavailable verification, fails closed for protected data, and presents a manual connection retry on both workspace entry and staff sign-in. Cookie contents, security attributes and one-hour lifetime unchanged; no automatic retry or refresh-token storage added.
+- 40 targeted auth/page tests, lint, typecheck and acceptance build passed. Invalid-token rejection and cross-origin protections remain covered. Installed Android immediate-login root cause remains unverified; hourly expiry without renewal remains a separate limitation.
+- Deployed only acceptance version `c6d24870-674c-489c-a398-c9b766ed7701`, retaining prior version `01b0d1ff-ef56-4ebc-84ed-292cda7e3fb2` for rollback. Production and Tally untouched. Await private signed-in acceptance and actual-device test before claiming repair of the reported device behavior.
+
 ## Hosted offline acceptance candidate — 8 October 2026
 
 - GitHub checks for source `15a94a1` all passed: release validation (full CI), migration/ACID replay, and CodeQL. Acceptance-mode build passed independently.
