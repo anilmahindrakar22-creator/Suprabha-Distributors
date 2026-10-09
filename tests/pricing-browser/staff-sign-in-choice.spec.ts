@@ -29,11 +29,19 @@ for (const width of [320, 375, 768, 1280]) {
     await expect(page.getByRole('button', { name: 'Sign out staff@example.test', exact: true })).toBeInViewport();
     expect(await page.evaluate(() => document.documentElement.scrollWidth <= innerWidth && document.documentElement.scrollHeight <= innerHeight)).toBe(true);
     const frame = page.frameLocator('iframe');
-    await frame.locator('.footer').scrollIntoViewIfNeeded();
-    if (width <= 800) {
-      const bounds = await frame.locator('.footer').evaluate(footer => ({ bottom: footer.getBoundingClientRect().bottom, navTop: document.querySelector('.mobile-nav')!.getBoundingClientRect().top }));
-      expect(bounds.bottom).toBeLessThanOrEqual(bounds.navTop);
+    await expect(frame.locator('.mobile-nav')).toHaveCount(0);
+    const stockViews = frame.getByRole('navigation', { name: 'Stock views' });
+    for (const [label, view] of [['Daily', 'operations'], ['Insights', 'insights'], ['Groups', 'groups'], ['Reorder list', 'orders']]) {
+      const button = stockViews.getByRole('button', { name: label, exact: true });
+      await button.scrollIntoViewIfNeeded();
+      await expect(button).toBeInViewport();
+      await button.click();
+      await expect(frame.locator(`#${view}View`)).toHaveClass('view active');
+      expect(await frame.locator(`#${view}View`).evaluate(element => getComputedStyle(element).display)).toBe('block');
     }
+    expect(await stockViews.evaluate(nav => getComputedStyle(nav).position)).toBe('static');
+    await frame.locator('.footer').scrollIntoViewIfNeeded();
+    await expect(frame.locator('.footer')).toBeInViewport();
   });
 }
 
