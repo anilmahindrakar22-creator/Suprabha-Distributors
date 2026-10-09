@@ -1,5 +1,32 @@
 import { expect, test } from '@playwright/test';
 
+test('active staff app renews on schedule without returning to login', async ({ page }) => {
+  let renewals = 0;
+  let checks = 0;
+  await page.route('**/stockflow.html', route => route.fulfill({ contentType: 'text/html', body: '<p>Fixture</p>' }));
+  await page.route('**/api/staff-auth', route => { checks++; return route.fulfill({ json: { ok: true, renewAfterSeconds: 30 } }); });
+  await page.route('**/api/staff-auth/refresh', route => { renewals++; return route.fulfill({ json: { ok: true } }); });
+  await page.clock.install();
+  await page.goto('/?view=staff-frame');
+  await expect.poll(() => checks).toBe(1);
+  await page.clock.fastForward(30001);
+  await expect.poll(() => renewals).toBe(1);
+  await expect.poll(() => checks).toBe(3);
+  expect(new URL(page.url()).searchParams.get('view')).toBe('staff-frame');
+});
+
+test('active app does not poll through a verification outage', async ({ page }) => {
+  let checks = 0;
+  await page.route('**/stockflow.html', route => route.fulfill({ contentType: 'text/html', body: '<p>Fixture</p>' }));
+  await page.route('**/api/staff-auth', route => { checks++; return route.fulfill({ status: 503, json: { error: 'Unavailable' } }); });
+  await page.clock.install();
+  await page.goto('/?view=staff-frame');
+  await expect(page.locator('output')).toContainText('saved drafts remain unchanged');
+  await page.clock.fastForward(300000);
+  expect(checks).toBe(1);
+  expect(new URL(page.url()).searchParams.get('view')).toBe('staff-frame');
+});
+
 test('reopening restores a renewable session without entering a password', async ({ page }) => {
   let renewals = 0;
   await page.route('**/api/staff-auth/refresh', route => { renewals++; return route.fulfill({ json: { ok: true } }); });
@@ -107,6 +134,8 @@ test('staff sign-out waits at most 15 seconds, blocks duplicate clicks and prese
   const button = page.getByRole('button', { name: 'Sign out staff@example.test', exact: true });
   await button.click();
   await expect(button).toBeDisabled();
+  // Web Lock acquisition and draft protection finish before the network timer starts.
+  await expect.poll(() => page.evaluate(() => (window as typeof window & { signOutRequests: number }).signOutRequests)).toBe(1);
   await page.clock.fastForward(15001);
   await expect(button).toBeEnabled();
   await expect(page.locator('output')).toContainText('Sign-out failed. Please retry before sharing this device.');
