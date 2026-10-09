@@ -3,6 +3,7 @@ import { offlineOrderDocument, type OfflineOrderDocument } from '../lib/offline-
 import { saveOfflineOrderDocument } from '../lib/offline-order-device';
 import { confirmedOrderNumber, orderSubmissionTimeoutMs } from '../lib/order-submission';
 import type { OfflineOrderDraft } from '../lib/offline-order-drafts';
+import { resumeStaffSession } from '../lib/staff-session-client';
 
 function element<T = HTMLElement>(id: string) { return document.getElementById(id) as T; }
 const message = element('message');
@@ -92,7 +93,9 @@ function renderDrafts() {
 }
 async function submit(draft: OfflineOrderDraft, ticket: number) {
   if (!vault || !navigator.onLine) throw new Error('Reconnect before submitting. Your draft remains saved.');
-  const session = await fetch('/api/offline-session', { cache: 'no-store', signal: AbortSignal.timeout(15_000) });
+  const verify = () => fetch('/api/offline-session', { cache: 'no-store', signal: AbortSignal.timeout(15_000) });
+  let session = await verify();
+  if (session.status === 401 && await resumeStaffSession()) session = await verify();
   const identity = await session.json() as { actorEmail?: string };
   if (!session.ok || identity.actorEmail !== vault.actorEmail) throw new Error('Sign in with the account that saved these drafts, then return and unlock.');
   if (ticket !== generation || !vault) return;

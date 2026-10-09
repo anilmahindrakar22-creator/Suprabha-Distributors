@@ -61,6 +61,37 @@ test('refuses other-account submission without posting an order', async ({ page 
   expect(posts).toBe(0);
   await expect(page.locator('#drafts')).toContainText('Not submitted');
 });
+
+test('renews expired access before checking the saved draft account again', async ({ page }) => {
+  await prepare(page); await draft(page);
+  let checks = 0; let renewals = 0; let posts = 0;
+  await page.route('**/api/offline-session', route => {
+    checks++;
+    return route.fulfill({ status: checks === 1 ? 401 : 200, json: checks === 1 ? { error: 'Sign in required' } : { actorEmail: 'staff@example.test' } });
+  });
+  await page.route('**/api/staff-auth/refresh', route => { renewals++; return route.fulfill({ json: { ok: true } }); });
+  await page.route('**/api/staff-auth', route => route.fulfill({ json: { ok: true } }));
+  await page.route('**/api/orders', route => { posts++; return route.fulfill({ json: { orderNumber: 'SF-OFFLINE-2' } }); });
+  await page.getByRole('button', { name: 'Verify account and submit' }).click();
+  await expect(page.getByRole('status')).toContainText('SF-OFFLINE-2');
+  expect(checks).toBe(2); expect(renewals).toBe(1); expect(posts).toBe(1);
+});
+
+test('renewal cannot submit a draft under another account', async ({ page }) => {
+  await prepare(page); await draft(page);
+  let checks = 0; let posts = 0;
+  await page.route('**/api/offline-session', route => {
+    checks++;
+    return route.fulfill({ status: checks === 1 ? 401 : 200, json: checks === 1 ? { error: 'Sign in required' } : { actorEmail: 'other@example.test' } });
+  });
+  await page.route('**/api/staff-auth/refresh', route => route.fulfill({ json: { ok: true } }));
+  await page.route('**/api/staff-auth', route => route.fulfill({ json: { ok: true } }));
+  await page.route('**/api/orders', route => { posts++; return route.fulfill({ json: { orderNumber: 'BAD' } }); });
+  await page.getByRole('button', { name: 'Verify account and submit' }).click();
+  await expect(page.getByRole('status')).toContainText('Sign in with the account');
+  expect(posts).toBe(0);
+  await expect(page.locator('#drafts')).toContainText('Not submitted');
+});
 test('retains uncertain submission and retries the exact original command', async ({ page }) => {
   await prepare(page); await draft(page);
   await page.route('**/api/offline-session', (route) => route.fulfill({ json: { actorEmail: 'staff@example.test' } }));

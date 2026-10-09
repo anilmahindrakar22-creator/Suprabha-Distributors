@@ -1372,6 +1372,12 @@ Completed after the user requested one more slice:
 
 ### Original staff-login implementation (historical)
 
+### Offline reconnect follow-up — 9 October 2026
+
+- Offline submission now attempts one coordinated staff-session renewal only after an authoritative 401, then re-verifies the saved account and order-entry permission before any order POST. Rejected membership, another account and uncertain renewal do not submit or change the draft command/idempotency key.
+- Bumped the public service-worker cache to v7 so installed apps receive the updated offline editor; no authenticated HTML, API response or pricing cache was added, and encrypted local drafts are not deleted.
+- Targeted evidence: four desktop/mobile expired-session/account-separation cases, 24 service-worker/session unit checks, typecheck and affected lint passed. This follow-up awaits fresh hosted CI and publication; production currently runs the preceding persistent-session release above.
+
 - Added Supabase email/password login, verified server-side identity, secure HttpOnly/Secure/SameSite=Strict host-only access-token cookie, sign-out and restricted-account switching. Existing Sites authentication remains the default. Alternative mode ignores Sites identity headers; existing membership gateway still enforces roles and active status. No database migration, production configuration or Tally change.
 - Added administrator recovery requests under Users and a staff recovery page. The administrator requests an email; the staff member chooses their own password (minimum 12 characters). Provider errors and uncertain password-update/session-revocation outcomes are surfaced without revealing credentials. Reset email is disabled until delivery is verified. Authentication provider logs cover recovery requests; no new business audit mutation was added.
 - Direct-host prerequisites: free Cloudflare account/deployment and measured free-tier suitability; `STOCKFLOW_AUTH_MODE=supabase`, exact HTTPS `STOCKFLOW_STAFF_ORIGIN`, `STOCKFLOW_AUTH_PUBLISHABLE_KEY`, existing server gateway configuration; approved Supabase Auth accounts provisioned separately from OMS membership; public signup disabled; recovery redirect allowlisted; verified free SMTP delivery before `STOCKFLOW_AUTH_EMAIL_RESET_ENABLED=true`. Do not enable this mode on the current Sites deployment as an OAuth workaround.
