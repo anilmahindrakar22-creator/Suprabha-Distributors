@@ -1,5 +1,11 @@
 # StockFlow production acceptance and pilot
 
+## Renewal-cookie lifecycle integration — 9 October 2026
+
+- Password login now requires a valid provider refresh credential and emits distinct HttpOnly/Secure/SameSite access and renewal cookies, never token JSON. Local sign-out clears both cookies. Completed password recovery clears both only after the existing global provider revocation succeeds; uncertain reset remains visibly incomplete.
+- Fresh validation: 50 affected auth/reset tests passed; typecheck, lint and whitespace checks passed. No production deployment, database or Tally change.
+- Persistent sign-in is not complete: browser app-reopen/foreground renewal, cross-tab serialization and refresh-versus-sign-out race protection remain pending. Local sign-out currently removes browser cookies, but provider-session revocation for ordinary sign-out is still pending; do not describe it as global revocation. Keep this candidate unpublished until those controls and recovery/device checks pass.
+
 ## Persistent-session server boundary — 9 October 2026
 
 - Owner approved persistent staff sign-in with secure renewal; suspension, explicit sign-out and password/security resets must still end access. Added same-origin POST renewal using a server-only HttpOnly/Secure/SameSite refresh cookie, provider token rotation/verification and current gateway membership before emitting either renewed cookie. No tokens returned in JSON; rejection/outage does not overwrite stored cookies. Cookie retention uses browser-compatible sliding retention, not a new application session timeout.

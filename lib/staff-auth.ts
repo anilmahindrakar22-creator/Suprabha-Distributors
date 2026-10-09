@@ -93,14 +93,14 @@ export async function verifiedStaff(token: string | undefined) {
 
 export async function staffPasswordLogin(email: string, password: string) {
   const { data, error } = await staffAuthClient().auth.signInWithPassword({ email: email.trim().toLowerCase(), password });
-  if (error || !data.session) return null;
+  if (error || !data.session || !data.session.refresh_token || data.session.refresh_token.length > 4096) return null;
   if (!Number.isFinite(data.session.expires_in) || data.session.expires_in <= 0) return null;
   const user = await verifiedStaff(data.session.access_token);
   if (!user) return null;
   // Password authentication does not grant membership, pricing or administrator rights.
   const member = await callOrderGateway<{ email: string; role: string }>(user.email, 'session');
   if (member.email !== user.email) return null;
-  return { token: data.session.access_token, expiresIn: Math.min(data.session.expires_in, 3600) };
+  return { token: data.session.access_token, refreshToken: data.session.refresh_token, expiresIn: Math.min(data.session.expires_in, 3600) };
 }
 
 export function staffCookie(token: string, expiresIn: number) {

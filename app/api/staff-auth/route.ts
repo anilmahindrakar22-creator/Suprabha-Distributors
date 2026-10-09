@@ -1,6 +1,6 @@
 import { BoundedJsonRequestError, readBoundedJsonRequest } from '@/lib/bounded-json-request';
 import { getChatGPTUser } from '@/app/chatgpt-auth';
-import { sameStaffOrigin, staffAuthEnabled, staffCookie, staffPasswordLogin } from '@/lib/staff-auth';
+import { sameStaffOrigin, staffAuthEnabled, staffCookie, staffPasswordLogin, staffRefreshCookie } from '@/lib/staff-auth';
 
 const headers = { 'cache-control': 'private, no-store' };
 const fail = (status: number, error: string) => Response.json({ error }, { status, headers });
@@ -25,7 +25,10 @@ export async function POST(request: Request) {
     if (!body || typeof body !== 'object' || !('email' in body) || !('password' in body) || typeof body.email !== 'string' || typeof body.password !== 'string' || body.email.length > 254 || !body.email.includes('@') || !body.password || body.password.length > 1024) return fail(400, 'Enter your email and password');
     const session = await staffPasswordLogin(body.email, body.password);
     if (!session) return fail(401, 'Unable to sign in with this account');
-    return Response.json({ ok: true }, { headers: { ...headers, 'set-cookie': staffCookie(session.token, session.expiresIn) } });
+    const response = Response.json({ ok: true }, { headers });
+    response.headers.append('set-cookie', staffCookie(session.token, session.expiresIn));
+    response.headers.append('set-cookie', staffRefreshCookie(session.refreshToken));
+    return response;
   } catch (error) {
     if (error instanceof BoundedJsonRequestError) return fail(error.status, 'Invalid sign-in request');
     // Never expose provider payloads, passwords, tokens or membership details.
@@ -37,6 +40,9 @@ export async function DELETE(request: Request) {
   try {
     if (!staffAuthEnabled()) return fail(404, 'Staff sign-in is not enabled');
     if (!sameStaffOrigin(request.headers.get('origin'))) return fail(403, 'Request denied');
-    return Response.json({ ok: true }, { headers: { ...headers, 'set-cookie': staffCookie('', 0) } });
+    const response = Response.json({ ok: true }, { headers });
+    response.headers.append('set-cookie', staffCookie('', 0));
+    response.headers.append('set-cookie', staffRefreshCookie(''));
+    return response;
   } catch { return fail(503, 'Sign-out is temporarily unavailable'); }
 }
