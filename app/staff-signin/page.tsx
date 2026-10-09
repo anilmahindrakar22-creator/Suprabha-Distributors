@@ -12,5 +12,5 @@ export default async function StaffSignInPage() {
     throw error;
   }
   if (user) redirect('/');
-  return <StaffSignIn chatGPTSignInUrl={publicChatGPTSignInUrl()} />;
+  return <StaffSignIn resume chatGPTSignInUrl={publicChatGPTSignInUrl()} />;
 }

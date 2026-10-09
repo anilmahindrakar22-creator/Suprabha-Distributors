@@ -107,6 +107,17 @@ export function staffCookie(token: string, expiresIn: number) {
   return `${STAFF_COOKIE}=${encodeURIComponent(token)}; Path=/; HttpOnly; Secure; SameSite=Strict; Max-Age=${Math.max(0, Math.floor(expiresIn))}`;
 }
 
+// Scheduling hint only, after provider verification. Never used for identity or permissions.
+export function staffRenewalDelay(token: string | undefined, now = Date.now()) {
+  try {
+    const payload = JSON.parse(atob((token?.split('.')[1] ?? '').replace(/-/g, '+').replace(/_/g, '/')));
+    if (typeof payload.exp === 'number' && Number.isFinite(payload.exp)) {
+      return Math.max(30, Math.min(3000, Math.floor(payload.exp - now / 1000 - 60)));
+    }
+  } catch { /* malformed hint cannot authorize or extend a session */ }
+  return 60;
+}
+
 export function staffRefreshCookie(token: string) {
   // Browser cookie retention is renewed whenever the provider rotates tokens.
   // This is not an application account/session timeout.

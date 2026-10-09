@@ -1,5 +1,8 @@
 import { BoundedJsonRequestError, readBoundedJsonRequest } from '@/lib/bounded-json-request';
 import { getChatGPTUser } from '@/app/chatgpt-auth';
+import { cookies } from 'next/headers';
+import { STAFF_COOKIE, staffRenewalDelay } from '@/lib/staff-auth';
+import { callOrderGateway, OrderGatewayError } from '@/lib/order-gateway';
 import { sameStaffOrigin, staffAuthEnabled, staffCookie, staffPasswordLogin, staffRefreshCookie } from '@/lib/staff-auth';
 
 const headers = { 'cache-control': 'private, no-store' };
@@ -12,9 +15,16 @@ export async function GET(request: Request) {
     if (!staffAuthEnabled()) return fail(404, 'Staff sign-in is not enabled');
     if (!sameStaffOrigin(new URL(request.url).origin) ||
         (request.headers.has('origin') && !sameStaffOrigin(request.headers.get('origin')))) return fail(403, 'Request denied');
-    if (!await getChatGPTUser()) return fail(401, 'Sign-in session could not be verified');
-    return Response.json({ ok: true }, { headers });
-  } catch { return fail(503, 'Sign-in verification is temporarily unavailable'); }
+    const user = await getChatGPTUser();
+    if (!user) return fail(401, 'Sign-in session could not be verified');
+    const member = await callOrderGateway<{ email: string }>(user.email, 'session');
+    if (member.email !== user.email) return fail(403, 'Access denied');
+    const token = (await cookies()).get(STAFF_COOKIE)?.value;
+    return Response.json({ ok: true, renewAfterSeconds: staffRenewalDelay(token) }, { headers });
+  } catch (error) {
+    if (error instanceof OrderGatewayError && [401, 403].includes(error.status)) return fail(403, 'Access denied');
+    return fail(503, 'Sign-in verification is temporarily unavailable');
+  }
 }
 
 export async function POST(request: Request) {

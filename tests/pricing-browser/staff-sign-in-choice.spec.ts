@@ -1,5 +1,32 @@
 import { expect, test } from '@playwright/test';
 
+test('reopening restores a renewable session without entering a password', async ({ page }) => {
+  let renewals = 0;
+  await page.route('**/api/staff-auth/refresh', route => { renewals++; return route.fulfill({ json: { ok: true } }); });
+  await page.route('**/api/staff-auth', route => route.fulfill({ json: { ok: true } }));
+  await page.goto('/?view=staff-signin-resume');
+  await expect(page).toHaveURL('http://127.0.0.1:3100/');
+  expect(renewals).toBe(1);
+});
+
+test('rejected renewal shows the sign-in form without a retry loop', async ({ page }) => {
+  let renewals = 0;
+  await page.route('**/api/staff-auth/refresh', route => { renewals++; return route.fulfill({ status: 403, json: { error: 'Access denied' } }); });
+  await page.goto('/?view=staff-signin-resume');
+  await expect(page.getByRole('button', { name: 'Sign in', exact: true })).toBeEnabled();
+  await expect(page.getByLabel('Email', { exact: true })).toBeVisible();
+  expect(renewals).toBe(1);
+});
+
+test('renewal outage is visible and does not retry automatically', async ({ page }) => {
+  let renewals = 0;
+  await page.route('**/api/staff-auth/refresh', route => { renewals++; return route.fulfill({ status: 503, json: { error: 'Unavailable' } }); });
+  await page.goto('/?view=staff-signin-resume');
+  await expect(page.getByRole('alert')).toContainText('drafts remain unchanged');
+  await expect(page.getByRole('button', { name: 'Sign in', exact: true })).toBeEnabled();
+  expect(renewals).toBe(1);
+});
+
 test('accepted password with missing session stays on the form with a visible handoff error', async ({ page }) => {
   const methods: string[] = [];
   await page.route('**/api/staff-auth', route => {

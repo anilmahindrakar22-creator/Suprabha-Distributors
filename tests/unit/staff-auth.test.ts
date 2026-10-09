@@ -3,7 +3,7 @@ const mocks = vi.hoisted(() => ({ getUser: vi.fn(), refreshSession: vi.fn(), sig
 vi.mock('@supabase/supabase-js', () => ({ createClient: () => ({ auth: { getUser: mocks.getUser, refreshSession: mocks.refreshSession, signInWithPassword: mocks.signInWithPassword } }) }));
 vi.mock('@/lib/order-gateway', () => ({ callOrderGateway: mocks.gateway, OrderGatewayError: class extends Error { constructor(message: string, public status: number) { super(message); } } }));
 vi.mock('next/headers', () => ({ headers: async () => mocks.headers, cookies: async () => ({ get: () => mocks.token ? { value: mocks.token } : undefined }) }));
-import { staffAuthClient, staffAuthEnabled, sameStaffOrigin, staffCookie, staffInvitationClient, staffPasswordLogin, verifiedStaff } from '@/lib/staff-auth';
+import { staffAuthClient, staffAuthEnabled, sameStaffOrigin, staffCookie, staffInvitationClient, staffPasswordLogin, verifiedStaff, staffRenewalDelay } from '@/lib/staff-auth';
 import { getChatGPTUser } from '@/app/chatgpt-auth';
 import { GET, POST, DELETE } from '@/app/api/staff-auth/route';
 import { POST as REFRESH } from '@/app/api/staff-auth/refresh/route';
@@ -23,6 +23,21 @@ afterEach(() => vi.unstubAllEnvs());
 const request = (body: unknown, origin = 'https://staff.example.test') => new Request('https://staff.example.test/api/staff-auth', { method: 'POST', headers: { origin, 'content-type': 'application/json' }, body: JSON.stringify(body) });
 
 describe('isolated staff authentication', () => {
+  it('rejects suspended membership even while the access token remains valid', async () => {
+    mocks.token = 'verified-token';
+    mocks.gateway.mockRejectedValue(new OrderGatewayError('private suspension', 403));
+    const response = await GET(new Request('https://staff.example.test/api/staff-auth'));
+    expect(response.status).toBe(403);
+    expect(await response.text()).not.toContain('private suspension');
+    expect(response.headers.get('set-cookie')).toBeNull();
+  });
+  it('uses token expiry only as a bounded scheduling hint', () => {
+    const token = (exp: number) => `header.${btoa(JSON.stringify({ exp }))}.signature`;
+    expect(staffRenewalDelay(token(3600), 0)).toBe(3000);
+    expect(staffRenewalDelay(token(300), 0)).toBe(240);
+    expect(staffRenewalDelay(token(1), 0)).toBe(30);
+    expect(staffRenewalDelay('malformed', 0)).toBe(60);
+  });
   it('renews only a verified active account and returns credentials in HttpOnly cookies, not JSON', async () => {
     mocks.token = 'refresh-fixture';
     const response = await REFRESH(request({}));
@@ -66,7 +81,7 @@ describe('isolated staff authentication', () => {
     mocks.token = 'verified-token';
     const response = await check();
     expect(response.status).toBe(200);
-    expect(await response.json()).toEqual({ ok: true });
+    expect(await response.json()).toEqual({ ok: true, renewAfterSeconds: 60 });
     expect(response.headers.get('cache-control')).toContain('no-store');
     expect(response.headers.get('set-cookie')).toBeNull();
   });

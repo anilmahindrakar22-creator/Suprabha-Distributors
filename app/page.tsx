@@ -19,7 +19,7 @@ export default async function Home() {
   }
 
   if (!user) {
-    if (staffAuthEnabled()) return <StaffSignIn chatGPTSignInUrl={publicChatGPTSignInUrl()} />;
+    if (staffAuthEnabled()) return <StaffSignIn resume chatGPTSignInUrl={publicChatGPTSignInUrl()} />;
     const staffSignInUrl = publicStaffSignInUrl();
     return (
       <main className="grid min-h-dvh place-items-center bg-[#f7f6f1] px-5 text-[#173239]">

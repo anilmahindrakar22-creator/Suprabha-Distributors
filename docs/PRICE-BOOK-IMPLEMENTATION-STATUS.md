@@ -1359,6 +1359,15 @@ Completed after the user requested one more slice:
 
 ### Gated staff password login implementation — 3 October 2026
 
+### Persistent staff-session follow-up — 9 October 2026
+
+- Supersedes the access-token-only session limitation below: password sign-in now issues a separate host-only HttpOnly refresh cookie. Provider access tokens remain short-lived; no application inactivity timeout was added. Current membership is checked on renewal and confirmation, so suspended users cannot restore access.
+- Installed-app reopening attempts one coordinated renewal, then verifies cookie delivery before navigation. Active staff sessions schedule renewal from a bounded expiry hint; foreground/reconnection verifies existing credentials without rotating a valid session. Outages do not become silent sign-outs or automatic retry loops.
+- Browser Web Locks serialize cookie rotation with password login, sign-out and password reset across tabs. No credentials, prices or permission claims are persisted in client storage. Older browsers without Web Locks retain explicit password login rather than unsafe automatic rotation.
+- Fresh local evidence: 771 unit tests passed; targeted desktop/mobile sign-in browser checks passed 16 cases. Typecheck and lint passed. Production build, hosted CI/publication and actual installed-Android acceptance remain release checks until explicitly recorded as passed. No migration, Tally change or pilot-ready claim.
+
+### Original staff-login implementation (historical)
+
 - Added Supabase email/password login, verified server-side identity, secure HttpOnly/Secure/SameSite=Strict host-only access-token cookie, sign-out and restricted-account switching. Existing Sites authentication remains the default. Alternative mode ignores Sites identity headers; existing membership gateway still enforces roles and active status. No database migration, production configuration or Tally change.
 - Added administrator recovery requests under Users and a staff recovery page. The administrator requests an email; the staff member chooses their own password (minimum 12 characters). Provider errors and uncertain password-update/session-revocation outcomes are surfaced without revealing credentials. Reset email is disabled until delivery is verified. Authentication provider logs cover recovery requests; no new business audit mutation was added.
 - Direct-host prerequisites: free Cloudflare account/deployment and measured free-tier suitability; `STOCKFLOW_AUTH_MODE=supabase`, exact HTTPS `STOCKFLOW_STAFF_ORIGIN`, `STOCKFLOW_AUTH_PUBLISHABLE_KEY`, existing server gateway configuration; approved Supabase Auth accounts provisioned separately from OMS membership; public signup disabled; recovery redirect allowlisted; verified free SMTP delivery before `STOCKFLOW_AUTH_EMAIL_RESET_ENABLED=true`. Do not enable this mode on the current Sites deployment as an OAuth workaround.

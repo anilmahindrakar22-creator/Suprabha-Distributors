@@ -6,6 +6,7 @@ import { defaultOrderFilterForRole, readOrderDashboardMessage } from '@/lib/stoc
 import { prepareDeviceForAccount } from '@/lib/device-account-privacy';
 import { hasAnyStockFlowRole, type StockFlowRole } from '@/lib/user-types';
 import { revokeOfflineVault } from '@/lib/offline-vault-storage';
+import { checkStaffSession, withStaffSessionLock } from '@/lib/staff-session-client';
 
 const loadOrderWorkspace = () => import('./order-workspace').then((module) => ({ default: module.OrderWorkspace }));
 const OrderWorkspace = lazy(loadOrderWorkspace);
@@ -32,13 +33,45 @@ export function StockFlowFrame({ actorEmail, actorRole, actorRoles, staffAuth = 
   const [readyEmail, setReadyEmail] = useState('');
   const signOutInFlight = useRef(false);
   const [signingOut, setSigningOut] = useState(false);
+  useEffect(() => {
+    if (!staffAuth) return;
+    let stopped = false;
+    let running = false;
+    let timer: ReturnType<typeof setTimeout> | undefined;
+    let lastCheck = 0;
+    async function check(renew = false) {
+      if (stopped || running || document.visibilityState === 'hidden' || !navigator.onLine) return;
+      running = true;
+      lastCheck = Date.now();
+      if (timer) clearTimeout(timer);
+      try {
+        const delay = await checkStaffSession(renew);
+        if (stopped) return;
+        if (delay === null) { window.location.assign('/staff-signin'); return; }
+        timer = setTimeout(() => { void check(true); }, delay * 1000);
+      } catch {
+        if (!stopped) setDeviceNotice('Sign-in connection interrupted. Reconnect to verify your session; saved drafts remain unchanged.');
+        // No automatic retry loop. A foreground/reconnection event can retry.
+      } finally { running = false; }
+    }
+    const wake = () => { if (Date.now() - lastCheck >= 30000) void check(); };
+    void check();
+    document.addEventListener('visibilitychange', wake);
+    window.addEventListener('online', wake);
+    return () => {
+      stopped = true;
+      if (timer) clearTimeout(timer);
+      document.removeEventListener('visibilitychange', wake);
+      window.removeEventListener('online', wake);
+    };
+  }, [staffAuth]);
   async function staffSignOut() {
     if (signOutInFlight.current) return;
     signOutInFlight.current = true;
     setSigningOut(true);
     try {
       await revokeOfflineVault(localStorage);
-      const response = await fetch('/api/staff-auth', { method: 'DELETE', cache: 'no-store', signal: AbortSignal.timeout(15000) });
+      const response = await withStaffSessionLock(() => fetch('/api/staff-auth', { method: 'DELETE', cache: 'no-store', signal: AbortSignal.timeout(15000) }));
       if (response.ok) window.location.assign('/staff-signin');
       else setDeviceNotice('Sign-out failed. Please retry before sharing this device.');
     } catch { setDeviceNotice('Sign-out failed. Please retry before sharing this device.'); }
