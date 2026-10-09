@@ -837,8 +837,8 @@ function OrderRow({
     }
   }
   return (
-    <article className="[content-visibility:auto] [contain-intrinsic-size:auto_260px] p-3 sm:p-5">
-      <div className="grid gap-4 lg:grid-cols-[1.5fr_1fr_auto] lg:items-center">
+    <article className="min-w-0 [overflow-wrap:anywhere] [content-visibility:auto] [contain-intrinsic-size:auto_260px] p-3 sm:p-5">
+      <div className="grid gap-4 lg:grid-cols-[minmax(0,1.5fr)_minmax(0,1fr)_auto] lg:items-center">
       <div>
         <div className="flex flex-wrap items-center gap-2">
           <strong className="text-[#092f36]">{order.orderNumber}</strong>
@@ -898,7 +898,7 @@ function OrderRow({
             <p className="text-xs font-bold uppercase tracking-wide text-[#708386]">Products</p>
             <ul className="mt-2 space-y-2">{(order.lines || []).map((line) => <li key={line.tallyKey} className="flex justify-between gap-4"><span><strong className="block text-[#274b50]">{line.itemName}</strong><small className="text-[#718487]">{line.itemGroup || 'Tally stock item'}</small></span><span className="shrink-0 font-bold text-[#274b50]">{formatQuantity(line.quantity)} {line.baseUnit || ''}</span></li>)}</ul>
           </div>
-          <dl className="grid grid-cols-[auto_1fr] content-start gap-x-3 gap-y-2 text-xs">
+          <dl className="grid min-w-0 grid-cols-[auto_minmax(0,1fr)] content-start gap-x-3 gap-y-2 text-xs">
             <dt className="font-bold text-[#708386]">Internal status</dt><dd>{statusLabel(order.status)}</dd>
             <dt className="font-bold text-[#708386]">Order date</dt><dd>{new Date(order.createdAt).toLocaleString('en-IN')}</dd>
             <dt className="font-bold text-[#708386]">Last updated</dt><dd>{new Date(order.updatedAt).toLocaleString('en-IN')}</dd>
