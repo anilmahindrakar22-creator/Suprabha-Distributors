@@ -9,6 +9,7 @@ vi.mock('next/image', () => ({ default: () => <span>Suprabha Distributors</span>
 import Home from '@/app/page';
 import StaffSignInPage from '@/app/staff-signin/page';
 import { StaffSessionUnavailableError } from '@/lib/staff-auth';
+import { StaffSignIn } from '@/components/staff-sign-in';
 
 beforeEach(() => {
   vi.clearAllMocks();
@@ -53,16 +54,22 @@ describe('public sign-in choice rendering', () => {
     expect(html).toContain('Sign in with ChatGPT');
     expect(html).not.toContain('javascript:');
   });
-  it('offers the configured ChatGPT peer from both staff entry routes', async () => {
+  it('restores the session before displaying either configured staff sign-in choice', async () => {
     vi.stubEnv('STOCKFLOW_AUTH_MODE', 'supabase');
     vi.stubEnv('STOCKFLOW_PUBLIC_CHATGPT_ORIGIN', 'https://stockflow.chatgpt.site');
     for (const page of [await Home(), await StaffSignInPage()]) {
       const html = renderToStaticMarkup(page);
+      expect(html).toContain('Opening StockFlow…');
+      expect(html).not.toContain('type="password"');
+      expect(page.props).toMatchObject({ resume: true, chatGPTSignInUrl: 'https://stockflow.chatgpt.site/signin-with-chatgpt?return_to=%2F' });
+    }
+  });
+  it('keeps both choices available in the non-restoring sign-in form', () => {
+      const html = renderToStaticMarkup(<StaffSignIn chatGPTSignInUrl="https://stockflow.chatgpt.site/signin-with-chatgpt?return_to=%2F" />);
       expect(html).toContain('Staff sign in');
       expect(html).toContain('Sign in with ChatGPT');
       expect(html).toContain('https://stockflow.chatgpt.site/signin-with-chatgpt?return_to=%2F');
       expect(html.toLowerCase()).toContain('autocomplete="current-password"');
-    }
   });
   it('returns a verified staff session to the workspace instead of requesting another login', async () => {
     vi.stubEnv('STOCKFLOW_AUTH_MODE', 'supabase');
