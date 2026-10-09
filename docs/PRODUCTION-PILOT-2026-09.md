@@ -1,5 +1,11 @@
 # StockFlow production acceptance and pilot
 
+## Persistent-session server boundary — 9 October 2026
+
+- Owner approved persistent staff sign-in with secure renewal; suspension, explicit sign-out and password/security resets must still end access. Added same-origin POST renewal using a server-only HttpOnly/Secure/SameSite refresh cookie, provider token rotation/verification and current gateway membership before emitting either renewed cookie. No tokens returned in JSON; rejection/outage does not overwrite stored cookies. Cookie retention uses browser-compatible sliding retention, not a new application session timeout.
+- Fresh targeted validation: 38 auth tests passed, including suspended membership, cross-origin denial, rotation, credential separation and provider failure; typecheck, lint and whitespace validation passed. Supabase session docs/changelog reviewed; no relevant Auth breaking change found in the current index.
+- This is an unpublished server-boundary slice, not completed persistent login. Existing password login does not yet issue the renewal cookie. Remaining integration: initial issuance, serialized app-reopen/foreground renewal, sign-out/reset clearing and provider revocation, concurrent-tab/logout races, interrupted rotation recovery and installed Android acceptance. No production or Tally change.
+
 ## Staff testing release published — 9 October 2026
 
 - Owner explicitly requested publication. Source equivalent to `b342c18` deployed to production Worker `suprabha-staff`, version `4f384b9b-3c77-48bf-885c-3a819526b78c`. All hosted checks for that source passed: full release validation, database/ACID replay and CodeQL. Fresh production-mode build passed; target/project/email-reset guards verified before deployment. Existing variables/secrets preserved.

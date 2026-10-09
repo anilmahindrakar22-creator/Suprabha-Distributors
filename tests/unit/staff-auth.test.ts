@@ -1,11 +1,13 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
-const mocks = vi.hoisted(() => ({ getUser: vi.fn(), signInWithPassword: vi.fn(), gateway: vi.fn(), headers: new Headers(), token: undefined as string | undefined }));
-vi.mock('@supabase/supabase-js', () => ({ createClient: () => ({ auth: { getUser: mocks.getUser, signInWithPassword: mocks.signInWithPassword } }) }));
-vi.mock('@/lib/order-gateway', () => ({ callOrderGateway: mocks.gateway }));
+const mocks = vi.hoisted(() => ({ getUser: vi.fn(), refreshSession: vi.fn(), signInWithPassword: vi.fn(), gateway: vi.fn(), headers: new Headers(), token: undefined as string | undefined }));
+vi.mock('@supabase/supabase-js', () => ({ createClient: () => ({ auth: { getUser: mocks.getUser, refreshSession: mocks.refreshSession, signInWithPassword: mocks.signInWithPassword } }) }));
+vi.mock('@/lib/order-gateway', () => ({ callOrderGateway: mocks.gateway, OrderGatewayError: class extends Error { constructor(message: string, public status: number) { super(message); } } }));
 vi.mock('next/headers', () => ({ headers: async () => mocks.headers, cookies: async () => ({ get: () => mocks.token ? { value: mocks.token } : undefined }) }));
 import { staffAuthClient, staffAuthEnabled, sameStaffOrigin, staffCookie, staffInvitationClient, staffPasswordLogin, verifiedStaff } from '@/lib/staff-auth';
 import { getChatGPTUser } from '@/app/chatgpt-auth';
 import { GET, POST, DELETE } from '@/app/api/staff-auth/route';
+import { POST as REFRESH } from '@/app/api/staff-auth/refresh/route';
+import { OrderGatewayError } from '@/lib/order-gateway';
 
 beforeEach(() => {
   vi.stubEnv('STOCKFLOW_AUTH_MODE', 'supabase'); vi.stubEnv('STOCKFLOW_STAFF_ORIGIN', 'https://staff.example.test');
@@ -15,11 +17,48 @@ beforeEach(() => {
   mocks.getUser.mockResolvedValue({ data: { user: { id: 'u1', email: 'staff@example.test', email_confirmed_at: '2026-01-01', is_anonymous: false } }, error: null });
   mocks.signInWithPassword.mockResolvedValue({ data: { session: { access_token: 'verified-token', expires_in: 3600 } }, error: null });
   mocks.gateway.mockResolvedValue({ email: 'staff@example.test', role: 'sales' });
+  mocks.refreshSession.mockResolvedValue({ data: { session: { access_token: 'renewed-access', refresh_token: 'rotated-refresh', expires_in: 3600 } }, error: null });
 });
 afterEach(() => vi.unstubAllEnvs());
 const request = (body: unknown, origin = 'https://staff.example.test') => new Request('https://staff.example.test/api/staff-auth', { method: 'POST', headers: { origin, 'content-type': 'application/json' }, body: JSON.stringify(body) });
 
 describe('isolated staff authentication', () => {
+  it('renews only a verified active account and returns credentials in HttpOnly cookies, not JSON', async () => {
+    mocks.token = 'refresh-fixture';
+    const response = await REFRESH(request({}));
+    expect(response.status).toBe(200);
+    expect(await response.json()).toEqual({ ok: true });
+    expect(response.headers.get('cache-control')).toContain('no-store');
+    const cookieHeaders = response.headers.getSetCookie();
+    expect(cookieHeaders).toHaveLength(2);
+    expect(cookieHeaders[0]).toContain('renewed-access');
+    expect(cookieHeaders[1]).toContain('rotated-refresh');
+    for (const cookie of cookieHeaders) expect(cookie).toContain('HttpOnly; Secure; SameSite=Strict');
+    expect(mocks.gateway).toHaveBeenCalledWith('staff@example.test', 'session');
+    expect(mocks.refreshSession).toHaveBeenCalledWith({ refresh_token: 'refresh-fixture' });
+  });
+  it('cannot renew without a refresh cookie or from another origin', async () => {
+    expect((await REFRESH(request({}))).status).toBe(401);
+    mocks.token = 'refresh-fixture';
+    expect((await REFRESH(request({}, 'https://evil.example.test'))).status).toBe(403);
+    expect(mocks.refreshSession).not.toHaveBeenCalled();
+  });
+  it('does not issue renewed cookies to a suspended account', async () => {
+    mocks.token = 'refresh-fixture';
+    mocks.gateway.mockRejectedValue(new OrderGatewayError('private suspended account', 403));
+    const response = await REFRESH(request({}));
+    expect(response.status).toBe(403);
+    expect(response.headers.get('set-cookie')).toBeNull();
+    expect(await response.text()).not.toContain('private suspended account');
+  });
+  it.each([400, 401, 503])('handles refresh rejection/outage %s without overwriting cookies', async status => {
+    mocks.token = 'refresh-fixture';
+    mocks.refreshSession.mockResolvedValue({ data: { session: null }, error: { status } });
+    const response = await REFRESH(request({}));
+    expect(response.status).toBe(status === 503 ? 503 : 401);
+    expect(response.headers.get('set-cookie')).toBeNull();
+    expect(mocks.gateway).not.toHaveBeenCalled();
+  });
   it('confirms only a provider-verified cookie without returning identity or credentials', async () => {
     const check = () => GET(new Request('https://staff.example.test/api/staff-auth'));
     expect((await check()).status).toBe(401);

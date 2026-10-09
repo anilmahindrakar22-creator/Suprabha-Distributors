@@ -2,6 +2,7 @@ import { createClient } from '@supabase/supabase-js';
 import { callOrderGateway } from './order-gateway';
 
 export const STAFF_COOKIE = '__Host-stockflow-staff';
+export const STAFF_REFRESH_COOKIE = '__Host-stockflow-refresh';
 export class StaffSessionUnavailableError extends Error {
   constructor() { super('Sign-in verification is temporarily unavailable'); }
 }
@@ -104,4 +105,28 @@ export async function staffPasswordLogin(email: string, password: string) {
 
 export function staffCookie(token: string, expiresIn: number) {
   return `${STAFF_COOKIE}=${encodeURIComponent(token)}; Path=/; HttpOnly; Secure; SameSite=Strict; Max-Age=${Math.max(0, Math.floor(expiresIn))}`;
+}
+
+export function staffRefreshCookie(token: string) {
+  // Browser cookie retention is renewed whenever the provider rotates tokens.
+  // This is not an application account/session timeout.
+  return `${STAFF_REFRESH_COOKIE}=${encodeURIComponent(token)}; Path=/; HttpOnly; Secure; SameSite=Strict; Max-Age=${token ? 34560000 : 0}`;
+}
+
+export async function renewStaffSession(refreshToken: string) {
+  if (!refreshToken || refreshToken.length > 4096) return null;
+  const { data, error } = await staffAuthClient().auth.refreshSession({ refresh_token: refreshToken });
+  if (error) {
+    if ([400, 401, 403].includes(error.status ?? 0)) return null;
+    throw new StaffSessionUnavailableError();
+  }
+  const session = data.session;
+  if (!session?.access_token || !session.refresh_token || !Number.isFinite(session.expires_in) || session.expires_in <= 0) return null;
+  const user = await verifiedStaff(session.access_token);
+  if (!user) return null;
+  // Membership must be current. A provider session alone cannot restore a
+  // suspended account or grant roles from a stale token.
+  const member = await callOrderGateway<{ email: string }>(user.email, 'session');
+  if (member.email !== user.email) return null;
+  return { token: session.access_token, refreshToken: session.refresh_token, expiresIn: Math.min(session.expires_in, 3600) };
 }
