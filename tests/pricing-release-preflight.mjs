@@ -18,6 +18,7 @@ const pricingReleaseFiles = new Set([
   '20261010230000_auto_cost_one_year_lookback.sql',
   '20261010240000_unmapped_items_not_unresolved.sql',
   '20261011000000_instrument_reagent_sale_date.sql',
+  '20261011010000_active_economic_import_exceptions.sql',
   '20261004070312_combined_member_role_assignments.sql',
   '20261004071246_combined_role_policy_helpers.sql',
   '20261004071720_combined_role_order_mutation_checks.sql',
