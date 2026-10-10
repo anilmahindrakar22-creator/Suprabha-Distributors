@@ -5,16 +5,21 @@ import {
   getChatGPTUser,
 } from './chatgpt-auth';
 import { getStockFlowSession } from '@/lib/stockflow-session';
-import { publicChatGPTSignInUrl, publicStaffSignInUrl, staffAuthEnabled } from '@/lib/staff-auth';
-import { StaffAccountSwitch, StaffSignIn } from '@/components/staff-sign-in';
+import { publicChatGPTSignInUrl, publicStaffSignInUrl, staffAuthEnabled, StaffSessionUnavailableError } from '@/lib/staff-auth';
+import { StaffAccountSwitch, StaffSignIn, StaffSessionUnavailable } from '@/components/staff-sign-in';
 
 export const dynamic = 'force-dynamic';
 
 export default async function Home() {
-  const user = await getChatGPTUser();
+  let user;
+  try { user = await getChatGPTUser(); }
+  catch (error) {
+    if (error instanceof StaffSessionUnavailableError) return <StaffSessionUnavailable />;
+    throw error;
+  }
 
   if (!user) {
-    if (staffAuthEnabled()) return <StaffSignIn chatGPTSignInUrl={publicChatGPTSignInUrl()} />;
+    if (staffAuthEnabled()) return <StaffSignIn resume chatGPTSignInUrl={publicChatGPTSignInUrl()} />;
     const staffSignInUrl = publicStaffSignInUrl();
     return (
       <main className="grid min-h-dvh place-items-center bg-[#f7f6f1] px-5 text-[#173239]">

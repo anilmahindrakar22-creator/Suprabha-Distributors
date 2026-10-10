@@ -9,6 +9,7 @@ vi.mock('@/lib/staff-auth', () => ({
   staffAuthClient: () => ({ auth: { resetPasswordForEmail: mocks.reset } }),
   verifiedStaff: mocks.verified,
   staffCookie: () => 'clear-cookie',
+  staffRefreshCookie: () => 'clear-refresh-cookie',
 }));
 import { POST, PUT } from '@/app/api/staff-password-reset/route';
 beforeEach(() => {
@@ -32,5 +33,5 @@ it('requests recovery for exact approved email without returning secrets', async
 it('does not claim successful email delivery on a provider error', async () => { mocks.reset.mockResolvedValue({ error: new Error('private provider details') }); const response = await POST(request({ email: 'staff@example.test' })); expect(response.status).toBe(503); expect(await response.text()).not.toContain('private provider'); });
 it('rejects expired tokens and weak passwords before update', async () => { expect((await PUT(request({ token: 'token', password: 'short' }))).status).toBe(400); mocks.verified.mockResolvedValue(null); expect((await PUT(request({ token: 'expired', password: 'long-test-password' }))).status).toBe(401); expect(mocks.fetch).not.toHaveBeenCalled(); });
 it('requires active membership after recovery verification', async () => { mocks.gateway.mockRejectedValue(new Error('inactive')); expect((await PUT(request({ token: 'token', password: 'long-test-password' }))).status).toBe(503); expect(mocks.fetch).not.toHaveBeenCalled(); });
-it('updates provider password and revokes refresh sessions without storing it', async () => { const response = await PUT(request({ token: 'token', password: 'long-test-password' })); expect(response.status).toBe(200); expect(mocks.fetch).toHaveBeenCalledTimes(2); expect(mocks.fetch.mock.calls[1][0]).toBe('https://db.example.test/auth/v1/logout?scope=global'); expect(await response.json()).toEqual({ ok: true }); expect(response.headers.get('set-cookie')).toBe('clear-cookie'); });
+it('updates provider password and revokes refresh sessions without storing it', async () => { const response = await PUT(request({ token: 'token', password: 'long-test-password' })); expect(response.status).toBe(200); expect(mocks.fetch).toHaveBeenCalledTimes(2); expect(mocks.fetch.mock.calls[1][0]).toBe('https://db.example.test/auth/v1/logout?scope=global'); expect(await response.json()).toEqual({ ok: true }); expect(response.headers.getSetCookie()).toEqual(['clear-cookie', 'clear-refresh-cookie']); });
 it('reports partial reset when revocation fails', async () => { mocks.fetch.mockResolvedValueOnce(new Response(null, { status: 200 })).mockResolvedValueOnce(new Response(null, { status: 500 })); const response = await PUT(request({ token: 'token', password: 'long-test-password' })); expect(response.status).toBe(503); expect(await response.text()).toContain('Password changed'); });

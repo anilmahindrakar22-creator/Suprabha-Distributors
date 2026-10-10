@@ -31,6 +31,7 @@ function Fixture() {
   const [entry, setEntry] = useState({ rate: '445', reason: '' });
   const parameters = new URLSearchParams(location.search);
   if (parameters.get('view') === 'staff-signin') return <StaffSignIn />;
+  if (parameters.get('view') === 'staff-signin-resume') return <StaffSignIn resume />;
   if (parameters.get('view') === 'staff-signin-choice') return <StaffSignIn chatGPTSignInUrl="https://stockflow.chatgpt.site/signin-with-chatgpt?return_to=%2F" />;
   if (parameters.get('view') === 'staff-reset') return <React.StrictMode><StaffPasswordReset /></React.StrictMode>;
   if (parameters.get('view') === 'staff-switch') return <StaffAccountSwitch />;

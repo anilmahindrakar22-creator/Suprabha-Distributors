@@ -1,4 +1,5 @@
 'use client';
+import { withStaffSessionLock } from '@/lib/staff-session-client';
 import { useEffect, useRef, useState } from 'react';
 
 export function StaffPasswordReset() {
@@ -37,7 +38,7 @@ export function StaffPasswordReset() {
     if (password !== confirmation) { setMessage('Passwords must match.'); return; }
     inFlight.current = true; setBusy(true); setMessage('');
     try {
-      const response = await fetch('/api/staff-password-reset', { method: 'PUT', cache: 'no-store', signal: AbortSignal.timeout(15000), headers: { 'content-type': 'application/json' }, body: JSON.stringify({ token, password }) });
+      const response = await withStaffSessionLock(() => fetch('/api/staff-password-reset', { method: 'PUT', cache: 'no-store', signal: AbortSignal.timeout(15000), headers: { 'content-type': 'application/json' }, body: JSON.stringify({ token, password }) }));
       const result = await response.json() as { error?: string };
       if (!response.ok) {
         // An upstream failure may occur after the password was already changed.

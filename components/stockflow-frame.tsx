@@ -5,6 +5,8 @@ import Image from 'next/image';
 import { defaultOrderFilterForRole, readOrderDashboardMessage } from '@/lib/stockflow-navigation';
 import { prepareDeviceForAccount } from '@/lib/device-account-privacy';
 import { hasAnyStockFlowRole, type StockFlowRole } from '@/lib/user-types';
+import { revokeOfflineVault } from '@/lib/offline-vault-storage';
+import { checkStaffSession, withStaffSessionLock } from '@/lib/staff-session-client';
 
 const loadOrderWorkspace = () => import('./order-workspace').then((module) => ({ default: module.OrderWorkspace }));
 const OrderWorkspace = lazy(loadOrderWorkspace);
@@ -31,12 +33,45 @@ export function StockFlowFrame({ actorEmail, actorRole, actorRoles, staffAuth = 
   const [readyEmail, setReadyEmail] = useState('');
   const signOutInFlight = useRef(false);
   const [signingOut, setSigningOut] = useState(false);
+  useEffect(() => {
+    if (!staffAuth) return;
+    let stopped = false;
+    let running = false;
+    let timer: ReturnType<typeof setTimeout> | undefined;
+    let lastCheck = 0;
+    async function check(renew = false) {
+      if (stopped || running || document.visibilityState === 'hidden' || !navigator.onLine) return;
+      running = true;
+      lastCheck = Date.now();
+      if (timer) clearTimeout(timer);
+      try {
+        const delay = await checkStaffSession(renew);
+        if (stopped) return;
+        if (delay === null) { window.location.assign('/staff-signin'); return; }
+        timer = setTimeout(() => { void check(true); }, delay * 1000);
+      } catch {
+        if (!stopped) setDeviceNotice('Sign-in connection interrupted. Reconnect to verify your session; saved drafts remain unchanged.');
+        // No automatic retry loop. A foreground/reconnection event can retry.
+      } finally { running = false; }
+    }
+    const wake = () => { if (Date.now() - lastCheck >= 30000) void check(); };
+    void check();
+    document.addEventListener('visibilitychange', wake);
+    window.addEventListener('online', wake);
+    return () => {
+      stopped = true;
+      if (timer) clearTimeout(timer);
+      document.removeEventListener('visibilitychange', wake);
+      window.removeEventListener('online', wake);
+    };
+  }, [staffAuth]);
   async function staffSignOut() {
     if (signOutInFlight.current) return;
     signOutInFlight.current = true;
     setSigningOut(true);
     try {
-      const response = await fetch('/api/staff-auth', { method: 'DELETE', cache: 'no-store', signal: AbortSignal.timeout(15000) });
+      await revokeOfflineVault(localStorage);
+      const response = await withStaffSessionLock(() => fetch('/api/staff-auth', { method: 'DELETE', cache: 'no-store', signal: AbortSignal.timeout(15000) }));
       if (response.ok) window.location.assign('/staff-signin');
       else setDeviceNotice('Sign-out failed. Please retry before sharing this device.');
     } catch { setDeviceNotice('Sign-out failed. Please retry before sharing this device.'); }
@@ -54,6 +89,7 @@ export function StockFlowFrame({ actorEmail, actorRole, actorRoles, staffAuth = 
     const readyTimer = window.setTimeout(() => setReadyEmail(actorEmail), 0);
     let noticeTimer: number | undefined;
     if (account.switched) {
+      void revokeOfflineVault(localStorage).catch(() => setDeviceNotice('Offline device lock failed. Do not share this device; retry sign-out.'));
       void Promise.all([
         import('@/lib/order-bootstrap-cache').then((module) => module.clearOrderBootstrapCache()),
         import('@/lib/order-capture-masters').then((module) => module.clearOrderCaptureMasterCache()),
@@ -100,8 +136,8 @@ export function StockFlowFrame({ actorEmail, actorRole, actorRoles, staffAuth = 
   }
 
   return (
-    <main className="flex h-dvh w-full flex-col overflow-hidden bg-[#f7f6f1] text-[#173239]">
-      <header className="flex h-16 shrink-0 items-center justify-between gap-2 border-b border-[#dce7e5] bg-white px-4 sm:px-6">
+    <main className="flex h-dvh w-full flex-col overflow-hidden bg-[#f7f6f1] text-[#173239]" style={{ paddingTop: 'env(safe-area-inset-top)', paddingBottom: 'env(safe-area-inset-bottom)' }}>
+      <header className="flex shrink-0 flex-wrap items-center justify-between gap-2 border-b border-[#dce7e5] bg-white px-4 py-2 sm:h-16 sm:flex-nowrap sm:px-6 sm:py-0">
         <div className="flex min-w-0 items-center gap-3">
           <Image src="/suprabha-logo.png" alt="" width={36} height={36} priority className="size-9 shrink-0 object-contain" />
           <div className="min-w-0">
@@ -109,7 +145,7 @@ export function StockFlowFrame({ actorEmail, actorRole, actorRoles, staffAuth = 
             <p className="hidden text-xs text-[#6b7e81] sm:block">Suprabha Distributors</p>
           </div>
         </div>
-        <nav aria-label="Application sections" className="flex min-w-0 overflow-x-auto rounded-xl bg-[#edf3f1] p-1">
+        <nav aria-label="Application sections" className="order-last flex w-full min-w-0 overflow-x-auto rounded-xl bg-[#edf3f1] p-1 sm:order-none sm:w-auto">
           {(['stock', 'orders', ...(hasAnyStockFlowRole(roles, ['administrator', 'management', 'accounts']) ? ['pricing' as const] : []), ...(hasAnyStockFlowRole(roles, ['administrator', 'operations', 'sales', 'management']) ? ['service' as const] : []), ...(hasAnyStockFlowRole(roles, ['administrator']) ? ['users' as const] : [])] as const).map((item) => (
             <button
               key={item}
@@ -128,18 +164,21 @@ export function StockFlowFrame({ actorEmail, actorRole, actorRoles, staffAuth = 
               {item}
             </button>
           ))}
+          {/* Full navigation re-verifies the staff session before local preparation. */}
+          {/* oxlint-disable-next-line next/no-html-link-for-pages */}
+          {staffAuth && hasAnyStockFlowRole(roles, ['administrator', 'management', 'sales', 'operations']) ? <a href="/offline-preparation" className="min-h-10 shrink-0 rounded-lg px-3 py-2 text-sm font-bold text-[#61777a]">Offline</a> : null}
         </nav>
         {/* Sites owns the session cookie: use a full navigation, not a client router link. */}
         {/* oxlint-disable-next-line next/no-html-link-for-pages */}
         {staffAuth ? <button type="button" disabled={signingOut} onClick={() => void staffSignOut()} aria-label={`Sign out ${actorEmail}`} className="min-h-11 rounded-lg border px-3 text-sm font-bold disabled:opacity-50">{signingOut ? 'Signing out…' : 'Sign out'}</button> : <a href="/signout-with-chatgpt?return_to=/" target="_top" aria-label={`Sign out ${actorEmail}`} title={`Signed in as ${actorEmail}`} className="inline-flex min-h-11 shrink-0 items-center rounded-lg border border-[#dce7e5] px-2 text-xs font-bold text-[#173239] hover:bg-[#edf3f1] sm:px-3 sm:text-sm">Sign out</a>}
       </header>
       {deviceNotice ? <output className="flex shrink-0 items-center justify-between gap-3 border-b border-[#f0d7a5] bg-[#fff7e8] px-4 py-2 text-xs font-semibold text-[#805b20] sm:px-6"><span>{deviceNotice}</span><button type="button" onClick={() => setDeviceNotice('')} className="min-h-8 shrink-0 rounded-lg px-3 font-bold hover:bg-[#f7e8c8]">Dismiss</button></output> : null}
-      <section className="min-h-0 flex-1">
+      <section className="min-h-0 flex-1 overflow-hidden">
         {readyEmail !== actorEmail ? <SectionLoading /> : surface === 'stock' ? (
           <iframe
             title="Suprabha stock dashboard"
             src="/stockflow.html"
-            className="h-full w-full border-0"
+            className="block h-full w-full border-0"
             allow="clipboard-write"
             onLoad={(event) => event.currentTarget.contentWindow?.postMessage({ type: 'stockflow-cache-account', email: actorEmail }, window.location.origin)}
           />

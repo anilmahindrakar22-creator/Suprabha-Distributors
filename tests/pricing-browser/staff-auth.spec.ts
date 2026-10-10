@@ -143,9 +143,11 @@ for (const view of ['staff-signin', 'staff-reset']) {
       form.dispatchEvent(new Event('submit', { bubbles: true, cancelable: true }));
       form.dispatchEvent(new Event('submit', { bubbles: true, cancelable: true }));
     });
-    expect(await page.evaluate(() => (window as typeof window & { authRequestCount: number }).authRequestCount)).toBe(1);
+    // The sign-in session lock starts the request asynchronously; wait for that boundary.
+    await expect.poll(() => page.evaluate(() => (window as typeof window & { authRequestCount: number }).authRequestCount)).toBe(1);
     await page.clock.runFor(16000);
     await expect(page.getByRole('alert')).toContainText(view === 'staff-reset' ? 'unknown' : 'Unable to sign in');
+    expect(await page.evaluate(() => (window as typeof window & { authRequestCount: number }).authRequestCount)).toBe(1);
     if (view === 'staff-reset') await expect(button).toBeDisabled();
     else await expect(button).toBeEnabled();
   });

@@ -1,6 +1,11 @@
 'use client';
 import { useEffect, useRef, useState } from 'react';
 import { preconnect } from 'react-dom';
+import { resumeStaffSession, withStaffSessionLock } from '@/lib/staff-session-client';
+
+export function StaffSessionUnavailable() {
+  return <main className="grid min-h-dvh place-items-center p-5"><section className="grid max-w-md gap-4"><h1 className="text-2xl font-bold">Connection interrupted</h1><p>We could not verify your sign-in. This does not mean you have signed out. Reconnect and retry; your saved drafts remain unchanged.</p><button className="min-h-11 rounded-xl border px-5 font-semibold" onClick={() => window.location.reload()}>Retry connection</button></section></main>;
+}
 
 export function StaffAccountSwitch() {
   const [message, setMessage] = useState('');
@@ -9,7 +14,7 @@ export function StaffAccountSwitch() {
     if (inFlight.current) return;
     inFlight.current = true;
     try {
-      const response = await fetch('/api/staff-auth', { method: 'DELETE', cache: 'no-store', signal: AbortSignal.timeout(15000) });
+      const response = await withStaffSessionLock(() => fetch('/api/staff-auth', { method: 'DELETE', cache: 'no-store', signal: AbortSignal.timeout(15000) }));
       if (!response.ok) throw new Error('Sign out failed');
       window.location.assign('/staff-signin');
     } catch { setMessage('Unable to sign out. Please retry.'); }
@@ -18,7 +23,7 @@ export function StaffAccountSwitch() {
   return <><button onClick={signOut} className="mt-7 min-h-11 rounded-xl border px-5 font-semibold">Use another account</button>{message && <p role="alert">{message}</p>}</>;
 }
 
-export function StaffSignIn({ chatGPTSignInUrl = null }: { chatGPTSignInUrl?: string | null } = {}) {
+export function StaffSignIn({ chatGPTSignInUrl = null, resume = false }: { chatGPTSignInUrl?: string | null; resume?: boolean } = {}) {
   const [handoff, setHandoff] = useState<'idle' | 'opening' | 'stalled'>('idle');
   const handoffTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
   useEffect(() => () => { if (handoffTimer.current) clearTimeout(handoffTimer.current); }, []);
@@ -38,14 +43,40 @@ export function StaffSignIn({ chatGPTSignInUrl = null }: { chatGPTSignInUrl?: st
   const [email, setEmail] = useState('');
   const [password, setPassword] = useState('');
   const [busy, setBusy] = useState(false);
+  const [restoring, setRestoring] = useState(resume);
   const [message, setMessage] = useState('');
   const inFlight = useRef(false);
+  useEffect(() => {
+    if (!resume) return;
+    let cancelled = false;
+    inFlight.current = true;
+    const timer = setTimeout(() => setBusy(true), 0);
+    void resumeStaffSession().then(restored => {
+      if (!cancelled && restored) window.location.assign('/');
+      if (!cancelled && !restored) setRestoring(false);
+    }).catch(() => {
+      if (!cancelled) {
+        setRestoring(false);
+        setMessage('Unable to restore your sign-in right now. Reconnect and reopen the app, or sign in below. Your drafts remain unchanged.');
+      }
+    }).finally(() => {
+      if (!cancelled) { inFlight.current = false; setBusy(false); }
+    });
+    return () => { cancelled = true; clearTimeout(timer); };
+  }, [resume]);
+  if (restoring) return <main className="grid min-h-dvh place-items-center bg-[#f7f6f1] p-5 text-[#173239]"><output aria-live="polite">Opening StockFlow…</output></main>;
   async function submit(event: React.SyntheticEvent<HTMLFormElement>) {
     event.preventDefault(); if (inFlight.current) return;
     inFlight.current = true; setBusy(true); setMessage('');
     try {
-      const response = await fetch('/api/staff-auth', { method: 'POST', headers: { 'content-type': 'application/json' }, body: JSON.stringify({ email, password }), cache: 'no-store', signal: AbortSignal.timeout(15000) });
+      const response = await withStaffSessionLock(() => fetch('/api/staff-auth', { method: 'POST', credentials: 'same-origin', headers: { 'content-type': 'application/json' }, body: JSON.stringify({ email, password }), cache: 'no-store', signal: AbortSignal.timeout(15000) }));
       if (!response.ok) throw new Error('Unable to sign in. Check your details or contact your administrator.');
+      const confirmation = await fetch('/api/staff-auth', { credentials: 'same-origin', cache: 'no-store', signal: AbortSignal.timeout(15000) });
+      const confirmed: unknown = confirmation.ok ? await confirmation.json() : null;
+      if (!confirmed || typeof confirmed !== 'object' || !('ok' in confirmed) || confirmed.ok !== true) {
+        setMessage('Your password was accepted, but this app could not verify the sign-in session. Please open the staff site in Chrome and contact your administrator if this continues.');
+        return;
+      }
       window.location.assign('/');
     } catch { setMessage('Unable to sign in. Check your details or contact your administrator.'); }
     finally { inFlight.current = false; setPassword(''); setBusy(false); }
