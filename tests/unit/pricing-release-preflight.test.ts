@@ -11,7 +11,21 @@ const source = new Map(readdirSync(fileURLToPath(directory)).filter((name) => na
 describe('read-only pricing release preflight', () => {
   it('validates the saved production evidence after deployment', () => {
     const result = pricingReleasePreflight(original, source);
-    expect(result.pending).toHaveLength(0);
+    expect(result.pending).toEqual([
+      '20261007180000_instrument_economics_foundation.sql',
+      '20261007181000_instrument_economic_import_and_rebuild.sql',
+      '20261007182000_instrument_economics_workspace.sql',
+      '20261007183000_instrument_economics_commands.sql',
+      '20261010071925_historical_instrument_registration.sql',
+      '20261010170000_instrument_actuals_without_plan.sql',
+      '20261010172000_optional_plan_health.sql',
+      '20261010200000_source_voucher_number.sql',
+      '20261010210000_automatic_purchase_cost.sql',
+      '20261010220000_auto_cost_batch_fallback.sql',
+      '20261010230000_auto_cost_one_year_lookback.sql',
+      '20261010240000_unmapped_items_not_unresolved.sql',
+      '20261011000000_instrument_reagent_sale_date.sql',
+    ]);
     expect(result.deployed.at(-1)?.localFile).toBe('20261005055748_activate_governed_role_union.sql');
     expect(result.deployed).toHaveLength(103);
     const names = result.deployed.map((entry: { localFile: string }) => entry.localFile);
@@ -26,7 +40,7 @@ describe('read-only pricing release preflight', () => {
   });
   it('accepts documented CRLF normalization without modifying source', () => {
     const crlf = new Map([...source].map(([name, sql]) => [name, sql.replace(/\r/g, '').replace(/\n/g, '\r\n')]));
-    expect(pricingReleasePreflight(original, crlf).pending).toHaveLength(0);
+    expect(pricingReleasePreflight(original, crlf).pending).toHaveLength(13);
   });
   it('rejects changed SQL including changes inside literals', () => {
     const files = new Map(source);

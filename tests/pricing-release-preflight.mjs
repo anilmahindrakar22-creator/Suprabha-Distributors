@@ -5,6 +5,19 @@ import { resolve } from 'node:path';
 
 // Evidence-only: no database connection, SQL execution or migration-history repair.
 const pricingReleaseFiles = new Set([
+  '20261007180000_instrument_economics_foundation.sql',
+  '20261007181000_instrument_economic_import_and_rebuild.sql',
+  '20261007182000_instrument_economics_workspace.sql',
+  '20261007183000_instrument_economics_commands.sql',
+  '20261010071925_historical_instrument_registration.sql',
+  '20261010170000_instrument_actuals_without_plan.sql',
+  '20261010172000_optional_plan_health.sql',
+  '20261010200000_source_voucher_number.sql',
+  '20261010210000_automatic_purchase_cost.sql',
+  '20261010220000_auto_cost_batch_fallback.sql',
+  '20261010230000_auto_cost_one_year_lookback.sql',
+  '20261010240000_unmapped_items_not_unresolved.sql',
+  '20261011000000_instrument_reagent_sale_date.sql',
   '20261004070312_combined_member_role_assignments.sql',
   '20261004071246_combined_role_policy_helpers.sql',
   '20261004071720_combined_role_order_mutation_checks.sql',

@@ -11,10 +11,11 @@ import { checkStaffSession, withStaffSessionLock } from '@/lib/staff-session-cli
 const loadOrderWorkspace = () => import('./order-workspace').then((module) => ({ default: module.OrderWorkspace }));
 const OrderWorkspace = lazy(loadOrderWorkspace);
 const ServiceWorkspace = lazy(() => import('./service-workspace').then((module) => ({ default: module.ServiceWorkspace })));
+const InstrumentEconomicsWorkspace = lazy(() => import('./instrument-economics-workspace').then((module) => ({ default: module.InstrumentEconomicsWorkspace })));
 const UserManagement = lazy(() => import('./user-management').then((module) => ({ default: module.UserManagement })));
 const PricingWorkspace = lazy(() => import('./pricing-workspace').then((module) => ({ default: module.PricingWorkspace })));
 
-type Surface = 'stock' | 'orders' | 'pricing' | 'service' | 'users';
+type Surface = 'stock' | 'orders' | 'pricing' | 'economics' | 'service' | 'users';
 
 async function warmOrderData(actorEmail: string) {
   const { loadOrderBootstrap } = await import('@/lib/order-bootstrap-cache');
@@ -146,7 +147,7 @@ export function StockFlowFrame({ actorEmail, actorRole, actorRoles, staffAuth = 
           </div>
         </div>
         <nav aria-label="Application sections" className="order-last flex w-full min-w-0 overflow-x-auto rounded-xl bg-[#edf3f1] p-1 sm:order-none sm:w-auto">
-          {(['stock', 'orders', ...(hasAnyStockFlowRole(roles, ['administrator', 'management', 'accounts']) ? ['pricing' as const] : []), ...(hasAnyStockFlowRole(roles, ['administrator', 'operations', 'sales', 'management']) ? ['service' as const] : []), ...(hasAnyStockFlowRole(roles, ['administrator']) ? ['users' as const] : [])] as const).map((item) => (
+          {(['stock', 'orders', ...(hasAnyStockFlowRole(roles, ['administrator', 'management', 'accounts']) ? ['pricing' as const, 'economics' as const] : []), ...(hasAnyStockFlowRole(roles, ['administrator', 'operations', 'sales', 'management']) ? ['service' as const] : []), ...(hasAnyStockFlowRole(roles, ['administrator']) ? ['users' as const] : [])] as const).map((item) => (
             <button
               key={item}
               type="button"
@@ -186,6 +187,8 @@ export function StockFlowFrame({ actorEmail, actorRole, actorRoles, staffAuth = 
           <Suspense fallback={<SectionLoading />}><OrderWorkspace key={orderFilter} actorEmail={actorEmail} initialStatus={orderFilter} /></Suspense>
         ) : surface === 'pricing' ? (
           <Suspense fallback={<SectionLoading />}><PricingWorkspace actorEmail={actorEmail} actorRole={actorRole} actorRoles={roles} /></Suspense>
+        ) : surface === 'economics' ? (
+          <Suspense fallback={<SectionLoading />}><InstrumentEconomicsWorkspace embedded /></Suspense>
         ) : surface === 'service' ? (
           <Suspense fallback={<SectionLoading />}><ServiceWorkspace /></Suspense>
         ) : <Suspense fallback={<SectionLoading />}><UserManagement staffAuth={staffAuth} emailActionsEnabled={staffEmailActionsEnabled} /></Suspense>}

@@ -1,6 +1,10 @@
 import type { OrderCommand } from './order-types';
+import type { EconomicAction } from './instrument-economics-types';
 
 export type GatewayAction =
+  | 'get_instrument_economics'
+  | 'recover_economic_command'
+  | EconomicAction
   | 'session'
   | 'get_requirements'
   | 'get_requirement_orders'

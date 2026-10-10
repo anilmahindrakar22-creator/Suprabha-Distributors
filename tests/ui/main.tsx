@@ -10,6 +10,8 @@ import { StockFlowFrame } from '@/components/stockflow-frame';
 import { StaffSignIn, StaffAccountSwitch } from '@/components/staff-sign-in';
 import { StaffPasswordReset } from '@/components/staff-password-reset';
 import { UserManagement } from '@/components/user-management';
+import { InstrumentEconomicsWorkspace } from '@/components/instrument-economics-workspace';
+import { InstrumentWorkspace } from '@/components/instrument-workspace';
 import type { PricingLineResolution } from '@/lib/pricing-types';
 import type { OrderBootstrap } from '@/lib/order-types';
 import { normalizeStockFlowRoles } from '@/lib/user-types';
@@ -37,6 +39,8 @@ function Fixture() {
   if (parameters.get('view') === 'staff-switch') return <StaffAccountSwitch />;
   if (parameters.get('view') === 'staff-users') return <UserManagement staffAuth emailActionsEnabled />;
   if (parameters.get('view') === 'staff-users-disabled') return <UserManagement staffAuth />;
+  if (parameters.get('view') === 'instrument-economics') return <InstrumentEconomicsWorkspace />;
+  if (parameters.get('view') === 'instruments') return <InstrumentWorkspace />;
   if (parameters.get('view') === 'frame') return <StockFlowFrame actorEmail="staff@example.test" actorRole={parameters.get('role') || 'sales'} actorRoles={parameters.has('roles') ? normalizeStockFlowRoles(parameters.get('roles')?.split(',')) ?? [] : undefined} />;
   if (parameters.get('view') === 'staff-frame') return <StockFlowFrame actorEmail="staff@example.test" actorRole="administrator" staffAuth />;
   if (parameters.get('view') === 'product-requests') return <ProductRequestInbox />;
@@ -67,4 +71,6 @@ function Fixture() {
     ? <PricingOptions line={{ ...row, fixed: parameters.has('fixed') }} entry={entry} onChange={setEntry}/>
     : <CustomerPriceBook actorEmail="fixture@example.test" actorRole={parameters.get('role') || 'management'}/>}</main>;
 }
+// The isolated fixture omits RootLayout's next/font loader; keep its sans fallback.
+document.documentElement.style.setProperty('--font-geist-sans', 'Arial, Helvetica, sans-serif');
 createRoot(document.getElementById('root')!).render(<Fixture/>);
