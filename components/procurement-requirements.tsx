@@ -1,6 +1,7 @@
 'use client';
 
 import { useEffect, useRef, useState } from 'react';
+import { readJsonBody } from '@/lib/http-json';
 
 type RequirementRow = {
   tallyKey: string;
@@ -117,7 +118,7 @@ export function ProcurementRequirements() {
     setWaitingError('');
     try {
       const response = await fetch(`/api/requirements?itemKey=${encodeURIComponent(itemKey)}&page=${nextPage}`, { cache: 'no-store', signal: controller.signal });
-      const body = await response.json() as WaitingOrdersResponse & { error?: string };
+      const body = await readJsonBody<WaitingOrdersResponse & { error?: string }>(response);
       if (!response.ok) throw new Error(body.error || 'Waiting orders could not be loaded.');
       if (!Array.isArray(body.orders) || !body.pagination || !Number.isSafeInteger(body.pagination.page) || body.pagination.page !== nextPage
         || !Number.isSafeInteger(body.pagination.pageCount) || body.pagination.pageCount < 1 || !Number.isSafeInteger(body.pagination.total) || body.pagination.total < 0
@@ -170,7 +171,7 @@ export function ProcurementRequirements() {
     setError('');
     try {
       const response = await fetch(`/api/requirements?page=${nextPage}`, { cache: 'no-store', signal: controller.signal });
-      const body = await response.json() as RequirementsResponse & { error?: string };
+      const body = await readJsonBody<RequirementsResponse & { error?: string }>(response);
       if (!response.ok) throw new Error(body.error || 'Customer requirements could not be loaded.');
       if (!Array.isArray(body.rows) || !body.pagination || !Number.isSafeInteger(body.pagination.page) || body.pagination.page < 1
         || !Number.isSafeInteger(body.pagination.pageCount) || body.pagination.pageCount < 1 || !Number.isSafeInteger(body.pagination.total) || body.pagination.total < 0
@@ -200,7 +201,7 @@ export function ProcurementRequirements() {
     setAlertsError('');
     try {
       const response = await fetch(`/api/requirements?alerts=1&page=${nextPage}`, { cache: 'no-store', signal: controller.signal });
-      const body = await response.json() as StockIncreaseResponse & { error?: string };
+      const body = await readJsonBody<StockIncreaseResponse & { error?: string }>(response);
       if (!response.ok) throw new Error(body.error || 'Reported stock increases could not be loaded.');
       if (!Array.isArray(body.alerts) || body.alerts.length > 20 || !body.pagination
         || !Number.isSafeInteger(body.pagination.page) || body.pagination.page !== nextPage

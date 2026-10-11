@@ -6,6 +6,7 @@ import { finishEncryptedDraftMigration, readOfflineOrderDraft } from '@/lib/offl
 import { removeCatalogCache } from '@/lib/catalog-cache';
 import { removeCustomerCache } from '@/lib/customer-cache';
 import { offlineOrderDocument } from '@/lib/offline-order-document';
+import { readJsonBody } from '@/lib/http-json';
 
 export function OfflineOrderPreparation({ actorEmail }: { actorEmail: string }) {
   const [pin, setPin] = useState('');
@@ -33,7 +34,7 @@ export function OfflineOrderPreparation({ actorEmail }: { actorEmail: string }) 
       async function directory(kind: string) {
         const response = await fetch(`/api/offline-catalog?kind=${kind}`, { cache: 'no-store', signal: AbortSignal.timeout(30_000) });
         if (!response.ok) throw new Error('Could not verify this account and download its catalogue. Sign in and retry.');
-        const result = await response.json() as { actorEmail?: string; rows?: unknown[] };
+        const result = await readJsonBody<{ actorEmail?: string; rows?: unknown[] }>(response);
         if (result.actorEmail !== actorEmail || !Array.isArray(result.rows)) throw new Error('Account verification changed. Sign in and retry.');
         return result.rows;
       }

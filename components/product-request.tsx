@@ -2,6 +2,7 @@
 
 import { useState } from 'react';
 import { readPendingProductRequest, writePendingProductRequest, removePendingProductRequest, type ProductRequestPayload } from '@/lib/offline-order-drafts';
+import { readJsonBody } from '@/lib/http-json';
 
 export function ProductRequest({ productName, customerId, visible, actorEmail }: { productName: string; customerId?: string; visible: boolean; actorEmail: string }) {
   const [recovered] = useState(() => {
@@ -29,7 +30,7 @@ export function ProductRequest({ productName, customerId, visible, actorEmail }:
         method: 'POST', headers: { 'content-type': 'application/json' },
         body: JSON.stringify({ action: 'create_product_request', payload: command }),
       });
-      const result = await response.json() as { error?: string; requestId?: string };
+      const result = await readJsonBody<{ error?: string; requestId?: string }>(response);
       if ([400, 401, 403, 404, 422].includes(response.status)) {
         if (saveRetry && !removePendingProductRequest(localStorage, actorEmail, command.idempotencyKey)) throw new Error('Local request recovery could not be cleared. Retry after fixing device storage.');
         setPending(null); uncertain = false;
@@ -74,7 +75,7 @@ export function ProductRequestInbox() {
     setMessage('');
     try {
       const response = await fetch('/api/product-requests', { cache: 'no-store' });
-      const result = await response.json() as { requests?: OpenRequest[]; error?: string };
+      const result = await readJsonBody<{ requests?: OpenRequest[]; error?: string }>(response);
       if (!response.ok || !Array.isArray(result.requests)) throw new Error(result.error || 'Requests unavailable');
       setRequests(result.requests);
     } catch (error) { setMessage(error instanceof Error ? error.message : 'Requests unavailable'); }
@@ -103,7 +104,7 @@ function ProductRequestReview({ request, onReviewed }: { request: OpenRequest; o
     setPending(payload); setBusy(true); setMessage('');
     try {
       const response = await fetch('/api/product-requests', { method: 'POST', headers: { 'content-type': 'application/json' }, body: JSON.stringify({ action: 'review_product_request', payload }) });
-      const result = await response.json() as { error?: string; requestId?: string };
+      const result = await readJsonBody<{ error?: string; requestId?: string }>(response);
       if ([400, 401, 403, 404, 422].includes(response.status)) setPending(null);
       if (!response.ok || !result.requestId) throw new Error(result.error || 'Review could not be confirmed; retry or refresh.');
       onReviewed();

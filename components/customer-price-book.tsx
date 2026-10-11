@@ -5,6 +5,7 @@ import { loadOrderCatalog, loadOrderCustomers } from '@/lib/order-capture-master
 import type { CatalogItem, CustomerDirectoryEntry } from '@/lib/order-types';
 import { CUSTOMER_GROUP_MARGIN_GROUPS, type CustomerGroupMarginPreview, type PricingCommand } from '@/lib/pricing-types';
 import { hasAnyStockFlowRole, type StockFlowRole } from '@/lib/user-types';
+import { readJsonBody } from '@/lib/http-json';
 
 type Row = {
   currentDecisionId: string | null; customerId: string; customerName: string; tallyKey: string; itemName: string; evidenceHash: string;
@@ -26,14 +27,14 @@ const button = 'min-h-11 rounded-xl border border-[#b9d5cd] bg-white px-4 text-s
 async function readPricing<T>(url: string, signal?: AbortSignal, onAccessDenied?: () => void): Promise<T> {
   const response = await fetch(url, { cache: 'no-store', signal });
   if (response.status === 401 || response.status === 403) onAccessDenied?.();
-  const data = await response.json() as T & { error?: string };
+  const data = await readJsonBody<T & { error?: string }>(response);
   if (!response.ok) throw new Error(data.error || 'Pricing could not load');
   return data;
 }
 async function send(command: PricingCommand, onAccessDenied?: () => void) {
   const response = await fetch('/api/pricing', { method: 'POST', headers: { 'content-type': 'application/json' }, body: JSON.stringify(command) });
   if (response.status === 401 || response.status === 403) onAccessDenied?.();
-  const data = await response.json() as { error?: string; applied?: number; skipped?: number; excluded?: number };
+  const data = await readJsonBody<{ error?: string; applied?: number; skipped?: number; excluded?: number }>(response);
   if (!response.ok) throw new Error(data.error || 'Decision could not be saved');
   return data as { applied?: number; skipped?: number; excluded?: number };
 }
@@ -89,7 +90,7 @@ export function CustomerPriceBook({ actorEmail, actorRole, actorRoles, onRecover
       const response = closeUnresolved ? await fetch('/api/pricing', { method: 'POST', headers: { 'content-type': 'application/json' }, body: JSON.stringify({ action: 'close_unresolved_pricing', payload: { idempotencyKey: reference.idempotencyKey, pricingAction: reference.action } }) }) : null;
       if (response?.status === 401 || response?.status === 403) denyAccess();
       if (response && !response.ok) throw new Error('Recovery failed');
-      const result = response ? await response.json() as { status: string } : await read<{ status: string }>(`/api/pricing?${new URLSearchParams({ recoveryKey: reference.idempotencyKey, pricingAction: reference.action })}`);
+      const result = response ? await readJsonBody<{ status: string }>(response) : await read<{ status: string }>(`/api/pricing?${new URLSearchParams({ recoveryKey: reference.idempotencyKey, pricingAction: reference.action })}`);
       if (!['accepted','not_saved'].includes(result.status)) { setRecoveryMessage('This save is still unresolved. Check again later; do not assume it failed or enter a replacement.'); return; }
       const saved = JSON.parse(sessionStorage.getItem(recoveryStorageKey) || '[]') as typeof recovery;
       sessionStorage.setItem(recoveryStorageKey, JSON.stringify(saved.filter(value => value.idempotencyKey !== reference.idempotencyKey)));
@@ -136,7 +137,7 @@ export function CustomerPriceBook({ actorEmail, actorRole, actorRoles, onRecover
     try {
       const response = await fetch('/api/pricing', { method: 'POST', cache: 'no-store', headers: { 'content-type': 'application/json' }, body: JSON.stringify({ action: 'preview_customer_group_margin', payload: { customerId: selected, itemGroup: group, grossMarginPercent: Number(grossMargin) } }) });
       if (response.status === 401 || response.status === 403) denyAccess();
-      const data = await response.json() as CustomerGroupMarginPreview & { error?: string };
+      const data = await readJsonBody<CustomerGroupMarginPreview & { error?: string }>(response);
       if (!response.ok) throw new Error(data.error || 'Group margin preview could not load');
       if (activeGroupRequest.current !== requestId || accessRevoked.current) return;
       setGroupPreview(data); setGroupPreviewKey(requestKey);
@@ -201,7 +202,7 @@ export function CustomerPriceBook({ actorEmail, actorRole, actorRoles, onRecover
 
   if (accessDenied) return <p role="alert" className="p-4 text-sm font-bold">Pricing access is restricted. Reopen the app after your access is restored.</p>;
   return <section className="rounded-2xl border border-[#dce7e5] bg-white p-4 sm:p-5">
-    <h2 className="text-xl font-extrabold">Price book</h2>
+    <h2 className="text-lg font-extrabold text-[#092f36]">Price book</h2>
     {recovery.length > 0 ? <aside className="mt-3 rounded-lg bg-amber-50 p-3 text-sm"><p>An earlier pricing save needs checking before another approval. No prices were stored on this device.</p><p>Close only if unsaved checks the server first. A completed save is preserved; an unsaved request is blocked from arriving later.</p>{recovery.map(reference => <div key={reference.idempotencyKey} className="mt-2 flex flex-wrap gap-2"><button type="button" className={button} onClick={() => void checkRecovery(reference)}>Check earlier save {reference.idempotencyKey.slice(-6)}</button><button type="button" className={button} onClick={() => void checkRecovery(reference, true)}>Close only if unsaved {reference.idempotencyKey.slice(-6)}</button></div>)}</aside> : null}
     {recoveryMessage ? <output className="mt-2 block text-sm">{recoveryMessage}</output> : null}
     <nav aria-label="Pricing workbench" className="mt-3 flex flex-wrap gap-2">{([['customer','Customer prices'],['impact','Purchase-cost review'],['base','Base / default prices']] as const).map(([value,label]) => <button key={value} type="button" aria-pressed={mode === value} className={`${button} ${mode === value ? 'bg-[#e8f5ef]' : ''}`} onClick={() => { setMode(value); setSelected(''); setQuery(''); setPage(null); setOffset(0); setError(''); setNotice(''); }}>{label}</button>)}</nav>

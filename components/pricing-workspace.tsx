@@ -1,28 +1,26 @@
 'use client';
 
+import { PageHeader, pageActionClass, SummaryStrip } from './page-header';
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { CustomerPriceBook, savePricingReference } from './customer-price-book';
 import { loadOrderCatalog, loadOrderCustomers } from '@/lib/order-capture-masters';
 import type { CatalogItem, CustomerDirectoryEntry } from '@/lib/order-types';
 import type { CustomerPriceContract, PricingCommand, PricingPolicy } from '@/lib/pricing-types';
 import { hasAnyStockFlowRole, type StockFlowRole } from '@/lib/user-types';
+import { readJsonBody } from '@/lib/http-json';
 
 const money = new Intl.NumberFormat('en-IN', { style: 'currency', currency: 'INR', maximumFractionDigits: 2 });
 const today = () => new Date().toISOString().slice(0, 10);
 
 async function readResponse<T>(response: Response, onAccessDenied?: () => void): Promise<T> {
   if (response.status === 401 || response.status === 403) onAccessDenied?.();
-  const body = await response.json() as T & { error?: string };
+  const body = await readJsonBody<T & { error?: string }>(response);
   if (!response.ok) throw new Error(body.error || 'Pricing could not be loaded');
   return body;
 }
 
 async function sendRequest(command: PricingCommand, onAccessDenied?: () => void) {
   return readResponse(await fetch('/api/pricing', { method: 'POST', headers: { 'content-type': 'application/json' }, body: JSON.stringify(command) }), onAccessDenied);
-}
-
-function Metric({ label, value, note, attention = false }: { label: string; value: string | number; note: string; attention?: boolean }) {
-  return <article className={`rounded-2xl border p-4 ${attention ? 'border-[#efcf9c] bg-[#fff9ec]' : 'border-[#dce7e5] bg-white'}`}><p className="text-xs font-bold text-[#61777a]">{label}</p><p className="mt-2 text-3xl font-black text-[#092f36]">{value}</p><p className="mt-1 text-xs text-[#718487]">{note}</p></article>;
 }
 
 export function PricingWorkspace({ actorEmail, actorRole, actorRoles }: { actorEmail: string; actorRole: string; actorRoles?: StockFlowRole[] }) {
@@ -75,13 +73,13 @@ export function PricingWorkspace({ actorEmail, actorRole, actorRoles }: { actorE
 
   return <div className="h-full overflow-y-auto">
     <div className="mx-auto max-w-7xl space-y-5 p-4 pb-24 sm:p-6 lg:p-8">
-      <header className="flex flex-wrap items-end justify-between gap-3"><div><p className="text-xs font-extrabold uppercase tracking-[0.16em] text-[#277b69]">Restricted commercial workspace</p><h1 className="mt-1 text-3xl font-black text-[#092f36]">Pricing</h1><p className="mt-1 max-w-2xl text-sm text-[#61777a]">Govern customer rates and margins. Tally remains read-only and untouched.</p></div><button type="button" disabled={loading} onClick={() => void refresh()} className="min-h-11 rounded-xl border border-[#cbdedb] bg-white px-4 text-sm font-bold text-[#31585d] disabled:opacity-50">{loading ? 'Loading…' : 'Refresh'}</button></header>
+      <PageHeader eyebrow="Restricted commercial workspace" title="Pricing" description="Govern customer rates and margins. Tally remains read-only and untouched." actions={<button type="button" disabled={loading} onClick={() => void refresh()} className={pageActionClass}>{loading ? 'Loading…' : 'Refresh'}</button>} />
       {message ? <p role="alert" className="rounded-xl border border-[#edc7c1] bg-[#fff0ef] p-3 text-sm font-bold text-[#8d3a34]">{message}</p> : null}
-      <section aria-label="Pricing overview" className="grid gap-3 sm:grid-cols-3">
-        <Metric label="Awaiting approval" value={pending.length} note="Customer price proposals" attention={pending.length > 0} />
-        <Metric label="Expiring in 30 days" value={expiring} note="Renew before the end date" attention={expiring > 0} />
-        <Metric label="Minimum gross margin" value={current ? `${current.minimumMarginPercent}%` : 'Not set'} note={current ? `Policy ${current.policyVersion}` : 'Management policy required'} attention={!current} />
-      </section>
+      <SummaryStrip label="Pricing overview" items={[
+        { label: 'Awaiting approval', value: pending.length, note: 'Customer price proposals', tone: pending.length > 0 ? 'attention' : 'normal' },
+        { label: 'Expiring in 30 days', value: expiring, note: 'Renew before the end date', tone: expiring > 0 ? 'attention' : 'normal' },
+        { label: 'Minimum gross margin', value: current ? `${current.minimumMarginPercent}%` : 'Not set', note: current ? `Policy ${current.policyVersion}` : 'Management policy required', tone: current ? 'normal' : 'attention' },
+      ]} />
       <CustomerPriceBook actorEmail={actorEmail} actorRole={actorRole} actorRoles={roles} onRecoveryBlocked={setRecoveryBlocked} onAccessDenied={denyAccess} />
       <fieldset disabled={recoveryBlocked} className="space-y-5">
       <ApprovalInbox items={pending} actorRole={actorRole} actorRoles={roles} onChanged={refresh} send={send} />

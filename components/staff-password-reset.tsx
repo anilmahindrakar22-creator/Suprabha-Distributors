@@ -1,5 +1,6 @@
 'use client';
 import { withStaffSessionLock } from '@/lib/staff-session-client';
+import { readJsonBody } from '@/lib/http-json';
 import { useEffect, useRef, useState } from 'react';
 
 export function StaffPasswordReset() {
@@ -39,7 +40,7 @@ export function StaffPasswordReset() {
     inFlight.current = true; setBusy(true); setMessage('');
     try {
       const response = await withStaffSessionLock(() => fetch('/api/staff-password-reset', { method: 'PUT', cache: 'no-store', signal: AbortSignal.timeout(15000), headers: { 'content-type': 'application/json' }, body: JSON.stringify({ token, password }) }));
-      const result = await response.json() as { error?: string };
+      const result = await readJsonBody<{ error?: string }>(response);
       if (!response.ok) {
         // An upstream failure may occur after the password was already changed.
         // Consume this in-memory recovery attempt instead of silently repeating it.

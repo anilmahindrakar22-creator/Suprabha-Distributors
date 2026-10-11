@@ -1,8 +1,10 @@
 'use client';
 
+import { PageHeader, pageActionClass } from './page-header';
 import { useCallback, useEffect, useMemo, useState } from 'react';
 import Link from 'next/link';
 import { searchServiceWorkspace, type ServiceWorkspaceData } from '@/lib/service-types';
+import { readJsonBody } from '@/lib/http-json';
 
 const emptyData: ServiceWorkspaceData = { assets: [], tickets: [] };
 const labels: Record<string, string> = { breakdown: 'Breakdown', preventive_maintenance: 'Preventive maintenance', calibration: 'Calibration', training: 'Training', other: 'Other' };
@@ -16,7 +18,7 @@ export function ServiceWorkspace() {
   const load = useCallback(async (signal?: AbortSignal) => {
     try {
       const response = await fetch('/api/service', { cache: 'no-store', signal });
-      const body = await response.json() as ServiceWorkspaceData & { error?: string };
+      const body = await readJsonBody<ServiceWorkspaceData & { error?: string }>(response);
       if (!response.ok) throw new Error(body.error || 'Unable to load service workspace');
       setData(body); setError('');
     } catch (cause) {
@@ -39,7 +41,7 @@ export function ServiceWorkspace() {
     setBusy(key); setError('');
     try {
       const response = await fetch('/api/service', { method: 'POST', headers: { 'content-type': 'application/json' }, body: JSON.stringify(command) });
-      const body = await response.json() as { error?: string };
+      const body = await readJsonBody<{ error?: string }>(response);
       if (!response.ok) throw new Error(body.error || 'Unable to save service update');
       await load();
     } catch (cause) { setError(cause instanceof Error ? cause.message : 'Unable to save service update'); }
@@ -56,14 +58,14 @@ export function ServiceWorkspace() {
     await send({ action: 'resolve_service_ticket', payload: { ticketId, expectedVersion, resolution: form.get('resolution'), idempotencyKey: crypto.randomUUID() } }, `ticket-${ticketId}`);
   }
 
-  return <div className="h-full overflow-y-auto"><div className="mx-auto max-w-7xl space-y-5 p-4 sm:p-6">
-    <header><p className="text-xs font-extrabold uppercase tracking-[0.16em] text-[#217b69]">After-sales service</p><h1 className="mt-1 text-3xl font-black text-[#092f36]">Equipment & service</h1><p className="mt-1 text-sm text-[#61777a]">Installed equipment and its service history in one simple view.</p><Link href="/instruments" className="mt-3 inline-flex min-h-11 items-center rounded-xl border border-[#cedfdd] bg-white px-4 text-sm font-bold text-[#145e62]">Open instrument portfolio →</Link></header>
+  return <div className="h-full overflow-y-auto bg-[#f7f6f1]"><div className="mx-auto max-w-7xl space-y-5 p-4 sm:p-6">
+    <PageHeader eyebrow="After-sales service" title="Equipment & service" description="Installed equipment and its service history in one simple view." actions={<Link href="/instruments" className={pageActionClass}>Instrument portfolio →</Link>} />
     <section className="grid grid-cols-2 gap-3 lg:grid-cols-4">{[['Installed', workspace.assets.length], ['Customer sites', customers], ['Open tickets', openTickets.length], ['Urgent', openTickets.filter((item) => item.priority === 'urgent').length]].map(([label, value]) => <article key={label} className="rounded-2xl border border-[#d7e4e2] bg-white p-4"><p className="text-sm font-bold text-[#61777a]">{label}</p><strong className="mt-2 block text-3xl text-[#092f36]">{value}</strong></article>)}</section>
     <label className="block rounded-2xl border border-[#d7e4e2] bg-white p-3 text-sm font-bold text-[#31585d]">Find equipment or ticket<input value={query} onChange={(event) => setQuery(event.target.value)} placeholder="Customer, instrument, serial, ticket, or issue" className="mt-2 min-h-11 w-full rounded-xl border border-[#cedfdd] px-4 font-normal outline-none focus:border-[#64d4ad]" /></label>
     {error ? <p role="alert" className="rounded-xl bg-[#fff0ef] p-4 text-sm font-bold text-[#93463f]">{error}</p> : null}
     {!data && !error ? <p className="rounded-2xl border border-[#d7e4e2] bg-white p-5 text-sm text-[#61777a]">Loading service workspace…</p> : null}
 
-    {visible.tickets.length ? <section className="space-y-3" aria-label="Service tickets"><h2 className="text-xl font-black text-[#092f36]">Service tickets</h2>{visible.tickets.map((ticket) => {
+    {visible.tickets.length ? <section className="space-y-3" aria-label="Service tickets"><h2 className="text-lg font-extrabold text-[#092f36]">Service tickets</h2>{visible.tickets.map((ticket) => {
       const asset = workspace.assets.find((item) => item.installationId === ticket.installationId);
       return <article key={ticket.id} className="rounded-2xl border border-[#d7e4e2] bg-white p-5"><div className="flex flex-wrap justify-between gap-2"><div><p className="text-xs font-extrabold text-[#217b69]">{ticket.ticketNumber}</p><h3 className="mt-1 font-extrabold text-[#092f36]">{ticket.summary}</h3><p className="mt-1 text-sm text-[#61777a]">{asset?.customerName} · {asset?.itemName} · {asset?.serialNumber}</p></div><div className="flex gap-2"><span className="rounded-full bg-[#fff4db] px-3 py-1 text-xs font-extrabold text-[#805800]">{ticket.priority}</span><span className="rounded-full bg-[#eaf8f1] px-3 py-1 text-xs font-extrabold text-[#176246]">{ticket.status}</span></div></div>
         <p className="mt-3 text-xs text-[#708386]">{labels[ticket.category]} · Opened by {ticket.createdBy} on {new Date(ticket.createdAt).toLocaleString('en-IN')}</p>{ticket.resolution ? <p className="mt-3 rounded-xl bg-[#f2f7f6] p-3 text-sm text-[#274b50]"><strong>Resolution:</strong> {ticket.resolution}</p> : null}
@@ -71,7 +73,7 @@ export function ServiceWorkspace() {
       </article>;
     })}</section> : null}
 
-    <section className="space-y-3" aria-label="Installed equipment register"><h2 className="text-xl font-black text-[#092f36]">Installed equipment</h2>{data && visible.assets.length === 0 ? <p className="rounded-2xl border border-[#d7e4e2] bg-white p-5 text-sm text-[#61777a]">{workspace.assets.length ? 'No equipment or tickets match this search.' : 'Completed equipment installations will appear here automatically.'}</p> : null}{visible.assets.map((asset) => {
+    <section className="space-y-3" aria-label="Installed equipment register"><h2 className="text-lg font-extrabold text-[#092f36]">Installed equipment</h2>{data && visible.assets.length === 0 ? <p className="rounded-2xl border border-[#d7e4e2] bg-white p-5 text-sm text-[#61777a]">{workspace.assets.length ? 'No equipment or tickets match this search.' : 'Completed equipment installations will appear here automatically.'}</p> : null}{visible.assets.map((asset) => {
       const count = workspace.tickets.filter((ticket) => ticket.installationId === asset.installationId && ticket.status === 'open').length;
       return <article key={asset.installationId} className="rounded-2xl border border-[#d7e4e2] bg-white p-5"><div className="flex flex-wrap items-start justify-between gap-3"><div><h3 className="font-extrabold text-[#092f36]">{asset.itemName}</h3><p className="mt-1 text-sm text-[#61777a]">{asset.customerName}</p></div><span className="rounded-full bg-[#eaf8f1] px-3 py-1 text-xs font-extrabold text-[#176246]">{count ? `${count} open` : 'No open issues'}</span></div>
         <dl className="mt-4 grid gap-3 text-sm sm:grid-cols-3"><div><dt className="font-bold text-[#708386]">Serial number</dt><dd>{asset.serialNumber}</dd></div><div><dt className="font-bold text-[#708386]">Installed</dt><dd>{new Date(asset.installedAt).toLocaleDateString('en-IN', { timeZone: 'Asia/Kolkata' })}</dd></div><div><dt className="font-bold text-[#708386]">Source reference</dt><dd>{asset.orderNumber}</dd></div></dl>
