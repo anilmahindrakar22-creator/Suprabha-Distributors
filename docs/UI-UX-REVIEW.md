@@ -84,7 +84,9 @@ Limits (to be covered by Codex's event feed in `docs/ORDER-NOTIFICATIONS.md`):
 
 - **P2-5 colour tokens (12 Oct 2026):** about 1,400 raw hex classes replaced with 36 semantic `sf-*` tokens in `app/globals.css` by a deterministic codemod. Near-duplicates merged; light grey text darkened for contrast.
 
-Still open: Orders phase 3 (dense web table) and real-phone checks once the push backend exists.
+- **Orders phase 3 (12 Oct 2026, desktop):** a one-line top bar and single-line 44 px queue rows show about 13 orders at 1366×768 (previously 9). The row shows a next action only when there is a real one. The order number appears in rows from 1536 px wide and always in the selected pane.
+
+Still open: real-phone checks once the push backend exists.
 
 ## Proposed order of work
 1. P1-1 shared error helper (small, low risk, every screen).
