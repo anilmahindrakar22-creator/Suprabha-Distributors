@@ -17,6 +17,8 @@ import { MappingOptions, HistoricalInstrumentFields, AcquisitionReviewFields, Ec
 import { filterEconomicTargets, InstrumentEconomicsPortfolioFilters, type InstrumentEconomicsPortfolioFilterValues as EconomicPortfolioFilters } from '@/components/instrument-economics-portfolio-filters';
 import { readJsonBody } from '@/lib/http-json';
 
+function mark(name: string) { try { performance.mark(name); } catch { /* timing is optional */ } }
+
 type Health = EconomicTarget['health'];
 const healthStyle: Record<Health, string> = {
   healthy: 'border-emerald-200 bg-emerald-50 text-emerald-800', watch: 'border-amber-200 bg-amber-50 text-amber-900',
@@ -546,6 +548,7 @@ export function InstrumentEconomicsWorkspace({ embedded = false }: { embedded?: 
   const load = useCallback(async (signal?: AbortSignal) => {
     setLoading(true);
     try {
+      mark('sf-economics-fetch-start');
       const response = await fetch('/api/instrument-economics', { cache: 'no-store', signal });
       if (response.status === 401 || response.status === 403) {
         setData(null); setSelectedId(''); setExpandedId(''); setNotice('');
@@ -553,6 +556,7 @@ export function InstrumentEconomicsWorkspace({ embedded = false }: { embedded?: 
         throw new Error(body.error || 'Financial access is no longer available. Sign in and refresh.');
       }
       const body = await readJsonBody<EconomicsWorkspaceData & { error?: string }>(response);
+      mark('sf-economics-parsed');
       if (!response.ok) throw new Error(body.error || 'Unable to load instrument economics.');
       setData(body);
       try { recoveryReference.current = readEconomicRecoveryReference(window.sessionStorage); } catch (cause) { setUnresolved(true); throw cause; }
@@ -565,6 +569,14 @@ export function InstrumentEconomicsWorkspace({ embedded = false }: { embedded?: 
     finally { if (!signal?.aborted) setLoading(false); }
   }, []);
   useEffect(() => { const controller = new AbortController(); const timer = window.setTimeout(() => void load(controller.signal), 0); return () => { window.clearTimeout(timer); controller.abort(); }; }, [load]);
+  useEffect(() => {
+    if (!data) return;
+    const frame = requestAnimationFrame(() => {
+      mark('sf-economics-rendered');
+      try { performance.measure('sf-economics-load', 'sf-economics-fetch-start', 'sf-economics-rendered'); } catch { /* optional */ }
+    });
+    return () => cancelAnimationFrame(frame);
+  }, [data]);
   const visibleTargets = useMemo(() => filterEconomicTargets(data?.targets ?? [], portfolioFilters), [data, portfolioFilters]);
   const selected = useMemo(() => visibleTargets.find(row => row.id === selectedId) ?? visibleTargets[0] ?? null, [visibleTargets, selectedId]);
   const expanded = visibleTargets.length === 1 ? visibleTargets[0] : visibleTargets.find(row => row.id === expandedId) ?? null;
