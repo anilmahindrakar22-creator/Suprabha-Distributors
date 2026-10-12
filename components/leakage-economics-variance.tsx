@@ -36,7 +36,7 @@ function Amount({ label, value, variance = false, unavailable = false }: {
       : 'text-sf-strong';
   return <div className="min-w-0 rounded-lg border border-sf-line-soft bg-white p-3">
     <dt className="break-words text-xs font-semibold leading-5 text-sf-muted">{label}</dt>
-    <dd className={`mt-1 break-all text-sm font-bold tabular-nums ${toneClass}`}>{formatted.text}</dd>
+    <dd className={formatted.text === 'Unavailable' ? 'mt-1 break-words text-sm font-semibold text-sf-subtle' : `mt-1 break-all text-sm font-bold tabular-nums ${toneClass}`}>{formatted.text}</dd>
   </div>;
 }
 
