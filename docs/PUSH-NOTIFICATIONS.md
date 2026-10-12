@@ -24,7 +24,7 @@ Author: Claude Code ("instrument eco development" session). The backend parts be
 
 Rules:
 - Computed **server-side**, and rechecked at send time against active membership and the existing order-access predicate.
-- The event's recorded `actor_email` is always excluded, so nobody is pushed about their own action.
+- Follows the role-work contract in `docs/ORDER-NOTIFICATIONS.md`: a person is not pushed about the stage they just completed, but a **combined-role person does receive their own next-role task**. For example, a warehouse+accounts user who packs an order gets the billing hand-off. There is no blanket exclusion of the event's actor.
 - One push per (event, person); combined roles do not duplicate.
 - Pushes go only for events after the activation time, so turning push on does not trigger a flood of old events.
 
@@ -62,6 +62,14 @@ Rules:
 - The frame parses that deep link or message into the existing exact-order opening.
 - `lib/push-subscription.ts`: support and permission detection, subscribe and unsubscribe through `/api/push-subscription`, and unsubscribe on sign-out or account switch.
 - Bell: a "Phone alerts" control with states unsupported / needs Home Screen (iPhone) / off / on / blocked / server not ready. It stays hidden until `GET /api/push-subscription` reports `enabled: true`. Until the backend exists, nothing changes for staff.
+
+## Conditions before push is switched on (from the pre-push review, 11 Oct 2026)
+1. **Shared-device cleanup must be guaranteed, not best-effort.** Today `disablePush()` swallows unsubscribe and DELETE failures, and sign-out does not await it. Before activation:
+   - sign-out awaits cleanup with a short timeout;
+   - a failed server DELETE is retried at the next sign-in on that device;
+   - the server also removes a subscription when a different account registers the same endpoint.
+2. **Notification taps on standalone pages.** The service worker posts `stockflow-open-order` to the first top-level StockFlow window. A standalone or sign-in page has no listener, so the tap is lost. Before activation: target only windows that acknowledge the message, or fall back to opening the deep link.
+3. The client stays dormant until `GET /api/push-subscription` returns `enabled: true` (currently true by design).
 
 ## Acceptance checks
 

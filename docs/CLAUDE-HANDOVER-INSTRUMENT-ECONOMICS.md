@@ -585,3 +585,54 @@ Fix packages now claimed and running as Codex CLI workers:
 - W2: `lib/work-notifications.ts`, `components/stockflow-frame.tsx`, `components/notification-bell.tsx`, `tests/unit/work-notifications.test.ts`.
 - W3: `public/sw.js`, `tests/unit/push-notifications.test.ts`, `.gitignore`.
 `docs/INSTRUMENT-ECONOMICS-PRODUCTION-CUTOVER-PLAN.md` is held back from any push (it contains real Tally ledger IDs) until sanitized.
+
+### 11 Oct 2026: Claude Code (conductor) — slice 1 pushed to GitHub; slice 2 held
+
+Owner: "let codex review and push it"; chose "Integration chat updates it" for the migration preflight allowlist.
+- **Pushed** `codex/staff-signin-session-redirect` to origin (`6925c91..f4e1e97`). This includes the two earlier local commits (afbb17e, 4731652) plus 4 new ones:
+  - f438176: .gitignore adds `/.codex/` and `/Price`;
+  - 7934ef6: page header, summaries, plain-language errors;
+  - 1b551db: observation-only decision observer (dev tooling);
+  - f4e1e97: docs and previews (without the production cutover plan).
+- **Verified before pushing:** the exact file list was applied to an isolated worktree of HEAD and passed tsc, the lint script, 941 unit tests (including release preflight) and the offline and staff builds. A secret/forbidden-path scan of all six outgoing commits was clean.
+- **Held, not committed:** the Orders/notification/push/live-refresh/migration slice. It waits for (a) the integration owner updating the preflight reviewed-pending allowlist for `20261011060830_order_summary_revision.sql`, and (b) browser verification of the W1/W2/W3 fixes:
+  - W1: draft `baseVersion` lost-update fix, fail-closed exact lookup, modal order page, bootstrap plain errors;
+  - W2: distinct counts plus `workMore`, re-entry, operations confirm, clear on account change;
+  - W3: null push payload.
+  Also held: `docs/INSTRUMENT-ECONOMICS-PRODUCTION-CUTOVER-PLAN.md` (real Tally ledger IDs; sanitize first) and the superseded prototype `components/order-notification-service.tsx`, `lib/order-notification-service.ts` plus `tests/ui/main.tsx` (Codex's; recommend deleting or replacing).
+- Note: Codex CLI workers cannot write `.git`; the Windows sandbox denies it even with `--add-dir`. Commits and pushes stay with the conductor or the integrator.
+
+### 12 Oct 2026: Claude Code (conductor) — held slice verified; decision observer v1.1
+
+- **Held slice (Orders, notifications, push, live refresh, migration) verified locally after the review fixes:**
+  - tsc clean (except the ignored work/ file); lint clean.
+  - Vitest 968 passed. The only failures are the 5 `pricing-release-preflight` cases citing `20261011060830_order_summary_revision.sql`, which await the integration owner's allowlist update.
+  - Full Playwright: 344 passed. A W1 regression (the fail-closed notice was cleared by the reload) was found and fixed by W1 with a persistent `focusNotice`. The notification spec's fake-clock race was fixed with a stepwise `advanceToNextCheck`; 30/30 repeated runs pass. New `order-edit-conflict.spec.ts` passes on desktop and mobile.
+  - Still not committed; push after the allowlist update.
+- **Decision observer v1.1 (Codex worker, Claude-reviewed; uncommitted):**
+  - permission comes from a declared `actions:` line (prose patterns are informational `mentions`);
+  - governance files are sensitive;
+  - an empty `--tokens` is accepted;
+  - resumed runs keep `history`;
+  - corrupt records are skipped.
+  73 tests pass. Measured observer latency is 133 ms median (p90 241 ms) against 20–760 s Codex runs. 9 real runs recorded: 67% tier agreement. Zero model tokens. Doc updated.
+
+Correction to the previous entry (Claude, after advisor review):
+- The "344 passed" full Playwright run predates W1's `focusNotice` fix and the spec clock change. After those, only 7 affected specs (39/40 passed, then the 1 flake fixed) and 5 repeated notification-spec runs (30/30) were re-run. A full Vitest, Playwright and `build:staff` run on the final tree is in progress; its result follows.
+- Observer statistics by policy version: v2026-10-11.1 (prose-based permission): 8 runs, not usable evidence (both "deny" were false positives). v2026-10-12.1: 2 runs so far.
+- Before the held slice is pushed: run the same isolated-worktree check as slice 1 using HEAD's `tests/ui/main.tsx` (the prototype harness stays excluded). Need the integration owner's confirmation that the migration and live-refresh files are final, plus its local DB replay result, alongside the allowlist update. Re-run the secret/forbidden-path scan.
+- `docs/PUSH-NOTIFICATIONS.md` now lists the switch-on conditions (guaranteed shared-device cleanup; taps on standalone pages) and the corrected recipient rule (no blanket actor exclusion).
+Final-tree verification (12 Oct 2026, Claude):
+- tsc is clean except the pre-existing ignored work/ file. The lint script and an extra lint of the observer and the changed Orders/notification files are clean.
+- Vitest: 990 passed. The 5 failures are only the preflight cases citing `20261011060830_order_summary_revision.sql`.
+- Playwright full pricing suite (desktop and mobile): 346 passed, 0 failed.
+- `pnpm build:staff` passes.
+The held slice is ready for push once the integration owner updates the preflight allowlist and confirms the migration and live-refresh files.
+
+### 12 Oct 2026: Claude Code (conductor) — claim: preflight allowlist update (owner direction)
+
+Owner: "integration chat updated the allowlist, push the rest". No allowlist change exists in this checkout, any branch or any local release folder, so the owner directed: "you are the orchestrator. you should send commands to it and get it done". A Codex CLI worker (Sol, high) adds `20261011060830_order_summary_revision.sql` to `pricingReleaseFiles` in `tests/pricing-release-preflight.mjs`, updating `tests/unit/pricing-release-preflight.test.ts` only if an expectation enumerates the pending list. Evidence is the rollout record's "Orders live refresh acceptance release": applied in acceptance as 20261011062329, normalized hash `33c69fe4…a165b5`, production not_deployed. No check is weakened. Claude reviews it line by line. **If the integration chat already made this change elsewhere, its version should be compared with this one before its next push.**
+
+12 Oct 2026 — Codex integration claim: owner requested the reviewed-pending allowlist update and final migration/live-refresh confirmation. Claiming only tests/pricing-release-preflight.mjs and tests/unit/pricing-release-preflight.test.ts, plus append-only handover/rollout entries. Preserve all held-slice changes; do not edit Claude's Orders/frame/checker/push fixes. Reproduced five preflight failures from the missing 20261011060830_order_summary_revision.sql allowlist entry. Will run fresh local deployment-order DB replay and focused live-refresh/conflict verification; no hosted changes or deployment.
+
+12 Oct 2026 — Codex integration handoff complete: applied the allowlist update locally on codex/staff-signin-session-redirect (HEAD f4e1e97), adding only 20261011060830_order_summary_revision.sql to tests/pricing-release-preflight.mjs and updating the unit's explicit pending list/count to 15. This reconciles Claude's overlapping allowlist claim; the change is present in this exact checkout, with one entry and no weakened gates. Migration, SQL regression/runner and live-refresh files (lib/order-live-refresh.ts, lib/order-bootstrap-cache.ts, lib/work-notifications.ts and the Orders integration including W1 draft baseVersion guards) are final for this handoff; no further edits are pending from this chat. Migration normalized SHA-256 remains 33c69fe40ff220c0fbc5735935ee1aecae5af0fddfb02cfbe8543db72ea165b5, matching the saved acceptance evidence; production status remains not_deployed. Fresh verification: 33 focused unit checks (all 10 release-preflight checks included), four desktop/mobile cross-session + stale-editor-conflict browser checks, affected lint and product-scoped typecheck passed. Fresh full local PostgreSQL 17 DeploymentOrder replay passed access-scope isolation/equal-count/version/reassignment/archive revision checks, secret/member denial, pricing ACID and all two-session product/price-book/member-role/economics concurrency checks; exit 0, disposable server stopped. Log: work/order-revision-replay-20261012.log; verified source hashes: work/order-live-final-hashes-20261012.json. Initial local launch waits stalled before replay; corrected the ignored launcher to wait for pg_ctl alone rather than its persistent descendants, then completed the passing replay. Existing uncommitted work preserved; no commit, push, hosted write or deployment in this milestone. Allowlist claim released. Next: conductor reconciles this patch and completes its isolated held-slice/secret-scan check before the separately authorized push; production release still requires its existing acceptance gates.
