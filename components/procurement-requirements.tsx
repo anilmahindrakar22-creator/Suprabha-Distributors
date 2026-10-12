@@ -243,7 +243,7 @@ export function ProcurementRequirements() {
     return <div className="mt-2 rounded-lg bg-sf-soft-0 p-3" aria-label={`Waiting orders for ${itemName}`}>
       <div className="flex flex-wrap items-center justify-between gap-2">
         <p className="text-xs font-semibold text-sf-label">Waiting orders</p>
-        <button type="button" disabled={waitingLoading} onClick={() => void loadWaitingOrders(itemKey, waitingPage)} className="min-h-9 rounded-lg border border-sf-line bg-white px-3 text-xs font-bold text-sf-body disabled:opacity-50">{waitingLoading ? 'Loading…' : 'Refresh orders'}</button>
+        <button type="button" disabled={waitingLoading} onClick={() => void loadWaitingOrders(itemKey, waitingPage)} className="min-h-11 rounded-lg border border-sf-line bg-white px-3 text-xs font-bold text-sf-body disabled:opacity-50">{waitingLoading ? 'Loading…' : 'Refresh orders'}</button>
       </div>
       {waitingError ? <p role="alert" className="mt-2 text-sm text-sf-danger">{waitingError}</p> : null}
       {waitingLoading && !waitingResult ? <p className="mt-2 text-sm text-sf-subtle">Loading waiting orders…</p> : null}
@@ -258,8 +258,8 @@ export function ProcurementRequirements() {
         <div className="mt-3 flex items-center justify-between gap-3 text-xs text-sf-muted">
           <span>Page {waitingResult.pagination.page} of {waitingResult.pagination.pageCount}</span>
           <div className="flex gap-2">
-            <button type="button" disabled={waitingLoading || waitingPage <= 1} onClick={() => void loadWaitingOrders(itemKey, waitingPage - 1)} className="min-h-9 rounded-lg border border-sf-line px-3 font-bold disabled:opacity-40">Previous</button>
-            <button type="button" disabled={waitingLoading || waitingPage >= waitingResult.pagination.pageCount} onClick={() => void loadWaitingOrders(itemKey, waitingPage + 1)} className="min-h-9 rounded-lg border border-sf-line px-3 font-bold disabled:opacity-40">Next</button>
+            <button type="button" disabled={waitingLoading || waitingPage <= 1} onClick={() => void loadWaitingOrders(itemKey, waitingPage - 1)} className="min-h-11 rounded-lg border border-sf-line px-3 font-bold disabled:opacity-40">Previous</button>
+            <button type="button" disabled={waitingLoading || waitingPage >= waitingResult.pagination.pageCount} onClick={() => void loadWaitingOrders(itemKey, waitingPage + 1)} className="min-h-11 rounded-lg border border-sf-line px-3 font-bold disabled:opacity-40">Next</button>
           </div>
         </div>
       </> : null}
@@ -294,17 +294,17 @@ export function ProcurementRequirements() {
       <p className="text-xs leading-5 text-sf-muted">Customer demand from open orders is separate from stock replenishment. This is an advisory view, not an allocation or reservation.</p>
       <div className="mt-2 flex flex-wrap items-center justify-between gap-2">
         <p className="text-xs text-sf-subtle">Tally catalog stock as of: <strong className="font-semibold text-sf-label">{displayDate(result?.fetchedAt ?? null)}</strong></p>
-        <button type="button" disabled={loading} onClick={() => void load(page)} className="min-h-9 rounded-lg border border-sf-line bg-white px-3 text-xs font-bold text-sf-body disabled:opacity-50">{loading ? 'Loading…' : 'Refresh'}</button>
+        <button type="button" disabled={loading} onClick={() => void load(page)} className="min-h-11 rounded-lg border border-sf-line bg-white px-3 text-xs font-bold text-sf-body disabled:opacity-50">{loading ? 'Loading…' : 'Refresh'}</button>
       </div>
       <p className="mt-2 text-xs text-sf-warning">Catalog stock may be older than the latest upload. Check its date before procurement; picked but unbilled stock is not reserved here.</p>
       <div className="mt-3 rounded-lg border border-sf-line-soft bg-sf-soft-0 p-3">
-        <button type="button" aria-expanded={alertsOpen} onClick={toggleAlerts} className="flex min-h-9 w-full items-center justify-between gap-2 text-left text-xs font-bold text-sf-body">
+        <button type="button" aria-expanded={alertsOpen} onClick={toggleAlerts} className="flex min-h-11 w-full items-center justify-between gap-2 text-left text-xs font-bold text-sf-body">
           <span>Reported stock increases</span><span aria-hidden="true">{alertsOpen ? '−' : '+'}</span>
         </button>
         {alertsOpen ? <div className="mt-2 border-t border-sf-line-soft pt-2">
           <p className="text-xs leading-5 text-sf-warning">Reports from the last seven days. Confirm current stock and waiting orders; no automatic allocation.</p>
           <div className="mt-2 flex justify-end">
-            <button type="button" disabled={alertsLoading} onClick={() => void loadAlerts(alertsPage)} className="min-h-9 rounded-lg border border-sf-line bg-white px-3 text-xs font-bold text-sf-body disabled:opacity-50">{alertsLoading ? 'Loading…' : 'Refresh alerts'}</button>
+            <button type="button" disabled={alertsLoading} onClick={() => void loadAlerts(alertsPage)} className="min-h-11 rounded-lg border border-sf-line bg-white px-3 text-xs font-bold text-sf-body disabled:opacity-50">{alertsLoading ? 'Loading…' : 'Refresh alerts'}</button>
           </div>
           {alertsError ? <p role="alert" className="mt-2 text-sm text-sf-danger">{alertsError}</p> : null}
           {alertsLoading && !alertsResult ? <p className="mt-2 text-sm text-sf-subtle">Loading reported stock increases…</p> : null}
@@ -315,7 +315,7 @@ export function ProcurementRequirements() {
                 <h3 className="break-words text-sm font-bold text-sf-strong">{alert.itemName}</h3>
                 <p className="mt-1 text-xs text-sf-muted">Tally reported {quantity(alert.stockBefore)} → {quantity(alert.stockAfter)} · {displayDate(alert.sourceAt)}</p>
                 <p className="mt-1 text-xs text-sf-muted">{quantity(alert.affectedOrders)} affected waiting orders</p>
-                <button type="button" aria-expanded={waitingOrigin === `alert:${alert.tallyKey}:${alert.sourceAt}`} onClick={() => toggleWaitingOrders(alert.tallyKey, `alert:${alert.tallyKey}:${alert.sourceAt}`)} className="mt-2 min-h-9 rounded-lg border border-sf-line px-3 text-xs font-bold text-sf-body">{waitingOrigin === `alert:${alert.tallyKey}:${alert.sourceAt}` ? 'Hide waiting orders' : 'View waiting orders'}</button>
+                <button type="button" aria-expanded={waitingOrigin === `alert:${alert.tallyKey}:${alert.sourceAt}`} onClick={() => toggleWaitingOrders(alert.tallyKey, `alert:${alert.tallyKey}:${alert.sourceAt}`)} className="mt-2 min-h-11 rounded-lg border border-sf-line px-3 text-xs font-bold text-sf-body">{waitingOrigin === `alert:${alert.tallyKey}:${alert.sourceAt}` ? 'Hide waiting orders' : 'View waiting orders'}</button>
                 {renderWaitingOrders(alert.tallyKey, alert.itemName, `alert:${alert.tallyKey}:${alert.sourceAt}`)}
               </article>)}
               {!alertsResult.alerts.length ? <p className="rounded-lg p-2 text-xs text-sf-subtle">No reported increases on this page.</p> : null}
@@ -323,8 +323,8 @@ export function ProcurementRequirements() {
             <div className="mt-3 flex items-center justify-between gap-3 text-xs text-sf-muted">
               <span>Page {alertsResult.pagination.page} of {alertsResult.pagination.pageCount}</span>
               <div className="flex gap-2">
-                <button type="button" disabled={alertsLoading || alertsPage <= 1} onClick={() => void loadAlerts(alertsPage - 1)} className="min-h-9 rounded-lg border border-sf-line px-3 font-bold disabled:opacity-40">Previous</button>
-                <button type="button" disabled={alertsLoading || alertsPage >= alertsResult.pagination.pageCount} onClick={() => void loadAlerts(alertsPage + 1)} className="min-h-9 rounded-lg border border-sf-line px-3 font-bold disabled:opacity-40">Next</button>
+                <button type="button" disabled={alertsLoading || alertsPage <= 1} onClick={() => void loadAlerts(alertsPage - 1)} className="min-h-11 rounded-lg border border-sf-line px-3 font-bold disabled:opacity-40">Previous</button>
+                <button type="button" disabled={alertsLoading || alertsPage >= alertsResult.pagination.pageCount} onClick={() => void loadAlerts(alertsPage + 1)} className="min-h-11 rounded-lg border border-sf-line px-3 font-bold disabled:opacity-40">Next</button>
               </div>
             </div>
           </> : null}
@@ -338,7 +338,7 @@ export function ProcurementRequirements() {
           {result.rows.map((row) => <article key={row.tallyKey} className="rounded-lg border border-sf-line-soft bg-sf-soft-0 p-3">
             <div className="flex flex-wrap items-start justify-between gap-2">
               <h3 className="min-w-0 flex-1 break-words text-sm font-bold text-sf-strong">{row.itemName}</h3>
-              <span className="shrink-0 rounded-full bg-sf-soft-2 px-2 py-1 text-[11px] font-semibold text-sf-label">{priorityLabel(row.priority)}</span>
+              <span className="shrink-0 rounded-full bg-sf-soft-2 px-2 py-1 text-xs font-semibold text-sf-label">{priorityLabel(row.priority)}</span>
             </div>
             <dl className="mt-2 grid grid-cols-2 gap-x-3 gap-y-2 text-xs sm:grid-cols-4">
               <div><dt className="text-sf-subtle">Open demand</dt><dd className="mt-0.5 font-semibold text-sf-strong">{quantity(row.openDemand)}</dd></div>
@@ -346,8 +346,8 @@ export function ProcurementRequirements() {
               <div><dt className="text-sf-subtle">Shortage</dt><dd className="mt-0.5 font-semibold text-sf-strong">{row.shortage === null ? 'Unknown · review' : quantity(row.shortage)}</dd></div>
               <div><dt className="text-sf-subtle">Affected orders</dt><dd className="mt-0.5 font-semibold text-sf-strong">{quantity(row.affectedOrders)}</dd></div>
             </dl>
-            <p className="mt-2 text-[11px] text-sf-subtle">Oldest open order: {displayDate(row.oldestOrderAt)}</p>
-            <button type="button" aria-expanded={waitingOrigin === row.tallyKey} onClick={() => toggleWaitingOrders(row.tallyKey)} className="mt-3 min-h-9 rounded-lg border border-sf-line px-3 text-xs font-bold text-sf-body">
+            <p className="mt-2 text-xs text-sf-subtle">Oldest open order: {displayDate(row.oldestOrderAt)}</p>
+            <button type="button" aria-expanded={waitingOrigin === row.tallyKey} onClick={() => toggleWaitingOrders(row.tallyKey)} className="mt-3 min-h-11 rounded-lg border border-sf-line px-3 text-xs font-bold text-sf-body">
               {waitingOrigin === row.tallyKey ? 'Hide waiting orders' : 'View waiting orders'}
             </button>
             {renderWaitingOrders(row.tallyKey, row.itemName)}
@@ -357,8 +357,8 @@ export function ProcurementRequirements() {
         <div className="mt-3 flex items-center justify-between gap-3 text-xs text-sf-muted">
           <span>Page {result.pagination.page} of {result.pagination.pageCount}</span>
           <div className="flex gap-2">
-            <button type="button" disabled={loading || page <= 1} onClick={() => void load(page - 1)} className="min-h-9 rounded-lg border border-sf-line px-3 font-bold disabled:opacity-40">Previous</button>
-            <button type="button" disabled={loading || !pagination || page >= pagination.pageCount} onClick={() => void load(page + 1)} className="min-h-9 rounded-lg border border-sf-line px-3 font-bold disabled:opacity-40">Next</button>
+            <button type="button" disabled={loading || page <= 1} onClick={() => void load(page - 1)} className="min-h-11 rounded-lg border border-sf-line px-3 font-bold disabled:opacity-40">Previous</button>
+            <button type="button" disabled={loading || !pagination || page >= pagination.pageCount} onClick={() => void load(page + 1)} className="min-h-11 rounded-lg border border-sf-line px-3 font-bold disabled:opacity-40">Next</button>
           </div>
         </div>
       </> : null}

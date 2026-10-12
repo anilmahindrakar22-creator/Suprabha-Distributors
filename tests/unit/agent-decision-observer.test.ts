@@ -4,7 +4,7 @@ import { resolve } from 'node:path';
 import { spawnSync } from 'node:child_process';
 import { fileURLToPath } from 'node:url';
 import { afterEach, describe, expect, it } from 'vitest';
-import { buildRecord, classifyPath, decide, parseAgentFiles, summarize } from '../agent-decision-observer.mjs';
+import { agentFilesStatus, buildRecord, classifyPath, decide, parseAgentFiles, summarize } from '../agent-decision-observer.mjs';
 
 const policy = JSON.parse(readFileSync(new URL('../agent-decision-policy.json', import.meta.url), 'utf8'));
 const modulePath = fileURLToPath(new URL('../agent-decision-observer.mjs', import.meta.url));
@@ -43,9 +43,37 @@ describe('observation-only typed decision layer', () => {
     const text = '```text\n```agent-files\nwrite: hidden.ts\n```\n' +
       '~~~agent-files\nread: lib\\order-types.ts, lib/order-types.ts, \nwrite: ./docs/x.md\nwrite: docs/x.md, tests/x.ts\n~~~\n' + block(['ignored.ts']);
     expect(parseAgentFiles(text)).toEqual({ read: ['lib/order-types.ts'], write: ['docs/x.md', 'tests/x.ts'], actions: [], verify: [] });
+    expect(agentFilesStatus(text)).toBe('valid');
     expect(parseAgentFiles('```agent-files extra\nwrite: docs/x.md\n```')).toBeNull();
+    expect(agentFilesStatus('```agent-files extra\nwrite: docs/x.md\n```')).toBe('missing');
+    expect(agentFilesStatus('```text\n```agent-files\nwrite: hidden.ts\n```')).toBe('missing');
     expect(parseAgentFiles('```agent-files\nwrite: docs/x.md')).toBeNull();
     expect(parseAgentFiles('plain text')).toBeNull();
+  });
+
+  it.each([
+    { actions: ['edit', 'deploy'], permission: 'deny' },
+    { actions: ['edit'], permission: 'allow' },
+  ])('parses a leading BOM and decides $permission for $actions', ({ actions, permission }) => {
+    const declaration = block(['docs/x.md'], [], actions);
+    const text = `\uFEFF${declaration}`;
+    expect(agentFilesStatus(text)).toBe('valid');
+    expect(parseAgentFiles(text)).toEqual(parseAgentFiles(declaration));
+    expect(answer(text, 'permission.handoff')).toMatchObject({ answer: permission, confidence: 1 });
+    expect(record(text).handoffDigest).toBe(createHash('sha256').update(text).digest('hex'));
+  });
+
+  it.each([
+    '```agent-files\nwrite: docs/x.md\nactions: edit, deploy',
+    '\uFEFF~~~agent-files\nwrite: docs/x.md\nactions: edit\n```',
+    '````agent-files\nwrite: docs/x.md\nactions: edit\n```',
+  ])('denies an agent-files fence without a matching close: %s', text => {
+    expect(agentFilesStatus(text)).toBe('invalid');
+    expect(parseAgentFiles(text)).toBeNull();
+    expect(answer(text, 'permission.handoff')).toMatchObject({
+      answer: 'deny', confidence: 1, reasons: ['Invalid agent-files block: fix the declaration before launch.'],
+    });
+    expect(record(text).decisions.filter(decision => decision.question !== 'permission.handoff').every(decision => decision.answer === null)).toBe(true);
   });
 
   it('parses optional actions, lowercases, trims and deduplicates them', () => {
@@ -74,7 +102,21 @@ describe('observation-only typed decision layer', () => {
     'verify: C:\\absolute.md must-contain literal',
     'verify: ../outside.md must-contain literal',
   ])('invalidates the entire first block for malformed assertion %s', declaration => {
-    expect(parseAgentFiles(`\`\`\`agent-files\nwrite: docs/x.md\n${declaration}\n\`\`\`\n${block(['valid.md'])}`)).toBeNull();
+    const text = `\`\`\`agent-files\nread: .env.local\nwrite: docs/x.md\nactions: edit, deploy\n${declaration}\n\`\`\`\n${block(['valid.md'])}`;
+    expect(parseAgentFiles(text)).toBeNull();
+    expect(agentFilesStatus(text)).toBe('invalid');
+    const decisions = record(text).decisions;
+    expect(decisions.find(decision => decision.question === 'permission.handoff')).toMatchObject({
+      answer: 'deny', confidence: 1, reasons: ['Invalid agent-files block: fix the declaration before launch.'],
+    });
+    expect(decisions.filter(decision => decision.question !== 'permission.handoff').every(decision => decision.answer === null)).toBe(true);
+  });
+
+  it('abstains on other questions even when files are supplied for an invalid block', () => {
+    const text = '```agent-files\nverify: broken\n```';
+    const files = parseAgentFiles(block(['.env.local'], ['lib/order-types.ts'], ['deploy']));
+    const decisions = decide({ text, files, requested: requested(), policy, inFlight: [{ handoff: 'other.md', files: { read: [], write: ['.env.local'], actions: ['edit'] } }] });
+    expect(decisions.map(decision => decision.answer)).toEqual([null, 'deny', null, null, null]);
   });
 
   it.each([
@@ -152,6 +194,8 @@ describe('observation-only typed decision layer', () => {
 
   it('abstains without a block but allows an empty block with no declared actions', () => {
     for (const text of ['Describe the change', 'deploy migration']) {
+      expect(agentFilesStatus(text)).toBe('missing');
+      expect(parseAgentFiles(text)).toBeNull();
       expect(record(text).decisions.every(decision => decision.answer === null && decision.confidence === (decision.question === 'gate.lane' ? 0.7 : 0))).toBe(true);
     }
     expect(decide({ text: '', files: null, requested: requested(), policy }).map(decision => decision.answer)).toEqual([null, null, null, null, null]);
@@ -337,6 +381,41 @@ describe('observation-only typed decision layer', () => {
 });
 
 describe('fail-open observer CLI', () => {
+  it.each([
+    { name: 'BOM-prefixed deploy', text: `\uFEFF${block(['result.txt'], [], ['edit', 'deploy'])}`, status: 'valid' },
+    { name: 'malformed assertion', text: '```agent-files\nwrite: result.txt\nactions: edit, deploy\nverify: result.txt contains finished\n```', status: 'invalid' },
+    { name: 'unterminated fence', text: '```agent-files\nwrite: result.txt\nactions: edit', status: 'invalid' },
+  ])('refuses $name through existing enforcement', ({ text, status }) => {
+    expect(agentFilesStatus(text)).toBe(status);
+    const fixture = runFixture(text);
+    const observed = fixture.observe();
+    expect(observed.status).toBe(0);
+    expect(observed.stdout).toContain('permission=deny');
+    expect(observed.stdout).not.toContain('jev gate:');
+    expect(fixture.saved()).toMatchObject({ observedOnly: true, actionTaken: 'launched-unchanged' });
+    const enforced = fixture.observe('--enforce');
+    expect(enforced.status).toBe(3);
+    expect(enforced.stderr).toBe('');
+    expect(enforced.stdout).toContain('jev gate: DENY');
+    const saved = fixture.saved();
+    expect(saved).toMatchObject({ observedOnly: false, actionTaken: 'refused' });
+    if (status === 'invalid') {
+      expect(saved.decisions.find((decision: { question: string }) => decision.question === 'permission.handoff')).toMatchObject({
+        answer: 'deny', confidence: 1, reasons: ['Invalid agent-files block: fix the declaration before launch.'],
+      });
+      expect(saved.decisions.filter((decision: { question: string }) => decision.question !== 'permission.handoff').every((decision: { answer: unknown }) => decision.answer === null)).toBe(true);
+    }
+  });
+
+  it('allows a BOM-prefixed edit block with --enforce', () => {
+    const fixture = runFixture(`\uFEFF${block(['result.txt'], [], ['edit'])}`);
+    const result = fixture.observe('--enforce');
+    expect(result.status).toBe(0);
+    expect(result.stdout).toContain('permission=allow');
+    expect(result.stdout).not.toContain('jev gate:');
+    expect(fixture.saved()).toMatchObject({ observedOnly: false, actionTaken: 'launched-unchanged' });
+  });
+
   it('prints the lane, including null, without enforcing closed lanes', () => {
     const missingBlock = runFixture('No declarations');
     expect(missingBlock.observe().stdout.trim()).toMatch(/ lane=null$/);

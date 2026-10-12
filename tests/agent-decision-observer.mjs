@@ -28,7 +28,17 @@ const normalizePath = path => path.trim().replace(/\\/g, '/').replace(/^(?:\.\/)
 
 /** @param {string} text @returns {Files | null} */
 export function parseAgentFiles(text) {
-  const lines = text.split(/\r?\n/);
+  return parseAgentFilesBlock(text).files;
+}
+
+/** @param {string} text @returns {'missing' | 'invalid' | 'valid'} */
+export function agentFilesStatus(text) {
+  return parseAgentFilesBlock(text).status;
+}
+
+/** @param {string} text @returns {{ status: 'missing' | 'invalid' | 'valid', files: Files | null }} */
+function parseAgentFilesBlock(text) {
+  const lines = text.replace(/^\uFEFF/, '').split(/\r?\n/);
   let fence = null;
   let selected = false;
   /** @type {Files} */
@@ -43,16 +53,16 @@ export function parseAgentFiles(text) {
     }
     const closing = /^ {0,3}(`{3,}|~{3,})\s*$/.exec(line);
     if (closing && closing[1][0] === fence[0] && closing[1].length >= fence.length) {
-      if (selected) return files;
+      if (selected) return { status: 'valid', files };
       fence = null;
       continue;
     }
     if (!selected) continue;
     if (/^\s*verify:/.test(line)) {
       const assertion = /^\s*verify:\s*(\S+) (must-contain|must-not-contain) (.+)$/.exec(line);
-      if (!assertion) return null;
+      if (!assertion) return { status: 'invalid', files: null };
       const path = normalizePath(assertion[1]);
-      if (!path || /^[\\/]/.test(path) || path.includes(':') || path.split('/').includes('..')) return null;
+      if (!path || /^[\\/]/.test(path) || path.includes(':') || path.split('/').includes('..')) return { status: 'invalid', files: null };
       files.verify.push({ path, mode: assertion[2] === 'must-contain' ? 'contain' : 'not-contain', literal: assertion[3] });
       continue;
     }
@@ -62,7 +72,7 @@ export function parseAgentFiles(text) {
     const values = declaration[2].split(',').map(value => key === 'actions' ? value.trim().toLowerCase() : normalizePath(value)).filter(Boolean);
     files[key] = [...new Set([...files[key], ...values])];
   }
-  return null;
+  return { status: selected ? 'invalid' : 'missing', files: null };
 }
 
 /** @param {string} glob @param {string} path */
@@ -101,6 +111,8 @@ const mentions = (patterns, text) => patterns.some(pattern => new RegExp(pattern
  * @returns {Decision[]}
  */
 export function decide({ text, files, requested, policy, inFlight = [] }) {
+  const invalid = agentFilesStatus(text) === 'invalid';
+  if (invalid) files = null;
   /** @param {string[]} paths @param {'read' | 'write'} kind @returns {Match[]} */
   const matchFiles = (paths, kind) => [...new Set(paths)].map(path => ({ path, ...classifyPath(path, policy), kind }));
   const readMatches = matchFiles(files?.read ?? [], 'read');
@@ -129,7 +141,11 @@ export function decide({ text, files, requested, policy, inFlight = [] }) {
     question: 'permission.handoff', answer: null, confidence: 0, reasons: ['No declared agent-files block.'],
     mentions: [...new Set([...policy.denyPatterns, ...policy.askPatterns])].filter(pattern => mentions([pattern], text)),
   };
-  if (files) {
+  if (invalid) {
+    Object.assign(permission, {
+      answer: 'deny', confidence: 1, reasons: ['Invalid agent-files block: fix the declaration before launch.'],
+    });
+  } else if (files) {
     const actions = files.actions ?? [];
     const denyAction = actions.some(action => ['deploy', 'hosted-db', 'secrets'].includes(action));
     const dangerousSandbox = requested.sandbox === 'danger-full-access';
@@ -139,7 +155,7 @@ export function decide({ text, files, requested, policy, inFlight = [] }) {
       reasons: [denyAction ? 'Deny action declared.' : dangerousSandbox ? 'Dangerous sandbox requested.' : sensitiveWrites ? 'Sensitive or restricted write declared.' : askAction ? 'Review action declared.' : 'No permission rule requires review.'],
     });
   }
-  permission.reasons.push(...permission.mentions.map(pattern => `mentions: ${pattern}`));
+  if (!invalid) permission.reasons.push(...permission.mentions.map(pattern => `mentions: ${pattern}`));
   /** @type {TierDecision} */
   const tier = { question: 'route.tier', answer: null, requested: requested.tier, agrees: false, confidence: 0, reasons: ['No tier rule matches the declared files.'] };
   if (strongest && files) {

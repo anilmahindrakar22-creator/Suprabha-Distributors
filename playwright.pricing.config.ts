@@ -1,7 +1,7 @@
 import { defineConfig, devices } from '@playwright/test';
 
 export default defineConfig({
-  testDir: './tests/pricing-browser', workers: 1, retries: 0,
+  testDir: './tests/pricing-browser', workers: process.env.CI ? 1 : Number(process.env.PW_WORKERS ?? 1), retries: 0,
   testIgnore: 'offline-pin-orders.spec.ts',
   use: { baseURL: 'http://127.0.0.1:3100', screenshot: 'only-on-failure' },
   projects: [
