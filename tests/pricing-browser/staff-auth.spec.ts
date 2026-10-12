@@ -106,6 +106,7 @@ test('role edits retain the primary role and suspend uses saved roles, not an un
   await expect(page.getByText('Roles: sales, warehouse, accounts')).toBeVisible();
 
   await roleGroup.getByLabel('management', { exact: true }).check();
+  page.once('dialog', dialog => void dialog.accept());
   await page.getByRole('button', { name: 'Suspend', exact: true }).click();
   await expect(page.getByText('User access updated.')).toBeVisible();
   await expect(page.getByText('suspended', { exact: true })).toBeVisible();

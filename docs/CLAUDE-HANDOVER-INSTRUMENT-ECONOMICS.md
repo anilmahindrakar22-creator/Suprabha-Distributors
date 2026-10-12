@@ -644,3 +644,11 @@ Reconciled the integration owner's allowlist patch: one entry plus the test's pe
 - 29e0d84: observer v1.1;
 - fc6c150: docs.
 Still local and uncommitted on purpose: `docs/INSTRUMENT-ECONOMICS-PRODUCTION-CUTOVER-PLAN.md` (sanitize the Tally ledger IDs first) and Codex's superseded prototype (`components/order-notification-service.tsx`, `lib/order-notification-service.ts`, `tests/ui/main.tsx` harness change); recommend deleting them. No deployment by Claude. Production release remains with the integration owner's acceptance gates.
+
+### 12 Oct 2026: Claude Code (conductor) — claim: UI audit round 2 (owner: "continue other ui checks using codex")
+- Step 1: Claude audits all staff screens itself. Owner: "design reviews should be conducted by claude only". A Codex audit was started by mistake and stopped before it reported anything; no files were changed.
+- Step 2: fixes in small Codex packages, claimed here per package before editing. Candidates: the colour-token sweep (P2-5) on shell files (`app/globals.css`, `components/stockflow-frame.tsx`, `notification-bell.tsx`, `page-header.tsx`, `order-list.tsx`).
+- No migrations, API, Tally or pricing-logic changes. No deployment.
+- Claude's audit used screenshots of all 346 browser tests on phone and desktop. Packages claimed:
+  - **ui2-pricebook** (Codex Luna): `components/customer-price-book.tsx` and `tests/pricing-browser/price-book.spec.ts`. The selected workbench tab gets a visible state; the risk badge uses plain words and is hidden when empty.
+  - **ui2-users** (Codex Luna): `components/user-management.tsx` and `tests/pricing-browser/staff-auth.spec.ts`. Suspend asks for confirmation; existing-member roles use the same chip grid.
