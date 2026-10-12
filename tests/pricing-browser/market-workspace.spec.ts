@@ -16,18 +16,9 @@ type Command = { action: string; payload: Record<string, unknown> };
 
 async function mockMarket(page: Page, failEstimate = false) {
   const overviewRequests: string[] = [];
-  const locationPosts: Command[] = [];
   const estimatePosts: Command[] = [];
   let customers = fixture.customers.map(customer => ({ ...customer }));
   let wallet: CustomerWallet = { current: [], history: [], totalMonthlyWalletPaise: '0' };
-  await page.route('**/api/market', async route => {
-    if (route.request().method() === 'POST') {
-      const command = route.request().postDataJSON() as Command;
-      locationPosts.push(command);
-      customers = customers.map(customer => customer.id === command.payload.customerId ? { ...customer, hasPin: true, latitude: String(command.payload.latitude), longitude: String(command.payload.longitude), locationVersion: 1 } : customer);
-      await route.fulfill({ json: { ok: true } });
-    } else await route.fulfill({ json: { customers, page: fixture.page } });
-  });
   await page.route('**/api/market/wallet**', async route => {
     if (route.request().method() === 'POST') {
       const command = route.request().postDataJSON() as Command;
@@ -44,12 +35,12 @@ async function mockMarket(page: Page, failEstimate = false) {
   await page.route('**/api/market/overview**', async route => {
     overviewRequests.push(route.request().url());
     const filter = new URL(route.request().url()).searchParams.get('filter');
-    const visible = customers.filter(customer => filter === 'focus' ? customer.inFocus : filter === 'no_pin' ? !customer.hasPin : true);
+    const visible = customers.filter(customer => filter === 'focus' ? customer.inFocus : filter === 'no_estimate' ? customer.walletTotalPaise === null : true);
     await route.fulfill({ json: { ...fixture, customers: visible, page: { ...fixture.page, total: visible.length } } });
   });
   await page.goto('/?view=market');
   await expect(page.getByRole('list', { name: 'Customers' }).getByRole('button').first()).toBeVisible();
-  return { overviewRequests, locationPosts, estimatePosts };
+  return { overviewRequests, estimatePosts };
 }
 async function openCustomer(page: Page) {
   await page.getByRole('list', { name: 'Customers' }).getByRole('button', { name: /Care Hospital/ }).click();
@@ -67,6 +58,7 @@ async function fillEstimate(page: Page) {
 test('wallet focus list and pareto line', async ({ page }) => {
   const mocks = await mockMarket(page);
   await expect(page.getByText('2 customers', { exact: true })).toBeVisible();
+  await expect(page.getByText('No map pin')).toHaveCount(0);
   await expect(page.getByText(/Based on 4 of 6/)).toBeVisible();
   expect(new URL(mocks.overviewRequests[0]).searchParams.get('filter')).toBe('focus');
   await expect(page.getByRole('list', { name: 'Customers' }).getByRole('button')).toHaveCount(2);
@@ -78,25 +70,18 @@ test('wallet focus list and pareto line', async ({ page }) => {
 test('coverage tiles filter the list', async ({ page }) => {
   const mocks = await mockMarket(page);
   await page.getByRole('tab', { name: 'Coverage', exact: true }).click();
-  const tile = page.getByRole('region', { name: 'Coverage', exact: true }).getByRole('button', { name: /No map pin/ });
+  const tile = page.getByRole('region', { name: 'Coverage', exact: true }).getByRole('button', { name: /No wallet estimate/ });
   await tile.click();
   await expect(tile).toHaveAttribute('aria-pressed', 'true');
-  await expect.poll(() => new URL(mocks.overviewRequests.at(-1)!).searchParams.get('filter')).toBe('no_pin');
+  await expect.poll(() => new URL(mocks.overviewRequests.at(-1)!).searchParams.get('filter')).toBe('no_estimate');
   await tile.click();
   await expect(tile).toHaveAttribute('aria-pressed', 'false');
   await expect.poll(() => new URL(mocks.overviewRequests.at(-1)!).searchParams.get('filter')).toBe('all');
 });
 
-test('customer panel saves a pasted location and an estimate', async ({ page }) => {
+test('customer panel saves an estimate', async ({ page }) => {
   const mocks = await mockMarket(page);
   await openCustomer(page);
-  await page.getByLabel('Paste a map link or coordinates').fill('https://www.google.com/maps/place/X/@12.9716,77.5946,17z');
-  await page.getByRole('button', { name: 'Save location', exact: true }).click();
-  await expect(page.getByRole('status').filter({ hasText: 'Location saved' })).toBeVisible();
-  await expect(page.getByRole('button', { name: 'Change location', exact: true })).toBeVisible();
-  expect(mocks.locationPosts[0]).toMatchObject({ action: 'set_customer_location', payload: { customerId, latitude: '12.9716', longitude: '77.5946', source: 'pasted_link' } });
-  await expect(page.getByLabel('Paste a map link or coordinates')).toHaveValue('');
-  await expect(page.getByText('12.971600, 77.594600')).toBeVisible();
   await fillEstimate(page);
   await expect(page.getByLabel('Division', { exact: true }).getByRole('option', { name: 'Inactive division' })).toHaveCount(0);
   await page.getByRole('button', { name: 'Save', exact: true }).click();
@@ -104,16 +89,6 @@ test('customer panel saves a pasted location and an estimate', async ({ page }) 
   expect(mocks.estimatePosts[0]).toMatchObject({ action: 'record_wallet_estimate', payload: { customerId, divisionId: division.id, monthlyWalletPaise: '12500000', method: 'customer_stated', confidence: 'high', note: 'Confirmed with the customer' } });
   await expect(page.getByRole('region', { name: 'Wallet estimate', exact: true }).locator('table:visible, ul[aria-label="Current estimates"]:visible')).toContainText('₹1,25,000');
   expect(await page.evaluate(() => document.documentElement.scrollWidth <= window.innerWidth)).toBe(true);
-});
-
-test('short map link is rejected without a request', async ({ page }) => {
-  const mocks = await mockMarket(page);
-  await openCustomer(page);
-  await page.getByLabel('Paste a map link or coordinates').fill('https://maps.app.goo.gl/abc');
-  await page.getByRole('button', { name: 'Save location', exact: true }).click();
-  await expect(page.getByRole('alert')).toContainText('Open the link and copy the full address bar URL');
-  expect(mocks.locationPosts).toHaveLength(0);
-  expect(mocks.estimatePosts).toHaveLength(0);
 });
 
 test('estimate save failure keeps the typed values', async ({ page }) => {

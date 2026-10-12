@@ -4,13 +4,13 @@ import { useCallback, useEffect, useId, useRef, useState } from 'react';
 import { PageHeader, SummaryStrip, pageActionClass } from './page-header';
 import { readJsonBody } from '@/lib/http-json';
 import type { MarketOverview, MarketOverviewCustomer, MarketOverviewFilter } from '@/lib/market-overview-types';
-import { parseLocationInput } from '@/lib/market-types';
 import { formatPaise, rupeesToPaise, walletMethods, walletConfidences, type CustomerWallet, type WalletDivision } from '@/lib/wallet-types';
 
 const inputClass = 'min-h-11 w-full min-w-0 rounded-xl border border-sf-line bg-sf-soft-0 px-3 text-sm font-normal text-sf-body outline-none focus:border-sf-mint';
 const buttonClass = 'min-h-11 rounded-xl bg-sf-ink-hover px-4 text-sm font-bold text-sf-soft disabled:opacity-50';
-const secondaryButtonClass = 'min-h-11 rounded-xl border border-sf-line-strong bg-white px-4 font-bold text-sf-ink';
 const alertClass = 'rounded-xl bg-sf-danger-soft p-3 text-sm text-sf-danger';
+type CoverageFilter = Extract<MarketOverviewFilter, 'all' | 'no_estimate' | 'stale_estimate'>;
+
 type FormSubmission = { preventDefault(): void };
 
 function todayInKolkata() {
@@ -33,8 +33,7 @@ async function getJson<T>(url: string, signal?: AbortSignal) {
 async function postCommand(url: string, command: Record<string, unknown>) {
   const response = await fetch(url, { method: 'POST', headers: { 'content-type': 'application/json' }, body: JSON.stringify(command) });
   const body = await readJsonBody<{ error?: string }>(response);
-  if (!response.ok) throw new Error(response.status === 409 && url === '/api/market'
-    ? 'Someone else changed this location. Refresh and try again.' : body.error || 'Unable to save Market update');
+  if (!response.ok) throw new Error(body.error || 'Unable to save Market update');
 }
 const errorMessage = (cause: unknown) => cause instanceof Error ? cause.message : 'Market is temporarily unavailable';
 
@@ -42,7 +41,7 @@ export function MarketWorkspace() {
   const [data, setData] = useState<MarketOverview | null>(null);
   const [mode, setMode] = useState<'wallet' | 'coverage'>('wallet');
   const [walletFilter, setWalletFilter] = useState<'focus' | 'all' | null>(null);
-  const [coverageFilter, setCoverageFilter] = useState<MarketOverviewFilter>('all');
+  const [coverageFilter, setCoverageFilter] = useState<CoverageFilter>('all');
   const [query, setQuery] = useState('');
   const [search, setSearch] = useState('');
   const [page, setPage] = useState(1);
@@ -86,7 +85,7 @@ export function MarketWorkspace() {
   }, [load]);
 
   function selectMode(next: typeof mode) { setMode(next); setPage(1); setOpenId(null); }
-  function selectCoverage(next: MarketOverviewFilter) { setCoverageFilter(current => current === next ? 'all' : next); setPage(1); setOpenId(null); }
+  function selectCoverage(next: CoverageFilter) { setCoverageFilter(current => current === next ? 'all' : next); setPage(1); setOpenId(null); }
 
   return <div className="h-full overflow-y-auto bg-sf-page"><div className="mx-auto max-w-7xl space-y-5 p-4 sm:p-6">
     <PageHeader title="Market" description="Where the money is, and what we don't know yet." actions={<button type="button" disabled={loading} onClick={() => void load()} className={`${pageActionClass} min-h-11`}>Refresh</button>} />
@@ -98,7 +97,6 @@ export function MarketWorkspace() {
       <button type="button" className="min-h-11 text-sm font-bold text-sf-brand" onClick={() => { setWalletFilter(filter === 'focus' ? 'all' : 'focus'); setPage(1); setOpenId(null); }}>{filter === 'focus' ? 'Show all customers' : 'Show focus list'}</button>
     </div> : null}
     {mode === 'coverage' ? <SummaryStrip label="Coverage" items={[
-      { label: 'No map pin', value: data?.counts.noPin, tone: data?.counts.noPin ? 'attention' : 'normal', onSelect: () => selectCoverage('no_pin'), selected: filter === 'no_pin' },
       { label: 'No wallet estimate', value: data?.counts.noEstimate, tone: data?.counts.noEstimate ? 'attention' : 'normal', onSelect: () => selectCoverage('no_estimate'), selected: filter === 'no_estimate' },
       { label: 'Estimate older than 6 months', value: data?.counts.staleEstimate, tone: data?.counts.staleEstimate ? 'attention' : 'normal', onSelect: () => selectCoverage('stale_estimate'), selected: filter === 'stale_estimate' },
     ]} /> : null}
@@ -110,7 +108,7 @@ export function MarketWorkspace() {
     <ul aria-label="Customers" aria-busy={loading} className="space-y-3">{data?.customers.map(customer => <li key={customer.id} className="min-w-0 rounded-2xl border border-sf-line-soft bg-sf-soft-0">
       <button type="button" aria-expanded={openId === customer.id} aria-controls={`market-customer-${customer.id}`} className="min-h-11 w-full space-y-2 p-4 text-left text-sm text-sf-body" onClick={() => setOpenId(current => current === customer.id ? null : customer.id)}>
         <span className="flex items-start justify-between gap-3"><span className="min-w-0 break-words"><strong className="text-sf-ink">{customer.name}</strong>{customer.city ? <span className="ml-2 text-sf-muted">{customer.city}</span> : null}</span><span className={`shrink-0 ${customer.walletTotalPaise === null ? 'text-sf-muted' : 'font-bold text-sf-ink'}`}>{customer.walletTotalPaise === null ? 'No estimate' : `${formatPaise(customer.walletTotalPaise)}/month`}</span></span>
-        <span className="flex flex-wrap items-center gap-x-3 gap-y-1 text-xs text-sf-muted"><span>{customer.divisionsEstimated} of {data.activeDivisions} divisions</span>{mode === 'wallet' && customer.inFocus ? <span className="rounded-full bg-sf-accent-soft px-2 py-0.5 font-bold text-sf-accent">Focus</span> : null}{customer.staleEstimate ? <span className="rounded-full bg-sf-warning-soft px-2 py-0.5 font-bold text-sf-warning">Old estimate</span> : null}<span className={customer.hasPin ? 'text-sf-body' : 'text-sf-muted'}>{customer.hasPin ? 'On map' : 'No map pin'}</span></span>
+        <span className="flex flex-wrap items-center gap-x-3 gap-y-1 text-xs text-sf-muted"><span>{customer.divisionsEstimated} of {data.activeDivisions} divisions</span>{mode === 'wallet' && customer.inFocus ? <span className="rounded-full bg-sf-accent-soft px-2 py-0.5 font-bold text-sf-accent">Focus</span> : null}{customer.staleEstimate ? <span className="rounded-full bg-sf-warning-soft px-2 py-0.5 font-bold text-sf-warning">Old estimate</span> : null}</span>
       </button>
       {openId === customer.id ? <CustomerPanel key={customer.id} customer={customer} loadDivisions={loadDivisions} refreshOverview={load} onStatus={setStatus} /> : null}
     </li>)}</ul>
@@ -123,9 +121,6 @@ function CustomerPanel({ customer, loadDivisions, refreshOverview, onStatus }: {
   const [wallet, setWallet] = useState<CustomerWallet | null>(null);
   const [divisions, setDivisions] = useState<WalletDivision[]>([]);
   const [panelError, setPanelError] = useState('');
-  const [locationInput, setLocationInput] = useState('');
-  const [showLocationForm, setShowLocationForm] = useState(false);
-  const [locationError, setLocationError] = useState('');
   const [estimateError, setEstimateError] = useState('');
   const [showForm, setShowForm] = useState(false);
   const [busy, setBusy] = useState('');
@@ -155,17 +150,6 @@ function CustomerPanel({ customer, loadDivisions, refreshOverview, onStatus }: {
     return () => { window.clearTimeout(timer); controller.abort(); };
   }, [load]);
 
-  async function saveLocation(event: FormSubmission) {
-    event.preventDefault(); setLocationError(''); onStatus('');
-    const parsed = parseLocationInput(locationInput);
-    if (!parsed.ok) { setLocationError(parsed.error); return; }
-    setBusy('location');
-    try {
-      await postCommand('/api/market', { action: 'set_customer_location', payload: { customerId: customer.id, latitude: parsed.latitude, longitude: parsed.longitude, source: 'pasted_link', expectedVersion: customer.locationVersion, idempotencyKey: crypto.randomUUID() } });
-      setLocationInput(''); setShowLocationForm(false); onStatus('Location saved'); await refreshOverview();
-    } catch (cause) { setLocationError(errorMessage(cause)); }
-    finally { setBusy(''); }
-  }
   async function saveEstimate(event: FormSubmission) {
     event.preventDefault(); setEstimateError(''); onStatus('');
     const monthlyWalletPaise = rupeesToPaise(form.amount);
@@ -179,13 +163,6 @@ function CustomerPanel({ customer, loadDivisions, refreshOverview, onStatus }: {
   }
   return <div id={`market-customer-${customer.id}`} className="min-w-0 space-y-5 border-t border-sf-line-soft p-4">
     {panelError ? <p role="alert" className={alertClass}>{panelError}</p> : null}
-    <section aria-label="Location" className="space-y-3 text-sm text-sf-body"><h3 className="font-bold text-sf-ink">Location</h3>
-      {customer.hasPin && customer.latitude !== undefined && customer.longitude !== undefined ? <div className="flex flex-wrap gap-x-3 gap-y-2"><p>{Number(customer.latitude).toFixed(6)}, {Number(customer.longitude).toFixed(6)}</p><a className="font-bold text-sf-brand underline" href={`https://www.google.com/maps?q=${customer.latitude},${customer.longitude}`} target="_blank" rel="noopener noreferrer">Open in Google Maps</a><button type="button" aria-expanded={showLocationForm} onClick={() => setShowLocationForm(current => !current)} className="text-sm font-bold text-sf-brand underline">Change location</button></div> : <p className="text-sf-muted">Not on the map yet</p>}
-      <form hidden={customer.hasPin && !showLocationForm} onSubmit={event => void saveLocation(event)} className="space-y-2"><div className="block font-bold"><label htmlFor={`${fieldId}-location`} className="font-bold">Paste a map link or coordinates</label><input id={`${fieldId}-location`} value={locationInput} onChange={event => setLocationInput(event.target.value)} className={`mt-1 ${inputClass}`} /></div>
-        {locationError ? <p role="alert" className={alertClass}>{locationError}</p> : null}
-        <button disabled={Boolean(busy)} className={secondaryButtonClass}>Save location</button>
-      </form>
-    </section>
     <section aria-label="Wallet estimate" className="min-w-0 space-y-3 text-sm text-sf-body"><h3 className="font-bold text-sf-ink">Wallet estimate</h3>
       {!wallet && !panelError ? <p className="text-sf-muted">Loading wallet estimate…</p> : null}
       {wallet?.current.length ? <>
