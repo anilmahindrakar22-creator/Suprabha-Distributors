@@ -842,6 +842,14 @@
       "remoteSha256": null,
       "status": "not_deployed",
       "review": "Integration fix 11 Oct 2026: current document-review queue excludes failures superseded by compatible canonical source admission. Rejection evidence remains immutable. Newer/same-revision conflicts, unadmitted sources and global failures remain open. Full disposable deployment-order/integrity/concurrency replay passed. Acceptance applied as 20261010191809 with identical normalized hash and hosted queue readback. Production deployment pending."
+    },
+    {
+      "localFile": "20261011060830_order_summary_revision.sql",
+      "localSha256": "33c69fe40ff220c0fbc5735935ee1aecae5af0fddfb02cfbe8543db72ea165b5",
+      "remoteVersion": null,
+      "remoteSha256": null,
+      "status": "not_deployed",
+      "review": "Cross-session Orders live refresh: access-scoped canonical ID/version/status revision in existing authenticated summary. Full disposable deployment and role/concurrency replay passed; same-count replacement and invisible-order isolation regression passed. Acceptance applied as 20261011062329; hosted normalized SHA-256 matches local and private helper remains denied to authenticated/anon. Production deployment pending."
     }
   ],
   "liveCheck": {

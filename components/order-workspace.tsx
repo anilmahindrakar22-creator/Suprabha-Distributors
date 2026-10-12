@@ -11,7 +11,7 @@ import type {
   OrderEvent,
   OrderSummary,
 } from '@/lib/order-types';
-import { billingHandoffText, canRoleTransitionOrder, customerBalanceFreshness, customerDeliveryAddresses, customerPhoneHref, filterOrders, orderAttentionReasons, orderBackOrderedQuantity, orderDeliveryReminder, orderEventDescription, orderFollowUpReminder, orderMatchesCaptureDateRange, orderNextOwnerLabel, orderNotificationGroups, orderOperationsText, orderStage, repeatOrderTemplate, searchCatalog, searchCustomers, tallyInvoiceLineReconciliation, tallyInvoiceReconciliationDetail } from '@/lib/order-types';
+import { billingHandoffText, canRoleTransitionOrder, customerBalanceFreshness, customerDeliveryAddresses, customerPhoneHref, filterOrders, orderAttentionReasons, orderBackOrderedQuantity, orderDeliveryReminder, orderEventDescription, orderFollowUpReminder, orderMatchesCaptureDateRange, orderNextOwnerLabel, orderOperationsText, orderStage, repeatOrderTemplate, searchCatalog, searchCustomers, tallyInvoiceLineReconciliation, tallyInvoiceReconciliationDetail } from '@/lib/order-types';
 import { orderListUrl } from '@/lib/order-list-query';
 import { offlineDraftRecoveryError, pinProtectedOfflineDevice, readOfflineDraftConsent, readOfflineOrderDraft, removeOfflineOrderDraft, restoreOfflineDraftLines, updateOfflineDraftState, writeOfflineDraftConsent, writeOfflineOrderDraft, type OfflineDraftState } from '@/lib/offline-order-drafts';
 import { readCatalogCache, removeCatalogCache, writeCatalogCache } from '@/lib/catalog-cache';
@@ -19,14 +19,17 @@ import { readCustomerCache, removeCustomerCache, writeCustomerCache } from '@/li
 import { applyCreatedOrderAcknowledgement, applyOrderAcknowledgement } from '@/lib/order-acknowledgement';
 import { confirmedOrderNumber, OrderSubmissionError, orderSubmissionError, orderSubmissionTimeoutMs, recoverAcceptedOrder, retryableOrderSubmissionFailure } from '@/lib/order-submission';
 import { loadOrderBootstrap } from '@/lib/order-bootstrap-cache';
+import { startOrderLiveRefresh } from '@/lib/order-live-refresh';
 import { retryPendingOfflineOrder } from '@/lib/offline-order-retry';
 import { acknowledgeOrderCommand, prepareOrderCommandRetry } from '@/lib/order-command-idempotency';
 import { loadOrderCatalog, loadOrderCustomers } from '@/lib/order-capture-masters';
 import { recordOrderClientTiming } from '@/lib/order-client-timing';
 import type { OrderPricingWorkspace, PricingLineResolution } from '@/lib/pricing-types';
 import { PricingOptions } from './pricing-options';
-import { ProductRequest, ProductRequestInbox } from './product-request';
-import { ProcurementRequirements } from './procurement-requirements';
+import { ProductRequest } from './product-request';
+import { BackIcon, ChevronDownIcon, CompactOrderRow, OrderFlagBadge, OrderProgress, OrderStageChips, orderStageStyle, snapshotTimeLabel, type StageFilter } from './order-list';
+import { deliveredTodayOrders, groupOrdersForList } from '@/lib/order-list-groups';
+import { readJsonBody } from '@/lib/http-json';
 import { hasAnyStockFlowRole, type StockFlowRole } from '@/lib/user-types';
 
 type DraftLine = { tallyKey: string; item: CatalogItem | null; quantity: number };
@@ -86,6 +89,7 @@ function statusLabel(status: string) {
 
 function compactOrderAge(createdAt: string, now = Date.now()) {
   const elapsedMinutes = Math.max(0, Math.floor((now - new Date(createdAt).getTime()) / 60_000));
+  if (elapsedMinutes < 1) return 'now';
   if (elapsedMinutes < 60) return `${elapsedMinutes}m`;
   const elapsedHours = Math.floor(elapsedMinutes / 60);
   if (elapsedHours < 24) return `${elapsedHours}h`;
@@ -101,43 +105,64 @@ const queueNames: Record<string, string> = {
 };
 
 async function readResponse<T>(response: Response): Promise<T> {
-  const body = (await response.json()) as T & { error?: string };
+  const body = await readJsonBody<T & { error?: string }>(response);
   if (!response.ok) throw new Error(body.error || 'Unable to complete the request');
   return body;
 }
 
-export function OrderWorkspace({ actorEmail, initialStatus = 'open' }: { actorEmail: string; initialStatus?: string }) {
+export function OrderWorkspace({ actorEmail, initialStatus = 'open', initialQuery = '', focusOrder, newOrderIds, onOrderActed }: {
+  actorEmail: string;
+  initialStatus?: string;
+  initialQuery?: string;
+  /** Open this exact order (from a notification). Found through the server's own access-checked list; fails closed. */
+  focusOrder?: { orderId: string; orderNumber: string };
+  /** Orders newly handed to this person by the frame's work notifications; tagged "New". */
+  newOrderIds?: ReadonlySet<string>;
+  /** Told about orders this person just moved or created, so their own hand-off is never announced back to them. */
+  onOrderActed?: (orderId: string) => void;
+}) {
   const [data, setData] = useState<OrderBootstrap | null>(null);
   const [loading, setLoading] = useState(true);
   const [refreshing, setRefreshing] = useState(false);
   const [error, setError] = useState('');
+  const [focusNotice, setFocusNotice] = useState('');
   const [notice, setNotice] = useState('');
   const [noticeOrderNumber, setNoticeOrderNumber] = useState('');
-  const [query, setQuery] = useState('');
+  const [query, setQuery] = useState(focusOrder?.orderNumber || initialQuery);
+  const [pendingFocusId, setPendingFocusId] = useState(focusOrder?.orderId || '');
   const [captureDate, setCaptureDate] = useState('');
   const [captureDateTo, setCaptureDateTo] = useState('');
-  const [status, setStatus] = useState(initialStatus);
+  const [status, setStatus] = useState(focusOrder ? 'all' : initialStatus);
   const [creating, setCreating] = useState(false);
   const [repeatOrder, setRepeatOrder] = useState<OrderSummary | null>(null);
   const [catalogLoading, setCatalogLoading] = useState(false);
   const [deviceDraftState, setDeviceDraftState] = useState<OfflineDraftState | null>(null);
   const [mobileFiltersOpen, setMobileFiltersOpen] = useState(false);
-  const [notificationsOpen, setNotificationsOpen] = useState(false);
   const [page, setPage] = useState(1);
   const [selectedOrderId, setSelectedOrderId] = useState('');
+  const [openOrderId, setOpenOrderId] = useState('');
+  const [deliveredToday, setDeliveredToday] = useState<OrderSummary[]>([]);
+  const [deliveredRefresh, setDeliveredRefresh] = useState(0);
   const desktopControlCenter = useSyncExternalStore(subscribeDesktopControlCenter, desktopControlCenterSnapshot, () => false);
   const workspaceRef = useRef<HTMLDivElement>(null);
+  const orderPageRef = useRef<HTMLDialogElement>(null);
   const dataRef = useRef<OrderBootstrap | null>(null);
   const retryingDraftRef = useRef(false);
   const pendingCommandKeysRef = useRef(new Map<string, string>());
   const latestListRequestRef = useRef(0);
   const openingOrderRequestRef = useRef(0);
+  const mutationInFlightRef = useRef(false);
+  const liveStateRef = useRef({ ready: false, creating: false, loading: true });
+  useEffect(() => {
+    liveStateRef.current = { ready: data !== null, creating, loading };
+    if (creating) latestListRequestRef.current += 1;
+  }, [data, creating, loading]);
 
   useEffect(() => {
     dataRef.current = data;
   }, [data]);
 
-  const load = useCallback(async (showLoading = false, showRefreshing = false) => {
+  const load = useCallback(async (showLoading = false, showRefreshing = false, propagateFailure = false) => {
     const startedAt = performance.now();
     const requestId = ++latestListRequestRef.current;
     if (showLoading) setLoading(true);
@@ -148,9 +173,11 @@ export function OrderWorkspace({ actorEmail, initialStatus = 'open' }: { actorEm
       if (requestId !== latestListRequestRef.current) return;
       recordOrderClientTiming('order_list_ms', startedAt);
       setData(result);
+      setDeliveredRefresh((value) => value + 1);
       setDeviceDraftState(readOfflineOrderDraft(localStorage, result.actor.email)?.state || null);
     } catch (cause) {
       if (requestId === latestListRequestRef.current) setError(cause instanceof Error ? cause.message : 'Unable to load orders');
+      if (propagateFailure) throw cause;
     } finally {
       if (requestId === latestListRequestRef.current) {
         if (showLoading) setLoading(false);
@@ -158,6 +185,26 @@ export function OrderWorkspace({ actorEmail, initialStatus = 'open' }: { actorEm
       }
     }
   }, [captureDate, captureDateTo, page, query, status]);
+
+  useEffect(() => {
+    const service = startOrderLiveRefresh({
+      fetchSummary: (signal) => fetch('/api/orders?summary=1', { cache: 'no-store', signal }),
+      online: () => navigator.onLine,
+      active: () => document.visibilityState !== 'hidden',
+      canRefresh: () => liveStateRef.current.ready && !liveStateRef.current.creating && !liveStateRef.current.loading && !mutationInFlightRef.current,
+      refresh: () => load(false, false, true),
+      onError: setError,
+    });
+    document.addEventListener('visibilitychange', service.wake);
+    window.addEventListener('online', service.wake);
+    window.addEventListener('focus', service.wake);
+    return () => {
+      service.stop();
+      document.removeEventListener('visibilitychange', service.wake);
+      window.removeEventListener('online', service.wake);
+      window.removeEventListener('focus', service.wake);
+    };
+  }, [actorEmail, load]);
 
   useEffect(() => {
     if (creating || deviceDraftState !== 'pending') return;
@@ -199,7 +246,7 @@ export function OrderWorkspace({ actorEmail, initialStatus = 'open' }: { actorEm
   }, [actorEmail, creating, deviceDraftState, load]);
 
   useEffect(() => {
-    if (initialStatus !== 'open') return;
+    if (initialStatus !== 'open' || initialQuery || focusOrder) return;
     const startedAt = performance.now();
     let active = true;
     const requestId = ++latestListRequestRef.current;
@@ -222,7 +269,7 @@ export function OrderWorkspace({ actorEmail, initialStatus = 'open' }: { actorEm
     return () => {
       active = false;
     };
-  }, [actorEmail, initialStatus]);
+  }, [actorEmail, initialStatus, initialQuery, focusOrder]);
 
   const firstFilterRun = useRef(true);
   useEffect(() => {
@@ -257,8 +304,44 @@ export function OrderWorkspace({ actorEmail, initialStatus = 'open' }: { actorEm
     };
   }, [actorEmail, captureDate, captureDateTo, page, query, status]);
 
-  const visibleOrders = data?.orders || [];
-  const displayedOrders = visibleOrders;
+  // Active = every pending order plus orders delivered today (IST). Older delivered and cancelled orders live in History.
+  // Delivered-today rows come from page 1 of History (newest captured first), so an old order delivered today can be missed.
+  const showsDeliveredToday = status === 'open' && page === 1 && !query && !captureDate && !captureDateTo;
+  useEffect(() => {
+    if (!showsDeliveredToday) return;
+    const controller = new AbortController();
+    fetch(orderListUrl({ page: 1, query: '', status: 'history', captureDate: '', captureDateTo: '' }), { cache: 'no-store', signal: controller.signal })
+      .then((response) => readResponse<OrderBootstrap>(response))
+      .then((result) => setDeliveredToday(deliveredTodayOrders(result.orders || [])))
+      .catch(() => undefined);
+    return () => controller.abort();
+  }, [showsDeliveredToday, deliveredRefresh]);
+
+  const visibleOrders = useMemo(() => data?.orders || [], [data]);
+  const orderGroups = useMemo(() => groupOrdersForList(visibleOrders, showsDeliveredToday ? deliveredToday : []), [visibleOrders, showsDeliveredToday, deliveredToday]);
+  const displayedOrders = useMemo(() => orderGroups.flatMap((group) => group.orders), [orderGroups]);
+  const openOrder = openOrderId ? displayedOrders.find((order) => order.id === openOrderId) : undefined;
+  const orderPageId = !desktopControlCenter ? openOrder?.id : undefined;
+
+  useEffect(() => {
+    const dialog = orderPageRef.current;
+    if (!dialog || !orderPageId) return;
+    if (!dialog.open) dialog.showModal();
+    return () => dialog.close();
+  }, [orderPageId]);
+
+  // Exact-order opening from a notification: the order is looked up through the normal, access-checked list
+  // (search by its number across all statuses) and matched by ID. Not found means not visible to this person.
+  if (pendingFocusId && !loading && data) {
+    setPendingFocusId('');
+    if (!displayedOrders.some((order) => order.id === pendingFocusId)) {
+      setFocusNotice(`Order ${focusOrder?.orderNumber || ''} is not available to you, or it no longer exists.`);
+      setQuery('');
+      setStatus(initialStatus);
+    }
+    else if (desktopControlCenter) setSelectedOrderId(pendingFocusId);
+    else setOpenOrderId(pendingFocusId);
+  }
   const currentPage = data?.pagination?.page || page;
   const pageCount = data?.pagination?.pageCount || 1;
   const totalOrders = data?.pagination?.total ?? visibleOrders.length;
@@ -381,6 +464,9 @@ export function OrderWorkspace({ actorEmail, initialStatus = 'open' }: { actorEm
   }
 
   async function runCommand(command: OrderCommand, success: string) {
+    mutationInFlightRef.current = true;
+    // A list read started before this command must not overwrite its acknowledgement.
+    latestListRequestRef.current += 1;
     const scrollTop = workspaceRef.current?.scrollTop;
     const prepared = prepareOrderCommandRetry(command, pendingCommandKeysRef.current, undefined, actorEmail);
     setError('');
@@ -395,8 +481,10 @@ export function OrderWorkspace({ actorEmail, initialStatus = 'open' }: { actorEm
         }),
       );
       acknowledgeOrderCommand(prepared.identity, pendingCommandKeysRef.current);
+      setDeliveredRefresh((value) => value + 1);
       setNotice(success);
       const acknowledgedOrderId = 'orderId' in prepared.command.payload ? prepared.command.payload.orderId : '';
+      if (acknowledgedOrderId) onOrderActed?.(acknowledgedOrderId);
       const acknowledgedOrder = dataRef.current?.orders.find((order) => order.id === acknowledgedOrderId);
       setNoticeOrderNumber(acknowledgedOrder?.orderNumber || '');
        const patched = dataRef.current ? applyOrderAcknowledgement(dataRef.current, prepared.command, result) : null;
@@ -424,6 +512,8 @@ export function OrderWorkspace({ actorEmail, initialStatus = 'open' }: { actorEm
      } catch (cause) {
        setError(cause instanceof Error ? cause.message : 'Unable to update order');
        return false;
+     } finally {
+       mutationInFlightRef.current = false;
      }
    }
 
@@ -498,66 +588,104 @@ export function OrderWorkspace({ actorEmail, initialStatus = 'open' }: { actorEm
   }
 
   const operations = data?.operations || {};
-  const notifications = orderNotificationGroups(operations);
   const staleText = data?.snapshot.fetchedAt || 'No Tally snapshot';
+  const actorRoles = data?.actor.roles ?? data?.actor.role;
+  const stageFilters: StageFilter[] = [
+    { status: 'open', label: 'Active' },
+    { status: 'awaiting_confirmation', label: 'Confirm', count: operations.awaitingConfirmation, tone: 'confirm' },
+    { status: 'picking', label: 'Pack', tone: 'pack' },
+    { status: 'billing', label: 'Bill', count: operations.awaitingTallyBilling, tone: 'bill' },
+    { status: 'dispatch_ready', label: 'Dispatch', count: operations.billedNotDispatched, tone: 'dispatch' },
+    { status: 'attention', label: 'Issues', count: operations.needsAttention, tone: 'alert' },
+  ];
+  const yourQueue = hasAnyStockFlowRole(actorRoles, ['administrator', 'management']) ? 'awaiting_confirmation' : hasAnyStockFlowRole(actorRoles, ['accounts']) ? 'billing' : hasAnyStockFlowRole(actorRoles, ['warehouse']) ? 'picking' : '';
+  function showQueue(queue: string) {
+    setFocusNotice('');
+    setStatus(queue); setQuery(''); setCaptureDate(''); setCaptureDateTo(''); setPage(1);
+  }
+  function openOrderDetail(order: OrderSummary) {
+    if (desktopControlCenter) setSelectedOrderId(order.id);
+    else setOpenOrderId(order.id);
+  }
+  const orderRowProps = {
+    actorRole: data?.actor.role || '',
+    actorRoles: data?.actor.roles,
+    actorEmail: data?.actor.email || actorEmail,
+    tallyInvoices: data?.snapshot.tallyInvoices,
+    tallySnapshotFetchedAt: data?.snapshot.fetchedAt,
+    onAdvance: advance,
+    onCancel: cancelOrder,
+    onSaveFulfilment: saveFulfilment,
+    onDelivery: updateDelivery,
+    onEdit: editOrder,
+    onException: updateException,
+    onInstallation: updateInstallation,
+    onBillingReview: recordBillingReview,
+    onAddNote: addOrderNote,
+    onRepeat: (order: OrderSummary) => { setOpenOrderId(''); void openNewOrder(order); },
+    onFindCustomer: (order: OrderSummary) => { setFocusNotice(''); setOpenOrderId(''); setQuery(`customer:${order.customerName}`); setStatus('all'); setCaptureDate(''); setCaptureDateTo(''); setPage(1); },
+    onSetPriority: setOrderPriority,
+    onSetAssignee: setOrderAssignee,
+    onFollowUp: updateOrderFollowUp,
+    onPricingChanged: () => load(false, true),
+  };
 
   return (
     <div ref={workspaceRef} className="h-full overflow-y-auto bg-[#f7f6f1]">
-      <div className="mx-auto max-w-7xl px-3 py-3 sm:px-6 sm:py-6 lg:px-8">
-        {hasAnyStockFlowRole(data?.actor.roles ?? data?.actor.role, ['administrator', 'management', 'operations']) ? <ProductRequestInbox /> : null}
-        {data ? <ProcurementRequirements /> : null}
-        <header className="flex flex-col gap-4 sm:flex-row sm:items-end sm:justify-between">
-          <div>
-            <h1 className="text-2xl font-black tracking-tight text-[#092f36] sm:text-3xl">
+      <div className="mx-auto max-w-7xl px-3 pb-6 sm:px-6 lg:px-8">
+        <div className="sticky top-0 z-20 -mx-3 border-b border-[#dfe7e5] bg-[#f7f6f1]/95 px-3 pb-2 pt-2 backdrop-blur sm:-mx-6 sm:px-6 lg:-mx-8 lg:px-8">
+        <header className="flex items-center justify-between gap-2">
+          <div className="min-w-0">
+            <h1 className="text-xl font-black tracking-tight text-[#092f36] sm:text-2xl">
               Orders
             </h1>
-            <p className="mt-1 hidden text-sm text-[#667b7e] md:block">
+            <p className="hidden text-xs text-[#667b7e] lg:block">
               Confirm orders, send packed orders to Tally billing, then dispatch.
             </p>
           </div>
-          <div className="relative flex items-center gap-2 self-stretch sm:self-auto">
-            <button type="button" aria-label={`Order notifications${notifications.length ? `, ${notifications.length} active groups` : ''}`} aria-expanded={notificationsOpen} onClick={() => setNotificationsOpen((open) => !open)} className="relative min-h-12 min-w-12 rounded-xl border border-[#cedfdd] bg-white px-3 text-xl text-[#31585d]" title="Order notifications">🔔{notifications.length ? <span className="absolute -right-1 -top-1 min-w-5 rounded-full bg-[#a54c44] px-1 text-center text-[11px] font-black leading-5 text-white">{notifications.length}</span> : null}</button>
+          <div className="relative flex shrink-0 items-center gap-2">
+
             <button
               type="button"
               onClick={() => void openNewOrder()}
               onFocus={warmOrderCapture}
               onPointerEnter={warmOrderCapture}
               disabled={catalogLoading}
-              className="min-h-12 flex-1 rounded-xl bg-[#092f36] px-5 font-bold text-white shadow-sm transition hover:bg-[#0d4549] disabled:opacity-50 sm:flex-none"
+              className="min-h-11 rounded-xl bg-[#092f36] px-4 font-bold text-white shadow-sm transition hover:bg-[#0d4549] disabled:opacity-50"
             >
               {catalogLoading ? 'Loading products…' : deviceDraftState ? 'Continue order' : '+ Order'}
             </button>
-            {notificationsOpen ? <section aria-label="Order notifications" className="absolute right-0 top-14 z-30 w-[min(22rem,calc(100vw-1.5rem))] rounded-2xl border border-[#dce7e5] bg-white p-3 shadow-xl"><div className="flex items-center justify-between"><strong className="text-[#173239]">Order notifications</strong><button type="button" onClick={() => setNotificationsOpen(false)} className="min-h-9 rounded-lg px-2 text-xs font-bold text-[#587275]">Close</button></div>{notifications.length ? <div className="mt-2 space-y-2">{notifications.map((item) => <button type="button" key={item.id} onClick={() => { setStatus(item.status); setQuery(''); setCaptureDate(''); setCaptureDateTo(''); setPage(1); setNotificationsOpen(false); }} className="flex min-h-11 w-full items-center justify-between rounded-xl bg-[#f4f8f7] px-3 text-left text-sm font-bold text-[#31585d]"><span>{item.label}</span><span className="rounded-full bg-white px-2 py-1 text-[#9a4e47]">{item.count}</span></button>)}</div> : <p className="mt-2 rounded-xl bg-[#edf9f4] p-3 text-sm text-[#277b69]">No order action is due right now.</p>}<p className="mt-3 text-[11px] text-[#718487]">Updates when the order workspace refreshes. No background Tally query is made.</p></section> : null}
+
           </div>
-          {deviceDraftState ? <span aria-live="polite" className={`text-xs font-bold ${deviceDraftState === 'pending' ? 'text-[#9a6412]' : deviceDraftState === 'error' ? 'text-[#a0443b]' : 'text-[#587275]'}`}>{deviceDraftState === 'pending' ? '1 pending order on this device' : deviceDraftState === 'error' ? '1 device draft needs attention' : '1 draft on this device'}</span> : null}
         </header>
+        {deviceDraftState ? <span aria-live="polite" className={`mt-1 block text-right text-xs font-bold ${deviceDraftState === 'pending' ? 'text-[#9a6412]' : deviceDraftState === 'error' ? 'text-[#a0443b]' : 'text-[#587275]'}`}>{deviceDraftState === 'pending' ? '1 pending order on this device' : deviceDraftState === 'error' ? '1 device draft needs attention' : '1 draft on this device'}</span> : null}
 
-        <section aria-label="Order handoff queues" className="mt-3 flex snap-x gap-1.5 overflow-x-auto rounded-2xl border border-[#dce7e5] bg-white p-2 sm:mt-5 sm:gap-2">
-          <SummaryCard label="Confirm orders" value={operations.awaitingConfirmation} focus={hasAnyStockFlowRole(data?.actor.roles ?? data?.actor.role, ['administrator', 'management'])} onOpen={() => { setStatus('awaiting_confirmation'); setQuery(''); setCaptureDate(''); setCaptureDateTo(''); setPage(1); }} />
-          <SummaryCard label="Pick & pack" focus={hasAnyStockFlowRole(data?.actor.roles ?? data?.actor.role, ['warehouse', 'operations'])} onOpen={() => { setStatus('picking'); setQuery(''); setCaptureDate(''); setCaptureDateTo(''); setPage(1); }} />
-          <SummaryCard label="Tally billing" value={operations.awaitingTallyBilling} focus={hasAnyStockFlowRole(data?.actor.roles ?? data?.actor.role, ['accounts'])} onOpen={() => { setStatus('billing'); setQuery(''); setCaptureDate(''); setCaptureDateTo(''); setPage(1); }} />
-          <SummaryCard label="Ready to dispatch" value={operations.billedNotDispatched} focus={hasAnyStockFlowRole(data?.actor.roles ?? data?.actor.role, ['operations'])} onOpen={() => { setStatus('dispatch_ready'); setQuery(''); setCaptureDate(''); setCaptureDateTo(''); setPage(1); }} />
-          <SummaryCard label="Delivery attention" value={operations.deliveryAttention} tone="watch" focus={hasAnyStockFlowRole(data?.actor.roles ?? data?.actor.role, ['operations'])} onOpen={() => { setStatus('delivery_attention'); setQuery(''); setCaptureDate(''); setCaptureDateTo(''); setPage(1); }} />
-        </section>
-
-        <div className="sticky top-0 z-20 -mx-1 mt-3 flex flex-col gap-2 rounded-2xl border border-[#dce7e5] bg-white/95 p-2 shadow-sm backdrop-blur sm:static sm:mx-0 sm:mt-5 sm:flex-row sm:items-center sm:gap-3 sm:bg-white sm:p-3 sm:shadow-none">
-          <div className="relative flex-1">
-            <label className="sr-only sm:not-sr-only sm:mb-1 sm:block sm:text-xs sm:font-bold sm:text-[#587275]" htmlFor="order-search">Find existing order</label>
+        <div className="mt-2 flex items-center gap-2">
+          <div className="relative min-w-0 flex-1">
+            <label className="sr-only" htmlFor="order-search">Find existing order</label>
             <input
               id="order-search"
+              type="search"
               value={query}
-              onChange={(event) => { setQuery(event.target.value); setPage(1); }}
-              placeholder="Customer, product, invoice, order, or note"
-              className="min-h-11 w-full rounded-xl border border-[#cedfdd] px-4 pr-16 outline-none focus:border-[#64d4ad] focus:ring-3 focus:ring-[#64d4ad]/20"
+              onChange={(event) => { setFocusNotice(''); setQuery(event.target.value); setPage(1); }}
+              placeholder="Search customer, product, invoice, order"
+              className="min-h-10 w-full rounded-xl border border-[#d6e1df] bg-white px-3.5 pr-16 text-[15px] outline-none focus:border-[#3aa585] focus:ring-3 focus:ring-[#3aa585]/20"
             />
-            {query ? <button type="button" onClick={() => { setQuery(''); setPage(1); }} className="absolute bottom-1 right-1 min-h-9 rounded-lg px-3 text-xs font-bold text-[#456367] hover:bg-[#edf3f1]">Clear</button> : null}
+            {query ? <button type="button" onClick={() => { setFocusNotice(''); setQuery(''); setPage(1); }} className="absolute bottom-0.5 right-1 min-h-9 rounded-lg px-3 text-xs font-bold text-[#456367] hover:bg-[#edf3f1]">Clear</button> : null}
           </div>
-          <label className="sr-only" htmlFor="order-status">Filter by status</label>
+          <button type="button" aria-pressed={query === `assignee:${actorEmail.toLocaleLowerCase('en-IN')}`} onClick={() => { setFocusNotice(''); setQuery((current) => current === `assignee:${actorEmail.toLocaleLowerCase('en-IN')}` ? '' : `assignee:${actorEmail.toLocaleLowerCase('en-IN')}`); setStatus('open'); setCaptureDate(''); setCaptureDateTo(''); setPage(1); }} className="hidden min-h-10 shrink-0 rounded-xl border border-[#d6e1df] bg-white px-3 text-sm font-bold text-[#31585d] hover:bg-[#f1f6f4] aria-pressed:border-[#3aa585] aria-pressed:bg-[#e3f6f1] sm:block">My work</button>
+          <button type="button" aria-expanded={mobileFiltersOpen} aria-controls="mobile-order-filters" onClick={() => setMobileFiltersOpen((open) => !open)} className={`flex min-h-10 shrink-0 items-center gap-1 rounded-xl border px-3 text-sm font-bold ${mobileFiltersOpen || !stageFilters.some((filter) => filter.status === status) || captureDate ? 'border-[#092f36] bg-[#092f36] text-white' : 'border-[#d6e1df] bg-white text-[#31585d]'}`}>Filters <span className={`transition ${mobileFiltersOpen ? 'rotate-180' : ''}`}><ChevronDownIcon /></span></button>
+        </div>
+        <div className="mt-2">
+          <OrderStageChips filters={stageFilters} active={status} onSelect={showQueue} />
+        </div>
+        <div id="mobile-order-filters" className={`${mobileFiltersOpen ? 'grid' : 'hidden'} mt-2 gap-3 rounded-2xl border border-[#dfe7e5] bg-white p-3 shadow-sm sm:grid-cols-[minmax(0,1fr)_auto] sm:items-end`}>
+          <label className="block text-xs font-bold text-[#587275]" htmlFor="order-status">Show orders
           <select
             id="order-status"
             value={status}
-            onChange={(event) => { setStatus(event.target.value); setPage(1); }}
-            className="min-h-11 rounded-xl border border-[#cedfdd] bg-white px-3 outline-none focus:border-[#64d4ad]"
+            onChange={(event) => { setFocusNotice(''); setStatus(event.target.value); setPage(1); }}
+            className="mt-1 block min-h-11 w-full rounded-xl border border-[#d6e1df] bg-white px-3 text-sm font-semibold text-[#173239] outline-none focus:border-[#3aa585]"
           >
             <option value="open">Active orders</option>
             <option value="attention">Needs attention</option>
@@ -585,120 +713,108 @@ export function OrderWorkspace({ actorEmail, initialStatus = 'open' }: { actorEm
             <option value="overdue">Overdue deliveries</option>
             <option value="cancelled">Cancelled</option>
           </select>
-          <div className="sm:contents">
-            <button type="button" aria-pressed={query === `assignee:${actorEmail.toLocaleLowerCase('en-IN')}`} onClick={() => { setQuery((current) => current === `assignee:${actorEmail.toLocaleLowerCase('en-IN')}` ? '' : `assignee:${actorEmail.toLocaleLowerCase('en-IN')}`); setStatus('open'); setCaptureDate(''); setCaptureDateTo(''); setPage(1); }} className="min-h-10 rounded-xl border border-[#cedfdd] px-3 text-sm font-bold text-[#31585d] hover:bg-[#f1f6f4] aria-pressed:border-[#64d4ad] aria-pressed:bg-[#eaf8f1] sm:min-h-11 sm:px-4">My work</button>
-            <button type="button" aria-expanded={mobileFiltersOpen} aria-controls="mobile-order-filters" onClick={() => setMobileFiltersOpen((open) => !open)} className="flex min-h-10 items-center justify-between rounded-xl border border-[#cedfdd] px-3 text-sm font-bold text-[#31585d] sm:hidden">More filters <span aria-hidden="true" className={`transition ${mobileFiltersOpen ? 'rotate-180' : ''}`}>⌄</span></button>
-            <div id="mobile-order-filters" className={`${mobileFiltersOpen ? 'grid' : 'hidden'} mt-2 grid-cols-2 gap-2 border-t border-[#e3ecea] pt-2 sm:contents`}>
-              <button type="button" aria-pressed={query === 'assignee:unassigned'} onClick={() => { setQuery((current) => current === 'assignee:unassigned' ? '' : 'assignee:unassigned'); setStatus('open'); setCaptureDate(''); setCaptureDateTo(''); setPage(1); }} className="min-h-11 rounded-xl border border-[#cedfdd] px-3 font-bold text-[#31585d] hover:bg-[#f1f6f4] aria-pressed:border-[#64d4ad] aria-pressed:bg-[#eaf8f1] sm:px-4">Unassigned</button>
-              <label className="text-xs font-bold text-[#587275]">Order date from<input type="date" value={captureDate} max={captureDateTo || undefined} onChange={(event) => { const nextDate = event.target.value; setCaptureDate(nextDate); if (!nextDate || (captureDateTo && nextDate > captureDateTo)) setCaptureDateTo(''); setPage(1); }} className="mt-1 block min-h-11 w-full rounded-xl border border-[#cedfdd] bg-white px-3 font-normal outline-none focus:border-[#64d4ad]" /></label>
-              <label className="text-xs font-bold text-[#587275]">To (optional)<input type="date" value={captureDateTo} min={captureDate || undefined} disabled={!captureDate} onChange={(event) => { setCaptureDateTo(event.target.value); setPage(1); }} className="mt-1 block min-h-11 w-full rounded-xl border border-[#cedfdd] bg-white px-3 font-normal outline-none focus:border-[#64d4ad] disabled:bg-[#edf3f1]" /></label>
-              <button type="button" onClick={exportVisibleOrders} disabled={!totalOrders} className="min-h-11 rounded-xl border border-[#cedfdd] px-3 font-bold text-[#31585d] hover:bg-[#f1f6f4] disabled:opacity-50 sm:px-4">Export</button>
-              <button type="button" onClick={() => void load(false, true)} disabled={refreshing} aria-busy={refreshing} className="min-h-11 rounded-xl border border-[#cedfdd] px-3 font-bold text-[#31585d] hover:bg-[#f1f6f4] disabled:opacity-60 sm:px-4">{refreshing ? 'Refreshing…' : 'Refresh'}</button>
-            </div>
+          </label>
+          <div className="grid grid-cols-2 gap-2 sm:w-80">
+            <label className="text-xs font-bold text-[#587275]">Ordered from<input type="date" value={captureDate} max={captureDateTo || undefined} onChange={(event) => { const nextDate = event.target.value; setCaptureDate(nextDate); if (!nextDate || (captureDateTo && nextDate > captureDateTo)) setCaptureDateTo(''); setPage(1); }} className="mt-1 block min-h-11 w-full rounded-xl border border-[#d6e1df] bg-white px-2.5 text-sm font-normal text-[#173239] outline-none focus:border-[#3aa585]" /></label>
+            <label className="text-xs font-bold text-[#587275]">To (optional)<input type="date" value={captureDateTo} min={captureDate || undefined} disabled={!captureDate} onChange={(event) => { setCaptureDateTo(event.target.value); setPage(1); }} className="mt-1 block min-h-11 w-full rounded-xl border border-[#d6e1df] bg-white px-2.5 text-sm font-normal text-[#173239] outline-none focus:border-[#3aa585] disabled:bg-[#f1f4f3] disabled:text-[#9aa8aa]" /></label>
+          </div>
+          <div className="flex flex-wrap items-center gap-2 border-t border-[#edf1f0] pt-3 sm:col-span-2">
+            <button type="button" aria-pressed={query === `assignee:${actorEmail.toLocaleLowerCase('en-IN')}`} onClick={() => { setFocusNotice(''); setQuery((current) => current === `assignee:${actorEmail.toLocaleLowerCase('en-IN')}` ? '' : `assignee:${actorEmail.toLocaleLowerCase('en-IN')}`); setStatus('open'); setCaptureDate(''); setCaptureDateTo(''); setPage(1); }} className="min-h-10 rounded-full border border-[#d6e1df] px-3.5 text-sm font-bold text-[#31585d] hover:bg-[#f1f6f4] aria-pressed:border-[#092f36] aria-pressed:bg-[#092f36] aria-pressed:text-white sm:hidden">My work</button>
+            <button type="button" aria-pressed={query === 'assignee:unassigned'} onClick={() => { setFocusNotice(''); setQuery((current) => current === 'assignee:unassigned' ? '' : 'assignee:unassigned'); setStatus('open'); setCaptureDate(''); setCaptureDateTo(''); setPage(1); }} className="min-h-10 rounded-full border border-[#d6e1df] px-3.5 text-sm font-bold text-[#31585d] hover:bg-[#f1f6f4] aria-pressed:border-[#092f36] aria-pressed:bg-[#092f36] aria-pressed:text-white">Unassigned</button>
+            <button type="button" aria-pressed={status === 'history'} onClick={() => showQueue(status === 'history' ? 'open' : 'history')} className="min-h-10 rounded-full border border-[#d6e1df] px-3.5 text-sm font-bold text-[#31585d] hover:bg-[#f1f6f4] aria-pressed:border-[#092f36] aria-pressed:bg-[#092f36] aria-pressed:text-white">Old orders</button>
+            <span className="ml-auto flex gap-1">
+              <button type="button" onClick={exportVisibleOrders} disabled={!totalOrders} className="min-h-10 rounded-lg px-3 text-sm font-bold text-[#0f7b6c] hover:bg-[#e3f6f1] disabled:opacity-40">Export</button>
+              <button type="button" onClick={() => void load(false, true)} disabled={refreshing} aria-busy={refreshing} className="min-h-10 rounded-lg px-3 text-sm font-bold text-[#0f7b6c] hover:bg-[#e3f6f1] disabled:opacity-60">{refreshing ? 'Refreshing…' : 'Refresh'}</button>
+            </span>
           </div>
         </div>
+        </div>
 
-        {notice ? <div className="mt-4 flex items-center justify-between gap-3 rounded-xl border border-[#bfe5d8] bg-[#eaf8f1] px-4 py-3 text-sm font-semibold text-[#176246]"><p>{notice}</p>{noticeOrderNumber ? <button type="button" onClick={() => { setQuery(noticeOrderNumber); setStatus('all'); setCaptureDate(''); setCaptureDateTo(''); setPage(1); }} className="min-h-9 shrink-0 rounded-lg border border-[#9ddbc5] bg-white px-3 text-xs font-bold text-[#277b69]">Review order</button> : null}</div> : null}
+        {notice ? <div className="mt-4 flex items-center justify-between gap-3 rounded-xl border border-[#bfe5d8] bg-[#eaf8f1] px-4 py-3 text-sm font-semibold text-[#176246]"><p>{notice}</p>{noticeOrderNumber ? <button type="button" onClick={() => { setFocusNotice(''); setQuery(noticeOrderNumber); setStatus('all'); setCaptureDate(''); setCaptureDateTo(''); setPage(1); }} className="min-h-9 shrink-0 rounded-lg border border-[#9ddbc5] bg-white px-3 text-xs font-bold text-[#277b69]">Review order</button> : null}</div> : null}
         {error ? <p role="alert" className="mt-4 rounded-xl border border-[#efbbb6] bg-[#fff0ef] px-4 py-3 text-sm text-[#8d3a34]">{error}</p> : null}
+        {focusNotice ? <p role="alert" className="mt-4 flex flex-wrap items-center justify-between gap-2 rounded-xl border border-[#efbbb6] bg-[#fff0ef] px-4 py-3 text-sm text-[#8d3a34]"><span>{focusNotice}</span><button type="button" onClick={() => setFocusNotice('')} className="min-h-9 shrink-0 rounded-lg border border-[#efbbb6] bg-white px-3 text-xs font-bold">Dismiss</button></p> : null}
 
-        <section className="mt-3 overflow-hidden rounded-2xl border border-[#dce7e5] bg-white shadow-[0_8px_24px_rgba(9,47,54,0.05)] sm:mt-4">
-          <div className="flex items-center justify-between border-b border-[#e3ecea] px-3 py-3 sm:px-5 sm:py-4">
-            <div>
-              <h2 className="font-extrabold text-[#173239]">{queueNames[status] || statusLabel(status)}</h2>
-              <p className="mt-1 hidden text-xs text-[#6b7e81] sm:block">Tally stock snapshot: {staleText}</p>
+        <section className="mt-3 overflow-hidden rounded-2xl border border-[#dfe7e5] bg-white shadow-[0_1px_3px_rgba(9,47,54,0.06)]">
+          <div className="flex items-center justify-between gap-3 border-b border-[#e8eeed] px-4 py-2">
+            <div className="min-w-0">
+              <h2 className="truncate text-sm font-extrabold text-[#173239]">{queueNames[status] || statusLabel(status)}</h2>
+              <p className="hidden text-[11px] text-[#7a8c8f] lg:block" title={staleText}>Tally stock {snapshotTimeLabel(data?.snapshot.fetchedAt).toLocaleLowerCase('en-IN')}</p>
             </div>
-            <span className="rounded-full bg-[#e2f8ef] px-3 py-1 text-xs font-extrabold text-[#136146]">{totalOrders} orders</span>
+            <span className="flex shrink-0 items-center gap-2">
+              {yourQueue && yourQueue !== status ? <button type="button" onClick={() => showQueue(yourQueue)} className="min-h-8 rounded-full px-2.5 text-xs font-bold text-[#0f7b6c] hover:bg-[#e3f6f1]">Your queue</button> : null}
+              <span className="rounded-full bg-[#eef3f2] px-2.5 py-1 text-xs font-extrabold tabular-nums text-[#31585d]">{totalOrders} {status === 'open' ? 'pending' : 'orders'}{showsDeliveredToday && deliveredToday.length ? <span className="hidden sm:inline"> · {deliveredToday.length} delivered today</span> : null}</span>
+            </span>
           </div>
 
           {loading ? (
             <div className="p-10 text-center text-sm text-[#6b7e81]">Loading orders…</div>
-          ) : visibleOrders.length === 0 ? (
+          ) : displayedOrders.length === 0 ? (
             <div className="p-10 text-center">
               <p className="font-bold text-[#31585d]">No matching orders</p>
               <p className="mt-2 text-sm text-[#708386]">{query ? `No orders match “${query}”. Clear the search to see the full list.` : status === 'history' ? 'Completed and cancelled orders will remain available here.' : status === 'attention' ? 'No active orders are stalled or have unresolved operational issues.' : status === 'billing_attention' ? 'No invoice, customer-ledger, product, quantity, or stale-verification issues need attention.' : status.startsWith('delivery_due_') ? 'No promised deliveries fall in this period.' : status === 'back_ordered' ? 'No prepared orders currently have a quantity shortage.' : status === 'delivery_exception' ? 'No delivery exceptions are currently open.' : 'New orders will appear here immediately.'}</p>
             </div>
           ) : desktopControlCenter ? (
-            <div className="grid items-start lg:h-[calc(100dvh-20rem)] lg:min-h-96 lg:grid-cols-[minmax(280px,360px)_minmax(0,1fr)]">
-              <aside aria-label="Desktop order queue" className="h-full overflow-y-auto border-r border-[#e3ecea] bg-[#f8faf9] p-2">
-                {displayedOrders.map((order) => {
+            <div className="grid items-start lg:h-[calc(100dvh-13rem)] lg:min-h-96 lg:grid-cols-[minmax(300px,380px)_minmax(0,1fr)]">
+              <aside aria-label="Desktop order queue" className="h-full overflow-y-auto border-r border-[#e8eeed] bg-[#fafbfb]">
+                {orderGroups.map((group) => <section key={group.id} aria-label={group.label}>
+                  <h3 className={`sticky top-0 z-[1] border-b border-[#edf1f0] bg-[#fafbfb]/95 px-4 py-1.5 text-[11px] font-extrabold uppercase tracking-wide backdrop-blur ${group.id === 'action' ? 'text-[#a23b33]' : 'text-[#7a8c8f]'}`}>{group.label} <span className="font-bold tabular-nums">· {group.orders.length}</span></h3>
+                  {group.orders.map((order) => {
                   const selected = order.id === selectedOrder?.id;
                   const nextAction = nextStatus[order.status]?.label || orderNextOwnerLabel(order.status) || 'View order';
-                  const deliveryState = orderDeliveryReminder(order);
-                  const attentionCount = orderAttentionReasons(order).length;
-                  return <button id={`desktop-order-${order.id}`} key={order.id} type="button" aria-current={selected ? 'true' : undefined} onClick={() => setSelectedOrderId(order.id)} onKeyDown={(event) => { if (['ArrowUp', 'ArrowDown', 'Home', 'End'].includes(event.key)) { event.preventDefault(); navigateDesktopQueue(event.key); } }} className="mb-1 w-full rounded-xl border border-transparent px-3 py-3 text-left outline-none hover:bg-white focus-visible:border-[#64d4ad] focus-visible:ring-3 focus-visible:ring-[#64d4ad]/20 aria-current:border-[#8ad9be] aria-current:bg-white aria-current:shadow-sm">
-                    <span className="flex items-center justify-between gap-2"><strong className="text-sm text-[#173239]">{order.orderNumber}</strong><span className="flex shrink-0 items-center gap-1">{order.priority && order.priority !== 'normal' ? <span className={`rounded-full px-1.5 py-0.5 text-[9px] font-black uppercase ${order.priority === 'urgent' ? 'bg-[#fff0ef] text-[#9a3f37]' : 'bg-[#fff1d6] text-[#8a5a0a]'}`}>{order.priority}</span> : null}<span className="text-[10px] font-extrabold uppercase text-[#587275]">{orderStage(order.status)}</span></span></span>
-                    <span className="mt-1 block truncate text-sm font-bold text-[#31585d]">{order.customerName}</span>
-                    <span className="mt-1 flex items-center justify-between gap-2 text-xs text-[#718487]"><span>{formatQuantity(order.totalQuantity)} qty · {order.lineCount} line{order.lineCount === 1 ? '' : 's'}</span><span className="truncate font-bold text-[#277b69]">{nextAction}</span></span>
-                    <span className="mt-1 flex items-center gap-2 text-[10px] font-semibold text-[#718487]"><span title="Time since order capture">{compactOrderAge(order.createdAt)} old</span><span>·</span><span className="max-w-36 truncate">{order.assignedToEmail ? `Owner: ${order.assignedToEmail}` : 'Unassigned'}</span>{attentionCount ? <span className="ml-auto rounded-full bg-[#fff1d6] px-1.5 py-0.5 font-extrabold text-[#8a5a0a]">{attentionCount} alert{attentionCount === 1 ? '' : 's'}</span> : null}</span>
-                    {deliveryState ? <span className={`mt-1 block text-[10px] font-extrabold ${deliveryState === 'overdue' ? 'text-[#9a3f37]' : 'text-[#8a5a0a]'}`}>{deliveryState === 'overdue' ? 'Delivery overdue' : deliveryState === 'today' ? 'Delivery due today' : 'Delivery due soon'}</span> : null}
+                  const stage = orderStageStyle(order.status);
+                  return <button id={`desktop-order-${order.id}`} key={order.id} type="button" aria-current={selected ? 'true' : undefined} title={`${order.assignedToEmail ? `Owner: ${order.assignedToEmail}` : 'Unassigned'} · Next: ${nextAction}`} onClick={() => setSelectedOrderId(order.id)} onKeyDown={(event) => { if (['ArrowUp', 'ArrowDown', 'Home', 'End'].includes(event.key)) { event.preventDefault(); navigateDesktopQueue(event.key); } }} className={`relative block w-full border-b border-[#edf1f0] py-2 pl-5 pr-3 text-left outline-none hover:bg-white focus-visible:bg-white focus-visible:ring-2 focus-visible:ring-inset focus-visible:ring-[#3aa585] aria-current:bg-white aria-current:shadow-[inset_3px_0_0_#092f36] ${['delivered', 'cancelled'].includes(order.status) ? 'opacity-70' : ''}`}>
+                    <span aria-hidden="true" className={`absolute inset-y-2 left-2 w-1 rounded-full ${stage.bar}`} />
+                    <span className="flex items-baseline justify-between gap-2"><strong className="truncate text-sm text-[#092f36]">{order.customerName}</strong><span className="shrink-0 text-[11px] font-semibold tabular-nums text-[#7a8c8f]" title="Time since order capture">{compactOrderAge(order.createdAt)}</span></span>
+                    <span className="mt-1 flex min-w-0 items-center gap-1.5 text-xs text-[#6b7e81]"><span className={`shrink-0 rounded-full px-2 py-0.5 text-[10px] font-extrabold ${stage.chip}`}>{stage.label}</span>{newOrderIds?.has(order.id) ? <span className="shrink-0 rounded-full bg-[#092f36] px-1.5 py-0.5 text-[9px] font-black uppercase text-white">New</span> : null}<OrderFlagBadge order={order} /><span className="truncate">{order.orderNumber}</span><span className="ml-auto max-w-32 shrink-0 truncate text-[11px] font-bold text-[#0f7b6c]">{nextAction}</span></span>
                   </button>;
-                })}
+                  })}
+                </section>)}
               </aside>
               <div aria-label="Selected order workspace" className="h-full min-w-0 overflow-y-auto overscroll-contain">
-                <div className="sticky top-0 z-10 flex min-h-12 items-center justify-between gap-3 border-b border-[#e3ecea] bg-white/95 px-4 py-2 backdrop-blur">
-                  <span aria-live="polite" className="text-xs font-bold text-[#587275]">Order {selectedOrderIndex + 1} of {displayedOrders.length} <span className="ml-2 font-normal text-[#718487]">↑ ↓ to navigate</span></span>
-                  <div className="flex gap-2">
-                    <button type="button" aria-label="Previous order" disabled={selectedOrderIndex <= 0} onClick={() => setSelectedOrderId(displayedOrders[selectedOrderIndex - 1].id)} className="min-h-9 rounded-lg border border-[#cedfdd] px-3 text-xs font-bold text-[#31585d] disabled:opacity-35">Previous</button>
-                    <button type="button" aria-label="Next order" disabled={selectedOrderIndex < 0 || selectedOrderIndex >= displayedOrders.length - 1} onClick={() => setSelectedOrderId(displayedOrders[selectedOrderIndex + 1].id)} className="min-h-9 rounded-lg border border-[#cedfdd] px-3 text-xs font-bold text-[#31585d] disabled:opacity-35">Next</button>
+                <div className="sticky top-0 z-10 border-b border-[#e8eeed] bg-white/95 px-4 py-2 backdrop-blur">
+                  <div className="flex min-h-9 items-center justify-between gap-3">
+                    <span aria-live="polite" className="text-xs font-bold text-[#587275]">Order {selectedOrderIndex + 1} of {displayedOrders.length} <span className="ml-2 font-normal text-[#718487]">↑ ↓ to navigate</span></span>
+                    <div className="flex gap-2">
+                      <button type="button" aria-label="Previous order" disabled={selectedOrderIndex <= 0} onClick={() => setSelectedOrderId(displayedOrders[selectedOrderIndex - 1].id)} className="min-h-9 rounded-lg border border-[#d6e1df] px-3 text-xs font-bold text-[#31585d] disabled:opacity-35">Previous</button>
+                      <button type="button" aria-label="Next order" disabled={selectedOrderIndex < 0 || selectedOrderIndex >= displayedOrders.length - 1} onClick={() => setSelectedOrderId(displayedOrders[selectedOrderIndex + 1].id)} className="min-h-9 rounded-lg border border-[#d6e1df] px-3 text-xs font-bold text-[#31585d] disabled:opacity-35">Next</button>
+                    </div>
                   </div>
+                  {selectedOrder ? <div className="mt-1.5 max-w-md"><OrderProgress status={selectedOrder.status} /></div> : null}
                 </div>
-                {selectedOrder ? <OrderRow
-                  key={selectedOrder.id}
-                  order={selectedOrder}
-                  actorRole={data?.actor.role || ''}
-                  actorRoles={data?.actor.roles}
-                  actorEmail={data?.actor.email || actorEmail}
-                  tallyInvoices={data?.snapshot.tallyInvoices}
-                  tallySnapshotFetchedAt={data?.snapshot.fetchedAt}
-                  onAdvance={advance}
-                  onCancel={cancelOrder}
-                  onSaveFulfilment={saveFulfilment}
-                  onDelivery={updateDelivery}
-                  onEdit={editOrder}
-                  onException={updateException}
-                  onInstallation={updateInstallation}
-                  onBillingReview={recordBillingReview}
-                  onAddNote={addOrderNote}
-                  onRepeat={(order) => void openNewOrder(order)}
-                  onFindCustomer={(order) => { setQuery(`customer:${order.customerName}`); setStatus('all'); setCaptureDate(''); setCaptureDateTo(''); setPage(1); }}
-                  onSetPriority={setOrderPriority}
-                  onSetAssignee={setOrderAssignee}
-                  onFollowUp={updateOrderFollowUp}
-                  onPricingChanged={() => load(false, true)}
-                /> : null}
+                {selectedOrder ? <OrderRow key={selectedOrder.id} order={selectedOrder} {...orderRowProps} /> : null}
               </div>
             </div>
           ) : (
-            <div className="divide-y divide-[#e8efed]">
-              {displayedOrders.map((order) => <OrderRow
-                  key={order.id}
-                  order={order}
-                  actorRole={data?.actor.role || ''}
-                  actorRoles={data?.actor.roles}
-                  actorEmail={data?.actor.email || actorEmail}
-                  tallyInvoices={data?.snapshot.tallyInvoices}
-                  tallySnapshotFetchedAt={data?.snapshot.fetchedAt}
-                  onAdvance={advance}
-                  onCancel={cancelOrder}
-                  onSaveFulfilment={saveFulfilment}
-                  onDelivery={updateDelivery}
-                  onEdit={editOrder}
-                  onException={updateException}
-                  onInstallation={updateInstallation}
-                  onBillingReview={recordBillingReview}
-                  onAddNote={addOrderNote}
-                  onRepeat={(order) => void openNewOrder(order)}
-                  onFindCustomer={(order) => { setQuery(`customer:${order.customerName}`); setStatus('all'); setCaptureDate(''); setCaptureDateTo(''); setPage(1); }}
-                  onSetPriority={setOrderPriority}
-                  onSetAssignee={setOrderAssignee}
-                  onFollowUp={updateOrderFollowUp}
-                  onPricingChanged={() => load(false, true)}
-                />)}
+            <div>
+              {orderGroups.map((group) => <section key={group.id} aria-label={group.label}>
+                <h3 className={`border-b border-[#edf1f0] bg-[#fafbfb] px-4 py-1.5 text-[11px] font-extrabold uppercase tracking-wide ${group.id === 'action' ? 'text-[#a23b33]' : 'text-[#7a8c8f]'}`}>{group.label} <span className="font-bold tabular-nums">· {group.orders.length}</span></h3>
+                {group.orders.map((order) => <CompactOrderRow key={order.id} order={order} onOpen={openOrderDetail} isNew={newOrderIds?.has(order.id)} />)}
+              </section>)}
             </div>
           )}
-          {!loading && pageCount > 1 ? <nav aria-label="Order pages" className="flex items-center justify-between gap-3 border-t border-[#e3ecea] px-5 py-4"><button type="button" disabled={currentPage === 1} onClick={() => setPage((value) => Math.max(1, value - 1))} className="min-h-10 rounded-xl border border-[#cedfdd] px-4 font-bold text-[#31585d] disabled:opacity-40">Previous</button><span className="text-xs font-bold text-[#6b7e81]">Page {currentPage} of {pageCount}</span><button type="button" disabled={currentPage === pageCount} onClick={() => setPage((value) => Math.min(pageCount, value + 1))} className="min-h-10 rounded-xl border border-[#cedfdd] px-4 font-bold text-[#31585d] disabled:opacity-40">Next</button></nav> : null}
+          {!loading && pageCount > 1 ? <nav aria-label="Order pages" className="flex items-center justify-between gap-3 border-t border-[#e3ecea] px-4 py-3"><button type="button" disabled={currentPage === 1} onClick={() => setPage((value) => Math.max(1, value - 1))} className="min-h-10 rounded-xl border border-[#cedfdd] px-4 font-bold text-[#31585d] disabled:opacity-40">Previous</button><span className="text-xs font-bold text-[#6b7e81]">Page {currentPage} of {pageCount}</span><button type="button" disabled={currentPage === pageCount} onClick={() => setPage((value) => Math.min(pageCount, value + 1))} className="min-h-10 rounded-xl border border-[#cedfdd] px-4 font-bold text-[#31585d] disabled:opacity-40">Next</button></nav> : null}
         </section>
       </div>
+
+      {openOrder && !desktopControlCenter ? (
+        <dialog ref={orderPageRef} aria-modal="true" aria-label={`Order ${openOrder.orderNumber}`} onCancel={(event) => { event.preventDefault(); setOpenOrderId(''); }} className="fixed inset-0 z-40 m-0 flex size-full max-h-none max-w-none flex-col overflow-hidden border-0 bg-white p-0 text-[#173239]" style={{ paddingTop: 'env(safe-area-inset-top)', paddingBottom: 'env(safe-area-inset-bottom)' }}>
+          <div className="shrink-0 border-b border-[#e8eeed] bg-white px-2 pb-2 pt-1.5">
+            <div className="flex items-center gap-1">
+              <button type="button" autoFocus aria-label="Back to orders" onClick={() => setOpenOrderId('')} className="grid min-h-11 min-w-11 place-items-center rounded-xl text-[#092f36] hover:bg-[#f1f6f4]"><BackIcon /></button>
+              <div className="min-w-0 flex-1">
+                <p className="truncate text-base font-black text-[#092f36]">{openOrder.customerName}</p>
+                <p className="flex items-center gap-1.5 text-xs text-[#6b7e81]"><span className={`rounded-full px-2 py-0.5 text-[10px] font-extrabold ${orderStageStyle(openOrder.status).chip}`}>{orderStageStyle(openOrder.status).label}</span><OrderFlagBadge order={openOrder} /><span className="truncate">{openOrder.orderNumber} · {compactOrderAge(openOrder.createdAt)} old</span></p>
+              </div>
+            </div>
+            <div className="mt-1.5 px-2"><OrderProgress status={openOrder.status} /></div>
+          </div>
+          <div className="min-h-0 flex-1 overflow-y-auto overscroll-contain">
+            {notice ? <p className="mx-3 mt-3 rounded-xl border border-[#bfe5d8] bg-[#eaf8f1] px-3 py-2 text-sm font-semibold text-[#176246]">{notice}</p> : null}
+            {error ? <p className="mx-3 mt-3 rounded-xl border border-[#efbbb6] bg-[#fff0ef] px-3 py-2 text-sm text-[#8d3a34]">{error}</p> : null}
+            <OrderRow key={openOrder.id} order={openOrder} inOrderPage {...orderRowProps} />
+          </div>
+        </dialog>
+      ) : null}
 
       {catalogLoading && !creating ? <div className="fixed inset-0 z-50 flex items-center justify-center bg-[#092f36]/45 p-4" role="presentation"><dialog open aria-modal="true" aria-label="Preparing order" onKeyDown={(event) => { if (event.key === 'Escape') cancelOrderPreparation(); }} className="relative m-auto w-full max-w-sm rounded-2xl border border-[#dce7e5] bg-white p-6 shadow-2xl"><h2 className="text-lg font-black text-[#092f36]">Preparing order</h2><p className="mt-2 text-sm text-[#587275]">Loading customer and product lists…</p><button type="button" autoFocus onClick={cancelOrderPreparation} className="mt-5 min-h-10 rounded-xl border border-[#cedfdd] px-4 text-sm font-bold text-[#31585d]">Cancel</button></dialog></div> : null}
       {creating && data ? (
@@ -712,6 +828,7 @@ export function OrderWorkspace({ actorEmail, initialStatus = 'open' }: { actorEm
             setRepeatOrder(null);
           }}
           onCreated={(number, command, result) => {
+            if (result?.orderId) onOrderActed?.(result.orderId);
             setDeviceDraftState(null);
             setCreating(false);
             setNotice(`${number} captured successfully.`);
@@ -727,6 +844,7 @@ export function OrderWorkspace({ actorEmail, initialStatus = 'open' }: { actorEm
             }
           }}
           onViewCustomer={(customerName) => {
+            setFocusNotice('');
             setQuery(`customer:${customerName}`);
             setStatus('all');
             setCaptureDate('');
@@ -739,15 +857,6 @@ export function OrderWorkspace({ actorEmail, initialStatus = 'open' }: { actorEm
       ) : null}
     </div>
   );
-}
-
-function SummaryCard({ label, value, tone = 'normal', focus = false, onOpen }: { label: string; value?: number; tone?: 'normal' | 'watch'; focus?: boolean; onOpen?: () => void }) {
-  const content = <>
-      <span className="min-w-0 text-left"><span className="block truncate text-xs font-bold text-[#587275]">{label}</span>{focus ? <span className="mt-0.5 block text-[9px] font-extrabold uppercase tracking-wide text-[#277b69]">Your queue</span> : null}</span>
-      <strong className="shrink-0 rounded-lg bg-white px-2 py-1 text-base font-black text-[#092f36]">{value == null ? '›' : Number(value).toLocaleString('en-IN')}</strong>
-    </>;
-  const className = `flex min-h-14 min-w-36 flex-1 shrink-0 snap-start items-center justify-between gap-2 rounded-xl border px-3 py-2 text-left ${focus ? 'border-[#8ad9be] bg-[#effbf6]' : tone === 'watch' ? 'border-[#f0d7a5] bg-[#fff9ec]' : 'border-transparent bg-[#f5f8f7]'}`;
-  return onOpen ? <button type="button" onClick={onOpen} className={`${className} transition hover:-translate-y-0.5 hover:shadow-sm`}>{content}</button> : <article className={className}>{content}</article>;
 }
 
 function OrderRow({
@@ -772,6 +881,7 @@ function OrderRow({
   onSetAssignee,
   onFollowUp,
   onPricingChanged,
+  inOrderPage = false,
 }: {
   order: OrderSummary;
   actorRole: string;
@@ -794,6 +904,8 @@ function OrderRow({
   onSetAssignee: (order: OrderSummary, assignedToEmail?: string) => Promise<void>;
   onFollowUp: (order: OrderSummary, command: Extract<OrderCommand, { action: 'set_order_follow_up' | 'complete_order_follow_up' }>) => Promise<void>;
   onPricingChanged: () => Promise<void>;
+  /** The full-screen order page already shows number, stage and customer in its header. */
+  inOrderPage?: boolean;
 }) {
   const roles = actorRoles ?? [actorRole as StockFlowRole];
   const [busy, setBusy] = useState(false);
@@ -837,12 +949,13 @@ function OrderRow({
     }
   }
   return (
-    <article className="min-w-0 [overflow-wrap:anywhere] [content-visibility:auto] [contain-intrinsic-size:auto_260px] p-3 sm:p-5">
+    // content-visibility adds paint containment, which would trap the pinned next-step bar; the order page skips it.
+    <article className={inOrderPage ? 'min-w-0 p-3 pb-36 [overflow-wrap:anywhere]' : 'min-w-0 [overflow-wrap:anywhere] [content-visibility:auto] [contain-intrinsic-size:auto_260px] p-3 sm:p-5'}>
       <div className="grid gap-4 lg:grid-cols-[minmax(0,1.5fr)_minmax(0,1fr)_auto] lg:items-center">
       <div>
         <div className="flex flex-wrap items-center gap-2">
-          <strong className="text-[#092f36]">{order.orderNumber}</strong>
-          <span className="rounded-full bg-[#edf3f1] px-2.5 py-1 text-[11px] font-extrabold text-[#46686c]">{orderStage(order.status)}</span>
+          {inOrderPage ? null : <><strong className="text-[#092f36]">{order.orderNumber}</strong>
+          <span className="rounded-full bg-[#edf3f1] px-2.5 py-1 text-[11px] font-extrabold text-[#46686c]">{orderStage(order.status)}</span></>}
           {order.priority && order.priority !== 'normal' ? <span className={`rounded-full px-2.5 py-1 text-[11px] font-extrabold ${order.priority === 'urgent' ? 'bg-[#fff0ef] text-[#9a3f37]' : 'bg-[#fff1d6] text-[#8a5a0a]'}`}>{order.priority === 'urgent' ? 'Urgent' : 'High priority'}</span> : null}
           {order.assignedToEmail ? <span title={`Assigned to ${order.assignedToEmail}`} className="max-w-44 truncate rounded-full bg-[#e8f4fa] px-2.5 py-1 text-[11px] font-extrabold text-[#315f75] sm:max-w-none">Assigned: {order.assignedToEmail}</span> : null}
           {deliveryReminder ? <span className={`rounded-full px-2.5 py-1 text-[11px] font-extrabold ${deliveryReminder === 'overdue' ? 'bg-[#fff0ef] text-[#9a3f37]' : deliveryReminder === 'today' ? 'bg-[#fff1d6] text-[#8a5a0a]' : 'bg-[#e8f4fa] text-[#315f75]'}`}>{deliveryReminder === 'overdue' ? 'Delivery overdue' : deliveryReminder === 'today' ? 'Delivery due today' : 'Delivery due soon'}</span> : null}
@@ -850,7 +963,7 @@ function OrderRow({
           {lineMatch.state === 'mismatch' ? <span className="rounded-full bg-[#fff0ef] px-2.5 py-1 text-[11px] font-extrabold text-[#8d3a34]">Billing mismatch</span> : null}
           <span className={`rounded-full px-2.5 py-1 text-[11px] font-extrabold ${order.pricingState === 'approved' ? 'bg-[#eaf8f1] text-[#176246]' : order.pricingState === 'approval_required' ? 'bg-[#fff1d6] text-[#8a5a0a]' : 'bg-[#f1f3f2] text-[#587275]'}`}>Pricing: {order.pricingState === 'approved' ? 'verified' : order.pricingState === 'approval_required' ? 'approval required' : 'review required'}</span>
         </div>
-        <p className="mt-2 font-bold text-[#274b50]">{order.customerName}</p>
+        {inOrderPage ? null : <p className="mt-2 font-bold text-[#274b50]">{order.customerName}</p>}
         <p className="mt-1 flex flex-wrap items-center gap-2 text-xs text-[#718487]"><span>{order.customerPhone || 'No phone recorded'} · {order.lineCount} line{order.lineCount === 1 ? '' : 's'}<span className="sm:hidden"> · {formatQuantity(total)} qty</span></span>{phoneHref ? <a href={phoneHref} aria-label={`Call ${order.customerName}`} className="rounded-lg border border-[#cedfdd] px-2 py-1 font-bold text-[#31585d] hover:bg-[#f1f6f4]">Call</a> : null}</p>
         {order.expectedDeliveryDate ? <p className="mt-1 text-xs font-bold text-[#456367]">Promised delivery: {new Date(`${order.expectedDeliveryDate}T00:00:00+05:30`).toLocaleDateString('en-IN', { timeZone: 'Asia/Kolkata', day: '2-digit', month: 'short', year: 'numeric' })}</p> : null}
         {backOrderedQuantity > 0 ? <p className="mt-1 text-xs font-extrabold text-[#9a6412]">Short by {formatQuantity(backOrderedQuantity)}</p> : null}
@@ -862,13 +975,14 @@ function OrderRow({
         <p className="mt-1 font-extrabold text-[#274b50]">{formatQuantity(total)}</p>
       </div>
       {action && canAdvance ? (
-        <div className="flex w-full flex-col gap-2 lg:min-w-48">
+        // On the phone order page the next step is pinned to the bottom of the screen, always within thumb reach.
+        <div className={inOrderPage ? 'fixed inset-x-0 bottom-0 z-50 flex flex-col gap-2 border-t border-[#e3ecea] bg-white/95 px-3 pt-3 shadow-[0_-8px_24px_rgba(9,47,54,0.08)] backdrop-blur' : 'flex w-full flex-col gap-2 lg:min-w-48'} style={inOrderPage ? { paddingBottom: 'max(0.75rem, env(safe-area-inset-bottom))' } : undefined}>
           {requiresInvoice ? <label className="text-xs font-bold text-[#587275]">Tally invoice number(s)<input maxLength={160} value={invoiceNumber} onChange={(event) => setInvoiceNumber(event.target.value)} placeholder="Use commas for split invoices" className="mt-1 min-h-10 w-full rounded-lg border border-[#cedfdd] px-3 font-normal text-[#173239] outline-none focus:border-[#64d4ad]" /></label> : null}
           <button
           type="button"
           disabled={busy || (requiresInvoice && !invoiceNumber.trim())}
           onClick={async () => { setBusy(true); try { await onAdvance(order, invoiceNumber); } finally { setBusy(false); } }}
-          className="min-h-11 rounded-xl border border-[#badfd4] bg-[#effbf6] px-4 text-sm font-extrabold text-[#126044] hover:bg-[#e2f8ef] disabled:opacity-50"
+          className={inOrderPage ? 'min-h-12 rounded-xl bg-[#092f36] px-4 text-base font-bold text-white hover:bg-[#0d4549] disabled:opacity-50' : 'min-h-11 rounded-xl border border-[#badfd4] bg-[#effbf6] px-4 text-sm font-extrabold text-[#126044] hover:bg-[#e2f8ef] disabled:opacity-50'}
         >
           {busy ? 'Updating…' : action.label}
         </button>
@@ -912,7 +1026,7 @@ function OrderRow({
           {lineMatch.state === 'mismatch' ? <div className="mt-3 rounded-xl border border-[#efc6c2] bg-[#fff8f7] p-3"><p className="text-xs font-extrabold uppercase tracking-wide text-[#8d3a34]">Tally invoice differences</p><ul className="mt-2 space-y-1 text-sm text-[#6f3f3b]">{lineMatch.differences.map((difference) => <li key={difference.itemName}>{difference.itemName}: ordered {formatQuantity(difference.orderedQuantity)}, invoiced {formatQuantity(difference.invoicedQuantity)}</li>)}</ul><BillingReviewPanel order={order} actorRole={actorRole} actorRoles={roles} onSave={onBillingReview} /></div> : null}
         {hasAnyStockFlowRole(roles, ['administrator', 'accounts', 'management']) && !['billed_in_tally','ready_for_dispatch','dispatched','delivered','cancelled'].includes(order.status) ? <PricingPanel order={order} actorRole={actorRole} actorRoles={roles} onChanged={onPricingChanged} /> : null}
         {!['cancelled', 'delivered'].includes(order.status) ? <FulfilmentEditor order={order} onSave={onSaveFulfilment} /> : null}
-        {['ready_for_dispatch', 'dispatched', 'delivered'].includes(order.status) ? <DispatchPanel order={order} actorRole={actorRole} actorRoles={roles} onSave={onDelivery} /> : null}
+        {['ready_for_dispatch', 'dispatched', 'delivered'].includes(order.status) ? <DispatchPanel key={order.status} order={order} actorRole={actorRole} actorRoles={roles} onSave={onDelivery} /> : null}
         {['phone_order_received','awaiting_confirmation','awaiting_approval','confirmed','partially_reserved','fully_reserved','ready_for_picking','picked','packed'].includes(order.status) ? <OrderEditPanel order={order} onSave={onEdit} /> : null}
         {detailState === 'loading' ? <p className="mt-4 text-xs text-[#718487]">Loading operational history…</p> : detailState === 'error' ? <button type="button" onClick={() => void loadDetails()} className="mt-4 text-xs font-bold text-[#9a4e47]">Operational history could not load · Retry</button> : null}
         <DeliveryExceptionPanel order={detailedOrder} onSave={onException} />
@@ -1120,10 +1234,24 @@ function BillingHandoff({ order }: { order: OrderSummary }) {
   return <div className="mt-5 flex flex-col gap-2 border-t border-[#dfe9e7] pt-4 sm:flex-row sm:items-center sm:justify-between"><div><p className="font-bold text-[#31585d]">Tally billing handoff</p><p className="text-xs text-[#718487]">Copies the customer, products, quantities, delivery details, and notes.</p>{state === 'error' ? <p className="mt-1 text-xs font-bold text-[#9a4e47]">Copy was blocked. Please allow clipboard access and try again.</p> : null}</div><button type="button" onClick={() => void copy()} className="min-h-10 shrink-0 rounded-xl border border-[#badfd4] bg-white px-4 text-sm font-bold text-[#126044] hover:bg-[#effbf6]">{state === 'copied' ? 'Copied' : 'Copy for Tally'}</button></div>;
 }
 
+function OrderDraftNotice({ changed, busy, onLoadLatest }: { changed: boolean; busy: boolean; onLoadLatest: () => void }) {
+  if (!changed) return null;
+  return <div className="col-span-full flex flex-wrap items-center justify-between gap-2 rounded-lg border border-[#f0d7a5] bg-[#fff9ec] px-3 py-2 text-xs text-[#805b20]"><span>This order changed since you started editing.</span><button type="button" disabled={busy} onClick={onLoadLatest} className="min-h-9 rounded-lg border border-[#f0d7a5] bg-white px-3 font-bold disabled:opacity-50">Load latest</button></div>;
+}
+
 function OrderEditPanel({ order, onSave }: { order: OrderSummary; onSave: (order: OrderSummary, payload: Extract<OrderCommand, { action: 'edit_order' }>['payload']) => Promise<void> }) {
   const [open,setOpen]=useState(false); const [busy,setBusy]=useState(false); const [customerName,setCustomerName]=useState(order.customerName); const [customerPhone,setCustomerPhone]=useState(order.customerPhone||''); const [notes,setNotes]=useState(order.notes||''); const [reason,setReason]=useState(''); const [lines,setLines]=useState(()=>order.lines.map(line=>({tallyKey:line.tallyKey,itemName:line.itemName,quantity:Math.max(1,Math.round(line.quantity)),fulfilled:Math.max(0,Math.round(Number(line.fulfilledQuantity||0)))})));
+  const [baseVersion, setBaseVersion] = useState(order.version);
+  function resetDrafts() {
+    setCustomerName(order.customerName);
+    setCustomerPhone(order.customerPhone || '');
+    setNotes(order.notes || '');
+    setReason('');
+    setLines(order.lines.map((line) => ({ tallyKey: line.tallyKey, itemName: line.itemName, quantity: Math.max(1, Math.round(line.quantity)), fulfilled: Math.max(0, Math.round(Number(line.fulfilledQuantity || 0))) })));
+    setBaseVersion(order.version);
+  }
   const reasonRequired=!['phone_order_received','awaiting_confirmation','awaiting_approval'].includes(order.status);
-  return <div className="mt-5 border-t border-[#dfe9e7] pt-4"><button type="button" onClick={()=>setOpen(v=>!v)} className="font-bold text-[#31585d]">{open?'−':'+'} Edit order</button>{open?<div className="mt-3 space-y-3 rounded-xl bg-white p-4"><div className="grid gap-3 sm:grid-cols-2"><label className="text-xs font-bold">Customer name<input maxLength={200} value={customerName} onChange={e=>setCustomerName(e.target.value)} className="mt-1 min-h-10 w-full rounded-lg border px-3 font-normal" /></label><label className="text-xs font-bold">Phone<input maxLength={40} value={customerPhone} onChange={e=>setCustomerPhone(e.target.value)} className="mt-1 min-h-10 w-full rounded-lg border px-3 font-normal" /></label></div>{lines.map((line,index)=><label key={line.tallyKey} className="grid grid-cols-[1fr_110px] items-center gap-3 text-xs font-bold">{line.itemName}<input type="number" min={Math.max(line.fulfilled,1)} max="1000000" step="1" value={line.quantity} onChange={e=>setLines(current=>current.map((item,i)=>i===index?{...item,quantity:Number(e.target.value)}:item))} className="min-h-10 rounded-lg border px-2 text-right font-normal" /></label>)}<label className="text-xs font-bold">Notes<textarea maxLength={2000} value={notes} onChange={e=>setNotes(e.target.value)} rows={2} className="mt-1 w-full rounded-lg border p-2 font-normal" /></label>{reasonRequired?<label className="text-xs font-bold text-[#80524d]">Reason for change<textarea required maxLength={500} value={reason} onChange={e=>setReason(e.target.value)} rows={2} className="mt-1 w-full rounded-lg border p-2 font-normal" /></label>:null}<div className="flex justify-end"><button type="button" disabled={busy||customerName.trim().length<2||(reasonRequired&&!reason.trim())} onClick={async()=>{setBusy(true);try{await onSave(order,{orderId:order.id,expectedVersion:order.version,customerName:customerName.trim(),customerPhone:customerPhone.trim(),notes:notes.trim(),reason:reason.trim(),lines:lines.map(({tallyKey,quantity})=>({tallyKey,quantity}))});}finally{setBusy(false)}}} className="min-h-10 rounded-xl bg-[#092f36] px-4 font-bold text-white disabled:opacity-50">{busy?'Saving…':'Save changes'}</button></div></div>:null}</div>;
+  return <div className="mt-5 border-t border-[#dfe9e7] pt-4"><button type="button" onClick={() => { if (!open) resetDrafts(); setOpen((value) => !value); }} className="font-bold text-[#31585d]">{open?'−':'+'} Edit order</button>{open?<div className="mt-3 space-y-3 rounded-xl bg-white p-4"><OrderDraftNotice changed={order.version !== baseVersion} busy={busy} onLoadLatest={resetDrafts} /><div className="grid gap-3 sm:grid-cols-2"><label className="text-xs font-bold">Customer name<input maxLength={200} value={customerName} onChange={e=>setCustomerName(e.target.value)} className="mt-1 min-h-10 w-full rounded-lg border px-3 font-normal" /></label><label className="text-xs font-bold">Phone<input maxLength={40} value={customerPhone} onChange={e=>setCustomerPhone(e.target.value)} className="mt-1 min-h-10 w-full rounded-lg border px-3 font-normal" /></label></div>{lines.map((line,index)=><label key={line.tallyKey} className="grid grid-cols-[1fr_110px] items-center gap-3 text-xs font-bold">{line.itemName}<input type="number" min={Math.max(line.fulfilled,1)} max="1000000" step="1" value={line.quantity} onChange={e=>setLines(current=>current.map((item,i)=>i===index?{...item,quantity:Number(e.target.value)}:item))} className="min-h-10 rounded-lg border px-2 text-right font-normal" /></label>)}<label className="text-xs font-bold">Notes<textarea maxLength={2000} value={notes} onChange={e=>setNotes(e.target.value)} rows={2} className="mt-1 w-full rounded-lg border p-2 font-normal" /></label>{reasonRequired?<label className="text-xs font-bold text-[#80524d]">Reason for change<textarea required maxLength={500} value={reason} onChange={e=>setReason(e.target.value)} rows={2} className="mt-1 w-full rounded-lg border p-2 font-normal" /></label>:null}<div className="flex justify-end"><button type="button" disabled={busy||customerName.trim().length<2||(reasonRequired&&!reason.trim())} onClick={async()=>{setBusy(true);try{await onSave(order,{orderId:order.id,expectedVersion:baseVersion,customerName:customerName.trim(),customerPhone:customerPhone.trim(),notes:notes.trim(),reason:reason.trim(),lines:lines.map(({tallyKey,quantity})=>({tallyKey,quantity}))});}finally{setBusy(false)}}} className="min-h-10 rounded-xl bg-[#092f36] px-4 font-bold text-white disabled:opacity-50">{busy?'Saving…':'Save changes'}</button></div></div>:null}</div>;
 }
 
 function FulfilmentEditor({ order, onSave }: { order: OrderSummary; onSave: (order: OrderSummary, payload: Extract<OrderCommand, { action: 'save_fulfilment' }>['payload']) => Promise<void> }) {
@@ -1132,8 +1260,15 @@ function FulfilmentEditor({ order, onSave }: { order: OrderSummary; onSave: (ord
   const [deliveryAddress, setDeliveryAddress] = useState(order.deliveryAddress || '');
   const [expectedDeliveryDate, setExpectedDeliveryDate] = useState(order.expectedDeliveryDate || '');
   const [lines, setLines] = useState(() => order.lines.map((line) => ({ tallyKey: line.tallyKey, itemName: line.itemName, quantity: Math.max(1, Math.round(line.quantity)), fulfilledQuantity: Math.max(0, Math.round(Number(line.fulfilledQuantity || 0))) })));
+  const [baseVersion, setBaseVersion] = useState(order.version);
+  function resetDrafts() {
+    setDeliveryAddress(order.deliveryAddress || '');
+    setExpectedDeliveryDate(order.expectedDeliveryDate || '');
+    setLines(order.lines.map((line) => ({ tallyKey: line.tallyKey, itemName: line.itemName, quantity: Math.max(1, Math.round(line.quantity)), fulfilledQuantity: Math.max(0, Math.round(Number(line.fulfilledQuantity || 0))) })));
+    setBaseVersion(order.version);
+  }
   const backOrdered = lines.reduce((sum, line) => sum + Math.max(line.quantity - line.fulfilledQuantity, 0), 0);
-  return <div className="mt-5 border-t border-[#dfe9e7] pt-4"><button type="button" onClick={() => setOpen((value) => !value)} className="font-bold text-[#31585d]">{open ? '−' : '+'} Fulfilment details</button>{open ? <div className="mt-3 space-y-4 rounded-xl bg-white p-4"><div className="grid gap-3 sm:grid-cols-2"><label className="text-xs font-bold text-[#587275]">Expected delivery<input type="date" value={expectedDeliveryDate} onChange={(event) => setExpectedDeliveryDate(event.target.value)} className="mt-1 min-h-10 w-full rounded-lg border border-[#cedfdd] px-3 font-normal" /></label><label className="text-xs font-bold text-[#587275]">Delivery address<input maxLength={1000} value={deliveryAddress} onChange={(event) => setDeliveryAddress(event.target.value)} className="mt-1 min-h-10 w-full rounded-lg border border-[#cedfdd] px-3 font-normal" /></label></div><div className="space-y-2">{lines.map((line, index) => <div key={line.tallyKey} className="grid gap-2 rounded-lg bg-[#f6f8f7] p-3 sm:grid-cols-[1fr_120px]"><strong className="text-sm text-[#274b50]">{line.itemName}<small className="block font-normal text-[#718487]">Ordered {formatQuantity(line.quantity)}</small></strong><label className="text-xs font-bold">Fulfilled<input type="number" min="0" max={line.quantity} step="1" value={line.fulfilledQuantity} onChange={(event) => setLines((current) => current.map((item, position) => position === index ? { ...item, fulfilledQuantity: Number(event.target.value) } : item))} className="mt-1 min-h-10 w-full rounded-lg border px-2 font-normal" /></label></div>)}</div><p className="text-xs text-[#718487]">Batch, expiry and stock adjustments continue to be recorded only in Tally Prime.</p><div className="flex items-center justify-between gap-3"><p className={`text-xs font-bold ${backOrdered > 0 ? 'text-[#9a6412]' : 'text-[#277b69]'}`}>{backOrdered > 0 ? `${formatQuantity(backOrdered)} back-ordered` : 'Fully fulfilled'}</p><button type="button" disabled={busy} onClick={async () => { setBusy(true); try { await onSave(order, { orderId: order.id, expectedVersion: order.version, deliveryAddress, expectedDeliveryDate: expectedDeliveryDate || undefined, lines: lines.map(({ tallyKey, fulfilledQuantity }) => ({ tallyKey, fulfilledQuantity })) }); } finally { setBusy(false); } }} className="min-h-10 rounded-xl bg-[#092f36] px-4 font-bold text-white disabled:opacity-50">{busy ? 'Saving…' : 'Save fulfilment'}</button></div></div> : null}</div>;
+  return <div className="mt-5 border-t border-[#dfe9e7] pt-4"><button type="button" onClick={() => { if (!open) resetDrafts(); setOpen((value) => !value); }} className="font-bold text-[#31585d]">{open ? '−' : '+'} Fulfilment details</button>{open ? <div className="mt-3 space-y-4 rounded-xl bg-white p-4"><OrderDraftNotice changed={order.version !== baseVersion} busy={busy} onLoadLatest={resetDrafts} /><div className="grid gap-3 sm:grid-cols-2"><label className="text-xs font-bold text-[#587275]">Expected delivery<input type="date" value={expectedDeliveryDate} onChange={(event) => setExpectedDeliveryDate(event.target.value)} className="mt-1 min-h-10 w-full rounded-lg border border-[#cedfdd] px-3 font-normal" /></label><label className="text-xs font-bold text-[#587275]">Delivery address<input maxLength={1000} value={deliveryAddress} onChange={(event) => setDeliveryAddress(event.target.value)} className="mt-1 min-h-10 w-full rounded-lg border border-[#cedfdd] px-3 font-normal" /></label></div><div className="space-y-2">{lines.map((line, index) => <div key={line.tallyKey} className="grid gap-2 rounded-lg bg-[#f6f8f7] p-3 sm:grid-cols-[1fr_120px]"><strong className="text-sm text-[#274b50]">{line.itemName}<small className="block font-normal text-[#718487]">Ordered {formatQuantity(line.quantity)}</small></strong><label className="text-xs font-bold">Fulfilled<input type="number" min="0" max={line.quantity} step="1" value={line.fulfilledQuantity} onChange={(event) => setLines((current) => current.map((item, position) => position === index ? { ...item, fulfilledQuantity: Number(event.target.value) } : item))} className="mt-1 min-h-10 w-full rounded-lg border px-2 font-normal" /></label></div>)}</div><p className="text-xs text-[#718487]">Batch, expiry and stock adjustments continue to be recorded only in Tally Prime.</p><div className="flex items-center justify-between gap-3"><p className={`text-xs font-bold ${backOrdered > 0 ? 'text-[#9a6412]' : 'text-[#277b69]'}`}>{backOrdered > 0 ? `${formatQuantity(backOrdered)} back-ordered` : 'Fully fulfilled'}</p><button type="button" disabled={busy} onClick={async () => { setBusy(true); try { await onSave(order, { orderId: order.id, expectedVersion: baseVersion, deliveryAddress, expectedDeliveryDate: expectedDeliveryDate || undefined, lines: lines.map(({ tallyKey, fulfilledQuantity }) => ({ tallyKey, fulfilledQuantity })) }); } finally { setBusy(false); } }} className="min-h-10 rounded-xl bg-[#092f36] px-4 font-bold text-white disabled:opacity-50">{busy ? 'Saving…' : 'Save fulfilment'}</button></div></div> : null}</div>;
 }
 
 function localDateTimeValue(date = new Date()) {
@@ -1150,9 +1285,20 @@ function DispatchPanel({ order, actorRole, actorRoles, onSave }: { order: OrderS
   const [deliveredAt, setDeliveredAt] = useState(order.deliveredAt ? localDateTimeValue(new Date(order.deliveredAt)) : localDateTimeValue());
   const [receivedBy, setReceivedBy] = useState(order.receivedBy || '');
   const [podReference, setPodReference] = useState(order.podReference || '');
+  const [baseVersion, setBaseVersion] = useState(order.version);
+  function resetDrafts() {
+    setCourierName(order.courierName || '');
+    setTrackingNumber(order.trackingNumber || '');
+    setDispatchDate(order.dispatchDate || new Date().toISOString().slice(0, 10));
+    setVehicleNumber(order.vehicleNumber || '');
+    setDeliveredAt(order.deliveredAt ? localDateTimeValue(new Date(order.deliveredAt)) : localDateTimeValue());
+    setReceivedBy(order.receivedBy || '');
+    setPodReference(order.podReference || '');
+    setBaseVersion(order.version);
+  }
   const canUpdate = hasAnyStockFlowRole(actorRoles ?? [actorRole as StockFlowRole], ['administrator', 'operations']);
   if (order.status === 'delivered') return <div className="mt-5 border-t border-[#dfe9e7] pt-4"><p className="font-bold text-[#31585d]">Delivery confirmation</p><p className="mt-2 text-sm text-[#587275]">Received by {order.receivedBy} on {order.deliveredAt ? new Date(order.deliveredAt).toLocaleString('en-IN') : '—'}{order.podReference ? ` · POD ${order.podReference}` : ''}</p></div>;
-  return <div className="mt-5 border-t border-[#dfe9e7] pt-4"><p className="font-bold text-[#31585d]">{order.status === 'ready_for_dispatch' ? 'Dispatch details' : 'Delivery confirmation'}</p>{order.status === 'ready_for_dispatch' ? <div className="mt-3 grid gap-3 rounded-xl bg-white p-4 sm:grid-cols-2"><label className="text-sm font-bold">Courier / transporter<input maxLength={160} value={courierName} onChange={(event) => setCourierName(event.target.value)} className="mt-1 min-h-11 w-full rounded-lg border px-3 font-normal" /></label><label className="text-sm font-bold">Tracking / docket number<input maxLength={160} value={trackingNumber} onChange={(event) => setTrackingNumber(event.target.value)} className="mt-1 min-h-11 w-full rounded-lg border px-3 font-normal" /></label><label className="text-sm font-bold">Dispatch date<input type="date" value={dispatchDate} onChange={(event) => setDispatchDate(event.target.value)} className="mt-1 min-h-11 w-full rounded-lg border px-3 font-normal" /></label><label className="text-sm font-bold">Vehicle number <span className="font-normal text-[#718487]">(optional)</span><input value={vehicleNumber} onChange={(event) => setVehicleNumber(event.target.value)} maxLength={40} className="mt-1 min-h-11 w-full rounded-lg border px-3 font-normal" /></label><div className="sm:col-span-2 flex justify-end"><button type="button" disabled={!canUpdate || busy || courierName.trim().length < 2 || trackingNumber.trim().length < 2 || !dispatchDate} onClick={async () => { setBusy(true); try { await onSave(order, { action: 'save_dispatch', payload: { orderId: order.id, expectedVersion: order.version, courierName: courierName.trim(), trackingNumber: trackingNumber.trim(), dispatchDate, vehicleNumber: vehicleNumber.trim() } }); } finally { setBusy(false); } }} className="min-h-11 rounded-xl bg-[#092f36] px-5 font-bold text-white disabled:opacity-50">{busy ? 'Saving…' : 'Mark dispatched'}</button></div></div> : <div className="mt-3 grid gap-3 rounded-xl bg-white p-4 sm:grid-cols-2"><p className="sm:col-span-2 text-sm text-[#587275]">{order.courierName} · {order.trackingNumber}{order.vehicleNumber ? ` · ${order.vehicleNumber}` : ''}</p><label className="text-sm font-bold">Delivered at<input type="datetime-local" value={deliveredAt} onChange={(event) => setDeliveredAt(event.target.value)} className="mt-1 min-h-11 w-full rounded-lg border px-3 font-normal" /></label><label className="text-sm font-bold">Received by<input value={receivedBy} onChange={(event) => setReceivedBy(event.target.value)} maxLength={160} className="mt-1 min-h-11 w-full rounded-lg border px-3 font-normal" /></label><label className="text-sm font-bold sm:col-span-2">Proof of delivery reference <span className="font-normal text-[#718487]">(optional)</span><input value={podReference} onChange={(event) => setPodReference(event.target.value)} maxLength={160} className="mt-1 min-h-11 w-full rounded-lg border px-3 font-normal" /></label><div className="sm:col-span-2 flex justify-end"><button type="button" disabled={!canUpdate || busy || receivedBy.trim().length < 2 || !deliveredAt} onClick={async () => { setBusy(true); try { await onSave(order, { action: 'confirm_delivery', payload: { orderId: order.id, expectedVersion: order.version, deliveredAt: new Date(deliveredAt).toISOString(), receivedBy: receivedBy.trim(), podReference: podReference.trim() } }); } finally { setBusy(false); } }} className="min-h-11 rounded-xl bg-[#092f36] px-5 font-bold text-white disabled:opacity-50">{busy ? 'Saving…' : 'Confirm delivery'}</button></div></div>}</div>;
+  return <div className="mt-5 border-t border-[#dfe9e7] pt-4"><p className="font-bold text-[#31585d]">{order.status === 'ready_for_dispatch' ? 'Dispatch details' : 'Delivery confirmation'}</p>{order.status === 'ready_for_dispatch' ? <div className="mt-3 grid gap-3 rounded-xl bg-white p-4 sm:grid-cols-2"><OrderDraftNotice changed={order.version !== baseVersion} busy={busy} onLoadLatest={resetDrafts} /><label className="text-sm font-bold">Courier / transporter<input maxLength={160} value={courierName} onChange={(event) => setCourierName(event.target.value)} className="mt-1 min-h-11 w-full rounded-lg border px-3 font-normal" /></label><label className="text-sm font-bold">Tracking / docket number<input maxLength={160} value={trackingNumber} onChange={(event) => setTrackingNumber(event.target.value)} className="mt-1 min-h-11 w-full rounded-lg border px-3 font-normal" /></label><label className="text-sm font-bold">Dispatch date<input type="date" value={dispatchDate} onChange={(event) => setDispatchDate(event.target.value)} className="mt-1 min-h-11 w-full rounded-lg border px-3 font-normal" /></label><label className="text-sm font-bold">Vehicle number <span className="font-normal text-[#718487]">(optional)</span><input value={vehicleNumber} onChange={(event) => setVehicleNumber(event.target.value)} maxLength={40} className="mt-1 min-h-11 w-full rounded-lg border px-3 font-normal" /></label><div className="sm:col-span-2 flex justify-end"><button type="button" disabled={!canUpdate || busy || courierName.trim().length < 2 || trackingNumber.trim().length < 2 || !dispatchDate} onClick={async () => { setBusy(true); try { await onSave(order, { action: 'save_dispatch', payload: { orderId: order.id, expectedVersion: baseVersion, courierName: courierName.trim(), trackingNumber: trackingNumber.trim(), dispatchDate, vehicleNumber: vehicleNumber.trim() } }); } finally { setBusy(false); } }} className="min-h-11 rounded-xl bg-[#092f36] px-5 font-bold text-white disabled:opacity-50">{busy ? 'Saving…' : 'Mark dispatched'}</button></div></div> : <div className="mt-3 grid gap-3 rounded-xl bg-white p-4 sm:grid-cols-2"><OrderDraftNotice changed={order.version !== baseVersion} busy={busy} onLoadLatest={resetDrafts} /><p className="sm:col-span-2 text-sm text-[#587275]">{order.courierName} · {order.trackingNumber}{order.vehicleNumber ? ` · ${order.vehicleNumber}` : ''}</p><label className="text-sm font-bold">Delivered at<input type="datetime-local" value={deliveredAt} onChange={(event) => setDeliveredAt(event.target.value)} className="mt-1 min-h-11 w-full rounded-lg border px-3 font-normal" /></label><label className="text-sm font-bold">Received by<input value={receivedBy} onChange={(event) => setReceivedBy(event.target.value)} maxLength={160} className="mt-1 min-h-11 w-full rounded-lg border px-3 font-normal" /></label><label className="text-sm font-bold sm:col-span-2">Proof of delivery reference <span className="font-normal text-[#718487]">(optional)</span><input value={podReference} onChange={(event) => setPodReference(event.target.value)} maxLength={160} className="mt-1 min-h-11 w-full rounded-lg border px-3 font-normal" /></label><div className="sm:col-span-2 flex justify-end"><button type="button" disabled={!canUpdate || busy || receivedBy.trim().length < 2 || !deliveredAt} onClick={async () => { setBusy(true); try { await onSave(order, { action: 'confirm_delivery', payload: { orderId: order.id, expectedVersion: baseVersion, deliveredAt: new Date(deliveredAt).toISOString(), receivedBy: receivedBy.trim(), podReference: podReference.trim() } }); } finally { setBusy(false); } }} className="min-h-11 rounded-xl bg-[#092f36] px-5 font-bold text-white disabled:opacity-50">{busy ? 'Saving…' : 'Confirm delivery'}</button></div></div>}</div>;
 }
 
 function NewOrderPanel({ data, templateOrder, onClose, onCreated, onViewCustomer }: { data: OrderBootstrap; templateOrder: OrderSummary | null; onClose: () => void; onCreated: (number: string, command?: CreatedOrderCommand, result?: CreatedOrderResult) => void; onViewCustomer: (customerName: string) => void }) {
@@ -1167,10 +1313,16 @@ function OrderFollowUpPanel({ order, actorRole, actorRoles, onSave }: { order: O
   const [busy, setBusy] = useState(false);
   const [followUpDate, setFollowUpDate] = useState(order.followUpDate || '');
   const [followUpNote, setFollowUpNote] = useState(order.followUpNote || '');
+  const [baseVersion, setBaseVersion] = useState(order.version);
+  function resetDrafts() {
+    setFollowUpDate(order.followUpDate || '');
+    setFollowUpNote(order.followUpNote || '');
+    setBaseVersion(order.version);
+  }
   if (!canManage) return null;
   return <div className="mt-3 rounded-xl border border-[#dce7e5] bg-[#fbfcfb] p-3 text-sm">
-    <div className="flex flex-wrap items-center justify-between gap-2"><div><strong className="text-[#31585d]">Customer follow-up</strong>{order.followUpDate ? <p className="mt-1 text-xs text-[#718487]">{order.followUpDate} · {order.followUpNote}</p> : <p className="mt-1 text-xs text-[#718487]">No follow-up scheduled</p>}</div><div className="flex gap-2">{order.followUpDate ? <button type="button" disabled={busy} onClick={async () => { setBusy(true); try { await onSave(order, { action: 'complete_order_follow_up', payload: { orderId: order.id, expectedVersion: order.version } }); setFollowUpDate(''); setFollowUpNote(''); } finally { setBusy(false); } }} className="min-h-9 rounded-lg border border-[#9ddbc5] bg-white px-3 text-xs font-bold text-[#277b69] disabled:opacity-50">{busy ? 'Saving…' : 'Done'}</button> : null}<button type="button" onClick={() => setOpen((value) => !value)} aria-expanded={open} className="min-h-9 rounded-lg border border-[#cedfdd] bg-white px-3 text-xs font-bold text-[#31585d]">{open ? 'Close' : order.followUpDate ? 'Change' : 'Schedule'}</button></div></div>
-    {open ? <div className="mt-3 grid gap-2 border-t border-[#e3ecea] pt-3 sm:grid-cols-[160px_1fr_auto]"><label className="text-xs font-bold text-[#587275]">Follow-up date<input type="date" min={new Date().toLocaleDateString('en-CA', { timeZone: 'Asia/Kolkata' })} value={followUpDate} onChange={(event) => setFollowUpDate(event.target.value)} className="mt-1 min-h-10 w-full rounded-lg border border-[#cedfdd] bg-white px-2 font-normal" /></label><label className="text-xs font-bold text-[#587275]">Purpose<input maxLength={500} value={followUpNote} onChange={(event) => setFollowUpNote(event.target.value)} placeholder="Confirm quantities, call customer…" className="mt-1 min-h-10 w-full rounded-lg border border-[#cedfdd] bg-white px-3 font-normal" /></label><button type="button" disabled={busy || !followUpDate || followUpNote.trim().length < 3} onClick={async () => { setBusy(true); try { await onSave(order, { action: 'set_order_follow_up', payload: { orderId: order.id, expectedVersion: order.version, followUpDate, followUpNote: followUpNote.trim() } }); setOpen(false); } finally { setBusy(false); } }} className="min-h-10 self-end rounded-lg bg-[#31585d] px-4 text-xs font-bold text-white disabled:opacity-50">{busy ? 'Saving…' : 'Save follow-up'}</button></div> : null}
+    <div className="flex flex-wrap items-center justify-between gap-2"><div><strong className="text-[#31585d]">Customer follow-up</strong>{order.followUpDate ? <p className="mt-1 text-xs text-[#718487]">{order.followUpDate} · {order.followUpNote}</p> : <p className="mt-1 text-xs text-[#718487]">No follow-up scheduled</p>}</div><div className="flex gap-2">{order.followUpDate ? <button type="button" disabled={busy} onClick={async () => { setBusy(true); try { await onSave(order, { action: 'complete_order_follow_up', payload: { orderId: order.id, expectedVersion: baseVersion } }); setFollowUpDate(''); setFollowUpNote(''); setBaseVersion(order.version); } finally { setBusy(false); } }} className="min-h-9 rounded-lg border border-[#9ddbc5] bg-white px-3 text-xs font-bold text-[#277b69] disabled:opacity-50">{busy ? 'Saving…' : 'Done'}</button> : null}<button type="button" onClick={() => { if (!open) resetDrafts(); setOpen((value) => !value); }} aria-expanded={open} className="min-h-9 rounded-lg border border-[#cedfdd] bg-white px-3 text-xs font-bold text-[#31585d]">{open ? 'Close' : order.followUpDate ? 'Change' : 'Schedule'}</button></div></div>
+    {open ? <div className="mt-3 grid gap-2 border-t border-[#e3ecea] pt-3 sm:grid-cols-[160px_1fr_auto]"><OrderDraftNotice changed={order.version !== baseVersion} busy={busy} onLoadLatest={resetDrafts} /><label className="text-xs font-bold text-[#587275]">Follow-up date<input type="date" min={new Date().toLocaleDateString('en-CA', { timeZone: 'Asia/Kolkata' })} value={followUpDate} onChange={(event) => setFollowUpDate(event.target.value)} className="mt-1 min-h-10 w-full rounded-lg border border-[#cedfdd] bg-white px-2 font-normal" /></label><label className="text-xs font-bold text-[#587275]">Purpose<input maxLength={500} value={followUpNote} onChange={(event) => setFollowUpNote(event.target.value)} placeholder="Confirm quantities, call customer…" className="mt-1 min-h-10 w-full rounded-lg border border-[#cedfdd] bg-white px-3 font-normal" /></label><button type="button" disabled={busy || !followUpDate || followUpNote.trim().length < 3} onClick={async () => { setBusy(true); try { await onSave(order, { action: 'set_order_follow_up', payload: { orderId: order.id, expectedVersion: baseVersion, followUpDate, followUpNote: followUpNote.trim() } }); setOpen(false); } finally { setBusy(false); } }} className="min-h-10 self-end rounded-lg bg-[#31585d] px-4 text-xs font-bold text-white disabled:opacity-50">{busy ? 'Saving…' : 'Save follow-up'}</button></div> : null}
   </div>;
 }
 

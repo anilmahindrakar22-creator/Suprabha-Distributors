@@ -7,7 +7,14 @@ for (const width of [320, 375, 768, 1280]) {
     await page.route('**/api/orders**', route => route.fulfill({ json: route.request().url().includes('detailsFor=') ? { exceptions: [], installations: [] } : { actor: { email: 'staff@example.test', role: 'sales' }, snapshot: { company: 'TEST', fetchedAt: new Date().toISOString(), catalogVersion: 'test', catalog: [] }, customers: [], orders: [order], operations: {}, pagination: { total: 1, page: 1, pageCount: 1, pageSize: 20 } } }));
     await page.route('**/api/procurement-requirements**', route => route.fulfill({ json: { requirements: [] } }));
     await page.goto('/?view=orders-workspace');
-    const tile = page.locator('article').filter({ hasText: order.orderNumber });
+    // Below 1024 px the list shows compact rows; tapping one opens the order full screen.
+    if (width < 1024) {
+      const row = page.getByRole('button', { name: new RegExp(order.orderNumber) });
+      expect(await row.evaluate(element => element.scrollWidth <= element.clientWidth)).toBe(true);
+      await row.click();
+      await expect(page.getByRole('dialog', { name: `Order ${order.orderNumber}` })).toBeVisible();
+    }
+    const tile = width < 1024 ? page.getByRole('dialog', { name: `Order ${order.orderNumber}` }).locator('article') : page.locator('article').filter({ hasText: order.orderNumber });
     await expect(tile).toBeVisible();
     expect(await tile.evaluate(element => element.scrollWidth <= element.clientWidth)).toBe(true);
     await tile.getByText('View order details', { exact: true }).click();

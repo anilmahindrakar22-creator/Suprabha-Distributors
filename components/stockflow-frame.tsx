@@ -1,6 +1,10 @@
 'use client';
 
-import { lazy, Suspense, useEffect, useRef, useState } from 'react';
+import { lazy, Suspense, useEffect, useMemo, useRef, useState } from 'react';
+import { NotificationBell } from './notification-bell';
+import { BellIcon } from './order-list';
+import { startWorkNotifications, type WorkItem, type WorkNotificationState } from '@/lib/work-notifications';
+import { currentPushState, disablePush, enablePush, loadPushConfig, readOpenOrderLink, readOpenOrderMessage, type PushConfig, type PushState } from '@/lib/push-subscription';
 import Image from 'next/image';
 import { defaultOrderFilterForRole, readOrderDashboardMessage } from '@/lib/stockflow-navigation';
 import { prepareDeviceForAccount } from '@/lib/device-account-privacy';
@@ -14,8 +18,10 @@ const ServiceWorkspace = lazy(() => import('./service-workspace').then((module) 
 const InstrumentEconomicsWorkspace = lazy(() => import('./instrument-economics-workspace').then((module) => ({ default: module.InstrumentEconomicsWorkspace })));
 const UserManagement = lazy(() => import('./user-management').then((module) => ({ default: module.UserManagement })));
 const PricingWorkspace = lazy(() => import('./pricing-workspace').then((module) => ({ default: module.PricingWorkspace })));
+const RequestsWorkspace = lazy(() => import('./requests-workspace').then((module) => ({ default: module.RequestsWorkspace })));
 
-type Surface = 'stock' | 'orders' | 'pricing' | 'economics' | 'service' | 'users';
+type Surface = 'stock' | 'orders' | 'requests' | 'pricing' | 'economics' | 'service' | 'users';
+const initialWork: WorkNotificationState = { connection: 'checking', work: [], workTotal: 0, workMore: false, queues: [], fresh: [], reminders: [], checkedAt: null };
 
 async function warmOrderData(actorEmail: string) {
   const { loadOrderBootstrap } = await import('@/lib/order-bootstrap-cache');
@@ -71,6 +77,8 @@ export function StockFlowFrame({ actorEmail, actorRole, actorRoles, staffAuth = 
     signOutInFlight.current = true;
     setSigningOut(true);
     try {
+      // Stop phone alerts for this person (shared phones). Never waited on: it must not delay locking offline data.
+      void disablePush().catch(() => undefined);
       await revokeOfflineVault(localStorage);
       const response = await withStaffSessionLock(() => fetch('/api/staff-auth', { method: 'DELETE', cache: 'no-store', signal: AbortSignal.timeout(15000) }));
       if (response.ok) window.location.assign('/staff-signin');
@@ -90,6 +98,9 @@ export function StockFlowFrame({ actorEmail, actorRole, actorRoles, staffAuth = 
     const readyTimer = window.setTimeout(() => setReadyEmail(actorEmail), 0);
     let noticeTimer: number | undefined;
     if (account.switched) {
+      // A different person on this phone: drop the previous person's push subscription (the push service then
+      // reports it gone and the server deletes the row).
+      void disablePush().catch(() => undefined);
       void revokeOfflineVault(localStorage).catch(() => setDeviceNotice('Offline device lock failed. Do not share this device; retry sign-out.'));
       void Promise.all([
         import('@/lib/order-bootstrap-cache').then((module) => module.clearOrderBootstrapCache()),
@@ -126,9 +137,135 @@ export function StockFlowFrame({ actorEmail, actorRole, actorRoles, staffAuth = 
     return () => window.removeEventListener('message', receiveDashboardNavigation);
   }, []);
 
+  // Work notifications: one foreground checker per session. Starts a few seconds after load so it never competes
+  // with the first Stock request on a phone.
+  const [work, setWork] = useState<WorkNotificationState>(initialWork);
+  const [arrivals, setArrivals] = useState<WorkItem[]>([]);
+  const workService = useRef<ReturnType<typeof startWorkNotifications> | null>(null);
+  const [orderView, setOrderView] = useState<{ query: string; focus?: { orderId: string; orderNumber: string }; nonce: number }>({ query: '', nonce: 0 });
+  const [moreOpen, setMoreOpen] = useState(false);
+  const rolesKey = roles.join(',');
+  // Viewers have no hand-offs; they get no checker and no bell.
+  const notifiable = hasAnyStockFlowRole(roles, ['administrator', 'management', 'sales', 'operations', 'warehouse', 'accounts']);
+  useEffect(() => {
+    if (readyEmail !== actorEmail || !notifiable) return;
+    let service: ReturnType<typeof startWorkNotifications> | null = null;
+    const wake = () => service?.wake();
+    const startTimer = window.setTimeout(() => {
+      service = startWorkNotifications({
+        actorEmail,
+        roles: rolesKey.split(','),
+        fetchJson: (url, signal) => fetch(url, { cache: 'no-store', signal }),
+        active: () => document.visibilityState !== 'hidden',
+        online: () => navigator.onLine,
+        onState: setWork,
+        onFresh: (items) => setArrivals(items),
+      });
+      workService.current = service;
+    }, 4_000);
+    document.addEventListener('visibilitychange', wake);
+    window.addEventListener('online', wake);
+    window.addEventListener('offline', wake);
+    return () => {
+      window.clearTimeout(startTimer);
+      service?.stop();
+      workService.current = null;
+      setWork(initialWork);
+      setArrivals([]);
+      document.removeEventListener('visibilitychange', wake);
+      window.removeEventListener('online', wake);
+      window.removeEventListener('offline', wake);
+    };
+  }, [actorEmail, readyEmail, rolesKey, notifiable]);
+  const freshCount = work.fresh.length;
+  const baseTitle = useRef('');
+  useEffect(() => {
+    // Keep the app's own title and only prefix the new-work count.
+    if (!baseTitle.current) baseTitle.current = document.title.replace(/^\(\d+\+?\) /, '') || 'StockFlow';
+    document.title = freshCount ? `(${freshCount}) ${baseTitle.current}` : baseTitle.current;
+  }, [freshCount]);
+  const newOrderIds = useMemo(() => new Set(work.fresh.map((item) => item.orderId)), [work.fresh]);
+
+  function markWorkSeen() {
+    workService.current?.markSeen();
+    setArrivals([]);
+  }
+  function openOrder(item: { orderId: string; orderNumber: string }) {
+    markWorkSeen();
+    setOrderFilter('all');
+    setOrderView((current) => ({ query: item.orderNumber, focus: { orderId: item.orderId, orderNumber: item.orderNumber }, nonce: current.nonce + 1 }));
+    setSurface('orders');
+  }
+  function openQueue(status: string, query = '') {
+    setOrderFilter(status);
+    setOrderView((current) => ({ query: query === 'mine' ? `assignee:${actorEmail.toLocaleLowerCase('en-IN')}` : query, nonce: current.nonce + 1 }));
+    setSurface('orders');
+  }
+
   function openSurface(item: Surface) {
-    if (item === 'orders' && surface !== 'orders') setOrderFilter(defaultOrderFilterForRole(actorRole));
+    setMoreOpen(false);
+    if (item === 'orders' && surface !== 'orders') {
+      setOrderFilter(defaultOrderFilterForRole(actorRole));
+      setOrderView((current) => ({ query: '', nonce: current.nonce + 1 }));
+    }
     setSurface(item);
+  }
+  const surfaces: Surface[] = ['stock', 'orders', 'requests', ...(hasAnyStockFlowRole(roles, ['administrator', 'management', 'accounts']) ? ['pricing' as const, 'economics' as const] : []), ...(hasAnyStockFlowRole(roles, ['administrator', 'operations', 'sales', 'management']) ? ['service' as const] : []), ...(hasAnyStockFlowRole(roles, ['administrator']) ? ['users' as const] : [])];
+  const phoneMain: Surface[] = ['stock', 'orders', 'requests'];
+  const phoneMore = surfaces.filter((item) => !phoneMain.includes(item));
+  // Phone push: dormant until the server reports it is enabled (docs/PUSH-NOTIFICATIONS.md).
+  const [pushConfig, setPushConfig] = useState<PushConfig>({ enabled: false, publicKey: '' });
+  const [pushState, setPushState] = useState<PushState>('hidden');
+  useEffect(() => {
+    if (readyEmail !== actorEmail || !notifiable) return;
+    let active = true;
+    void loadPushConfig().then(async (config) => {
+      if (!active) return;
+      setPushConfig(config);
+      const state = await currentPushState(config).catch((): PushState => 'hidden');
+      if (active) setPushState(state);
+    });
+    return () => { active = false; };
+  }, [actorEmail, readyEmail, notifiable]);
+  async function changePush(enable: boolean) {
+    setPushState('working');
+    try {
+      setPushState(enable ? await enablePush(pushConfig) : await disablePush());
+    } catch {
+      setPushState('error');
+    }
+  }
+  // A tapped phone notification opens the exact order: by deep link when StockFlow was closed, by message when open.
+  const openOrderRef = useRef(openOrder);
+  useEffect(() => { openOrderRef.current = openOrder; });
+  useEffect(() => {
+    if (readyEmail !== actorEmail) return;
+    const link = readOpenOrderLink(window.location.search);
+    if (link) {
+      const cleaned = new URL(window.location.href);
+      cleaned.searchParams.delete('openOrder');
+      cleaned.searchParams.delete('n');
+      window.history.replaceState(null, '', `${cleaned.pathname}${cleaned.search}${cleaned.hash}`);
+      openOrderRef.current(link);
+    }
+    if (!('serviceWorker' in navigator)) return;
+    const receive = (event: MessageEvent) => {
+      const order = readOpenOrderMessage(event.data);
+      if (order) openOrderRef.current(order);
+    };
+    navigator.serviceWorker.addEventListener('message', receive);
+    return () => navigator.serviceWorker.removeEventListener('message', receive);
+  }, [actorEmail, readyEmail]);
+
+  const offlineLink = staffAuth && hasAnyStockFlowRole(roles, ['administrator', 'management', 'sales', 'operations']);
+  // Orders tab badge: orders waiting for you; red while any of them is new.
+  const waitingCount = work.workTotal;
+  const badgeText = waitingCount > 99 ? '99+' : `${waitingCount}${work.workMore ? '+' : ''}`;
+  const badgeTone = freshCount ? 'bg-[#a23b33]' : 'bg-[#0f7b6c]';
+  const ordersBadge = waitingCount ? <span id="orders-new-work" className={`ml-1.5 inline-grid min-w-5 place-items-center rounded-full px-1 text-[11px] font-black leading-5 text-white tabular-nums ${badgeTone}`}>{badgeText}<span className="sr-only"> waiting{freshCount ? `, ${freshCount} new` : ''}</span></span> : null;
+  function arrivalsFilter(item: WorkItem) {
+    const queue = work.queues.find((candidate) => candidate.id === item.queueId);
+    return queue ? workService.current?.ordersFilterFor(queue) ?? queue.statuses[0] : 'open';
   }
 
   function warmOrders() {
@@ -146,8 +283,8 @@ export function StockFlowFrame({ actorEmail, actorRole, actorRoles, staffAuth = 
             <p className="hidden text-xs text-[#6b7e81] sm:block">Suprabha Distributors</p>
           </div>
         </div>
-        <nav aria-label="Application sections" className="order-last flex w-full min-w-0 overflow-x-auto rounded-xl bg-[#edf3f1] p-1 sm:order-none sm:w-auto">
-          {(['stock', 'orders', ...(hasAnyStockFlowRole(roles, ['administrator', 'management', 'accounts']) ? ['pricing' as const, 'economics' as const] : []), ...(hasAnyStockFlowRole(roles, ['administrator', 'operations', 'sales', 'management']) ? ['service' as const] : []), ...(hasAnyStockFlowRole(roles, ['administrator']) ? ['users' as const] : [])] as const).map((item) => (
+        <nav aria-label="Application sections" className="hidden min-w-0 overflow-x-auto rounded-xl bg-[#edf3f1] p-1 sm:flex">
+          {surfaces.map((item) => (
             <button
               key={item}
               type="button"
@@ -156,22 +293,26 @@ export function StockFlowFrame({ actorEmail, actorRole, actorRoles, staffAuth = 
               onPointerEnter={item === 'orders' ? warmOrders : undefined}
               onPointerDown={item === 'orders' ? warmOrders : undefined}
               aria-pressed={surface === item}
-              className={`min-h-10 shrink-0 rounded-lg px-3 text-sm font-bold capitalize transition sm:px-4 ${
+              aria-describedby={item === 'orders' && waitingCount ? 'orders-new-work' : undefined}
+              className={`inline-flex min-h-10 shrink-0 items-center rounded-lg px-3 text-sm font-bold capitalize transition sm:px-4 ${
                 surface === item
                   ? 'bg-white text-[#092f36] shadow-sm'
                   : 'text-[#61777a] hover:text-[#092f36]'
               }`}
             >
-              {item}
+              {item}{item === 'orders' ? ordersBadge : null}
             </button>
           ))}
           {/* Full navigation re-verifies the staff session before local preparation. */}
           {/* oxlint-disable-next-line next/no-html-link-for-pages */}
-          {staffAuth && hasAnyStockFlowRole(roles, ['administrator', 'management', 'sales', 'operations']) ? <a href="/offline-preparation" className="min-h-10 shrink-0 rounded-lg px-3 py-2 text-sm font-bold text-[#61777a]">Offline</a> : null}
+          {offlineLink ? <a href="/offline-preparation" className="min-h-10 shrink-0 rounded-lg px-3 py-2 text-sm font-bold text-[#61777a]">Offline</a> : null}
         </nav>
+        <div className="flex shrink-0 items-center gap-2">
+        {notifiable ? <NotificationBell state={work} ordersFilterFor={(queue) => workService.current?.ordersFilterFor(queue) ?? queue.statuses[0]} phone={pushState === 'hidden' ? undefined : { state: pushState, onEnable: () => void changePush(true), onDisable: () => void changePush(false) }} onSeen={markWorkSeen} onOpenOrder={openOrder} onOpenQueue={openQueue} onRetry={() => workService.current?.retry()} /> : null}
         {/* Sites owns the session cookie: use a full navigation, not a client router link. */}
         {/* oxlint-disable-next-line next/no-html-link-for-pages */}
         {staffAuth ? <button type="button" disabled={signingOut} onClick={() => void staffSignOut()} aria-label={`Sign out ${actorEmail}`} className="min-h-11 rounded-lg border px-3 text-sm font-bold disabled:opacity-50">{signingOut ? 'Signing out…' : 'Sign out'}</button> : <a href="/signout-with-chatgpt?return_to=/" target="_top" aria-label={`Sign out ${actorEmail}`} title={`Signed in as ${actorEmail}`} className="inline-flex min-h-11 shrink-0 items-center rounded-lg border border-[#dce7e5] px-2 text-xs font-bold text-[#173239] hover:bg-[#edf3f1] sm:px-3 sm:text-sm">Sign out</a>}
+        </div>
       </header>
       {deviceNotice ? <output className="flex shrink-0 items-center justify-between gap-3 border-b border-[#f0d7a5] bg-[#fff7e8] px-4 py-2 text-xs font-semibold text-[#805b20] sm:px-6"><span>{deviceNotice}</span><button type="button" onClick={() => setDeviceNotice('')} className="min-h-8 shrink-0 rounded-lg px-3 font-bold hover:bg-[#f7e8c8]">Dismiss</button></output> : null}
       <section className="min-h-0 flex-1 overflow-hidden">
@@ -184,7 +325,9 @@ export function StockFlowFrame({ actorEmail, actorRole, actorRoles, staffAuth = 
             onLoad={(event) => event.currentTarget.contentWindow?.postMessage({ type: 'stockflow-cache-account', email: actorEmail }, window.location.origin)}
           />
         ) : surface === 'orders' ? (
-          <Suspense fallback={<SectionLoading />}><OrderWorkspace key={orderFilter} actorEmail={actorEmail} initialStatus={orderFilter} /></Suspense>
+          <Suspense fallback={<SectionLoading />}><OrderWorkspace key={`${orderFilter}:${orderView.nonce}`} actorEmail={actorEmail} initialStatus={orderFilter} initialQuery={orderView.query} focusOrder={orderView.focus} newOrderIds={newOrderIds} onOrderActed={() => workService.current?.reconcile()} /></Suspense>
+        ) : surface === 'requests' ? (
+          <Suspense fallback={<SectionLoading />}><RequestsWorkspace roles={roles} /></Suspense>
         ) : surface === 'pricing' ? (
           <Suspense fallback={<SectionLoading />}><PricingWorkspace actorEmail={actorEmail} actorRole={actorRole} actorRoles={roles} /></Suspense>
         ) : surface === 'economics' ? (
@@ -193,6 +336,34 @@ export function StockFlowFrame({ actorEmail, actorRole, actorRoles, staffAuth = 
           <Suspense fallback={<SectionLoading />}><ServiceWorkspace /></Suspense>
         ) : <Suspense fallback={<SectionLoading />}><UserManagement staffAuth={staffAuth} emailActionsEnabled={staffEmailActionsEnabled} /></Suspense>}
       </section>
+      {arrivals.length ? (
+        <output aria-live="polite" className="fixed inset-x-3 bottom-[calc(4.5rem+env(safe-area-inset-bottom))] z-40 flex items-center gap-3 rounded-2xl border border-[#c9ddd8] bg-white p-3 shadow-[0_12px_32px_rgba(9,47,54,0.18)] sm:inset-x-auto sm:bottom-auto sm:right-6 sm:top-20 sm:w-[24rem]">
+          <span aria-hidden="true" className="grid size-9 shrink-0 place-items-center rounded-full bg-[#e3f6f1] text-[#0f7b6c]"><BellIcon className="size-4" /></span>
+          <span className="min-w-0 flex-1">
+            <strong className="block truncate text-sm text-[#092f36]">{arrivals.length === 1 ? arrivals[0].message : `${arrivals.length} new orders for you`}</strong>
+            <span className="block truncate text-xs text-[#587275]">{arrivals.length === 1 ? `${arrivals[0].customerName} · ${arrivals[0].orderNumber}` : arrivals.slice(0, 3).map((item) => item.customerName).join(', ')}</span>
+          </span>
+          <button type="button" onClick={() => arrivals.length === 1 ? openOrder(arrivals[0]) : (markWorkSeen(), openQueue(arrivalsFilter(arrivals[0]), arrivals[0].queueId === 'assigned' ? 'mine' : ''))} className="min-h-11 shrink-0 rounded-xl bg-[#092f36] px-4 text-sm font-bold text-white">{arrivals.length === 1 ? 'Open' : 'View'}</button>
+          <button type="button" aria-label="Dismiss" onClick={() => setArrivals([])} className="grid min-h-11 min-w-9 shrink-0 place-items-center rounded-lg text-lg text-[#587275] hover:bg-[#f1f6f4]">×</button>
+        </output>
+      ) : null}
+      <nav aria-label="Application sections" className="relative flex shrink-0 border-t border-[#dce7e5] bg-white sm:hidden">
+        {phoneMain.map((item) => (
+          <button key={item} type="button" aria-label={item} onClick={() => openSurface(item)} onPointerDown={item === 'orders' ? warmOrders : undefined} aria-pressed={surface === item} aria-describedby={item === 'orders' && waitingCount ? 'orders-new-work-phone' : undefined} className={`flex min-h-14 flex-1 flex-col items-center justify-center gap-0.5 text-xs font-bold capitalize ${surface === item ? 'text-[#092f36]' : 'text-[#7a8c8f]'}`}>
+            <span className="relative">
+              <span aria-hidden="true" className={`block h-1 w-6 rounded-full ${surface === item ? 'bg-[#092f36]' : 'bg-transparent'}`} />
+              {item === 'orders' && waitingCount ? <span id="orders-new-work-phone" className={`absolute -right-5 -top-2 min-w-5 rounded-full px-1 text-center text-[11px] font-black leading-5 text-white ${badgeTone}`}>{badgeText}<span className="sr-only"> waiting{freshCount ? `, ${freshCount} new` : ''}</span></span> : null}
+            </span>
+            {item}
+          </button>
+        ))}
+        {phoneMore.length || offlineLink ? <button type="button" aria-expanded={moreOpen} aria-controls="more-sections" onClick={() => setMoreOpen(!moreOpen)} className={`flex min-h-14 flex-1 flex-col items-center justify-center gap-0.5 text-xs font-bold ${phoneMore.includes(surface) || moreOpen ? 'text-[#092f36]' : 'text-[#7a8c8f]'}`}><span aria-hidden="true" className={`block h-1 w-6 rounded-full ${phoneMore.includes(surface) ? 'bg-[#092f36]' : 'bg-transparent'}`} />More</button> : null}
+        {moreOpen ? <div id="more-sections" className="absolute inset-x-2 bottom-[calc(100%+0.5rem)] z-40 grid gap-1 rounded-2xl border border-[#dce7e5] bg-white p-2 shadow-xl">
+          {phoneMore.map((item) => <button key={item} type="button" onClick={() => openSurface(item)} aria-pressed={surface === item} className="min-h-11 rounded-xl px-3 text-left text-sm font-bold capitalize text-[#31585d] hover:bg-[#f1f6f4] aria-pressed:bg-[#edf3f1] aria-pressed:text-[#092f36]">{item}</button>)}
+          {/* oxlint-disable-next-line next/no-html-link-for-pages */}
+          {offlineLink ? <a href="/offline-preparation" className="flex min-h-11 items-center rounded-xl px-3 text-sm font-bold text-[#31585d] hover:bg-[#f1f6f4]">Offline</a> : null}
+        </div> : null}
+      </nav>
     </main>
   );
 }

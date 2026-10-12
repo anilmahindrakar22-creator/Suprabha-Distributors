@@ -29,3 +29,54 @@ self.addEventListener('fetch', (event) => {
   if (url.origin !== self.location.origin || !PUBLIC_ASSETS.includes(url.pathname) || url.search) return;
   event.respondWith(caches.open(CACHE).then((cache) => cache.match(url.pathname)).then((cached) => cached || fetch(event.request)));
 });
+
+// Phone push (docs/PUSH-NOTIFICATIONS.md). Every push shows a notification; taps open the exact order.
+const ORDER_ID_PATTERN = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
+const ORDER_NUMBER_PATTERN = /^[A-Za-z0-9/_.-]{1,40}$/;
+
+function readPushPayload(event) {
+  let data = {};
+  try {
+    const payload = event.data ? event.data.json() : {};
+    data = payload && typeof payload === 'object' ? payload : {};
+  } catch { data = {}; }
+  const orderId = typeof data.orderId === 'string' && ORDER_ID_PATTERN.test(data.orderId) ? data.orderId : '';
+  const orderNumber = typeof data.orderNumber === 'string' && ORDER_NUMBER_PATTERN.test(data.orderNumber) ? data.orderNumber : '';
+  const text = (value, fallback, limit) => (typeof value === 'string' && value.trim() ? value.trim().slice(0, limit) : fallback);
+  // Owner decision: the customer name is shown on the lock screen ("Care Hospital · SF-26-1043").
+  const customer = text(data.customerName, '', 60);
+  const fallbackTitle = customer && orderNumber ? `${customer} · ${orderNumber}` : orderNumber ? `${orderNumber} · StockFlow` : 'StockFlow';
+  return {
+    title: text(data.title, fallbackTitle, 80),
+    body: text(data.body, 'New work is waiting for you.', 160),
+    orderId,
+    orderNumber,
+  };
+}
+
+self.addEventListener('push', (event) => {
+  const payload = readPushPayload(event);
+  event.waitUntil(self.registration.showNotification(payload.title, {
+    body: payload.body,
+    icon: '/suprabha-logo.png',
+    tag: payload.orderId ? `stockflow-order-${payload.orderId}` : 'stockflow-work',
+    renotify: true,
+    data: { orderId: payload.orderId, orderNumber: payload.orderNumber },
+  }));
+});
+
+self.addEventListener('notificationclick', (event) => {
+  event.notification.close();
+  const { orderId = '', orderNumber = '' } = event.notification.data || {};
+  const exact = ORDER_ID_PATTERN.test(orderId) && ORDER_NUMBER_PATTERN.test(orderNumber);
+  const target = exact ? `/?openOrder=${encodeURIComponent(orderId)}&n=${encodeURIComponent(orderNumber)}` : '/';
+  event.waitUntil(self.clients.matchAll({ type: 'window', includeUncontrolled: true }).then((windows) => {
+    // Only the top-level StockFlow window: the Stock screen is a same-origin iframe that must not receive the tap.
+    const open = windows.find((client) => client.frameType === 'top-level' && new URL(client.url).origin === self.location.origin);
+    if (open) {
+      if (exact) open.postMessage({ type: 'stockflow-open-order', orderId, orderNumber });
+      return open.focus();
+    }
+    return self.clients.openWindow(target);
+  }));
+});

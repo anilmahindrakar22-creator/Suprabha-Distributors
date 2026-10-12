@@ -20,6 +20,9 @@ for (const surface of ['instruments', 'instrument-economics', 'embedded-economic
     await page.route('**/api/orders**', route => route.fulfill({ json: { actor: { email: 'staff@example.test' }, orders: [], customers: [], operations: {} } }));
     if (surface === 'embedded-economics') {
       await page.goto('/?view=frame&role=management');
+      // Phones keep Economics under More in the bottom navigation.
+      const more = page.getByRole('button', { name: 'More', exact: true });
+      if (await more.isVisible()) await more.click();
       await page.getByRole('button', { name: 'economics', exact: true }).click();
     } else await page.goto(`/?view=${surface}`);
     await expect(page.getByRole('heading', { name: surface === 'instruments' ? 'Instrument portfolio' : 'Instrument economics', exact: true })).toBeVisible();
