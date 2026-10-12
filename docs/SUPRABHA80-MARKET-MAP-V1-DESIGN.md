@@ -136,3 +136,6 @@ W1–W3 touch different tables but share the gateway, so they run **one after an
 5. **Who sees the Market screen?** Default: administrator and management.
 6. **Map library:** add Leaflet (free, open source) and allow OpenStreetMap tiles? Default: yes, loaded only on the Map view. Without it, V1 ships list-only.
 7. **Full-sales import:** ask the integration chat to extend the read-only Tally export to all sales vouchers, so "our sales" covers every customer. **Required for the wallet figures.**
+
+## 10. Owner decisions recorded (12 Oct 2026)
+The owner accepted all seven defaults ('Defaults ok'). Build W1 on branch `claude/market-w1`.
