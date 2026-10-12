@@ -1,13 +1,16 @@
 import { expect, test, type Locator, type Page } from '@playwright/test';
 
 async function advanceToNextCheck(page: Page, bell: Locator, expectedName: string) {
-  let actualName: string | null = null;
+  // After each fake-clock step, give in-flight requests a short real-time window to land before the clock moves
+  // again; otherwise, on a busy machine, the app's 15 s request timeout (on the fake clock) aborts the check.
   for (let step = 0; step < 20; step += 1) {
     await page.clock.runFor(1_000);
-    actualName = await bell.getAttribute('aria-label');
-    if (actualName === expectedName) return;
+    try {
+      await expect(bell).toHaveAttribute('aria-label', expectedName, { timeout: 750 });
+      return;
+    } catch { /* not yet: advance another step */ }
   }
-  throw new Error(`Work check did not reach "${expectedName}" after 20 one-second clock steps; last bell name: "${actualName}"`);
+  throw new Error(`Work check did not reach "${expectedName}" after 20 one-second clock steps; last bell name: "${await bell.getAttribute('aria-label')}"`);
 }
 
 const now = () => new Date().toISOString();
