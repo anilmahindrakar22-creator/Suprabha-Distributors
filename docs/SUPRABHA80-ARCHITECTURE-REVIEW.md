@@ -1,5 +1,7 @@
 # Suprabha 80: full architecture review (Claude, 13 Oct 2026)
 
+> **SUPERSEDED** (13 Oct 2026) by the canonical docs in [docs/README.md](README.md). Its power-map model (§3) is withdrawn under [ADR-0005](architecture/06-DECISION-RECORDS.md). Kept for history only.
+
 Covers `SUPRABHA80-PROFITABLE-WALLET-CAPTURE.md` (direction), `SUPRABHA80-UI-FUNCTIONAL-TECHNICAL-SPEC.md` (approved spec) and what is built on `claude/market-w1`. The owner asked for Pareto, power maps and maps to be planned as one system.
 
 **Owner rule applied throughout:** every element must drive a decision or give strategic guidance. Each part below names its decision.
