@@ -1,5 +1,7 @@
 # Suprabha 80, V1: Market Map and wallet (design, Claude, 12 Oct 2026)
 
+> **HISTORICAL** (13 Oct 2026). Canonical rules now live in [intelligence/SUPRABHA80.md](intelligence/SUPRABHA80.md) and [intelligence/MARKET-MAPS.md](intelligence/MARKET-MAPS.md). The fixed 80% focus band and division-only estimates are superseded by [ADR-0006 and ADR-0007](architecture/06-DECISION-RECORDS.md). The built slice on `claude/market-w1` is parked until Phases 4–5.
+
 **Status:** design only. Nothing is built.
 - It builds on the approved direction in `SUPRABHA80-PROFITABLE-WALLET-CAPTURE.md` and the full spec `SUPRABHA80-UI-FUNCTIONAL-TECHNICAL-SPEC.md` (§§ 4–26).
 - This document picks the **smallest first release** of that spec: spec sequence steps 4–5 plus the map's WALLET and COVERAGE modes.
