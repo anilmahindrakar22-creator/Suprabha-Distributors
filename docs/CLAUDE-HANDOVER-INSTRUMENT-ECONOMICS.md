@@ -651,4 +651,11 @@ Still local and uncommitted on purpose: `docs/INSTRUMENT-ECONOMICS-PRODUCTION-CU
 - No migrations, API, Tally or pricing-logic changes. No deployment.
 - Claude's audit used screenshots of all 346 browser tests on phone and desktop. Packages claimed:
   - **ui2-pricebook** (Codex Luna): `components/customer-price-book.tsx` and `tests/pricing-browser/price-book.spec.ts`. The selected workbench tab gets a visible state; the risk badge uses plain words and is hidden when empty.
+  - **jev-v2** (Codex Sol high; owner: "implement jev guidelines first"; UI round paused until it is done): `tests/agent-decision-observer.mjs`, `tests/agent-decision-policy.json` and `tests/unit/agent-decision-observer.test.ts`. Claude owns `docs/AGENT-DECISION-LAYER.md` and the launcher, which is outside the repo. v2 adds deny enforcement and post-run verification; tier routing stays observe-only.
+  - **jev-v2 done.** Codex (Sol high) built it; Claude reviewed the diff.
+    - Vitest: 1027/1027 across the repo (105 observer tests); tsc and lint clean.
+    - Proofs:
+      - an `actions: deploy` handoff was refused by the launcher (exit 3; Codex never started);
+      - a replay of the half-done badge run escalated through `writes.unchanged` and the assertions; the fixed file passes.
+    - Launcher change (outside the repo) was made by Claude: `--enforce`/`--repo` on observe, `--repo`/`--report` on outcome.
   - **ui2-users** (Codex Luna): `components/user-management.tsx` and `tests/pricing-browser/staff-auth.spec.ts`. Suspend asks for confirmation; existing-member roles use the same chip grid.

@@ -1,5 +1,6 @@
 {
-  "policyVersion": "2026-10-12.1",
+  "policyVersion": "2026-10-12.2",
+  "enforcement": { "deny": "refuse", "ask": "record", "escalate": "suggest", "tier": "observe" },
   "_comment": "denyPatterns and askPatterns are informational prose mentions only; permissions come from declared actions, sandbox and write sensitivity.",
   "classes": {
     "restricted": [".env*", "**/*.pem", "**/*.key", ".codex/setup-*keys*.ps1", "wrangler*.json*", "**/wrangler.toml", "tests/pricing-release-preflight.mjs", "supabase/migration-history-map.json"],

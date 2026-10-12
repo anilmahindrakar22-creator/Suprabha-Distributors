@@ -5,18 +5,20 @@ import { pathToFileURL } from 'node:url';
 
 /** @typedef {'public' | 'app' | 'sensitive' | 'restricted'} Sensitivity */
 /** @typedef {'light' | 'standard' | 'heavy'} Tier */
-/** @typedef {{ read: string[], write: string[], actions: string[] }} Files */
-/** @typedef {{ policyVersion: string, classes: Record<Sensitivity, string[]>, scores: Record<Sensitivity, number>, denyPatterns: string[], askPatterns: string[], logicKeywords: string[] }} Policy */
+/** @typedef {{ path: string, mode: 'contain' | 'not-contain', literal: string }} Assertion */
+/** @typedef {{ read: string[], write: string[], actions: string[], verify: Assertion[] }} Files */
+/** @typedef {{ policyVersion: string, classes: Record<Sensitivity, string[]>, scores: Record<Sensitivity, number>, denyPatterns: string[], askPatterns: string[], logicKeywords: string[], enforcement?: { deny: string, ask: string, escalate: string, tier: string } }} Policy */
 /** @typedef {{ tier: Tier, effort: string, sandbox: string, network: boolean, resume: boolean }} Requested */
 /** @typedef {{ path: string, class: Sensitivity, rule: string, kind: 'read' | 'write' }} Match */
-/** @typedef {{ handoff: string, files: Files }} InFlight */
+/** @typedef {{ handoff: string, files: Pick<Files, 'read' | 'write' | 'actions'> }} InFlight */
 /** @typedef {{ question: 'security.sensitivity', answer: { class: Sensitivity, score: number, readClass: Sensitivity | null, restrictedReads: string[], matches: Match[] } | null, confidence: number, reasons: string[] }} SecurityDecision */
 /** @typedef {{ question: 'permission.handoff', answer: 'allow' | 'ask' | 'deny' | null, confidence: number, reasons: string[], mentions: string[] }} PermissionDecision */
 /** @typedef {{ question: 'route.tier', answer: Tier | null, requested: Tier, agrees: boolean, confidence: number, reasons: string[] }} TierDecision */
 /** @typedef {{ question: 'ownership.overlap', answer: { overlapping: { path: string, handoff: string }[] } | null, confidence: number, reasons: string[] }} OwnershipDecision */
 /** @typedef {SecurityDecision | PermissionDecision | TierDecision | OwnershipDecision} Decision */
 /** @typedef {{ exitCode: number, seconds: number, tokens?: string }} Outcome */
-/** @typedef {{ schema: 'jev.decision/v1', policyVersion: string, createdAt: string, handoffDigest: string, files: Files, requested: Requested, decisions: Decision[], observedOnly: true, actionTaken: 'launched-unchanged', outcome?: Outcome, history?: Omit<DecisionRecord, 'history'>[] }} DecisionRecord */
+/** @typedef {{ checks: { id: string, fired: boolean, reason: string }[], verdict: 'pass' | 'escalate', suggestedTier: Tier | 'conductor' | null, reportMentions?: string[] }} Verification */
+/** @typedef {{ schema: 'jev.decision/v1' | 'jev.decision/v2', policyVersion: string, createdAt: string, handoffDigest: string, files: Files, verify?: Assertion[], writeDigests?: Record<string, string | null>, requested: Requested, decisions: Decision[], observedOnly: boolean, actionTaken: 'launched-unchanged' | 'refused', outcome?: Outcome, verification?: Verification, history?: Omit<DecisionRecord, 'history'>[] }} DecisionRecord */
 
 /** @param {string} path */
 const normalizePath = path => path.trim().replace(/\\/g, '/').replace(/^(?:\.\/)+/, '');
@@ -27,7 +29,7 @@ export function parseAgentFiles(text) {
   let fence = null;
   let selected = false;
   /** @type {Files} */
-  const files = { read: [], write: [], actions: [] };
+  const files = { read: [], write: [], actions: [], verify: [] };
   for (const line of lines) {
     if (!fence) {
       const opening = /^ {0,3}(`{3,}|~{3,})([^\r\n]*)$/.exec(line);
@@ -43,9 +45,17 @@ export function parseAgentFiles(text) {
       continue;
     }
     if (!selected) continue;
+    if (/^\s*verify:/.test(line)) {
+      const assertion = /^\s*verify:\s*(\S+) (must-contain|must-not-contain) (.+)$/.exec(line);
+      if (!assertion) return null;
+      const path = normalizePath(assertion[1]);
+      if (!path || /^[\\/]/.test(path) || path.includes(':') || path.split('/').includes('..')) return null;
+      files.verify.push({ path, mode: assertion[2] === 'must-contain' ? 'contain' : 'not-contain', literal: assertion[3] });
+      continue;
+    }
     const declaration = /^\s*(read|write|actions):\s*(.*)$/.exec(line);
     if (!declaration) continue;
-    const key = /** @type {keyof Files} */ (declaration[1]);
+    const key = /** @type {'read' | 'write' | 'actions'} */ (declaration[1]);
     const values = declaration[2].split(',').map(value => key === 'actions' ? value.trim().toLowerCase() : normalizePath(value)).filter(Boolean);
     files[key] = [...new Set([...files[key], ...values])];
   }
@@ -154,18 +164,59 @@ export function decide({ text, files, requested, policy, inFlight = [] }) {
 }
 
 /**
- * @param {{ text: string, requested: Requested, policy: Policy, inFlight?: InFlight[], now?: Date | string }} input
+ * @param {{ text: string, requested: Requested, policy: Policy, inFlight?: InFlight[], now?: Date | string, repo?: string }} input
  * @returns {DecisionRecord}
  */
-export function buildRecord({ text, requested, policy, inFlight = [], now = new Date() }) {
+export function buildRecord({ text, requested, policy, inFlight = [], now = new Date(), repo = process.cwd() }) {
   const files = parseAgentFiles(text);
   return {
-    schema: 'jev.decision/v1', policyVersion: policy.policyVersion,
+    schema: 'jev.decision/v2', policyVersion: policy.policyVersion,
     createdAt: new Date(now).toISOString(),
     handoffDigest: createHash('sha256').update(text, 'utf8').digest('hex'),
-    files: files ?? { read: [], write: [], actions: [] }, requested: { ...requested },
+    files: files ?? { read: [], write: [], actions: [], verify: [] }, requested: { ...requested },
+    verify: files?.verify ?? [],
+    writeDigests: Object.fromEntries((files?.write ?? []).map(path => [path, fileDigest(repo, path)])),
     decisions: decide({ text, files, requested, policy, inFlight }),
     observedOnly: true, actionTaken: 'launched-unchanged',
+  };
+}
+
+/** @param {string} repo @param {string} path */
+function fileContent(repo, path) {
+  try { return readFileSync(resolve(repo, path)); }
+  catch (error) {
+    const code = /** @type {NodeJS.ErrnoException} */ (error).code;
+    if (code === 'ENOENT' || code === 'ENOTDIR') return null;
+    throw error;
+  }
+}
+
+/** @param {string} repo @param {string} path */
+function fileDigest(repo, path) {
+  const content = fileContent(repo, path);
+  return content === null ? null : createHash('sha256').update(content).digest('hex');
+}
+
+/** @param {DecisionRecord} record @param {string} repo @returns {Verification} */
+function verifyOutcome(record, repo) {
+  if (!record.outcome) throw new Error('outcome');
+  const exitCode = record.outcome.exitCode;
+  const checks = [{ id: 'exit.nonzero', fired: exitCode !== 0, reason: `Exit code: ${exitCode}.` }];
+  if (record.writeDigests) {
+    const fired = record.files.actions.includes('edit') && record.files.write.length > 0 &&
+      record.files.write.every(path => fileDigest(repo, path) === record.writeDigests?.[path]);
+    checks.push({ id: 'writes.unchanged', fired, reason: fired ? 'Every declared write file is unchanged.' : 'The unchanged edit write-set rule did not fire.' });
+  }
+  for (const [index, assertion] of (record.verify ?? []).entries()) {
+    const content = fileContent(repo, assertion.path);
+    const contains = content?.toString('utf8').includes(assertion.literal) ?? false;
+    const fired = assertion.mode === 'contain' ? !contains : contains;
+    checks.push({ id: `assert.${index + 1}`, fired, reason: `${assertion.path} must-${assertion.mode}: ${fired ? 'failed' : 'passed'}.` });
+  }
+  const escalated = checks.some(check => check.fired);
+  return {
+    checks, verdict: escalated ? 'escalate' : 'pass',
+    suggestedTier: escalated ? record.requested.tier === 'light' ? 'standard' : record.requested.tier === 'standard' ? 'heavy' : 'conductor' : null,
   };
 }
 
@@ -177,12 +228,14 @@ export function summarize(records) {
   let wouldDeny = 0;
   let restrictedReadRuns = 0;
   let resumedRuns = 0;
+  let refused = 0;
   // Abstained counts runs with at least one null answer.
   let abstained = 0;
-  const empty = () => ({ runs: 0, completed: 0, succeeded: 0, failed: 0, seconds: 0 });
+  const empty = () => ({ runs: 0, completed: 0, succeeded: 0, failed: 0, seconds: 0, verified: 0, passed: 0, escalated: 0 });
   const outcomesByTier = { light: empty(), standard: empty(), heavy: empty() };
   for (const record of records) {
     resumedRuns += record.history?.length ?? 0;
+    if (record.actionTaken === 'refused') refused++;
     for (const decision of record.decisions) {
       if (decision.question === 'route.tier' && decision.answer !== null) {
         compared++;
@@ -197,6 +250,11 @@ export function summarize(records) {
     if (record.decisions.some(decision => decision.question === 'security.sensitivity' && decision.answer?.restrictedReads?.length)) restrictedReadRuns++;
     const bucket = outcomesByTier[record.requested.tier];
     bucket.runs++;
+    if (record.verification) {
+      bucket.verified++;
+      if (record.verification.verdict === 'pass') bucket.passed++;
+      if (record.verification.verdict === 'escalate') bucket.escalated++;
+    }
     if (record.outcome) {
       bucket.completed++;
       bucket.seconds += record.outcome.seconds;
@@ -204,7 +262,7 @@ export function summarize(records) {
       else bucket.failed++;
     }
   }
-  return { runs: records.length, tierAgreementRate: compared ? agreed / compared : null, wouldAsk, wouldDeny, abstained, restrictedReadRuns, resumedRuns, outcomesByTier };
+  return { runs: records.length, tierAgreementRate: compared ? agreed / compared : null, wouldAsk, wouldDeny, abstained, restrictedReadRuns, resumedRuns, refused, outcomesByTier };
 }
 
 /** @param {string} handoff */
@@ -213,15 +271,15 @@ function recordPath(handoff) {
   return resolve(dirname(absolute), `${basename(absolute, extname(absolute))}.decisions.json`);
 }
 
-/** @param {string[]} args @param {string[]} valued @param {string[]} flags */
-function parseOptions(args, valued, flags = []) {
+/** @param {string[]} args @param {string[]} valued @param {string[]} flags @param {string[]} optional */
+function parseOptions(args, valued, flags = [], optional = []) {
   /** @type {Record<string, string | boolean>} */
   const options = {};
   for (let index = 0; index < args.length; index++) {
     const key = args[index];
     if (key in options) throw new Error('arguments');
     if (flags.includes(key)) options[key] = true;
-    else if (valued.includes(key)) {
+    else if (valued.includes(key) || optional.includes(key)) {
       const value = args[++index];
       if (value === undefined || (value === '' && key !== '--tokens') || value.startsWith('--')) throw new Error('arguments');
       options[key] = value;
@@ -242,7 +300,7 @@ function readRecords(directory) {
     const path = resolve(directory, name);
     try {
       const record = JSON.parse(readFileSync(path, 'utf8'));
-      if (record?.schema !== 'jev.decision/v1' || !Array.isArray(record.files?.read) || !Array.isArray(record.files?.write) || !Array.isArray(record.decisions) || !['light', 'standard', 'heavy'].includes(record.requested?.tier)) throw new Error('record');
+      if (!['jev.decision/v1', 'jev.decision/v2'].includes(record?.schema) || !Array.isArray(record.files?.read) || !Array.isArray(record.files?.write) || !Array.isArray(record.decisions) || !['light', 'standard', 'heavy'].includes(record.requested?.tier)) throw new Error('record');
       records.push({ path, record });
     } catch { skippedRecords++; }
   }
@@ -253,7 +311,7 @@ function readRecords(directory) {
 function runCli([command, ...args]) {
   try {
     if (command === 'observe') {
-      const options = parseOptions(args, ['--handoff', '--tier', '--effort', '--sandbox'], ['--network', '--resume']);
+      const options = parseOptions(args, ['--handoff', '--tier', '--effort', '--sandbox'], ['--network', '--resume', '--enforce'], ['--repo']);
       const handoff = String(options['--handoff']);
       const tier = String(options['--tier']);
       if (!['light', 'standard', 'heavy'].includes(tier)) throw new Error('arguments');
@@ -263,10 +321,14 @@ function runCli([command, ...args]) {
       const policy = JSON.parse(readFileSync(new URL('./agent-decision-policy.json', import.meta.url), 'utf8'));
       const { records } = readRecords(dirname(target));
       const inFlight = records.filter(entry => entry.path !== target && !entry.record.outcome).map(entry => ({ handoff: entry.path, files: entry.record.files }));
-      const record = buildRecord({ text, policy, inFlight, requested: {
+      const record = buildRecord({ text, policy, inFlight, repo: options['--repo'] === undefined ? process.cwd() : String(options['--repo']), requested: {
         tier: /** @type {Tier} */ (tier), effort: String(options['--effort']), sandbox: String(options['--sandbox']),
         network: options['--network'] === true, resume: options['--resume'] === true,
       } });
+      record.observedOnly = options['--enforce'] !== true;
+      const [security, permission, route, ownership] = /** @type {[SecurityDecision, PermissionDecision, TierDecision, OwnershipDecision]} */ (record.decisions);
+      const refused = options['--enforce'] === true && permission.answer === 'deny' && policy.enforcement?.deny === 'refuse';
+      if (refused) record.actionTaken = 'refused';
       const existing = records.find(entry => entry.path === target)?.record;
       record.history = [];
       if (existing) {
@@ -274,10 +336,13 @@ function runCli([command, ...args]) {
         record.history = [previous, ...history].slice(0, 10);
       }
       writeFileSync(target, `${JSON.stringify(record, null, 2)}\n`, 'utf8');
-      const [security, permission, route, ownership] = /** @type {[SecurityDecision, PermissionDecision, TierDecision, OwnershipDecision]} */ (record.decisions);
       console.log(`jev observe: sensitivity=${security.answer?.class ?? null} permission=${permission.answer} tier=${route.answer}/${route.requested} agrees=${route.agrees} overlap=${ownership.answer?.overlapping.length ?? 0}`);
+      if (refused) {
+        console.log(`jev gate: DENY — launch refused (${permission.reasons.join('; ')})`);
+        process.exitCode = 3;
+      }
     } else if (command === 'outcome') {
-      const options = parseOptions(args, ['--handoff', '--exit', '--seconds', '--tokens']);
+      const options = parseOptions(args, ['--handoff', '--exit', '--seconds', '--tokens'], [], ['--repo', '--report']);
       const exitCode = Number(options['--exit']);
       const seconds = Number(options['--seconds']);
       if (!Number.isInteger(exitCode) || !Number.isFinite(seconds) || seconds < 0) throw new Error('arguments');
@@ -289,14 +354,24 @@ function runCli([command, ...args]) {
         if (/** @type {NodeJS.ErrnoException} */ (error).code === 'ENOENT') return;
         throw error;
       }
-      if (record.schema !== 'jev.decision/v1') throw new Error('record');
+      if (!['jev.decision/v1', 'jev.decision/v2'].includes(record.schema)) throw new Error('record');
       record.outcome = { exitCode, seconds, ...(options['--tokens'] === undefined ? {} : { tokens: String(options['--tokens']) }) };
       writeFileSync(target, `${JSON.stringify(record, null, 2)}\n`, 'utf8');
+      record.verification = verifyOutcome(record, options['--repo'] === undefined ? process.cwd() : String(options['--repo']));
+      if (options['--report'] !== undefined) {
+        try {
+          const report = readFileSync(String(options['--report']), 'utf8');
+          record.verification.reportMentions = [...new Set((report.match(/incomplete|could not|unable to|not done|remains? (?:unchanged|incomplete)/gi) ?? []).map(match => match.toLowerCase()))];
+        } catch { /* An unreadable report does not affect machine verification. */ }
+      }
+      writeFileSync(target, `${JSON.stringify(record, null, 2)}\n`, 'utf8');
+      console.log(record.verification.verdict === 'pass' ? 'jev verify: pass' : `jev verify: ESCALATE -> ${record.verification.suggestedTier} (${record.verification.checks.filter(check => check.fired).map(check => check.id).join(', ')})`);
     } else if (command === 'summary' && args.length === 1) {
       const { records, skippedRecords } = readRecords(resolve(args[0]));
       console.log(JSON.stringify({ ...summarize(records.map(entry => entry.record)), skippedRecords }, null, 2));
     } else throw new Error('arguments');
   } catch (error) {
+    process.exitCode = 0;
     const code = /** @type {NodeJS.ErrnoException} */ (error).code;
     const reason = code === 'ENOENT' ? 'missing file' : code === 'EACCES' || code === 'EPERM' ? 'access unavailable' : 'invalid input or unavailable observation';
     console.log(`jev observe: skipped (${reason})`);

@@ -24,6 +24,16 @@ function tempFolder() {
 function cli(...args: string[]) {
   return spawnSync(process.execPath, [modulePath, ...args], { encoding: 'utf8', env: { ...process.env, TEMP: tmpRoot, TMP: tmpRoot } });
 }
+function runFixture(text: string, tier: Tier = 'light') {
+  const folder = tempFolder();
+  const handoff = resolve(folder, 'run.md');
+  const output = resolve(folder, 'run.decisions.json');
+  writeFileSync(handoff, text);
+  const observe = (...extra: string[]) => cli('observe', '--handoff', handoff, '--tier', tier, '--effort', 'low', '--sandbox', 'workspace-write', '--repo', folder, ...extra);
+  const outcome = (...extra: string[]) => cli('outcome', '--handoff', handoff, '--exit', '0', '--seconds', '1', '--repo', folder, ...extra);
+  const saved = () => JSON.parse(readFileSync(output, 'utf8'));
+  return { folder, handoff, output, observe, outcome, saved };
+}
 afterEach(() => {
   for (const folder of folders.splice(0)) rmSync(folder, { recursive: true, force: true });
 });
@@ -32,15 +42,39 @@ describe('observation-only typed decision layer', () => {
   it('parses only the first agent-files fence and normalizes and deduplicates paths', () => {
     const text = '```text\n```agent-files\nwrite: hidden.ts\n```\n' +
       '~~~agent-files\nread: lib\\order-types.ts, lib/order-types.ts, \nwrite: ./docs/x.md\nwrite: docs/x.md, tests/x.ts\n~~~\n' + block(['ignored.ts']);
-    expect(parseAgentFiles(text)).toEqual({ read: ['lib/order-types.ts'], write: ['docs/x.md', 'tests/x.ts'], actions: [] });
+    expect(parseAgentFiles(text)).toEqual({ read: ['lib/order-types.ts'], write: ['docs/x.md', 'tests/x.ts'], actions: [], verify: [] });
     expect(parseAgentFiles('```agent-files extra\nwrite: docs/x.md\n```')).toBeNull();
     expect(parseAgentFiles('```agent-files\nwrite: docs/x.md')).toBeNull();
     expect(parseAgentFiles('plain text')).toBeNull();
   });
 
   it('parses optional actions, lowercases, trims and deduplicates them', () => {
-    expect(parseAgentFiles(block(['docs/x.md'], [], [' EDIT ', 'Test', 'edit', '', 'PUSH']))).toEqual({ read: [], write: ['docs/x.md'], actions: ['edit', 'test', 'push'] });
-    expect(parseAgentFiles('```agent-files\nactions: EDIT, test\nactions: edit, COMMIT\n```')).toEqual({ read: [], write: [], actions: ['edit', 'test', 'commit'] });
+    expect(parseAgentFiles(block(['docs/x.md'], [], [' EDIT ', 'Test', 'edit', '', 'PUSH']))).toEqual({ read: [], write: ['docs/x.md'], actions: ['edit', 'test', 'push'], verify: [] });
+    expect(parseAgentFiles('```agent-files\nactions: EDIT, test\nactions: edit, COMMIT\n```')).toEqual({ read: [], write: [], actions: ['edit', 'test', 'commit'], verify: [] });
+  });
+
+  it('parses multiple assertions in both modes and preserves literals verbatim', () => {
+    const text = '```agent-files\nwrite: docs/x.md\nverify: docs/x.md must-contain  "quoted" `two words`  \nverify: tests/x.ts must-not-contain TODO pending\nverify: docs/x.md must-contain another\n```';
+    expect(parseAgentFiles(text)?.verify).toEqual([
+      { path: 'docs/x.md', mode: 'contain', literal: ' "quoted" `two words`  ' },
+      { path: 'tests/x.ts', mode: 'not-contain', literal: 'TODO pending' },
+      { path: 'docs/x.md', mode: 'contain', literal: 'another' },
+    ]);
+    expect(parseAgentFiles(block([]))?.verify).toEqual([]);
+  });
+
+  it.each([
+    'verify: docs/x.md must-contain',
+    'verify: docs/x.md must-contain ',
+    'verify: docs/x.md contains literal',
+    'verify: docs/my file.md must-contain literal',
+    'verify: must-not-contain literal',
+    'verify:',
+    'verify: /absolute.md must-contain literal',
+    'verify: C:\\absolute.md must-contain literal',
+    'verify: ../outside.md must-contain literal',
+  ])('invalidates the entire first block for malformed assertion %s', declaration => {
+    expect(parseAgentFiles(`\`\`\`agent-files\nwrite: docs/x.md\n${declaration}\n\`\`\`\n${block(['valid.md'])}`)).toBeNull();
   });
 
   it.each([
@@ -197,8 +231,21 @@ describe('observation-only typed decision layer', () => {
     expect(built.handoffDigest).toBe(createHash('sha256').update(text).digest('hex'));
     expect(record(text).handoffDigest).toBe(built.handoffDigest);
     expect(JSON.stringify(built)).not.toContain('unique sentinel');
-    expect(built).toMatchObject({ schema: 'jev.decision/v1', policyVersion: '2026-10-12.1', createdAt: '2026-10-11T00:00:00.000Z', observedOnly: true, actionTaken: 'launched-unchanged', requested: requested() });
+    expect(built).toMatchObject({ schema: 'jev.decision/v2', policyVersion: '2026-10-12.2', createdAt: '2026-10-11T00:00:00.000Z', observedOnly: true, actionTaken: 'launched-unchanged', requested: requested() });
     expect(built.decisions.every(decision => decision.confidence >= 0 && decision.confidence <= 1)).toBe(true);
+  });
+
+  it('captures v2 assertions and SHA-256 write digests relative to the supplied repo', () => {
+    const folder = tempFolder();
+    const content = Buffer.from([0, 1, 255, 10]);
+    writeFileSync(resolve(folder, 'existing.bin'), content);
+    const text = '```agent-files\nwrite: existing.bin, missing.txt\nverify: existing.bin must-not-contain unfinished\nactions: edit\n```';
+    const built = buildRecord({ text, policy, requested: requested(), repo: folder });
+    expect(built).toMatchObject({ schema: 'jev.decision/v2', verify: [{ path: 'existing.bin', mode: 'not-contain', literal: 'unfinished' }] });
+    expect(built.writeDigests).toEqual({ 'existing.bin': createHash('sha256').update(content).digest('hex'), 'missing.txt': null });
+    expect(record('No block')).toMatchObject({ verify: [], writeDigests: {} });
+    const defaultRoot = record(block(['tests/agent-decision-policy.json']));
+    expect(defaultRoot.writeDigests?.['tests/agent-decision-policy.json']).toBe(createHash('sha256').update(readFileSync(new URL('../agent-decision-policy.json', import.meta.url))).digest('hex'));
   });
 
   it('summarizes non-null tier agreement, review counts, abstained runs and requested-tier outcomes', () => {
@@ -209,10 +256,27 @@ describe('observation-only typed decision layer', () => {
     const denied = record(block([], [], ['deploy']), 'heavy');
     const summary = summarize([good, ask, denied]);
     expect(summary).toMatchObject({ runs: 3, tierAgreementRate: 0.5, wouldAsk: 1, wouldDeny: 1, abstained: 1 });
-    expect(summary.outcomesByTier.light).toEqual({ runs: 1, completed: 1, succeeded: 1, failed: 0, seconds: 2 });
-    expect(summary.outcomesByTier.standard).toEqual({ runs: 1, completed: 1, succeeded: 0, failed: 1, seconds: 4 });
+    expect(summary.outcomesByTier.light).toEqual({ runs: 1, completed: 1, succeeded: 1, failed: 0, seconds: 2, verified: 0, passed: 0, escalated: 0 });
+    expect(summary.outcomesByTier.standard).toEqual({ runs: 1, completed: 1, succeeded: 0, failed: 1, seconds: 4, verified: 0, passed: 0, escalated: 0 });
     expect(summary.restrictedReadRuns).toBe(0);
     expect(summarize([])).toMatchObject({ runs: 0, tierAgreementRate: null, abstained: 0, restrictedReadRuns: 0, resumedRuns: 0 });
+  });
+
+  it('counts refused runs and verification verdicts independently of exit success', () => {
+    const passed = record(block(['docs/x.md']));
+    passed.outcome = { exitCode: 0, seconds: 1 };
+    passed.verification = { checks: [], verdict: 'pass', suggestedTier: null };
+    const escalated = record(block(['docs/y.md']));
+    escalated.outcome = { exitCode: 0, seconds: 2 };
+    escalated.verification = { checks: [{ id: 'writes.unchanged', fired: true, reason: 'unchanged' }], verdict: 'escalate', suggestedTier: 'standard' };
+    const refused = record(block([], [], ['deploy']), 'heavy');
+    refused.actionTaken = 'refused';
+    expect(summarize([passed, escalated, refused])).toMatchObject({ refused: 1, outcomesByTier: {
+      light: { runs: 2, succeeded: 2, verified: 2, passed: 1, escalated: 1 },
+      standard: { verified: 0, passed: 0, escalated: 0 },
+      heavy: { runs: 1, completed: 0, verified: 0, passed: 0, escalated: 0 },
+    } });
+    expect(summarize([]).refused).toBe(0);
   });
 
   it('counts restricted-read runs once each, including reads-only records', () => {
@@ -233,6 +297,162 @@ describe('observation-only typed decision layer', () => {
 });
 
 describe('fail-open observer CLI', () => {
+  it('refuses typed deny only with --enforce and saves the action before exiting 3', () => {
+    const fixture = runFixture(block([], [], ['deploy']));
+    const observed = fixture.observe();
+    expect(observed.status).toBe(0);
+    expect(observed.stdout).not.toContain('jev gate:');
+    expect(fixture.saved()).toMatchObject({ observedOnly: true, actionTaken: 'launched-unchanged' });
+    const enforced = fixture.observe('--enforce');
+    expect(enforced.status).toBe(3);
+    expect(enforced.stderr).toBe('');
+    expect(enforced.stdout.trim().split(/\r?\n/).at(-1)).toBe('jev gate: DENY — launch refused (Deny action declared.; mentions: deploy)');
+    expect(fixture.saved()).toMatchObject({ observedOnly: false, actionTaken: 'refused' });
+    expect(JSON.parse(cli('summary', fixture.folder).stdout).refused).toBe(1);
+  });
+
+  it.each([['push', 'ask'], ['test', 'allow']])('keeps %s recorded only with --enforce', (action, permission) => {
+    const fixture = runFixture(block(['result.txt'], [], [action]));
+    const result = fixture.observe('--enforce');
+    expect(result.status).toBe(0);
+    expect(result.stdout).toContain(`permission=${permission}`);
+    expect(result.stdout).not.toContain('jev gate:');
+    expect(fixture.saved()).toMatchObject({ observedOnly: false, actionTaken: 'launched-unchanged' });
+  });
+
+  it.each(['record', 'REFUSE', '', null])('only the exact policy value refuse enables denial (%s)', deny => {
+    const fixture = runFixture(block([], [], ['deploy']));
+    const copy = resolve(fixture.folder, 'observer.mjs');
+    writeFileSync(copy, readFileSync(modulePath));
+    const customPolicy = { ...policy, enforcement: { ...policy.enforcement, deny } };
+    writeFileSync(resolve(fixture.folder, 'agent-decision-policy.json'), JSON.stringify(customPolicy));
+    const result = spawnSync(process.execPath, [copy, 'observe', '--handoff', fixture.handoff, '--tier', 'light', '--effort', 'low', '--sandbox', 'read-only', '--enforce'], { encoding: 'utf8' });
+    expect(result.status).toBe(0);
+    expect(result.stdout).toContain('permission=deny');
+    expect(fixture.saved()).toMatchObject({ observedOnly: false, actionTaken: 'launched-unchanged' });
+  });
+
+  it('fails open with --enforce for a corrupt policy or missing handoff', () => {
+    const fixture = runFixture(block([], [], ['deploy']));
+    const copy = resolve(fixture.folder, 'observer.mjs');
+    writeFileSync(copy, readFileSync(modulePath));
+    writeFileSync(resolve(fixture.folder, 'agent-decision-policy.json'), '{ corrupt');
+    const corrupt = spawnSync(process.execPath, [copy, 'observe', '--handoff', fixture.handoff, '--tier', 'light', '--effort', 'low', '--sandbox', 'read-only', '--enforce'], { encoding: 'utf8' });
+    const missing = cli('observe', '--handoff', resolve(fixture.folder, 'missing.md'), '--tier', 'light', '--effort', 'low', '--sandbox', 'read-only', '--enforce');
+    for (const result of [corrupt, missing]) {
+      expect(result.status).toBe(0);
+      expect(result.stdout).toContain('jev observe: skipped (');
+      expect(result.stdout).not.toContain('jev gate:');
+      expect(result.stderr).toBe('');
+    }
+    expect(readdirSync(fixture.folder)).not.toContain('run.decisions.json');
+  });
+
+  it('escalates exit-zero unchanged edit writes, including files missing before and after', () => {
+    const fixture = runFixture(block(['result.txt', 'missing.txt'], [], ['edit']));
+    writeFileSync(resolve(fixture.folder, 'result.txt'), 'before');
+    expect(fixture.observe().status).toBe(0);
+    const result = fixture.outcome();
+    expect(result.status).toBe(0);
+    expect(result.stdout.trim()).toBe('jev verify: ESCALATE -> standard (writes.unchanged)');
+    expect(fixture.saved().verification).toMatchObject({ verdict: 'escalate', suggestedTier: 'standard', checks: [
+      { id: 'exit.nonzero', fired: false, reason: expect.any(String) },
+      { id: 'writes.unchanged', fired: true, reason: expect.any(String) },
+    ] });
+  });
+
+  it('escalates a changed file that fails must-not-contain', () => {
+    const fixture = runFixture('```agent-files\nwrite: result.txt\nactions: edit\nverify: result.txt must-not-contain TODO `unfinished work`\n```');
+    writeFileSync(resolve(fixture.folder, 'result.txt'), 'before');
+    expect(fixture.observe().status).toBe(0);
+    writeFileSync(resolve(fixture.folder, 'result.txt'), 'after TODO `unfinished work`');
+    const result = fixture.outcome();
+    expect(result.status).toBe(0);
+    expect(result.stdout.trim()).toBe('jev verify: ESCALATE -> standard (assert.1)');
+    expect(fixture.saved().verification.checks.map((check: { id: string, fired: boolean }) => [check.id, check.fired])).toEqual([
+      ['exit.nonzero', false], ['writes.unchanged', false], ['assert.1', true],
+    ]);
+  });
+
+  it('passes changed writes and satisfied assertions, including a missing must-not-contain file', () => {
+    const fixture = runFixture('```agent-files\nwrite: result.txt, missing.txt\nactions: edit\nverify: result.txt must-contain finished\nverify: missing.txt must-not-contain TODO\n```');
+    writeFileSync(resolve(fixture.folder, 'result.txt'), 'before');
+    expect(fixture.observe().status).toBe(0);
+    writeFileSync(resolve(fixture.folder, 'result.txt'), 'finished');
+    const result = fixture.outcome();
+    expect(result.status).toBe(0);
+    expect(result.stdout.trim()).toBe('jev verify: pass');
+    const verification = fixture.saved().verification;
+    expect(verification).toMatchObject({ verdict: 'pass', suggestedTier: null });
+    expect(verification.checks.map((check: { id: string, fired: boolean }) => [check.id, check.fired])).toEqual([
+      ['exit.nonzero', false], ['writes.unchanged', false], ['assert.1', false], ['assert.2', false],
+    ]);
+    expect(JSON.parse(cli('summary', fixture.folder).stdout)).toMatchObject({ outcomesByTier: { light: { verified: 1, passed: 1, escalated: 0 } } });
+  });
+
+  it.each(['light', 'standard', 'heavy'] as Tier[])('combines fired checks in order and escalates from %s', tier => {
+    const fixture = runFixture('```agent-files\nwrite: missing.txt\nactions: edit\nverify: missing.txt must-contain finished\n```', tier);
+    expect(fixture.observe().status).toBe(0);
+    const result = cli('outcome', '--handoff', fixture.handoff, '--exit', '2', '--seconds', '1', '--repo', fixture.folder);
+    const next = tier === 'light' ? 'standard' : tier === 'standard' ? 'heavy' : 'conductor';
+    expect(result.status).toBe(0);
+    expect(result.stdout.trim()).toBe(`jev verify: ESCALATE -> ${next} (exit.nonzero, writes.unchanged, assert.1)`);
+    expect(fixture.saved().verification).toMatchObject({ verdict: 'escalate', suggestedTier: next });
+  });
+
+  it.each([{ actions: ['edit'] }, { actions: ['test'] }, { actions: [] }])('does not fire unchanged writes for empty write sets or non-edit actions $actions', ({ actions }) => {
+    const fixture = runFixture(block(actions.includes('edit') ? [] : ['result.txt'], [], actions));
+    expect(fixture.observe().status).toBe(0);
+    expect(fixture.outcome().stdout.trim()).toBe('jev verify: pass');
+  });
+
+  it('reads v1 records without digest checks and includes them in summary and history', () => {
+    const fixture = runFixture(block(['missing.txt'], [], ['edit']));
+    expect(fixture.observe().status).toBe(0);
+    const legacy = fixture.saved();
+    legacy.schema = 'jev.decision/v1';
+    delete legacy.writeDigests;
+    delete legacy.verify;
+    delete legacy.files.verify;
+    writeFileSync(fixture.output, JSON.stringify(legacy));
+    const result = fixture.outcome();
+    expect(result.status).toBe(0);
+    expect(result.stdout.trim()).toBe('jev verify: pass');
+    expect(fixture.saved().verification.checks).toEqual([{ id: 'exit.nonzero', fired: false, reason: expect.any(String) }]);
+    expect(JSON.parse(cli('summary', fixture.folder).stdout)).toMatchObject({ runs: 1, skippedRecords: 0, outcomesByTier: { light: { verified: 1, passed: 1 } } });
+    expect(fixture.observe().status).toBe(0);
+    expect(fixture.saved().history[0].schema).toBe('jev.decision/v1');
+  });
+
+  it('records distinct lowercase report mentions without changing a passing verdict', () => {
+    const fixture = runFixture(block([], [], ['test']));
+    expect(fixture.observe().status).toBe(0);
+    const report = resolve(fixture.folder, 'report.md');
+    writeFileSync(report, 'INCOMPLETE incomplete. Could Not finish; UNABLE TO test; not done. Remain unchanged; remains incomplete.');
+    const result = fixture.outcome('--report', report);
+    expect(result.status).toBe(0);
+    expect(result.stdout.trim()).toBe('jev verify: pass');
+    expect(fixture.saved().verification).toMatchObject({ verdict: 'pass', suggestedTier: null, reportMentions: [
+      'incomplete', 'could not', 'unable to', 'not done', 'remain unchanged', 'remains incomplete',
+    ] });
+    const unreadable = fixture.outcome('--report', resolve(fixture.folder, 'missing-report.md'));
+    expect(unreadable.status).toBe(0);
+    expect(unreadable.stdout.trim()).toBe('jev verify: pass');
+    expect(fixture.saved().verification).not.toHaveProperty('reportMentions');
+  });
+
+  it('fails open for malformed outcome records while preserving the saved outcome on verification errors', () => {
+    const fixture = runFixture(block(['result.txt'], [], ['edit']));
+    expect(fixture.observe().status).toBe(0);
+    mkdirSync(resolve(fixture.folder, 'result.txt'));
+    const result = fixture.outcome();
+    expect(result.status).toBe(0);
+    expect(result.stdout).toContain('jev observe: skipped (');
+    expect(fixture.saved().outcome).toEqual({ exitCode: 0, seconds: 1 });
+    writeFileSync(fixture.output, '{ corrupt');
+    expect(fixture.outcome().stdout).toContain('jev observe: skipped (');
+  });
+
   it('writes only its adjacent record, adds outcomes, and summarizes', () => {
     const folder = tempFolder();
     const handoff = resolve(folder, 'sample.handoff.md');
