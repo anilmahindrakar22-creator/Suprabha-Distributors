@@ -181,6 +181,8 @@ end$$;
   Invoke-DatabaseCommand $psqlProgram @('-U',$databaseUser,'-X','-q','-v','ON_ERROR_STOP=1','-d',$database,'-f',(Join-Path $repository 'supabase/tests/historical_instrument_registration.sql'))
   Invoke-DatabaseCommand $psqlProgram @('-U',$databaseUser,'-X','-q','-v','ON_ERROR_STOP=1','-d',$database,'-f',(Join-Path $repository 'supabase/tests/market_customer_locations.sql'))
   Write-Output 'PASS: market customer locations, roles, versioning, audit and replay'
+  Invoke-DatabaseCommand $psqlProgram @('-U',$databaseUser,'-X','-q','-v','ON_ERROR_STOP=1','-d',$database,'-f',(Join-Path $repository 'supabase/tests/market_wallet_estimates.sql'))
+  Write-Output 'PASS: market wallet divisions and append-only estimates, roles, replay and immutability'
   Invoke-DatabaseCommand $psqlProgram @('-U',$databaseUser,'-X','-q','-v','ON_ERROR_STOP=1','-d',$database,'-f',(Join-Path $repository 'supabase/tests/instrument_economics_auto_cost.sql'))
   Write-Output 'PASS: automatic Tally purchase cost by batch then oldest first, zero-value cost and no reuse'
   Invoke-DatabaseCommand $psqlProgram @('-U',$databaseUser,'-X','-q','-v','ON_ERROR_STOP=1','-d',$database,'-f',(Join-Path $repository 'supabase/tests/instrument_economics_sale_date.sql'))
