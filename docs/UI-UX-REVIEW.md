@@ -9,7 +9,7 @@ Method: every screen in the UI test harness was captured at phone width (Pixel 7
 1. **The work comes first.** The first item of work (an order, a request or an instrument) should appear in the top third of a phone screen. Headings, explanations and summary numbers must not push it down.
 2. **One look, one language.** Use the same page header, background (`#f7f6f1`), card style, button sizes and status colours on every screen. Stage colours: confirm blue, pack purple, bill amber, dispatch teal, done green. Red is used only for problems.
 3. **Say what to do next.** Each item shows one primary next action. Rarer controls sit behind "Filters" or "More".
-4. **Plain language.** Staff never see technical errors such as `Unexpected token '<' … is not valid JSON`. Say what happened and what to do.
+4. **Plain language.** Staff never see technical errors such as `Unexpected token '<' â€¦ is not valid JSON`. Say what happened and what to do.
 5. **Phone-ready.** Tap targets are at least 44 px. There is no sideways scrolling from 320 px upward. Dates and times show in IST in a readable form, never as raw ISO text.
 6. **Simple first, complex later.** Admin-only and advanced tools stay in an Advanced area, as already done for Instrument Economics.
 
@@ -17,7 +17,7 @@ Method: every screen in the UI test harness was captured at phone width (Pixel 7
 
 | Issue | Fix |
 | --- | --- |
-| First order 626 px down; about 285 px per order; about 3 orders per phone screen | Pinned compact header with search, stage chips and Filters. Grouped rows of about 60 px, so about 9–10 orders fit per phone screen. |
+| First order 626 px down; about 285 px per order; about 3 orders per phone screen | Pinned compact header with search, stage chips and Filters. Grouped rows of about 60 px, so about 9â€“10 orders fit per phone screen. |
 | Product requests and Customer demand above the Orders list | Moved to their own **Requests** navigation entry |
 | 25-option status menu as the main filter | Stage chips (Active, Confirm, Pack, Bill, Dispatch, Issues) with counts. The full menu stays inside Filters. |
 | Urgent or overdue orders lost among others | **Needs action** group first, then Today, Yesterday, Earlier |
@@ -38,8 +38,8 @@ A bell alone is not enough, because people have to remember to open it. New work
 | --- | --- | --- |
 | New order | Administrator, Management, Sales (confirmers) | New order to confirm |
 | Confirmed | Warehouse, Operations | Ready to pick & pack |
-| Packed → sent to billing | **Accounts** | Packed · ready for Tally billing |
-| Billed in Tally | **Operations (dispatch)** | Billed · ready for dispatch |
+| Packed â†’ sent to billing | **Accounts** | Packed Â· ready for Tally billing |
+| Billed in Tally | **Operations (dispatch)** | Billed Â· ready for dispatch |
 | Assigned to a person | That person | Assigned to you |
 
 Signals, in order of reach:
@@ -59,30 +59,32 @@ Limits (to be covered by Codex's event feed in `docs/ORDER-NOTIFICATIONS.md`):
 ## Remaining issues, by priority (not yet changed)
 
 ### P1: affects every user, daily
-1. **Raw technical errors on other screens.** Pricing, Users, Instruments, Economics, Service, Requests and Offline preparation still show `Unexpected token '<' … not valid JSON` when the server returns a page instead of data. There are 24 `response.json()` call sites across 11 components. Fix: one shared `readJsonResponse` helper with the plain-language message, adopted everywhere.
+1. **Raw technical errors on other screens.** Pricing, Users, Instruments, Economics, Service, Requests and Offline preparation still show `Unexpected token '<' â€¦ not valid JSON` when the server returns a page instead of data. There are 24 `response.json()` call sites across 11 components. Fix: one shared `readJsonResponse` helper with the plain-language message, adopted everywhere.
 2. **Phone navigation is cut off.** Admins see up to seven tabs (Stock, Orders, Requests, Pricing, Economics, Service, Users, plus Offline) in a sideways-scrolling strip, and "Economics" is clipped at 412 px. Fix: a bottom tab bar on phones (Stock, Orders, Requests, More) with the rest under **More**, and count badges on Orders and Requests. Desktop is unchanged.
-3. **Summary cards push work down on phones.** Pricing shows three full-width KPI cards (about 600 px) before the Price book. Instruments shows a 2×2 grid of large cards that read "—" while loading. Fix: one compact horizontal summary strip, like the Orders stage chips, and loading skeletons instead of dashes.
+3. **Summary cards push work down on phones.** Pricing shows three full-width KPI cards (about 600 px) before the Price book. Instruments shows a 2Ã—2 grid of large cards that read "â€”" while loading. Fix: one compact horizontal summary strip, like the Orders stage chips, and loading skeletons instead of dashes.
 
 ### P2: consistency and polish
-4. **Five different page-header styles.** Examples: an "eyebrow + giant title + paragraph" block on Pricing, Users and Instruments; "Back to workspace" links on Instruments. The headings are 40–48 px on phones. Fix: one shared `PageHeader` (title of 20–24 px, an optional one-line description hidden on phones, actions on the right).
+4. **Five different page-header styles.** Examples: an "eyebrow + giant title + paragraph" block on Pricing, Users and Instruments; "Back to workspace" links on Instruments. The headings are 40â€“48 px on phones. Fix: one shared `PageHeader` (title of 20â€“24 px, an optional one-line description hidden on phones, actions on the right).
 5. **Background and border colours vary** between `#f7f6f1`, `#f3f6f5` and white. Fix: shared colour tokens.
 6. **The Users role picker** wraps checkboxes with large gaps. Fix: a two-column checkbox grid with role descriptions.
 7. **The order page on phones** repeats the order number and customer, now removed. The next-step button is not yet pinned to the bottom of the screen; that is Orders phase 2.
 
-### P3: Orders phases 2–3 (already approved)
+### P3: Orders phases 2â€“3 (already approved)
 8. Order page: pinned next-step bar, and sections or tabs for Items, Delivery, Billing, Notes and History.
 9. Web: a dense list table (Order, Customer, Status, Age, Owner) with a one-line top bar.
 
 ## Done in the polish round (11 Oct 2026)
 - **P1-1 plain-language errors:** shared `lib/http-json.ts` across all screens.
 - **P1-2 phone navigation:** bottom bar (Stock, Orders, Requests, More) with an Orders count badge.
-- **P1-3 summary cards:** compact `SummaryStrip` (Pricing) and compact Instruments tiles. One row on phones, loading placeholders instead of "—".
-- **P2-4 page headers:** shared `PageHeader` on Pricing, Instruments, Instrument economics, Equipment & service and Users. Title 20–24 px; label and description shown from tablet width.
+- **P1-3 summary cards:** compact `SummaryStrip` (Pricing) and compact Instruments tiles. One row on phones, loading placeholders instead of "â€”".
+- **P2-4 page headers:** shared `PageHeader` on Pricing, Instruments, Instrument economics, Equipment & service and Users. Title 20â€“24 px; label and description shown from tablet width.
 - **P2-6 Users role picker:** a grid of tappable role chips (checked chips are highlighted).
 - **Orders phase 2:** next-step button pinned on the phone order page.
 - **Notifications:** role-to-role work bell, arrival banner, Orders badge, tab title; phone push client side (dormant until the backend exists); customer name on the lock screen.
 
-Still open: Orders phase 3 (dense web table), the shared colour tokens sweep (P2-5) and real-phone checks once the push backend exists.
+- **P2-5 colour tokens (12 Oct 2026):** about 1,400 raw hex classes replaced with 36 semantic `sf-*` tokens in `app/globals.css` by a deterministic codemod. Near-duplicates merged; light grey text darkened for contrast.
+
+Still open: Orders phase 3 (dense web table) and real-phone checks once the push backend exists.
 
 ## Proposed order of work
 1. P1-1 shared error helper (small, low risk, every screen).

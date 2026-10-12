@@ -80,6 +80,12 @@
   --color-sf-stage-confirm-soft: #e8f1fb;
   --color-sf-stage-pack: #7a4fb0;
   --color-sf-stage-pack-soft: #f2ecfa;
+  --color-sf-ink-hover: #073e46;
+  --color-sf-soft-0: #f9fbfa;
+  --color-sf-mint: #64d4ad;
+  --color-sf-accent-line: #badfd4;
+  --color-sf-info: #315f75;
+  --color-sf-info-soft: #e8f4fa;
 }
 
 body {

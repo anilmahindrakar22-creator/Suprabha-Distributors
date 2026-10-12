@@ -40,24 +40,24 @@ export function InstrumentEconomicsPortfolioFilters({
 }) {
   const update = (change: Partial<InstrumentEconomicsPortfolioFilterValues>) => onChange({ ...filters, ...change });
   const hasActiveFilters = filters.query.trim() !== '' || filters.health !== 'all' || filters.kind !== 'all';
-  return <section aria-label="Filter economic targets" className="mb-5 grid gap-3 rounded-2xl border border-[#d7e4e2] bg-white p-4 sm:grid-cols-2 lg:grid-cols-[minmax(16rem,1fr)_minmax(10rem,0.5fr)_minmax(10rem,0.5fr)_auto_auto] lg:items-end">
-    <label className="grid gap-1 text-sm font-semibold text-[#30494c]">
+  return <section aria-label="Filter economic targets" className="mb-5 grid gap-3 rounded-2xl border border-sf-line-soft bg-white p-4 sm:grid-cols-2 lg:grid-cols-[minmax(16rem,1fr)_minmax(10rem,0.5fr)_minmax(10rem,0.5fr)_auto_auto] lg:items-end">
+    <label className="grid gap-1 text-sm font-semibold text-sf-strong">
       Search targets
-      <input aria-label="Search targets" type="search" value={filters.query} onChange={event => update({ query: event.currentTarget.value })} placeholder="Name, customer, site or model" className="min-h-11 w-full min-w-0 rounded-xl border border-[#b8cdca] px-3 font-normal focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-[#145e62]" />
+      <input aria-label="Search targets" type="search" value={filters.query} onChange={event => update({ query: event.currentTarget.value })} placeholder="Name, customer, site or model" className="min-h-11 w-full min-w-0 rounded-xl border border-sf-line-strong px-3 font-normal focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-sf-brand" />
     </label>
-    <label className="grid gap-1 text-sm font-semibold text-[#30494c]">
+    <label className="grid gap-1 text-sm font-semibold text-sf-strong">
       Status
-      <select aria-label="Status" value={filters.health} onChange={event => update({ health: event.currentTarget.value as EconomicTargetHealthFilter })} className="min-h-11 w-full min-w-0 rounded-xl border border-[#b8cdca] px-3 focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-[#145e62]">
+      <select aria-label="Status" value={filters.health} onChange={event => update({ health: event.currentTarget.value as EconomicTargetHealthFilter })} className="min-h-11 w-full min-w-0 rounded-xl border border-sf-line-strong px-3 focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-sf-brand">
         {healthOptions.map(option => <option key={option.value} value={option.value}>{option.label}</option>)}
       </select>
     </label>
-    <label className="grid gap-1 text-sm font-semibold text-[#30494c]">
+    <label className="grid gap-1 text-sm font-semibold text-sf-strong">
       Type
-      <select aria-label="Type" value={filters.kind} onChange={event => update({ kind: event.currentTarget.value as EconomicTargetKindFilter })} className="min-h-11 w-full min-w-0 rounded-xl border border-[#b8cdca] px-3 focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-[#145e62]">
+      <select aria-label="Type" value={filters.kind} onChange={event => update({ kind: event.currentTarget.value as EconomicTargetKindFilter })} className="min-h-11 w-full min-w-0 rounded-xl border border-sf-line-strong px-3 focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-sf-brand">
         {kindOptions.map(option => <option key={option.value} value={option.value}>{option.label}</option>)}
       </select>
     </label>
-    {hasActiveFilters && <button type="button" aria-label="Reset filters" onClick={() => onChange({ query: '', health: 'all', kind: 'all' })} className="min-h-11 w-full min-w-0 rounded-xl border border-[#b8cdca] px-3 text-sm font-semibold text-[#30494c] focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-[#145e62] lg:w-auto">Reset filters</button>}
-    <p aria-live="polite" className="text-sm text-[#586e71]">{matching} of {total} targets</p>
+    {hasActiveFilters && <button type="button" aria-label="Reset filters" onClick={() => onChange({ query: '', health: 'all', kind: 'all' })} className="min-h-11 w-full min-w-0 rounded-xl border border-sf-line-strong px-3 text-sm font-semibold text-sf-strong focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-sf-brand lg:w-auto">Reset filters</button>}
+    <p aria-live="polite" className="text-sm text-sf-muted">{matching} of {total} targets</p>
   </section>;
 }

@@ -49,17 +49,17 @@ export function ProductRequest({ productName, customerId, visible, actorEmail }:
   }
 
   if (!visible && !pending && !message) return null;
-  return <section aria-label="Request new product" className="mt-2 rounded-xl border border-[#dce7e5] p-3">
-    {!opened && !pending ? <button type="button" onClick={() => { setOpened(true); setMessage(''); }} className="min-h-10 text-sm font-bold text-[#31585d]">Request new product</button> : <>
-      <p className="text-sm font-bold text-[#31585d]">Request: {pending?.productName || productName}</p>
-      <p className="mt-1 text-xs text-[#718487]">Office staff will review this request. It will not create a catalog item.</p>
-      <label className="mt-2 block text-sm">Product request details<textarea maxLength={1000} disabled={busy || Boolean(pending)} value={details} onChange={(event) => setDetails(event.target.value)} className="mt-1 w-full rounded-lg border border-[#cedfdd] p-2" /></label>
+  return <section aria-label="Request new product" className="mt-2 rounded-xl border border-sf-line-soft p-3">
+    {!opened && !pending ? <button type="button" onClick={() => { setOpened(true); setMessage(''); }} className="min-h-10 text-sm font-bold text-sf-body">Request new product</button> : <>
+      <p className="text-sm font-bold text-sf-body">Request: {pending?.productName || productName}</p>
+      <p className="mt-1 text-xs text-sf-subtle">Office staff will review this request. It will not create a catalog item.</p>
+      <label className="mt-2 block text-sm">Product request details<textarea maxLength={1000} disabled={busy || Boolean(pending)} value={details} onChange={(event) => setDetails(event.target.value)} className="mt-1 w-full rounded-lg border border-sf-line p-2" /></label>
       <label className="mt-2 flex items-center gap-2 text-xs"><input type="checkbox" checked={saveRetry} disabled={busy || Boolean(pending)} onChange={(event) => setSaveRetry(event.target.checked)} />Keep request retry on this trusted device</label>
-      {recovered && pending ? <p className="mt-1 text-xs text-[#805b20]">Recovered request for this account. Retry uses its original reference; nothing is sent automatically.</p> : null}
-      <button type="button" disabled={busy || (!pending && productName.trim().length < 2)} onClick={() => void send()} className="mt-2 min-h-10 rounded-lg bg-[#073e46] px-3 text-sm font-bold text-white disabled:opacity-50">{busy ? 'Sending request…' : pending ? 'Retry product request' : 'Send product request'}</button>
+      {recovered && pending ? <p className="mt-1 text-xs text-sf-warning">Recovered request for this account. Retry uses its original reference; nothing is sent automatically.</p> : null}
+      <button type="button" disabled={busy || (!pending && productName.trim().length < 2)} onClick={() => void send()} className="mt-2 min-h-10 rounded-lg bg-sf-ink-hover px-3 text-sm font-bold text-white disabled:opacity-50">{busy ? 'Sending request…' : pending ? 'Retry product request' : 'Send product request'}</button>
       {!pending && !busy ? <button type="button" onClick={() => setOpened(false)} className="ml-3 min-h-10 text-sm">Cancel</button> : null}
     </>}
-    {message ? <output className="mt-2 block text-sm text-[#31585d]">{message}</output> : null}
+    {message ? <output className="mt-2 block text-sm text-sf-body">{message}</output> : null}
   </section>;
 }
 
@@ -81,10 +81,10 @@ export function ProductRequestInbox() {
     } catch (error) { setMessage(error instanceof Error ? error.message : 'Requests unavailable'); }
     finally { setBusy(false); }
   }
-  return <section className="mt-3 rounded-xl border border-[#dce7e5] bg-white p-3" aria-label="Product request review">
-    <button type="button" aria-expanded={open} onClick={() => { setOpen(!open); if (!open) void load(); }} className="min-h-10 text-sm font-bold text-[#31585d]">Product requests</button>
+  return <section className="mt-3 rounded-xl border border-sf-line-soft bg-white p-3" aria-label="Product request review">
+    <button type="button" aria-expanded={open} onClick={() => { setOpen(!open); if (!open) void load(); }} className="min-h-10 text-sm font-bold text-sf-body">Product requests</button>
     {open ? <>
-      <p className="text-xs text-[#718487]">Review missing catalog items. Maintain products in Tally, then sync; resolving a request creates no product.</p>
+      <p className="text-xs text-sf-subtle">Review missing catalog items. Maintain products in Tally, then sync; resolving a request creates no product.</p>
       <button type="button" disabled={busy} onClick={() => void load()} className="min-h-10 text-sm font-bold">{busy ? 'Loading…' : 'Refresh requests'}</button>
       {requests.map((request) => <ProductRequestReview key={`${request.id}:${request.version}`} request={request} onReviewed={() => setRequests((current) => current.filter((row) => row.id !== request.id))} />)}
       {!busy && !requests.length && !message ? <p className="text-sm">No open product requests.</p> : null}
@@ -111,9 +111,9 @@ function ProductRequestReview({ request, onReviewed }: { request: OpenRequest; o
     } catch (error) { setMessage(error instanceof Error ? error.message : 'Review unavailable'); }
     finally { setBusy(false); }
   }
-  return <article className="mt-2 rounded-lg border border-[#dce7e5] p-3">
+  return <article className="mt-2 rounded-lg border border-sf-line-soft p-3">
     <h3 className="text-sm font-bold">{request.product_name}</h3><p className="text-xs">{request.details} · {request.created_by_email}</p>
-    <label className="mt-2 block text-sm">Review reason for {request.product_name}<input value={reason} maxLength={1000} disabled={busy || Boolean(pending)} onChange={(event) => setReason(event.target.value)} className="ml-2 min-h-10 rounded-lg border border-[#cedfdd] px-2" /></label>
+    <label className="mt-2 block text-sm">Review reason for {request.product_name}<input value={reason} maxLength={1000} disabled={busy || Boolean(pending)} onChange={(event) => setReason(event.target.value)} className="ml-2 min-h-10 rounded-lg border border-sf-line px-2" /></label>
     {pending ? <button type="button" disabled={busy} onClick={() => void review(pending.status as 'resolved' | 'rejected')} className="min-h-10 text-sm font-bold">Retry review</button> : <div className="flex gap-3"><button type="button" disabled={busy || reason.trim().length < 3} onClick={() => void review('resolved')} className="min-h-10 text-sm font-bold">Resolve request</button><button type="button" disabled={busy || reason.trim().length < 3} onClick={() => void review('rejected')} className="min-h-10 text-sm font-bold">Reject request</button></div>}
     {message ? <output className="block text-sm">{message}</output> : null}
   </article>;
