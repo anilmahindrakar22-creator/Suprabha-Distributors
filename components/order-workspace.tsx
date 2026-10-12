@@ -668,7 +668,7 @@ export function OrderWorkspace({ actorEmail, initialStatus = 'open', initialQuer
               type="search"
               value={query}
               onChange={(event) => { setFocusNotice(''); setQuery(event.target.value); setPage(1); }}
-              placeholder="Search customer, product, invoice, order"
+              placeholder="Search orders"
               className="min-h-10 w-full rounded-xl border border-[#d6e1df] bg-white px-3.5 pr-16 text-[15px] outline-none focus:border-[#3aa585] focus:ring-3 focus:ring-[#3aa585]/20"
             />
             {query ? <button type="button" onClick={() => { setFocusNotice(''); setQuery(''); setPage(1); }} className="absolute bottom-0.5 right-1 min-h-9 rounded-lg px-3 text-xs font-bold text-[#456367] hover:bg-[#edf3f1]">Clear</button> : null}
