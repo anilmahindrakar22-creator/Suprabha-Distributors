@@ -13,6 +13,7 @@ export type GatewayAction =
   | 'get_catalog'
   | 'get_customers'
   | 'get_customer_locations'
+  | 'get_market_overview'
   | 'set_customer_location'
   | 'get_wallet_divisions'
   | 'set_wallet_division'

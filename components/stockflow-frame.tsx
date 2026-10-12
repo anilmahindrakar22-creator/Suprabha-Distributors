@@ -15,12 +15,13 @@ import { checkStaffSession, withStaffSessionLock } from '@/lib/staff-session-cli
 const loadOrderWorkspace = () => import('./order-workspace').then((module) => ({ default: module.OrderWorkspace }));
 const OrderWorkspace = lazy(loadOrderWorkspace);
 const ServiceWorkspace = lazy(() => import('./service-workspace').then((module) => ({ default: module.ServiceWorkspace })));
+const MarketWorkspace = lazy(() => import('./market-workspace').then(m => ({ default: m.MarketWorkspace })));
 const InstrumentEconomicsWorkspace = lazy(() => import('./instrument-economics-workspace').then((module) => ({ default: module.InstrumentEconomicsWorkspace })));
 const UserManagement = lazy(() => import('./user-management').then((module) => ({ default: module.UserManagement })));
 const PricingWorkspace = lazy(() => import('./pricing-workspace').then((module) => ({ default: module.PricingWorkspace })));
 const RequestsWorkspace = lazy(() => import('./requests-workspace').then((module) => ({ default: module.RequestsWorkspace })));
 
-type Surface = 'stock' | 'orders' | 'requests' | 'pricing' | 'economics' | 'service' | 'users';
+type Surface = 'stock' | 'orders' | 'requests' | 'pricing' | 'economics' | 'market' | 'service' | 'users';
 const initialWork: WorkNotificationState = { connection: 'checking', work: [], workTotal: 0, workMore: false, queues: [], fresh: [], reminders: [], checkedAt: null };
 
 async function warmOrderData(actorEmail: string) {
@@ -210,7 +211,7 @@ export function StockFlowFrame({ actorEmail, actorRole, actorRoles, staffAuth = 
     }
     setSurface(item);
   }
-  const surfaces: Surface[] = ['stock', 'orders', 'requests', ...(hasAnyStockFlowRole(roles, ['administrator', 'management', 'accounts']) ? ['pricing' as const, 'economics' as const] : []), ...(hasAnyStockFlowRole(roles, ['administrator', 'operations', 'sales', 'management']) ? ['service' as const] : []), ...(hasAnyStockFlowRole(roles, ['administrator']) ? ['users' as const] : [])];
+  const surfaces: Surface[] = ['stock', 'orders', 'requests', ...(hasAnyStockFlowRole(roles, ['administrator', 'management', 'accounts']) ? ['pricing' as const, 'economics' as const] : []), ...(hasAnyStockFlowRole(roles, ['administrator', 'management']) ? ['market' as const] : []), ...(hasAnyStockFlowRole(roles, ['administrator', 'operations', 'sales', 'management']) ? ['service' as const] : []), ...(hasAnyStockFlowRole(roles, ['administrator']) ? ['users' as const] : [])];
   const phoneMain: Surface[] = ['stock', 'orders', 'requests'];
   const phoneMore = surfaces.filter((item) => !phoneMain.includes(item));
   // Phone push: dormant until the server reports it is enabled (docs/PUSH-NOTIFICATIONS.md).
@@ -332,6 +333,8 @@ export function StockFlowFrame({ actorEmail, actorRole, actorRoles, staffAuth = 
           <Suspense fallback={<SectionLoading />}><PricingWorkspace actorEmail={actorEmail} actorRole={actorRole} actorRoles={roles} /></Suspense>
         ) : surface === 'economics' ? (
           <Suspense fallback={<SectionLoading />}><InstrumentEconomicsWorkspace embedded /></Suspense>
+        ) : surface === 'market' && hasAnyStockFlowRole(roles, ['administrator', 'management']) ? (
+          <Suspense fallback={<SectionLoading />}><MarketWorkspace /></Suspense>
         ) : surface === 'service' ? (
           <Suspense fallback={<SectionLoading />}><ServiceWorkspace /></Suspense>
         ) : <Suspense fallback={<SectionLoading />}><UserManagement staffAuth={staffAuth} emailActionsEnabled={staffEmailActionsEnabled} /></Suspense>}
