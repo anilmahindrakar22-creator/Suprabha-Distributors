@@ -191,3 +191,44 @@ Compared against `SUPRABHA80-UI-FUNCTIONAL-TECHNICAL-SPEC.md` (approved) and `SU
 5. Opportunities and constraint diagnosis (FR-04/05, deterministic).
 6. The Action Center becomes the landing screen, plus the map's Action mode.
 7. Outcome review and learning.
+
+## 13. Map architecture: saved spec §26 compared with what exists (13 Oct 2026)
+
+**Spec model:**
+- **Three inputs** (Customer/Address geography, Equipment/Installed base, Territory/Assignment) feed one **Geographic Read Model**.
+- **Commercial Intelligence** (Wallet, Opportunity and Action records) joins that read model.
+- **One map** offers four decision modes (WALLET, OPPORTUNITY, ACTION, COVERAGE), with shared layers and filters.
+- **List and map** are two views of the same query, and both open the same decision drawer.
+
+| Spec part | Requirement | Today | Gap / plan |
+| --- | --- | --- | --- |
+| Customer/Address geography | coordinates live on the canonical customer (MAP-FR-04); corrections go through the customer process (26.10) | `stockflow_customer_locations` + versioned, audited `set_customer_location` (W1). Its screen was removed under the utility rule | Bring pin entry back **inside the Account page**, used only where the map needs it. **Town fallback:** the Tally `city` gives a town-level position. It must be shown as a **town aggregate**, never as a customer pin, so no coordinates are invented (MAP-FR-09/10). A town centroid table is built in; no outside geocoder |
+| Equipment / installed base | an overlay in Opportunity mode (MAP-FR-06) | Suprabha installations exist (Service register, including historical instruments) | Overlay "Our installed instruments" per account and town. Competitor installed base has **no data**, so it stays visibly missing |
+| Territory / assignment | a filter across modes (MAP-FR-03); sales sees only assigned accounts (§17) | **Nothing.** There's no salesperson or territory assignment on customers | A new Customer-domain assignment (owner and territory). It's needed for the salesperson filter and for sales-role row scoping. Without it, Market stays management-only |
+| Geographic read model | bounded, rebuildable, non-authoritative; exposes `calculated_at` and source watermarks (26.8) | The overview read gives list summaries but no geography or freshness | New map read: per town (count, wallet, sales, untapped, installed count, freshness) and per pinned account within the viewport. Exposes calculated-at and the Tally sync watermark |
+| WALLET mode | wallet, sales, share, untapped, GP, confidence | Estimates only | Needs W2b (sales). GP follows the Economics and Pricing permissions |
+| OPPORTUNITY mode | opportunities, constraints, installed base | Nothing | Needs opportunity and constraint records (spec FR-04/05) |
+| ACTION mode | actions by owner, type, due date | Nothing | Needs commercial actions and assignment |
+| COVERAGE mode | unmapped, stale or low-confidence data, UNKNOWN constraints | List version built (no estimate, old estimate) | Add a "No location (not even town)" queue for accounts whose Tally city is empty or unknown |
+| List ⇄ map, same drawer | MAP-FR-07 | The list opens the inline customer panel | The map uses the same overview query plus geography; a marker opens the same Account page |
+| Clustering, viewport fetch, provider adapter, failure isolation | 26.10 | Not built; separate read gateways already isolate failures | Leaflet (owner-approved decision 6) behind `components/market-map.tsx`, loaded lazily; OSM tiles with attribution; CSP change under primary review; town aggregation at low zoom |
+| Route suggestions | advisory, later (MAP-FR-12) | No | Later, after actions exist |
+
+**Map build order** (fits the §12 revised order):
+1. **W2b sales.** Without them, the map shows guesses.
+2. **Map read model and town centroids**, plus the "no location" coverage queue.
+3. **Map view, Wallet and Coverage modes:**
+   - town bubbles sized by untapped wallet;
+   - exact pins inside a city where they exist;
+   - an installed-instrument overlay;
+   - tapping a town lists its accounts; tapping an account opens the Account page.
+4. **Customer assignment** (owner and territory). This brings territory and salesperson filters and sales-role scoping.
+5. **Opportunity and Action modes**, once those records exist.
+6. **Route suggestions:** optional, advisory.
+
+**Decision value check (owner rule):**
+- **Wallet mode** decides which towns to target.
+- **Coverage mode** decides whose data to collect.
+- **The installed-base overlay** decides where to defend and where to cross-sell.
+- **Territory filters** decide who owns which accounts.
+- **Nothing decorative is added.**
