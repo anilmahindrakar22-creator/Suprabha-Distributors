@@ -675,7 +675,7 @@ export function InstrumentEconomicsWorkspace({ embedded = false }: { embedded?: 
 
   return <main className={`${embedded ? 'h-full min-h-0' : 'h-dvh'} overflow-y-auto bg-sf-page text-sf-strong`}><div className="mx-auto max-w-7xl space-y-5 p-4 sm:p-8">
     <PageHeader
-      back={<Link href="/instruments" className="inline-flex min-h-10 items-center px-1 text-sm font-bold text-sf-accent">← Back to instrument portfolio</Link>}
+      back={embedded ? undefined : <Link href="/" className="inline-flex min-h-10 items-center px-1 text-sm font-bold text-sf-accent">← Back to workspace</Link>}
       title="Instrument economics"
       description="Investment, capital recovered and balance to recover for each instrument."
       actions={<button type="button" disabled={loading || busy || (unresolved && canRetrySavedCommand)} onClick={() => void load()} className={pageActionClass}><RefreshCw size={16} className={loading ? 'animate-spin' : ''} aria-hidden="true" />Refresh</button>}

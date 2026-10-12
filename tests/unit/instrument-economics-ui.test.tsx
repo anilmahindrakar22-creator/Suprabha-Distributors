@@ -151,9 +151,11 @@ describe('instrument economics presentation', () => {
     expect(html).toContain('Instrument sale date needs review');
     expect(html).not.toContain('Reagent sales since');
   });
-  it('links back to the existing instrument portfolio', () => {
+  it('links back to the workspace', () => {
     const html = renderToStaticMarkup(<InstrumentEconomicsWorkspace />);
-    expect(html).toContain('href="/instruments"'); expect(html).toContain('Back to instrument portfolio');
+    expect(html).toContain('href="/"'); expect(html).toContain('Back to workspace');
+    const embedded = renderToStaticMarkup(<InstrumentEconomicsWorkspace embedded />);
+    expect(embedded).not.toContain('Back to workspace');
   });
   it('shows source-driven investment review warnings separately from actual recovery forecast', () => {
     const investmentReview = { status: 'review_required', expectedPaybackMonths: 40, expectationId: 'approval-baseline', policyId: 'policy-1', expectedMonthlyGpPaise: '1000000', netInvestmentPaise: '40000000', reviewMonths: 36, exceptionMonths: 48 };

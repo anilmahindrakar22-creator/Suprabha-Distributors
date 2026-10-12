@@ -2,7 +2,6 @@ import { redirect } from 'next/navigation';
 import { getChatGPTUser } from '@/app/chatgpt-auth';
 import { getStockFlowSession } from '@/lib/stockflow-session';
 import { hasAnyStockFlowRole } from '@/lib/user-types';
-import { InstrumentWorkspace } from '@/components/instrument-workspace';
 
 export const dynamic = 'force-dynamic';
 export default async function InstrumentsPage() {
@@ -10,5 +9,6 @@ export default async function InstrumentsPage() {
   if (!user) redirect('/');
   const session = await getStockFlowSession(user.email);
   if (!session || !hasAnyStockFlowRole(session.roles, ['administrator', 'management', 'operations', 'sales'])) redirect('/');
-  return <InstrumentWorkspace />;
+  // Merged into Service (12 Oct 2026); the old link opens the workspace.
+  redirect('/');
 }

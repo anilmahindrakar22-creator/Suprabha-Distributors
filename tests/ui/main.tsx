@@ -11,7 +11,6 @@ import { StaffSignIn, StaffAccountSwitch } from '@/components/staff-sign-in';
 import { StaffPasswordReset } from '@/components/staff-password-reset';
 import { UserManagement } from '@/components/user-management';
 import { InstrumentEconomicsWorkspace } from '@/components/instrument-economics-workspace';
-import { InstrumentWorkspace } from '@/components/instrument-workspace';
 import { ServiceWorkspace } from '@/components/service-workspace';
 import type { PricingLineResolution } from '@/lib/pricing-types';
 import type { OrderBootstrap } from '@/lib/order-types';
@@ -41,8 +40,7 @@ function Fixture() {
   if (parameters.get('view') === 'staff-users') return <UserManagement staffAuth emailActionsEnabled />;
   if (parameters.get('view') === 'staff-users-disabled') return <UserManagement staffAuth />;
   if (parameters.get('view') === 'instrument-economics') return <InstrumentEconomicsWorkspace />;
-  if (parameters.get('view') === 'instruments') return <InstrumentWorkspace />;
-  if (parameters.get('view') === 'service') return <ServiceWorkspace />;
+  if (parameters.get('view') === 'service') return <main className="h-dvh overflow-hidden"><ServiceWorkspace /></main>;
   if (parameters.get('view') === 'frame') return <StockFlowFrame actorEmail="staff@example.test" actorRole={parameters.get('role') || 'sales'} actorRoles={parameters.has('roles') ? normalizeStockFlowRoles(parameters.get('roles')?.split(',')) ?? [] : undefined} />;
   if (parameters.get('view') === 'staff-frame') return <StockFlowFrame actorEmail="staff@example.test" actorRole="administrator" staffAuth />;
   if (parameters.get('view') === 'product-requests') return <ProductRequestInbox />;

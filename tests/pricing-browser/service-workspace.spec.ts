@@ -74,3 +74,37 @@ test('log-issue fields have accessible names', async ({ page }) => {
   await expect(page.getByLabel('Priority')).toBeVisible();
   await expect(page.getByLabel('Issue description')).toBeVisible();
 });
+
+test('equipment status tiles filter the register', async ({ page }) => {
+  const data: ServiceWorkspaceData = {
+    ...fixture,
+    assets: [...fixture.assets, {
+      ...fixture.assets[0],
+      installationId: 'i2',
+      itemName: 'Hematology analyzer',
+      serialNumber: 'SN-2',
+    }],
+  };
+  await page.route('**/api/service', async route => {
+    await route.fulfill({ json: data });
+  });
+  await page.goto('/?view=service');
+  const register = page.getByRole('region', { name: 'Installed equipment register' });
+  const urgent = page.getByRole('region', { name: 'Service overview' }).getByRole('button', { name: /Urgent/ });
+  const urgentEquipment = register.getByRole('article').filter({ has: page.getByRole('heading', { name: 'Chemistry analyzer', exact: true }) });
+  await expect(register.getByRole('heading', { name: 'Hematology analyzer', exact: true })).toBeVisible();
+  await urgent.click();
+  await expect(urgent).toHaveAttribute('aria-pressed', 'true');
+  await expect(register.getByRole('heading', { name: 'Chemistry analyzer', exact: true })).toBeVisible();
+  await expect(register.getByRole('heading', { level: 3 })).toHaveCount(1);
+  await expect(register.getByRole('heading', { name: 'Hematology analyzer', exact: true })).toHaveCount(0);
+  await expect(page.getByRole('region', { name: 'Service tickets' }).getByText('Pump noise', { exact: true })).toBeVisible();
+  await urgent.click();
+  await expect(urgent).toHaveAttribute('aria-pressed', 'false');
+  await expect(register.getByRole('heading', { level: 3 })).toHaveCount(2);
+  await expect(register.getByRole('heading', { name: 'Chemistry analyzer', exact: true })).toBeVisible();
+  await expect(register.getByRole('heading', { name: 'Hematology analyzer', exact: true })).toBeVisible();
+  await urgentEquipment.getByText('Installation details', { exact: true }).click();
+  const siteContact = urgentEquipment.locator('dl > div').filter({ has: page.getByText('Site contact', { exact: true }) });
+  await expect(siteContact.getByText('Not recorded', { exact: true })).toBeVisible();
+});

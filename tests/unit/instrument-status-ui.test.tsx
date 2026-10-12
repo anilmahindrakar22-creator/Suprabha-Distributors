@@ -1,7 +1,7 @@
 import { describe, expect, it, vi } from 'vitest';
 vi.mock('next/link', () => ({ default: 'a' }));
 import { renderToStaticMarkup } from 'react-dom/server';
-import { InstrumentStatusBadge } from '@/components/instrument-workspace';
+import { InstrumentStatusBadge } from '@/components/instrument-status-badge';
 describe('instrument service status presentation', () => {
   it.each([
     ['urgent', 'Urgent service', 'text-red-800'],

@@ -1,14 +1,14 @@
 import { expect, test } from '@playwright/test';
 
-for (const surface of ['instruments', 'instrument-economics', 'embedded-economics']) {
+for (const surface of ['service', 'instrument-economics', 'embedded-economics']) {
   test(`${surface} lets users scroll to the lower evidence without scrolling the workspace header`, async ({ page }, testInfo) => {
     await page.setViewportSize({ width: testInfo.project.name.includes('mobile') ? 375 : 1280, height: 532 });
-    await page.route('**/api/instruments', route => route.fulfill({ json: {
-      generatedAt: '2026-10-10T07:00:00Z', economicsReadiness: 'separate_workspace', instruments: [{
-        installationId: 'installation-1', orderId: null, orderNumber: 'Tally TEST-INVOICE', customerName: 'Test Laboratory',
-        itemName: 'Test analyzer', serialNumber: 'TEST-SERIAL', installedAt: '2026-07-23', serviceStatus: 'clear',
-        openTicketCount: 0, openTicketNumbers: [], economicStatus: 'separate_workspace', commissioningNotes: 'Confirmed historical installation',
-      }],
+    await page.route('**/api/service', route => route.fulfill({ json: {
+      assets: Array.from({ length: 3 }, (_, index) => ({
+        installationId: `installation-${index}`, orderId: null, orderNumber: 'Tally TEST-INVOICE', customerName: 'Test Laboratory',
+        customerPhone: null, tallyKey: 'TEST-ANALYZER', itemName: `Test analyzer ${index + 1}`, serialNumber: `TEST-SERIAL-${index}`,
+        installedAt: '2026-07-23T00:00:00Z', siteContact: null, engineerEmail: null, commissioningNotes: 'Confirmed historical installation',
+      })), tickets: [],
     } }));
     await page.route('**/api/instrument-economics', route => route.fulfill({ json: {
       actorEmail: 'staff@example.test', businessDate: '2026-10-10', businessTimezone: 'Asia/Kolkata', targets: [], mappings: [],
@@ -25,19 +25,20 @@ for (const surface of ['instruments', 'instrument-economics', 'embedded-economic
       if (await more.isVisible()) await more.click();
       await page.getByRole('button', { name: 'economics', exact: true }).click();
     } else await page.goto(`/?view=${surface}`);
-    await expect(page.getByRole('heading', { name: surface === 'instruments' ? 'Instrument portfolio' : 'Instrument economics', exact: true })).toBeVisible();
-    if (surface !== 'instruments') {
+    await expect(page.getByRole('heading', { name: surface === 'service' ? 'Equipment & service' : 'Instrument economics', exact: true })).toBeVisible();
+    if (surface === 'service') await expect(page.getByRole('region', { name: 'Service overview' })).toBeVisible();
+    if (surface !== 'service') {
       // The long evidence lists now live in Advanced → Reports.
       await page.getByRole('navigation', { name: 'Economics sections' }).getByRole('button', { name: 'Advanced', exact: true }).click();
       await page.getByRole('navigation', { name: 'Advanced sections' }).getByRole('button', { name: 'Reports', exact: true }).click();
       await page.getByRole('main').last().evaluate(element => { element.scrollTop = 0; });
     }
-    const scrollArea = page.getByRole('main').last();
+    const scrollArea = surface === 'service' ? page.getByRole('main').locator(':scope > div').first() : page.getByRole('main').last();
     // The app deliberately locks body scroll: ordinary wheel input must reach
     // lower records through a container contained within the visible viewport.
     expect(await scrollArea.evaluate(element => element.getBoundingClientRect().bottom <= innerHeight + 1)).toBe(true);
-    const lowerEvidence = surface === 'instruments'
-      ? page.getByText('Installation evidence', { exact: true })
+    const lowerEvidence = surface === 'service'
+      ? page.getByRole('region', { name: 'Installed equipment register' }).getByText('Installation details', { exact: true }).last()
       : page.getByText('Current source line evidence (0)', { exact: true });
     await expect(lowerEvidence).not.toBeInViewport();
     const box = (await scrollArea.boundingBox())!;
@@ -46,6 +47,6 @@ for (const surface of ['instruments', 'instrument-economics', 'embedded-economic
     await expect(lowerEvidence).toBeInViewport();
     if (surface === 'embedded-economics') await expect(page.getByRole('navigation', { name: 'Application sections' })).toBeInViewport();
     expect(await page.evaluate(() => document.documentElement.scrollWidth <= innerWidth)).toBe(true);
-    if (surface === 'instruments') await page.screenshot({ path: `docs/UI-PREVIEWS/instrument-scroll-${testInfo.project.name}.png` });
+    if (surface === 'service') await page.screenshot({ path: `docs/UI-PREVIEWS/service-scroll-${testInfo.project.name}.png` });
   });
 }
