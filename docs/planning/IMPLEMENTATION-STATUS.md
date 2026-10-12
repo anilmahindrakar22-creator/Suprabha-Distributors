@@ -2,10 +2,11 @@
 
 **Last verified:** 13 Oct 2026, read-only.
 - **Code and git:** `main` `3804421` (103 migrations); release candidate (RC) `codex/staff-signin-session-redirect` `9cd36e0` (118 migrations, 62 commits ahead of `main`, **not merged**).
-- **Acceptance:** runs frozen candidate `e3a4a08` (integration owner readback, 12 Oct).
+- **Acceptance:** Worker `0cd18741-fa5b-46a3-8c2a-c240eb714b31` runs frozen source `172e56e+7d7cc0d+codex-economics-summary-read` (integration owner readback, 13 Oct). The uncommitted summary-read overrides are captured by exact manifests; this is not a released Git commit. Evidence: `docs/STOCKFLOW-ECONOMICS-SUMMARY-READ-20261013.md` in the integration workspace and [ROLLOUT-RECORD](../INSTRUMENT-ECONOMICS-ROLLOUT-RECORD.md). Production and financial/Accounts gates remain open.
 - **Production:** recorded migration count is 103, matching `main`. **The deployed commit is unverified** ([PRODUCTION-PILOT-2026-09.md](../PRODUCTION-PILOT-2026-09.md) records public v55 from PR #36, 3 Oct).
 - **Pilot:** **HOLD** (same file, lines 51 and 63).
-- **Not inspected:** CI runs and the live database.
+- **Original documentation audit:** did not inspect CI runs or the live database. Acceptance evidence above comes from the integration owner's readback, not that audit.
+- **PR integration check:** [PR #43 CI run](https://github.com/anilmahindrakar22-creator/Suprabha-Distributors/actions/runs/38303150980) failed on the inherited recovery-image lint and group-margin SQL regression. Application, SQL and test trees are identical to the base branch. Documentation integration does not close these code/release gates; the locally validated acceptance source includes uncommitted overrides.
 
 **Rules for this file:**
 - A document doesn't prove a feature exists.
@@ -50,7 +51,7 @@
 | Instrument Economics: placements, investment, attribution, auto purchase cost, GP/recovery, historical instruments | PARTIALLY IMPLEMENTED (acceptance only) | 15 RC migrations `20261007180000`–`20261011010000`; [ROLLOUT-RECORD](../INSTRUMENT-ECONOMICS-ROLLOUT-RECORD.md); pilot ABG. Open: financial sign-off, LDL-C, 11 import exceptions, role sessions |
 | Placement policy 24/36/48 months | PARTIALLY IMPLEMENTED | `stockflow_economic_policy_versions` (versioned); payback status labels only, **no role routing** (ADR-0013) |
 | Reagent leakage cases | PARTIALLY IMPLEMENTED (acceptance only) | `leakage-*` components; Economics "Reagent leakage" tab |
-| Full-sales Tally import (all customers and items) | APPROVED DESIGN ONLY (owner, 13 Oct) | integration owner's untracked `MARKET-FULL-SALES-IMPORT-PLAN.md`; current import is targeted |
+| Complete full-sales Tally coverage (all customers and items) | APPROVED DESIGN ONLY (owner, 13 Oct) | integration owner's untracked `MARKET-FULL-SALES-IMPORT-PLAN.md`; current connector export includes all customers/items in its configured window, but this does not establish complete historical coverage. Coverage publication and native reconciliation remain open |
 | Market / wallet (pins, divisions, append-only estimates, overview, Market list) | PARTIALLY IMPLEMENTED, **parked** | branch `claude/market-w1` (`2807fd8`); local SQL, unit and browser tests only; needs rework (ADR-0006/0007) |
 | Pareto FOCUS engine | APPROVED DESIGN ONLY | wallet-capture §3; only an interim exists on the parked branch |
 | CONSTRAINT diagnosis, ACTION (Action Center), LEARNING (outcomes) | APPROVED DESIGN ONLY | spec §§4–8, 15 |
