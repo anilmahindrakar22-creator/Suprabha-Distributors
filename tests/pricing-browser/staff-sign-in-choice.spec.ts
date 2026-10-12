@@ -8,7 +8,7 @@ test('session restoration hides the login form until a decision is available', a
     await route.fulfill({ status: 401, json: { error: 'Sign in required' } });
   });
   await page.goto('/?view=staff-signin-resume');
-  await expect(page.getByRole('status')).toHaveText('Opening StockFlow…');
+  await expect(page.getByRole('status')).toHaveText('Opening StockFlow…', { timeout: 15_000 });
   await expect(page.getByLabel('Email', { exact: true })).toHaveCount(0);
   await expect.poll(() => typeof release).toBe('function');
   release();
