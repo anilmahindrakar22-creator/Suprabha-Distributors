@@ -103,6 +103,25 @@ Branches `docs/tally-pricing-safe-test`, `-2` and `-final` point at the same or 
 | KPI-01 KPI registry metadata | KPI framework (`828803b`) |
 | PRIN-01…20 governing principles | owner brief, 13 Oct 2026 |
 
+## 3a. Source-section coverage (every H2 section of the authoritative sources)
+Each section is either carried into a canonical doc, kept in its source as evidence, or marked deferred or superseded. **129 sections checked, plus the growth and hosting documents as wholes; 0 unaccounted.**
+
+| Source | Sections → canonical home |
+| --- | --- |
+| Spec (31) | §1–3 → 02-UX, SUPRABHA80 · §4–9 → ACTION-CENTER · §10 → SUPRABHA80 §6 · §11 → 02-SYSTEM · §12 → 03-DATA · §13 → MASTER-ROADMAP P5 (APIs) · §14, 17 → 05-SECURITY · §15 → ADR-0014 · §16, 30 → RELEASE-GATES and NFRs · §18 → 02-UX · §19 → 01-PRINCIPLES (observability) · §20–21 → RELEASE-GATES · §22 → MASTER-ROADMAP exclusions, D-03 · §23 → superseded by MASTER-ROADMAP (ADR-0010) · §24–25 → 01-PRINCIPLES, SUPRABHA80 · §26 → MARKET-MAPS · §27 → 01-PRINCIPLES §2a · §28 → CATALOG-AND-PRICING · §29 → 02-UX · §31 → ORDERS, PROCUREMENT |
+| Wallet capture (17) | §1–6, 9–13, 15–16 → SUPRABHA80, ACTION-CENTER, 03-DATA, ADR-0003/0006/0014 · §7–8 → SUPRABHA80 §4a · §14 → 01-PRINCIPLES §2a · §17 → IMPLEMENTATION-STATUS |
+| Economics plan (12 + dated refinements) | §1–6 → INSTRUMENT-ECONOMICS §2 · §7–12 and the refinements stay in the source as authoritative detail (linked) |
+| REQUIREMENTS (9) | §1, 3 → ORDERS, 01-FUNCTIONAL-REQUIREMENTS · §2 → IMPLEMENTATION-STATUS · §4 → 04-TALLY · §5 → 05-SECURITY · §6, 8 → RELEASE-GATES · §7 → superseded by MASTER-ROADMAP · §9 → RELEASE-GATES Phase 0 |
+| main ROADMAP (10) | baseline, M1–M3, recovery → MASTER-ROADMAP Phases 0–1 · M4 → Phase 2 and the service deferral · M5 → Phases 4–5, receivables deferred · M6 → Phase 8 · deferrals and guardrails → stay authoritative in the source |
+| SUPRABHA_OS_ARCHITECTURE (10) | → 02-SYSTEM, 05-SECURITY, ADR-0001/0002/0013, ORDERS (state machine) |
+| `cba7f67` (3) | Territory → MARKET-MAPS (modes superseded) · Power Map → POWER-MAPS · Social Styles → POWER-MAPS §3 |
+| Dominance framework (7) | classes, wallet, divisions, scorecard → SUPRABHA80 · capital allocation → ADR-0014, D-02 · salesperson model → D-03 · Command Center → COMMAND-CENTER |
+| KPI framework (9) | → COMMAND-CENTER (receivables deferred; inventory per ADR-0001) |
+| OPERATING-MODEL (12) | §1–3, 7 → ACTION-CENTER · §4–5 → 01-PRINCIPLES §2a · Purpose, §6, 8–10, Definition of success → 00-VISION-AND-ROLES |
+| EMPLOYEE-LEARNING (9) | → 00-VISION-AND-ROLES §Adoption (detail stays in the source) |
+| GROWTH-AND-SCALE (16 engines) | → MASTER-ROADMAP §Future (proposed / not approved) |
+| HOSTING (stages) | → D-06 (proposed / not approved) |
+
 ## 4. Missing-design register (needed, not yet designed anywhere)
 
 | Gap | Needed by | Note |

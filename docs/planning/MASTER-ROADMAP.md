@@ -10,7 +10,7 @@
 
 ## Dependency corrections (versus the brief's hypothesis)
 1. **Full-sales Tally export** is a cross-cutting prerequisite for Phases 3, 5 and 7. Schedule it during Phase 1/2 (integration owner; plan drafted).
-2. **Phase 4 must precede 5 and 6**, because contacts, assignment and row scope are needed by the scorecards and Power Maps.
+2. **Phase 4 depends only on Phase 0**, so it can run in parallel with Phases 1–3. The brief's order (4 before 5 and 6) is kept, because contacts, assignment and row scope feed the scorecards and Power Maps.
 3. **Phase 2 starts by unifying the installed-base register** (ADR-0011), before new instrument features.
 
 ```mermaid

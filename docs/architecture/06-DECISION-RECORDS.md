@@ -47,6 +47,7 @@ Superseded content is named, never silently deleted.
 - The experimental inventory ledger and FEFO allocation objects (migrations `20260902211000`, `20260902214500`) were disabled by `20260903121500`. They are not routed by the Edge gateway and have no UI. They **remain dormant**, as the architecture doc already allows: "removing them later requires a separately reviewed archival migration".
 - **Observed issue:** `20261005054431` still patches `stockflow_inventory_gateway` and `stockflow_allocation_gateway` for role unions. Harmless, but it keeps dead code alive. Timing of removal is [D-05](../planning/OPEN-DECISIONS.md).
 - Procurement, PO and GRN visibility *reference* Tally transactions; nothing is created in parallel.
+- **Second observed issue:** `stockflow_products` (also from `20260902211000`) is no longer refreshed after the 3 Sep trigger drop, but the price-book reads still join it. Treat it as possibly stale until D-05 decides on a replacement or refresh.
 
 ## ADR-0002: Modular monolith, one PostgreSQL, gateway-only writes
 **Status:** Accepted. **Sources:** SUPRABHA_OS_ARCHITECTURE; spec §11; ROADMAP guardrails; owner brief.

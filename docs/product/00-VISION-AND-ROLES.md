@@ -42,6 +42,13 @@ It is not a collection of dashboards.
 5. **Sales (Phase 4+):** my accounts → Account page (wallet, gaps, Power Map) → log a visit → next action.
 6. **Accounts/Management (Phase 2):** placement proposal → payback tier → approval → recovery tracking.
 
+## Operating model (from [OPERATING-MODEL-ADOPTION](https://github.com/anilmahindrakar22-creator/Suprabha-Distributors/blob/839497a/docs/OPERATING-MODEL-ADOPTION.md))
+- **SOP-to-system mapping (§6):** each standard operating procedure maps to the screen and command that executes it. No shadow spreadsheets.
+- **Phased adoption (§8–10):**
+  - adopt role by role;
+  - track adoption KPIs, such as active use and data completeness, never surveillance;
+  - implementation guardrails as in the source.
+
 ## Adoption
 - **Learning levels:** Operate → Understand → Improve.
 - **Guidance over forms:** the software asks short contextual questions rather than presenting blank forms (employee learning framework).

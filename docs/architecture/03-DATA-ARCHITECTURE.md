@@ -10,13 +10,14 @@
 | --- | --- |
 | Identity | `public.stockflow_members`, `stockflow_member_events`, `stockflow_role_permissions`, `stockflow_role_order_scopes` |
 | Customer | `stockflow_customers` (Tally ledger key, name, phone, city, Tally balance) |
-| Catalog / Tally mirror | `stockflow_products`, `public.stockflow_snapshots`, `stockflow_tally_sales_prices`, `stockflow_tally_purchase_costs` |
+| Catalog / Tally mirror | `public.stockflow_snapshots` (the live Tally catalogue/stock snapshot), `stockflow_tally_sales_prices`, `stockflow_tally_purchase_costs` |
+| **Product projection: stale risk** | `stockflow_products` was created by the dormant inventory foundation (`20260902211000`). Its Tally sync trigger was dropped on 3 Sep (`20260903121500`), so it is **no longer refreshed**, yet the price-book reads (`20260913130000`…`132000`) still left-join it, for example for item names. Verify before relying on it; see [D-05](../planning/OPEN-DECISIONS.md) |
 | Orders | `stockflow_orders`, `stockflow_order_lines`, `stockflow_order_events`, `stockflow_order_states`, `stockflow_order_transition_rules`, `stockflow_order_tally_invoices`, `stockflow_delivery_exceptions`, `stockflow_billing_snapshots`, `stockflow_product_requests` (+events) |
 | Pricing | `stockflow_customer_product_prices`, `stockflow_standard_item_prices`, `stockflow_pricing_policies`, `stockflow_price_book_decisions`, `stockflow_price_exceptions`, `stockflow_order_pricing_decisions`, `stockflow_group_margin_item_decisions`, `stockflow_pricing_events`, `stockflow_pricing_import_runs` |
 | Installations / Service | `stockflow_equipment_installations`, `stockflow_service_tickets` (+events) |
 | Instrument Economics | `stockflow_economic_*` (targets, group members, mappings, item-group mappings, allocations, expectations (+items), policy versions, source vouchers/lines, runs, results, events, cost links/verifications, auto-cost links, acquisition links/reviews, instrument billings, import exceptions, line reviews, source coverage, customer identities, audit, consumption observations), `stockflow_leakage_cases`, `stockflow_leakage_recovery_claims` |
 | Reliability | `stockflow_command_results` (idempotency), `stockflow_outbox`, `stockflow_request_log`, `stockflow_gateway_config` |
-| **Dormant: superseded (ADR-0001)** | `stockflow_inventory_movements`, `stockflow_batches`, `stockflow_reservations`, `stockflow_warehouses`, `stockflow_locations`: no route, no UI; removal pending [D-05](../planning/OPEN-DECISIONS.md) |
+| **Dormant: superseded (ADR-0001)** | `stockflow_inventory_movements`, `stockflow_batches`, `stockflow_warehouses`, `stockflow_locations` (from `20260902211000`), and `stockflow_reservations` (from `20260830140000`, removed from the order flow by `20260901103000`). No route, no UI. No migration drops any of them; removal pending [D-05](../planning/OPEN-DECISIONS.md) |
 
 On the parked branch `claude/market-w1` only, **not part of the canonical model until reworked**: `stockflow_customer_locations` (+events), `stockflow_wallet_divisions` (+events), `stockflow_wallet_estimates`.
 

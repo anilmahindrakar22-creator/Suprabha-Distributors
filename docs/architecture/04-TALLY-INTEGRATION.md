@@ -29,7 +29,7 @@
 - **Partial failure:** the last good values are kept, each domain records its own error and freshness, and an empty failed response never erases masters (REQ-14).
 - **Invoice identity (REQ-08–10):** a match is verified only on company + financial year + voucher identity + customer ledger. Ambiguous, cancelled or mismatched matches never get a verified badge.
 - **Quantity reconciliation (REQ-11):** separate from invoice identity, and not built yet.
-- **Company guard:** an export is accepted only from the identified company. A wrong company is rejected.
+- **Company guard:** an export is accepted only from the identified company, and a wrong company is rejected. Per REQUIREMENTS R2 this is implemented locally; **confirmation on office Tally is still a Phase 0 gate**.
 - **Cost (economics plan §4):** actual GP = actual net Tally sale value − attributable Tally purchase cost. Missing cost shows as COST_UNAVAILABLE and is never zero or today's rate.
 
 ## 4. Reconciliation

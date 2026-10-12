@@ -31,6 +31,20 @@ The principles are **rules inside four logical engines** in the Commercial Intel
 | **ACTION** | What is the best economically justified intervention? | Expected Value (gain × probability − cost); Razor-and-Blade economics (placements judged on lifetime reagent GP); Margin of Safety (conservative bands, placement policy limits); Game Theory (a likely-competitor-response checklist; advisory); Capital Efficiency; governed pricing hand-off (ADR-0003) |
 | **LEARNING** | Did it work? | Feedback Loops (expected vs actual, append-only outcomes); Compounding; Measurable Outcomes; Continuous Improvement |
 
+## 2a. Product principles
+- **Automate the normal path; expose the exceptional path** (spec §27). Canonical data prefills automatically, and routine deterministic work is automated safely. People spend their time on decisions, relationships and exceptions, not on re-entering known facts.
+- **Anti-complexity** (wallet-capture §14):
+  - one Commercial Intelligence module, not many services;
+  - reuse the existing domains;
+  - asynchronous read models, not order-entry burden;
+  - visible low confidence;
+  - overrides need a reason and an audit record;
+  - every recommendation shows its evidence;
+  - NO_ACTION is valid.
+- **Data ownership and stewardship** ([OPERATING-MODEL §4–5](https://github.com/anilmahindrakar22-creator/Suprabha-Distributors/blob/839497a/docs/OPERATING-MODEL-ADOPTION.md)):
+  - every decision-critical data domain has a named business owner and a canonical source;
+  - coverage and freshness of strategic data are tracked, not assumed.
+
 ## 3. Commercial execution
 - Strategic account classification (A/B; versioned policy)
 - Customer wallet share

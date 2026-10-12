@@ -52,6 +52,10 @@ ADR-0003 (pricing authority), ADR-0006 (Pareto), ADR-0007 (wallet model), ADR-00
 4. **LEARNING:** append-only outcomes compare expected against actual for revenue, GP, GP%, share, cash and working capital.
    - A failed concession is surfaced to Pricing for review. It never becomes a silent new normal (spec §8).
 
+## 4a. Account economics and defence (wallet-capture §§7–8)
+- **Optimise the relationship, not one SKU:** Wallet capture × absolute GP × cash conversion × capital efficiency × retention value. This is a decision framework, not an automatic-discount formula.
+- **Defence is part of growth:** protecting existing profitable wallet (DEFEND/RECOVER) can outrank new capture. GP protected is a first-class outcome (FR-14).
+
 ## 5. Recommendation card (seven questions; [01-PRINCIPLES §4](../architecture/01-PRINCIPLES.md))
 Why it matters · evidence (source, freshness) · binding constraint · recommended action · revenue, GP, capital, risk · who acts and by when · how and when it's measured.
 
