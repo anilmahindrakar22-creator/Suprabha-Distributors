@@ -37,6 +37,7 @@ Handoffs gain an optional fenced block:
 ```agent-files
 read: lib/order-types.ts, components/page-header.tsx
 write: components/requests-workspace.tsx
+actions: edit, test
 ```
 ````
 
@@ -45,18 +46,18 @@ No block → `security.sensitivity`, `permission.handoff` (unless a keyword alre
 ## 3. Policy (derived from AGENTS.md)
 `tests/agent-decision-policy.json` maps globs to classes; first match wins, checked from most to least sensitive:
 - **restricted:** `.env*`, `**/*.pem`, `**/*.key`, `.codex/setup-*keys*.ps1`, `wrangler*.json*`, `**/wrangler.toml`, `tests/pricing-release-preflight.mjs`, `supabase/migration-history-map.json`.
-- **sensitive:** `supabase/**`, `app/api/**`, `lib/*pricing*`, `lib/*economic*`, `lib/*price*`, `lib/access-control.mjs`, `lib/staff-auth*`, `lib/*tally*`, `desktop-connector/**`, `public/sw.js`, `lib/order-gateway.ts`.
+- **sensitive:** governance files `tests/agent-decision-*`, `tests/*preflight*.mjs`, `AGENTS.md`, `.github/**`, `.gitignore`; plus `supabase/**`, `app/api/**`, `lib/*pricing*`, `lib/*economic*`, `lib/*price*`, `lib/access-control.mjs`, `lib/staff-auth*`, `lib/*tally*`, `desktop-connector/**`, `public/sw.js`, `lib/order-gateway.ts`.
 - **app:** `app/**`, `components/**`, `lib/**`, `hooks/**`, `offline/**`.
 - **public:** `docs/**`, `tests/**`, `*.md`.
 - Unmatched → `app`.
 
 Scores: public 0.1, app 0.4, sensitive 0.75, restricted 1.0. The task's score is the maximum over its files.
 
-**Permission rules** (first match wins):
-- **deny:** the handoff text mentions `--dangerously-bypass-approvals-and-sandbox`, `danger-full-access`, `wrangler deploy`, `supabase db push`, `apply_migration`, a production project ref, or writing secrets.
-- **ask:** any restricted file is in the write set; or a sensitive file is in the write set; or the text mentions migration or deploy.
-- **allow:** otherwise.
-
+**Permission rules** (v1.1, 12 Oct 2026; first match wins). They come from the **declared `actions:` line**, not prose. Real handoffs say "no deployments" and list secret patterns to scan for, so prose matching produced false ask/deny on almost every run.
+- **deny:** actions include `deploy`, `hosted-db` or `secrets`, or the requested sandbox is `danger-full-access`.
+- **ask:** actions include `migrate`, `commit`, `push` or `network`, or any restricted or sensitive file is in the write set.
+- **allow:** otherwise. With no block: abstain.
+Prose matches of the deny/ask patterns are recorded as informational `mentions` only.
 **Tier rules:**
 - heavy: if permission is ask (because of sensitive/restricted writes), or if more than 5 write files touch the sensitive class.
 - standard: if there are 2–5 write files, or the class is app with logic keywords.

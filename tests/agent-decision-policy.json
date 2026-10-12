@@ -1,8 +1,9 @@
 {
-  "policyVersion": "2026-10-11.1",
+  "policyVersion": "2026-10-12.1",
+  "_comment": "denyPatterns and askPatterns are informational prose mentions only; permissions come from declared actions, sandbox and write sensitivity.",
   "classes": {
     "restricted": [".env*", "**/*.pem", "**/*.key", ".codex/setup-*keys*.ps1", "wrangler*.json*", "**/wrangler.toml", "tests/pricing-release-preflight.mjs", "supabase/migration-history-map.json"],
-    "sensitive": ["supabase/**", "app/api/**", "lib/*pricing*", "lib/*economic*", "lib/*price*", "lib/access-control.mjs", "lib/staff-auth*", "lib/*tally*", "desktop-connector/**", "public/sw.js", "lib/order-gateway.ts"],
+    "sensitive": ["tests/agent-decision-*", "tests/*preflight*.mjs", "AGENTS.md", ".github/**", ".gitignore", "supabase/**", "app/api/**", "lib/*pricing*", "lib/*economic*", "lib/*price*", "lib/access-control.mjs", "lib/staff-auth*", "lib/*tally*", "desktop-connector/**", "public/sw.js", "lib/order-gateway.ts"],
     "app": ["app/**", "components/**", "lib/**", "hooks/**", "offline/**"],
     "public": ["docs/**", "tests/**", "*.md"]
   },
