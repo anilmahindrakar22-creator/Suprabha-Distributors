@@ -742,7 +742,7 @@ export function OrderWorkspace({ actorEmail, initialStatus = 'open', initialQuer
             </div>
             <span className="flex shrink-0 items-center gap-2">
               {yourQueue && yourQueue !== status ? <button type="button" onClick={() => showQueue(yourQueue)} className="min-h-8 rounded-full px-2.5 text-xs font-bold text-sf-accent hover:bg-sf-accent-soft">Your queue</button> : null}
-              <span className="rounded-full bg-sf-soft-2 px-2.5 py-1 text-xs font-extrabold tabular-nums text-sf-body">{totalOrders} {status === 'open' ? 'pending' : 'orders'}{showsDeliveredToday && deliveredToday.length ? <span className="hidden sm:inline"> · {deliveredToday.length} delivered today</span> : null}</span>
+              <span className="rounded-full bg-sf-soft-2 px-2.5 py-1 text-xs font-extrabold tabular-nums text-sf-body">{totalOrders} {status === 'open' ? 'pending' : totalOrders === 1 ? 'order' : 'orders'}{showsDeliveredToday && deliveredToday.length ? <span className="hidden sm:inline"> · {deliveredToday.length} delivered today</span> : null}</span>
             </span>
           </div>
 
@@ -918,7 +918,7 @@ function OrderRow({
   const action = nextStatus[order.status];
   const canAdvance = Boolean(action && canRoleTransitionOrder(roles, order.status, action.status)
     && (action.status !== 'awaiting_tally_billing' || order.pricingState === 'approved'));
-  const nextOwner = orderNextOwnerLabel(order.status);
+  const nextOwner = orderNextOwnerLabel(order.status) ?? (['ready_for_dispatch', 'dispatched'].includes(order.status) ? 'Operations' : null);
   const total = Number(order.totalQuantity || 0);
   const requiresInvoice = order.status === 'awaiting_tally_billing';
   const canCancel = hasAnyStockFlowRole(roles, ['administrator']) && !['cancelled', 'delivered'].includes(order.status);
@@ -987,12 +987,12 @@ function OrderRow({
           {busy ? 'Updating…' : action.label}
         </button>
         </div>
-      ) : <span className="text-xs font-bold text-sf-subtle">{action?.status === 'awaiting_tally_billing' && order.pricingState !== 'approved' ? 'Pricing approval required' : action && nextOwner ? `Waiting for ${nextOwner}` : 'No action due'}</span>}
+      ) : <span className="text-xs font-bold text-sf-subtle">{action?.status === 'awaiting_tally_billing' && order.pricingState !== 'approved' ? 'Pricing approval required' : nextOwner ? `Waiting for ${nextOwner}` : 'No action due'}</span>}
       </div>
       <details className="mt-3 rounded-xl border border-sf-line-soft bg-sf-soft-0 text-sm">
         <summary className="flex min-h-10 cursor-pointer list-none items-center justify-between gap-3 px-3 font-bold text-sf-label marker:hidden [&::-webkit-details-marker]:hidden">
           <span>More order controls</span>
-          <span className="truncate text-right text-[11px] font-semibold text-sf-subtle">{order.assignedToEmail ? `Owner: ${order.assignedToEmail}` : `${order.priority || 'normal'} priority`}</span>
+          <span className="truncate text-right text-[11px] font-semibold text-sf-subtle">{order.assignedToEmail ? `Owner: ${order.assignedToEmail}` : `${({ normal: 'Normal', high: 'High', urgent: 'Urgent' } as Record<string, string>)[order.priority || 'normal'] ?? order.priority} priority`}</span>
         </summary>
         <div className="border-t border-sf-line-soft p-3">
           <div className="flex flex-wrap gap-2"><button type="button" onClick={() => onFindCustomer(order)} className="min-h-9 rounded-lg border border-sf-line px-3 text-xs font-bold text-sf-body hover:bg-sf-soft">Customer orders</button>{canRepeat ? <button type="button" onClick={() => onRepeat(order)} className="min-h-9 rounded-lg border border-sf-line px-3 text-xs font-bold text-sf-body hover:bg-sf-soft">Repeat as new order</button> : null}<OrderSummaryCopy order={order} /></div>
