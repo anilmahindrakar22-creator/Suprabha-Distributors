@@ -1033,6 +1033,8 @@ test('selected placement details retain item group mapping versions and current 
     ],
   });
   await mockWorkspace(page, data);
+  const card = page.getByRole('article').filter({ has: page.getByRole('heading', { name: target.name, exact: true }) });
+  await card.getByRole('button', { name: 'Sales & items', exact: true }).click();
   const details = page.getByRole('region', { name: 'Instrument sales' });
   const mappingDetails = details.locator('details').filter({ hasText: 'Item group mappings (2)' });
   await expect(mappingDetails).toBeVisible();

@@ -15,7 +15,7 @@ const target: EconomicTarget = {
 describe('instrument economics presentation', () => {
   it('shows investment and recovery without an expected sales or GP target', () => {
     const html = renderToStaticMarkup(<EconomicTargetCard target={{ ...target, expectation: null, capitalPaise: '62500000', instrumentBillingPaise: '40000000', netInvestmentPaise: '22500000', recoveryPaise: '45000000', outstandingPaise: '17500000' }} />);
-    expect(html).toContain('Investment &amp; recovery');
+    expect(html).toContain('aria-label="Investment and recovery"');
     expect(html).toContain('Capital recovered');
     expect(html).toContain('₹50,000.00');
     expect(html).toContain('₹1,75,000.00');

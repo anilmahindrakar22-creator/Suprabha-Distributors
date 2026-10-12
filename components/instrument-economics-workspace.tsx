@@ -105,17 +105,21 @@ export function reagentLifetime(targetId: string, lines: NonNullable<EconomicsWo
   return { salesPaise: sales.toString(), knownGpPaise: gp.toString(), lines: count, missingCostLines: missing };
 }
 
+function InlineMetric({ label, value, hint }: { label: string; value: string; hint?: string }) {
+  return <div className="min-w-0"><dt className="text-xs font-medium text-sf-muted">{label}</dt><dd className={value === 'Unavailable' ? 'text-sm font-semibold text-sf-subtle' : 'text-sm font-extrabold text-sf-strong'}>{value}</dd>{hint ? <p className="text-xs text-sf-muted">{hint}</p> : null}</div>;
+}
+
 function ReagentSummary({ target, lifetime, period }: { target: EconomicTarget; lifetime?: ReagentLifetime; period?: string }) {
   const monthName = period ?? 'This month';
   if (target.approval === 'proposed' || !lifetime) {
-    return <dl className="mt-3 grid grid-cols-2 gap-2"><Metric label={`Reagent sales · ${monthName}`} value={reagentAmount(target, target.revenuePaise)} /><Metric label={`Reagent GP · ${monthName}`} value={reagentAmount(target, target.knownGpPaise)} hint={target.approval === 'proposed' ? 'Pending approval' : target.missingCostLines ? salesWithoutPurchase(target.missingCostLines) : undefined} /></dl>;
+    return <dl className="mt-3 flex flex-wrap gap-x-6 gap-y-2"><InlineMetric label={`Reagent sales · ${monthName}`} value={reagentAmount(target, target.revenuePaise)} /><InlineMetric label={`Reagent GP · ${monthName}`} value={reagentAmount(target, target.knownGpPaise)} hint={target.approval === 'proposed' ? 'Pending approval' : target.missingCostLines ? salesWithoutPurchase(target.missingCostLines) : undefined} /></dl>;
   }
-  if (target.salesFrom === null) return <dl className="mt-3 grid grid-cols-2 gap-2"><Metric label="Reagent sales" value="Unavailable" hint="Instrument sale date needs review" /><Metric label="Reagent GP" value="Unavailable" hint="Instrument sale date needs review" /></dl>;
+  if (target.salesFrom === null) return <dl className="mt-3 flex flex-wrap gap-x-6 gap-y-2"><InlineMetric label="Reagent sales" value="Unavailable" hint="Instrument sale date needs review" /><InlineMetric label="Reagent GP" value="Unavailable" hint="Instrument sale date needs review" /></dl>;
   const since = displayDate(target.salesFrom ?? target.effectiveFrom);
   const gpUnavailable = lifetime.lines > 0 && lifetime.missingCostLines === lifetime.lines;
-  return <dl className="mt-3 grid grid-cols-2 gap-2">
-    <Metric label={`Reagent sales since ${since}`} value={money(lifetime.salesPaise)} hint={`${lifetime.lines} invoice ${lifetime.lines === 1 ? 'line' : 'lines'}`} />
-    <Metric label={`Reagent GP since ${since}`} value={gpUnavailable ? 'Unavailable' : money(lifetime.knownGpPaise)} hint={lifetime.missingCostLines ? `${gpUnavailable ? '' : 'Partial · '}${lifetime.missingCostLines} without purchase cost` : 'Cost from Tally purchases'} />
+  return <dl className="mt-3 flex flex-wrap gap-x-6 gap-y-2">
+    <InlineMetric label={`Reagent sales since ${since}`} value={money(lifetime.salesPaise)} hint={`${lifetime.lines} invoice ${lifetime.lines === 1 ? 'line' : 'lines'}`} />
+    <InlineMetric label={`Reagent GP since ${since}`} value={gpUnavailable ? 'Unavailable' : money(lifetime.knownGpPaise)} hint={lifetime.missingCostLines ? `${gpUnavailable ? '' : 'Partial · '}${lifetime.missingCostLines} without purchase cost` : 'Cost from Tally purchases'} />
   </dl>;
 }
 
@@ -181,14 +185,22 @@ function recoveredInvestmentPaise(target: EconomicTarget): string | null {
   return /^-?\d+$/.test(target.recoveryPaise) && /^-?\d+$/.test(billing)
     ? (BigInt(target.recoveryPaise) - BigInt(billing)).toString() : null;
 }
+function recoveryPercent(recovered: string | null | undefined, investment: string | null | undefined): number | null {
+  if (recovered == null || investment == null || !/^-?\d+$/.test(recovered) || !/^-?\d+$/.test(investment) || BigInt(investment) <= BigInt(0)) return null;
+  const percent = (BigInt(recovered) * BigInt(100)) / BigInt(investment);
+  return Number(percent < BigInt(0) ? BigInt(0) : percent > BigInt(100) ? BigInt(100) : percent);
+}
 function InvestmentRecovery({ target }: { target: EconomicTarget }) {
   if (target.pooledIn) return null;
   const billing = target.instrumentBillingPaise ?? '0';
   const recovered = recoveredInvestmentPaise(target);
   const investment = target.netInvestmentPaise ?? target.capitalPaise;
   const pending = target.approval === 'proposed';
+  const percent = pending ? null : recoveryPercent(recovered, investment);
   return <section aria-label="Investment and recovery" className="mt-4 rounded-xl border border-sf-line-soft p-3">
-    <h4 className="text-sm font-bold">Investment &amp; recovery</h4>
+    {pending ? <p className="text-sm text-sf-muted">Investment {money(investment)} · recovery starts after approval</p> : <p className="flex flex-wrap items-baseline justify-between gap-x-3 gap-y-1"><span><span className="text-base font-extrabold text-sf-strong">{money(recovered)}</span> <span className="text-sm text-sf-muted">recovered of {money(investment)}</span></span><span className="text-sm text-sf-muted">Balance <strong className="text-sf-strong">{money(target.outstandingPaise)}</strong></span></p>}
+    {percent !== null ? <div aria-label="Recovery progress" role="img" title={`${percent}% recovered`} className="mt-2 h-2 overflow-hidden rounded-full bg-sf-line-soft"><div className={`h-full rounded-full ${percent >= 100 ? 'bg-sf-success' : 'bg-sf-accent'}`} style={{ width: `${percent}%` }} /></div> : null}
+    <details className="mt-2"><summary className="cursor-pointer text-xs font-bold text-sf-brand">Breakdown</summary>
     <dl className="mt-3 grid gap-2 sm:grid-cols-3">
       <Metric label="Investment" value={money(investment)} hint="Instrument cost less net instrument billing" />
       <Metric label="Capital recovered" value={pending ? 'Pending approval' : money(recovered)} hint={pending ? 'Reagent GP has not been calculated yet' : target.missingCostLines ? 'Verified GP and contributions only; costs still need review' : 'Cumulative reagent GP and eligible contributions'} />
@@ -196,11 +208,12 @@ function InvestmentRecovery({ target }: { target: EconomicTarget }) {
     </dl>
     <p className="mt-3 text-xs text-sf-muted">Instrument cost {money(target.capitalPaise)} · Instrument billed {money(billing)}. Recovery is economic recovery, not cash collected.</p>
     <dl className="mt-2"><RecoverySurplus target={target} /></dl>
+    </details>
   </section>;
 }
 
 const approvalLabel: Record<EconomicTarget['approval'], string> = { approved: 'Approved', proposed: 'Proposed', rejected: 'Rejected' };
-export function EconomicTargetCard({ target, selected, pooledInName, onSelect, lifetime, period, onReviewCosts }: { target: EconomicTarget; selected?: boolean; pooledInName?: string; onSelect?: () => void; lifetime?: ReagentLifetime; period?: string; onReviewCosts?: () => void }) {
+export function EconomicTargetCard({ target, selected, pooledInName, expanded, onToggle, children, lifetime, period, onReviewCosts }: { target: EconomicTarget; selected?: boolean; pooledInName?: string; expanded?: boolean; onToggle?: () => void; children?: ReactNode; lifetime?: ReagentLifetime; period?: string; onReviewCosts?: () => void }) {
   const missingCost = target.approval === 'proposed' ? 0 : lifetime?.missingCostLines ?? target.missingCostLines;
   return <article className={`rounded-2xl border bg-white p-4 shadow-sm sm:p-5 ${selected ? 'border-sf-accent ring-2 ring-sf-accent/20' : 'border-sf-line-soft'}`}>
     <div className="flex flex-wrap items-start justify-between gap-3"><div className="min-w-0"><p className="text-xs font-semibold text-sf-muted">{target.customerName}{target.kind === 'group' ? ' · group' : ''}</p><h3 className="mt-1 break-words text-lg font-extrabold text-sf-ink">{target.name}</h3><p className="mt-1 text-xs text-sf-muted">Since {displayDate(target.effectiveFrom)}{target.effectiveTo ? ` to ${displayDate(target.effectiveTo)}` : ''} · {approvalLabel[target.approval]}</p></div><EconomicHealthBadge health={target.health} /></div>
@@ -211,7 +224,7 @@ export function EconomicTargetCard({ target, selected, pooledInName, onSelect, l
     {target.approval === 'proposed' ? <p className="mt-3 rounded-xl bg-blue-50 p-3 text-sm text-blue-900">Waiting for approval in Set up. Reagent sales are counted after approval.</p> : null}
     <InvestmentRecovery target={target} />
     <ReagentSummary target={target} lifetime={lifetime} period={period} />
-    {onSelect ? selected ? <p className="mt-4 text-sm font-bold text-sf-brand">Sales are shown below ↓</p> : <button type="button" onClick={onSelect} className="mt-4 min-h-10 rounded-lg border border-sf-line px-3 text-sm font-bold text-sf-brand">Show sales</button> : null}
+    {onToggle ? <button type="button" onClick={onToggle} aria-expanded={expanded} className="mt-4 inline-flex min-h-10 items-center gap-1 rounded-lg border border-sf-line px-3 text-sm font-bold text-sf-brand">{expanded ? <>Hide sales &amp; items</> : <>Sales &amp; items</>}</button> : null}{expanded ? <div className="mt-4 space-y-4">{children}</div> : null}
   </article>;
 }
 
@@ -365,8 +378,8 @@ function voucherNumbers(data: EconomicsWorkspaceData) {
 function ReagentSalesList({ target, data }: { target: EconomicTarget; data: EconomicsWorkspaceData }) {
   const numbers = voucherNumbers(data);
   const rows = (data.attributionLines ?? []).filter(line => line.targetId === target.id).sort((a, b) => a.date.localeCompare(b.date) || a.id.localeCompare(b.id));
-  return <section aria-label="Instrument sales" className="overflow-hidden rounded-2xl border border-sf-line-soft bg-white">
-    <div className="p-4 sm:p-6"><h2 className="text-lg font-extrabold">{target.name} · sales</h2><p className="mt-1 text-sm text-sf-muted">Tally invoices counted for this instrument. Purchase cost comes from Tally automatically.</p>{target.kind === 'placement' ? <ItemGroupMappingSummary target={target} data={data} /> : null}</div>
+  return <section aria-label="Instrument sales" className="overflow-hidden rounded-xl border border-sf-line-soft bg-white">
+    <div className="p-3 sm:p-4"><h3 className="text-base font-extrabold">{target.name} · sales</h3><p className="mt-1 text-sm text-sf-muted">Tally invoices counted for this instrument. Purchase cost comes from Tally automatically.</p>{target.kind === 'placement' ? <ItemGroupMappingSummary target={target} data={data} /> : null}</div>
     {rows.length ? <div className="overflow-x-auto"><table className="w-full min-w-[680px] text-left text-sm"><thead className="bg-sf-soft text-xs text-sf-muted"><tr>{['Date', 'Tally invoice', 'Item', 'Qty', 'Sales', 'Purchase cost', 'GP'].map(label => <th key={label} scope="col" className="p-3">{label}</th>)}</tr></thead>
       <tbody>{rows.map(row => { const billing = row.status === 'instrument_billing'; return <tr key={row.id} className="border-t border-sf-soft"><td className="whitespace-nowrap p-3">{displayDate(row.date)}</td><td className="p-3">{numbers.get(row.sourceLineId) ?? row.voucherId}</td><td className="p-3">{billing ? 'Instrument billing' : row.productName || row.productId}</td><td className="whitespace-nowrap p-3">{plainQuantity(row.quantity)} {row.unit}</td><td className="whitespace-nowrap p-3">{money(row.revenuePaise)}</td><td className="whitespace-nowrap p-3">{billing ? '—' : row.costPaise == null ? <span className="text-amber-900">Cost unavailable</span> : money(row.costPaise)}</td><td className={`whitespace-nowrap p-3 font-semibold ${row.gpPaise == null ? 'text-slate-600' : row.gpPaise.startsWith('-') ? 'text-red-800' : 'text-emerald-800'}`}>{billing ? '—' : row.gpPaise == null ? '—' : money(row.gpPaise)}</td></tr>; })}</tbody></table></div>
       : <p className="px-5 pb-5 text-sm text-sf-muted">No sales are counted for this instrument yet.</p>}
@@ -522,7 +535,7 @@ function SetupSteps({ data, disabled, busy, onSubmit }: { data: EconomicsWorkspa
 
 export function InstrumentEconomicsWorkspace({ embedded = false }: { embedded?: boolean } = {}) {
   const [data, setData] = useState<EconomicsWorkspaceData | null>(null); const [error, setError] = useState(''); const [loading, setLoading] = useState(true);
-  const [tab, setTab] = useState<Tab>('Instruments'); const [advancedTab, setAdvancedTab] = useState<AdvancedTab>('All actions'); const [selectedId, setSelectedId] = useState(''); const [command, setCommand] = useState<EconomicAction>('create_target');
+  const [tab, setTab] = useState<Tab>('Instruments'); const [advancedTab, setAdvancedTab] = useState<AdvancedTab>('All actions'); const [selectedId, setSelectedId] = useState(''); const [expandedId, setExpandedId] = useState(''); const [command, setCommand] = useState<EconomicAction>('create_target');
   const [portfolioFilters, setPortfolioFilters] = useState<EconomicPortfolioFilters>({ query: '', health: 'all', kind: 'all' });
   const [notice, setNotice] = useState(''); const retryKey = useRef<{ signature: string; key: string } | null>(null);
   const pendingCommand = useRef<{ action: EconomicAction; payload: Record<string, unknown>; key: string; form: HTMLFormElement | null } | null>(null);
@@ -535,7 +548,7 @@ export function InstrumentEconomicsWorkspace({ embedded = false }: { embedded?: 
     try {
       const response = await fetch('/api/instrument-economics', { cache: 'no-store', signal });
       if (response.status === 401 || response.status === 403) {
-        setData(null); setSelectedId(''); setNotice('');
+        setData(null); setSelectedId(''); setExpandedId(''); setNotice('');
         const body = await response.json().catch(() => ({})) as { error?: string };
         throw new Error(body.error || 'Financial access is no longer available. Sign in and refresh.');
       }
@@ -554,6 +567,7 @@ export function InstrumentEconomicsWorkspace({ embedded = false }: { embedded?: 
   useEffect(() => { const controller = new AbortController(); const timer = window.setTimeout(() => void load(controller.signal), 0); return () => { window.clearTimeout(timer); controller.abort(); }; }, [load]);
   const visibleTargets = useMemo(() => filterEconomicTargets(data?.targets ?? [], portfolioFilters), [data, portfolioFilters]);
   const selected = useMemo(() => visibleTargets.find(row => row.id === selectedId) ?? visibleTargets[0] ?? null, [visibleTargets, selectedId]);
+  const expanded = visibleTargets.length === 1 ? visibleTargets[0] : visibleTargets.find(row => row.id === expandedId) ?? null;
   async function sendCommand(commandToSend: { action: EconomicAction; payload: Record<string, unknown>; key: string; form: HTMLFormElement | null }) {
     if (busyRef.current) return; busyRef.current = true; setBusy(true); setHasSavedPayload(true); setNotice(''); setError('');
     try {
@@ -562,7 +576,7 @@ export function InstrumentEconomicsWorkspace({ embedded = false }: { embedded?: 
       recoveryReference.current = reference;
       const response = await fetch('/api/instrument-economics', { method: 'POST', headers: { 'content-type': 'application/json' }, body: JSON.stringify({ action: commandToSend.action, payload: { ...commandToSend.payload, idempotencyKey: commandToSend.key } }) });
       if (response.status === 401 || response.status === 403) {
-        setData(null); setSelectedId(''); setNotice('');
+        setData(null); setSelectedId(''); setExpandedId(''); setNotice('');
         pendingCommand.current = commandToSend; setUnresolved(true);
         const body = await response.json().catch(() => ({})) as { error?: string };
         setError(body.error || 'Financial access is no longer available. Sign in with the original account and refresh.');
@@ -589,7 +603,7 @@ export function InstrumentEconomicsWorkspace({ embedded = false }: { embedded?: 
     busyRef.current = true; setBusy(true); setError('');
     try {
       const response = await fetch('/api/instrument-economics', { method: 'POST', headers: { 'content-type': 'application/json' }, body: JSON.stringify({ action: 'recover_economic_command', payload: { commandAction: reference.action, commandKey: reference.key, expectedActorEmail: reference.actorEmail, closeUnresolved } }) });
-      if (response.status === 401 || response.status === 403) { setData(null); setSelectedId(''); setNotice(''); }
+      if (response.status === 401 || response.status === 403) { setData(null); setSelectedId(''); setExpandedId(''); setNotice(''); }
       const body = await readJsonBody<{ status?: string; error?: string }>(response);
       if (!response.ok) throw new Error(body.error || 'Unable to check the saved command.');
       if (body.status !== 'accepted' && body.status !== 'not_saved') { setError('The result is still unknown. Check again, or close the unresolved request to block any late save before entering another command.'); return; }
@@ -671,7 +685,7 @@ export function InstrumentEconomicsWorkspace({ embedded = false }: { embedded?: 
     {data ? <p className="-mt-2 text-xs text-sf-muted">Business date {data.businessDate ? displayDate(data.businessDate) : 'unavailable'} · Tally data from {economicTimestamp(data.sourceImportedAt)}</p> : null}
     <nav aria-label="Economics sections" className="flex gap-1 overflow-x-auto rounded-2xl border border-sf-line-soft bg-white p-1.5 [scrollbar-width:none]">{visibleTabs.map(name => <button key={name} type="button" onClick={() => setTab(name)} aria-current={tab === name ? 'page' : undefined} className={`min-h-11 flex-1 shrink-0 whitespace-nowrap rounded-xl px-2.5 py-2 text-sm font-bold ${tab === name ? 'bg-sf-brand text-white' : 'text-sf-body hover:bg-sf-soft'}`}>{name}{name === 'To do' && todoCount ? ` (${todoCount})` : ''}</button>)}</nav>
     {loading && !data ? <div className="rounded-2xl bg-white p-8 text-sm text-sf-muted">Loading economics data…</div> : null}
-    {data && tab === 'Instruments' ? <>{data.targets.length > 2 ? <InstrumentEconomicsPortfolioFilters filters={portfolioFilters} onChange={setPortfolioFilters} total={data.targets.length} matching={visibleTargets.length} /> : null}<section aria-label="Economic targets" className="grid gap-4 xl:grid-cols-2">{visibleTargets.length ? visibleTargets.map(target => <EconomicTargetCard key={target.id} target={target} pooledInName={data.targets.find(row => row.id === target.pooledIn)?.name} selected={selected?.id === target.id} onSelect={() => setSelectedId(target.id)} lifetime={data.attributionLines ? reagentLifetime(target.id, data.attributionLines) : undefined} period={reportingPeriodLabel(data.reportingFrom, data.reportingTo)} onReviewCosts={() => setTab('To do')} />) : <Empty title={data.targets.length ? "No matching instruments" : "No instruments yet"} body={data.targets.length ? "Change the search, status or type filters to see more instruments." : "Add an instrument in Set up."} />}</section>{selected ? <>{selected.kind === 'placement' && !selected.pooledIn ? <InstrumentItems key={`${selected.id}:${data.generation}`} target={selected} data={data} disabled={unresolved || busy} onSubmit={submit} /> : null}<ReagentSalesList target={selected} data={data} /></> : null}</> : null}
+    {data && tab === 'Instruments' ? <>{data.targets.length > 2 ? <InstrumentEconomicsPortfolioFilters filters={portfolioFilters} onChange={setPortfolioFilters} total={data.targets.length} matching={visibleTargets.length} /> : null}<section aria-label="Economic targets" className="grid gap-4 xl:grid-cols-2">{visibleTargets.length ? visibleTargets.map(target => <EconomicTargetCard key={target.id} target={target} pooledInName={data.targets.find(row => row.id === target.pooledIn)?.name} selected={expanded?.id === target.id} expanded={expanded?.id === target.id} onToggle={() => setExpandedId(current => current === target.id && visibleTargets.length !== 1 ? '' : target.id)} lifetime={data.attributionLines ? reagentLifetime(target.id, data.attributionLines) : undefined} period={reportingPeriodLabel(data.reportingFrom, data.reportingTo)} onReviewCosts={() => setTab('To do')}>{target.kind === 'placement' && !target.pooledIn ? <InstrumentItems key={`${target.id}:${data.generation}`} target={target} data={data} disabled={unresolved || busy} onSubmit={submit} /> : null}<ReagentSalesList target={target} data={data} /></EconomicTargetCard>) : <Empty title={data.targets.length ? "No matching instruments" : "No instruments yet"} body={data.targets.length ? "Change the search, status or type filters to see more instruments." : "Add an instrument in Set up."} />}</section></> : null}
     {data && tab === 'To do' ? <TodoPanel data={data} /> : null}
     {data && tab === 'Set up' ? <SetupSteps data={data} disabled={unresolved || busy} busy={busy} onSubmit={submit} /> : null}
     {data && tab === 'Advanced' && data.canManage ? <nav aria-label="Advanced sections" className="-mx-1 flex gap-2 overflow-x-auto px-1 pb-0.5 [scrollbar-width:none]">{advancedTabs.map(name => <button key={name} type="button" onClick={() => setAdvancedTab(name)} aria-current={advancedTab === name ? 'page' : undefined} className={`shrink-0 whitespace-nowrap min-h-10 rounded-lg border px-3 text-sm font-bold ${advancedTab === name ? 'border-sf-brand bg-sf-brand text-white' : 'border-sf-line bg-white text-sf-body'}`}>{name}</button>)}</nav> : null}
