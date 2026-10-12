@@ -139,3 +139,22 @@ W1–W3 touch different tables but share the gateway, so they run **one after an
 
 ## 10. Owner decisions recorded (12 Oct 2026)
 The owner accepted all seven defaults ('Defaults ok'). Build W1 on branch `claude/market-w1`.
+
+## 11. Utility-value review (owner rule, 13 Oct 2026)
+Owner: "Everything we build must have a utility value … If it doesn't provide a value for decision making, putting it is not worth it. Should either give strategic guidance."
+
+Each element was checked against that rule:
+
+| Element | Decision it drives | Verdict |
+| --- | --- | --- |
+| Wallet estimate per division | gives the size of each customer's opportunity; input to the gap | **Keep** |
+| Old or missing estimate flags | tell someone whose estimate to collect next | **Keep** |
+| Focus list on *estimated* wallet only | weak: a big wallet where we already sell most isn't an opportunity | **Keep as an interim**, labelled. It becomes decision-grade only with Tally sales (W2b): untapped gap and share |
+| Map pins, the "No map pin" tile, the map view (Leaflet) | none today (only data entry) | **Cut from the screen.** Drop the map view and the Leaflet dependency from V1. The pin backend (W1) stays dormant for possible visit planning later; it gets no screen until a decision needs it |
+
+**Consequences:**
+- **W2b (our sales from Tally → untapped gap and share) is now the gate.** Market isn't released until it exists, because estimates alone don't guide decisions.
+- **Next design step after W2b:** each focus row gets one recommended next action from transparent rules (spec §5 Action engine). For example:
+  - "Large gap, low share: plan a management visit";
+  - "Top buyer without an estimate: ask for the monthly spend";
+  - "Estimate below actual sales: re-estimate".
