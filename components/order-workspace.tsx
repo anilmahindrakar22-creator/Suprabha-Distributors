@@ -633,17 +633,17 @@ export function OrderWorkspace({ actorEmail, initialStatus = 'open', initialQuer
   return (
     <div ref={workspaceRef} className="h-full overflow-y-auto bg-sf-page">
       <div className="mx-auto max-w-7xl px-3 pb-6 sm:px-6 lg:px-8">
-        <div className="sticky top-0 z-20 -mx-3 border-b border-sf-line-soft bg-sf-page/95 px-3 pb-2 pt-2 backdrop-blur sm:-mx-6 sm:px-6 lg:-mx-8 lg:px-8">
-        <header className="flex items-center justify-between gap-2">
-          <div className="min-w-0">
+        <div className="sticky top-0 z-20 -mx-3 border-b border-sf-line-soft bg-sf-page/95 px-3 pb-2 pt-2 backdrop-blur sm:-mx-6 sm:px-6 lg:-mx-8 lg:px-8 lg:flex lg:flex-wrap lg:items-center lg:gap-x-3 lg:gap-y-2">
+        <header className="flex items-center justify-between gap-2 lg:contents">
+          <div className="min-w-0 lg:order-1">
             <h1 className="text-xl font-black tracking-tight text-sf-ink sm:text-2xl">
               Orders
             </h1>
-            <p className="hidden text-xs text-sf-subtle lg:block">
+            <p className="hidden">
               Confirm orders, send packed orders to Tally billing, then dispatch.
             </p>
           </div>
-          <div className="relative flex shrink-0 items-center gap-2">
+          <div className="relative flex shrink-0 items-center gap-2 lg:order-4 lg:ml-auto">
 
             <button
               type="button"
@@ -658,9 +658,9 @@ export function OrderWorkspace({ actorEmail, initialStatus = 'open', initialQuer
 
           </div>
         </header>
-        {deviceDraftState ? <span aria-live="polite" className={`mt-1 block text-right text-xs font-bold ${deviceDraftState === 'pending' ? 'text-sf-warning' : deviceDraftState === 'error' ? 'text-sf-danger' : 'text-sf-muted'}`}>{deviceDraftState === 'pending' ? '1 pending order on this device' : deviceDraftState === 'error' ? '1 device draft needs attention' : '1 draft on this device'}</span> : null}
+        {deviceDraftState ? <span aria-live="polite" className={`lg:order-5 lg:basis-full mt-1 block text-right text-xs font-bold ${deviceDraftState === 'pending' ? 'text-sf-warning' : deviceDraftState === 'error' ? 'text-sf-danger' : 'text-sf-muted'}`}>{deviceDraftState === 'pending' ? '1 pending order on this device' : deviceDraftState === 'error' ? '1 device draft needs attention' : '1 draft on this device'}</span> : null}
 
-        <div className="mt-2 flex items-center gap-2">
+        <div className="mt-2 flex items-center gap-2 lg:order-2 lg:mt-0 lg:w-[22rem] lg:flex-none">
           <div className="relative min-w-0 flex-1">
             <label className="sr-only" htmlFor="order-search">Find existing order</label>
             <input
@@ -669,17 +669,17 @@ export function OrderWorkspace({ actorEmail, initialStatus = 'open', initialQuer
               value={query}
               onChange={(event) => { setFocusNotice(''); setQuery(event.target.value); setPage(1); }}
               placeholder="Search orders"
-              className="min-h-10 w-full rounded-xl border border-sf-line bg-white px-3.5 pr-16 text-[15px] outline-none focus:border-sf-accent-bright focus:ring-3 focus:ring-sf-accent-bright/20"
+              className={`min-h-10 w-full rounded-xl border border-sf-line bg-white px-3.5 ${query ? 'pr-16' : ''} text-[15px] outline-none focus:border-sf-accent-bright focus:ring-3 focus:ring-sf-accent-bright/20`}
             />
             {query ? <button type="button" onClick={() => { setFocusNotice(''); setQuery(''); setPage(1); }} className="absolute bottom-0.5 right-1 min-h-9 rounded-lg px-3 text-xs font-bold text-sf-label hover:bg-sf-soft">Clear</button> : null}
           </div>
           <button type="button" aria-pressed={query === `assignee:${actorEmail.toLocaleLowerCase('en-IN')}`} onClick={() => { setFocusNotice(''); setQuery((current) => current === `assignee:${actorEmail.toLocaleLowerCase('en-IN')}` ? '' : `assignee:${actorEmail.toLocaleLowerCase('en-IN')}`); setStatus('open'); setCaptureDate(''); setCaptureDateTo(''); setPage(1); }} className="hidden min-h-10 shrink-0 rounded-xl border border-sf-line bg-white px-3 text-sm font-bold text-sf-body hover:bg-sf-soft aria-pressed:border-sf-accent-bright aria-pressed:bg-sf-accent-soft sm:block">My work</button>
           <button type="button" aria-expanded={mobileFiltersOpen} aria-controls="mobile-order-filters" onClick={() => setMobileFiltersOpen((open) => !open)} className={`flex min-h-10 shrink-0 items-center gap-1 rounded-xl border px-3 text-sm font-bold ${mobileFiltersOpen || !stageFilters.some((filter) => filter.status === status) || captureDate ? 'border-sf-ink bg-sf-ink text-white' : 'border-sf-line bg-white text-sf-body'}`}>Filters <span className={`transition ${mobileFiltersOpen ? 'rotate-180' : ''}`}><ChevronDownIcon /></span></button>
         </div>
-        <div className="mt-2">
+        <div className="mt-2 lg:order-3 lg:mt-0 lg:min-w-0 lg:flex-1">
           <OrderStageChips filters={stageFilters} active={status} onSelect={showQueue} />
         </div>
-        <div id="mobile-order-filters" className={`${mobileFiltersOpen ? 'grid' : 'hidden'} mt-2 gap-3 rounded-2xl border border-sf-line-soft bg-white p-3 shadow-sm sm:grid-cols-[minmax(0,1fr)_auto] sm:items-end`}>
+        <div id="mobile-order-filters" className={`${mobileFiltersOpen ? 'grid' : 'hidden'} mt-2 gap-3 rounded-2xl border border-sf-line-soft bg-white p-3 shadow-sm sm:grid-cols-[minmax(0,1fr)_auto] sm:items-end lg:order-6 lg:basis-full`}>
           <label className="block text-xs font-bold text-sf-muted" htmlFor="order-status">Show orders
           <select
             id="order-status"
@@ -754,7 +754,7 @@ export function OrderWorkspace({ actorEmail, initialStatus = 'open', initialQuer
               <p className="mt-2 text-sm text-sf-subtle">{query ? `No orders match “${query}”. Clear the search to see the full list.` : status === 'history' ? 'Completed and cancelled orders will remain available here.' : status === 'attention' ? 'No active orders are stalled or have unresolved operational issues.' : status === 'billing_attention' ? 'No invoice, customer-ledger, product, quantity, or stale-verification issues need attention.' : status.startsWith('delivery_due_') ? 'No promised deliveries fall in this period.' : status === 'back_ordered' ? 'No prepared orders currently have a quantity shortage.' : status === 'delivery_exception' ? 'No delivery exceptions are currently open.' : 'New orders will appear here immediately.'}</p>
             </div>
           ) : desktopControlCenter ? (
-            <div className="grid items-start lg:h-[calc(100dvh-13rem)] lg:min-h-96 lg:grid-cols-[minmax(300px,380px)_minmax(0,1fr)]">
+            <div className="grid items-start lg:h-[calc(100dvh-9.5rem)] lg:min-h-96 lg:grid-cols-[minmax(360px,440px)_minmax(0,1fr)]">
               <aside aria-label="Desktop order queue" className="h-full overflow-y-auto border-r border-sf-line-soft bg-sf-soft-0">
                 {orderGroups.map((group) => <section key={group.id} aria-label={group.label}>
                   <h3 className={`sticky top-0 z-[1] border-b border-sf-soft-2 bg-sf-soft-0/95 px-4 py-1.5 text-[11px] font-extrabold uppercase tracking-wide backdrop-blur ${group.id === 'action' ? 'text-sf-danger' : 'text-sf-subtle'}`}>{group.label} <span className="font-bold tabular-nums">· {group.orders.length}</span></h3>
@@ -762,10 +762,9 @@ export function OrderWorkspace({ actorEmail, initialStatus = 'open', initialQuer
                   const selected = order.id === selectedOrder?.id;
                   const nextAction = nextStatus[order.status]?.label || orderNextOwnerLabel(order.status) || 'View order';
                   const stage = orderStageStyle(order.status);
-                  return <button id={`desktop-order-${order.id}`} key={order.id} type="button" aria-current={selected ? 'true' : undefined} title={`${order.assignedToEmail ? `Owner: ${order.assignedToEmail}` : 'Unassigned'} · Next: ${nextAction}`} onClick={() => setSelectedOrderId(order.id)} onKeyDown={(event) => { if (['ArrowUp', 'ArrowDown', 'Home', 'End'].includes(event.key)) { event.preventDefault(); navigateDesktopQueue(event.key); } }} className={`relative block w-full border-b border-sf-soft-2 py-2 pl-5 pr-3 text-left outline-none hover:bg-white focus-visible:bg-white focus-visible:ring-2 focus-visible:ring-inset focus-visible:ring-sf-accent-bright aria-current:bg-white aria-current:shadow-[inset_3px_0_0_#092f36] ${['delivered', 'cancelled'].includes(order.status) ? 'opacity-70' : ''}`}>
+                  return <button id={`desktop-order-${order.id}`} key={order.id} type="button" aria-current={selected ? 'true' : undefined} title={`${order.assignedToEmail ? `Owner: ${order.assignedToEmail}` : 'Unassigned'} · Next: ${nextAction}`} onClick={() => setSelectedOrderId(order.id)} onKeyDown={(event) => { if (['ArrowUp', 'ArrowDown', 'Home', 'End'].includes(event.key)) { event.preventDefault(); navigateDesktopQueue(event.key); } }} className={`relative block w-full border-b border-sf-soft-2 flex min-h-11 items-center py-1.5 pl-5 pr-3 text-left outline-none hover:bg-white focus-visible:bg-white focus-visible:ring-2 focus-visible:ring-inset focus-visible:ring-sf-accent-bright aria-current:bg-white aria-current:shadow-[inset_3px_0_0_#092f36] ${['delivered', 'cancelled'].includes(order.status) ? 'opacity-70' : ''}`}>
                     <span aria-hidden="true" className={`absolute inset-y-2 left-2 w-1 rounded-full ${stage.bar}`} />
-                    <span className="flex items-baseline justify-between gap-2"><strong className="truncate text-sm text-sf-ink">{order.customerName}</strong><span className="shrink-0 text-[11px] font-semibold tabular-nums text-sf-subtle" title="Time since order capture">{compactOrderAge(order.createdAt)}</span></span>
-                    <span className="mt-1 flex min-w-0 items-center gap-1.5 text-xs text-sf-subtle"><span className={`shrink-0 rounded-full px-2 py-0.5 text-[10px] font-extrabold ${stage.chip}`}>{stage.label}</span>{newOrderIds?.has(order.id) ? <span className="shrink-0 rounded-full bg-sf-ink px-1.5 py-0.5 text-[9px] font-black uppercase text-white">New</span> : null}<OrderFlagBadge order={order} /><span className="truncate">{order.orderNumber}</span><span className="ml-auto max-w-32 shrink-0 truncate text-[11px] font-bold text-sf-accent">{nextAction}</span></span>
+                    <span className="flex min-w-0 flex-1 items-center gap-2"><strong className="min-w-[6.5rem] flex-1 truncate text-sm text-sf-ink">{order.customerName}</strong>{newOrderIds?.has(order.id) ? <span className="shrink-0 rounded-full bg-sf-ink px-1.5 py-0.5 text-[9px] font-black uppercase text-white">New</span> : null}<span className={`shrink-0 rounded-full px-2 py-0.5 text-[10px] font-extrabold ${stage.chip}`}>{stage.label}</span><OrderFlagBadge order={order} /><span className="hidden shrink-0 text-[11px] tabular-nums text-sf-subtle 2xl:inline">{order.orderNumber}</span><span className="w-8 shrink-0 text-right text-[11px] font-semibold tabular-nums text-sf-subtle" title="Time since order capture">{compactOrderAge(order.createdAt)}</span>{nextAction === 'View order' ? null : <span className="w-[7.5rem] shrink-0 truncate text-right text-[11px] font-bold text-sf-accent">{nextAction}</span>}</span>
                   </button>;
                   })}
                 </section>)}

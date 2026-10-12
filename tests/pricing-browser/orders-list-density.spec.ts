@@ -90,5 +90,8 @@ test('web list keeps keyboard navigation in the grouped queue', async ({ page, i
   await expect(queue.locator('[aria-current="true"]')).toContainText('Laboratory');
   await expect(page.getByLabel('Selected order workspace').getByRole('list', { name: 'Order progress' })).toBeVisible();
   const rowsInView = await queue.getByRole('button').evaluateAll((elements) => elements.filter((element) => element.getBoundingClientRect().bottom <= innerHeight).length);
-  expect(rowsInView).toBeGreaterThanOrEqual(6);
+  expect(rowsInView).toBeGreaterThanOrEqual(10);
+  const searchBox = await page.getByLabel('Find existing order').boundingBox();
+  const newOrder = await page.getByRole('button', { name: /^\+ Order|Continue order|Loading products/ }).boundingBox();
+  expect(searchBox && newOrder && Math.abs(searchBox.y - newOrder.y) < 16).toBeTruthy();
 });
