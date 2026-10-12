@@ -104,6 +104,15 @@ Owner direction, 12 Oct 2026: "implement jev guidelines first". It applies the T
 
 **Why:** on 12 Oct 2026 two Luna runs exited 0 but left the price-book badge unchanged, so v1 counted them as successes. A `must-not-contain >{row.riskStatus}</span>` assertion would have fired on both. `summary` now reports `verified`, `passed`, `escalated` and `refused` per tier. "Succeeded" (exit 0) stays only for comparison.
 
+**v2.1 "Loops and graphs"** (owner, 12 Oct 2026). Both additions are recorded and printed only:
+- **`gate.lane`** gates on blast radius, not confidence:
+  - **closed:** actions migrate / deploy / hosted-db / secrets / delete, or writes under `supabase/migrations/**` or `desktop-connector/**`. This lane never opens for agents; only the owner or the integration owner approves it, at release.
+  - **wide:** writes under `lib/**`, APIs, shared UI or styles, `public/sw.js`, `supabase/**`, any sensitive file, or 6 or more files.
+  - **contained:** everything else.
+- **Attempt cap:** `attempt` is counted per handoff across resumes. A failed verification on attempt 3 or later suggests `conductor (attempt cap)`: re-plan the unit instead of retrying it.
+
+The conductor's matching rules (return the unit, not the batch; the learning-edge `CONSTRAINTS.md`) are in the launcher skill's `LOOPS-AND-GRAPHS.md`.
+
 **Fail open:** an observer error, timeout or missing observer never blocks the launch. The launcher hard-codes workspace-write, and the error path never returns exit 3.
 
 **Not built: these need control of the agent's own turn loop.** Claude Code and Codex own their context assembly, so the following cannot be done from a launcher:

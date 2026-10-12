@@ -152,10 +152,38 @@ describe('observation-only typed decision layer', () => {
 
   it('abstains without a block but allows an empty block with no declared actions', () => {
     for (const text of ['Describe the change', 'deploy migration']) {
-      expect(record(text).decisions.every(decision => decision.answer === null && decision.confidence === 0)).toBe(true);
+      expect(record(text).decisions.every(decision => decision.answer === null && decision.confidence === (decision.question === 'gate.lane' ? 0.7 : 0))).toBe(true);
     }
-    expect(decide({ text: '', files: null, requested: requested(), policy }).map(decision => decision.answer)).toEqual([null, null, null, null]);
-    expect(record(block([])).decisions.map(decision => decision.answer)).toEqual([null, 'allow', null, null]);
+    expect(decide({ text: '', files: null, requested: requested(), policy }).map(decision => decision.answer)).toEqual([null, null, null, null, null]);
+    expect(record(block([])).decisions.map(decision => decision.answer)).toEqual([null, 'allow', null, null, { lane: 'contained', reasons: expect.any(Array) }]);
+  });
+
+  it.each([
+    [block(['components/foo.tsx']), 'contained'],
+    [block(['lib/x.ts']), 'wide'],
+    [block(['supabase/migrations/1.sql', 'lib/x.ts']), 'closed'],
+    [block(['desktop-connector/x.ts']), 'closed'],
+    [block(['components/foo.tsx'], [], ['edit', 'migrate']), 'closed'],
+    [block(Array.from({ length: 6 }, (_, i) => `app/${i}/page.tsx`)), 'wide'],
+    [block(Array.from({ length: 5 }, (_, i) => `app/${i}/page.tsx`)), 'contained'],
+    [block(['app/api/x/route.ts']), 'wide'],
+    [block(['AGENTS.md']), 'wide'],
+    [block(['.env.local']), 'wide'],
+    [block([], ['supabase/migrations/1.sql', '.env.local'], ['test']), 'contained'],
+    [block([], [], ['edit']), 'contained'],
+  ])('records blast-radius lane %s as %s with typed reasons', (text, lane) => {
+    const gate = answer(text, 'gate.lane');
+    expect(gate).toMatchObject({ question: 'gate.lane', answer: { lane, reasons: expect.any(Array) }, confidence: lane === 'closed' ? 0.9 : 0.7 });
+    expect(gate?.reasons.length).toBeGreaterThan(0);
+    expect(record(text).decisions.map(decision => decision.question)).toEqual(['security.sensitivity', 'permission.handoff', 'route.tier', 'ownership.overlap', 'gate.lane']);
+  });
+
+  it.each(['migrate', 'deploy', 'hosted-db', 'secrets', 'delete'])('records action %s in the closed lane even without writes', action => {
+    expect(answer(block([], [], [action]), 'gate.lane')).toMatchObject({ answer: { lane: 'closed' }, confidence: 0.9 });
+  });
+
+  it('records a null lane without a block, regardless of prose mentions', () => {
+    expect(answer('migrate deploy delete lib/x.ts', 'gate.lane')).toMatchObject({ answer: null, confidence: 0.7 });
   });
 
   it.each([
@@ -231,7 +259,7 @@ describe('observation-only typed decision layer', () => {
     expect(built.handoffDigest).toBe(createHash('sha256').update(text).digest('hex'));
     expect(record(text).handoffDigest).toBe(built.handoffDigest);
     expect(JSON.stringify(built)).not.toContain('unique sentinel');
-    expect(built).toMatchObject({ schema: 'jev.decision/v2', policyVersion: '2026-10-12.2', createdAt: '2026-10-11T00:00:00.000Z', observedOnly: true, actionTaken: 'launched-unchanged', requested: requested() });
+    expect(built).toMatchObject({ schema: 'jev.decision/v2', policyVersion: '2026-10-12.3', createdAt: '2026-10-11T00:00:00.000Z', observedOnly: true, actionTaken: 'launched-unchanged', attempt: 1, requested: requested() });
     expect(built.decisions.every(decision => decision.confidence >= 0 && decision.confidence <= 1)).toBe(true);
   });
 
@@ -294,9 +322,80 @@ describe('observation-only typed decision layer', () => {
     current.history = [previous, previous];
     expect(summarize([current])).toMatchObject({ runs: 1, resumedRuns: 2, wouldAsk: 0, wouldDeny: 0, tierAgreementRate: 1, outcomesByTier: { heavy: { runs: 0, completed: 0, seconds: 0 } } });
   });
+
+  it('counts each current lane, including null answers and records without a lane decision', () => {
+    const contained = record(block(['components/foo.tsx']));
+    const wide = record(block(['lib/x.ts']));
+    const closed = record(block(['supabase/migrations/1.sql']));
+    const noBlock = record('No declarations');
+    const legacy = record(block(['docs/x.md']));
+    legacy.decisions = legacy.decisions.filter(decision => decision.question !== 'gate.lane');
+    contained.history = [wide, closed];
+    expect(summarize([contained, wide, closed, noBlock, legacy]).lanes).toEqual({ contained: 1, wide: 1, closed: 1, null: 2 });
+    expect(summarize([]).lanes).toEqual({ contained: 0, wide: 0, closed: 0, null: 0 });
+  });
 });
 
 describe('fail-open observer CLI', () => {
+  it('prints the lane, including null, without enforcing closed lanes', () => {
+    const missingBlock = runFixture('No declarations');
+    expect(missingBlock.observe().stdout.trim()).toMatch(/ lane=null$/);
+    const closed = runFixture(block([], [], ['migrate']));
+    const result = closed.observe('--enforce');
+    expect(result.status).toBe(0);
+    expect(result.stdout.trim()).toMatch(/ lane=closed$/);
+    expect(closed.saved()).toMatchObject({ actionTaken: 'launched-unchanged' });
+  });
+
+  it.each([2, 3, 4])('suggests the expected tier for a failing assertion on attempt %i', attempt => {
+    const fixture = runFixture('```agent-files\nactions: test\nverify: missing.txt must-contain finished\n```');
+    for (let index = 1; index <= attempt; index++) {
+      expect(fixture.observe('--resume').status).toBe(0);
+      expect(fixture.saved().attempt).toBe(index);
+      expect(fixture.saved().history).toHaveLength(index - 1);
+      const result = fixture.outcome();
+      expect(result.status).toBe(0);
+      if (index >= 3) {
+        expect(result.stdout.trim()).toBe('jev verify: ESCALATE -> conductor (attempt cap; assert.1)');
+        expect(fixture.saved().verification).toMatchObject({ verdict: 'escalate', suggestedTier: 'conductor', capReason: 'attempt cap: re-plan this unit' });
+      } else {
+        expect(result.stdout.trim()).toBe('jev verify: ESCALATE -> standard (assert.1)');
+        expect(fixture.saved().verification).toMatchObject({ verdict: 'escalate', suggestedTier: 'standard' });
+        expect(fixture.saved().verification).not.toHaveProperty('capReason');
+      }
+    }
+  }, 30000);
+
+  it('does not cap a passing verification on attempt three', () => {
+    const fixture = runFixture('```agent-files\nactions: test\nverify: result.txt must-contain finished\n```');
+    for (let index = 0; index < 3; index++) expect(fixture.observe().status).toBe(0);
+    writeFileSync(resolve(fixture.folder, 'result.txt'), 'finished');
+    expect(fixture.outcome().stdout.trim()).toBe('jev verify: pass');
+    expect(fixture.saved()).toMatchObject({ attempt: 3, verification: { verdict: 'pass', suggestedTier: null } });
+    expect(fixture.saved().verification).not.toHaveProperty('capReason');
+  }, 30000);
+
+  it.each(['custom', 'absent', 'corrupt', 'missing'])('loads the outcome attempt cap with a %s policy', variant => {
+    const fixture = runFixture('```agent-files\nactions: test\nverify: missing.txt must-contain finished\n```');
+    for (let index = 0; index < 3; index++) expect(fixture.observe().status).toBe(0);
+    const copy = resolve(fixture.folder, 'observer.mjs');
+    writeFileSync(copy, readFileSync(modulePath));
+    const policyPath = resolve(fixture.folder, 'agent-decision-policy.json');
+    if (variant === 'custom') writeFileSync(policyPath, JSON.stringify({ ...policy, lanes: { ...policy.lanes, maxAttempts: 4 } }));
+    if (variant === 'absent') writeFileSync(policyPath, JSON.stringify({ ...policy, lanes: undefined }));
+    if (variant === 'corrupt') writeFileSync(policyPath, '{ corrupt');
+    const result = spawnSync(process.execPath, [copy, 'outcome', '--handoff', fixture.handoff, '--exit', '0', '--seconds', '1', '--repo', fixture.folder], { encoding: 'utf8', env: { ...process.env, TEMP: tmpRoot, TMP: tmpRoot } });
+    expect(result.status).toBe(0);
+    expect(result.stderr).toBe('');
+    if (variant === 'custom') {
+      expect(result.stdout.trim()).toBe('jev verify: ESCALATE -> standard (assert.1)');
+      expect(fixture.saved().verification).not.toHaveProperty('capReason');
+    } else {
+      expect(result.stdout.trim()).toBe('jev verify: ESCALATE -> conductor (attempt cap; assert.1)');
+      expect(fixture.saved().verification.capReason).toBe('attempt cap: re-plan this unit');
+    }
+  }, 30000);
+
   it('refuses typed deny only with --enforce and saves the action before exiting 3', () => {
     const fixture = runFixture(block([], [], ['deploy']));
     const observed = fixture.observe();
@@ -461,7 +560,7 @@ describe('fail-open observer CLI', () => {
     const result = cli('observe', '--handoff', handoff, '--tier', 'light', '--effort', 'medium', '--sandbox', 'workspace-write', '--network', '--resume');
     expect(result.status).toBe(0);
     expect(result.stderr).toBe('');
-    expect(result.stdout.trim()).toBe('jev observe: sensitivity=public permission=allow tier=light/light agrees=true overlap=0');
+    expect(result.stdout.trim()).toBe('jev observe: sensitivity=public permission=allow tier=light/light agrees=true overlap=0 lane=contained');
     expect(readdirSync(folder).sort()).toEqual(['sample.handoff.decisions.json', 'sample.handoff.md']);
     expect(readFileSync(handoff, 'utf8')).toBe(text);
     const output = resolve(folder, 'sample.handoff.decisions.json');
@@ -538,15 +637,18 @@ describe('fail-open observer CLI', () => {
     expect(observe().stdout).not.toContain('skipped');
     cli('outcome', '--handoff', handoff, '--exit', '1', '--seconds', '2', '--tokens', '');
     const first = JSON.parse(readFileSync(output, 'utf8'));
+    expect(first.attempt).toBe(1);
     writeFileSync(handoff, block(['docs/second.md']));
     expect(observe().stdout).not.toContain('skipped');
     const second = JSON.parse(readFileSync(output, 'utf8'));
+    expect(second.attempt).toBe(2);
     expect(second.outcome).toBeUndefined();
     expect(second.history).toHaveLength(1);
     expect(second.history[0]).toMatchObject({ handoffDigest: first.handoffDigest, outcome: { exitCode: 1, seconds: 2, tokens: '' } });
     expect(second.history[0]).not.toHaveProperty('history');
     expect(observe().stdout).not.toContain('skipped');
     const third = JSON.parse(readFileSync(output, 'utf8'));
+    expect(third.attempt).toBe(3);
     expect(third.history).toHaveLength(2);
     expect(third.history[0].handoffDigest).toBe(second.handoffDigest);
     expect(third.history[1].handoffDigest).toBe(first.handoffDigest);
@@ -554,6 +656,7 @@ describe('fail-open observer CLI', () => {
     writeFileSync(output, JSON.stringify(third));
     expect(observe().stdout).not.toContain('skipped');
     const fourth = JSON.parse(readFileSync(output, 'utf8'));
+    expect(fourth.attempt).toBe(11);
     expect(fourth.history).toHaveLength(10);
     expect(fourth.history[0].createdAt).toBe(third.createdAt);
     expect(fourth.history[1].createdAt).toBe('saved-0');

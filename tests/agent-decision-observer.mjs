@@ -5,9 +5,11 @@ import { pathToFileURL } from 'node:url';
 
 /** @typedef {'public' | 'app' | 'sensitive' | 'restricted'} Sensitivity */
 /** @typedef {'light' | 'standard' | 'heavy'} Tier */
+/** @typedef {'contained' | 'wide' | 'closed'} Lane */
+/** @typedef {{ closedActions: string[], closed: string[], wide: string[], wideWriteCount: number, maxAttempts: number }} LanesPolicy */
 /** @typedef {{ path: string, mode: 'contain' | 'not-contain', literal: string }} Assertion */
 /** @typedef {{ read: string[], write: string[], actions: string[], verify: Assertion[] }} Files */
-/** @typedef {{ policyVersion: string, classes: Record<Sensitivity, string[]>, scores: Record<Sensitivity, number>, denyPatterns: string[], askPatterns: string[], logicKeywords: string[], enforcement?: { deny: string, ask: string, escalate: string, tier: string } }} Policy */
+/** @typedef {{ policyVersion: string, classes: Record<Sensitivity, string[]>, scores: Record<Sensitivity, number>, denyPatterns: string[], askPatterns: string[], logicKeywords: string[], lanes?: LanesPolicy, enforcement?: { deny: string, ask: string, escalate: string, tier: string } }} Policy */
 /** @typedef {{ tier: Tier, effort: string, sandbox: string, network: boolean, resume: boolean }} Requested */
 /** @typedef {{ path: string, class: Sensitivity, rule: string, kind: 'read' | 'write' }} Match */
 /** @typedef {{ handoff: string, files: Pick<Files, 'read' | 'write' | 'actions'> }} InFlight */
@@ -15,10 +17,11 @@ import { pathToFileURL } from 'node:url';
 /** @typedef {{ question: 'permission.handoff', answer: 'allow' | 'ask' | 'deny' | null, confidence: number, reasons: string[], mentions: string[] }} PermissionDecision */
 /** @typedef {{ question: 'route.tier', answer: Tier | null, requested: Tier, agrees: boolean, confidence: number, reasons: string[] }} TierDecision */
 /** @typedef {{ question: 'ownership.overlap', answer: { overlapping: { path: string, handoff: string }[] } | null, confidence: number, reasons: string[] }} OwnershipDecision */
-/** @typedef {SecurityDecision | PermissionDecision | TierDecision | OwnershipDecision} Decision */
+/** @typedef {{ question: 'gate.lane', answer: { lane: Lane, reasons: string[] } | null, confidence: number, reasons: string[] }} LaneDecision */
+/** @typedef {SecurityDecision | PermissionDecision | TierDecision | OwnershipDecision | LaneDecision} Decision */
 /** @typedef {{ exitCode: number, seconds: number, tokens?: string }} Outcome */
-/** @typedef {{ checks: { id: string, fired: boolean, reason: string }[], verdict: 'pass' | 'escalate', suggestedTier: Tier | 'conductor' | null, reportMentions?: string[] }} Verification */
-/** @typedef {{ schema: 'jev.decision/v1' | 'jev.decision/v2', policyVersion: string, createdAt: string, handoffDigest: string, files: Files, verify?: Assertion[], writeDigests?: Record<string, string | null>, requested: Requested, decisions: Decision[], observedOnly: boolean, actionTaken: 'launched-unchanged' | 'refused', outcome?: Outcome, verification?: Verification, history?: Omit<DecisionRecord, 'history'>[] }} DecisionRecord */
+/** @typedef {{ checks: { id: string, fired: boolean, reason: string }[], verdict: 'pass' | 'escalate', suggestedTier: Tier | 'conductor' | null, capReason?: string, reportMentions?: string[] }} Verification */
+/** @typedef {{ schema: 'jev.decision/v1' | 'jev.decision/v2', policyVersion: string, createdAt: string, handoffDigest: string, files: Files, verify?: Assertion[], writeDigests?: Record<string, string | null>, requested: Requested, decisions: Decision[], observedOnly: boolean, actionTaken: 'launched-unchanged' | 'refused', attempt?: number, outcome?: Outcome, verification?: Verification, history?: Omit<DecisionRecord, 'history'>[] }} DecisionRecord */
 
 /** @param {string} path */
 const normalizePath = path => path.trim().replace(/\\/g, '/').replace(/^(?:\.\/)+/, '');
@@ -160,7 +163,18 @@ export function decide({ text, files, requested, policy, inFlight = [] }) {
     const overlapping = inFlight.flatMap(record => [...new Set(files.write)].filter(path => record.files.write.map(normalizePath).includes(normalizePath(path))).map(path => ({ path, handoff: record.handoff })));
     Object.assign(ownership, { answer: { overlapping }, confidence: 1, reasons: ['Compared declared writes with in-flight records.'] });
   }
-  return [security, permission, tier, ownership];
+  /** @type {LaneDecision} */
+  const gate = { question: 'gate.lane', answer: null, confidence: 0.7, reasons: ['No declared agent-files block.'] };
+  if (files) {
+    const closedAction = files.actions.find(action => policy.lanes?.closedActions.includes(action));
+    const closedWrite = writeMatches.find(match => policy.lanes?.closed.some(glob => matchesGlob(glob, normalizePath(match.path))));
+    const wideWrite = writeMatches.find(match => policy.lanes?.wide.some(glob => matchesGlob(glob, normalizePath(match.path))));
+    /** @type {Lane} */
+    const lane = closedAction || closedWrite ? 'closed' : wideWrite || sensitiveWrites || files.write.length >= (policy.lanes?.wideWriteCount ?? 6) ? 'wide' : 'contained';
+    const reasons = [closedAction ? `Closed action declared: ${closedAction}.` : closedWrite ? `Closed write declared: ${closedWrite.path}.` : wideWrite ? `Wide write declared: ${wideWrite.path}.` : sensitiveWrites ? 'Sensitive or restricted write declared.' : files.write.length >= (policy.lanes?.wideWriteCount ?? 6) ? 'Write count reaches the wide lane threshold.' : 'Declared work has a contained blast radius.'];
+    Object.assign(gate, { answer: { lane, reasons }, confidence: lane === 'closed' ? 0.9 : 0.7, reasons });
+  }
+  return [security, permission, tier, ownership, gate];
 }
 
 /**
@@ -177,7 +191,7 @@ export function buildRecord({ text, requested, policy, inFlight = [], now = new 
     verify: files?.verify ?? [],
     writeDigests: Object.fromEntries((files?.write ?? []).map(path => [path, fileDigest(repo, path)])),
     decisions: decide({ text, files, requested, policy, inFlight }),
-    observedOnly: true, actionTaken: 'launched-unchanged',
+    observedOnly: true, actionTaken: 'launched-unchanged', attempt: 1,
   };
 }
 
@@ -197,8 +211,8 @@ function fileDigest(repo, path) {
   return content === null ? null : createHash('sha256').update(content).digest('hex');
 }
 
-/** @param {DecisionRecord} record @param {string} repo @returns {Verification} */
-function verifyOutcome(record, repo) {
+/** @param {DecisionRecord} record @param {string} repo @param {number} maxAttempts @returns {Verification} */
+function verifyOutcome(record, repo, maxAttempts = 3) {
   if (!record.outcome) throw new Error('outcome');
   const exitCode = record.outcome.exitCode;
   const checks = [{ id: 'exit.nonzero', fired: exitCode !== 0, reason: `Exit code: ${exitCode}.` }];
@@ -214,9 +228,11 @@ function verifyOutcome(record, repo) {
     checks.push({ id: `assert.${index + 1}`, fired, reason: `${assertion.path} must-${assertion.mode}: ${fired ? 'failed' : 'passed'}.` });
   }
   const escalated = checks.some(check => check.fired);
+  const capped = escalated && (record.attempt ?? 1) >= maxAttempts;
   return {
     checks, verdict: escalated ? 'escalate' : 'pass',
-    suggestedTier: escalated ? record.requested.tier === 'light' ? 'standard' : record.requested.tier === 'standard' ? 'heavy' : 'conductor' : null,
+    suggestedTier: capped ? 'conductor' : escalated ? record.requested.tier === 'light' ? 'standard' : record.requested.tier === 'standard' ? 'heavy' : 'conductor' : null,
+    ...(capped ? { capReason: 'attempt cap: re-plan this unit' } : {}),
   };
 }
 
@@ -233,7 +249,10 @@ export function summarize(records) {
   let abstained = 0;
   const empty = () => ({ runs: 0, completed: 0, succeeded: 0, failed: 0, seconds: 0, verified: 0, passed: 0, escalated: 0 });
   const outcomesByTier = { light: empty(), standard: empty(), heavy: empty() };
+  const lanes = { contained: 0, wide: 0, closed: 0, null: 0 };
   for (const record of records) {
+    const gate = record.decisions.find(decision => decision.question === 'gate.lane');
+    lanes[gate?.answer?.lane ?? 'null']++;
     resumedRuns += record.history?.length ?? 0;
     if (record.actionTaken === 'refused') refused++;
     for (const decision of record.decisions) {
@@ -262,7 +281,7 @@ export function summarize(records) {
       else bucket.failed++;
     }
   }
-  return { runs: records.length, tierAgreementRate: compared ? agreed / compared : null, wouldAsk, wouldDeny, abstained, restrictedReadRuns, resumedRuns, refused, outcomesByTier };
+  return { runs: records.length, tierAgreementRate: compared ? agreed / compared : null, wouldAsk, wouldDeny, abstained, restrictedReadRuns, resumedRuns, refused, outcomesByTier, lanes };
 }
 
 /** @param {string} handoff */
@@ -327,6 +346,7 @@ function runCli([command, ...args]) {
       } });
       record.observedOnly = options['--enforce'] !== true;
       const [security, permission, route, ownership] = /** @type {[SecurityDecision, PermissionDecision, TierDecision, OwnershipDecision]} */ (record.decisions);
+      const gate = record.decisions.find(decision => decision.question === 'gate.lane');
       const refused = options['--enforce'] === true && permission.answer === 'deny' && policy.enforcement?.deny === 'refuse';
       if (refused) record.actionTaken = 'refused';
       const existing = records.find(entry => entry.path === target)?.record;
@@ -335,8 +355,9 @@ function runCli([command, ...args]) {
         const { history = [], ...previous } = existing;
         record.history = [previous, ...history].slice(0, 10);
       }
+      record.attempt = 1 + record.history.length;
       writeFileSync(target, `${JSON.stringify(record, null, 2)}\n`, 'utf8');
-      console.log(`jev observe: sensitivity=${security.answer?.class ?? null} permission=${permission.answer} tier=${route.answer}/${route.requested} agrees=${route.agrees} overlap=${ownership.answer?.overlapping.length ?? 0}`);
+      console.log(`jev observe: sensitivity=${security.answer?.class ?? null} permission=${permission.answer} tier=${route.answer}/${route.requested} agrees=${route.agrees} overlap=${ownership.answer?.overlapping.length ?? 0} lane=${gate?.answer?.lane ?? null}`);
       if (refused) {
         console.log(`jev gate: DENY — launch refused (${permission.reasons.join('; ')})`);
         process.exitCode = 3;
@@ -357,7 +378,12 @@ function runCli([command, ...args]) {
       if (!['jev.decision/v1', 'jev.decision/v2'].includes(record.schema)) throw new Error('record');
       record.outcome = { exitCode, seconds, ...(options['--tokens'] === undefined ? {} : { tokens: String(options['--tokens']) }) };
       writeFileSync(target, `${JSON.stringify(record, null, 2)}\n`, 'utf8');
-      record.verification = verifyOutcome(record, options['--repo'] === undefined ? process.cwd() : String(options['--repo']));
+      let maxAttempts = 3;
+      try {
+        const policy = JSON.parse(readFileSync(new URL('./agent-decision-policy.json', import.meta.url), 'utf8'));
+        maxAttempts = policy.lanes?.maxAttempts ?? 3;
+      } catch { /* Policy loading failures keep the default attempt cap. */ }
+      record.verification = verifyOutcome(record, options['--repo'] === undefined ? process.cwd() : String(options['--repo']), maxAttempts);
       if (options['--report'] !== undefined) {
         try {
           const report = readFileSync(String(options['--report']), 'utf8');
@@ -365,7 +391,7 @@ function runCli([command, ...args]) {
         } catch { /* An unreadable report does not affect machine verification. */ }
       }
       writeFileSync(target, `${JSON.stringify(record, null, 2)}\n`, 'utf8');
-      console.log(record.verification.verdict === 'pass' ? 'jev verify: pass' : `jev verify: ESCALATE -> ${record.verification.suggestedTier} (${record.verification.checks.filter(check => check.fired).map(check => check.id).join(', ')})`);
+      console.log(record.verification.verdict === 'pass' ? 'jev verify: pass' : `jev verify: ESCALATE -> ${record.verification.suggestedTier} (${record.verification.capReason ? 'attempt cap; ' : ''}${record.verification.checks.filter(check => check.fired).map(check => check.id).join(', ')})`);
     } else if (command === 'summary' && args.length === 1) {
       const { records, skippedRecords } = readRecords(resolve(args[0]));
       console.log(JSON.stringify({ ...summarize(records.map(entry => entry.record)), skippedRecords }, null, 2));
