@@ -63,15 +63,15 @@ export function OfflineOrderPreparation({ actorEmail }: { actorEmail: string }) 
     } finally { if (current === generation.current) setBusy(false); }
   }
   return <section className="mx-auto max-w-lg space-y-4 p-5 text-sf-strong">
-    <h1 className="text-xl font-bold">Prepare offline orders</h1>
+    <h1 className="text-xl font-extrabold text-sf-ink">Prepare offline orders</h1>
     <p>Use only a trusted staff device. Customer and product names will be stored encrypted. Stock and pricing still require online verification.</p>
     <p>Your PIN protects local data, not your online account. Forgotten PINs cannot recover unsent encrypted drafts.</p>
-    <label className="block">Offline PIN<input type="password" inputMode="numeric" autoComplete="off" minLength={6} maxLength={64} value={pin} onChange={(event) => setPin(event.target.value)} className="mt-1 block min-h-11 w-full rounded-lg border px-3" /></label>
+    <label className="block">Offline PIN<input type="password" inputMode="numeric" autoComplete="off" minLength={6} maxLength={64} value={pin} onChange={(event) => setPin(event.target.value)} className="mt-1 block min-h-11 w-full rounded-lg border px-3" aria-describedby="offline-pin-hint" /><span id="offline-pin-hint" className="mt-1 block text-xs text-sf-subtle">At least 6 digits.</span></label>
     <label className="flex gap-2"><input type="checkbox" checked={consent} onChange={(event) => setConsent(event.target.checked)} />I approve encrypted offline storage on this device.</label>
     <button type="button" disabled={busy || !consent || !/^\d{6,64}$/.test(pin)} onClick={() => void prepare()} className="min-h-11 rounded-lg bg-sf-ink px-4 font-bold text-white disabled:opacity-50">{busy ? 'Preparing…' : 'Prepare / refresh encrypted copy'}</button>
-    <output className="block" aria-live="polite">{message}</output>
+    <output aria-live="polite" className={message ? 'block rounded-xl bg-sf-soft p-3 text-sm text-sf-strong' : 'block'}>{message}</output>
     {/* Public static document: requires full navigation, not the authenticated router. */}
     {/* oxlint-disable-next-line next/no-html-link-for-pages */}
-    <a href="/offline.html" className="block min-h-11 underline">Open offline orders</a>
+    <a href="/offline.html" className="inline-flex min-h-11 items-center rounded-lg border border-sf-line px-4 font-bold text-sf-body hover:bg-sf-soft">Open offline orders</a>
   </section>;
 }
