@@ -29,7 +29,7 @@ async function warmOrderData(actorEmail: string) {
 }
 
 function SectionLoading() {
-  return <div className="grid h-full place-items-center text-sm font-semibold text-[#61777a]">Opening section…</div>;
+  return <div className="grid h-full place-items-center text-sm font-semibold text-sf-muted">Opening section…</div>;
 }
 
 export function StockFlowFrame({ actorEmail, actorRole, actorRoles, staffAuth = false, staffEmailActionsEnabled = false }: { actorEmail: string; actorRole: string; actorRoles?: StockFlowRole[]; staffAuth?: boolean; staffEmailActionsEnabled?: boolean }) {
@@ -261,7 +261,7 @@ export function StockFlowFrame({ actorEmail, actorRole, actorRoles, staffAuth = 
   // Orders tab badge: orders waiting for you; red while any of them is new.
   const waitingCount = work.workTotal;
   const badgeText = waitingCount > 99 ? '99+' : `${waitingCount}${work.workMore ? '+' : ''}`;
-  const badgeTone = freshCount ? 'bg-[#a23b33]' : 'bg-[#0f7b6c]';
+  const badgeTone = freshCount ? 'bg-sf-danger' : 'bg-sf-accent';
   const ordersBadge = waitingCount ? <span id="orders-new-work" className={`ml-1.5 inline-grid min-w-5 place-items-center rounded-full px-1 text-[11px] font-black leading-5 text-white tabular-nums ${badgeTone}`}>{badgeText}<span className="sr-only"> waiting{freshCount ? `, ${freshCount} new` : ''}</span></span> : null;
   function arrivalsFilter(item: WorkItem) {
     const queue = work.queues.find((candidate) => candidate.id === item.queueId);
@@ -274,16 +274,16 @@ export function StockFlowFrame({ actorEmail, actorRole, actorRoles, staffAuth = 
   }
 
   return (
-    <main className="flex h-dvh w-full flex-col overflow-hidden bg-[#f7f6f1] text-[#173239]" style={{ paddingTop: 'env(safe-area-inset-top)', paddingBottom: 'env(safe-area-inset-bottom)' }}>
-      <header className="flex shrink-0 flex-wrap items-center justify-between gap-2 border-b border-[#dce7e5] bg-white px-4 py-2 sm:h-16 sm:flex-nowrap sm:px-6 sm:py-0">
+    <main className="flex h-dvh w-full flex-col overflow-hidden bg-sf-page text-sf-strong" style={{ paddingTop: 'env(safe-area-inset-top)', paddingBottom: 'env(safe-area-inset-bottom)' }}>
+      <header className="flex shrink-0 flex-wrap items-center justify-between gap-2 border-b border-sf-line-soft bg-white px-4 py-2 sm:h-16 sm:flex-nowrap sm:px-6 sm:py-0">
         <div className="flex min-w-0 items-center gap-3">
           <Image src="/suprabha-logo.png" alt="" width={36} height={36} priority className="size-9 shrink-0 object-contain" />
           <div className="min-w-0">
-            <p className="truncate text-sm font-extrabold text-[#092f36]">StockFlow</p>
-            <p className="hidden text-xs text-[#6b7e81] sm:block">Suprabha Distributors</p>
+            <p className="truncate text-sm font-extrabold text-sf-ink">StockFlow</p>
+            <p className="hidden text-xs text-sf-subtle sm:block">Suprabha Distributors</p>
           </div>
         </div>
-        <nav aria-label="Application sections" className="hidden min-w-0 overflow-x-auto rounded-xl bg-[#edf3f1] p-1 sm:flex">
+        <nav aria-label="Application sections" className="hidden min-w-0 overflow-x-auto rounded-xl bg-sf-soft p-1 sm:flex">
           {surfaces.map((item) => (
             <button
               key={item}
@@ -296,8 +296,8 @@ export function StockFlowFrame({ actorEmail, actorRole, actorRoles, staffAuth = 
               aria-describedby={item === 'orders' && waitingCount ? 'orders-new-work' : undefined}
               className={`inline-flex min-h-10 shrink-0 items-center rounded-lg px-3 text-sm font-bold capitalize transition sm:px-4 ${
                 surface === item
-                  ? 'bg-white text-[#092f36] shadow-sm'
-                  : 'text-[#61777a] hover:text-[#092f36]'
+                  ? 'bg-white text-sf-ink shadow-sm'
+                  : 'text-sf-muted hover:text-sf-ink'
               }`}
             >
               {item}{item === 'orders' ? ordersBadge : null}
@@ -305,16 +305,16 @@ export function StockFlowFrame({ actorEmail, actorRole, actorRoles, staffAuth = 
           ))}
           {/* Full navigation re-verifies the staff session before local preparation. */}
           {/* oxlint-disable-next-line next/no-html-link-for-pages */}
-          {offlineLink ? <a href="/offline-preparation" className="min-h-10 shrink-0 rounded-lg px-3 py-2 text-sm font-bold text-[#61777a]">Offline</a> : null}
+          {offlineLink ? <a href="/offline-preparation" className="min-h-10 shrink-0 rounded-lg px-3 py-2 text-sm font-bold text-sf-muted">Offline</a> : null}
         </nav>
         <div className="flex shrink-0 items-center gap-2">
         {notifiable ? <NotificationBell state={work} ordersFilterFor={(queue) => workService.current?.ordersFilterFor(queue) ?? queue.statuses[0]} phone={pushState === 'hidden' ? undefined : { state: pushState, onEnable: () => void changePush(true), onDisable: () => void changePush(false) }} onSeen={markWorkSeen} onOpenOrder={openOrder} onOpenQueue={openQueue} onRetry={() => workService.current?.retry()} /> : null}
         {/* Sites owns the session cookie: use a full navigation, not a client router link. */}
         {/* oxlint-disable-next-line next/no-html-link-for-pages */}
-        {staffAuth ? <button type="button" disabled={signingOut} onClick={() => void staffSignOut()} aria-label={`Sign out ${actorEmail}`} className="min-h-11 rounded-lg border px-3 text-sm font-bold disabled:opacity-50">{signingOut ? 'Signing out…' : 'Sign out'}</button> : <a href="/signout-with-chatgpt?return_to=/" target="_top" aria-label={`Sign out ${actorEmail}`} title={`Signed in as ${actorEmail}`} className="inline-flex min-h-11 shrink-0 items-center rounded-lg border border-[#dce7e5] px-2 text-xs font-bold text-[#173239] hover:bg-[#edf3f1] sm:px-3 sm:text-sm">Sign out</a>}
+        {staffAuth ? <button type="button" disabled={signingOut} onClick={() => void staffSignOut()} aria-label={`Sign out ${actorEmail}`} className="min-h-11 rounded-lg border px-3 text-sm font-bold disabled:opacity-50">{signingOut ? 'Signing out…' : 'Sign out'}</button> : <a href="/signout-with-chatgpt?return_to=/" target="_top" aria-label={`Sign out ${actorEmail}`} title={`Signed in as ${actorEmail}`} className="inline-flex min-h-11 shrink-0 items-center rounded-lg border border-sf-line-soft px-2 text-xs font-bold text-sf-strong hover:bg-sf-soft sm:px-3 sm:text-sm">Sign out</a>}
         </div>
       </header>
-      {deviceNotice ? <output className="flex shrink-0 items-center justify-between gap-3 border-b border-[#f0d7a5] bg-[#fff7e8] px-4 py-2 text-xs font-semibold text-[#805b20] sm:px-6"><span>{deviceNotice}</span><button type="button" onClick={() => setDeviceNotice('')} className="min-h-8 shrink-0 rounded-lg px-3 font-bold hover:bg-[#f7e8c8]">Dismiss</button></output> : null}
+      {deviceNotice ? <output className="flex shrink-0 items-center justify-between gap-3 border-b border-sf-warning-line bg-sf-warning-soft px-4 py-2 text-xs font-semibold text-sf-warning sm:px-6"><span>{deviceNotice}</span><button type="button" onClick={() => setDeviceNotice('')} className="min-h-8 shrink-0 rounded-lg px-3 font-bold hover:bg-sf-warning-line">Dismiss</button></output> : null}
       <section className="min-h-0 flex-1 overflow-hidden">
         {readyEmail !== actorEmail ? <SectionLoading /> : surface === 'stock' ? (
           <iframe
@@ -337,31 +337,31 @@ export function StockFlowFrame({ actorEmail, actorRole, actorRoles, staffAuth = 
         ) : <Suspense fallback={<SectionLoading />}><UserManagement staffAuth={staffAuth} emailActionsEnabled={staffEmailActionsEnabled} /></Suspense>}
       </section>
       {arrivals.length ? (
-        <output aria-live="polite" className="fixed inset-x-3 bottom-[calc(4.5rem+env(safe-area-inset-bottom))] z-40 flex items-center gap-3 rounded-2xl border border-[#c9ddd8] bg-white p-3 shadow-[0_12px_32px_rgba(9,47,54,0.18)] sm:inset-x-auto sm:bottom-auto sm:right-6 sm:top-20 sm:w-[24rem]">
-          <span aria-hidden="true" className="grid size-9 shrink-0 place-items-center rounded-full bg-[#e3f6f1] text-[#0f7b6c]"><BellIcon className="size-4" /></span>
+        <output aria-live="polite" className="fixed inset-x-3 bottom-[calc(4.5rem+env(safe-area-inset-bottom))] z-40 flex items-center gap-3 rounded-2xl border border-sf-line bg-white p-3 shadow-[0_12px_32px_rgba(9,47,54,0.18)] sm:inset-x-auto sm:bottom-auto sm:right-6 sm:top-20 sm:w-[24rem]">
+          <span aria-hidden="true" className="grid size-9 shrink-0 place-items-center rounded-full bg-sf-accent-soft text-sf-accent"><BellIcon className="size-4" /></span>
           <span className="min-w-0 flex-1">
-            <strong className="block truncate text-sm text-[#092f36]">{arrivals.length === 1 ? arrivals[0].message : `${arrivals.length} new orders for you`}</strong>
-            <span className="block truncate text-xs text-[#587275]">{arrivals.length === 1 ? `${arrivals[0].customerName} · ${arrivals[0].orderNumber}` : arrivals.slice(0, 3).map((item) => item.customerName).join(', ')}</span>
+            <strong className="block truncate text-sm text-sf-ink">{arrivals.length === 1 ? arrivals[0].message : `${arrivals.length} new orders for you`}</strong>
+            <span className="block truncate text-xs text-sf-muted">{arrivals.length === 1 ? `${arrivals[0].customerName} · ${arrivals[0].orderNumber}` : arrivals.slice(0, 3).map((item) => item.customerName).join(', ')}</span>
           </span>
-          <button type="button" onClick={() => arrivals.length === 1 ? openOrder(arrivals[0]) : (markWorkSeen(), openQueue(arrivalsFilter(arrivals[0]), arrivals[0].queueId === 'assigned' ? 'mine' : ''))} className="min-h-11 shrink-0 rounded-xl bg-[#092f36] px-4 text-sm font-bold text-white">{arrivals.length === 1 ? 'Open' : 'View'}</button>
-          <button type="button" aria-label="Dismiss" onClick={() => setArrivals([])} className="grid min-h-11 min-w-9 shrink-0 place-items-center rounded-lg text-lg text-[#587275] hover:bg-[#f1f6f4]">×</button>
+          <button type="button" onClick={() => arrivals.length === 1 ? openOrder(arrivals[0]) : (markWorkSeen(), openQueue(arrivalsFilter(arrivals[0]), arrivals[0].queueId === 'assigned' ? 'mine' : ''))} className="min-h-11 shrink-0 rounded-xl bg-sf-ink px-4 text-sm font-bold text-white">{arrivals.length === 1 ? 'Open' : 'View'}</button>
+          <button type="button" aria-label="Dismiss" onClick={() => setArrivals([])} className="grid min-h-11 min-w-9 shrink-0 place-items-center rounded-lg text-lg text-sf-muted hover:bg-sf-soft">×</button>
         </output>
       ) : null}
-      <nav aria-label="Application sections" className="relative flex shrink-0 border-t border-[#dce7e5] bg-white sm:hidden">
+      <nav aria-label="Application sections" className="relative flex shrink-0 border-t border-sf-line-soft bg-white sm:hidden">
         {phoneMain.map((item) => (
-          <button key={item} type="button" aria-label={item} onClick={() => openSurface(item)} onPointerDown={item === 'orders' ? warmOrders : undefined} aria-pressed={surface === item} aria-describedby={item === 'orders' && waitingCount ? 'orders-new-work-phone' : undefined} className={`flex min-h-14 flex-1 flex-col items-center justify-center gap-0.5 text-xs font-bold capitalize ${surface === item ? 'text-[#092f36]' : 'text-[#7a8c8f]'}`}>
+          <button key={item} type="button" aria-label={item} onClick={() => openSurface(item)} onPointerDown={item === 'orders' ? warmOrders : undefined} aria-pressed={surface === item} aria-describedby={item === 'orders' && waitingCount ? 'orders-new-work-phone' : undefined} className={`flex min-h-14 flex-1 flex-col items-center justify-center gap-0.5 text-xs font-bold capitalize ${surface === item ? 'text-sf-ink' : 'text-sf-subtle'}`}>
             <span className="relative">
-              <span aria-hidden="true" className={`block h-1 w-6 rounded-full ${surface === item ? 'bg-[#092f36]' : 'bg-transparent'}`} />
+              <span aria-hidden="true" className={`block h-1 w-6 rounded-full ${surface === item ? 'bg-sf-ink' : 'bg-transparent'}`} />
               {item === 'orders' && waitingCount ? <span id="orders-new-work-phone" className={`absolute -right-5 -top-2 min-w-5 rounded-full px-1 text-center text-[11px] font-black leading-5 text-white ${badgeTone}`}>{badgeText}<span className="sr-only"> waiting{freshCount ? `, ${freshCount} new` : ''}</span></span> : null}
             </span>
             {item}
           </button>
         ))}
-        {phoneMore.length || offlineLink ? <button type="button" aria-expanded={moreOpen} aria-controls="more-sections" onClick={() => setMoreOpen(!moreOpen)} className={`flex min-h-14 flex-1 flex-col items-center justify-center gap-0.5 text-xs font-bold ${phoneMore.includes(surface) || moreOpen ? 'text-[#092f36]' : 'text-[#7a8c8f]'}`}><span aria-hidden="true" className={`block h-1 w-6 rounded-full ${phoneMore.includes(surface) ? 'bg-[#092f36]' : 'bg-transparent'}`} />More</button> : null}
-        {moreOpen ? <div id="more-sections" className="absolute inset-x-2 bottom-[calc(100%+0.5rem)] z-40 grid gap-1 rounded-2xl border border-[#dce7e5] bg-white p-2 shadow-xl">
-          {phoneMore.map((item) => <button key={item} type="button" onClick={() => openSurface(item)} aria-pressed={surface === item} className="min-h-11 rounded-xl px-3 text-left text-sm font-bold capitalize text-[#31585d] hover:bg-[#f1f6f4] aria-pressed:bg-[#edf3f1] aria-pressed:text-[#092f36]">{item}</button>)}
+        {phoneMore.length || offlineLink ? <button type="button" aria-expanded={moreOpen} aria-controls="more-sections" onClick={() => setMoreOpen(!moreOpen)} className={`flex min-h-14 flex-1 flex-col items-center justify-center gap-0.5 text-xs font-bold ${phoneMore.includes(surface) || moreOpen ? 'text-sf-ink' : 'text-sf-subtle'}`}><span aria-hidden="true" className={`block h-1 w-6 rounded-full ${phoneMore.includes(surface) ? 'bg-sf-ink' : 'bg-transparent'}`} />More</button> : null}
+        {moreOpen ? <div id="more-sections" className="absolute inset-x-2 bottom-[calc(100%+0.5rem)] z-40 grid gap-1 rounded-2xl border border-sf-line-soft bg-white p-2 shadow-xl">
+          {phoneMore.map((item) => <button key={item} type="button" onClick={() => openSurface(item)} aria-pressed={surface === item} className="min-h-11 rounded-xl px-3 text-left text-sm font-bold capitalize text-sf-body hover:bg-sf-soft aria-pressed:bg-sf-soft aria-pressed:text-sf-ink">{item}</button>)}
           {/* oxlint-disable-next-line next/no-html-link-for-pages */}
-          {offlineLink ? <a href="/offline-preparation" className="flex min-h-11 items-center rounded-xl px-3 text-sm font-bold text-[#31585d] hover:bg-[#f1f6f4]">Offline</a> : null}
+          {offlineLink ? <a href="/offline-preparation" className="flex min-h-11 items-center rounded-xl px-3 text-sm font-bold text-sf-body hover:bg-sf-soft">Offline</a> : null}
         </div> : null}
       </nav>
     </main>

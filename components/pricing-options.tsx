@@ -19,14 +19,14 @@ export function PricingOptions({ line, entry, onChange }: { line: PricingLineRes
       {([
         ['Last customer rate', line.lastRate], ['Cost at last sale', line.historicCost], ['Current cost', line.currentCost],
         ['Cost change', line.costChange], ['Continuity price', line.continuityPrice], ['Target-margin price', line.targetMarginPrice],
-      ] as const).map(([label, value]) => <div key={label}><dt className="text-[#61777a]">{label}</dt><dd className="mt-1 font-bold">{format(value)}</dd></div>)}
+      ] as const).map(([label, value]) => <div key={label}><dt className="text-sf-muted">{label}</dt><dd className="mt-1 font-bold">{format(value)}</dd></div>)}
     </dl>
-    <p className="rounded-lg bg-[#edf7f3] p-3 text-xs"><strong>Recommended {format(line.recommendedPrice)}</strong><span className="mt-1 block">{line.recommendationReason}</span></p>
+    <p className="rounded-lg bg-sf-accent-soft p-3 text-xs"><strong>Recommended {format(line.recommendedPrice)}</strong><span className="mt-1 block">{line.recommendationReason}</span></p>
     <p className="text-xs">Continuity GP {format(line.continuityGP)} ({line.continuityMargin ?? '—'}%) · Recommended GP {format(line.recommendedGP)} ({line.recommendedMargin ?? '—'}%).</p>
     <p className="text-xs">Change from last customer rate {format(line.differenceToCustomer)} · Additional GP per unit {format(line.additionalGP)}.</p>
     <div className="flex flex-wrap gap-2">
       <button type="button" disabled={line.fixed || line.continuityPrice == null} onClick={() => choose(line.continuityPrice, 'Maintain customer continuity; pass through only positive cost change.')} className="min-h-10 rounded-lg border px-3 text-xs font-bold disabled:opacity-40">Maintain {format(line.continuityPrice)}</button>
-      <button type="button" disabled={line.recommendedPrice == null} onClick={() => choose(line.recommendedPrice, line.recommendationReason)} className="min-h-10 rounded-lg bg-[#176246] px-3 text-xs font-bold text-white disabled:opacity-40">Recommended {format(line.recommendedPrice)}</button>
+      <button type="button" disabled={line.recommendedPrice == null} onClick={() => choose(line.recommendedPrice, line.recommendationReason)} className="min-h-10 rounded-lg bg-sf-success px-3 text-xs font-bold text-white disabled:opacity-40">Recommended {format(line.recommendedPrice)}</button>
       <button type="button" aria-expanded={custom} aria-controls={inputId} onClick={() => { setCustom(true); onChange({ ...entry, reason: '' }); }} className="min-h-10 rounded-lg border px-3 text-xs font-bold">Custom</button>
     </div>
     {line.fixed ? <p className="text-xs text-amber-800">This agreement is fixed. A custom change requires a reason and management approval.</p> : null}

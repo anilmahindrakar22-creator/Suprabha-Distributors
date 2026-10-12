@@ -15,9 +15,9 @@ export function PageHeader({ title, description, eyebrow, back, actions }: {
     <header className="flex items-start justify-between gap-3">
       <div className="min-w-0">
         {back ? <div className="-ml-1 mb-0.5">{back}</div> : null}
-        {eyebrow ? <p className="hidden text-[11px] font-extrabold uppercase tracking-[0.14em] text-[#277b69] sm:block">{eyebrow}</p> : null}
-        <h1 className="text-xl font-black tracking-tight text-[#092f36] sm:text-2xl">{title}</h1>
-        {description ? <p className="mt-0.5 hidden max-w-2xl text-sm text-[#61777a] sm:block">{description}</p> : null}
+        {eyebrow ? <p className="hidden text-[11px] font-extrabold uppercase tracking-[0.14em] text-sf-accent sm:block">{eyebrow}</p> : null}
+        <h1 className="text-xl font-black tracking-tight text-sf-ink sm:text-2xl">{title}</h1>
+        {description ? <p className="mt-0.5 hidden max-w-2xl text-sm text-sf-muted sm:block">{description}</p> : null}
       </div>
       {actions ? <div className="flex shrink-0 items-center gap-2">{actions}</div> : null}
     </header>
@@ -37,10 +37,10 @@ export type SummaryItem = {
 };
 
 const toneStyles: Record<NonNullable<SummaryItem['tone']>, string> = {
-  normal: 'border-[#dfe7e5] bg-white text-[#092f36]',
-  attention: 'border-[#efd9a8] bg-[#fff8e8] text-[#8a5a0a]',
-  alert: 'border-[#f0c9c4] bg-[#fdf1f0] text-[#a23b33]',
-  good: 'border-[#cfe6d9] bg-[#f1f9f4] text-[#2e7d32]',
+  normal: 'border-sf-line-soft bg-white text-sf-ink',
+  attention: 'border-sf-warning-line bg-sf-warning-soft text-sf-warning',
+  alert: 'border-sf-danger-line bg-sf-danger-soft text-sf-danger',
+  good: 'border-sf-success-line bg-sf-success-soft text-sf-success',
 };
 
 /** Compact summary numbers: one row of small tiles on phones (scrolls sideways if needed), a grid from tablet up. */
@@ -51,16 +51,16 @@ export function SummaryStrip({ items, label }: { items: readonly SummaryItem[]; 
         const tone = toneStyles[item.tone ?? 'normal'];
         const body = (
           <>
-            <span className="flex items-center gap-1.5 text-[11px] font-bold text-[#61777a]">{item.icon}{item.label}</span>
+            <span className="flex items-center gap-1.5 text-[11px] font-bold text-sf-muted">{item.icon}{item.label}</span>
             {item.value === undefined
-              ? <span aria-label="Loading" className="mt-1.5 block h-6 w-12 animate-pulse rounded-md bg-[#e6eeec]" />
+              ? <span aria-label="Loading" className="mt-1.5 block h-6 w-12 animate-pulse rounded-md bg-sf-line-soft" />
               : <strong className="mt-0.5 block text-xl font-black tabular-nums">{item.value}</strong>}
-            {item.note ? <span className="hidden text-[11px] text-[#718487] sm:block">{item.note}</span> : null}
+            {item.note ? <span className="hidden text-[11px] text-sf-subtle sm:block">{item.note}</span> : null}
           </>
         );
         const className = `min-w-[8.5rem] shrink-0 rounded-xl border px-3 py-2 text-left sm:min-w-0 ${tone}`;
         return item.onSelect
-          ? <button key={item.label} type="button" aria-pressed={item.selected} onClick={item.onSelect} className={`${className} transition hover:shadow-sm aria-pressed:ring-2 aria-pressed:ring-[#092f36]`}>{body}</button>
+          ? <button key={item.label} type="button" aria-pressed={item.selected} onClick={item.onSelect} className={`${className} transition hover:shadow-sm aria-pressed:ring-2 aria-pressed:ring-sf-ink`}>{body}</button>
           : <article key={item.label} className={className}>{body}</article>;
       })}
     </section>
@@ -68,4 +68,4 @@ export function SummaryStrip({ items, label }: { items: readonly SummaryItem[]; 
 }
 
 /** Compact header action button (Refresh and similar). */
-export const pageActionClass = 'inline-flex min-h-10 items-center gap-1.5 rounded-xl border border-[#d6e1df] bg-white px-3 text-sm font-bold text-[#31585d] hover:bg-[#f1f6f4] disabled:opacity-50';
+export const pageActionClass = 'inline-flex min-h-10 items-center gap-1.5 rounded-xl border border-sf-line bg-white px-3 text-sm font-bold text-sf-body hover:bg-sf-soft disabled:opacity-50';

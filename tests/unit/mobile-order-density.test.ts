@@ -37,8 +37,8 @@ describe('order-list density (list-first redesign)', () => {
     expect(workspace).toContain('aria-label="Back to orders"');
     expect(workspace).toContain('<OrderProgress status={openOrder.status} />');
     expect(list).toContain('min-h-15');
-    expect(list).toContain("confirm: { bar: 'bg-[#2f6fb3]'");
-    expect(list).toContain("'bg-[#fdeceb] text-[#a23b33]'");
+    expect(list).toContain("confirm: { bar: 'bg-sf-stage-confirm'");
+    expect(list).toContain("'bg-sf-danger-soft text-sf-danger'");
   });
 
   it('keeps the next workflow action visible while collapsing secondary order controls', () => {

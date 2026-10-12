@@ -7,13 +7,13 @@ import { orderListFlag, orderProgressIndex, orderProgressSteps, orderStageKey, t
 
 // One colour per stage, used everywhere on the Orders screens. Red is reserved for problems.
 export const stageStyles: Record<StageKey, { bar: string; chip: string; label: string }> = {
-  confirm: { bar: 'bg-[#2f6fb3]', chip: 'bg-[#e8f1fb] text-[#2f6fb3]', label: 'Confirm' },
-  pack: { bar: 'bg-[#7a4fb0]', chip: 'bg-[#f2ecfa] text-[#7a4fb0]', label: 'Pack' },
-  bill: { bar: 'bg-[#9a6412]', chip: 'bg-[#fff4dc] text-[#9a6412]', label: 'Bill' },
-  dispatch: { bar: 'bg-[#0f7b6c]', chip: 'bg-[#e3f6f1] text-[#0f7b6c]', label: 'Dispatch' },
-  done: { bar: 'bg-[#2e7d32]', chip: 'bg-[#e9f6ea] text-[#2e7d32]', label: 'Delivered' },
-  cancelled: { bar: 'bg-[#9aa8aa]', chip: 'bg-[#eef1f1] text-[#5f7174]', label: 'Cancelled' },
-  other: { bar: 'bg-[#9aa8aa]', chip: 'bg-[#eef1f1] text-[#5f7174]', label: 'Other' },
+  confirm: { bar: 'bg-sf-stage-confirm', chip: 'bg-sf-stage-confirm-soft text-sf-stage-confirm', label: 'Confirm' },
+  pack: { bar: 'bg-sf-stage-pack', chip: 'bg-sf-stage-pack-soft text-sf-stage-pack', label: 'Pack' },
+  bill: { bar: 'bg-sf-warning', chip: 'bg-sf-warning-soft text-sf-warning', label: 'Bill' },
+  dispatch: { bar: 'bg-sf-accent', chip: 'bg-sf-accent-soft text-sf-accent', label: 'Dispatch' },
+  done: { bar: 'bg-sf-success', chip: 'bg-sf-success-soft text-sf-success', label: 'Delivered' },
+  cancelled: { bar: 'bg-sf-faint', chip: 'bg-sf-soft-2 text-sf-muted', label: 'Cancelled' },
+  other: { bar: 'bg-sf-faint', chip: 'bg-sf-soft-2 text-sf-muted', label: 'Other' },
 };
 
 export function BellIcon({ className = 'size-5' }: { className?: string }) {
@@ -44,7 +44,7 @@ export function orderStageStyle(status: string) {
 export function OrderFlagBadge({ order }: { order: OrderSummary }) {
   const flag = orderListFlag(order);
   if (!flag) return null;
-  return <span className={`shrink-0 rounded-full px-2 py-0.5 text-[10px] font-extrabold ${flag.tone === 'alert' ? 'bg-[#fdeceb] text-[#a23b33]' : 'bg-[#fff4dc] text-[#8a5a0a]'}`}>{flag.label}</span>;
+  return <span className={`shrink-0 rounded-full px-2 py-0.5 text-[10px] font-extrabold ${flag.tone === 'alert' ? 'bg-sf-danger-soft text-sf-danger' : 'bg-sf-warning-soft text-sf-warning'}`}>{flag.label}</span>;
 }
 
 function compactAge(createdAt: string, now = Date.now()) {
@@ -67,16 +67,16 @@ export function CompactOrderRow({ order, onOpen, selected = false, isNew = false
       aria-label={`${order.orderNumber}, ${order.customerName}, ${orderStage(order.status)}`}
       onClick={() => onOpen(order)}
       onKeyDown={onKeyDown}
-      className={`group relative flex min-h-15 w-full items-stretch gap-3 border-b border-[#edf1f0] bg-white py-2.5 pl-4 pr-3 text-left outline-none transition hover:bg-[#f6f9f8] focus-visible:bg-[#f1f8f6] focus-visible:ring-2 focus-visible:ring-inset focus-visible:ring-[#3aa585] aria-current:bg-[#eef7f4] ${finished ? 'opacity-70' : ''}`}
+      className={`group relative flex min-h-15 w-full items-stretch gap-3 border-b border-sf-soft-2 bg-white py-2.5 pl-4 pr-3 text-left outline-none transition hover:bg-sf-soft focus-visible:bg-sf-accent-soft focus-visible:ring-2 focus-visible:ring-inset focus-visible:ring-sf-accent-bright aria-current:bg-sf-accent-soft ${finished ? 'opacity-70' : ''}`}
     >
       <span aria-hidden="true" className={`absolute inset-y-2 left-1.5 w-1 rounded-full ${style.bar}`} />
       <span className="min-w-0 flex-1">
         <span className="flex items-baseline justify-between gap-2">
-          <strong className="truncate text-[15px] font-bold text-[#092f36]">{order.customerName}</strong>
-          <span className="shrink-0 text-xs font-semibold tabular-nums text-[#7a8c8f]" title="Time since order capture">{compactAge(order.createdAt)}</span>
+          <strong className="truncate text-[15px] font-bold text-sf-ink">{order.customerName}</strong>
+          <span className="shrink-0 text-xs font-semibold tabular-nums text-sf-subtle" title="Time since order capture">{compactAge(order.createdAt)}</span>
         </span>
-        <span className="mt-1 flex min-w-0 items-center gap-1.5 text-xs text-[#6b7e81]">
-          {isNew ? <span className="shrink-0 rounded-full bg-[#092f36] px-1.5 py-0.5 text-[10px] font-black uppercase tracking-wide text-white">New</span> : null}
+        <span className="mt-1 flex min-w-0 items-center gap-1.5 text-xs text-sf-subtle">
+          {isNew ? <span className="shrink-0 rounded-full bg-sf-ink px-1.5 py-0.5 text-[10px] font-black uppercase tracking-wide text-white">New</span> : null}
           <span className={`shrink-0 rounded-full px-2 py-0.5 text-[10px] font-extrabold ${style.chip}`}>{style.label}</span>
           <OrderFlagBadge order={order} />
           <span className="truncate">{order.orderNumber} ·{Math.round(Number(order.totalQuantity || 0)).toLocaleString('en-IN')} qty</span>
@@ -89,13 +89,13 @@ export function CompactOrderRow({ order, onOpen, selected = false, isNew = false
 /** Five-step progress: Confirm → Pack → Bill → Dispatch → Delivered. */
 export function OrderProgress({ status }: { status: string }) {
   const current = orderProgressIndex(status);
-  if (current < 0) return <p className="text-xs font-bold text-[#5f7174]">{orderStage(status)}</p>;
+  if (current < 0) return <p className="text-xs font-bold text-sf-muted">{orderStage(status)}</p>;
   return (
     <ol aria-label="Order progress" className="grid grid-cols-5 gap-1">
       {orderProgressSteps.map((step, index) => (
         <li key={step} aria-current={index === current ? 'step' : undefined} className="min-w-0">
-          <span className={`block h-1.5 rounded-full ${index < current ? 'bg-[#2e7d32]' : index === current ? stageStyles[(['confirm', 'pack', 'bill', 'dispatch', 'done'] as const)[index]].bar : 'bg-[#dfe7e6]'}`} />
-          <span className={`mt-1 block truncate text-[10px] font-bold ${index === current ? 'text-[#092f36]' : 'text-[#8a9a9c]'}`}>{step}</span>
+          <span className={`block h-1.5 rounded-full ${index < current ? 'bg-sf-success' : index === current ? stageStyles[(['confirm', 'pack', 'bill', 'dispatch', 'done'] as const)[index]].bar : 'bg-sf-line-soft'}`} />
+          <span className={`mt-1 block truncate text-[10px] font-bold ${index === current ? 'text-sf-ink' : 'text-sf-faint'}`}>{step}</span>
         </li>
       ))}
     </ol>
@@ -110,12 +110,12 @@ export function OrderStageChips({ filters, active, onSelect }: { filters: readon
     <nav aria-label="Order stages" className="-mx-1 flex gap-1.5 overflow-x-auto px-1 pb-0.5 [scrollbar-width:none]">
       {filters.map((filter) => {
         const selected = filter.status === active;
-        const dot = filter.tone === 'alert' ? 'bg-[#a23b33]' : filter.tone ? stageStyles[filter.tone].bar : 'bg-[#092f36]';
+        const dot = filter.tone === 'alert' ? 'bg-sf-danger' : filter.tone ? stageStyles[filter.tone].bar : 'bg-sf-ink';
         return (
-          <button key={filter.status} type="button" aria-pressed={selected} onClick={() => onSelect(filter.status)} className={`flex min-h-9 shrink-0 items-center gap-1.5 rounded-full border px-3 text-[13px] font-bold transition ${selected ? 'border-[#092f36] bg-[#092f36] text-white' : 'border-[#d6e1df] bg-white text-[#31585d] hover:border-[#9fb9b5]'}`}>
+          <button key={filter.status} type="button" aria-pressed={selected} onClick={() => onSelect(filter.status)} className={`flex min-h-9 shrink-0 items-center gap-1.5 rounded-full border px-3 text-[13px] font-bold transition ${selected ? 'border-sf-ink bg-sf-ink text-white' : 'border-sf-line bg-white text-sf-body hover:border-sf-line-strong'}`}>
             <span aria-hidden="true" className={`size-2 rounded-full ${selected ? 'bg-white' : dot}`} />
             {filter.label}
-            {filter.count ? <span className={`rounded-full px-1.5 text-[11px] font-black tabular-nums ${selected ? 'bg-white/20 text-white' : filter.tone === 'alert' ? 'bg-[#fdeceb] text-[#a23b33]' : 'bg-[#eef3f2] text-[#31585d]'}`}>{filter.count.toLocaleString('en-IN')}</span> : null}
+            {filter.count ? <span className={`rounded-full px-1.5 text-[11px] font-black tabular-nums ${selected ? 'bg-white/20 text-white' : filter.tone === 'alert' ? 'bg-sf-danger-soft text-sf-danger' : 'bg-sf-soft-2 text-sf-body'}`}>{filter.count.toLocaleString('en-IN')}</span> : null}
           </button>
         );
       })}
