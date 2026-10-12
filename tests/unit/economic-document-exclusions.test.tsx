@@ -14,7 +14,7 @@ describe('economic document exclusions', () => {
     expect(html).toContain('<summary');
     expect(html).toContain('Excluded documents (1)');
     expect(html).toContain('Classified non-economic documents are retained for audit and excluded from revenue, GP and supply.');
-    expect(html).toContain('2026-10-07');
+    expect(html).toContain('7 Oct 2026');
     expect(html).toContain('Proforma Invoice');
     expect(html).toContain('PROFORMA-VOUCHER-2026-001');
     expect(html).toContain('Cancelled');

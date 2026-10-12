@@ -42,7 +42,7 @@ describe('instrument economics presentation', () => {
     const empty = renderToStaticMarkup(<ItemGpBreakdown target={{ ...target, revenuePaise: '0', knownGpPaise: '0', itemBreakdown: [] }} {...props} />);
     expect(empty).toContain('No attributed reagent items were billed in this reporting month.');
     expect(empty).toContain('Unique billed items');
-    expect(empty).toContain('2026-09-01 to 2026-10-01 (end date exclusive)');
+    expect(empty).toContain(reportingPeriodLabel('2026-09-01', '2026-10-01'));
   });
 
   it('keeps different units separate while counting a canonical item once and retaining unavailable costs', () => {
@@ -77,7 +77,7 @@ describe('instrument economics presentation', () => {
   it('keeps tiny proposal threshold breaches visible and never falls back to a reporting-month baseline', () => {
     const preview = { status: 'director_exception_required' as const, capitalPaise: '64800001', instrumentBillingPaise: '0', netInvestmentPaise: '64800001', expectedMonthlyGpPaise: '1800000', expectedPaybackMonths: 36.000000555, expectationId: 'start', expectationEffectiveFrom: '2026-01-01', policyId: 'policy-1', reviewMonths: 36, exceptionMonths: 48 };
     const html = renderToStaticMarkup(<EconomicApprovalPreview target={{ ...target, approvalPreview: preview }} />);
-    expect(html).toContain('Over 36 months'); expect(html).toContain('Approval baseline from 2026-01-01.'); expect(html).not.toContain('2026-04-01');
+    expect(html).toContain('Over 36 months'); expect(html).toContain('Approval baseline from 1 Jan 2026.'); expect(html).not.toContain('2026-04-01');
     expect(renderToStaticMarkup(<EconomicApprovalPreview target={{ ...target, approvalPreview: { ...preview, status: 'limit_exceeded', expectedPaybackMonths: 48.0000001 } }} />)).toContain('Over 48 months');
     expect(renderToStaticMarkup(<EconomicApprovalPreview target={target} />)).toContain('Refresh to load the financial approval preview.');
   });

@@ -28,8 +28,8 @@ describe('instrument economics portfolio filters', () => {
 
   it('renders an empty result count and labelled controls accessibly', () => {
     const html = renderToStaticMarkup(<InstrumentEconomicsPortfolioFilters filters={{ ...all, query: 'missing' }} onChange={() => {}} total={3} matching={0} />);
-    expect(html).toContain('0 of 3 targets');
-    expect(html).toContain('aria-label="Search targets"');
+    expect(html).toContain('0 of 3 instruments');
+    expect(html).toContain('aria-label="Search instruments"');
     expect(html).toContain('aria-label="Status"');
     expect(html).toContain('aria-label="Type"');
     expect(html).toContain('aria-label="Reset filters"');
@@ -39,7 +39,7 @@ describe('instrument economics portfolio filters', () => {
   it('shows reset only when at least one filter is active', () => {
     const html = renderToStaticMarkup(<InstrumentEconomicsPortfolioFilters filters={{ query: 'north', health: 'watch', kind: 'placement' }} onChange={() => {}} total={3} matching={1} />);
     expect(html).toContain('aria-label="Reset filters"');
-    expect(html).toContain('1 of 3 targets');
+    expect(html).toContain('1 of 3 instruments');
     const defaults = renderToStaticMarkup(<InstrumentEconomicsPortfolioFilters filters={all} onChange={() => {}} total={3} matching={3} />);
     expect(defaults).not.toContain('aria-label="Reset filters"');
   });
@@ -57,7 +57,7 @@ describe('instrument economics portfolio filters', () => {
     };
     const byLabel = (label: string) => controls(element).find(node => node.props['aria-label'] === label)!;
 
-    byLabel('Search targets').props.onChange!({ currentTarget: { value: 'Central' } });
+    byLabel('Search instruments').props.onChange!({ currentTarget: { value: 'Central' } });
     expect(onChange).toHaveBeenLastCalledWith({ ...all, query: 'Central' });
     byLabel('Status').props.onChange!({ currentTarget: { value: 'watch' } });
     expect(onChange).toHaveBeenLastCalledWith({ ...all, health: 'watch' });

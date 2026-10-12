@@ -7,6 +7,13 @@ export type EconomicDocumentExclusion = {
   cancelled: boolean;
 };
 
+function formatExclusionDate(value: string): string {
+  if (!/^\d{4}-\d{2}-\d{2}$/.test(value)) return value;
+  return new Intl.DateTimeFormat('en-IN', {
+    day: 'numeric', month: 'short', year: 'numeric', timeZone: 'UTC',
+  }).format(new Date(`${value}T00:00:00Z`));
+}
+
 export function EconomicDocumentExclusions({ documents, total }: {
   documents: EconomicDocumentExclusion[];
   total: number;
@@ -24,7 +31,7 @@ export function EconomicDocumentExclusions({ documents, total }: {
     <ul className="mt-2 grid gap-2">
       {documents.map((document, index) => <li key={`${document.sourceId}-${document.revision}-${index}`} className="min-w-0 rounded-lg border border-sf-line-soft p-3">
         <dl className="grid min-w-0 gap-1 break-words text-xs leading-5 sm:grid-cols-[auto_1fr] sm:gap-x-2">
-          <dt className="font-semibold">Date:</dt><dd className="min-w-0 break-all">{document.date}</dd>
+          <dt className="font-semibold">Date:</dt><dd className="min-w-0 break-all">{formatExclusionDate(document.date)}</dd>
           <dt className="font-semibold">Voucher type:</dt><dd className="min-w-0 break-words">{document.voucherType}</dd>
           <dt className="font-semibold">Source:</dt><dd className="min-w-0 break-all">{document.sourceId}</dd>
           <dt className="font-semibold">Revision:</dt><dd className="min-w-0 break-all">{document.revision}</dd>

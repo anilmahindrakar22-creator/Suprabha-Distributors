@@ -106,7 +106,7 @@ async function mockWorkspace(page: Page, body = economicsData()) {
     : route.fulfill({ json: { ok: true } }));
   await page.goto('/?view=instrument-economics');
   await expect(page.getByRole('heading', { name: 'Instrument economics' })).toBeVisible();
-  await expect(page.getByText('Business date: 2026-10-09 (Asia/Kolkata).', { exact: false })).toBeVisible();
+  await expect(page.getByText('Business date 9 Oct 2026', { exact: false })).toBeVisible();
 }
 
 test('proposed reagent totals say pending approval instead of zero sales or no billed items', async ({ page }, testInfo) => {
@@ -143,7 +143,7 @@ test('proposal review shows net investment and the placement-start baseline befo
   await expect(proposal.getByText('₹3,50,000.00', { exact: true })).toBeVisible();
   await expect(proposal.getByText('₹10,000.00', { exact: true })).toBeVisible();
   await expect(proposal.getByText('35 months', { exact: true })).toBeVisible();
-  await expect(proposal.getByText('Approval baseline from 2025-01-01.', { exact: true })).toBeVisible();
+  await expect(proposal.getByText('Approval baseline from 1 Jan 2025.', { exact: true })).toBeVisible();
   await page.getByRole('combobox', { name: 'Decision', exact: true }).selectOption('approved');
   await page.getByLabel('Decision reason', { exact: true }).fill('Verified net investment and start baseline');
   expect(await page.evaluate(() => document.documentElement.scrollWidth <= window.innerWidth)).toBe(true);
@@ -388,7 +388,7 @@ test('portfolio shows API health colors, reporting dates and fits the browser vi
   await expect(cards.getByText('Watch', { exact: true }).first()).toHaveClass(/text-amber-900/);
   await expect(cards.getByText('Data incomplete', { exact: true }).first()).toHaveClass(/text-slate-700/);
   await expect(cards.getByText('Proposed', { exact: true }).first()).toHaveClass(/text-blue-800/);
-  await expect(page.getByText('Tally data imported', { exact: false })).toBeVisible();
+  await expect(page.getByText('Tally data from', { exact: false })).toBeVisible();
   const widths = await page.evaluate(() => ({ viewport: document.documentElement.clientWidth, document: document.documentElement.scrollWidth }));
   expect(widths.document).toBeLessThanOrEqual(widths.viewport);
   for (const name of ['Instruments', 'To do', 'Set up', 'Advanced']) {
@@ -404,21 +404,21 @@ test('portfolio filters intersect status, type and search and keep details align
   const data = economicsData();
   await mockWorkspace(page, economicsData({ targets: [...data.targets, { ...target, id: 'group-1', kind: 'group', name: 'Shared analyzer group', health: 'critical' }] }));
   await page.getByLabel('Status', { exact: true }).selectOption('critical');
-  await expect(page.getByText('2 of 4 targets')).toBeVisible();
+  await expect(page.getByText('2 of 4 instruments')).toBeVisible();
   await page.getByLabel('Type', { exact: true }).selectOption('group');
-  await expect(page.getByText('1 of 4 targets')).toBeVisible();
+  await expect(page.getByText('1 of 4 instruments')).toBeVisible();
   await expect(page.getByRole('heading', { name: 'Shared analyzer group · sales' })).toBeVisible();
-  await page.getByLabel('Search targets', { exact: true }).fill('missing site');
+  await page.getByLabel('Search instruments', { exact: true }).fill('missing site');
   await expect(page.getByRole('heading', { name: 'No matching instruments' })).toBeVisible();
   await expect(page.getByRole('region', { name: 'Instrument sales' })).toHaveCount(0);
-  await page.getByLabel('Search targets', { exact: true }).fill('ALPHA LABORATORY');
-  await expect(page.getByText('1 of 4 targets')).toBeVisible();
+  await page.getByLabel('Search instruments', { exact: true }).fill('ALPHA LABORATORY');
+  await expect(page.getByText('1 of 4 instruments')).toBeVisible();
   await page.getByRole('button', { name: 'Reset filters', exact: true }).focus();
   await page.keyboard.press('Enter');
-  await expect(page.getByLabel('Search targets', { exact: true })).toHaveValue('');
+  await expect(page.getByLabel('Search instruments', { exact: true })).toHaveValue('');
   await expect(page.getByLabel('Status', { exact: true })).toHaveValue('all');
   await expect(page.getByLabel('Type', { exact: true })).toHaveValue('all');
-  await expect(page.getByText('4 of 4 targets')).toBeVisible();
+  await expect(page.getByText('4 of 4 instruments')).toBeVisible();
   await expect(page.getByRole('button', { name: 'Reset filters', exact: true })).toHaveCount(0);
   expect(await page.evaluate(() => document.documentElement.scrollWidth <= window.innerWidth)).toBe(true);
 });
@@ -830,8 +830,8 @@ test.describe('Indian evidence timestamp display', () => {
     await openAdvanced(page, 'Reports');
     const coverage = page.getByRole('region', { name: 'Economics data coverage' });
     await expect(coverage).toContainText('1 Oct 2026');
-    await expect(coverage).toContainText('12:00:00 am IST');
-    await expect(coverage).toContainText('Figures recalculated 1 Oct 2026, 12:01:00 am IST');
+    await expect(coverage).toContainText('12:00 am');
+    await expect(coverage).toContainText('Figures recalculated 1 Oct 2026, 12:01 am');
   });
 });
 
@@ -1059,7 +1059,7 @@ test('monthly item GP breakdown shows unique billed items and partial costs with
   await expect(region).toBeVisible();
   await expect(region.getByText('Unique billed items', { exact: true })).toBeVisible();
   await expect(region.locator('dd').first()).toHaveText('3');
-  await expect(region.getByText('2026-09-01 to 2026-10-01 (end date exclusive)', { exact: false })).toBeVisible();
+  await expect(region.getByText('September 2026', { exact: false })).toBeVisible();
   await expect(region.getByRole('table').getByRole('row')).toHaveCount(4);
   const a = region.getByRole('row').filter({ hasText: 'reagent-a' });
   await expect(a.getByText('0.8 pack', { exact: true })).toBeVisible();
