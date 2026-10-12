@@ -158,3 +158,36 @@ Each element was checked against that rule:
   - "Large gap, low share: plan a management visit";
   - "Top buyer without an estimate: ask for the monthly spend";
   - "Estimate below actual sales: re-estimate".
+
+## 12. Alignment with the saved Suprabha 80 architecture (13 Oct 2026)
+Compared against `SUPRABHA80-UI-FUNCTIONAL-TECHNICAL-SPEC.md` (approved) and `SUPRABHA80-PROFITABLE-WALLET-CAPTURE.md`.
+
+**What matches the spec:**
+- Wallet estimates that are effective-dated, show method and confidence, never invent values, and keep a history (FR-02, FR-16).
+- Map geography belongs to the canonical customer, not to opportunities (MAP-FR-04/05).
+- One module, no new services; reads are kept separate from transactions (§11).
+- The Coverage queues (§9).
+- The build order: spec §23 step 4, "wallet snapshots and division coverage as read-only intelligence".
+
+**Gaps to correct:**
+1. **Front door.** The spec's landing screen is the **Action Center**, a ranked list of actions with expected GP, constraint, owner and due date. It is not a wallet list. Market's list is the spec's **Accounts** view and must not become the end state.
+2. **Account-level estimate.**
+   - The spec keeps an account-level wallet snapshot (FR-02) with an *optional* division breakdown, and shows the difference instead of forcing totals to balance (FR-03). Today we force division-level entry.
+   - Planned: allow a total-only estimate; the division breakdown is optional; show "₹X not assigned to a division".
+3. **Evidence fields.** FR-02 asks for source period, evidence and verifier. Planned: add optional `evidence` and a "Verified by / on" action. The entry note stays.
+4. **Division list.**
+   - The spec lists Biochemistry, Haematology, Immunoassay, Molecular, Microbiology, Rapid, Coagulation, Electrolytes and Others, or configured divisions.
+   - Our seed has Urine and lacks Molecular, Microbiology and Rapid. Divisions are editable in the app, so align the seed with the spec (owner to confirm Urine).
+5. **Potential customers.** The spec has no prospect concept, and FR-01 forbids a duplicate customer master. So prospects must live in the **canonical Customer domain**: a customer row with no Tally ledger, marked *prospect*, linked by a person when the first Tally invoice appears. They must not be a separate Suprabha 80 table.
+6. **Account workspace columns (§5).** Our sales, share, untapped, GP, confidence, main constraint and recommended action. The first four need W2b; GP follows the Pricing and Economics permissions.
+7. **Map (§26):** four modes over one map (Wallet, Opportunity, Action, Coverage), with list and map as two views of the same records. Our town-level Wallet map is the right first step. The Opportunity and Action modes need the opportunity and action records.
+8. **Timing.** The spec places this after the pricing pilot. The owner chose to start design and backend now; the release still waits.
+
+**Revised order (follows spec §23):**
+1. W2b: our Tally sales → untapped gap and share (the gate).
+2. Account workspace: division matrix with sales, share, untapped and GP; a total-only estimate; evidence and verification.
+3. Prospects in the Customer domain.
+4. Town-level Market map, Wallet and Coverage modes. Tapping a town lists its accounts; tapping an account opens the Account workspace.
+5. Opportunities and constraint diagnosis (FR-04/05, deterministic).
+6. The Action Center becomes the landing screen, plus the map's Action mode.
+7. Outcome review and learning.
