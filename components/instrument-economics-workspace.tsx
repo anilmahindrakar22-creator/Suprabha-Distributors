@@ -19,6 +19,13 @@ import { readJsonBody } from '@/lib/http-json';
 
 type EconomicsWorkspaceData = BaseEconomicsWorkspaceData & { canAdministrator?: boolean };
 
+export function economicCommandNotice(body: { autoApproved?: { paybackMonths?: number | string; attractiveMonths?: number } }): string {
+  const payback = Number(body.autoApproved?.paybackMonths);
+  return body.autoApproved && Number.isFinite(payback)
+    ? `Saved. Approved automatically: payback ${payback.toFixed(1)} months (within ${body.autoApproved.attractiveMonths}).`
+    : 'Saved. Workspace refreshed with the latest records.';
+}
+
 function startLoadMeasurement() {
   try {
     for (const name of ['sf-economics-fetch-start', 'sf-economics-parsed', 'sf-economics-rendered']) performance.clearMarks(name);
@@ -663,8 +670,8 @@ export function InstrumentEconomicsWorkspace({ embedded = false }: { embedded?: 
         setError(body.error || 'Financial access is no longer available. Sign in with the original account and refresh.');
         return;
       }
-      let body: { error?: string };
-      try { body = await response.json() as { error?: string }; }
+      let body: { error?: string; autoApproved?: { paybackMonths?: number | string; attractiveMonths?: number } };
+      try { body = await response.json() as { error?: string; autoApproved?: { paybackMonths?: number | string; attractiveMonths?: number } }; }
       catch { pendingCommand.current = commandToSend; setUnresolved(true); setError('The server response could not be read, so the result is unknown. Retry the saved command with the same request key.'); return; }
       if (!response.ok) {
         const transient = response.status === 429 || response.status >= 500;
@@ -673,7 +680,7 @@ export function InstrumentEconomicsWorkspace({ embedded = false }: { embedded?: 
         return;
       }
       clearEconomicRecoveryReference(window.sessionStorage); recoveryReference.current = null;
-      pendingCommand.current = null; setHasSavedPayload(false); retryKey.current = null; setSavedCommandActor(null); setUnresolved(false); setNotice('Saved. Workspace refreshed with the latest records.'); if (commandToSend.form?.isConnected) commandToSend.form.reset(); await load();
+      pendingCommand.current = null; setHasSavedPayload(false); retryKey.current = null; setSavedCommandActor(null); setUnresolved(false); setNotice(economicCommandNotice(body)); if (commandToSend.form?.isConnected) commandToSend.form.reset(); await load();
     } catch (cause) {
       pendingCommand.current = commandToSend; setUnresolved(true); setError(`${cause instanceof Error ? cause.message : 'Network error'} The result is unknown. Retry the saved command with the same request key.`);
     } finally { busyRef.current = false; setBusy(false); }

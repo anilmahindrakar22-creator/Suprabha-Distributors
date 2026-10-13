@@ -1,7 +1,7 @@
 import { describe, expect, it, vi } from 'vitest';
 vi.mock('next/link', () => ({ default: 'a' }));
 import { renderToStaticMarkup } from 'react-dom/server';
-import { EconomicActionOptions, ProposedTargetReview, EconomicApprovalPreview, EconomicHealthBadge, EconomicTargetAdvancedDetails, EconomicTargetCard, InstrumentEconomicsWorkspace, ItemGpBreakdown, reagentLifetime, reportingPeriodLabel } from '@/components/instrument-economics-workspace';
+import { EconomicActionOptions, ProposedTargetReview, EconomicApprovalPreview, EconomicHealthBadge, EconomicTargetAdvancedDetails, EconomicTargetCard, InstrumentEconomicsWorkspace, economicCommandNotice, ItemGpBreakdown, reagentLifetime, reportingPeriodLabel } from '@/components/instrument-economics-workspace';
 import { capitalBeyondManagementReview } from '@/components/instrument-economics-evidence-forms';
 import type { EconomicTarget } from '@/lib/instrument-economics-types';
 
@@ -14,6 +14,12 @@ const target: EconomicTarget = {
 };
 
 describe('instrument economics presentation', () => {
+  it('formats automatic approval notices and falls back for absent or invalid payback', () => {
+    expect(economicCommandNotice({ autoApproved: { paybackMonths: '23.456', attractiveMonths: 24 } })).toBe('Saved. Approved automatically: payback 23.5 months (within 24).');
+    expect(economicCommandNotice({ autoApproved: { paybackMonths: 24, attractiveMonths: 24 } })).toBe('Saved. Approved automatically: payback 24.0 months (within 24).');
+    expect(economicCommandNotice({})).toBe('Saved. Workspace refreshed with the latest records.');
+    expect(economicCommandNotice({ autoApproved: { paybackMonths: 'x', attractiveMonths: 24 } })).toBe('Saved. Workspace refreshed with the latest records.');
+  });
   it('offers the policy action only to administrators', () => {
     const management = renderToStaticMarkup(<EconomicActionOptions data={{ canAdministrator: false }} />);
     expect(management).not.toContain('value="set_policy"');

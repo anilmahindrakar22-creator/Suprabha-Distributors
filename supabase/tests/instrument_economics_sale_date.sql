@@ -1,4 +1,5 @@
 begin;
+insert into private.stockflow_economic_policy_versions(actor,reason,automatic_approval) values('test','Manual approval path fixture',false);
 update private.stockflow_gateway_config set secret_sha256=encode(extensions.digest('sale-date-key','sha256'),'hex') where name='orders';
 insert into public.stockflow_members(email,role,status) values('sale-date-manager@test.local','management','active');
 insert into public.stockflow_snapshots(id,company,fetched_at,payload) values('suprabha','SUPRABHA DISTRIBUTORS',now()::text,'{"catalog":[]}'::jsonb) on conflict(id) do nothing;

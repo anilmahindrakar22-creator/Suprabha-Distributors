@@ -10,6 +10,7 @@ insert into private.stockflow_orders(id,order_number,customer_id,customer_name,s
 insert into private.stockflow_equipment_installations(id,order_id,tally_key,item_name,status,scheduled_date,serial_number,created_by_email,completed_at)
  values('d0400000-0000-4000-8000-000000000003','d0400000-0000-4000-8000-000000000002','d04-equipment','D04 instrument','completed',private.stockflow_economic_business_date()-60,'D04-SERIAL','test',now());
 insert into private.stockflow_economic_policy_versions(review_months,exception_months,actor,reason) values(36,48,'test','D04 explicit policy fixture');
+insert into private.stockflow_economic_policy_versions(actor,reason,automatic_approval) values('test','Manual approval path fixture',false);
 
 do $test$
 declare v_command text; v_scenario integer; v_months integer; v_initial_months integer; v_actor text; v_flag boolean; v_expected_message text;

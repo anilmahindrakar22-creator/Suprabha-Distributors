@@ -5,6 +5,7 @@ insert into public.stockflow_snapshots(id,company,fetched_at,payload) values('su
 insert into private.stockflow_customers(id,name,tally_key,created_by_email) values('aaaaaaaa-eeee-4eee-8eee-eeeeeeeeeeee','Group fixture customer','group-fixture-customer','test');
 -- This suite covers the manual purchase-cost path; automatic costing has its own suite.
 insert into private.stockflow_economic_policy_versions(actor,reason,automatic_purchase_cost) values('test','Manual purchase-cost verification path fixture',false);
+insert into private.stockflow_economic_policy_versions(actor,reason,automatic_approval) values('test','Manual approval path fixture',false);
 insert into private.stockflow_orders(id,order_number,customer_id,customer_name,source,status,created_by_email,updated_by_email,idempotency_key) values('aaaaaaaa-eeee-4eee-8eee-eeeeeeeeeeed','GROUP-TEST-ORDER','aaaaaaaa-eeee-4eee-8eee-eeeeeeeeeeee','Group fixture customer','phone','delivered','test','test','group-order-fixture');
 insert into private.stockflow_equipment_installations(id,order_id,tally_key,item_name,status,scheduled_date,serial_number,created_by_email,completed_at) values('aaaaaaaa-eeee-4eee-8eee-eeeeeeeeeeec','aaaaaaaa-eeee-4eee-8eee-eeeeeeeeeeed','group-instrument','Group instrument','completed',private.stockflow_economic_business_date()-60,'GROUP-SERIAL','test',now()-interval '60 days');
 
