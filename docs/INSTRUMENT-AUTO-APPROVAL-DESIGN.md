@@ -13,6 +13,10 @@ A proposed placement (or group) is approved automatically when **all** hold, eva
 
 25–36 months stays with Management, 37–48 with an Administrator (D-04), > 48 blocked. Only an Administrator can change the bands (D-04).
 
+**Switch:** `automatic_approval` on the policy versions (latest non-null value, default on), the same pattern as `automatic_purchase_cost`. Off restores manual-only approval. No screen control yet.
+
+**Built:** branch `claude/auto-approval` (`af6e783`), migration `20261013130000_instrument_auto_approval.sql`.
+
 ## When it is checked
 At the end of these target-scoped commands, after the existing rebuild, in the same transaction:
 `set_expectation`, `record_capital`, `review_acquisition`, `link_instrument_billing`, `set_group_members`.
