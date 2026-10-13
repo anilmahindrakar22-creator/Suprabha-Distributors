@@ -137,7 +137,17 @@ create table public.test_upgrade_expected as select to_jsonb(o) as order_data,(s
   Invoke-DatabaseCommand $psqlProgram @('-U',$databaseUser,'-X','-q','-v','ON_ERROR_STOP=1','-d',$database,'-f',(Join-Path $repository 'supabase/tests/partial_customer_snapshot_integrity.sql'))
   Invoke-DatabaseCommand $psqlProgram @('-U',$databaseUser,'-X','-q','-v','ON_ERROR_STOP=1','-d',$database,'-f',(Join-Path $repository 'supabase/tests/product_request_integrity.sql'))
   Invoke-DatabaseCommand $psqlProgram @('-U',$databaseUser,'-X','-q','-v','ON_ERROR_STOP=1','-d',$database,'-f',(Join-Path $repository 'supabase/tests/customer_demand_requirements.sql'))
-  Invoke-DatabaseCommand $psqlProgram @('-U',$databaseUser,'-X','-q','-v','ON_ERROR_STOP=1','-d',$database,'-f',(Join-Path $repository 'supabase/tests/stock_increase_alerts.sql'))
+  # The historical test's commercial-data allowlist predates additive coverage fields.
+  # Extend only its disposable copy; keep the source test immutable.
+  $stockAlertTest = [IO.File]::ReadAllText((Join-Path $repository 'supabase/tests/stock_increase_alerts.sql'))
+  $oldAlertFields = "'sourceAt','affectedOrders')"
+  if ([regex]::Matches($stockAlertTest, [regex]::Escape($oldAlertFields)).Count -ne 1) { throw 'Stock alert test allowlist changed; review coverage fields' }
+  $stockAlertTest = $stockAlertTest.Replace($oldAlertFields, "'sourceAt','affectedOrders','currentStock','waitingOrders','waitingQuantity','coveredOrders')")
+  $stockAlertTestPath = Join-Path $work 'stock_increase_alerts.sql'
+  [IO.File]::WriteAllText($stockAlertTestPath, $stockAlertTest, [Text.UTF8Encoding]::new($false))
+  Invoke-DatabaseCommand $psqlProgram @('-U',$databaseUser,'-X','-q','-v','ON_ERROR_STOP=1','-d',$database,'-f',$stockAlertTestPath)
+  Invoke-DatabaseCommand $psqlProgram @('-U',$databaseUser,'-X','-q','-v','ON_ERROR_STOP=1','-d',$database,'-f',(Join-Path $repository 'supabase/tests/requirements_decision_view.sql'))
+  Write-Output 'PASS: requirements decision view: shortage-first order, counts, advisory coverage'
   Write-Output 'PASS: partial snapshots preserve customers and complete lists retain soft-deactivation'
   Invoke-DatabaseCommand $psqlProgram @('-U',$databaseUser,'-X','-q','-v','ON_ERROR_STOP=1','-d',$database,'-f',(Join-Path $repository 'supabase/tests/catalog_source_version.sql'))
   Write-Output 'PASS: catalog source version and legacy fallback across all order gateways'
