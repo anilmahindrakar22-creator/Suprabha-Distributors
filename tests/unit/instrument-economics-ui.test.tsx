@@ -1,7 +1,7 @@
 import { describe, expect, it, vi } from 'vitest';
 vi.mock('next/link', () => ({ default: 'a' }));
 import { renderToStaticMarkup } from 'react-dom/server';
-import { ProposedTargetReview, EconomicApprovalPreview, EconomicHealthBadge, EconomicTargetAdvancedDetails, EconomicTargetCard, InstrumentEconomicsWorkspace, ItemGpBreakdown, reagentLifetime, reportingPeriodLabel } from '@/components/instrument-economics-workspace';
+import { EconomicActionOptions, ProposedTargetReview, EconomicApprovalPreview, EconomicHealthBadge, EconomicTargetAdvancedDetails, EconomicTargetCard, InstrumentEconomicsWorkspace, ItemGpBreakdown, reagentLifetime, reportingPeriodLabel } from '@/components/instrument-economics-workspace';
 import { capitalBeyondManagementReview } from '@/components/instrument-economics-evidence-forms';
 import type { EconomicTarget } from '@/lib/instrument-economics-types';
 
@@ -14,6 +14,13 @@ const target: EconomicTarget = {
 };
 
 describe('instrument economics presentation', () => {
+  it('offers the policy action only to administrators', () => {
+    const management = renderToStaticMarkup(<EconomicActionOptions data={{ canAdministrator: false }} />);
+    expect(management).not.toContain('value="set_policy"');
+    expect(management).toContain('value="set_expectation"');
+    const administrator = renderToStaticMarkup(<EconomicActionOptions data={{ canAdministrator: true }} />);
+    expect(administrator).toContain('<option value="set_policy">Set policy version</option>');
+  });
   it('gates capital increases using approved GP and exact paise at the review boundary', () => {
     const approved = { ...target, capitalPaise: '30000000', instrumentBillingPaise: '0', investmentReview: { status: 'within_limit' as const, expectedMonthlyGpPaise: '1000000', expectedPaybackMonths: 30, netInvestmentPaise: '30000000', expectationId: 'original', policyId: 'policy', reviewMonths: 36, exceptionMonths: 48 } };
     expect(capitalBeyondManagementReview(approved, BigInt(6000000), 36)).toBe(false);

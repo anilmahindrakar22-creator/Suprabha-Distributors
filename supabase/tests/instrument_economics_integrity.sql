@@ -56,7 +56,7 @@ begin
     if changed_action='set_expectation' then
      perform public.stockflow_economics_gateway('economic-test-key','economic-manager@test.local',changed_action,jsonb_build_object('targetId',target,'effectiveFrom',period-10,'monthlyRevenuePaise','6000000','monthlyGpPaise','2000000','reason','Changed assumption while reviewer is reading','idempotencyKey','approval-stale-baseline'));
     elsif changed_action='set_policy' then
-     perform public.stockflow_economics_gateway('economic-test-key','economic-manager@test.local',changed_action,'{"attractiveMonths":24,"reviewMonths":35,"exceptionMonths":48,"forecastWindowMonths":3,"watchRevenuePercent":80,"criticalRevenuePercent":50,"reason":"Policy changed while reviewer is reading","idempotencyKey":"approval-stale-policy"}');
+     perform public.stockflow_economics_gateway('economic-test-key','economic-administrator@test.local',changed_action,'{"attractiveMonths":24,"reviewMonths":35,"exceptionMonths":48,"forecastWindowMonths":3,"watchRevenuePercent":80,"criticalRevenuePercent":50,"reason":"Policy changed while reviewer is reading","idempotencyKey":"approval-stale-policy"}');
     else
      perform public.stockflow_economics_gateway('economic-test-key','economic-manager@test.local',changed_action,jsonb_build_object('targetId',target,'kind','capital','amountPaise','100000','effectiveDate',period,'reason','Additional capital while reviewer is reading','idempotencyKey','approval-stale-capital'));
     end if;
@@ -110,7 +110,7 @@ begin
  -- Healthy revenue cannot hide slow payback based on verified actual GP.
  declare saved_forecast_doc jsonb:=doc; revised_purchase uuid; cost_value bigint; source_rev integer:=1; expected_months numeric; expected_health text;
  begin
-  perform public.stockflow_economics_gateway('economic-test-key','economic-manager@test.local','set_policy',jsonb_build_object('attractiveMonths',24,'reviewMonths',36,'exceptionMonths',48,'forecastWindowMonths',1,'watchRevenuePercent',80,'criticalRevenuePercent',50,'reason','One completed-month actual forecast health fixture','idempotencyKey','economic-actual-forecast-policy'));
+  perform public.stockflow_economics_gateway('economic-test-key','economic-administrator@test.local','set_policy',jsonb_build_object('attractiveMonths',24,'reviewMonths',36,'exceptionMonths',48,'forecastWindowMonths',1,'watchRevenuePercent',80,'criticalRevenuePercent',50,'reason','One completed-month actual forecast health fixture','idempotencyKey','economic-actual-forecast-policy'));
   foreach cost_value in array array[3750000::bigint,4500000::bigint,5000000::bigint] loop
    source_rev:=source_rev+1;
    expected_months:=case when cost_value=3750000 then 43 when cost_value=4500000 then 109 else null end;
@@ -184,7 +184,7 @@ begin
   if not exists(select 1 from private.stockflow_economic_audit a join private.stockflow_economic_audit original on original.action='approve_target' and original.entity_id=target and original.payload->>'decision'='approved' where a.action='record_capital' and a.payload->>'idempotencyKey'='economic-capital-review-fixture' and a.payload->>'approvalExpectationId'=original.payload->>'approvalExpectationId') then raise exception 'Capital increase substituted a later planning version for the approved baseline';end if;
   workspace:=private.stockflow_economic_workspace(array['management']);
   if not exists(select 1 from jsonb_array_elements(workspace->'targets') t where t->>'id'=target::text and t->>'health'='watch' and t->'investmentReview'->>'status'='review_required' and (t->'investmentReview'->>'expectedPaybackMonths')::numeric=36) then raise exception 'Portfolio health hid a current investment review threshold';end if;
-  perform public.stockflow_economics_gateway('economic-test-key','economic-manager@test.local','set_policy',jsonb_build_object('attractiveMonths',20,'reviewMonths',30,'exceptionMonths',35,'forecastWindowMonths',3,'watchRevenuePercent',80,'criticalRevenuePercent',50,'reason','Review existing investment against tighter policy','idempotencyKey','economic-capital-health-policy'));
+  perform public.stockflow_economics_gateway('economic-test-key','economic-administrator@test.local','set_policy',jsonb_build_object('attractiveMonths',20,'reviewMonths',30,'exceptionMonths',35,'forecastWindowMonths',3,'watchRevenuePercent',80,'criticalRevenuePercent',50,'reason','Review existing investment against tighter policy','idempotencyKey','economic-capital-health-policy'));
   workspace:=private.stockflow_economic_workspace(array['management']);
   if not exists(select 1 from jsonb_array_elements(workspace->'targets') t where t->>'id'=target::text and t->>'health'='critical' and t->'investmentReview'->>'status'='limit_exceeded') then raise exception 'Portfolio health hid a current investment absolute limit';end if;
   raise exception using errcode='ZT010',message='Rollback capital approval fixture';
@@ -480,7 +480,7 @@ begin
     perform public.stockflow_economics_gateway('economic-test-key','economic-manager@test.local','set_expectation',jsonb_build_object('targetId',billing_pool,'effectiveFrom',private.stockflow_economic_business_date(),'monthlyRevenuePaise','6000000','monthlyGpPaise','5000000','reason','New planning assumption must not replace original approval','idempotencyKey','economic-billing-revised-plan'));
     workspace:=private.stockflow_economic_workspace(array['management']);
     if not exists(select 1 from jsonb_array_elements(workspace->'targets') t where t->>'id'=billing_pool::text and t->'investmentReview'->>'expectedMonthlyGpPaise'='1000000' and (t->'investmentReview'->>'expectedPaybackMonths')::numeric=40) then raise exception 'New expectation silently replaced approval baseline in investment review';end if;
-    perform public.stockflow_economics_gateway('economic-test-key','economic-manager@test.local','set_policy',jsonb_build_object('attractiveMonths',20,'reviewMonths',30,'exceptionMonths',39,'forecastWindowMonths',3,'watchRevenuePercent',80,'criticalRevenuePercent',50,'reason','Current versioned policy threshold review','idempotencyKey','economic-billing-revised-policy'));
+    perform public.stockflow_economics_gateway('economic-test-key','economic-administrator@test.local','set_policy',jsonb_build_object('attractiveMonths',20,'reviewMonths',30,'exceptionMonths',39,'forecastWindowMonths',3,'watchRevenuePercent',80,'criticalRevenuePercent',50,'reason','Current versioned policy threshold review','idempotencyKey','economic-billing-revised-policy'));
     workspace:=private.stockflow_economic_workspace(array['management']);
     if not exists(select 1 from jsonb_array_elements(workspace->'targets') t where t->>'id'=billing_pool::text and t->'investmentReview'->>'status'='limit_exceeded' and t->'investmentReview'->>'exceptionMonths'='39') then raise exception 'Investment review ignored current policy version';end if;
     raise exception using errcode='ZT012',message='Rollback revised planning/policy fixture';

@@ -109,6 +109,18 @@ async function mockWorkspace(page: Page, body = economicsData()) {
   await expect(page.getByText('Business date 9 Oct 2026', { exact: false })).toBeVisible();
 }
 
+test('only administrators see the policy action', async ({ page }) => {
+  await mockWorkspace(page, economicsData({ canAdministrator: false }));
+  await openAdvanced(page);
+  await expect(page.getByLabel('Action', { exact: true }).locator('option[value="set_policy"]')).toHaveCount(0);
+  await page.unroute('**/api/instrument-economics');
+  await mockWorkspace(page, economicsData({ canAdministrator: true }));
+  await openAdvanced(page);
+  await expect(page.getByLabel('Action', { exact: true }).locator('option[value="set_policy"]')).toHaveCount(1);
+  await page.getByLabel('Action', { exact: true }).selectOption('set_policy');
+  await expect(page.getByLabel('Management can approve up to (months)', { exact: true })).toBeVisible();
+});
+
 test('proposed reagent totals say pending approval instead of zero sales or no billed items', async ({ page }, testInfo) => {
   await mockWorkspace(page, economicsData({ targets: [{ ...target, approval: 'proposed', health: 'proposed', expectation: null, revenuePaise: '0', knownGpPaise: '0', forecastMonths: null, itemBreakdown: [] }] }));
   await expect(page.getByText('Waiting for approval in Set up.', { exact: false })).toBeVisible();
