@@ -22,10 +22,10 @@ Superseded content is named, never silently deleted.
 | 0007 | Wallet model: account snapshot + optional division split | Accepted (division list partly open) |
 | 0008 | One Opportunity entity shared by Suprabha 80 and Power Maps | Proposed |
 | 0009 | Prospects are Customer-domain accounts | Proposed |
-| 0010 | Master roadmap Phases 0–8 replace older orderings | Proposed |
+| 0010 | Master roadmap Phases 0–8 replace older orderings | **Accepted** (owner, 13 Oct) |
 | 0011 | Instruments: four distinct concerns, one installed-base register | Proposed |
 | 0012 | Account stage ≠ action type | Proposed |
-| 0013 | Role names in code are canonical | Accepted (fact) + decision required (director) |
+| 0013 | Role names in code are canonical | Accepted; director tier = administrator (owner, 13 Oct) |
 | 0014 | Deterministic, versioned scoring; no unvalidated weights | Proposed |
 | 0015 | Commercial visit planning is separate from delivery routing | Accepted |
 | 0016 | Derived data carries provenance; missing ≠ zero | Accepted |
@@ -137,7 +137,7 @@ It is shown as a graph plus a list view.
 - Never auto-merged by name.
 
 ## ADR-0010: Master roadmap Phases 0–8 replace older orderings
-**Status:** Proposed. **Sources:** owner brief phases; [MASTER-ROADMAP](../planning/MASTER-ROADMAP.md).
+**Status:** Accepted (owner, 13 Oct 2026; D-09). **Sources:** owner brief phases; [MASTER-ROADMAP](../planning/MASTER-ROADMAP.md).
 
 **Decision (proposed):**
 - Phases 0–8 become the only roadmap.
