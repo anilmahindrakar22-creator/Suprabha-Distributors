@@ -15,7 +15,6 @@ do $test$
 declare v_command text; v_scenario integer; v_months integer; v_initial_months integer; v_actor text; v_flag boolean; v_expected_message text;
  v_day date:=private.stockflow_economic_business_date()-30; v_target uuid; v_purchase uuid; v_response jsonb; v_payload jsonb; v_doc jsonb; v_before_events integer; v_before_reviews integer; v_before_audit integer;
 begin
- if (public.stockflow_economics_gateway('d04-test-key','d04-management@test.local','get_instrument_economics','{}')->>'canAdministrator')::boolean is distinct from false or (public.stockflow_economics_gateway('d04-test-key','d04-administrator@test.local','get_instrument_economics','{}')->>'canAdministrator')::boolean is distinct from true then raise exception 'D04 workspace administrator permission is incorrect';end if;
  -- Keep the policy success isolated so the existing approval scenarios retain their 36-month boundary.
  begin
   v_payload:='{"attractiveMonths":24,"reviewMonths":40,"exceptionMonths":48,"forecastWindowMonths":3,"watchRevenuePercent":80,"criticalRevenuePercent":50,"reason":"D04 policy authorization","idempotencyKey":"d04-policy-fixture"}'::jsonb;

@@ -19,6 +19,14 @@ import { readJsonBody } from '@/lib/http-json';
 
 type EconomicsWorkspaceData = BaseEconomicsWorkspaceData & { canAdministrator?: boolean };
 
+function startLoadMeasurement() {
+  try {
+    for (const name of ['sf-economics-fetch-start', 'sf-economics-parsed', 'sf-economics-rendered']) performance.clearMarks(name);
+    performance.clearMeasures('sf-economics-load');
+    return performance.now();
+  } catch { return null; } // Optional measurement must not block the workspace.
+}
+
 type Health = EconomicTarget['health'];
 const healthStyle: Record<Health, string> = {
   healthy: 'border-emerald-200 bg-emerald-50 text-emerald-800', watch: 'border-amber-200 bg-amber-50 text-amber-900',
@@ -201,7 +209,7 @@ function InvestmentRecovery({ target }: { target: EconomicTarget }) {
   const percent = pending ? null : recoveryPercent(recovered, investment);
   return <section aria-label="Investment and recovery" className="mt-4 rounded-xl border border-sf-line-soft p-3">
     {pending ? <p className="text-sm text-sf-muted">Investment {money(investment)} · recovery starts after approval</p> : <p className="flex flex-wrap items-baseline justify-between gap-x-3 gap-y-1"><span><span className="text-base font-extrabold text-sf-strong">{money(recovered)}</span> <span className="text-sm text-sf-muted">recovered of {money(investment)}</span></span><span className="text-sm text-sf-muted">Balance <strong className="text-sf-strong">{money(target.outstandingPaise)}</strong></span></p>}
-    {percent !== null ? <div aria-label="Recovery progress" role="img" title={`${percent}% recovered`} className="mt-2 h-2 overflow-hidden rounded-full bg-sf-line-soft"><div className={`h-full rounded-full ${percent >= 100 ? 'bg-sf-success' : 'bg-sf-accent'}`} style={{ width: `${percent}%` }} /></div> : null}
+    {percent !== null ? <figure aria-label="Recovery progress" title={`${percent}% recovered`} className="mt-2 h-2 overflow-hidden rounded-full bg-sf-line-soft"><div className={`h-full rounded-full ${percent >= 100 ? 'bg-sf-success' : 'bg-sf-accent'}`} style={{ width: `${percent}%` }} /></figure> : null}
     <details className="mt-2"><summary className="cursor-pointer text-xs font-bold text-sf-brand">Breakdown</summary>
     <dl className="mt-3 grid gap-2 sm:grid-cols-3">
       <Metric label="Investment" value={money(investment)} hint="Instrument cost less net instrument billing" />
@@ -562,31 +570,85 @@ export function InstrumentEconomicsWorkspace({ embedded = false }: { embedded?: 
   const [savedCommandActor, setSavedCommandActor] = useState<string | null>(null);
   const recoveryReference = useRef<EconomicRecoveryReference | null>(null);
   const [hasSavedPayload, setHasSavedPayload] = useState(false);
-  const load = useCallback(async (signal?: AbortSignal) => {
+  const measurementElement = useRef<HTMLElement>(null);
+  const readView = useRef<'summary' | 'full'>('summary');
+  const readSequence = useRef(0);
+  const loadMeasurement = useRef<{ data: EconomicsWorkspaceData; startedAt: number; parsedAt: number; signal?: AbortSignal; details: { serverTiming: string | null; responseBytes: number | null; targetCount: number; sourceLineCount: number | null } } | null>(null);
+  const load = useCallback(async (signal?: AbortSignal, view = readView.current) => {
+    const sequence = ++readSequence.current;
     setLoading(true);
+    loadMeasurement.current = null;
+    try { measurementElement.current?.removeAttribute('data-load-sample'); } catch { /* optional */ }
+    const startedAt = startLoadMeasurement();
     try {
-      const response = await fetch('/api/instrument-economics', { cache: 'no-store', signal });
+      const response = await fetch('/api/instrument-economics', { cache: 'no-store', signal, headers: { 'x-stockflow-economics-view': view } });
+      if (signal?.aborted || sequence !== readSequence.current) return false;
       if (response.status === 401 || response.status === 403) {
         setData(null); setSelectedId(''); setExpandedId(''); setNotice('');
         const body = await response.json().catch(() => ({})) as { error?: string };
         throw new Error(body.error || 'Financial access is no longer available. Sign in and refresh.');
       }
       const body = await readJsonBody<EconomicsWorkspaceData & { error?: string }>(response);
+      if (signal?.aborted || sequence !== readSequence.current) return false;
       if (!response.ok) throw new Error(body.error || 'Unable to load instrument economics.');
+      readView.current = body.readView === 'summary' ? 'summary' : 'full';
+      if (startedAt !== null && !signal?.aborted) {
+        try {
+          const bytes = response.headers.get('x-stockflow-response-bytes');
+          loadMeasurement.current = { data: body, startedAt, parsedAt: performance.now(), signal, details: {
+            serverTiming: response.headers.get('server-timing')?.slice(0, 1024) ?? null,
+            responseBytes: bytes && /^\d+$/.test(bytes) && Number.isSafeInteger(Number(bytes)) ? Number(bytes) : null,
+            targetCount: body.targets.length, sourceLineCount: body.sourceLineCount ?? null,
+          } };
+        } catch { /* optional */ }
+      }
       setData(body);
       try { recoveryReference.current = readEconomicRecoveryReference(window.sessionStorage); } catch (cause) { setUnresolved(true); throw cause; }
       if (recoveryReference.current) { setUnresolved(true); setSavedCommandActor(recoveryReference.current.actorEmail); }
       const savedActor = pendingCommand.current?.payload.expectedActorEmail ?? recoveryReference.current?.actorEmail;
       setError(savedActor && savedActor !== body.actorEmail ? 'A saved command belongs to another account. Sign in with the original account and refresh before retrying.' : '');
       setSelectedId(current => body.targets.some(row => row.id === current) ? current : body.targets[0]?.id ?? '');
+      if (body.readView !== 'summary' && view === 'summary' && body.targets.length === 1) setExpandedId(body.targets[0].id);
+      return true;
     }
-    catch (cause) { if (signal?.aborted) return; setError(cause instanceof Error ? cause.message : 'Unable to load instrument economics.'); }
-    finally { if (!signal?.aborted) setLoading(false); }
+    catch (cause) { if (signal?.aborted || sequence !== readSequence.current) return false; setError(cause instanceof Error ? cause.message : 'Unable to load instrument economics.'); return false; }
+    finally { if (!signal?.aborted && sequence === readSequence.current) setLoading(false); }
   }, []);
   useEffect(() => { const controller = new AbortController(); const timer = window.setTimeout(() => void load(controller.signal), 0); return () => { window.clearTimeout(timer); controller.abort(); }; }, [load]);
+  useEffect(() => {
+    const sample = loadMeasurement.current;
+    if (!sample || sample.data !== data) return;
+    const frame = requestAnimationFrame(() => {
+      if (loadMeasurement.current !== sample || sample.signal?.aborted) return;
+      loadMeasurement.current = null;
+      try {
+        const renderedAt = performance.now();
+        performance.mark('sf-economics-fetch-start', { startTime: sample.startedAt });
+        performance.mark('sf-economics-parsed', { startTime: sample.parsedAt });
+        performance.mark('sf-economics-rendered', { startTime: renderedAt });
+        performance.measure('sf-economics-load', 'sf-economics-fetch-start', 'sf-economics-rendered');
+        measurementElement.current?.setAttribute('data-load-sample', JSON.stringify({ ...sample.details,
+          durationMs: renderedAt - sample.startedAt, fetchParseMs: sample.parsedAt - sample.startedAt,
+          renderAfterParseMs: renderedAt - sample.parsedAt,
+        }));
+      } catch { /* optional */ }
+    });
+    return () => cancelAnimationFrame(frame);
+  }, [data]);
   const visibleTargets = useMemo(() => filterEconomicTargets(data?.targets ?? [], portfolioFilters), [data, portfolioFilters]);
   const selected = useMemo(() => visibleTargets.find(row => row.id === selectedId) ?? visibleTargets[0] ?? null, [visibleTargets, selectedId]);
-  const expanded = visibleTargets.length === 1 ? visibleTargets[0] : visibleTargets.find(row => row.id === expandedId) ?? null;
+  const expanded = visibleTargets.find(row => row.id === expandedId) ?? null;
+  async function openTab(name: Tab) {
+    if (loading) return;
+    if (name !== 'Instruments' && data?.readView === 'summary' && !await load(undefined, 'full')) return;
+    setTab(name);
+  }
+  async function toggleTarget(targetId: string) {
+    if (loading) return;
+    if (expandedId === targetId) { setExpandedId(''); return; }
+    if (data?.readView === 'summary' && !await load(undefined, 'full')) return;
+    setExpandedId(targetId);
+  }
   async function sendCommand(commandToSend: { action: EconomicAction; payload: Record<string, unknown>; key: string; form: HTMLFormElement | null }) {
     if (busyRef.current) return; busyRef.current = true; setBusy(true); setHasSavedPayload(true); setNotice(''); setError('');
     try {
@@ -690,9 +752,9 @@ export function InstrumentEconomicsWorkspace({ embedded = false }: { embedded?: 
   }
   const canRetrySavedCommand = !!data?.canManage && savedCommandActor === data.actorEmail && hasSavedPayload;
   const visibleTabs: Tab[] = data?.canManage ? ['Instruments', 'To do', 'Set up', 'Advanced'] : ['Instruments', 'To do'];
-  const todoCount = data ? costVerificationSaleLines(data.sourceLines ?? [], data.attributionLines ?? []).length + data.exceptions.filter(row => row.status === 'import_rejected').length : 0;
+  const todoCount = data?.readView === 'summary' ? data.todoCount ?? 0 : data ? costVerificationSaleLines(data.sourceLines ?? [], data.attributionLines ?? []).length + data.exceptions.filter(row => row.status === 'import_rejected').length : 0;
 
-  return <main className={`${embedded ? 'h-full min-h-0' : 'h-dvh'} overflow-y-auto bg-sf-page text-sf-strong`}><div className="mx-auto max-w-7xl space-y-5 p-4 sm:p-8">
+  return <main ref={measurementElement} data-economics-workspace="" className={`${embedded ? 'h-full min-h-0' : 'h-dvh'} overflow-y-auto bg-sf-page text-sf-strong`}><div className="mx-auto max-w-7xl space-y-5 p-4 sm:p-8">
     <PageHeader
       back={embedded ? undefined : <Link href="/" className="inline-flex min-h-10 items-center px-1 text-sm font-bold text-sf-accent">← Back to workspace</Link>}
       title="Instrument economics"
@@ -701,9 +763,10 @@ export function InstrumentEconomicsWorkspace({ embedded = false }: { embedded?: 
     />
     {error || unresolved ? <div role="alert" className="rounded-xl border border-red-200 bg-red-50 p-4 text-sm text-red-800">{error || 'A saved command is waiting for confirmation. Retry it with the original request key before making another change.'}{unresolved && canRetrySavedCommand ? <button type="button" disabled={busy} onClick={() => { const pending = pendingCommand.current; if (pending) void sendCommand(pending); }} className="ml-3 min-h-11 rounded-lg bg-red-800 px-3 font-bold text-white disabled:opacity-50">{busy ? 'Retrying…' : 'Retry saved command'}</button> : null}{unresolved && savedCommandActor && savedCommandActor === data?.actorEmail ? <span className="mt-3 flex flex-wrap gap-2"><button type="button" disabled={busy} onClick={() => void recoverCommand(false)} className="min-h-10 rounded-lg border border-red-300 px-3 font-bold disabled:opacity-50">Check saved command</button>{data?.canManage ? <button type="button" disabled={busy} onClick={() => void recoverCommand(true)} className="min-h-10 rounded-lg bg-red-800 px-3 font-bold text-white disabled:opacity-50">Close unresolved request</button> : null}<span className="basis-full text-xs">Closing checks the receipt first. A completed save is retained; otherwise any late delivery of this request is blocked.</span></span> : null}</div> : null}{notice ? <output className="block rounded-xl border border-emerald-200 bg-emerald-50 p-3 text-sm text-emerald-800">{notice}</output> : null}
     {data ? <p className="-mt-2 text-xs text-sf-muted">Business date {data.businessDate ? displayDate(data.businessDate) : 'unavailable'} · Tally data from {economicTimestamp(data.sourceImportedAt)}</p> : null}
-    <nav aria-label="Economics sections" className="flex gap-1 overflow-x-auto rounded-2xl border border-sf-line-soft bg-white p-1.5 [scrollbar-width:none]">{visibleTabs.map(name => <button key={name} type="button" onClick={() => setTab(name)} aria-current={tab === name ? 'page' : undefined} className={`min-h-11 flex-1 shrink-0 whitespace-nowrap rounded-xl px-2.5 py-2 text-sm font-bold ${tab === name ? 'bg-sf-brand text-white' : 'text-sf-body hover:bg-sf-soft'}`}>{name}{name === 'To do' && todoCount ? ` (${todoCount})` : ''}</button>)}</nav>
+    <nav aria-label="Economics sections" className="flex gap-1 overflow-x-auto rounded-2xl border border-sf-line-soft bg-white p-1.5 [scrollbar-width:none]">{visibleTabs.map(name => <button key={name} type="button" onClick={() => void openTab(name)} disabled={loading} aria-current={tab === name ? 'page' : undefined} className={`min-h-11 flex-1 shrink-0 whitespace-nowrap rounded-xl px-2.5 py-2 text-sm font-bold ${tab === name ? 'bg-sf-brand text-white' : 'text-sf-body hover:bg-sf-soft'}`}>{name}{name === 'To do' && todoCount ? ` (${todoCount})` : ''}</button>)}</nav>
+    {loading && data ? <output className="block text-sm text-sf-muted">Loading economics details…</output> : null}
     {loading && !data ? <div className="rounded-2xl bg-white p-8 text-sm text-sf-muted">Loading economics data…</div> : null}
-    {data && tab === 'Instruments' ? <>{data.targets.length > 2 ? <InstrumentEconomicsPortfolioFilters filters={portfolioFilters} onChange={setPortfolioFilters} total={data.targets.length} matching={visibleTargets.length} /> : null}<section aria-label="Economic targets" className="grid gap-4 xl:grid-cols-2">{visibleTargets.length ? visibleTargets.map(target => <EconomicTargetCard key={target.id} target={target} pooledInName={data.targets.find(row => row.id === target.pooledIn)?.name} selected={expanded?.id === target.id} expanded={expanded?.id === target.id} onToggle={() => setExpandedId(current => current === target.id && visibleTargets.length !== 1 ? '' : target.id)} lifetime={data.attributionLines ? reagentLifetime(target.id, data.attributionLines) : undefined} period={reportingPeriodLabel(data.reportingFrom, data.reportingTo)} onReviewCosts={() => setTab('To do')}>{target.kind === 'placement' && !target.pooledIn ? <InstrumentItems key={`${target.id}:${data.generation}`} target={target} data={data} disabled={unresolved || busy} onSubmit={submit} /> : null}<ReagentSalesList target={target} data={data} /></EconomicTargetCard>) : <Empty title={data.targets.length ? "No matching instruments" : "No instruments yet"} body={data.targets.length ? "Change the search, status or type filters to see more instruments." : "Add an instrument in Set up."} />}</section></> : null}
+    {data && tab === 'Instruments' ? <>{data.targets.length > 2 ? <InstrumentEconomicsPortfolioFilters filters={portfolioFilters} onChange={setPortfolioFilters} total={data.targets.length} matching={visibleTargets.length} /> : null}<section aria-label="Economic targets" className="grid gap-4 xl:grid-cols-2">{visibleTargets.length ? visibleTargets.map(target => <EconomicTargetCard key={target.id} target={target} pooledInName={data.targets.find(row => row.id === target.pooledIn)?.name} selected={expanded?.id === target.id} expanded={expanded?.id === target.id} onToggle={() => void toggleTarget(target.id)} lifetime={target.reagentLifetime ?? (data.attributionLines ? reagentLifetime(target.id, data.attributionLines) : undefined)} period={reportingPeriodLabel(data.reportingFrom, data.reportingTo)} onReviewCosts={() => void openTab('To do')}>{target.kind === 'placement' && !target.pooledIn ? <InstrumentItems key={`${target.id}:${data.generation}`} target={target} data={data} disabled={unresolved || busy} onSubmit={submit} /> : null}<ReagentSalesList target={target} data={data} /></EconomicTargetCard>) : <Empty title={data.targets.length ? "No matching instruments" : "No instruments yet"} body={data.targets.length ? "Change the search, status or type filters to see more instruments." : "Add an instrument in Set up."} />}</section></> : null}
     {data && tab === 'To do' ? <TodoPanel data={data} /> : null}
     {data && tab === 'Set up' ? <SetupSteps data={data} disabled={unresolved || busy} busy={busy} onSubmit={submit} /> : null}
     {data && tab === 'Advanced' && data.canManage ? <nav aria-label="Advanced sections" className="-mx-1 flex gap-2 overflow-x-auto px-1 pb-0.5 [scrollbar-width:none]">{advancedTabs.map(name => <button key={name} type="button" onClick={() => setAdvancedTab(name)} aria-current={advancedTab === name ? 'page' : undefined} className={`shrink-0 whitespace-nowrap min-h-10 rounded-lg border px-3 text-sm font-bold ${advancedTab === name ? 'border-sf-brand bg-sf-brand text-white' : 'border-sf-line bg-white text-sf-body'}`}>{name}</button>)}</nav> : null}

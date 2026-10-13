@@ -850,6 +850,30 @@
       "remoteSha256": null,
       "status": "not_deployed",
       "review": "Cross-session Orders live refresh: access-scoped canonical ID/version/status revision in existing authenticated summary. Full disposable deployment and role/concurrency replay passed; same-count replacement and invisible-order isolation regression passed. Acceptance applied as 20261011062329; hosted normalized SHA-256 matches local and private helper remains denied to authenticated/anon. Production deployment pending."
+    },
+    {
+      "localFile": "20261012184457_instrument_economics_summary_read.sql",
+      "localSha256": "e16dabba10b6bf88434d00fc2af0a5811d5f0c9560e1251919829c2762a2a0d1",
+      "remoteVersion": null,
+      "remoteSha256": null,
+      "status": "not_deployed",
+      "review": "13 October 2026: summary-first Economics uses one shared canonical calculator with guarded evidence/catalogue reads and lifetime/To do metadata. Existing full entry point and authenticated economics action retained; private helpers denied to anon/authenticated. Local parity/deferred-query/sale-date/access replay passed; final FOC/missing-cost checks recorded in the handover. No hosted application or production promotion is implied by this pending entry."
+    },
+    {
+      "localFile": "20261011070000_product_master_refresh.sql",
+      "localSha256": "5722fa89190ed3621587aa745644e2d72816e6b14e1966a17078d6fc755c7bb5",
+      "remoteVersion": null,
+      "remoteSha256": null,
+      "status": "not_deployed",
+      "review": "13 October 2026 primary integration review: governed product identity mirror from accepted catalogue snapshots, change-only upserts and no deactivation/stock/ledger writes. Private denied helpers, failure state, bounded lock wait and next-upload retry. Full disposable replay passed, including new-item public pricing regression and two-session snapshot-upload contention. Production coverage gap read-only confirmed; no production deployment implied."
+    },
+    {
+      "localFile": "20261011090000_requirements_decision_view.sql",
+      "localSha256": "eead8a9418bafcf5035cfdbb667dd8d0c5cbecaf560826ea650b05f97bd3d6b8",
+      "remoteVersion": null,
+      "remoteSha256": null,
+      "status": "not_deployed",
+      "review": "13 October 2026 primary integration review: read-only requirements/stock-alert gateways retain gateway key and active-member checks with service-only execute. Shortage-first ordering, whole-list counts, duplicate/invalid stock remains unknown; coverage is priority/oldest-first advisory per item, no allocation or commercial-rate reads. Exact additive source reviewed; combined disposable replay and browser checks required before release. No hosted or production deployment implied."
     }
   ],
   "liveCheck": {

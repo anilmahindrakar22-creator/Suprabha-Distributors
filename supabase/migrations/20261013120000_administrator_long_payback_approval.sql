@@ -5,6 +5,7 @@ begin;
 -- (directorException retained for API compatibility) can approve capital exposure.
 -- limit_exceeded stays blocked for everyone, including administrators.
 -- Changing the policy is administrator-only because the review band is the D-04 boundary.
+-- The display-only UI administrator flag comes from the API route; read output is unchanged.
 do $upgrade$
 declare definition text; anchor text; old_message text; new_message text; i integer;
 begin
@@ -20,10 +21,6 @@ begin
   if (length(definition)-length(replace(definition,old_message,'')))/length(old_message)<>1 then raise exception 'Unexpected economics gateway seam';end if;
   definition:=replace(definition,old_message,new_message);
  end loop;
- -- Expose the active administrator permission alongside the existing workspace permissions.
- anchor:='return private.stockflow_economic_workspace(roles);';
- if (length(definition)-length(replace(definition,anchor,'')))/length(anchor)<>1 then raise exception 'Unexpected economics gateway seam';end if;
- definition:=replace(definition,anchor,$seam$return private.stockflow_economic_workspace(roles)||jsonb_build_object('canAdministrator',roles && array['administrator']::text[]);$seam$);
  anchor:=$seam$elsif p_action='set_policy' then$seam$;
  if (length(definition)-length(replace(definition,anchor,'')))/length(anchor)<>1 then raise exception 'Unexpected economics gateway seam';end if;
  definition:=replace(definition,anchor,$seam$elsif p_action='set_policy' then if not (roles && array['administrator']::text[]) then raise exception 'Administrator required to change the payback approval policy' using errcode='42501'; end if;$seam$);

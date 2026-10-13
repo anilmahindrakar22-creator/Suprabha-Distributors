@@ -3,13 +3,18 @@ import { getStockFlowSession } from '@/lib/stockflow-session';
 import { hasAnyStockFlowRole } from '@/lib/user-types';
 import { BoundedJsonRequestError, readBoundedJsonRequest } from '@/lib/bounded-json-request';
 import { callOrderGateway, OrderGatewayError } from '@/lib/order-gateway';
+import { measuredJsonResponse } from '@/lib/measured-json-response';
 import { economicActions, validateEconomicCommand, type EconomicsWorkspaceData } from '@/lib/instrument-economics-types';
 
 const headers = { 'cache-control': 'private, no-store' };
-async function actor() {
+async function actor(timings?: { auth?: number; member?: number }) {
+  const authStartedAt = timings ? performance.now() : 0;
   const user = await getChatGPTUser();
+  if (timings) timings.auth = performance.now() - authStartedAt;
   if (!user) throw new OrderGatewayError('Sign in required', 401);
+  const memberStartedAt = timings ? performance.now() : 0;
   const session = await getStockFlowSession(user.email);
+  if (timings) timings.member = performance.now() - memberStartedAt;
   if (!session || !hasAnyStockFlowRole(session.roles, ['administrator', 'management', 'accounts'])) throw new OrderGatewayError('Commercial economics access required', 403);
   return session;
 }
@@ -17,8 +22,22 @@ function failure(error: unknown) {
   if (error instanceof OrderGatewayError || error instanceof BoundedJsonRequestError) return Response.json({ error: error.message }, { status: error.status, headers });
   return Response.json({ error: 'Instrument economics is temporarily unavailable' }, { status: 502, headers });
 }
-export async function GET() {
-  try { const session = await actor(); const workspace = await callOrderGateway<EconomicsWorkspaceData>(session.email, 'get_instrument_economics'); return Response.json({ ...workspace, actorEmail: session.email }, { headers }); }
+export async function GET(request?: Request) {
+  const startedAt = performance.now();
+  try {
+    const timings = { auth: 0, member: 0 };
+    const session = await actor(timings);
+    const view = request?.headers.get('x-stockflow-economics-view') ?? 'full';
+    if (view !== 'full' && view !== 'summary') return Response.json({ error: 'Invalid economics view' }, { status: 400, headers });
+    const rpcStartedAt = performance.now();
+    const workspace = view === 'summary'
+      ? await callOrderGateway<EconomicsWorkspaceData>(session.email, 'get_instrument_economics', { view: 'summary' })
+      : await callOrderGateway<EconomicsWorkspaceData>(session.email, 'get_instrument_economics');
+    if (view === 'summary' && workspace.readView !== 'summary') throw new OrderGatewayError('The Economics summary is not available yet. Refresh after the read-model update.', 503);
+    const rpc = performance.now() - rpcStartedAt;
+    const { auth, member } = timings;
+    return measuredJsonResponse({ ...workspace, actorEmail: session.email, canAdministrator: hasAnyStockFlowRole(session.roles, ['administrator']) }, startedAt, performance.now(), { auth, member, rpc });
+  }
   catch (error) { return failure(error); }
 }
 export async function POST(request: Request) {

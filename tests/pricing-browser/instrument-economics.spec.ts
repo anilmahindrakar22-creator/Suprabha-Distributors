@@ -436,6 +436,7 @@ test('portfolio filters intersect status, type and search and keep details align
   await expect(page.getByText('2 of 4 instruments')).toBeVisible();
   await page.getByLabel('Type', { exact: true }).selectOption('group');
   await expect(page.getByText('1 of 4 instruments')).toBeVisible();
+  await page.getByRole('button', { name: 'Sales & items', exact: true }).click();
   await expect(page.getByRole('heading', { name: 'Shared analyzer group · sales' })).toBeVisible();
   await page.getByLabel('Search instruments', { exact: true }).fill('missing site');
   await expect(page.getByRole('heading', { name: 'No matching instruments' })).toBeVisible();
