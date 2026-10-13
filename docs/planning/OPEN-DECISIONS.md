@@ -28,7 +28,7 @@ Items marked **decided below** have an owner decision in the Decided section. Al
 | D-05 | **Investigate now; remove the dormant tables after the pilot.** A real bug found during the investigation is fixed promptly | See the finding below |
 | D-01 | **HbA1c becomes a separate division** | Division list: Biochemistry, Haematology, Immunoassay, Molecular, Microbiology, Rapid, Coagulation, Electrolytes, **HbA1c**, Others |
 | D-14 | **ADR-0011 accepted** (owner, 13 Oct 2026): one persistent instrument ID per physical machine; relocation keeps the ID and opens a new placement; nothing financial is duplicated | Build after the Economics cutover ([INSTALLED-BASE-REGISTER-DESIGN](../INSTALLED-BASE-REGISTER-DESIGN.md)) |
-| D-15 | **Placements with payback ≤ `attractive_months` (24) are approved automatically** (owner, 13 Oct 2026) | Approved in the same transaction as the command that makes them eligible, with the same frozen baseline and an "Automatic" reason. 25–36 months: Management; 37–48: Administrator; > 48: blocked. Only an Administrator can change the band (D-04) |
+| D-15 | **Placements with payback ≤ `attractive_months` (24) are approved automatically** (owner, 13 Oct 2026) | Placements only (groups stay manual); capital must be recorded. Approved in the same transaction as the command that makes them eligible, with the same frozen baseline and an "Automatic" reason. 25–36 months: Management; 37–48: Administrator; > 48: blocked. Only an Administrator can change the band (D-04) |
 
 ### D-05 investigation finding (13 Oct 2026, read-only code inspection)
 **The facts:**
