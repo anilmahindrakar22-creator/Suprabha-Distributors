@@ -4,6 +4,7 @@ import { renderToStaticMarkup } from 'react-dom/server';
 import { EconomicActionOptions, ProposedTargetReview, EconomicApprovalPreview, EconomicHealthBadge, EconomicTargetAdvancedDetails, EconomicTargetCard, InstrumentEconomicsWorkspace, economicCommandNotice, ItemGpBreakdown, reagentLifetime, reportingPeriodLabel } from '@/components/instrument-economics-workspace';
 import { capitalBeyondManagementReview } from '@/components/instrument-economics-evidence-forms';
 import type { EconomicTarget } from '@/lib/instrument-economics-types';
+import { CommandForm } from '@/components/instrument-economics-workspace';
 
 const target: EconomicTarget = {
   id: 'target-1', kind: 'placement', name: 'Central Lab', companyId: 'company-guid', customerId: 'customer-1', customerName: 'City Hospital',
@@ -14,6 +15,21 @@ const target: EconomicTarget = {
 };
 
 describe('instrument economics presentation', () => {
+  it('shows the previous customer in installation option labels', () => {
+    const data: import('@/lib/instrument-economics-types').EconomicsWorkspaceData = {
+      actorEmail: 'rr-management@test.local', targets: [], customers: [], sourceLines: [], mappings: [], exceptions: [], leakage: [], cases: [],
+      canManage: true, canApprove: false, canAct: false, generation: null, lastRebuiltAt: null, sourceImportedAt: null,
+      sourceLineCount: 0, unattributedPaise: '0', reportingFrom: '2026-09-01', reportingTo: '2026-10-01',
+      policy: { attractiveMonths: 24, reviewMonths: 36, exceptionMonths: 48, forecastWindowMonths: 3, watchRevenuePercent: 80, criticalRevenuePercent: 50 },
+      installations: [
+      { id: 'rr-installation', name: 'RR analyzer', serialNumber: 'rr 1', customerName: 'Lab B', instrumentId: 'rr-instrument', modelId: 'rr-model', movedFrom: 'Lab A' },
+      { id: 'new-installation', name: 'New analyzer', serialNumber: 'NEW-1', customerName: 'Lab B', movedFrom: null },
+    ] };
+    const html = renderToStaticMarkup(<CommandForm action="create_target" data={data} disabled={false} busy={false} onSubmit={async () => undefined} />);
+    expect(html).toContain('RR analyzer · rr 1 · Lab B · moved from Lab A');
+    expect(html).toContain('New analyzer · NEW-1 · Lab B</option>');
+    expect(html.match(/<option value=""[^>]*>None<\/option>/g)).toHaveLength(1);
+  });
   it('formats automatic approval notices and falls back for absent or invalid payback', () => {
     expect(economicCommandNotice({ autoApproved: { paybackMonths: '23.456', attractiveMonths: 24 } })).toBe('Saved. Approved automatically: payback 23.5 months (within 24).');
     expect(economicCommandNotice({ autoApproved: { paybackMonths: 24, attractiveMonths: 24 } })).toBe('Saved. Approved automatically: payback 24.0 months (within 24).');

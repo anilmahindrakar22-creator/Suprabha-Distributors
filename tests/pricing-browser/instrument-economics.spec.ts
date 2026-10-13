@@ -1,5 +1,31 @@
 import { expect, test, type Page, type Route } from '@playwright/test';
 
+test('placement locks the instrument model and shows its previous customer', async ({ page }) => {
+  await mockWorkspace(page, economicsData({ installations: [
+    { id: 'rr-installation', name: 'RR analyzer', serialNumber: 'rr 1', customerName: 'Lab B', instrumentId: 'rr-instrument', modelId: 'rr-model', movedFrom: 'Lab A' },
+    { id: 'new-installation', name: 'New analyzer', serialNumber: 'NEW-1', customerName: 'Lab B', modelId: null },
+  ] }));
+  await openAdvanced(page);
+  await page.getByLabel('Action', { exact: true }).selectOption('create_target');
+  const installation = page.getByLabel('Installation', { exact: true });
+  const model = page.getByLabel('Model ID', { exact: true });
+  await expect(installation.locator('option[value="rr-installation"]')).toHaveText('RR analyzer · rr 1 · Lab B · moved from Lab A');
+  await model.fill('user-model');
+  await installation.selectOption('rr-installation');
+  await expect(model).toHaveValue('rr-model');
+  await expect(model).toHaveAttribute('readonly', '');
+  await expect(model).toHaveAttribute('aria-describedby', 'instrument-model-hint');
+  await expect(page.getByText("Locked to this instrument's model.", { exact: true })).toBeVisible();
+  await installation.selectOption('');
+  await expect(model).toBeEditable();
+  await expect(model).toHaveValue('user-model');
+  await expect(page.getByText("Locked to this instrument's model.", { exact: true })).toHaveCount(0);
+  await installation.selectOption('rr-installation');
+  await installation.selectOption('new-installation');
+  await expect(model).toBeEditable();
+  await expect(model).toHaveValue('user-model');
+});
+
 test('instrument sale date drives lifetime labels and simple group and item mapping defaults', async ({ page }) => {
   const posts: { action: string; payload: Record<string, unknown> }[] = [];
   const sold = { ...target, effectiveFrom: '2026-07-30', salesFrom: '2026-07-23' };

@@ -195,6 +195,10 @@ end$$;
   Invoke-DatabaseCommand $psqlProgram @('-U',$databaseUser,'-X','-q','-v','ON_ERROR_STOP=1','-d',$database,'-f',(Join-Path $repository 'supabase/tests/instrument_economics_item_groups.sql'))
   Write-Output 'PASS: instrument item-group membership, scoped net sales/GP, revisions and replay'
   Invoke-DatabaseCommand $psqlProgram @('-U',$databaseUser,'-X','-q','-v','ON_ERROR_STOP=1','-d',$database,'-f',(Join-Path $repository 'supabase/tests/historical_instrument_registration.sql'))
+  Invoke-DatabaseCommand $psqlProgram @('-U',$databaseUser,'-X','-q','-v','ON_ERROR_STOP=1','-d',$database,'-f',(Join-Path $repository 'supabase/tests/instrument_register.sql'))
+  Invoke-DatabaseCommand $psqlProgram @('-U',$databaseUser,'-X','-q','-v','ON_ERROR_STOP=1','-d',$database,'-f',(Join-Path $repository 'supabase/tests/instrument_register_read.sql'))
+  Write-Output 'PASS: installation read carries instrument, locked model and moved-from'
+  Write-Output 'PASS: one instrument ID per machine, relocation, overlap and model lock'
   Invoke-DatabaseCommand $psqlProgram @('-U',$databaseUser,'-X','-q','-v','ON_ERROR_STOP=1','-d',$database,'-f',(Join-Path $repository 'supabase/tests/instrument_economics_auto_cost.sql'))
   Write-Output 'PASS: automatic Tally purchase cost by batch then oldest first, zero-value cost and no reuse'
   Invoke-DatabaseCommand $psqlProgram @('-U',$databaseUser,'-X','-q','-v','ON_ERROR_STOP=1','-d',$database,'-f',(Join-Path $repository 'supabase/tests/instrument_economics_sale_date.sql'))
@@ -215,6 +219,8 @@ end$$;
   Invoke-DatabaseCommand $psqlProgram @('-U',$databaseUser,'-X','-q','-v','ON_ERROR_STOP=1','-d',$database,'-f',(Join-Path $repository 'supabase/tests/member_role_concurrency.sql'))
   Invoke-DatabaseCommand $psqlProgram @('-U',$databaseUser,'-X','-q','-v','ON_ERROR_STOP=1','-d',$database,'-f',(Join-Path $repository 'supabase/tests/instrument_economics_concurrency.sql'))
   Write-Output 'PASS: two-session economic command replay, audit and atomic publication'
+  Invoke-DatabaseCommand $psqlProgram @('-U',$databaseUser,'-X','-q','-v','ON_ERROR_STOP=1','-d',$database,'-f',(Join-Path $repository 'supabase/tests/instrument_register_concurrency.sql'))
+  Write-Output 'PASS: two-session instrument registration resolves to one instrument'
   Write-Output 'PASS: two-session member role edits, stale denial, replay and audit'
 } finally {
   if ($databaseCreated) { & $dropdbProgram -U $databaseUser --if-exists $database | Out-Null }
