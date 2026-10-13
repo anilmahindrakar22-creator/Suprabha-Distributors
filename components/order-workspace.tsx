@@ -1375,9 +1375,9 @@ export function HydratedNewOrderPanel({ data, templateOrder, onClose, onCreated,
   const [customerSuggestionsOpen, setCustomerSuggestionsOpen] = useState(false);
   const customerBlurTimerRef = useRef<number | null>(null);
   const [activeCustomerIndex, setActiveCustomerIndex] = useState(0);
-  const [customerHistory, setCustomerHistory] = useState<{ ownerKey: string; orders: OrderSummary[]; total: number } | null>(null);
+  const [customerHistory, setCustomerHistory] = useState<{ ownerKey: string; orders: OrderSummary[]; rankingOrders: OrderSummary[]; total: number } | null>(null);
   const [customerHistoryState, setCustomerHistoryState] = useState<'idle' | 'loading' | 'error'>('idle');
-  const customerHistoryCacheRef = useRef(new Map<string, { ownerKey: string; orders: OrderSummary[]; total: number }>());
+  const customerHistoryCacheRef = useRef(new Map<string, { ownerKey: string; orders: OrderSummary[]; rankingOrders: OrderSummary[]; total: number }>());
   const currentCustomerKeyRef = useRef(selectedCustomerKey);
   const [notes, setNotes] = useState(initialPayload?.notes || '');
   const [source, setSource] = useState<'phone' | 'email' | 'whatsapp' | 'walk_in'>(initialPayload?.source || 'phone');
@@ -1512,17 +1512,22 @@ export function HydratedNewOrderPanel({ data, templateOrder, onClose, onCreated,
     if (!selectedCustomerId || customerHistory?.ownerKey !== selectedCustomerKey || lines.length >= 50) return [];
     const catalogByKey = new Map(data.snapshot.catalog.filter((item) => item.active).map((item) => [item.tallyKey, item]));
     const seen = new Set(lines.map((line) => line.tallyKey));
-    const products: CatalogItem[] = [];
-    for (const order of [...customerHistory.orders].sort((left, right) => Date.parse(right.createdAt) - Date.parse(left.createdAt))) {
+    const products = new Map<string, { item: CatalogItem; orderCount: number; lastOrderedAt: string; lastQuantity: number }>();
+    const ordersByItem = new Map<string, Set<string>>();
+    for (const order of [...customerHistory.rankingOrders].sort((left, right) => Date.parse(right.createdAt) - Date.parse(left.createdAt))) {
       for (const line of order.lines || []) {
         const item = catalogByKey.get(line.tallyKey);
         if (!item || seen.has(line.tallyKey)) continue;
-        seen.add(line.tallyKey);
-        products.push(item);
-        if (products.length === 5) return products;
+        const orderIds = ordersByItem.get(item.tallyKey) || new Set<string>();
+        if (orderIds.has(order.id)) continue;
+        orderIds.add(order.id);
+        ordersByItem.set(item.tallyKey, orderIds);
+        const entry = products.get(item.tallyKey);
+        if (entry) entry.orderCount = orderIds.size;
+        else products.set(item.tallyKey, { item, orderCount: 1, lastOrderedAt: order.createdAt, lastQuantity: line.quantity });
       }
     }
-    return products;
+    return [...products.values()].sort((left, right) => right.orderCount - left.orderCount || Date.parse(right.lastOrderedAt) - Date.parse(left.lastOrderedAt) || left.item.item.localeCompare(right.item.item)).slice(0, 8);
   }, [customerHistory, data.snapshot.catalog, lines, selectedCustomerId, selectedCustomerKey]);
 
   useEffect(() => {
@@ -1539,7 +1544,7 @@ export function HydratedNewOrderPanel({ data, templateOrder, onClose, onCreated,
       .then((response) => readResponse<OrderBootstrap>(response))
       .then((result) => {
         if (controller.signal.aborted || currentCustomerKeyRef.current !== selectedCustomerKey) return;
-        const history = { ownerKey: selectedCustomerKey, orders: result.orders.slice(0, 5), total: result.pagination?.total || result.orders.length };
+        const history = { ownerKey: selectedCustomerKey, orders: result.orders.slice(0, 5), rankingOrders: result.orders.filter(o => o.status !== 'cancelled').slice(0, 20), total: result.pagination?.total || result.orders.length };
         customerHistoryCacheRef.current.set(selectedCustomerKey, history);
         setCustomerHistory(history);
         setCustomerHistoryState('idle');
@@ -1784,11 +1789,15 @@ export function HydratedNewOrderPanel({ data, templateOrder, onClose, onCreated,
               <legend className="px-2 text-sm font-extrabold text-sf-strong">Products</legend>
               {recentProducts.length ? <section aria-label="Recently ordered products" className="mb-4">
                 <p className="mb-2 text-xs font-bold text-sf-muted">Recently ordered · enter quantity and press Enter</p>
-                <div className="grid gap-2 sm:grid-cols-2">{recentProducts.map((item) => {
-                  const quantity = recentQuantities[item.tallyKey] ?? '1';
+                <div className="grid gap-2 sm:grid-cols-2">{recentProducts.map((entry) => {
+                  const item = entry.item;
+                  const quantity = recentQuantities[item.tallyKey] ?? String(entry.lastQuantity ?? 1);
                   const valid = Number.isInteger(Number(quantity)) && Number(quantity) >= 1 && Number(quantity) <= 1000000;
                   return <div key={item.tallyKey} className="flex min-w-0 items-center gap-2 rounded-lg border border-sf-line bg-sf-accent-soft p-2">
-                    <span title={item.item} className="min-w-0 flex-1 truncate text-sm font-bold text-sf-body">{item.item}</span>
+                    <div className="min-w-0 flex-1">
+                      <div title={item.item} className="truncate text-sm font-bold text-sf-body">{item.item}</div>
+                      <div className="text-xs text-sf-muted">{`${entry.orderCount} of last ${customerHistory?.rankingOrders.length} orders · last ${new Date(entry.lastOrderedAt).toLocaleDateString('en-IN', { timeZone: 'Asia/Kolkata', day: 'numeric', month: 'short' })}`}</div>
+                    </div>
                     <input type="number" form="recent-product-quantities" aria-label={`Recent quantity for ${item.item}`} min="1" max="1000000" step="1" value={quantity} onChange={(event) => setRecentQuantities((current) => ({ ...current, [item.tallyKey]: event.target.value }))} onKeyDown={(event) => { if (event.key === 'Enter') { event.preventDefault(); if (valid) addProduct(item, Number(quantity)); } }} className="min-h-10 w-20 rounded-lg border border-sf-line bg-white px-2 text-right" />
                     <button type="button" aria-label={`Add ${item.item}`} disabled={!valid} onClick={() => addProduct(item, Number(quantity))} className="min-h-10 rounded-lg px-2 text-sm font-bold text-sf-body disabled:opacity-50">Add</button>
                   </div>;

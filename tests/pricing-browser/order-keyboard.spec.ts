@@ -197,6 +197,35 @@ test('recent customer products can be added from the existing history response',
   expect(submissions).toBe(0);
 });
 
+test('recent products rank by frequency and default to last quantity', async ({ page }) => {
+  await page.route('**/api/orders?list=1*', async (route) => {
+    const orders = [
+      { id: 'rank-newest', createdAt: '2026-09-23T10:00:00Z', status: 'delivered', lines: [{ tallyKey: 'GLUCOSE-A', itemName: 'Glucose A', quantity: 6 }, { tallyKey: 'CRP', itemName: 'CRP', quantity: 2 }] },
+      { id: 'rank-middle', createdAt: '2026-09-22T10:00:00Z', status: 'delivered', lines: [{ tallyKey: 'GLUCOSE-A', itemName: 'Glucose A', quantity: 4 }] },
+      { id: 'rank-oldest', createdAt: '2026-09-21T10:00:00Z', status: 'delivered', lines: [{ tallyKey: 'GLUCOSE-A', itemName: 'Glucose A', quantity: 1 }] },
+      { id: 'rank-cancelled', createdAt: '2026-09-24T10:00:00Z', status: 'cancelled', lines: [{ tallyKey: 'CLEANER', itemName: 'Cleaner', quantity: 9 }] },
+    ].map((order) => ({
+      orderNumber: order.id, customerName: 'Test Beta Laboratory', customerPhone: null,
+      source: 'phone', notes: null, version: 1, updatedAt: order.createdAt,
+      lineCount: order.lines.length, totalQuantity: order.lines.reduce((sum, line) => sum + line.quantity, 0),
+      reservedQuantity: 0, tallyInvoiceNumber: null, events: [], exceptions: [], installations: [], ...order,
+    }));
+    await route.fulfill({ json: { orders, pagination: { total: 4 } } });
+  });
+  await page.goto('/?view=order-entry');
+  const customer = page.getByRole('combobox', { name: 'Name' });
+  await customer.fill('Beta');
+  await customer.press('Enter');
+  const recent = page.getByRole('region', { name: 'Recently ordered products' });
+  await expect(recent.getByRole('button')).toHaveText(['Add', 'Add']);
+  await expect(recent.getByRole('button').nth(0)).toHaveAttribute('aria-label', 'Add Glucose A');
+  await expect(recent.getByRole('button').nth(1)).toHaveAttribute('aria-label', 'Add CRP');
+  await expect(recent.getByRole('button', { name: 'Add Cleaner' })).toHaveCount(0);
+  await expect(recent.getByRole('spinbutton', { name: 'Recent quantity for Glucose A' })).toHaveValue('6');
+  await expect(recent.getByRole('spinbutton', { name: 'Recent quantity for CRP' })).toHaveValue('2');
+  await expect(recent.getByRole('button', { name: 'Add Glucose A' }).locator('..')).toContainText('3 of last 3 orders');
+});
+
 test('switching back to a customer reuses only that customer’s history', async ({ page }) => {
   const historyQueries: string[] = [];
   await page.route('**/api/orders?list=1*', async (route) => {
