@@ -866,6 +866,14 @@
       "remoteSha256": null,
       "status": "not_deployed",
       "review": "13 October 2026 primary integration review: governed product identity mirror from accepted catalogue snapshots, change-only upserts and no deactivation/stock/ledger writes. Private denied helpers, failure state, bounded lock wait and next-upload retry. Full disposable replay passed, including new-item public pricing regression and two-session snapshot-upload contention. Production coverage gap read-only confirmed; no production deployment implied."
+    },
+    {
+      "localFile": "20261011090000_requirements_decision_view.sql",
+      "localSha256": "eead8a9418bafcf5035cfdbb667dd8d0c5cbecaf560826ea650b05f97bd3d6b8",
+      "remoteVersion": null,
+      "remoteSha256": null,
+      "status": "not_deployed",
+      "review": "13 October 2026 primary integration review: read-only requirements/stock-alert gateways retain gateway key and active-member checks with service-only execute. Shortage-first ordering, whole-list counts, duplicate/invalid stock remains unknown; coverage is priority/oldest-first advisory per item, no allocation or commercial-rate reads. Exact additive source reviewed; combined disposable replay and browser checks required before release. No hosted or production deployment implied."
     }
   ],
   "liveCheck": {
