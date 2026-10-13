@@ -150,7 +150,7 @@ Three dependency corrections are recorded in the roadmap:
 3. a unified installed-base register comes first in Phase 2.
 
 ## ADR-0011: Instruments: four distinct concerns, one register
-**Status:** Proposed. **Sources:** owner brief §Instruments; economics plan §§1–2; SUPRABHA_OS_ARCHITECTURE §Instruments.
+**Status:** Proposed; design ready for owner approval ([INSTALLED-BASE-REGISTER-DESIGN](../INSTALLED-BASE-REGISTER-DESIGN.md), 13 Oct 2026). **Sources:** owner brief §Instruments; economics plan §§1–2; SUPRABHA_OS_ARCHITECTURE §Instruments.
 
 **Decision (proposed):**
 
