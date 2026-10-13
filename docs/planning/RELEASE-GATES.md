@@ -1,6 +1,6 @@
 # Release gates (per phase)
 
-**Status:** canonical gate definitions. Phases 1–8 are PROPOSED along with the roadmap.
+**Status:** canonical gate definitions. The roadmap is adopted (D-09); these implementation and release gates remain open until their evidence passes.
 **Sources:** [REQUIREMENTS §§6, 8](../REQUIREMENTS-AND-DELIVERY-PLAN.md); [PRODUCTION-PILOT-2026-09](../PRODUCTION-PILOT-2026-09.md); [INSTRUMENT-ECONOMICS-PRODUCTION-CUTOVER-PLAN](../INSTRUMENT-ECONOMICS-PRODUCTION-CUTOVER-PLAN.md); spec §§20–21.
 **Last verified:** 13 Oct 2026.
 

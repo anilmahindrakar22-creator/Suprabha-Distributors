@@ -1,6 +1,6 @@
 # Master roadmap (Phases 0–8)
 
-**Status:** PROPOSED for owner approval (ADR-0010, [D-09](OPEN-DECISIONS.md)). Once approved, it replaces the milestone ordering in [ROADMAP.md](../ROADMAP.md) and R0–R5 in [REQUIREMENTS §7](../REQUIREMENTS-AND-DELIVERY-PLAN.md). Their deferrals and guardrails remain.
+**Status:** APPROVED DESIGN ONLY (owner, 13 October 2026; ADR-0010, [D-09](OPEN-DECISIONS.md)). It replaces the milestone ordering in [ROADMAP.md](../ROADMAP.md) and R0–R5 in [REQUIREMENTS §7](../REQUIREMENTS-AND-DELIVERY-PLAN.md). Their deferrals and guardrails remain.
 **Sources:** owner brief phases (13 Oct 2026); dependency checks against the repo ([IMPLEMENTATION-STATUS](IMPLEMENTATION-STATUS.md)).
 **Last verified:** 13 Oct 2026.
 
