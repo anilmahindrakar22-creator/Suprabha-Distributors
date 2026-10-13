@@ -1,6 +1,6 @@
 # Suprabha OS delivery roadmap
 
-> **Pending replacement** (13 Oct 2026). The proposed [master roadmap](planning/MASTER-ROADMAP.md) (ADR-0010, awaiting owner approval) replaces the milestone ordering below once approved. The deferrals and cost/portability guardrails here stay authoritative.
+> **Historical milestone ordering** (13 Oct 2026). The owner-adopted [master roadmap](planning/MASTER-ROADMAP.md) (ADR-0010, D-09) replaces the milestone ordering below. The deferrals and cost/portability guardrails here stay authoritative.
 
 The roadmap grows one transactional spine. It is not authorization to build every listed domain simultaneously.
 

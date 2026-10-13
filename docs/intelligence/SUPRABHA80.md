@@ -34,7 +34,7 @@ ADR-0003 (pricing authority), ADR-0006 (Pareto), ADR-0007 (wallet model), ADR-00
 | Capture gap to 80% | max(0.8 × wallet − revenue, 0) | same |
 | Account class | A ≈ ≥ ₹2 L/month wallet; B ≈ ₹75 k–2 L. Versioned policy; C open ([D-13](../planning/OPEN-DECISIONS.md)) | same |
 | Account stage | Conquest <25%, Capture 25–<50%, Grow 50–<80%, Defend ≥80% (versioned) | same; ADR-0012 |
-| Divisions | Biochemistry, Haematology, Immunoassay, Molecular, Microbiology, Rapid, Coagulation, Electrolytes, Others (+HbA1c open, [D-01](../planning/OPEN-DECISIONS.md)) | ADR-0007 |
+| Divisions | Biochemistry, Haematology, Immunoassay, Molecular, Microbiology, Rapid, Coagulation, Electrolytes, HbA1c, Others ([D-01](../planning/OPEN-DECISIONS.md), owner approved) | ADR-0007 |
 | Focus band | policy share of opportunity that defines the focus set (default 80%), computed from data | ADR-0006 |
 
 ## 4. The four engines (logical, inside Commercial Intelligence)

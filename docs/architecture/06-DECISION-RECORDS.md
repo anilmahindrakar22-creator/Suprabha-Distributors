@@ -115,7 +115,7 @@ It is shown as a graph plus a list view.
   - untapped = max(wallet − revenue, 0);
   - capture gap to 80% = max(0.8 × wallet − revenue, 0).
 - **History:** estimates are append-only; lowering an estimate is audited, so share can't be gamed.
-- **Divisions:** Biochemistry, Haematology, Immunoassay, Molecular, Microbiology, Rapid, Coagulation, Electrolytes, Others. **HbA1c is open** ([D-01](../planning/OPEN-DECISIONS.md)).
+- **Divisions:** Biochemistry, Haematology, Immunoassay, Molecular, Microbiology, Rapid, Coagulation, Electrolytes, Others. **HbA1c is a separate division** (owner, 13 October 2026; [D-01](../planning/OPEN-DECISIONS.md)).
 
 **Supersedes:** the division-only estimates and the Urine-inclusive seed on `claude/market-w1`.
 
@@ -139,7 +139,7 @@ It is shown as a graph plus a list view.
 ## ADR-0010: Master roadmap Phases 0–8 replace older orderings
 **Status:** Accepted (owner, 13 Oct 2026; D-09). **Sources:** owner brief phases; [MASTER-ROADMAP](../planning/MASTER-ROADMAP.md).
 
-**Decision (proposed):**
+**Decision:**
 - Phases 0–8 become the only roadmap.
 - ROADMAP M1–M3 and REQUIREMENTS R0–R5 fold into Phase 0/1 hardening.
 - M4–M6 map onto Phases 2, 4 and 8.
@@ -173,10 +173,10 @@ Three dependency corrections are recorded in the roadmap:
 - The stage suggests, but never fixes, the action. **COLLECT stays disabled** until governed receivables exist.
 
 ## ADR-0013: Role names in code are canonical
-**Status:** Accepted (fact) + decision required.
+**Status:** Accepted; director-tier approval maps to administrator (owner, 13 October 2026; D-04).
 - **Evidence:** `lib/user-types.ts` defines `administrator`, `sales`, `operations`, `warehouse`, `accounts`, `management` and `viewer`, with combined role sets and row scope (migrations `20261004…`, `20261005…`).
 - **Mapping:** the architecture doc's "Order desk", "Service" and "Customer" are role *concepts*, mapped as Order desk → operations, Service → operations (no service role yet), Customer → future.
-- **Gap:** placement approval tiers mention a **director**. No such role exists, and payback status labels (`director_exception_required`) are not routed by role ([D-04](../planning/OPEN-DECISIONS.md)).
+- **Approved mapping:** the director tier uses `administrator`; no director role is added. Payback status labels (`director_exception_required`) still need this routing implemented and verified ([D-04](../planning/OPEN-DECISIONS.md)).
 
 ## ADR-0014: Deterministic, versioned scoring
 **Status:** Proposed. **Sources:** spec §15 ("no false mathematical precision"); wallet-capture §13; dominance framework (Capital Priority Score weights 35/25/15/10/10/5); the principles Margin of Safety and Expected Value.
