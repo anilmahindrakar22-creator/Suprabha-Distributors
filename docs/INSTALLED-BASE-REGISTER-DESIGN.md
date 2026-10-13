@@ -1,6 +1,6 @@
 # Installed-base register: design (ADR-0011)
 
-**Status:** design for owner approval. No code until ADR-0011 is approved **and** the Economics production cutover is done.
+**Status:** approved (owner, 13 Oct 2026; D-14). No code until the Economics production cutover is done.
 **Phase:** 2 (first item, [MASTER-ROADMAP](planning/MASTER-ROADMAP.md)). **Release gate:** "One register ID per physical instrument; installations and placements linked" ([RELEASE-GATES](planning/RELEASE-GATES.md)).
 **Authoritative rule:** economics plan §2: *"A physical Instrument has a persistent asset ID and serial identity… Relocation creates a new placement; it does not rewrite the old customer."*
 **Author:** Claude (design), 13 Oct 2026.
@@ -107,5 +107,5 @@ plus a count of placements per installation with differing `model_id`. Zero rows
 - Business conflicts use PT409, never 40001.
 - Size: about one migration, three function patches, two form changes, five SQL tests. Small model first (per orchestration rules); Claude reviews the diff and the screens.
 
-## 8. Decision asked of the owner
-Approve ADR-0011 as: **"one persistent instrument ID per physical machine (by normalised serial); installations and placements hang off it; relocation keeps the ID and opens a new placement; nothing financial is duplicated."**
+## 8. Owner decision (approved 13 Oct 2026)
+ADR-0011 approved as: **"one persistent instrument ID per physical machine (by normalised serial); installations and placements hang off it; relocation keeps the ID and opens a new placement; nothing financial is duplicated."**

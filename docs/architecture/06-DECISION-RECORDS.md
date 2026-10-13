@@ -23,7 +23,7 @@ Superseded content is named, never silently deleted.
 | 0008 | One Opportunity entity shared by Suprabha 80 and Power Maps | Proposed |
 | 0009 | Prospects are Customer-domain accounts | Proposed |
 | 0010 | Master roadmap Phases 0–8 replace older orderings | **Accepted** (owner, 13 Oct) |
-| 0011 | Instruments: four distinct concerns, one installed-base register | Proposed |
+| 0011 | Instruments: four distinct concerns, one installed-base register | Accepted |
 | 0012 | Account stage ≠ action type | Proposed |
 | 0013 | Role names in code are canonical | Accepted; director tier = administrator (owner, 13 Oct) |
 | 0014 | Deterministic, versioned scoring; no unvalidated weights | Proposed |
@@ -150,7 +150,7 @@ Three dependency corrections are recorded in the roadmap:
 3. a unified installed-base register comes first in Phase 2.
 
 ## ADR-0011: Instruments: four distinct concerns, one register
-**Status:** Proposed; design ready for owner approval ([INSTALLED-BASE-REGISTER-DESIGN](../INSTALLED-BASE-REGISTER-DESIGN.md), 13 Oct 2026). **Sources:** owner brief §Instruments; economics plan §§1–2; SUPRABHA_OS_ARCHITECTURE §Instruments.
+**Status:** Accepted (owner, 13 Oct 2026; D-14). Design: [INSTALLED-BASE-REGISTER-DESIGN](../INSTALLED-BASE-REGISTER-DESIGN.md); build after the Economics cutover. **Sources:** owner brief §Instruments; economics plan §§1–2; SUPRABHA_OS_ARCHITECTURE §Instruments.
 
 **Decision (proposed):**
 
