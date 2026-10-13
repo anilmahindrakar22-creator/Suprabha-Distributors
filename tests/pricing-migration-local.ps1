@@ -141,6 +141,8 @@ create table public.test_upgrade_expected as select to_jsonb(o) as order_data,(s
   Write-Output 'PASS: partial snapshots preserve customers and complete lists retain soft-deactivation'
   Invoke-DatabaseCommand $psqlProgram @('-U',$databaseUser,'-X','-q','-v','ON_ERROR_STOP=1','-d',$database,'-f',(Join-Path $repository 'supabase/tests/catalog_source_version.sql'))
   Write-Output 'PASS: catalog source version and legacy fallback across all order gateways'
+  Invoke-DatabaseCommand $psqlProgram @('-U',$databaseUser,'-X','-q','-v','ON_ERROR_STOP=1','-d',$database,'-f',(Join-Path $repository 'supabase/tests/product_master_refresh.sql'))
+  Write-Output 'PASS: product master refresh from catalogue snapshot, no deactivation, change-only versions'
   $preserved = @'
 do $$begin
 if not exists(select 1 from private.stockflow_orders o cross join public.test_upgrade_expected e where o.id='dddddddd-dddd-4ddd-8ddd-dddddddddddd' and to_jsonb(o)=e.order_data and (select jsonb_agg(to_jsonb(l)) from private.stockflow_order_lines l where l.order_id=o.id)=e.line_data) then raise exception 'Pricing upgrade changed existing order data'; end if;
@@ -183,6 +185,8 @@ end$$;
   Write-Output 'PASS: automatic Tally purchase cost by batch then oldest first, zero-value cost and no reuse'
   Invoke-DatabaseCommand $psqlProgram @('-U',$databaseUser,'-X','-q','-v','ON_ERROR_STOP=1','-d',$database,'-f',(Join-Path $repository 'supabase/tests/instrument_economics_sale_date.sql'))
   Invoke-DatabaseCommand $psqlProgram @('-U',$databaseUser,'-X','-q','-v','ON_ERROR_STOP=1','-d',$database,'-f',(Join-Path $repository 'supabase/tests/instrument_economics_import_exceptions.sql'))
+  Invoke-DatabaseCommand $psqlProgram @('-U',$databaseUser,'-X','-q','-v','ON_ERROR_STOP=1','-d',$database,'-f',(Join-Path $repository 'supabase/tests/instrument_economics_summary_read.sql'))
+  Write-Output 'PASS: summary parity, deferred evidence, FOC/missing cost and sale-date revisions'
   Write-Output 'PASS: instrument invoice-date reagent sales, inclusive boundary, revisions and cancellation'
   Write-Output 'PASS: instrument economics source import, approval, GP, replay, exceptions and leakage'
   Write-Output 'PASS: complete migration replay, pricing ACID and role-storage tests'
@@ -191,6 +195,8 @@ end$$;
   Invoke-DatabaseCommand $psqlProgram @('-U',$databaseUser,'-X','-q','-v','ON_ERROR_STOP=1','-d',$database,'-f',(Join-Path $repository 'supabase/tests/order_summary_revision.sql'))
   Write-Output 'PASS: access-scoped order revision detects equal-count stage changes'
   Invoke-DatabaseCommand $psqlProgram @('-U',$databaseUser,'-X','-q','-v','ON_ERROR_STOP=1','-d',$database,'-f',(Join-Path $repository 'supabase/tests/price_book_concurrency.sql'))
+  Invoke-DatabaseCommand $psqlProgram @('-U',$databaseUser,'-X','-q','-v','ON_ERROR_STOP=1','-d',$database,'-f',(Join-Path $repository 'supabase/tests/product_master_refresh_lock.sql'))
+  Write-Output 'PASS: product refresh never blocks a snapshot upload under group-margin lock'
   Write-Output 'PASS: two-session price-book concurrency and bulk rollback'
   Invoke-DatabaseCommand $psqlProgram @('-U',$databaseUser,'-X','-q','-v','ON_ERROR_STOP=1','-d',$database,'-f',(Join-Path $repository 'supabase/tests/member_role_concurrency.sql'))
   Invoke-DatabaseCommand $psqlProgram @('-U',$databaseUser,'-X','-q','-v','ON_ERROR_STOP=1','-d',$database,'-f',(Join-Path $repository 'supabase/tests/instrument_economics_concurrency.sql'))

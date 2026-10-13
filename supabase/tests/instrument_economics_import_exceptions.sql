@@ -36,7 +36,7 @@ begin
  end loop;
  if (select count(*) from private.stockflow_economic_import_exceptions)<>failures_before+11 then raise exception 'Resolution removed audit evidence';end if;
  -- Reproduce the old read-model bug without changing any immutable evidence.
- original_definition:=pg_get_functiondef('private.stockflow_economic_workspace(text[])'::regprocedure);
+ original_definition:=pg_get_functiondef('private.stockflow_economic_workspace_read(text[],boolean)'::regprocedure);
  execute replace(original_definition,fragment||' e where private.stockflow_economic_import_exception_open(e.id)',fragment);
  workspace:=private.stockflow_economic_workspace(array['accounts']);
  if not exists(select 1 from jsonb_array_elements(workspace->'exceptions') e where e->>'reason'='Exception fixture same-later') then raise exception 'Old queue regression was not reproduced';end if;
