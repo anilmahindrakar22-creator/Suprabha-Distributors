@@ -1,7 +1,8 @@
 import { describe, expect, it, vi } from 'vitest';
 vi.mock('next/link', () => ({ default: 'a' }));
 import { renderToStaticMarkup } from 'react-dom/server';
-import { EconomicApprovalPreview, EconomicHealthBadge, EconomicTargetAdvancedDetails, EconomicTargetCard, InstrumentEconomicsWorkspace, ItemGpBreakdown, reagentLifetime, reportingPeriodLabel } from '@/components/instrument-economics-workspace';
+import { ProposedTargetReview, EconomicApprovalPreview, EconomicHealthBadge, EconomicTargetAdvancedDetails, EconomicTargetCard, InstrumentEconomicsWorkspace, ItemGpBreakdown, reagentLifetime, reportingPeriodLabel } from '@/components/instrument-economics-workspace';
+import { capitalBeyondManagementReview } from '@/components/instrument-economics-evidence-forms';
 import type { EconomicTarget } from '@/lib/instrument-economics-types';
 
 const target: EconomicTarget = {
@@ -13,6 +14,31 @@ const target: EconomicTarget = {
 };
 
 describe('instrument economics presentation', () => {
+  it('gates capital increases using approved GP and exact paise at the review boundary', () => {
+    const approved = { ...target, capitalPaise: '30000000', instrumentBillingPaise: '0', investmentReview: { status: 'within_limit' as const, expectedMonthlyGpPaise: '1000000', expectedPaybackMonths: 30, netInvestmentPaise: '30000000', expectationId: 'original', policyId: 'policy', reviewMonths: 36, exceptionMonths: 48 } };
+    expect(capitalBeyondManagementReview(approved, BigInt(6000000), 36)).toBe(false);
+    expect(capitalBeyondManagementReview(approved, BigInt(6000001), 36)).toBe(true);
+    expect(capitalBeyondManagementReview(approved, BigInt(-1), 36)).toBe(false);
+    expect(capitalBeyondManagementReview({ ...approved, approval: 'proposed' }, BigInt(10000000), 36)).toBe(false);
+    expect(capitalBeyondManagementReview({ ...approved, instrumentBillingPaise: '40000000' }, BigInt(40000000), 36)).toBe(false);
+    expect(capitalBeyondManagementReview({ ...approved, expectation: { ...target.expectation!, monthlyGpPaise: '9000000' } }, BigInt(6000001), 36)).toBe(true);
+  });
+  it('requires administrator permission beyond the review band while leaving rejection available', () => {
+    const proposal = { ...target, approval: 'proposed' as const, approvalPreview: { status: 'director_exception_required' as const, capitalPaise: '40000000', instrumentBillingPaise: '0', netInvestmentPaise: '40000000', expectedMonthlyGpPaise: '1000000', expectedPaybackMonths: 40, expectationId: 'start', expectationEffectiveFrom: '2026-01-01', policyId: 'policy-1', reviewMonths: 36, exceptionMonths: 48 } };
+    const data = { generation: 'run-1', canApprove: true } as import('@/lib/instrument-economics-types').EconomicsWorkspaceData;
+    const management = renderToStaticMarkup(<ProposedTargetReview target={proposal} data={data} disabled={false} onSubmit={() => undefined} />);
+    expect(management).toContain('Needs an Administrator to approve (payback over 36 months).');
+    expect(management).not.toContain('name="directorException"');
+    expect(management).toContain('<option value="approved" disabled="">Approve</option>');
+    expect(management).toContain('<option value="rejected">Reject</option>');
+    const admin = renderToStaticMarkup(<ProposedTargetReview target={proposal} data={{ ...data, canAdministrator: true }} disabled={false} onSubmit={() => undefined} />);
+    expect(admin).toContain('Administrator approval: I confirm this payback beyond the review band');
+    expect(admin).toContain('name="directorException"');
+    expect(admin).not.toContain('Needs an Administrator');
+    const within = renderToStaticMarkup(<ProposedTargetReview target={{ ...proposal, approvalPreview: { ...proposal.approvalPreview, status: 'within_limit', expectedPaybackMonths: 36 } }} data={data} disabled={false} onSubmit={() => undefined} />);
+    expect(within).toContain('<option value="approved">Approve</option>');
+    expect(within).not.toContain('name="directorException"');
+  });
   it('shows investment and recovery without an expected sales or GP target', () => {
     const html = renderToStaticMarkup(<EconomicTargetCard target={{ ...target, expectation: null, capitalPaise: '62500000', instrumentBillingPaise: '40000000', netInvestmentPaise: '22500000', recoveryPaise: '45000000', outstandingPaise: '17500000' }} />);
     expect(html).toContain('aria-label="Investment and recovery"');
