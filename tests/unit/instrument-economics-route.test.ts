@@ -58,12 +58,54 @@ describe('instrument economics API', () => {
     expect(await response.json()).toMatchObject({ actorEmail: 'staff@example.com' });
   });
 
+  it('measures authorized reads without changing financial response bytes or gateway scope', async () => {
+    const workspace = { targets: [], leakage: [], knownGpPaise: '2300000', customer: 'आरोग्य Lab' };
+    mocks.gateway.mockResolvedValue(workspace);
+    const response = await GET();
+    const expected = new TextEncoder().encode(JSON.stringify({ ...workspace, actorEmail: 'staff@example.com' }));
+    expect(response.headers.get('server-timing')).toMatch(/^stockflow;dur=\d+\.\d, auth;dur=\d+\.\d, member;dur=\d+\.\d, rpc;dur=\d+\.\d, json;dur=\d+\.\d$/);
+    expect(response.headers.get('x-stockflow-response-bytes')).toBe(String(expected.byteLength));
+    expect(response.headers.get('cache-control')).toBe('private, no-store');
+    expect(new Uint8Array(await response.arrayBuffer())).toEqual(expected);
+    expect(mocks.gateway).toHaveBeenCalledExactlyOnceWith('staff@example.com', 'get_instrument_economics');
+  });
+
+  it('keeps unauthenticated reads private and never measures or executes the financial RPC', async () => {
+    mocks.user.mockResolvedValue(null);
+    const response = await GET();
+    expect(response.status).toBe(401);
+    expect(response.headers.get('cache-control')).toBe('private, no-store');
+    expect(response.headers.get('server-timing')).toBeNull();
+    expect(mocks.session).not.toHaveBeenCalled(); expect(mocks.gateway).not.toHaveBeenCalled();
+  });
+
   it('denies sales read access before calling the gateway', async () => {
     mocks.session.mockResolvedValue({ email: 'staff@example.com', roles: ['sales'] });
     const response = await GET();
     expect(response.status).toBe(403);
     expect(response.headers.get('cache-control')).toBe('private, no-store');
     expect(mocks.gateway).not.toHaveBeenCalled();
+  });
+
+  it('requests an explicit canonical summary without widening gateway access', async () => {
+    mocks.gateway.mockResolvedValue({ readView: 'summary', targets: [{ knownGpPaise: '1234', missingCostLines: 1 }] });
+    const response = await GET(new Request('https://test.local/api/instrument-economics', { headers: { 'x-stockflow-economics-view': 'summary' } }));
+    expect(response.status).toBe(200);
+    expect(response.headers.get('cache-control')).toBe('private, no-store');
+    expect(mocks.gateway).toHaveBeenCalledExactlyOnceWith('staff@example.com', 'get_instrument_economics', { view: 'summary' });
+    expect(await response.json()).toMatchObject({ readView: 'summary', actorEmail: 'staff@example.com', targets: [{ knownGpPaise: '1234', missingCostLines: 1 }] });
+  });
+
+  it('fails visibly if the summary read model has not been deployed', async () => {
+    mocks.gateway.mockResolvedValue({ targets: [] });
+    const response = await GET(new Request('https://test.local/api/instrument-economics', { headers: { 'x-stockflow-economics-view': 'summary' } }));
+    expect(response.status).toBe(503);
+    expect(await response.json()).toMatchObject({ error: expect.stringContaining('summary is not available') });
+  });
+
+  it('rejects unknown read views without executing the financial RPC', async () => {
+    const response = await GET(new Request('https://test.local/api/instrument-economics', { headers: { 'x-stockflow-economics-view': 'other' } }));
+    expect(response.status).toBe(400); expect(mocks.gateway).not.toHaveBeenCalled();
   });
 
   it('allows management to post a validated command and forwards actor, action, and idempotency key', async () => {
