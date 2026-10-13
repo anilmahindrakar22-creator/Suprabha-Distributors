@@ -25,15 +25,16 @@ create trigger d15_capture_approval_preview before update on private.stockflow_e
 
 do $test$
 declare
- v_scenario integer;v_months numeric;v_target uuid;v_version integer;v_preview jsonb;v_audit jsonb;v_payload jsonb;v_response jsonb;v_replay jsonb;v_audit_count integer;
+ v_scenario integer;v_months numeric;v_target uuid;v_group uuid;v_version integer;v_preview jsonb;v_audit jsonb;v_payload jsonb;v_response jsonb;v_replay jsonb;v_audit_count integer;
  v_day date:=private.stockflow_economic_business_date()-30;
 begin
  -- 1 capital then baseline (inclusive 24); 2 baseline then capital;
  -- 3 Management band; 4 Administrator band; 5 zero investment;
  -- 6 rebuild only; 9 existing eligible proposal until touched;
  -- 10 just above 24, to ensure the comparison never rounds down.
+ -- 12 eligible group remains proposed while automatic approval is on.
  -- 11 otherwise eligible, with automatic approval switched off (last case).
- foreach v_scenario in array array[1,2,3,4,5,6,9,10,11] loop
+ foreach v_scenario in array array[1,2,3,4,5,6,9,10,12,11] loop
   begin
    if v_scenario=11 then
     insert into private.stockflow_economic_policy_versions(actor,reason,automatic_approval) values('test','D15 switch off',false);
@@ -41,13 +42,28 @@ begin
    v_months:=case v_scenario when 3 then 30 when 4 then 40 when 10 then 24.000001 else 24 end;
    v_response:=public.stockflow_economics_gateway('d15-test-key','d15-management@test.local','create_target',jsonb_build_object(
     'kind','placement','name','D15 placement','companyId','d15-company','customerId','d1500000-0000-4000-8000-000000000001','customerSourceId','d15-customer-guid','siteId','d15-site','modelId','d15-model','installationId','d1500000-0000-4000-8000-000000000003','effectiveFrom',v_day,
-    'capitalPaise',case when v_scenario in (2,5) then '0' else (v_months*1000000)::bigint::text end,'capitalEvidence','D15 verified capital fixture','idempotencyKey','d15-create-fixture'));
+    'capitalPaise',case when v_scenario in (2,5,12) then '0' else (v_months*1000000)::bigint::text end,'capitalEvidence','D15 verified capital fixture','idempotencyKey','d15-create-fixture'));
    v_target:=(v_response->>'entityId')::uuid;
    select version into v_version from private.stockflow_economic_targets where id=v_target;
    if (select approval from private.stockflow_economic_targets where id=v_target)<>'proposed' or v_response?'autoApproved' then raise exception 'D15 create_target unexpectedly approved';end if;
 
+   if v_scenario=12 then
+    -- Group investment is inherited from its member; no member expectation is set.
+    perform public.stockflow_economics_gateway('d15-test-key','d15-management@test.local','record_capital',jsonb_build_object('targetId',v_target,'kind','capital','amountPaise','24000000','effectiveDate',v_day,'reason','D15 group member capital','idempotencyKey','d15-group-member-capital'));
+    v_response:=public.stockflow_economics_gateway('d15-test-key','d15-management@test.local','create_target',jsonb_build_object(
+     'kind','group','name','D15 eligible group','companyId','d15-company','customerId','d1500000-0000-4000-8000-000000000001','customerSourceId','d15-customer-guid','siteId','d15-site','modelId','d15-model','effectiveFrom',v_day,'capitalPaise','0','idempotencyKey','d15-group-create-fixture'));
+    v_group:=(v_response->>'entityId')::uuid;
+    perform public.stockflow_economics_gateway('d15-test-key','d15-management@test.local','set_group_members',jsonb_build_object('targetId',v_group,'members',jsonb_build_array(jsonb_build_object('placementId',v_target,'effectiveFrom',v_day)),'idempotencyKey','d15-group-members-fixture'));
+    select version into v_version from private.stockflow_economic_targets where id=v_group;
+    v_response:=public.stockflow_economics_gateway('d15-test-key','d15-management@test.local','set_expectation',jsonb_build_object('targetId',v_group,'effectiveFrom',v_day,'monthlyRevenuePaise','2000000','monthlyGpPaise','1000000','reason','D15 eligible group baseline','idempotencyKey','d15-group-expectation-fixture'));
+    v_preview:=private.stockflow_economic_approval_preview(v_group);
+    if v_preview->>'status' is distinct from 'within_limit' or (v_preview->>'netInvestmentPaise')::numeric is distinct from 24000000 or (v_preview->>'expectedPaybackMonths')::numeric is distinct from 24 then raise exception 'D15 group is not otherwise eligible: %',v_preview;end if;
+    if (select approval from private.stockflow_economic_targets where id=v_group) is distinct from 'proposed' or (select version from private.stockflow_economic_targets where id=v_group) is distinct from v_version or v_response?'autoApproved' or exists(select 1 from private.stockflow_economic_audit where action='approve_target' and entity_id=v_group) then raise exception 'D15 eligible group was automatically approved';end if;
+    raise exception using errcode='ZD015',message='Rollback D15 scenario';
+   end if;
+
    if v_scenario in (6,9) then
-    -- Seed an already eligible proposal without any of the five commands.
+    -- Seed an already eligible proposal without any of the four commands.
     insert into private.stockflow_economic_expectations(target_id,effective_from,monthly_revenue_paise,monthly_gp_paise,reason,created_by)
      values(v_target,v_day,2000000,1000000,'D15 pre-existing placement-start baseline','test');
     v_preview:=private.stockflow_economic_approval_preview(v_target);
