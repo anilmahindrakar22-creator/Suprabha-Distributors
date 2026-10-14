@@ -1,7 +1,7 @@
 # Open decisions (owner approval required)
 
 Items marked **decided below** have an owner decision in the Decided section. All other items remain open and must not assume an answer.
-**Last verified:** 13 Oct 2026.
+**Last verified:** 15 Oct 2026 (integration directive reconciliation).
 
 | ID | Decision | Options and trade-offs | Recommendation | Blocks |
 | --- | --- | --- | --- | --- |
@@ -17,7 +17,7 @@ Items marked **decided below** have an owner decision in the Decided section. Al
 | D-10 | **Branch disposition** | `docs/power-map-social-styles-roadmap`: content consolidated here; archive the branch after this PR. `feature/customer-pricing-engine`: 13 commits not patch-identical in the RC, so a content check is needed before archiving. `claude/market-w1`: keep parked until Phases 4/5, then rework to ADR-0006/0007. Old `feature/*` branches with 1–2 leftover commits: review, then archive | As stated | hygiene |
 | D-11 | **Receivables / COLLECT** | Owner deferred receivables (13 Oct). Confirm that COLLECT stays disabled until governed receivables exist | Confirm | Phases 5, 8 |
 | D-12 | **Urine** division | Seeded inactive on `market-w1`; re-enable? | Leave inactive unless it's a material line | Phase 5 |
-| D-13 | **Account class thresholds**: A ≥ ₹2 L/month, B ₹75 k–2 L; is there a C class? | Configurable policy (dominance framework) | Keep A/B; treat the rest as "unclassified" until a need appears | Phase 5 |
+| D-13 *(decided below)* | **Account class thresholds**: A ≥ ₹2 L/month, B ₹75 k–2 L; is there a C class? | Configurable policy (dominance framework) | Keep A/B; treat the rest as "unclassified" until a need appears | Phase 5 |
 
 ## Decided (owner, 13 Oct 2026)
 
@@ -28,6 +28,15 @@ Items marked **decided below** have an owner decision in the Decided section. Al
 | D-05 | **Investigate now; remove the dormant tables after the pilot.** A real bug found during the investigation is fixed promptly | See the finding below |
 | D-01 | **HbA1c becomes a separate division** | Division list: Biochemistry, Haematology, Immunoassay, Molecular, Microbiology, Rapid, Coagulation, Electrolytes, **HbA1c**, Others |
 | D-14 | **ADR-0011 accepted** (owner, 13 Oct 2026): one persistent instrument ID per physical machine; relocation keeps the ID and opens a new placement; nothing financial is duplicated | Build after the Economics cutover ([INSTALLED-BASE-REGISTER-DESIGN](../INSTALLED-BASE-REGISTER-DESIGN.md)) |
+| D-16 | **Accounts stay visible to every reader** (owner, 14 Oct 2026). "Mine" is a filter, never a restriction | Sales row scope unchanged (`global`) |
+| D-17 | **Any sales or operations user logs visits**, recorded under their name (default accepted 14 Oct 2026) | Accounts W1 as built |
+| D-18 | **Territories are created by management over time**, in the app (owner, 14 Oct 2026) | No seeded list |
+| D-19 | **Market area = the five districts around Gulbarga (Kalaburagi)** (owner, 14 Oct 2026). **Confirmed by the owner (14 Oct 2026): Kalaburagi, Bidar, Raichur, Yadgir, Bijapur (Vijayapura)** | Map bounds and location sanity checks (Phases 4 and 7) |
+| D-20 | **No Tally purchase orders or receipt notes are used** (owner, 14 Oct 2026) | Drop PO/GRN references from Phase 1; the aggregate "on order" quantity stays as it is |
+| D-07 *(source part)* | **App-only contacts** (owner reversal, 14 Oct 2026). The Tally contact mirror and connector request are superseded; staff add contacts in the app | [PHASE4-TALLY-CONTACTS-DESIGN](../PHASE4-TALLY-CONTACTS-DESIGN.md) retains historical sections. D-21/D-22 govern Power Map/style visibility; broader retention defaults remain open |
+| D-22 | **Social Styles from observed behaviour** (owner, 14 Oct 2026): any visit-logging user rates a person they met; the style and guidance are visible to administrators, management **and the account owner**; raw ratings to administrators and management | [PHASE6-SOCIAL-STYLES-DESIGN](../PHASE6-SOCIAL-STYLES-DESIGN.md) |
+| D-21 | **Power Map slice 1 approved** (owner, 14 Oct 2026): role, stance and influence per contact, 'who did you meet' in visits, three alerts. **Visible to administrators and management only**, including the alerts. Business facts only; blanked on erasure (ADR-0018 accepted with this visibility) | [PHASE6-POWER-MAP-SLICE1-DESIGN](../PHASE6-POWER-MAP-SLICE1-DESIGN.md) |
+| D-13 | **A/B classes next** (owner, 14 Oct 2026): A ≥ ₹2 L/month, B ₹75 k–<2 L, the rest "unclassified"; versioned policy | Phase 4 slice 2; needs the full-sales import (MARKET-FULL-SALES-IMPORT-PLAN) |
 | D-15 | **Placements with payback ≤ `attractive_months` (24) are approved automatically** (owner, 13 Oct 2026) | Placements only (groups stay manual); capital must be recorded. Approved in the same transaction as the command that makes them eligible, with the same frozen baseline and an "Automatic" reason. 25–36 months: Management; 37–48: Administrator; > 48: blocked. Only an Administrator can change the band (D-04) |
 
 ### D-05 investigation finding (13 Oct 2026, read-only code inspection)
