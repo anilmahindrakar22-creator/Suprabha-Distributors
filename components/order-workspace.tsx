@@ -1,6 +1,7 @@
 'use client';
 
 import { useCallback, useEffect, useEffectEvent, useMemo, useRef, useState, useSyncExternalStore } from 'react';
+import { ArrowUp, CircleCheck, Flame, PackageX, PhoneCall, ReceiptText, ShieldAlert, ShieldCheck, ShieldQuestionMark, TriangleAlert, Truck, UserCheck } from 'lucide-react';
 import type {
   CatalogItem,
   CustomerDirectoryEntry,
@@ -828,7 +829,7 @@ export function OrderWorkspace({ actorEmail, initialStatus = 'open', initialQuer
             <div className="mt-1.5 px-2"><OrderProgress status={openOrder.status} /></div>
           </div>
           <div className="min-h-0 flex-1 overflow-y-auto overscroll-contain">
-            {notice ? <p className="mx-3 mt-3 rounded-xl border border-sf-accent-line bg-sf-accent-soft px-3 py-2 text-sm font-semibold text-sf-success">{notice}</p> : null}
+            {notice ? <p className="mx-3 mt-3 flex items-center gap-1 rounded-xl border border-sf-success-line bg-sf-success-soft px-3 py-2 text-sm font-semibold text-sf-success"><CircleCheck aria-hidden="true" className="shrink-0" size={14} />{notice}</p> : null}
             {error ? <p className="mx-3 mt-3 rounded-xl border border-sf-danger-line bg-sf-danger-soft px-3 py-2 text-sm text-sf-danger">{error}</p> : null}
             <OrderRow key={openOrder.id} order={openOrder} inOrderPage {...orderRowProps} />
           </div>
@@ -975,18 +976,18 @@ function OrderRow({
         <div className="flex flex-wrap items-center gap-2">
           {inOrderPage ? null : <><strong className="text-sf-ink">{order.orderNumber}</strong>
           <span className="rounded-full bg-sf-soft px-2.5 py-1 text-[11px] font-extrabold text-sf-label">{orderStage(order.status)}</span></>}
-          {order.priority && order.priority !== 'normal' ? <span className={`rounded-full px-2.5 py-1 text-[11px] font-extrabold ${order.priority === 'urgent' ? 'bg-sf-danger-soft text-sf-danger' : 'bg-sf-warning-soft text-sf-warning'}`}>{order.priority === 'urgent' ? 'Urgent' : 'High priority'}</span> : null}
-          {order.assignedToEmail ? <span title={`Assigned to ${order.assignedToEmail}`} className="max-w-44 truncate rounded-full bg-sf-info-soft px-2.5 py-1 text-[11px] font-extrabold text-sf-info sm:max-w-none">Assigned: {order.assignedToEmail}</span> : null}
-          {deliveryReminder ? <span className={`rounded-full px-2.5 py-1 text-[11px] font-extrabold ${deliveryReminder === 'overdue' ? 'bg-sf-danger-soft text-sf-danger' : deliveryReminder === 'today' ? 'bg-sf-warning-soft text-sf-warning' : 'bg-sf-info-soft text-sf-info'}`}>{deliveryReminder === 'overdue' ? 'Delivery overdue' : deliveryReminder === 'today' ? 'Delivery due today' : 'Delivery due soon'}</span> : null}
-          {followUpReminder ? <span className={`rounded-full px-2.5 py-1 text-[11px] font-extrabold ${followUpReminder === 'overdue' ? 'bg-sf-danger-soft text-sf-danger' : followUpReminder === 'today' ? 'bg-sf-warning-soft text-sf-warning' : 'bg-sf-info-soft text-sf-info'}`}>{followUpReminder === 'overdue' ? 'Follow-up overdue' : followUpReminder === 'today' ? 'Follow-up today' : `Follow-up ${order.followUpDate}`}</span> : null}
-          {lineMatch.state === 'mismatch' ? <span className="rounded-full bg-sf-danger-soft px-2.5 py-1 text-[11px] font-extrabold text-sf-danger">Billing mismatch</span> : null}
-          <span className={`rounded-full px-2.5 py-1 text-[11px] font-extrabold ${order.pricingState === 'approved' ? 'bg-sf-accent-soft text-sf-success' : order.pricingState === 'approval_required' ? 'bg-sf-warning-soft text-sf-warning' : 'bg-sf-soft text-sf-muted'}`}>Pricing: {order.pricingState === 'approved' ? 'verified' : order.pricingState === 'approval_required' ? 'approval required' : 'review required'}</span>
+          {order.priority && order.priority !== 'normal' ? <span className={`inline-flex items-center gap-1 rounded-full px-2.5 py-1 text-[11px] font-extrabold ${order.priority === 'urgent' ? 'bg-sf-danger-soft text-sf-danger' : 'bg-sf-warning-soft text-sf-warning'}`}>{order.priority === 'urgent' ? <Flame aria-hidden="true" className="shrink-0" size={12} /> : <ArrowUp aria-hidden="true" className="shrink-0" size={12} />}{order.priority === 'urgent' ? 'Urgent' : 'High priority'}</span> : null}
+          {order.assignedToEmail ? <span title={`Assigned to ${order.assignedToEmail}`} className="inline-flex items-center gap-1 max-w-44 truncate rounded-full bg-sf-info-soft px-2.5 py-1 text-[11px] font-extrabold text-sf-info sm:max-w-none"><UserCheck aria-hidden="true" className="shrink-0" size={12} /><span className="truncate">Assigned: {order.assignedToEmail}</span></span> : null}
+          {deliveryReminder ? <span className={`inline-flex items-center gap-1 rounded-full px-2.5 py-1 text-[11px] font-extrabold ${deliveryReminder === 'overdue' ? 'bg-sf-danger-soft text-sf-danger' : deliveryReminder === 'today' ? 'bg-sf-warning-soft text-sf-warning' : 'bg-sf-info-soft text-sf-info'}`}><Truck aria-hidden="true" className="shrink-0" size={12} />{deliveryReminder === 'overdue' ? 'Delivery overdue' : deliveryReminder === 'today' ? 'Delivery due today' : 'Delivery due soon'}</span> : null}
+          {followUpReminder ? <span className={`inline-flex items-center gap-1 rounded-full px-2.5 py-1 text-[11px] font-extrabold ${followUpReminder === 'overdue' ? 'bg-sf-danger-soft text-sf-danger' : followUpReminder === 'today' ? 'bg-sf-warning-soft text-sf-warning' : 'bg-sf-info-soft text-sf-info'}`}><PhoneCall aria-hidden="true" className="shrink-0" size={12} />{followUpReminder === 'overdue' ? 'Follow-up overdue' : followUpReminder === 'today' ? 'Follow-up today' : `Follow-up ${order.followUpDate}`}</span> : null}
+          {lineMatch.state === 'mismatch' ? <span className="inline-flex items-center gap-1 rounded-full bg-sf-danger-soft px-2.5 py-1 text-[11px] font-extrabold text-sf-danger"><ReceiptText aria-hidden="true" className="shrink-0" size={12} />Billing mismatch</span> : null}
+          <span className={`inline-flex items-center gap-1 rounded-full px-2.5 py-1 text-[11px] font-extrabold ${order.pricingState === 'approved' ? 'bg-sf-success-soft text-sf-success' : order.pricingState === 'approval_required' ? 'bg-sf-warning-soft text-sf-warning' : 'bg-sf-soft text-sf-muted'}`}>{order.pricingState === 'approved' ? <ShieldCheck aria-hidden="true" className="shrink-0" size={12} /> : order.pricingState === 'approval_required' ? <ShieldAlert aria-hidden="true" className="shrink-0" size={12} /> : <ShieldQuestionMark aria-hidden="true" className="shrink-0" size={12} />}Pricing: {order.pricingState === 'approved' ? 'verified' : order.pricingState === 'approval_required' ? 'approval required' : 'review required'}</span>
         </div>
         {inOrderPage ? null : <p className="mt-2 font-bold text-sf-strong">{order.customerName}</p>}
         <p className="mt-1 flex flex-wrap items-center gap-2 text-xs text-sf-subtle"><span>{order.customerPhone || 'No phone recorded'} · {order.lineCount} line{order.lineCount === 1 ? '' : 's'}<span className="sm:hidden"> · {formatQuantity(total)} qty</span></span>{phoneHref ? <a href={phoneHref} aria-label={`Call ${order.customerName}`} className="rounded-lg border border-sf-line px-2 py-1 font-bold text-sf-body hover:bg-sf-soft">Call</a> : null}</p>
         {order.expectedDeliveryDate ? <p className="mt-1 text-xs font-bold text-sf-label">Promised delivery: {new Date(`${order.expectedDeliveryDate}T00:00:00+05:30`).toLocaleDateString('en-IN', { timeZone: 'Asia/Kolkata', day: '2-digit', month: 'short', year: 'numeric' })}</p> : null}
-        {backOrderedQuantity > 0 ? <p className="mt-1 text-xs font-extrabold text-sf-warning">Short by {formatQuantity(backOrderedQuantity)}</p> : null}
-        {attention.length ? <p className="mt-2 text-xs font-bold text-sf-warning">Needs attention: {attention.join(' · ')}</p> : null}
+        {backOrderedQuantity > 0 ? <p className="mt-1 inline-flex items-center gap-1 text-xs font-extrabold text-sf-warning"><PackageX aria-hidden="true" className="shrink-0" size={14} />Short by {formatQuantity(backOrderedQuantity)}</p> : null}
+        {attention.length ? <p className="mt-2 inline-flex items-center gap-1 text-xs font-bold text-sf-warning"><TriangleAlert aria-hidden="true" className="shrink-0" size={14} />Needs attention: {attention.join(' · ')}</p> : null}
         <ul aria-label="Order product preview" className="mt-3 hidden flex-wrap gap-1.5 lg:flex">{order.lines.slice(0, 4).map((line) => <li key={line.tallyKey} className="max-w-56 truncate rounded-lg bg-sf-soft px-2 py-1 text-[11px] font-bold text-sf-label" title={`${line.itemName} · ${formatQuantity(line.quantity)} ${line.baseUnit || ''}`}>{line.itemName} · {formatQuantity(line.quantity)} {line.baseUnit || ''}</li>)}{order.lines.length > 4 ? <li className="rounded-lg bg-sf-soft px-2 py-1 text-[11px] font-bold text-sf-muted">+{order.lines.length - 4} more</li> : null}</ul>
       </div>
       <div className="hidden sm:block">
@@ -1150,10 +1151,10 @@ function PricingDecisionHistory({ history }: { history: OrderPricingWorkspace['h
 
 function PricingLineCard({ line, entry, compact, onChange }: { line: PricingLineResolution; entry: { rate: string; reason: string }; compact: boolean; onChange: (value: { rate: string; reason: string }) => void }) {
   return <section className="rounded-xl border border-sf-line-soft bg-white p-3 text-xs text-sf-label">
-    <div className="flex flex-wrap items-start justify-between gap-2"><div><strong className="block text-sm text-sf-strong">{line.itemName}</strong><span>{formatQuantity(line.quantity)} ordered · {line.resolution.replaceAll('_', ' ')}</span></div><span className={`rounded-full px-2 py-1 font-extrabold ${line.guardrail === 'PRICE_OK' ? 'bg-sf-accent-soft text-sf-success' : 'bg-sf-warning-soft text-sf-warning'}`}>{line.guardrail.replaceAll('_', ' ')}</span></div>
+    <div className="flex flex-wrap items-start justify-between gap-2"><div><strong className="block text-sm text-sf-strong">{line.itemName}</strong><span>{formatQuantity(line.quantity)} ordered · {line.resolution.replaceAll('_', ' ')}</span></div><span className={`rounded-full px-2 py-1 font-extrabold ${line.guardrail === 'PRICE_OK' ? 'bg-sf-success-soft text-sf-success' : 'bg-sf-warning-soft text-sf-warning'}`}>{line.guardrail.replaceAll('_', ' ')}</span></div>
     {line.source.reference ? <p className="mt-2">Source: {line.source.reference} · {line.source.date}</p> : null}
     {line.warnings.length ? <p className="mt-2 font-extrabold text-sf-warning">{line.warnings.join(' · ').replaceAll('_', ' ')}</p> : null}
-    {compact ? <p className="mt-2 rounded-lg bg-sf-accent-soft p-3 font-bold text-sf-success">Governed price: {line.proposedRate == null ? 'Unavailable' : currency.format(line.proposedRate)}</p> : <PricingOptions line={line} entry={entry} onChange={onChange}/>}
+    {compact ? <p className="mt-2 flex items-center gap-1 rounded-lg bg-sf-success-soft p-3 font-bold text-sf-success"><CircleCheck aria-hidden="true" className="shrink-0" size={14} />Governed price: {line.proposedRate == null ? 'Unavailable' : currency.format(line.proposedRate)}</p> : <PricingOptions line={line} entry={entry} onChange={onChange}/>}
   </section>;
 }
 

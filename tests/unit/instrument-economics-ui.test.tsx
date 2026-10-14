@@ -1,3 +1,4 @@
+import { readFileSync } from 'node:fs';
 import { describe, expect, it, vi } from 'vitest';
 vi.mock('next/link', () => ({ default: 'a' }));
 import { renderToStaticMarkup } from 'react-dom/server';
@@ -14,6 +15,10 @@ const target: EconomicTarget = {
 };
 
 describe('instrument economics presentation', () => {
+  it('uses semantic tokens instead of raw palette classes', () => {
+    const source = readFileSync('components/instrument-economics-workspace.tsx', 'utf8');
+    expect(source).not.toMatch(/(emerald|amber|red|blue|slate)-\d{2,3}/);
+  });
   it('keeps capital-entry preview exact at paise boundaries and above number precision', () => {
     expect(capitalPreviewPaise('100000.01')).toBe(BigInt('10000001'));
     expect(capitalPreviewPaise('90071992547409.93')).toBe(BigInt('9007199254740993'));
@@ -101,7 +106,7 @@ describe('instrument economics presentation', () => {
     expect(html).toContain('₹9,00,71,99,25,47,409.93');
     expect(html).toContain('Unavailable · 1 line missing cost');
     expect(html).toContain('Known cost and GP include verified lines only.');
-    expect(html).toContain('−₹1.00'); expect(html).toContain('text-red-800');
+    expect(html).toContain('−₹1.00'); expect(html).toContain('text-sf-danger');
   });
 
   it.each([
@@ -128,8 +133,8 @@ describe('instrument economics presentation', () => {
     expect(renderToStaticMarkup(<EconomicApprovalPreview target={target} />)).toContain('Refresh to load the financial approval preview.');
   });
   it.each([
-    ['healthy', 'Healthy', 'text-emerald-800'], ['watch', 'Watch', 'text-amber-900'], ['critical', 'Critical', 'text-red-800'],
-    ['data_incomplete', 'Data incomplete', 'text-slate-700'], ['inactive', 'Inactive', 'text-slate-600'], ['proposed', 'Proposed', 'text-blue-800'],
+    ['healthy', 'Healthy', 'text-sf-success'], ['watch', 'Watch', 'text-sf-warning'], ['critical', 'Critical', 'text-sf-danger'],
+    ['data_incomplete', 'Data incomplete', 'text-sf-body'], ['inactive', 'Inactive', 'text-sf-muted'], ['proposed', 'Proposed', 'text-sf-info'],
   ] as const)('shows %s with an explicit label and distinct color', (health, label, color) => {
     const html = renderToStaticMarkup(<EconomicHealthBadge health={health} />);
     expect(html).toContain(label); expect(html).toContain(color); expect(html).toContain('<svg');
@@ -208,12 +213,12 @@ describe('instrument economics presentation', () => {
     const html = renderToStaticMarkup(<EconomicTargetAdvancedDetails target={{ ...target, investmentReview } as EconomicTarget} />);
     expect(html).toContain('Investment review required');
     expect(html).toContain('40 months');
-    expect(html).toContain('border-amber-200');
+    expect(html).toContain('border-sf-warning-line');
     expect(html).toContain('Actual GP forecast');
     expect(html).not.toContain('Unapproved');
     const limit = renderToStaticMarkup(<EconomicTargetAdvancedDetails target={{ ...target, investmentReview: { ...investmentReview, status: 'limit_exceeded', expectedPaybackMonths: 55 } } as EconomicTarget} />);
     expect(limit).toContain('Investment payback limit exceeded');
-    expect(limit).toContain('border-red-200');
+    expect(limit).toContain('border-sf-danger-line');
     expect(limit).toContain('55 months');
     expect(limit).not.toContain('Forecast</dt>55 months');
   });
@@ -237,7 +242,7 @@ describe('instrument economics presentation', () => {
     expect(html).toContain('verified trailing reagent GP');
     const critical = renderToStaticMarkup(<EconomicTargetAdvancedDetails target={{ ...target, forecastMonths: 109, forecastReview: { ...forecastReview, status: 'limit_exceeded' } } as EconomicTarget} />);
     expect(critical).toContain('Actual recovery forecast exceeds limit');
-    expect(critical).toContain('border-red-200');
+    expect(critical).toContain('border-sf-danger-line');
     const stalled = renderToStaticMarkup(<EconomicTargetAdvancedDetails target={{ ...target, health: 'critical', missingCostLines: 0, forecastMonths: null, forecastReview: { ...forecastReview, status: 'non_positive_gp' } } as EconomicTarget} />);
     expect(stalled).toContain('Actual GP does not support recovery');
     expect(stalled).toContain('Actual recovery forecast: Unavailable');
