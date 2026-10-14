@@ -33,6 +33,26 @@ import { readJsonBody } from '@/lib/http-json';
 import { hasAnyStockFlowRole, type StockFlowRole } from '@/lib/user-types';
 
 type DraftLine = { tallyKey: string; item: CatalogItem | null; quantity: number };
+// A null draft means no customer is selected; callers supply only that customer's history.
+export function findPossibleRepeat(lines: readonly { tallyKey: string }[] | null, recentOrders: readonly OrderSummary[], today: Date) {
+  if (!lines?.length) return null;
+  const keys = new Set(lines.map((line) => line.tallyKey));
+  const now = today.getTime();
+  let best: { order: OrderSummary; items: OrderSummary['lines'] } | null = null;
+  for (const order of recentOrders) {
+    const created = Date.parse(order.createdAt);
+    if (order.status === 'delivered' || order.status === 'cancelled' || !Number.isFinite(created) || created > now || now - created > 7 * 24 * 60 * 60 * 1000) continue;
+    const seen = new Set<string>();
+    const items = order.lines.filter((line) => {
+      if (!keys.has(line.tallyKey) || seen.has(line.tallyKey)) return false;
+      seen.add(line.tallyKey);
+      return true;
+    });
+    if (items.length && (!best || items.length > best.items.length || items.length === best.items.length && created > Date.parse(best.order.createdAt))) best = { order, items };
+  }
+  return best;
+}
+
 type OrderEntryPrice = { tallyKey: string; currentPrice: number | null; currentPriceSource: string; riskStatus: 'GREEN' | 'AMBER' | 'RED'; recommendationReason?: string };
 type CreatedOrderResult = { orderId?: string; orderNumber?: string; status?: string; version?: number };
 type CreatedOrderCommand = Extract<OrderCommand, { action: 'create_order' }>;
@@ -1385,6 +1405,7 @@ export function HydratedNewOrderPanel({ data, templateOrder, onClose, onCreated,
   const [expectedDeliveryDate, setExpectedDeliveryDate] = useState(initialPayload?.expectedDeliveryDate || '');
   const [productQuery, setProductQuery] = useState('');
   const [recentQuantities, setRecentQuantities] = useState<Record<string, string>>({});
+  const [expandedRepeatOrderId, setExpandedRepeatOrderId] = useState<string | null>(null);
   const customerSelectedAtRef = useRef<number | null>(null);
   const [activeProductIndex, setActiveProductIndex] = useState(0);
   const focusQuantityKey = useRef<string | null>(null);
@@ -1508,6 +1529,12 @@ export function HydratedNewOrderPanel({ data, templateOrder, onClose, onCreated,
     [customerName, data.customers],
   );
   const selectedCustomer = data.customers.find((customer) => customer.id === selectedCustomerId);
+  const possibleRepeat = findPossibleRepeat(
+    selectedCustomer && customerHistory?.ownerKey === selectedCustomerKey ? lines : null,
+    customerHistory?.rankingOrders ?? [],
+    new Date(),
+  );
+  const repeatExpanded = !!possibleRepeat && expandedRepeatOrderId === possibleRepeat.order.id;
   const recentProducts = useMemo(() => {
     if (!selectedCustomerId || customerHistory?.ownerKey !== selectedCustomerKey || lines.length >= 50) return [];
     const catalogByKey = new Map(data.snapshot.catalog.filter((item) => item.active).map((item) => [item.tallyKey, item]));
@@ -1772,7 +1799,7 @@ export function HydratedNewOrderPanel({ data, templateOrder, onClose, onCreated,
                       ))}
                     </ul>
                   ) : null}
-                  {selectedCustomer ? <CustomerAccountPreview customer={selectedCustomer} history={customerHistory?.ownerKey === selectedCustomerKey ? customerHistory : null} state={customerHistoryState} onViewOrders={() => onViewCustomer(selectedCustomer.name)} onUseOrder={usePreviousOrder} onUseAddress={usePreviousAddress} /> : null}
+                  {selectedCustomer ? <CustomerAccountPreview customer={selectedCustomer} history={customerHistory?.ownerKey === selectedCustomerKey ? customerHistory : null} state={customerHistoryState} onShowCustomerOrders={() => onViewCustomer(selectedCustomer.name)} onUseOrder={usePreviousOrder} onUseAddress={usePreviousAddress} /> : null}
                 </div>
                 <details className="sm:col-span-2 rounded-xl bg-sf-soft px-3 py-2 text-sm">
                   <summary className="cursor-pointer font-bold text-sf-label">Contact details <span className="font-normal text-sf-subtle">(optional)</span></summary>
@@ -1816,7 +1843,7 @@ export function HydratedNewOrderPanel({ data, templateOrder, onClose, onCreated,
               }} role="combobox" aria-autocomplete="list" aria-expanded={matches.length > 0} aria-controls="product-suggestions" className="mt-2 min-h-11 w-full rounded-xl border border-sf-line px-3 font-normal outline-none focus:border-sf-mint" placeholder="Type a product name" /></label>
               {matches.length ? <div id="product-suggestions" aria-label="Matching Tally products" className="mt-2 overflow-hidden rounded-xl border border-sf-line-soft">{matches.map((item, index) => <button key={item.tallyKey} type="button" onClick={() => addProduct(item)} className={`flex min-h-12 w-full items-center justify-between gap-4 border-b border-sf-soft-2 px-3 text-left last:border-0 hover:bg-sf-accent-soft ${index === activeProductIndex ? 'bg-sf-accent-soft' : ''}`}><span><strong className="block text-sm text-sf-strong">{item.item}</strong><small className="text-sf-subtle">{item.group}</small></span><span className="shrink-0 text-xs font-bold text-sf-accent">Available {formatQuantity(item.closing)} {item.baseUnit}</span></button>)}</div> : null}
               {productQuery.trim() && matches.length === 0 ? <p className="mt-2 rounded-xl bg-sf-warning-soft px-3 py-2 text-sm text-sf-warning">No Tally products match “{productQuery.trim()}”.</p> : null}
-              <div className="mt-4 space-y-2">{lines.map((line) => { const price = entryPrices[line.tallyKey]; return <div key={line.tallyKey} className={`grid grid-cols-[minmax(0,1fr)_44px] sm:grid-cols-[minmax(0,1fr)_90px_44px] items-center gap-3 rounded-xl p-3 ${line.item ? 'bg-sf-soft' : 'border border-sf-danger-line bg-sf-danger-soft'}`}><div className="col-span-2 min-w-0 sm:col-span-1"><strong className="block [overflow-wrap:anywhere] text-sm text-sf-strong">{line.item?.item || `Unavailable Tally item (${line.tallyKey})`}</strong><small className={line.item ? 'text-sf-subtle' : 'font-bold text-sf-danger'}>{line.item ? `Closing ${formatQuantity(line.item.closing)} ${line.item.baseUnit}` : 'Remove and select its current catalogue replacement'}</small>{canViewPrices ? <small className={`mt-1 block font-bold ${price?.riskStatus === 'RED' ? 'text-sf-danger' : price?.riskStatus === 'AMBER' ? 'text-sf-warning' : 'text-sf-success'}`}>{price ? `Current price ${price.currentPrice == null ? 'review required' : currency.format(price.currentPrice)} · ${price.riskStatus}` : entryPriceState === 'loading' ? 'Resolving customer price…' : 'Customer price unavailable · review required'}</small> : <small className="mt-1 block text-sf-subtle">Pricing is checked at confirmation.</small>}</div><label className="sr-only" htmlFor={`qty-${line.tallyKey}`}>Quantity for {line.item?.item || line.tallyKey}</label><input id={`qty-${line.tallyKey}`} type="number" min="1" max="1000000" step="1" required value={line.quantity} onChange={(event) => setLines((current) => current.map((entry) => entry.tallyKey === line.tallyKey ? { ...entry, quantity: Number(event.target.value) } : entry))} onKeyDown={(event) => { if (event.key === 'Enter') { event.preventDefault(); productInputRef.current?.focus(); } }} className="min-h-11 min-w-0 w-full rounded-lg border border-sf-line px-2 text-right" /><button type="button" onClick={() => setLines((current) => current.filter((entry) => entry.tallyKey !== line.tallyKey))} aria-label={`Remove ${line.item?.item || line.tallyKey}`} className="size-11 rounded-lg text-xl text-sf-danger hover:bg-sf-danger-soft">×</button></div>; })}</div>
+              <div className="mt-4 space-y-2">{lines.map((line) => { const price = entryPrices[line.tallyKey]; const unit = line.item?.baseUnit?.trim() || 'units'; return <div key={line.tallyKey} className={`grid grid-cols-[minmax(0,1fr)_44px] sm:grid-cols-[minmax(0,1fr)_140px_44px] items-center gap-3 rounded-xl p-3 ${line.item ? 'bg-sf-soft' : 'border border-sf-danger-line bg-sf-danger-soft'}`}><div className="col-span-2 min-w-0 sm:col-span-1"><strong className="block [overflow-wrap:anywhere] text-sm text-sf-strong">{line.item?.item || `Unavailable Tally item (${line.tallyKey})`}</strong><small className={line.item ? 'text-sf-subtle' : 'font-bold text-sf-danger'}>{line.item ? `Closing ${formatQuantity(line.item.closing)} ${line.item.baseUnit}` : 'Remove and select its current catalogue replacement'}</small>{line.item && !line.item.baseUnit?.trim() ? <small className="mt-1 block text-sf-subtle">Unit not set in Tally</small> : null}{canViewPrices ? <small className={`mt-1 block font-bold ${price?.riskStatus === 'RED' ? 'text-sf-danger' : price?.riskStatus === 'AMBER' ? 'text-sf-warning' : 'text-sf-success'}`}>{price ? `Current price ${price.currentPrice == null ? 'review required' : currency.format(price.currentPrice)} · ${price.riskStatus}` : entryPriceState === 'loading' ? 'Resolving customer price…' : 'Customer price unavailable · review required'}</small> : <small className="mt-1 block text-sf-subtle">Pricing is checked at confirmation.</small>}</div><label className="sr-only" htmlFor={`qty-${line.tallyKey}`}>Quantity for {line.item?.item || line.tallyKey} in {unit}</label><div className="flex min-w-0 items-center gap-2"><input id={`qty-${line.tallyKey}`} type="number" min="1" max="1000000" step="1" required value={line.quantity} onChange={(event) => setLines((current) => current.map((entry) => entry.tallyKey === line.tallyKey ? { ...entry, quantity: Number(event.target.value) } : entry))} onKeyDown={(event) => { if (event.key === 'Enter') { event.preventDefault(); productInputRef.current?.focus(); } }} className="min-h-11 min-w-0 w-full rounded-lg border border-sf-line px-2 text-right" /><span className="max-w-20 shrink-0 break-words text-sm text-sf-subtle">{unit}</span></div><button type="button" onClick={() => setLines((current) => current.filter((entry) => entry.tallyKey !== line.tallyKey))} aria-label={`Remove ${line.item?.item || line.tallyKey}`} className="size-11 rounded-lg text-xl text-sf-danger hover:bg-sf-danger-soft">×</button></div>; })}</div>
               {hasAnyStockFlowRole(data.actor.roles ?? data.actor.role, ['administrator', 'management', 'operations', 'sales']) ? <ProductRequest key={data.actor.email} actorEmail={data.actor.email} productName={productQuery} customerId={selectedCustomerId} visible={productQuery.trim().length >= 2 && matches.length === 0 && lines.length < 50 && !data.snapshot.catalog.some((item) => item.item.toLocaleLowerCase('en-IN') === productQuery.trim().toLocaleLowerCase('en-IN'))} /> : null}
               {lines.length >= 50 ? <p className="mt-2 text-xs font-bold text-sf-warning">Maximum 50 products per order.</p> : null}
               {lines.length === 0 ? <p className="mt-4 rounded-xl bg-sf-soft p-4 text-center text-sm text-sf-subtle">Search and add the products requested on the call.</p> : null}
@@ -1842,6 +1869,14 @@ export function HydratedNewOrderPanel({ data, templateOrder, onClose, onCreated,
             {initialDraft ? <button type="button" onClick={discardSavedOrder} className="min-h-10 rounded-xl px-4 text-sm font-bold text-sf-danger hover:bg-sf-danger-soft">Discard saved order</button> : null}
             {error ? <p role="alert" className="rounded-xl border border-sf-danger-line bg-sf-danger-soft px-4 py-3 text-sm text-sf-danger">{error}</p> : null}
           </div>
+          {possibleRepeat ? <div role="status" className="mx-5 mb-3 rounded-xl border border-sf-warning-line bg-sf-warning-soft p-3 text-sm text-sf-warning">
+            <p>Possible repeat: order {possibleRepeat.order.orderNumber} from {new Date(possibleRepeat.order.createdAt).toLocaleDateString('en-GB', { timeZone: 'Asia/Kolkata', day: 'numeric', month: 'short' })} already has {possibleRepeat.items.length} of these items ({possibleRepeat.items.slice(0, 2).map((item) => item.itemName).join(', ')}{possibleRepeat.items.length > 2 ? ', …' : ''}).</p>
+            <button type="button" aria-expanded={repeatExpanded} onClick={() => setExpandedRepeatOrderId(repeatExpanded ? null : possibleRepeat.order.id)} className="mt-1 min-h-11 text-left font-bold underline">{repeatExpanded ? 'Hide order' : 'Show order'} {possibleRepeat.order.orderNumber}</button>
+            {repeatExpanded ? <div className="mt-1">
+              <p>{statusLabel(possibleRepeat.order.status)} · <time dateTime={possibleRepeat.order.createdAt}>{new Date(possibleRepeat.order.createdAt).toLocaleString('en-GB', { timeZone: 'Asia/Kolkata', day: 'numeric', month: 'short', hour: '2-digit', minute: '2-digit', hour12: false })}</time></p>
+              <ul className="mt-2 space-y-1">{possibleRepeat.items.map((item) => <li key={item.tallyKey}>{item.itemName} — {formatQuantity(item.quantity)}{item.baseUnit?.trim() ? ` ${item.baseUnit.trim()}` : ''}</li>)}</ul>
+            </div> : null}
+          </div> : null}
           <footer className="sticky bottom-0 flex items-center justify-between gap-4 border-t border-sf-line-soft bg-white/95 px-5 py-4 backdrop-blur"><p className="min-w-0 text-xs text-sf-subtle">{lines.length} product{lines.length === 1 ? '' : 's'} · {lines.some((line) => !line.item) ? 'product needs replacement' : draftState === 'pending' ? 'waiting to send' : saveOnDevice ? 'draft protected' : 'ready to save'}</p><button type="submit" disabled={submitting || lines.length === 0 || lines.some((line) => !line.item)} className="min-h-12 shrink-0 rounded-xl bg-sf-ink px-6 font-extrabold text-white hover:bg-sf-ink-hover disabled:opacity-50">{submitting ? 'Saving…' : draftState === 'pending' || draftState === 'error' ? 'Retry order' : 'Save order'}</button></footer>
         </form>
       </dialog>
@@ -1849,12 +1884,12 @@ export function HydratedNewOrderPanel({ data, templateOrder, onClose, onCreated,
   );
 }
 
-function CustomerAccountPreview({ customer, history, state, onViewOrders, onUseOrder, onUseAddress }: { customer: CustomerDirectoryEntry; history: { orders: OrderSummary[]; total: number } | null; state: 'idle' | 'loading' | 'error'; onViewOrders: () => void; onUseOrder: (order: OrderSummary) => void; onUseAddress: (address: string) => void }) {
+function CustomerAccountPreview({ customer, history, state, onShowCustomerOrders, onUseOrder, onUseAddress }: { customer: CustomerDirectoryEntry; history: { orders: OrderSummary[]; total: number } | null; state: 'idle' | 'loading' | 'error'; onShowCustomerOrders: () => void; onUseOrder: (order: OrderSummary) => void; onUseAddress: (address: string) => void }) {
   const phoneHref = customerPhoneHref(customer.phone);
   const addresses = customerDeliveryAddresses(history?.orders || []);
   const balanceFreshness = customerBalanceFreshness(customer);
   return <section aria-label="Customer account" className="mt-2 rounded-xl border border-sf-line-soft bg-sf-soft-0 p-3 text-xs font-normal">
-    <div className="flex items-start justify-between gap-3"><div><strong className="block text-sm text-sf-strong">Customer account</strong><span className="mt-1 block text-sf-subtle">{[customer.city, customer.phone].filter(Boolean).join(' · ') || 'Contact details unavailable in Tally'}</span></div><div className="flex shrink-0 flex-wrap justify-end gap-2">{phoneHref ? <a href={phoneHref} aria-label={`Call ${customer.name}`} className="inline-flex min-h-9 items-center rounded-lg border border-sf-line bg-white px-3 font-bold text-sf-body">Call</a> : null}{history ? <button type="button" onClick={onViewOrders} className="min-h-9 rounded-lg border border-sf-line bg-white px-3 font-bold text-sf-body">View all orders</button> : null}</div></div>
+    <div className="flex items-start justify-between gap-3"><div><strong className="block text-sm text-sf-strong">Customer account</strong><span className="mt-1 block text-sf-subtle">{[customer.city, customer.phone].filter(Boolean).join(' · ') || 'Contact details unavailable in Tally'}</span></div><div className="flex shrink-0 flex-wrap justify-end gap-2">{phoneHref ? <a href={phoneHref} aria-label={`Call ${customer.name}`} className="inline-flex min-h-9 items-center rounded-lg border border-sf-line bg-white px-3 font-bold text-sf-body">Call</a> : null}{history ? <button type="button" onClick={onShowCustomerOrders} className="min-h-9 rounded-lg border border-sf-line bg-white px-3 font-bold text-sf-body">View all orders</button> : null}</div></div>
     {balanceFreshness !== 'unavailable' ? <div className={`mt-2 rounded-lg px-3 py-2 ${balanceFreshness === 'stale' ? 'border border-sf-warning-line bg-sf-warning-soft text-sf-warning' : 'bg-sf-soft text-sf-label'}`}><p>Read-only Tally ledger balance: <strong>₹{customer.tallyBalance?.toLocaleString('en-IN', { maximumFractionDigits: 2 })}</strong>{customer.balanceAsOf ? ` · as of ${new Date(customer.balanceAsOf).toLocaleString('en-IN')}` : ''}</p>{balanceFreshness === 'stale' ? <output className="mt-1 block font-bold">Balance may be outdated. Check Tally before confirming credit terms.</output> : <p className="mt-1 text-sf-subtle">For reference only; StockFlow does not approve or block credit.</p>}</div> : null}
     {state === 'loading' ? <p className="mt-2 text-sf-subtle">Loading this customer’s order history…</p> : null}
     {state === 'error' ? <p className="mt-2 rounded-lg bg-sf-warning-soft px-3 py-2 text-sf-warning">Order history is unavailable right now. You can still save this order.</p> : null}

@@ -67,7 +67,7 @@ test('five-product keyboard capture saves exact quantities once and records loca
   for (const [index, name] of ['Glucose A', 'Glucose B', 'CRP', 'HbA1c', 'Cleaner'].entries()) {
     await product.fill(name);
     await product.press('Enter');
-    const quantity = page.getByRole('spinbutton', { name: `Quantity for ${name}`, exact: true });
+    const quantity = page.getByRole('spinbutton', { name: `Quantity for ${name} in ` });
     await expect(quantity).toBeFocused();
     await quantity.fill(String(index + 1));
     await quantity.press('Enter');
@@ -187,7 +187,7 @@ test('recent customer products can be added from the existing history response',
   const quickQuantity = recent.getByRole('spinbutton', { name: 'Recent quantity for Glucose B' });
   await quickQuantity.fill('0');
   await quickQuantity.press('Enter');
-  await expect(page.getByRole('spinbutton', { name: 'Quantity for Glucose B', exact: true })).toHaveCount(0);
+  await expect(page.getByRole('spinbutton', { name: /^Quantity for Glucose B in / })).toHaveCount(0);
   await quickQuantity.fill('4');
   await quickQuantity.press('Enter');
   await expect(page.getByRole('spinbutton', { name: 'Quantity for Glucose B' })).toBeFocused();

@@ -18,7 +18,7 @@ test('real submission deadline retains the original command for successful retry
   await page.goto('/?view=order-recovery');
   await expect.poll(() => writes.length).toBe(1);
   await expect(page.getByRole('button', { name: 'Retry order', exact: true })).toBeEnabled({ timeout: 20_000 });
-  await expect(page.getByRole('spinbutton', { name: 'Quantity for CRP', exact: true })).toBeDisabled();
+  await expect(page.getByRole('spinbutton', { name: /^Quantity for CRP in / })).toBeDisabled();
   expect(await page.evaluate(key => JSON.parse(localStorage.getItem(key)!), key)).toMatchObject({ state: 'pending', command });
   await page.getByRole('button', { name: 'Retry order', exact: true }).click();
   await expect(page.getByText('Accepted SF-TIMEOUT-RECOVERED')).toBeVisible();
@@ -37,10 +37,10 @@ test('saved draft restores customer and quantities without submitting on reload'
   }, { key, actor, command });
   await page.goto('/?view=order-recovery');
   await expect(page.getByRole('combobox', { name: 'Name', exact: true })).toHaveValue('Test Alpha Laboratory');
-  await expect(page.getByRole('spinbutton', { name: 'Quantity for CRP', exact: true })).toHaveValue('3');
+  await expect(page.getByRole('spinbutton', { name: /^Quantity for CRP in / })).toHaveValue('3');
   await expect(page.getByRole('checkbox', { name: 'Save draft on this device' })).toBeChecked();
   await page.reload();
-  await expect(page.getByRole('spinbutton', { name: 'Quantity for CRP', exact: true })).toHaveValue('3');
+  await expect(page.getByRole('spinbutton', { name: /^Quantity for CRP in / })).toHaveValue('3');
   expect(writes).toBe(0);
 });
 
@@ -87,7 +87,7 @@ test('manual retry keeps a pending submission immutable until its outcome is kno
   }, { key, actor, command });
   await page.goto('/?view=order-recovery');
   await expect(page.getByRole('combobox', { name: 'Name', exact: true })).toBeDisabled();
-  await expect(page.getByRole('spinbutton', { name: 'Quantity for CRP', exact: true })).toBeDisabled();
+  await expect(page.getByRole('spinbutton', { name: /^Quantity for CRP in / })).toBeDisabled();
   await page.getByRole('button', { name: 'Retry order', exact: true }).click();
   await expect(page.getByText('Accepted SF-MANUAL-RECOVERED')).toBeVisible();
   expect(writes).toEqual([command]);
@@ -106,7 +106,7 @@ test('incomplete acknowledgement retains the draft and manual retry sends the ex
   await expect.poll(() => writes.length).toBe(1);
   await expect(page.getByRole('button', { name: 'Retry order', exact: true })).toBeEnabled();
   expect(await page.evaluate(key => JSON.parse(localStorage.getItem(key)!).command, key)).toEqual(command);
-  await expect(page.getByRole('spinbutton', { name: 'Quantity for CRP', exact: true })).toBeDisabled();
+  await expect(page.getByRole('spinbutton', { name: /^Quantity for CRP in / })).toBeDisabled();
   await page.getByRole('button', { name: 'Retry order', exact: true }).click();
   await expect(page.getByText('Accepted SF-ACKNOWLEDGED')).toBeVisible();
   expect(writes).toEqual([command, command]);
@@ -121,7 +121,7 @@ test('revoked order access stops reconnect retries and keeps a draft needing att
   }, { key, actor, command });
   await page.goto('/?view=order-recovery');
   await expect(page.getByRole('alert')).toContainText('no longer has permission');
-  await expect(page.getByRole('spinbutton', { name: 'Quantity for CRP', exact: true })).toBeEnabled();
+  await expect(page.getByRole('spinbutton', { name: /^Quantity for CRP in / })).toBeEnabled();
   expect(await page.evaluate(key => JSON.parse(localStorage.getItem(key)!).state, key)).toBe('error');
   await page.evaluate(() => { for (let i=0; i<3; i++) window.dispatchEvent(new Event('online')); });
   expect(writes).toBe(1);

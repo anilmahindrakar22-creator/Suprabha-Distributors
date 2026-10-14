@@ -37,11 +37,12 @@ for (const width of [320, 375, 768, 1280]) {
     const product = page.getByRole('combobox', { name: 'Find product' });
     await product.fill('Glucose A');
     await product.press('Enter');
-    const quantity = page.getByRole('spinbutton', { name: 'Quantity for Glucose A', exact: true });
+    const quantity = page.getByRole('spinbutton', { name: /^Quantity for Glucose A in / });
     await quantity.scrollIntoViewIfNeeded();
     await expect(quantity).toBeInViewport();
-    const card = quantity.locator('..');
+    const card = quantity.locator('../..');
     const name = card.locator('strong');
+    await expect(name).toHaveText('Glucose A');
     expect(await name.evaluate(element => getComputedStyle(element).textOverflow)).not.toBe('ellipsis');
     expect(await dialog.evaluate(element => element.scrollWidth <= element.clientWidth)).toBe(true);
     for (const button of [dialog.getByRole('button', { name: 'Close', exact: true }), dialog.getByRole('button', { name: 'Remove Glucose A', exact: true }), dialog.getByRole('button', { name: 'Save order', exact: true })]) {
