@@ -41,4 +41,4 @@ An unlinked large account must never look small.
 - Classes C and lower (D-13: the rest is "below B").
 - Automatic linking.
 - Any map.
-- The five-district market area (D-19), until the owner confirms the list.
+- The market area (D-19, confirmed: Kalaburagi, Bidar, Raichur, Yadgir, Bijapur). It's used for map bounds and location sanity checks in a later slice.
