@@ -1,3 +1,5 @@
+> **Superseded (owner, 14 Oct 2026):** the Tally contacts mirror is dropped. Contacts are app-only (§3b). Sections 1–3 are kept for history only.
+
 # Phase 4: customer contacts from Tally ledgers (D-07 source decision)
 
 **Owner decision (14 Oct 2026):** "Names should come from Tally ledger." Tally is the **authority** for contact names. The app never creates or edits a contact name.
