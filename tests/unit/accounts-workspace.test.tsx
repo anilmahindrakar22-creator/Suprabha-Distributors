@@ -2,7 +2,7 @@ import React from 'react';
 import { renderToStaticMarkup } from 'react-dom/server';
 import { describe, expect, it } from 'vitest';
 import type { AccountRow, ContactStyle } from '@/lib/account-types';
-import { AccountDetails, accountClassesNote, accountDate, accountMetaLine, addAccountDays, alertLabel, assessmentSummary, classChip, visitChip, styleLine, styleTip, whoDecidesLine } from '@/components/accounts-workspace';
+import { AccountDetails, accountClassesNote, accountDate, accountMetaLine, addAccountDays, alertLabel, assessmentSummary, classChip, ratingChoice, visitChip, styleLine, styleTip, whoDecidesLine } from '@/components/accounts-workspace';
 
 const row: AccountRow = {
   id: '11111111-1111-4111-8111-111111111111', name: 'Care Lab', city: 'Pune',
@@ -13,6 +13,18 @@ const row: AccountRow = {
   class: { state: 'not_available', monthlyPaise: null, window: { from: '2026-07-01', to: '2026-09-30' } },
 };
 describe('Accounts pure presentation', () => {
+  it.each([
+    [0, 1, 'Clearly', 'speaks slowly and carefully', 'left', 2],
+    [0, 2, 'Slightly', 'speaks slowly and carefully', 'left', 1],
+    [0, 3, 'Slightly', 'speaks quickly and firmly', 'right', 1],
+    [0, 4, 'Clearly', 'speaks quickly and firmly', 'right', 2],
+    [7, 1, 'Clearly', 'asks for proof and data', 'left', 2],
+    [7, 2, 'Slightly', 'asks for proof and data', 'left', 1],
+    [7, 3, 'Slightly', 'goes by trust and peer labs', 'right', 1],
+    [7, 4, 'Clearly', 'goes by trust and peer labs', 'right', 2],
+  ] as const)('formats rating step %i value %i', (step, value, strength, phrase, side, iconCount) => {
+    expect(ratingChoice(step, value)).toEqual({ strength, phrase, side, iconCount });
+  });
   const style: ContactStyle = { state: 'analytical', computedStyle: 'analytical', confidence: 'high', observations: 3, distinctDates: 3, assertiveness: 1, responsiveness: 1, override: null, cues: {} };
   it.each([
     ['analytical', 'Analytical', "Bring the data: cost per test, validation papers, a written comparison. Don't rush."],

@@ -1,6 +1,7 @@
 'use client';
 
 import { useCallback, useEffect, useId, useRef, useState, type ReactNode, type SubmitEvent } from 'react';
+import { Briefcase, Calculator, Check, Coffee, Crown, FileSearch, Gavel, Handshake, Heart, Hourglass, ListChecks, Megaphone, MessageCircleQuestionMark, Snail, Timer, Users, Zap } from 'lucide-react';
 import { isInsideMarketArea, MARKET_AREA, parseLocationInput, powerAlerts, socialStyles, styleCues, withAccountContacts, type ContactStyle, type SocialStyle, type StyleCue, type AppContact, type ContactAssessment, type PowerAlert, type AccountRow, type AccountsResponse, type VisitOutcome } from '@/lib/account-types';
 import { readJsonBody } from '@/lib/http-json';
 
@@ -42,15 +43,21 @@ const cueLabels: Record<StyleCue, string> = {
   service_training: 'Service and training', stay_current_supplier: 'Staying with current supplier',
 };
 const behaviours = [
-  ['Speaks slowly and carefully', 'Speaks quickly and firmly'],
-  ['Asks questions, holds back opinions', 'States opinions'],
-  ['Follows our agenda', 'Takes control of the meeting'],
-  ['Wants time and consults others', 'Decides on the spot'],
-  ['Talks tasks, facts, numbers', 'Talks people, stories'],
-  ['Formal, reserved', 'Warm, animated'],
-  ['Strict on time, straight to business', 'Relaxed, enjoys small talk'],
-  ['Asks for proof and data', 'Goes by trust and peer labs'],
+  { phrases: ['Speaks slowly and carefully', 'Speaks quickly and firmly'], icons: [Snail, Zap], question: (name: string) => `How did ${name} speak?` },
+  { phrases: ['Asks questions, holds back opinions', 'States opinions'], icons: [MessageCircleQuestionMark, Megaphone], question: (name: string) => `Did ${name} ask or tell?` },
+  { phrases: ['Follows our agenda', 'Takes control of the meeting'], icons: [ListChecks, Crown], question: () => 'Who led the meeting?' },
+  { phrases: ['Wants time and consults others', 'Decides on the spot'], icons: [Hourglass, Gavel], question: (name: string) => `How did ${name} decide?` },
+  { phrases: ['Talks tasks, facts, numbers', 'Talks people, stories'], icons: [Calculator, Users], question: (name: string) => `What did ${name} talk about?` },
+  { phrases: ['Formal, reserved', 'Warm, animated'], icons: [Briefcase, Heart], question: (name: string) => `How did ${name} come across?` },
+  { phrases: ['Strict on time, straight to business', 'Relaxed, enjoys small talk'], icons: [Timer, Coffee], question: (name: string) => `How did ${name} treat time?` },
+  { phrases: ['Asks for proof and data', 'Goes by trust and peer labs'], icons: [FileSearch, Handshake], question: (name: string) => `What convinced ${name}?` },
 ] as const;
+
+export function ratingChoice(step: number, value: number): { strength: 'Clearly' | 'Slightly'; phrase: string; side: 'left' | 'right'; iconCount: 1 | 2 } {
+  const clearly = value === 1 || value === 4;
+  const behaviour = behaviours[step].phrases[value <= 2 ? 0 : 1];
+  return { strength: clearly ? 'Clearly' : 'Slightly', phrase: behaviour.charAt(0).toLowerCase() + behaviour.slice(1), side: value <= 2 ? 'left' : 'right', iconCount: clearly ? 2 : 1 };
+}
 
 function ContactSocial({ contact, canSeeStyle, visitId, attribution, renderActions, closeVersion, onOpen, prompt = false, autoOpen = false, sequence, onRatingOpenChange, onComplete, onCancel, busy = false, onBusy, onSaved }: {
   contact: AppContact; canSeeStyle?: boolean; visitId?: string; attribution?: ReactNode; prompt?: boolean;
@@ -132,7 +139,7 @@ function ContactSocial({ contact, canSeeStyle, visitId, attribution, renderActio
       <button type="button" disabled={busy} className={contactActionClass} aria-label={`Back to accounts, stop rating ${contact.name}`} onClick={cancel}>← Back to accounts</button>
       {sequence ? <p className="text-xs text-sf-muted">{sequence}</p> : null}
       <div className="flex flex-wrap items-center justify-between gap-2">
-        <p ref={stepHeading} tabIndex={-1} className="text-sm font-semibold text-sf-body">Rate {contact.name} · {step < 8 ? `${step + 1} of 8` : 'last step'}</p>
+        <p ref={stepHeading} tabIndex={-1} className="text-xs font-semibold text-sf-muted">Rate {contact.name} · {step < 8 ? `${step + 1} of 8` : 'last step'}</p>
         <span className="flex items-center gap-2">
         {prompt ? <button type="button" disabled={busy} className={chipClass} aria-label={`Skip rating ${who}`} onClick={() => { setDone(true); closeRating(); onComplete?.(); }}>Skip</button> : null}
         <button type="button" disabled={busy} className={chipClass} aria-label={`Cancel rating for ${who}`} onClick={cancel}>Cancel</button>
@@ -141,19 +148,24 @@ function ContactSocial({ contact, canSeeStyle, visitId, attribution, renderActio
       <div aria-hidden="true" className="h-1 w-full rounded-full bg-sf-line-soft"><div aria-hidden="true" className="h-1 rounded-full bg-sf-brand" style={{ width: `${Math.round(step / 8 * 100)}%` }} /></div>
       {step < 8 ? <>
         <p className="text-xs font-semibold text-sf-muted">{step < 4 ? 'Pace and control' : 'Warmth and focus'}</p>
-        <fieldset key={step} disabled={busy} className="min-w-0"><legend className="text-sm text-sf-body">In this meeting, {contact.name}…</legend>
+        <fieldset key={step} disabled={busy} className="min-w-0"><legend className="mb-3 text-lg font-semibold leading-snug text-sf-ink">{behaviours[step].question(contact.name)}</legend>
           <div className="grid gap-2">{[1, 2, 3, 4].map(value => {
-            const strength = value === 1 || value === 4 ? 'Clearly' : 'Slightly';
-            const behaviour = behaviours[step][value <= 2 ? 0 : 1];
-            const phrase = behaviour.charAt(0).toLowerCase() + behaviour.slice(1);
-            return <label key={value} className={`flex min-h-12 w-full cursor-pointer items-center rounded-xl border px-4 text-left text-sm has-[:focus-visible]:outline-2 has-[:focus-visible]:outline-sf-brand ${value === 3 ? 'mt-1 ' : ''}${ratings[step] === value ? 'border-sf-brand bg-sf-brand text-white' : 'border-sf-line bg-sf-soft-0 text-sf-body'}`} onClick={event => {
+            const { strength, phrase, side, iconCount } = ratingChoice(step, value);
+            const Icon = behaviours[step].icons[side === 'left' ? 0 : 1];
+            const selected = ratings[step] === value;
+            const colours = side === 'left'
+              ? selected ? 'border-sf-info bg-sf-info text-white' : `border-sf-info/40 ${iconCount === 2 ? 'bg-sf-info-soft' : 'bg-white'} text-sf-info`
+              : selected ? 'border-sf-warning bg-sf-warning text-white' : `border-sf-warning-line ${iconCount === 2 ? 'bg-sf-warning-soft' : 'bg-white'} text-sf-warning`;
+            return <label key={value} className={`flex min-h-12 w-full cursor-pointer items-center gap-3 rounded-xl border px-4 text-left text-sm has-[:focus-visible]:outline-2 has-[:focus-visible]:outline-sf-brand ${value === 3 ? 'mt-1 ' : ''}${colours}`} onClick={event => {
               if (event.detail > 0 && !busy) {
                 if (advanceTimer.current !== null) clearTimeout(advanceTimer.current);
                 advanceTimer.current = setTimeout(() => setStep(step + 1), 200);
               }
             }}>
               <input type="radio" className="sr-only" name={`${prefix}-q${step}`} value={value} checked={ratings[step] === value} onChange={() => setRatings(previous => previous.map((old, position) => position === step ? value : old))} />
-              <span><strong>{strength}</strong> {phrase}</span>
+              {selected ? <Check size={18} aria-hidden="true" className="shrink-0" /> : null}
+              <span className="min-w-0 flex-1"><strong>{strength}</strong> {phrase}</span>
+              <span className="flex shrink-0 gap-0.5" aria-hidden="true"><Icon aria-hidden="true" size={20} strokeWidth={2} />{iconCount === 2 ? <Icon aria-hidden="true" size={20} strokeWidth={2} /> : null}</span>
             </label>;
           })}</div>
         </fieldset>

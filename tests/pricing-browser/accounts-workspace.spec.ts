@@ -58,7 +58,9 @@ const behaviours = [
 ] as const;
 async function fillRating(page: Page, name: string) {
   const form = firstCard(page).getByRole('form', { name: `Rate behaviour for ${name}`, exact: false });
+  const questions = [`How did ${name} speak?`, `Did ${name} ask or tell?`, 'Who led the meeting?', `How did ${name} decide?`, `What did ${name} talk about?`, `How did ${name} come across?`, `How did ${name} treat time?`, `What convinced ${name}?`];
   for (const [index, value] of [1, 2, 3, 4, 4, 3, 2, 1].entries()) {
+    await expect(form.getByRole('group', { name: questions[index], exact: true })).toBeVisible();
     const strength = value === 1 || value === 4 ? 'Clearly' : 'Slightly';
     const behaviour = behaviours[index][value <= 2 ? 0 : 1];
     const phrase = behaviour.charAt(0).toLowerCase() + behaviour.slice(1);
@@ -241,9 +243,12 @@ test('Back keeps the rating answer', async ({ page }) => {
   const firstChoice = form.getByRole('radio', { name: 'Clearly speaks slowly and carefully', exact: true });
   await firstChoice.locator('..').click();
   await expect(form.getByText('Rate Asha · 2 of 8', { exact: true })).toBeVisible();
+  await expect(form.getByRole('radio', { name: 'Slightly states opinions', exact: true }).locator('..').locator('svg')).toHaveCount(1);
   await form.getByRole('button', { name: /^Back, rating Asha/ }).click();
   await expect(form.getByText('Rate Asha · 1 of 8', { exact: true })).toBeVisible();
   await expect(firstChoice).toBeChecked();
+  await expect(firstChoice.locator('..').locator('svg')).toHaveCount(3);
+  await expect(firstChoice.locator('..').locator('svg[aria-hidden="true"]')).toHaveCount(3);
   await form.getByRole('button', { name: /^Next, rating Asha/ }).click();
   await expect(form.getByText('Rate Asha · 2 of 8', { exact: true })).toBeVisible();
 });
@@ -273,12 +278,26 @@ test('phone rating choices have large tap targets and no horizontal overflow', a
   expect(headingBox!.y).toBeGreaterThanOrEqual(0);
   expect(headingBox!.y + headingBox!.height).toBeLessThanOrEqual(300);
   expect(await page.evaluate(() => document.documentElement.scrollWidth <= document.documentElement.clientWidth)).toBe(true);
-  for (const radio of await form.getByRole('radio').all()) {
-    const box = await radio.locator('..').boundingBox();
-    expect(box).not.toBeNull();
-    expect(box!.height).toBeGreaterThanOrEqual(48);
+  for (let step = 0; step < 8; step++) {
+    for (const radio of await form.getByRole('radio').all()) {
+      const box = await radio.locator('..').boundingBox();
+      expect(box).not.toBeNull();
+      expect(box!.height).toBeGreaterThanOrEqual(48);
+    }
+    if (step === 6) {
+      const label = form.getByRole('radio', { name: 'Clearly strict on time, straight to business', exact: true }).locator('..');
+      const labelBox = (await label.boundingBox())!;
+      const textBox = (await label.locator('span').first().boundingBox())!;
+      const iconsBox = (await label.locator('span[aria-hidden="true"]').boundingBox())!;
+      expect(textBox.height).toBeGreaterThan(20);
+      expect(textBox.x + textBox.width).toBeLessThanOrEqual(iconsBox.x);
+      expect(iconsBox.x + iconsBox.width).toBeLessThanOrEqual(labelBox.x + labelBox.width);
+      expect(iconsBox.x + iconsBox.width).toBeLessThanOrEqual(375);
+    }
+    expect(await page.evaluate(() => document.documentElement.scrollWidth <= document.documentElement.clientWidth)).toBe(true);
+    await form.getByRole('radio').first().locator('..').click();
+    await expect(form.getByText(`Rate Asha · ${step < 7 ? `${step + 2} of 8` : 'last step'}`, { exact: true })).toBeVisible();
   }
-  await fillRating(page, 'Asha');
   await expect(form.getByText('Rate Asha · last step', { exact: true })).toBeVisible();
   expect(await page.evaluate(() => document.documentElement.scrollWidth <= document.documentElement.clientWidth)).toBe(true);
 });
