@@ -1,3 +1,5 @@
+> **Approved (owner, 14 Oct 2026; D-21):** scope and data rules approved. Visibility = **administrators and management only**, including the alerts. People are app-added contacts only (the Tally mirror was dropped), so §4 no longer applies.
+
 # Phase 6, slice 1: Power Map on the account (design for owner approval)
 
 **Author:** Claude, 14 Oct 2026. **Builds on:** Accounts (W1), A/B classes, and contacts (Tally and app). **Full model:** [POWER-MAPS](intelligence/POWER-MAPS.md).
