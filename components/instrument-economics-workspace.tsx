@@ -13,7 +13,7 @@ import { Activity, AlertTriangle, CheckCircle2, CircleDollarSign, RefreshCw, Shi
 import type { EconomicAction, EconomicTarget, EconomicsWorkspaceData as BaseEconomicsWorkspaceData, LeakageCase } from '@/lib/instrument-economics-types';
 import { buildAllocationShares, buildPurchaseAllocations, costVerificationSaleLines, purchaseMatchKind } from '@/lib/instrument-economics-forms';
 import { clearEconomicRecoveryReference, readEconomicRecoveryReference, writeEconomicRecoveryReference, type EconomicRecoveryReference } from '@/lib/instrument-economics-recovery';
-import { capitalBeyondManagementReview, MappingOptions, HistoricalInstrumentFields, AcquisitionReviewFields, EconomicMappingIdentityFields, EconomicAllocationRows, InstrumentAcquisitionFields, InstrumentBillingFields, ItemGroupMappingFields, PurchaseCostVerificationFields } from '@/components/instrument-economics-evidence-forms';
+import { capitalBeyondManagementReview, capitalPreviewPaise, MappingOptions, HistoricalInstrumentFields, AcquisitionReviewFields, EconomicMappingIdentityFields, EconomicAllocationRows, InstrumentAcquisitionFields, InstrumentBillingFields, ItemGroupMappingFields, PurchaseCostVerificationFields } from '@/components/instrument-economics-evidence-forms';
 import { filterEconomicTargets, InstrumentEconomicsPortfolioFilters, type InstrumentEconomicsPortfolioFilterValues as EconomicPortfolioFilters } from '@/components/instrument-economics-portfolio-filters';
 import { readJsonBody } from '@/lib/http-json';
 
@@ -380,8 +380,7 @@ function CommandForm({ action, data, disabled, busy, onSubmit, label, simpleMapp
   const [capitalAmount, setCapitalAmount] = useState('');
   const [capitalKind, setCapitalKind] = useState('capital');
   const capitalTarget = targets.find(row => row.id === capitalTargetId);
-  const amountParts = /^([+-]?)(\d+)(?:\.(\d{1,2}))?$/.exec(capitalAmount.trim());
-  const amountPaise = amountParts ? (BigInt(amountParts[2]) * BigInt(100) + BigInt((amountParts[3] ?? '').padEnd(2, '0'))) * (amountParts[1] === '-' ? BigInt(-1) : BigInt(1)) : BigInt(0);
+  const amountPaise = capitalPreviewPaise(capitalAmount);
   const capitalBeyondReview = action === 'record_capital' && capitalKind === 'capital' && capitalBeyondManagementReview(capitalTarget, amountPaise, data.policy.reviewMonths);
   const capitalBlocked = capitalBeyondReview && !data.canAdministrator;
   const [mappingTargetId, setMappingTargetId] = useState('');

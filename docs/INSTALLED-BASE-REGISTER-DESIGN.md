@@ -89,6 +89,10 @@ group by 1 having count(*) > 1;
 ```
 plus a count of placements per installation with differing `model_id`. Zero rows means the backfill is mechanical.
 
+**Integration-owner readback, 14 October 2026:** production has zero completed installations, zero duplicate serial groups and zero invalid normalized serials. Its Economics target table is absent, so the model-conflict check is unavailable there. Acceptance has one completed installation, no duplicate/invalid serials and no installation with conflicting placement models. This is a read-only check of current stored rows, not reconciliation of physical machines or approval of the backfill after cutover. Repeat both checks immediately before register integration/release, after the Economics cutover populates the relevant data.
+
+The separately prepared `claude/instrument-register` branch remains outside the approval-controls integration. Its current two-session test proves both unplaced commissioning events link to one instrument ID; it does not demonstrate acceptance check 5's one-success/one-conflict behavior. The design's administrator serial-collision confirmation is also absent from that branch. Reconcile these requirements before register integration; do not silently claim full ADR-0011 acceptance from its passing tests.
+
 ## 6. Acceptance checks (written before code)
 
 1. After backfill, every completed installation has an `instrument_id`; the count of instruments = distinct serial keys.

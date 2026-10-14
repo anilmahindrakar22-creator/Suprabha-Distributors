@@ -133,6 +133,10 @@ function formatAcquisitionCost(paise: string) {
   const value = BigInt(paise); const absolute = value < BigInt(0) ? -value : value;
   return `${value < BigInt(0) ? '−' : ''}₹${(absolute / BigInt(100)).toLocaleString('en-IN')}.${(absolute % BigInt(100)).toString().padStart(2, '0')}`;
 }
+export function capitalPreviewPaise(input: string): bigint {
+  const parts = /^([+-]?)(\d+)(?:\.(\d{1,2}))?$/.exec(input.trim());
+  return parts ? (BigInt(parts[2]) * BigInt(100) + BigInt((parts[3] ?? '').padEnd(2, '0'))) * (parts[1] === '-' ? BigInt(-1) : BigInt(1)) : BigInt(0);
+}
 export function capitalBeyondManagementReview(target: EconomicTarget | undefined, deltaPaise: bigint, reviewMonths: number) {
   const gp = target?.investmentReview?.expectedMonthlyGpPaise;
   if (target?.approval !== 'approved' || deltaPaise <= BigInt(0) || gp == null || BigInt(gp) <= BigInt(0)) return false;

@@ -874,6 +874,22 @@
       "remoteSha256": null,
       "status": "not_deployed",
       "review": "13 October 2026 primary integration review: read-only requirements/stock-alert gateways retain gateway key and active-member checks with service-only execute. Shortage-first ordering, whole-list counts, duplicate/invalid stock remains unknown; coverage is priority/oldest-first advisory per item, no allocation or commercial-rate reads. Exact additive source reviewed; combined disposable replay and browser checks required before release. No hosted or production deployment implied."
+    },
+    {
+      "localFile": "20261013120000_administrator_long_payback_approval.sql",
+      "localSha256": "fa84a9766b178d0332e3ca0dcd8b8ead994940f34feafa49a76648628b422b79",
+      "remoteVersion": null,
+      "remoteSha256": null,
+      "status": "not_deployed",
+      "review": "14 October 2026 primary review of released D-04/D-15 approval controls: existing gateway roles, advisory lock, frozen baseline and stored idempotent receipts retained. Administrator required beyond review band and to change policy; short-payback placement approval only within the same preview policy, positive recorded net investment, never from rebuild, groups remain manual. Exact source and all four command seams reviewed; fresh combined replay/browser/static/CI required before integration. This is pending production evidence, not a hosted deployment record."
+    },
+    {
+      "localFile": "20261013130000_instrument_auto_approval.sql",
+      "localSha256": "4191edced4e34a0bcc27c183ac93bfaacf581cdb5f614f1d4707d3e0ff95e228",
+      "remoteVersion": null,
+      "remoteSha256": null,
+      "status": "not_deployed",
+      "review": "14 October 2026 primary review of released D-04/D-15 approval controls: existing gateway roles, advisory lock, frozen baseline and stored idempotent receipts retained. Administrator required beyond review band and to change policy; short-payback placement approval only within the same preview policy, positive recorded net investment, never from rebuild, groups remain manual. Exact source and all four command seams reviewed; fresh combined replay/browser/static/CI required before integration. This is pending production evidence, not a hosted deployment record."
     }
   ],
   "liveCheck": {

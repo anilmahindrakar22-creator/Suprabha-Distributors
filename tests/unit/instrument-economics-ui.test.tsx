@@ -2,7 +2,7 @@ import { describe, expect, it, vi } from 'vitest';
 vi.mock('next/link', () => ({ default: 'a' }));
 import { renderToStaticMarkup } from 'react-dom/server';
 import { EconomicActionOptions, ProposedTargetReview, EconomicApprovalPreview, EconomicHealthBadge, EconomicTargetAdvancedDetails, EconomicTargetCard, InstrumentEconomicsWorkspace, economicCommandNotice, ItemGpBreakdown, reagentLifetime, reportingPeriodLabel } from '@/components/instrument-economics-workspace';
-import { capitalBeyondManagementReview } from '@/components/instrument-economics-evidence-forms';
+import { capitalBeyondManagementReview, capitalPreviewPaise } from '@/components/instrument-economics-evidence-forms';
 import type { EconomicTarget } from '@/lib/instrument-economics-types';
 
 const target: EconomicTarget = {
@@ -14,6 +14,13 @@ const target: EconomicTarget = {
 };
 
 describe('instrument economics presentation', () => {
+  it('keeps capital-entry preview exact at paise boundaries and above number precision', () => {
+    expect(capitalPreviewPaise('100000.01')).toBe(BigInt('10000001'));
+    expect(capitalPreviewPaise('90071992547409.93')).toBe(BigInt('9007199254740993'));
+    expect(capitalPreviewPaise(' -0.01 ')).toBe(BigInt(-1));
+    expect(capitalPreviewPaise('+1.5')).toBe(BigInt(150));
+    for (const input of ['', '1.001', '1e3', 'invalid']) expect(capitalPreviewPaise(input)).toBe(BigInt(0));
+  });
   it('formats automatic approval notices and falls back for absent or invalid payback', () => {
     expect(economicCommandNotice({ autoApproved: { paybackMonths: '23.456', attractiveMonths: 24 } })).toBe('Saved. Approved automatically: payback 23.5 months (within 24).');
     expect(economicCommandNotice({ autoApproved: { paybackMonths: 24, attractiveMonths: 24 } })).toBe('Saved. Approved automatically: payback 24.0 months (within 24).');

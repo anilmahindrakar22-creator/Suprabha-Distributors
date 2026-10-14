@@ -9,7 +9,7 @@ Investment economics live in [INSTRUMENT-ECONOMICS](../intelligence/INSTRUMENT-E
 
 **Status:**
 - **Installations and service tickets:** IMPLEMENTED BUT NOT VERIFIED (`20260902113000`, `20260908173500`). The Service screen holds the equipment register (RC `b42c633`).
-- **Unified installed-base register:** PROPOSED (ADR-0011); design: [INSTALLED-BASE-REGISTER-DESIGN](../INSTALLED-BASE-REGISTER-DESIGN.md).
+- **Unified installed-base register:** approved design (ADR-0011 / D-14); implementation prepared separately on `claude/instrument-register`, with integration/release held until after the Economics cutover. See [INSTALLED-BASE-REGISTER-DESIGN](../INSTALLED-BASE-REGISTER-DESIGN.md).
 - **Visits, parts, downtime, PM:** DEFERRED (owner, 13 Oct; [SERVICE-MILESTONE-4-DESIGN](../SERVICE-MILESTONE-4-DESIGN.md)).
 
 **Sources:** [SUPRABHA_OS_ARCHITECTURE §Instruments](../SUPRABHA_OS_ARCHITECTURE.md); [ROADMAP M4](../ROADMAP.md); economics plan §2; owner brief §Phase 2.
