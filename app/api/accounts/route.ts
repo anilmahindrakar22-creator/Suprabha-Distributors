@@ -45,7 +45,7 @@ export async function GET(request: Request) {
       ...(classFilter === null ? {} : { class: classFilter }),
       ...(alert === null ? {} : { alert }),
     });
-    return measuredJsonResponse({ ...withAccountContacts(workspace), actorEmail: session.email, canAssign: hasAnyStockFlowRole(session.roles, ['administrator', 'management']) }, startedAt);
+    return measuredJsonResponse({ ...withAccountContacts(workspace), actorEmail: session.email, canAssign: hasAnyStockFlowRole(session.roles, ['administrator', 'management']), canEraseContacts: hasAnyStockFlowRole(session.roles, ['administrator']) }, startedAt);
   } catch (error) { return failed(error); }
 }
 export async function POST(request: Request) {

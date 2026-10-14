@@ -8,11 +8,11 @@ const base: AccountRow = { id: customerId, name: 'Care Lab', city: 'Pune', appCo
 const fixture: AccountsResponse = {
   accounts: [{ ...base }, { ...base, id: '33333333-3333-4333-8333-333333333333', name: 'City Lab', nextVisitOn: '2026-10-21' }, { ...base, id: '44444444-4444-4444-8444-444444444444', name: 'New Lab', nextVisitOn: null }],
   page: { page: 1, pageSize: 50, total: 3 }, owners: [{ email: 'sales@example.test', name: 'Salesperson' }, { email: 'other@example.test', name: 'Other salesperson' }],
-  territories: [{ id: territoryId, name: 'West' }], canAssign: false, canSeePowerMap: false, actorEmail: 'sales@example.test', today: '2026-10-14',
+  territories: [{ id: territoryId, name: 'West' }], canAssign: false, canEraseContacts: false, canSeePowerMap: false, actorEmail: 'sales@example.test', today: '2026-10-14',
   classPolicy: { aMinPaise: '20000000', bMinPaise: '7500000' },
 };
 type Command = Record<string, unknown>;
-async function mockAccounts(page: Page, options: { canSeeStyle?: boolean; canAssign?: boolean; canSeePowerMap?: boolean; powerAlerts?: AccountRow['powerAlerts']; lastVisit?: AccountRow['lastVisit']; emptyMine?: boolean; status?: number; networkOnce?: boolean; paginate?: boolean; classes?: boolean; appContacts?: AccountRow['appContacts']; duplicatePhone?: boolean } = {}) {
+async function mockAccounts(page: Page, options: { canSeeStyle?: boolean; canAssign?: boolean; canEraseContacts?: boolean; canSeePowerMap?: boolean; powerAlerts?: AccountRow['powerAlerts']; lastVisit?: AccountRow['lastVisit']; emptyMine?: boolean; status?: number; networkOnce?: boolean; paginate?: boolean; classes?: boolean; appContacts?: AccountRow['appContacts']; duplicatePhone?: boolean } = {}) {
   const gets: string[] = [];
   const posts: Command[] = [];
   const territories = [...fixture.territories];
@@ -29,7 +29,7 @@ async function mockAccounts(page: Page, options: { canSeeStyle?: boolean; canAss
       const query = new URL(route.request().url()).searchParams;
       const classRows: AccountRow[] = (['A', 'B', 'below_b', 'not_available', 'not_linked'] as const).map((state, index) => ({ ...base, id: `class-${index}`, name: `Class ${state} Lab`, class: { ...base.class, state, monthlyPaise: index < 3 ? ['21000000', '7500000', '5000000'][index] : null } }));
       const accounts = options.classes ? classRows.filter(row => !query.get('class') || row.class.state === query.get('class')) : options.emptyMine && query.get('scope') === 'mine' ? [] : options.paginate ? [fixture.accounts[Number(query.get('page')) - 1]] : fixture.accounts;
-      await route.fulfill({ json: { ...fixture, accounts: accounts.map(row => ({ ...row, canSeeStyle: options.canSeeStyle ?? false, appContacts: row.id === customerId ? options.appContacts ?? [] : [], ...(row.id === customerId && options.powerAlerts ? { powerAlerts: options.powerAlerts } : {}), ...(row.id === customerId && options.lastVisit ? { lastVisit: options.lastVisit } : {}) })), territories, canAssign: options.canAssign ?? false, canSeePowerMap: options.canSeePowerMap ?? false, page: { page: Number(query.get('page')), pageSize: options.paginate ? 1 : 50, total: options.paginate ? 3 : accounts.length } } });
+      await route.fulfill({ json: { ...fixture, accounts: accounts.map(row => ({ ...row, canSeeStyle: options.canSeeStyle ?? false, appContacts: row.id === customerId ? options.appContacts ?? [] : [], ...(row.id === customerId && options.powerAlerts ? { powerAlerts: options.powerAlerts } : {}), ...(row.id === customerId && options.lastVisit ? { lastVisit: options.lastVisit } : {}) })), territories, canAssign: options.canAssign ?? false, canEraseContacts: options.canEraseContacts ?? false, canSeePowerMap: options.canSeePowerMap ?? false, page: { page: Number(query.get('page')), pageSize: options.paginate ? 1 : 50, total: options.paginate ? 3 : accounts.length } } });
     }
   });
   await page.goto('/?view=accounts');
@@ -263,7 +263,7 @@ test('phone layout has no horizontal overflow with Set role open', async ({ page
 
 test('adds an app contact with a flat command and duplicate-phone notice', async ({ page }) => {
   const { gets, posts } = await mockAccounts(page, { duplicatePhone: true });
-  const addContact = firstCard(page).getByRole('button', { name: 'Add contact for Care Lab', exact: true });
+  const addContact = firstCard(page).getByRole('button', { name: 'Add contact for Care Lab', exact: false });
   const actions = addContact.locator('..');
   await expect(actions.getByRole('button')).toHaveText(['Log visit', 'Location', 'Add contact']);
   expect(await addContact.getAttribute('class')).toEqual(await actions.getByRole('button', { name: 'Location for Care Lab', exact: false }).getAttribute('class'));
@@ -318,6 +318,44 @@ test('remove uses an inline confirmation with Keep and the current version', asy
   await card.getByRole('button', { name: 'Confirm remove App buyer for Care Lab', exact: false }).click();
   await expect(page.getByRole('status')).toHaveText('Saved.');
   expect(posts[0]).toMatchObject({ action: 'remove_contact', contactId: appContact.id, expectedVersion: 3, idempotencyKey: expect.any(String) });
+});
+
+test('administrator can erase personal data with a checked reason and reloads the list', async ({ page }) => {
+  const { gets, posts } = await mockAccounts(page, { canEraseContacts: true, appContacts: [appContact] });
+  const card = firstCard(page);
+  const before = gets.length;
+  await card.getByRole('button', { name: 'Remove App buyer', exact: true }).click();
+  await card.getByRole('button', { name: 'Erase personal data of App buyer for Care Lab', exact: false }).click();
+  const form = card.getByRole('form', { name: 'Erase App buyer at Care Lab', exact: false });
+  await expect(form.getByText(/Replaces the name, role, phone and email with "Erased contact"/)).toBeVisible();
+  await form.getByRole('button', { name: 'Erase permanently App buyer for Care Lab', exact: false }).click();
+  await expect(form.getByRole('alert')).toHaveText('Enter a reason with at least 3 characters.');
+  expect(posts).toHaveLength(0);
+  await form.getByLabel('Erasure reason for App buyer at Care Lab', { exact: false }).fill('Erasure request by phone');
+  await form.getByRole('button', { name: 'Erase permanently App buyer for Care Lab', exact: false }).click();
+  await expect(page.getByRole('status')).toHaveText('Saved.');
+  expect(posts[0]).toEqual({ action: 'erase_contact', contactId: appContact.id, reason: 'Erasure request by phone', idempotencyKey: expect.any(String) });
+  await expect.poll(() => gets.length).toBeGreaterThan(before);
+});
+
+test('management can remove a contact but cannot erase personal data', async ({ page }) => {
+  await mockAccounts(page, { canEraseContacts: false, appContacts: [appContact] });
+  const card = firstCard(page);
+  await card.getByRole('button', { name: 'Remove App buyer', exact: true }).click();
+  await expect(card.getByRole('button', { name: 'Confirm remove App buyer for Care Lab', exact: false })).toBeVisible();
+  await expect(card.getByRole('button', { name: 'Keep App buyer for Care Lab', exact: false })).toBeVisible();
+  await expect(card.getByText('Erase personal data', { exact: true })).toHaveCount(0);
+});
+
+test('phone layout has no horizontal overflow with erase form open', async ({ page }, testInfo) => {
+  test.skip(testInfo.project.name !== 'pricing-mobile', 'Phone layout');
+  await mockAccounts(page, { canEraseContacts: true, appContacts: [appContact] });
+  await page.setViewportSize({ width: 375, height: 812 });
+  const card = firstCard(page);
+  await card.getByRole('button', { name: 'Remove App buyer', exact: true }).click();
+  await card.getByRole('button', { name: 'Erase personal data of App buyer for Care Lab', exact: false }).click();
+  await expect(card.getByRole('form', { name: 'Erase App buyer at Care Lab', exact: false })).toBeVisible();
+  expect(await page.evaluate(() => document.documentElement.scrollWidth <= document.documentElement.clientWidth)).toBe(true);
 });
 
 test('app contacts without canEdit have no Edit or Remove controls', async ({ page }) => {
@@ -383,7 +421,7 @@ test("3 app contacts show 2 + '+1 more'", async ({ page }) => {
   await expect(card.getByText('Ravi', { exact: true })).toBeVisible();
   await expect(card.getByText('Meena', { exact: true })).toHaveCount(0);
   await expect(card.getByRole('link', { name: 'Call Asha for Care Lab', exact: false })).toHaveAttribute('href', 'tel:919876543210');
-  const toggle = card.getByRole('button', { name: '1 more contacts for Care Lab', exact: true });
+  const toggle = card.getByRole('button', { name: '1 more contacts for Care Lab', exact: false });
   await expect(toggle).toHaveText('+1 more');
   await expect(toggle).toHaveAttribute('aria-expanded', 'false');
   const controls = await toggle.getAttribute('aria-controls');
@@ -592,7 +630,7 @@ test('phone layout has no horizontal overflow including open forms', async ({ pa
   await mockAccounts(page, { canAssign: true, appContacts: [appContact] });
   await page.setViewportSize({ width: 375, height: 812 });
   await page.getByRole('button', { name: 'All', exact: true }).click();
-  await expect(firstCard(page).getByRole('button', { name: 'Add contact for Care Lab', exact: true }).locator('..').getByRole('button')).toHaveText(['Log visit', 'Location', 'Add contact', 'Owner']);
+  await expect(firstCard(page).getByRole('button', { name: 'Add contact for Care Lab', exact: false }).locator('..').getByRole('button')).toHaveText(['Log visit', 'Location', 'Add contact', 'Owner']);
   await firstCard(page).getByRole('button', { name: 'Remove App buyer', exact: true }).click();
   expect(await page.evaluate(() => document.documentElement.scrollWidth <= document.documentElement.clientWidth)).toBe(true);
   await firstCard(page).getByRole('button', { name: 'Keep App buyer for Care Lab', exact: false }).click();

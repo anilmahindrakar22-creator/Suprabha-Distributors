@@ -9,6 +9,7 @@ type FormKind = 'visit' | 'location' | 'owner';
 const inputClass = 'min-h-11 w-full min-w-0 max-w-full rounded-xl border border-sf-line bg-sf-soft-0 px-3 text-sm text-sf-body outline-none focus:border-sf-mint';
 const buttonClass = 'min-h-11 rounded-xl border border-sf-line px-3 text-sm font-bold text-sf-body disabled:opacity-50';
 const primaryClass = 'min-h-11 rounded-xl bg-sf-ink-hover px-4 text-sm font-bold text-sf-soft disabled:opacity-50';
+const dangerClass = 'min-h-11 rounded-xl bg-sf-danger px-4 text-sm font-bold text-white disabled:opacity-50';
 const actionClass = 'min-h-11 rounded-xl px-3 text-sm font-bold text-sf-brand disabled:opacity-50';
 const contactActionClass = 'inline-flex min-h-11 items-center px-1 text-xs text-sf-brand/80 disabled:opacity-50';
 const outcomes: Record<VisitOutcome, string> = { met: 'Met', not_available: 'Not available', order_taken: 'Order taken', issue_raised: 'Issue raised', other: 'Other' };
@@ -199,12 +200,14 @@ export function accountMetaLine(row: AccountRow, mode: Mode) {
     row.class?.state === 'not_linked' ? 'Not linked to Tally sales' : null].filter(Boolean).join(' · ');
 }
 type ContactCallbacks = { busy?: boolean; onSaved?: (duplicatePhone: boolean) => Promise<unknown>; onConflict?: () => Promise<void>; onBusy?: (busy: boolean) => void };
-type ContactActions = { renderActions?: (addContact: ReactNode) => ReactNode; canSeePowerMap?: boolean };
-function AppContacts({ row, today, busy = false, onSaved, onConflict, onBusy, renderActions, canSeePowerMap = false }: { row: AccountRow; today: string } & ContactCallbacks & ContactActions) {
+type ContactActions = { renderActions?: (addContact: ReactNode) => ReactNode; canSeePowerMap?: boolean; canEraseContacts?: boolean };
+function AppContacts({ row, today, busy = false, onSaved, onConflict, onBusy, renderActions, canSeePowerMap = false, canEraseContacts = false }: { row: AccountRow; today: string } & ContactCallbacks & ContactActions) {
   const [contactsExpanded, setContactsExpanded] = useState(false);
   const contactsId = useId();
   const [editing, setEditing] = useState<AccountRow['appContacts'][number] | 'new' | null>(null);
   const [removing, setRemoving] = useState<string | null>(null);
+  const [erasing, setErasing] = useState<string | null>(null);
+  const [eraseReason, setEraseReason] = useState('');
   const [assessing, setAssessing] = useState<string | null>(null);
   const [decisionRole, setDecisionRole] = useState<ContactAssessment['decisionRole']>('unknown');
   const [stance, setStance] = useState<ContactAssessment['stance']>('unknown');
@@ -223,13 +226,13 @@ function AppContacts({ row, today, busy = false, onSaved, onConflict, onBusy, re
   useEffect(() => { if (editing) form.current?.querySelector<HTMLInputElement>('input')?.focus(); }, [editing]);
   function open(contact: AccountRow['appContacts'][number] | 'new', button: HTMLButtonElement) {
     origin.current = button;
-    setEditing(contact); setRemoving(null); setAssessing(null); setError('');
+    setEditing(contact); setRemoving(null); setErasing(null); setAssessing(null); setError('');
     setName(contact === 'new' ? '' : contact.name);
     setBusinessRole(contact === 'new' ? '' : contact.businessRole ?? '');
     setPhone(contact === 'new' ? '' : contact.phone ?? '');
     setEmail(contact === 'new' ? '' : contact.email ?? '');
   }
-  function cancel() { setEditing(null); setRemoving(null); setAssessing(null); setError(''); origin.current?.focus(); }
+  function cancel() { setEditing(null); setRemoving(null); setErasing(null); setAssessing(null); setError(''); origin.current?.focus(); }
   async function post(body: Record<string, unknown>) {
     if (inFlight.current || busy) return;
     inFlight.current = true; onBusy?.(true); setError('');
@@ -237,13 +240,13 @@ function AppContacts({ row, today, busy = false, onSaved, onConflict, onBusy, re
     if (pending.current?.fingerprint !== fingerprint) pending.current = { fingerprint, key: crypto.randomUUID() };
     try {
       const response = await fetch('/api/accounts', { method: 'POST', headers: { 'content-type': 'application/json' }, body: JSON.stringify({ ...body, idempotencyKey: pending.current.key }) });
-      if (response.status === 409) { pending.current = null; setEditing(null); setRemoving(null); setAssessing(null); await onConflict?.(); return; }
+      if (response.status === 409) { pending.current = null; setEditing(null); setRemoving(null); setErasing(null); setAssessing(null); await onConflict?.(); return; }
       if (response.status >= 400 && response.status < 500 && response.status !== 408 && response.status !== 429) pending.current = null;
       const result = await readJsonBody<{ error?: string; duplicatePhone?: boolean }>(response);
       if (!response.ok) {
         setError(result.error || 'Not saved. Please try again.'); return;
       }
-      pending.current = null; setEditing(null); setRemoving(null); setAssessing(null);
+      pending.current = null; setEditing(null); setRemoving(null); setErasing(null); setAssessing(null);
       await onSaved?.(result.duplicatePhone === true);
     } catch { setError('Not saved. Check the connection and try again.'); }
     finally { inFlight.current = false; onBusy?.(false); }
@@ -268,7 +271,7 @@ function AppContacts({ row, today, busy = false, onSaved, onConflict, onBusy, re
       {canSeePowerMap ? <p className="break-words text-xs text-sf-muted">{assessmentSummary(contact)} · {contact.lastMetOn ? `Last met ${accountDate(contact.lastMetOn)}` : 'Not met yet'}</p> : null}
       <ContactSocial key={`${contact.id}-${row.lastVisit?.id ?? 'unvisited'}`} attribution={<><span>added by {contact.addedBy}</span>{contact.canEdit ? <span className="inline-flex items-center whitespace-nowrap">{' · '}
           <button type="button" disabled={busy} className={contactActionClass} aria-label={`Edit ${contact.name}`} onClick={event => open(contact, event.currentTarget)}>Edit</button>
-          {' · '}<button type="button" disabled={busy} className={contactActionClass} aria-label={`Remove ${contact.name}`} onClick={event => { origin.current = event.currentTarget; setRemoving(contact.id); setEditing(null); setAssessing(null); setError(''); }}>Remove</button>
+          {' · '}<button type="button" disabled={busy} className={contactActionClass} aria-label={`Remove ${contact.name}`} onClick={event => { origin.current = event.currentTarget; setRemoving(contact.id); setErasing(null); setEditing(null); setAssessing(null); setError(''); }}>Remove</button>
         </span> : null}
         {canSeePowerMap ? <>{' · '}<button type="button" disabled={busy} className={contactActionClass} aria-label={`Set role for ${contact.name}`} aria-expanded={assessing === contact.id} onClick={event => {
           origin.current = event.currentTarget; setAssessing(contact.id); setEditing(null); setRemoving(null); setError('');
@@ -285,7 +288,13 @@ function AppContacts({ row, today, busy = false, onSaved, onConflict, onBusy, re
         </fieldset>
         <div className="flex flex-wrap gap-2"><button type="submit" disabled={busy} className={primaryClass} aria-label={`Save role for ${contact.name} at ${accountLabel}`}>{busy ? 'Saving…' : 'Save'}</button><button type="button" disabled={busy} className={buttonClass} aria-label={`Cancel role for ${contact.name} at ${accountLabel}`} onClick={cancel}>Cancel</button></div>
       </form> : null}
-      {contact.canEdit && removing === contact.id ? <p className="flex flex-wrap items-center gap-x-2 text-sm text-sf-body"><span>Remove {contact.name}?</span><button type="button" disabled={busy} className={contactActionClass} aria-label={`Confirm remove ${contact.name} for ${accountLabel}`} onClick={() => void post({ action: 'remove_contact', contactId: contact.id, expectedVersion: contact.version })}>Remove</button><button type="button" disabled={busy} className={contactActionClass} aria-label={`Keep ${contact.name} for ${accountLabel}`} onClick={cancel}>Keep</button></p> : null}
+      {contact.canEdit && removing === contact.id ? <p className="flex flex-wrap items-center gap-x-2 text-sm text-sf-body"><span>Remove {contact.name}?</span><button type="button" disabled={busy} className={contactActionClass} aria-label={`Confirm remove ${contact.name} for ${accountLabel}`} onClick={() => void post({ action: 'remove_contact', contactId: contact.id, expectedVersion: contact.version })}>Remove</button><button type="button" disabled={busy} className={contactActionClass} aria-label={`Keep ${contact.name} for ${accountLabel}`} onClick={cancel}>Keep</button>{canEraseContacts ? <button type="button" disabled={busy} className="inline-flex min-h-11 items-center px-1 text-xs text-sf-danger disabled:opacity-50" aria-label={`Erase personal data of ${contact.name} for ${accountLabel}`} onClick={() => { setErasing(contact.id); setRemoving(null); setEditing(null); setAssessing(null); setEraseReason(''); setError(''); }}>Erase personal data</button> : null}</p> : null}
+      {contact.canEdit && erasing === contact.id ? <form noValidate aria-label={`Erase ${contact.name} at ${accountLabel}`} onSubmit={event => { event.preventDefault(); if (eraseReason.trim().length < 3) { setError('Enter a reason with at least 3 characters.'); return; } void post({ action: 'erase_contact', contactId: contact.id, reason: eraseReason.trim() }); }} className="min-w-0 space-y-3 border-t border-sf-line-soft py-3">
+        <p className="text-sm text-sf-body">Replaces the name, role, phone and email with "Erased contact" and clears role reasons. Visits and ratings stay, without personal details. This can't be undone. Use it only when the person asks to be erased.</p>
+        <div><label htmlFor={`${prefix}-erase-reason`} className="text-sm text-sf-body">Reason (checked, not stored)</label><input id={`${prefix}-erase-reason`} aria-label={`Erasure reason for ${contact.name} at ${accountLabel}`} required minLength={3} maxLength={300} placeholder="e.g. Erasure request by phone" value={eraseReason} onChange={event => setEraseReason(event.target.value)} className={inputClass} /></div>
+        {error ? <p role="alert" className="text-sm text-sf-danger">{error}</p> : null}
+        <div className="flex flex-wrap gap-2"><button type="submit" disabled={busy} className={dangerClass} aria-label={`Erase permanently ${contact.name} for ${accountLabel}`}>Erase permanently</button><button type="button" disabled={busy} className={buttonClass} aria-label={`Cancel erase ${contact.name} for ${accountLabel}`} onClick={cancel}>Cancel</button></div>
+      </form> : null}
     </div>)}
     </div>
     {moreCount ? <button type="button" className="min-h-11 text-sm font-semibold text-sf-brand" aria-label={`${contactsExpanded ? 'Hide' : `${moreCount} more`} contacts for ${row.name}`} aria-expanded={contactsExpanded} aria-controls={contactsId} onClick={() => setContactsExpanded(value => !value)}>{contactsExpanded ? 'Hide' : `+${moreCount} more`}</button> : null}
@@ -299,10 +308,10 @@ function AppContacts({ row, today, busy = false, onSaved, onConflict, onBusy, re
       </fieldset>
       <div className="flex flex-wrap gap-2"><button type="submit" disabled={busy} className={primaryClass} aria-label={`Save contact for ${accountLabel}`}>{busy ? 'Saving…' : 'Save'}</button><button type="button" disabled={busy} className={buttonClass} aria-label={`Cancel contact for ${accountLabel}`} onClick={cancel}>Cancel</button></div>
     </form> : null}
-    {error ? <p role="alert" className="text-sm text-sf-danger">{error}</p> : null}
+    {error && !erasing ? <p role="alert" className="text-sm text-sf-danger">{error}</p> : null}
   </>;
 }
-export function AccountDetails({ row, mode, today, renderActions, canSeePowerMap = false, ...contactCallbacks }: { row: AccountRow; mode: Mode; today: string } & ContactCallbacks & ContactActions) {
+export function AccountDetails({ row, mode, today, renderActions, canSeePowerMap = false, canEraseContacts, ...contactCallbacks }: { row: AccountRow; mode: Mode; today: string } & ContactCallbacks & ContactActions) {
   const chip = visitChip(row, today);
   const accountClass = classChip(row);
   return <>
@@ -315,7 +324,7 @@ export function AccountDetails({ row, mode, today, renderActions, canSeePowerMap
     {canSeePowerMap && row.powerAlerts?.length ? <div className="mt-2 flex flex-wrap gap-2">{row.powerAlerts.map(alert => <span key={alert} className="max-w-full rounded-full bg-sf-warning-soft px-2 py-1 text-xs font-semibold text-sf-warning">{alertLabel(alert)}</span>)}</div> : null}
     <p className="mt-2 flex flex-wrap items-center gap-2 text-sm text-sf-body">{row.location?.precision === 'pin' ? <><span>📍 Pin set{!isInsideMarketArea(Number(row.location.latitude), Number(row.location.longitude)) ? <span className="text-sf-muted"> · outside market area</span> : null}</span><a className="inline-flex min-h-11 items-center font-semibold text-sf-brand" href={`https://www.google.com/maps?q=${row.location.latitude},${row.location.longitude}`} target="_blank" rel="noopener" aria-label={`Open map for ${row.name} (${row.id})`}>Open map</a></> : row.location?.precision === 'town' ? `Town: ${row.location.town}` : 'No location'}</p>
     <div className="mt-2">
-      <AppContacts row={row} today={today} canSeePowerMap={canSeePowerMap} renderActions={renderActions} {...contactCallbacks} />
+      <AppContacts row={row} today={today} canSeePowerMap={canSeePowerMap} canEraseContacts={canEraseContacts} renderActions={renderActions} {...contactCallbacks} />
     </div>
   </>;
 }
@@ -407,7 +416,7 @@ export function AccountsWorkspace() {
     {data && !error ? <>
       {!loading && !data.accounts.length ? <div className="rounded-xl border border-sf-line-soft bg-sf-soft-0 p-4 text-sm text-sf-body"><p>{mode === 'mine' ? 'No accounts are assigned to you yet.' : 'No accounts match.'}</p>{mode === 'mine' ? <button type="button" className={`${buttonClass} mt-3`} onClick={() => changeMode('all')}>Show all accounts</button> : null}</div> : null}
       <ul aria-label="Accounts" className="space-y-3">{data.accounts.map(row => <li key={row.id} className="min-w-0 rounded-xl border border-sf-line-soft bg-sf-soft-0 p-4">
-        <AccountDetails row={row} mode={mode} today={data.today} canSeePowerMap={data.canSeePowerMap} busy={busy} onBusy={setBusy} onConflict={conflict} onSaved={async duplicatePhone => { setNotice(duplicatePhone ? 'Saved. This phone is already on the account.' : 'Saved.'); await load(); }} renderActions={addContact => <div className="mt-3 flex flex-wrap gap-2">{(['visit', 'location'] as FormKind[]).map(kind => <button key={kind} type="button" disabled={busy} aria-label={`${kind === 'visit' ? 'Log visit' : 'Location'} for ${row.name} (${row.id})`} aria-expanded={open?.id === row.id && open.kind === kind} onClick={event => { origin.current = event.currentTarget; setNotice(''); setOpen({ id: row.id, kind }); }} className={kind === 'visit' ? primaryClass : actionClass}>{kind === 'visit' ? 'Log visit' : 'Location'}</button>)}{addContact}{data.canAssign ? <button type="button" disabled={busy} aria-label={`Owner for ${row.name} (${row.id})`} aria-expanded={open?.id === row.id && open.kind === 'owner'} onClick={event => { origin.current = event.currentTarget; setNotice(''); setOpen({ id: row.id, kind: 'owner' }); }} className={actionClass}>Owner</button> : null}</div>} />
+        <AccountDetails row={row} mode={mode} today={data.today} canSeePowerMap={data.canSeePowerMap} canEraseContacts={data.canEraseContacts} busy={busy} onBusy={setBusy} onConflict={conflict} onSaved={async duplicatePhone => { setNotice(duplicatePhone ? 'Saved. This phone is already on the account.' : 'Saved.'); await load(); }} renderActions={addContact => <div className="mt-3 flex flex-wrap gap-2">{(['visit', 'location'] as FormKind[]).map(kind => <button key={kind} type="button" disabled={busy} aria-label={`${kind === 'visit' ? 'Log visit' : 'Location'} for ${row.name} (${row.id})`} aria-expanded={open?.id === row.id && open.kind === kind} onClick={event => { origin.current = event.currentTarget; setNotice(''); setOpen({ id: row.id, kind }); }} className={kind === 'visit' ? primaryClass : actionClass}>{kind === 'visit' ? 'Log visit' : 'Location'}</button>)}{addContact}{data.canAssign ? <button type="button" disabled={busy} aria-label={`Owner for ${row.name} (${row.id})`} aria-expanded={open?.id === row.id && open.kind === 'owner'} onClick={event => { origin.current = event.currentTarget; setNotice(''); setOpen({ id: row.id, kind: 'owner' }); }} className={actionClass}>Owner</button> : null}</div>} />
         {open?.id === row.id ? <AccountForm key={`${row.id}-${open.kind}`} row={row} kind={open.kind} data={data} onCancel={cancel} onSaved={saved} onConflict={conflict} onBusy={setBusy} onVisitLogged={(visitId, contactIds) => setVisitPrompts(current => ({ ...current, [row.id]: { visitId, contacts: row.appContacts.filter(contact => contactIds.includes(contact.id)) } }))} /> : null}
         {visitPrompts[row.id]?.contacts.map(contact => <ContactSocial key={`${visitPrompts[row.id].visitId}-${contact.id}`} contact={contact} visitId={visitPrompts[row.id].visitId} prompt busy={busy} onBusy={setBusy} onSaved={async () => { await saved(false); }} />)}
       </li>)}</ul>

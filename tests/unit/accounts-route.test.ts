@@ -32,7 +32,7 @@ describe('accounts API', () => {
       { id: 'other', canSeeStyle: false, appContacts: [{ id }] },
     ] };
     mocks.gateway.mockResolvedValue(data);
-    expect(await (await get()).json()).toEqual({ ...data, actorEmail: 'manager@example.test', canAssign: true });
+    expect(await (await get()).json()).toEqual({ ...data, actorEmail: 'manager@example.test', canAssign: true, canEraseContacts: false });
     mocks.gateway.mockResolvedValue({ ok: true, customerId: id, visitId: id });
     const response = await POST(post({ action: 'log_visit', customerId: id, visitedOn: '2026-10-14', outcome: 'met', idempotencyKey: 'social-route-visit-0001' }));
     expect(await response.json()).toHaveProperty('visitId', id);
@@ -49,7 +49,7 @@ describe('accounts API', () => {
     mocks.session.mockResolvedValue({ email: 'sales@example.test', roles: ['sales'] });
     const sales = { ...workspace, canSeePowerMap: false, accounts: [{ id, appContacts: [{ id, name: 'Contact' }], lastVisit: { metContacts: [{ id, name: 'Contact' }] } }] };
     mocks.gateway.mockResolvedValue(sales);
-    expect(await (await get()).json()).toEqual({ ...sales, actorEmail: 'sales@example.test', canAssign: false });
+    expect(await (await get()).json()).toEqual({ ...sales, actorEmail: 'sales@example.test', canAssign: false, canEraseContacts: false });
     mocks.gateway.mockRejectedValue(new OrderGatewayError('Management required for alert filter', 403));
     expect((await get('?alert=no_decision_maker')).status).toBe(403);
   });
@@ -93,7 +93,7 @@ describe('accounts API', () => {
   it('maps GET query names to gateway fields', async () => {
     const response = await get(`?search=Bengaluru&scope=mine&owner=sales%40example.test&territory=${id}&page=2`);
     expect(mocks.gateway).toHaveBeenCalledWith('manager@example.test', 'get_accounts', { search: 'Bengaluru', scope: 'mine', ownerEmail: 'sales@example.test', territoryId: id, page: 2 });
-    expect(await response.json()).toEqual({ ...workspace, actorEmail: 'manager@example.test', canAssign: true });
+    expect(await response.json()).toEqual({ ...workspace, actorEmail: 'manager@example.test', canAssign: true, canEraseContacts: false });
     expect(response.headers.get('cache-control')).toBe('private, no-store');
     expect(response.headers.has('server-timing')).toBe(true);
   });
@@ -107,7 +107,7 @@ describe('accounts API', () => {
     const response = await get(`?scope=mine&class=${state}`);
     expect(response.status).toBe(200);
     expect(mocks.gateway).toHaveBeenCalledWith('manager@example.test', 'get_accounts', { search: '', scope: 'mine', page: 1, class: state });
-    expect(await response.json()).toEqual({ ...classified, accounts: classified.accounts.map(row => ({ ...row, appContacts: [] })), actorEmail: 'manager@example.test', canAssign: true });
+    expect(await response.json()).toEqual({ ...classified, accounts: classified.accounts.map(row => ({ ...row, appContacts: [] })), actorEmail: 'manager@example.test', canAssign: true, canEraseContacts: false });
   });
   it.each(['', 'a', 'b', 'Below%20B', 'unknown', '%20A%20', 'null'])('rejects invalid class=%s before calling the gateway', async state => {
     const response = await get(`?class=${state}`);
@@ -136,10 +136,10 @@ describe('accounts API', () => {
       expect(mocks.gateway).not.toHaveBeenCalled();
     });
   });
-  it.each(['administrator', 'management', 'sales', 'operations'])('reports canAssign for %s', async role => {
+  it.each(['administrator', 'management', 'sales', 'operations'])('reports permissions for %s', async role => {
     mocks.session.mockResolvedValue({ email: 'member@example.test', role, roles: [role] });
     const response = await get();
-    expect(await response.json()).toMatchObject({ actorEmail: 'member@example.test', canAssign: ['administrator', 'management'].includes(role) });
+    expect(await response.json()).toMatchObject({ actorEmail: 'member@example.test', canAssign: ['administrator', 'management'].includes(role), canEraseContacts: role === 'administrator' });
   });
   it.each(['page=0', 'page=1.5', 'page=abc', 'page=2147483648', 'scope=team', 'territory=bad', 'owner=bad', `search=${'x'.repeat(121)}`])('rejects invalid GET %s', async query => {
     expect((await get(`?${query}`)).status).toBe(400);

@@ -114,6 +114,11 @@ describe('Accounts pure presentation', () => {
     expect(html).not.toContain('aria-label="Remove Ravi');
     expect(html).toContain('Add contact');
   });
+  it('hides erase personal data unless the administrator permission is present', () => {
+    const account = { ...row, appContacts: [{ id: 'editable', name: 'Asha', businessRole: null, phone: null, email: null, addedBy: 'sales@example.test', version: 1, canEdit: true }] };
+    expect(renderToStaticMarkup(<AccountDetails row={account} mode="mine" today="2026-10-14" />)).not.toContain('Erase personal data');
+    expect(renderToStaticMarkup(<AccountDetails row={account} mode="mine" today="2026-10-14" canEraseContacts />)).not.toContain('Erase personal data');
+  });
   it('shows two of three app contacts and an accessible more toggle', () => {
     const appContacts = ['Asha', 'Ravi', 'Meena'].map(name => ({ id: name, name, businessRole: null, phone: null, email: null, addedBy: 'sales@example.test', version: 1, canEdit: false }));
     const html = renderToStaticMarkup(<AccountDetails row={{ ...row, appContacts }} mode="mine" today="2026-10-14" />);
