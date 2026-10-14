@@ -1,5 +1,28 @@
 import { describe, expect, it } from 'vitest';
-import { parseAccountClass, parseAccountCommand, parseLocationInput } from '@/lib/account-types';
+import { isInsideMarketArea, parseAccountClass, parseAccountCommand, parseLocationInput } from '@/lib/account-types';
+
+describe('market area warning bounds', () => {
+  it.each([
+    ['Kalaburagi', 17.33, 76.83, true],
+    ['Bidar', 17.91, 77.52, true],
+    ['Raichur', 16.20, 77.36, true],
+    ['Bijapur', 16.83, 75.71, true],
+    ['Pune', 18.52, 73.85, false],
+    ['Bengaluru', 12.97, 77.59, false],
+  ] as const)('checks %s', (_name, latitude, longitude, inside) => {
+    expect(isInsideMarketArea(latitude, longitude)).toBe(inside);
+  });
+  it.each([
+    [15.4, 75.0], [15.4, 77.9], [18.6, 75.0], [18.6, 77.9],
+  ])('includes the boundary at %s, %s', (latitude, longitude) => {
+    expect(isInsideMarketArea(latitude, longitude)).toBe(true);
+  });
+  it.each([
+    [15.3999, 76.83], [18.6001, 76.83], [17.33, 74.9999], [17.33, 77.9001],
+  ])('excludes coordinates just beyond the boundary at %s, %s', (latitude, longitude) => {
+    expect(isInsideMarketArea(latitude, longitude)).toBe(false);
+  });
+});
 
 const customerId = '12345678-1234-4234-8234-123456789abc';
 const idempotencyKey = 'accounts-parser-key-001';

@@ -1,3 +1,11 @@
+// D-19 (owner, 14 Oct 2026); bounding box with margin; used only to warn
+export const MARKET_AREA = { name: 'Kalaburagi, Bidar, Raichur, Yadgir, Bijapur', minLatitude: 15.4, maxLatitude: 18.6, minLongitude: 75.0, maxLongitude: 77.9 } as const;
+
+export function isInsideMarketArea(latitude: number, longitude: number): boolean {
+  return latitude >= MARKET_AREA.minLatitude && latitude <= MARKET_AREA.maxLatitude
+    && longitude >= MARKET_AREA.minLongitude && longitude <= MARKET_AREA.maxLongitude;
+}
+
 export type VisitOutcome = 'met' | 'not_available' | 'order_taken' | 'issue_raised' | 'other';
 export const accountClassStates = ['A', 'B', 'below_b', 'not_available', 'not_linked'] as const;
 export type AccountClassState = typeof accountClassStates[number];

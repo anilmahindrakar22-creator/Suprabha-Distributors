@@ -1,7 +1,7 @@
 'use client';
 
 import { useCallback, useEffect, useId, useRef, useState, type SubmitEvent } from 'react';
-import { parseLocationInput, type AccountRow, type AccountsResponse, type VisitOutcome } from '@/lib/account-types';
+import { isInsideMarketArea, MARKET_AREA, parseLocationInput, type AccountRow, type AccountsResponse, type VisitOutcome } from '@/lib/account-types';
 import { readJsonBody } from '@/lib/http-json';
 
 type Mode = 'mine' | 'all';
@@ -72,7 +72,7 @@ export function AccountDetails({ row, mode, today }: { row: AccountRow; mode: Mo
       {chip ? <span className={`max-w-full shrink-0 rounded-full px-2 py-1 text-xs font-semibold ${chip.className}`}>{chip.text}</span> : null}
     </div>
     <p className="mt-2 break-words text-xs text-sf-muted">{accountMetaLine(row, mode)}</p>
-    <p className="mt-2 flex flex-wrap items-center gap-2 text-sm text-sf-body">{row.location?.precision === 'pin' ? <><span>📍 Pin set</span><a className="inline-flex min-h-11 items-center font-semibold text-sf-brand" href={`https://www.google.com/maps?q=${row.location.latitude},${row.location.longitude}`} target="_blank" rel="noopener">Open map</a></> : row.location?.precision === 'town' ? `Town: ${row.location.town}` : 'No location'}</p>
+    <p className="mt-2 flex flex-wrap items-center gap-2 text-sm text-sf-body">{row.location?.precision === 'pin' ? <><span>📍 Pin set{!isInsideMarketArea(Number(row.location.latitude), Number(row.location.longitude)) ? <span className="text-sf-muted"> · outside market area</span> : null}</span><a className="inline-flex min-h-11 items-center font-semibold text-sf-brand" href={`https://www.google.com/maps?q=${row.location.latitude},${row.location.longitude}`} target="_blank" rel="noopener">Open map</a></> : row.location?.precision === 'town' ? `Town: ${row.location.town}` : 'No location'}</p>
   </>;
 }
 
@@ -239,7 +239,7 @@ function AccountForm({ row, kind, data, onCancel, onSaved, onConflict, onBusy }:
       </> : null}
       {kind === 'location' ? <>
         <fieldset><legend className="text-sm text-sf-body">Location</legend><div className="flex gap-4">{(['pin', 'town'] as const).map(value => <label key={value} className="flex min-h-11 items-center gap-2 text-sm text-sf-body"><input type="radio" name={`${prefix}-precision`} checked={precision === value} onChange={() => { setPrecision(value); setError(''); }} />{value === 'pin' ? 'Pin' : 'Town'}</label>)}</div></fieldset>
-        {precision === 'pin' ? <><div className="block"><label htmlFor={`${prefix}-pin`} className="text-sm text-sf-body">Google Maps link or lat, long</label><input id={`${prefix}-pin`} value={pin} onChange={event => { setPin(event.target.value); setError(''); }} className={inputClass} /></div>{parsed.ok ? <p className="text-sm text-sf-muted">{parsed.latitude}, {parsed.longitude}</p> : pin ? <p className="text-sm text-sf-danger">{pinError}</p> : null}</> : <div className="block"><label htmlFor={`${prefix}-town`} className="text-sm text-sf-body">Town</label><input id={`${prefix}-town`} required minLength={2} maxLength={80} value={town} onChange={event => setTown(event.target.value)} className={inputClass} /></div>}
+        {precision === 'pin' ? <><div className="block"><label htmlFor={`${prefix}-pin`} className="text-sm text-sf-body">Google Maps link or lat, long</label><input id={`${prefix}-pin`} value={pin} onChange={event => { setPin(event.target.value); setError(''); }} className={inputClass} /></div>{parsed.ok ? <><p className="text-sm text-sf-muted">{parsed.latitude}, {parsed.longitude}</p>{!isInsideMarketArea(Number(parsed.latitude), Number(parsed.longitude)) ? <p className="text-sm text-sf-warning">This pin is outside the five-district market area ({MARKET_AREA.name}). Check the link before saving.</p> : null}</> : pin ? <p className="text-sm text-sf-danger">{pinError}</p> : null}</> : <div className="block"><label htmlFor={`${prefix}-town`} className="text-sm text-sf-body">Town</label><input id={`${prefix}-town`} required minLength={2} maxLength={80} value={town} onChange={event => setTown(event.target.value)} className={inputClass} /></div>}
       </> : null}
       {kind === 'owner' ? <>
         <div className="block"><label htmlFor={`${prefix}-owner`} className="text-sm text-sf-body">Owner</label><select id={`${prefix}-owner`} required value={ownerEmail} onChange={event => setOwnerEmail(event.target.value)} className={inputClass}><option value="">Select owner</option>{data.owners.map(item => <option key={item.email} value={item.email}>{item.name || item.email}</option>)}</select></div>

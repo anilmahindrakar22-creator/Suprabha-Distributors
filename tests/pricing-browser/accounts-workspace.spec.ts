@@ -114,6 +114,28 @@ test('location parses a map link and blocks invalid input', async ({ page }) => 
   await expect(page.getByRole('status')).toHaveText('Saved.');
   expect(posts[0]).toMatchObject({ action: 'set_location', customerId, expectedVersion: null, precision: 'pin', latitude: '18.52', longitude: '73.85', source: 'pasted_link' });
 });
+test('location warns outside the market area without blocking Save and clears inside', async ({ page }) => {
+  const { posts } = await mockAccounts(page);
+  await firstCard(page).getByRole('button', { name: 'Location', exact: true }).click();
+  const form = page.getByRole('form', { name: 'Account location' });
+  const input = form.getByLabel('Google Maps link or lat, long');
+  const warning = form.getByText('This pin is outside the five-district market area (Kalaburagi, Bidar, Raichur, Yadgir, Bijapur). Check the link before saving.', { exact: true });
+  await input.fill('18.52, 73.85');
+  await expect(form.getByText('18.52, 73.85', { exact: true })).toBeVisible();
+  await expect(warning).toBeVisible();
+  await expect(warning).not.toHaveAttribute('role', 'alert');
+  await expect(form.getByRole('alert')).toHaveCount(0);
+  await expect(form.getByRole('button', { name: 'Save', exact: true })).toBeEnabled();
+  await input.fill('17.33, 76.83');
+  await expect(form.getByText('17.33, 76.83', { exact: true })).toBeVisible();
+  await expect(warning).toHaveCount(0);
+  await input.fill('18.52, 73.85');
+  await expect(warning).toBeVisible();
+  await form.getByRole('button', { name: 'Save', exact: true }).click();
+  await expect(page.getByRole('status')).toHaveText('Saved.');
+  expect(posts).toHaveLength(1);
+  expect(posts[0]).toMatchObject({ action: 'set_location', customerId, expectedVersion: null, precision: 'pin', latitude: '18.52', longitude: '73.85', source: 'manual_pin' });
+});
 test('assignment controls respect canAssign', async ({ page }) => {
   await mockAccounts(page);
   await expect(page.getByRole('button', { name: 'Owner', exact: true })).toHaveCount(0);
