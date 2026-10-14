@@ -31,6 +31,16 @@ Each `customers[i]` gains:
 - It's read-only, labelled "from Tally".
 - No app-side edit or add. The hint reads "Update contacts in Tally".
 
+## 3b. App-added contacts (owner, 14 Oct 2026: "Contacts can be added to an account")
+- **Who:** administrators, management, sales and operations (the same roles that log visits) can add a contact to an account.
+- **Fields:** name (required), business role (optional, for example "Lab head", "Purchase", "Pathologist"), phone, email.
+- **Stored in** `private.stockflow_account_contacts`, separate from the Tally mirror. Shown under the Tally contacts with the label "added by {name}".
+- **Editing:** the person who added a contact, or management, can edit or remove it.
+  - Removal is a soft "remove": hidden, with history kept.
+  - Edits are versioned (`expectedVersion`, PT409) and audited.
+- **No duplicates:** the same phone already on the account (Tally or app) → warning, still allowed.
+- **Tally contacts stay read-only.** If an app contact should be permanent, staff add it in Tally; the hint says so.
+
 ## 4. Personal-data rules (recommended defaults; owner may change)
 - Store only what Tally holds: name, phone, email.
 - Visible to the roles that can read Accounts.
