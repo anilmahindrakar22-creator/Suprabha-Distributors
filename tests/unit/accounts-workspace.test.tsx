@@ -34,11 +34,12 @@ describe('Accounts pure presentation', () => {
   it('gates styles and management extras while keeping recent rating access', () => {
     const appContact = { id: 'asha', name: 'Asha', businessRole: null, phone: null, email: null, addedBy: 'sales@example.test', version: 1, canEdit: false, style, styleObservations: [] };
     const account = { ...row, appContacts: [appContact], lastVisit: { ...row.lastVisit!, metContacts: [{ id: appContact.id, name: appContact.name }] } };
-    const hidden = renderToStaticMarkup(<AccountDetails row={account} mode="mine" today="2026-10-14" />);
+    const hidden = renderToStaticMarkup(<AccountDetails row={account} mode="mine" today="2026-10-14" actorEmail="sales@example.test" />);
     expect(hidden).toContain('Rate behaviour');
     expect(hidden).not.toContain('Analytical');
     expect(hidden).not.toContain('Ratings (');
     expect(hidden).not.toContain('Override style');
+    expect(renderToStaticMarkup(<AccountDetails row={account} mode="mine" today="2026-10-14" actorEmail="other@example.test" />)).not.toContain('Rate behaviour');
     const visible = renderToStaticMarkup(<AccountDetails row={{ ...account, canSeeStyle: true }} mode="mine" today="2026-10-14" />);
     expect(visible).toContain('Analytical · high confidence');
     expect(visible).toContain('Bring the data');
