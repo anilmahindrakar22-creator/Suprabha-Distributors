@@ -1,9 +1,92 @@
 import { describe, expect, it } from 'vitest';
-import { parseAccountCommand, parseLocationInput } from '@/lib/account-types';
+import { isInsideMarketArea, parseAccountClass, parseAccountCommand, parseLocationInput, withAccountContacts } from '@/lib/account-types';
+import type { AccountRow } from '@/lib/account-types';
+
+describe('optional app contacts response', () => {
+  it('defaults absent app contacts to an empty array and preserves supplied contacts', () => {
+    const older = { id: 'older' } as Omit<AccountRow, 'appContacts'>;
+    const appContacts: AccountRow['appContacts'] = [{ id: 'contact', name: 'Asha', businessRole: null, phone: null, email: null, addedBy: 'sales@example.test', version: 1, canEdit: true }];
+    const response = withAccountContacts({ accounts: [older, { ...older, appContacts }] });
+    expect(response.accounts[0].appContacts).toEqual([]);
+    expect(response.accounts[1].appContacts).toEqual(appContacts);
+    expect(older).not.toHaveProperty('appContacts');
+  });
+});
+
+describe('market area warning bounds', () => {
+  it.each([
+    ['Kalaburagi', 17.33, 76.83, true],
+    ['Bidar', 17.91, 77.52, true],
+    ['Raichur', 16.20, 77.36, true],
+    ['Bijapur', 16.83, 75.71, true],
+    ['Pune', 18.52, 73.85, false],
+    ['Bengaluru', 12.97, 77.59, false],
+  ] as const)('checks %s', (_name, latitude, longitude, inside) => {
+    expect(isInsideMarketArea(latitude, longitude)).toBe(inside);
+  });
+  it.each([
+    [15.4, 75.0], [15.4, 77.9], [18.6, 75.0], [18.6, 77.9],
+  ])('includes the boundary at %s, %s', (latitude, longitude) => {
+    expect(isInsideMarketArea(latitude, longitude)).toBe(true);
+  });
+  it.each([
+    [15.3999, 76.83], [18.6001, 76.83], [17.33, 74.9999], [17.33, 77.9001],
+  ])('excludes coordinates just beyond the boundary at %s, %s', (latitude, longitude) => {
+    expect(isInsideMarketArea(latitude, longitude)).toBe(false);
+  });
+});
 
 const customerId = '12345678-1234-4234-8234-123456789abc';
 const idempotencyKey = 'accounts-parser-key-001';
+describe('app contact commands', () => {
+  const contact = { action: 'add_contact', customerId, name: ' Asha ', businessRole: ' Lab head ', phone: ' 9000000000 ', email: ' a@example.test ', idempotencyKey };
+  it('trims fields and extracts add/update/remove targets', () => {
+    expect(parseAccountCommand(contact)).toEqual({ action: 'add_contact', payload: { customerId, name: 'Asha', businessRole: 'Lab head', phone: '9000000000', email: 'a@example.test', idempotencyKey } });
+    expect(parseAccountCommand({ ...contact, action: 'update_contact', customerId: undefined, contactId: customerId, expectedVersion: 2 })?.payload).toMatchObject({ contactId: customerId, expectedVersion: 2 });
+    expect(parseAccountCommand({ action: 'remove_contact', contactId: customerId, expectedVersion: 1, idempotencyKey })).toEqual({ action: 'remove_contact', payload: { contactId: customerId, expectedVersion: 1, idempotencyKey } });
+  });
+  it('normalizes optional blanks and omitted fields', () => {
+    expect(parseAccountCommand({ action: 'add_contact', customerId, name: 'Asha', idempotencyKey })?.payload).toMatchObject({ businessRole: null, phone: null, email: null });
+    expect(parseAccountCommand({ ...contact, businessRole: ' ', phone: '', email: ' ' })?.payload).toMatchObject({ businessRole: null, phone: null, email: null });
+  });
+  it.each([{ name: 'x' }, { name: 'x'.repeat(121) }, { businessRole: 'x'.repeat(81) }, { phone: 'x'.repeat(41) }, { email: 'invalid' }, { email: 'a'.repeat(160)+'@' }, { phone: 123 }, { customerId: 'bad' }, { idempotencyKey: 'short' }])('rejects invalid fields %#', override => {
+    expect(parseAccountCommand({ ...contact, ...override })).toBeNull();
+  });
+  it.each([undefined, null, 0, 1.5, 2147483648, '1'])('requires an integer edit/removal version %s', expectedVersion => {
+    for (const action of ['update_contact', 'remove_contact']) expect(parseAccountCommand({ ...contact, action, contactId: customerId, expectedVersion })).toBeNull();
+  });
+});
 const pin = { action: 'set_location', customerId, idempotencyKey, precision: 'pin', latitude: '12.9716', longitude: '77.5946', source: 'manual_pin', expectedVersion: null };
+describe('account class parser', () => {
+  it.each(['A', 'B', 'below_b', 'not_available', 'not_linked'])('accepts %s', state => {
+    expect(parseAccountClass(state)).toBe(state);
+  });
+  it.each([null, '', 'a', 'b', 'Below B', 'unknown', ' A ', 'null'])('rejects %s', state => {
+    expect(parseAccountClass(state)).toBeNull();
+  });
+});
+describe('account class policy command', () => {
+  const policy = { action: 'set_class_policy', aMinPaise: '20000000', bMinPaise: '7500000', reason: ' Owner thresholds ', idempotencyKey };
+  it('extracts string thresholds and trims the reason without needing a customer', () => {
+    expect(parseAccountCommand(policy)).toEqual({ action: 'set_class_policy', payload: {
+      aMinPaise: '20000000', bMinPaise: '7500000', reason: 'Owner thresholds', idempotencyKey,
+    } });
+  });
+  it('preserves exact bigint thresholds through the maximum supported value', () => {
+    expect(parseAccountCommand({ ...policy, aMinPaise: '9223372036854775807', bMinPaise: '9223372036854775806' })?.payload)
+      .toMatchObject({ aMinPaise: '9223372036854775807', bMinPaise: '9223372036854775806' });
+  });
+  it.each([
+    { aMinPaise: 20000000 }, { bMinPaise: 7500000 }, { aMinPaise: undefined }, { bMinPaise: undefined },
+    { aMinPaise: '7500000' }, { aMinPaise: '7499999' }, { bMinPaise: '0' }, { bMinPaise: '-1' },
+    { aMinPaise: '20000000.5' }, { aMinPaise: '2e7' }, { aMinPaise: ' 20000000' }, { aMinPaise: '' },
+    { aMinPaise: '9223372036854775808' }, { bMinPaise: '9223372036854775808' }, { aMinPaise: '1'.repeat(20) },
+    { reason: null }, { reason: '  ab  ' }, { reason: 'x'.repeat(501) },
+    { idempotencyKey: 'short' }, { idempotencyKey: ' '.repeat(16) }, { idempotencyKey: 'x'.repeat(201) },
+  ])('rejects invalid policy %#', override => {
+    expect(parseAccountCommand({ ...policy, ...override })).toBeNull();
+  });
+});
 describe('account command parser', () => {
   it('accepts and trims territory names', () => {
     expect(parseAccountCommand({ action: 'create_territory', name: ' South ', idempotencyKey })).toEqual({ action: 'create_territory', payload: { name: 'South', idempotencyKey } });
@@ -34,6 +117,51 @@ describe('account command parser', () => {
     { action: 'log_visit', customerId, idempotencyKey, visitedOn: '2026-10-14', outcome: 'met', nextVisitOn: '2026-10-14' },
     { action: 'log_visit', customerId, idempotencyKey, visitedOn: '2026-10-14', outcome: 'met', note: 'x'.repeat(501) },
   ])('rejects malformed commands %#', input => { expect(parseAccountCommand(input)).toBeNull(); });
+});
+describe('Power Map commands', () => {
+  const contactId = '12345678-1234-4234-8234-123456789abc';
+  const idempotencyKey = 'power-map-types-key-0001';
+  const assessment = { action: 'set_assessment', contactId, decisionRole: 'decision_maker', stance: 'sceptical', influence: 'high', idempotencyKey };
+  it('parses assessments with optional and null reasons', () => {
+    expect(parseAccountCommand(assessment)).toEqual({ action: 'set_assessment', payload: { contactId, decisionRole: 'decision_maker', stance: 'sceptical', influence: 'high', idempotencyKey } });
+    expect(parseAccountCommand({ ...assessment, reason: null })?.payload).toHaveProperty('reason', null);
+    expect(parseAccountCommand({ ...assessment, reason: 'x'.repeat(300) })).not.toBeNull();
+  });
+  it.each([{ decisionRole: 'bad' }, { stance: 'bad' }, { influence: 'bad' }, { contactId: 'bad' }, { reason: 1 }, { reason: 'x'.repeat(301) }, { idempotencyKey: 'short' }])('rejects malformed assessment %#', override => {
+    expect(parseAccountCommand({ ...assessment, ...override })).toBeNull();
+  });
+  it('parses erasure and requires a bounded reason', () => {
+    expect(parseAccountCommand({ action: 'erase_contact', contactId, reason: ' Privacy request ', idempotencyKey })).toEqual({ action: 'erase_contact', payload: { contactId, reason: 'Privacy request', idempotencyKey } });
+    for (const reason of [undefined, null, 1, 'ab', 'x'.repeat(301)]) expect(parseAccountCommand({ action: 'erase_contact', contactId, reason, idempotencyKey })).toBeNull();
+  });
+  it('parses bounded UUID arrays on visits and preserves omission', () => {
+    const visit = { action: 'log_visit', customerId: contactId, visitedOn: '2026-10-14', outcome: 'met', idempotencyKey };
+    expect(parseAccountCommand(visit)?.payload).not.toHaveProperty('metContactIds');
+    for (const metContactIds of [[], [contactId], Array(10).fill(contactId)]) expect(parseAccountCommand({ ...visit, metContactIds })?.payload).toHaveProperty('metContactIds', metContactIds);
+    for (const metContactIds of [null, contactId, ['bad'], [1], Array(11).fill(contactId)]) expect(parseAccountCommand({ ...visit, metContactIds })).toBeNull();
+  });
+});
+describe('Social Styles commands', () => {
+  const contactId = '12345678-1234-4234-8234-123456789abc';
+  const observation = { action: 'record_style_observation', contactId, visitId: contactId, a: [1, 2, 3, 4], r: [4, 3, 2, 1], idempotencyKey: 'social-types-key-0001' };
+  it('parses ratings and preserves omitted or empty cues', () => {
+    const { action, ...payload } = observation;
+    expect(parseAccountCommand(observation)).toEqual({ action, payload });
+    expect(parseAccountCommand({ ...observation, cues: [] })?.payload).toHaveProperty('cues', []);
+    expect(parseAccountCommand({ ...observation, cues: ['cost_per_test', 'validation_data'] })?.payload).toHaveProperty('cues', ['cost_per_test', 'validation_data']);
+  });
+  it.each([{ contactId: 'bad' }, { visitId: 'bad' }, { a: null }, { a: [1, 2, 3] }, { r: [1, 2, 3, 4, 1] },
+    { a: [0, 1, 2, 3] }, { r: [1, 2, 3, 5] }, { a: [1, 2, 3, 2.5] }, { a: ['1', 2, 3, 4] },
+    { cues: null }, { cues: 'cost_per_test' }, { cues: ['bad'] }, { cues: [null] }, { idempotencyKey: 'short' }])('rejects malformed observation %#', override => {
+    expect(parseAccountCommand({ ...observation, ...override })).toBeNull();
+  });
+  it.each(['analytical', 'driving', 'expressive', 'amiable', null])('parses override %s', style => {
+    expect(parseAccountCommand({ action: 'set_style_override', contactId, style, reason: ' Reviewed evidence ', idempotencyKey: observation.idempotencyKey }))
+      .toEqual({ action: 'set_style_override', payload: { contactId, style, reason: 'Reviewed evidence', idempotencyKey: observation.idempotencyKey } });
+  });
+  it.each([{ style: undefined }, { style: 'bad' }, { reason: null }, { reason: ' ab ' }, { reason: 'x'.repeat(301) }, { contactId: 'bad' }])('rejects malformed override %#', override => {
+    expect(parseAccountCommand({ action: 'set_style_override', contactId, style: null, reason: 'Clear override', idempotencyKey: observation.idempotencyKey, ...override })).toBeNull();
+  });
 });
 describe('account location input', () => {
   it('parses bare coordinates and rounds to six decimals', () => {

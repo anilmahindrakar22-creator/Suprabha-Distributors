@@ -4,7 +4,7 @@ import { hasAnyStockFlowRole } from '@/lib/user-types';
 import { BoundedJsonRequestError, readBoundedJsonRequest } from '@/lib/bounded-json-request';
 import { callOrderGateway, OrderGatewayError } from '@/lib/order-gateway';
 import { measuredJsonResponse } from '@/lib/measured-json-response';
-import { accountUuidPattern, parseAccountCommand, type AccountsGatewayResponse } from '@/lib/account-types';
+import { accountUuidPattern, parseAccountClass, parseAccountCommand, powerAlerts, withAccountContacts, type PowerAlert, type AccountsGatewayResponse } from '@/lib/account-types';
 
 const headers = { 'cache-control': 'private, no-store' };
 const failure = (error: string, status: number) => Response.json({ error }, { status, headers });
@@ -30,22 +30,29 @@ export async function GET(request: Request) {
     const page = Number(rawPage);
     const ownerEmail = query.get('owner');
     const territoryId = query.get('territory');
+    const classFilter = query.get('class');
+    const alert = query.get('alert');
     if (search.length > 120 || !/^[0-9]+$/.test(rawPage) || !Number.isInteger(page) || page < 1 || page > 2_147_483_647
       || (scope !== 'all' && scope !== 'mine')
       || (ownerEmail !== null && (ownerEmail.length > 254 || !/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(ownerEmail.trim())))
-      || (territoryId !== null && !accountUuidPattern.test(territoryId))) return failure('Invalid accounts request', 400);
+      || (territoryId !== null && !accountUuidPattern.test(territoryId))
+      || (classFilter !== null && parseAccountClass(classFilter) === null)
+      || (alert !== null && !powerAlerts.includes(alert as PowerAlert))) return failure('Invalid accounts request', 400);
     const workspace = await callOrderGateway<AccountsGatewayResponse>(session.email, 'get_accounts', {
       search, scope, page,
       ...(ownerEmail === null ? {} : { ownerEmail: ownerEmail.trim().toLowerCase() }),
       ...(territoryId === null ? {} : { territoryId }),
+      ...(classFilter === null ? {} : { class: classFilter }),
+      ...(alert === null ? {} : { alert }),
     });
-    return measuredJsonResponse({ ...workspace, actorEmail: session.email, canAssign: hasAnyStockFlowRole(session.roles, ['administrator', 'management']) }, startedAt);
+    return measuredJsonResponse({ ...withAccountContacts(workspace), actorEmail: session.email, canAssign: hasAnyStockFlowRole(session.roles, ['administrator', 'management']), canEraseContacts: hasAnyStockFlowRole(session.roles, ['administrator']) }, startedAt);
   } catch (error) { return failed(error); }
 }
 export async function POST(request: Request) {
   const startedAt = performance.now();
   try {
     const session = await actor();
+    // Includes Social Styles commands; SQL enforces per-action authorization.
     const command = parseAccountCommand(await readBoundedJsonRequest(request, 8_192));
     if (!command) return failure('Invalid accounts request', 400);
     return measuredJsonResponse(await callOrderGateway(session.email, command.action, command.payload), startedAt);
