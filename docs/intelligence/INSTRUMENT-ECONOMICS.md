@@ -42,12 +42,12 @@
 
   | Payback | Status |
   | --- | --- |
-  | ≤ 24 months | attractive |
-  | 25–36 months | management review |
-  | 37–48 months | director exception |
+  | ≤ 24 months | approved automatically (D-15; capital must be recorded) |
+  | 25–36 months | Management approves |
+  | 37–48 months | Administrator approves (D-04) |
   | > 48 months | blocked |
 
-  - **As built:** thresholds are stored and status labels are computed; **approval routing by role is not built**, and there is no director role ([D-04](../planning/OPEN-DECISIONS.md)).
+  - **As built:** thresholds are stored and status labels are computed. Administrator routing is on branch `claude/admin-tier` (D-04); automatic approval is designed, not built ([D-15](../planning/OPEN-DECISIONS.md), [design](../INSTRUMENT-AUTO-APPROVAL-DESIGN.md)).
 - **No complex accounting in V1:** no depreciation, NPV or IRR (owner brief).
 - **Leakage (plan §6):**
   - consumption-based vs commercial-expectation tiers;
