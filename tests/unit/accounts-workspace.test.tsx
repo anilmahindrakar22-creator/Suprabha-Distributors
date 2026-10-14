@@ -1,8 +1,9 @@
 import React from 'react';
 import { renderToStaticMarkup } from 'react-dom/server';
 import { describe, expect, it } from 'vitest';
+import { CalendarClock, CalendarPlus, CalendarX } from 'lucide-react';
 import type { AccountRow, ContactStyle } from '@/lib/account-types';
-import { AccountDetails, accountClassesNote, accountDate, accountMetaLine, addAccountDays, alertLabel, assessmentSummary, classChip, ratingChoice, visitChip, styleLine, styleTip, whoDecidesLine } from '@/components/accounts-workspace';
+import { AccountDetails, accountClassesNote, accountDate, accountMetaLine, addAccountDays, alertLabel, assessmentSummary, classChip, ratingChoice, visitChip, stanceTone, styleLine, styleTip, whoDecidesLine } from '@/components/accounts-workspace';
 
 const row: AccountRow = {
   id: '11111111-1111-4111-8111-111111111111', name: 'Care Lab', city: 'Pune',
@@ -98,8 +99,8 @@ describe('Accounts pure presentation', () => {
   it('gates alerts, assessments and Set role on Power Map permission, including read-only contacts', () => {
     const powerRow: AccountRow = { ...row, powerAlerts: ['no_decision_maker', 'decision_maker_not_met', 'influential_blocker'], appContacts: [{ ...contact, assessment, lastMetOn: '2026-10-03' }, { ...contact, id: 'ravi', name: 'Ravi' }] };
     const visible = renderToStaticMarkup(<AccountDetails row={powerRow} mode="mine" today="2026-10-14" canSeePowerMap />);
-    expect(visible).toContain('Decision maker · Sceptical · High influence · Last met 3 Oct');
-    expect(visible).toContain('Role not set · Not met yet');
+    for (const text of ['Decision maker', 'Sceptical', 'High influence', 'Last met 3 Oct']) expect(visible).toContain(text);
+    for (const text of ['Role not set', 'Not met yet']) expect(visible).toContain(text);
     expect(visible).toContain('Set role for Asha');
     for (const alert of powerRow.powerAlerts!) expect(visible).toContain(alertLabel(alert));
     const hidden = renderToStaticMarkup(<AccountDetails row={powerRow} mode="mine" today="2026-10-14" />);
@@ -143,7 +144,7 @@ describe('Accounts pure presentation', () => {
     expect(html).toContain('href="mailto:asha@example.test"');
     expect(html).toContain('added by sales@example.test');
     expect(html).toContain('aria-label="Edit Asha"');
-    expect(html).toMatch(/<button[^>]*aria-label="Edit Asha"[^>]*>Edit<\/button>/);
+    expect(html).toMatch(/<button[^>]*aria-label="Edit Asha"[^>]*>[\s\S]*?Edit<\/button>/);
     expect(html).toContain('aria-label="More actions for Asha"');
     expect(html).not.toContain('aria-label="Remove Asha"');
     const contactLine = html.match(/<p[^>]*><a[^>]*href="tel:919876543210"[\s\S]*?<\/p>/)?.[0];
@@ -216,7 +217,7 @@ describe('Accounts pure presentation', () => {
     expect(html).toContain('aria-label="A · ₹2.1 L a month, Jul–Sep"');
     expect(html.indexOf('A · ₹2.1 L')).toBeLessThan(html.indexOf('Visit overdue'));
     expect(html).toContain('min-w-0 flex-1');
-    expect(html.match(/shrink-0/g)).toHaveLength(2);
+    expect(html).toContain('inline-flex items-center gap-1 max-w-full shrink-0');
   });
   it('uses date-only arithmetic across month and year boundaries', () => {
     expect(accountDate('2026-10-03')).toBe('3 Oct');
@@ -224,10 +225,15 @@ describe('Accounts pure presentation', () => {
     expect(addAccountDays('2026-10-14', -30)).toBe('2026-09-14');
   });
   it('prioritises overdue and future visits over never visited', () => {
-    expect(visitChip({ ...row, lastVisit: null, nextVisitOn: '2026-10-14' }, '2026-10-14')).toMatchObject({ text: 'Visit overdue · due 14 Oct', className: 'bg-sf-warning-soft text-sf-warning' });
-    expect(visitChip({ ...row, lastVisit: null, nextVisitOn: '2026-10-15' }, '2026-10-14')?.text).toBe('Next visit 15 Oct');
-    expect(visitChip({ ...row, lastVisit: null }, '2026-10-14')?.text).toBe('Never visited');
+    expect(visitChip({ ...row, lastVisit: null, nextVisitOn: '2026-10-14' }, '2026-10-14')).toMatchObject({ text: 'Visit overdue · due 14 Oct', className: 'bg-sf-danger-soft text-sf-danger', icon: CalendarX });
+    expect(visitChip({ ...row, lastVisit: null, nextVisitOn: '2026-10-15' }, '2026-10-14')).toMatchObject({ text: 'Next visit 15 Oct', className: 'bg-sf-soft-2 text-sf-label', icon: CalendarClock });
+    expect(visitChip({ ...row, lastVisit: null }, '2026-10-14')).toMatchObject({ text: 'Never visited', className: 'bg-sf-warning-soft text-sf-warning', icon: CalendarPlus });
     expect(visitChip(row, '2026-10-14')).toBeNull();
+  });
+  it.each([
+    ['supporter', 'success'], ['neutral', 'neutral'], ['sceptical', 'warning'], ['blocker', 'danger'], ['unknown', null],
+  ] as const)('maps stance %s to %s', (stance, tone) => {
+    expect(stanceTone(stance)).toBe(tone);
   });
   it('joins existing metadata in order and shows the owner only in All', () => {
     expect(accountMetaLine(row, 'mine')).toBe('Pune · West · Last visit 3 Oct · Order taken · Last order 4 Oct');
@@ -248,7 +254,7 @@ describe('Accounts pure presentation', () => {
   it('renders real chip text and a map link with its target and rel', () => {
     const html = renderToStaticMarkup(<AccountDetails row={{ ...row, nextVisitOn: '2026-10-03', location: { precision: 'pin', latitude: '18.52', longitude: '73.85', town: null, verifiedBy: 'sales@example.test', verifiedAt: '2026-10-14', version: 1 } }} mode="all" today="2026-10-14" />);
     expect(html).toContain('Visit overdue · due 3 Oct');
-    expect(html).toContain('📍 Pin set');
+    expect(html).toContain('Pin set');
     expect(html).toContain('href="https://www.google.com/maps?q=18.52,73.85"');
     expect(html).toContain('target="_blank" rel="noopener"');
     expect(html).toContain('sales@example.test');

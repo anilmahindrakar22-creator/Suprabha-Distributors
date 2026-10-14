@@ -12,7 +12,7 @@ const fixture: AccountsResponse = {
   classPolicy: { aMinPaise: '20000000', bMinPaise: '7500000' },
 };
 type Command = Record<string, unknown>;
-async function mockAccounts(page: Page, options: { actorEmail?: string; canSeeStyle?: boolean; canAssign?: boolean; canEraseContacts?: boolean; canSeePowerMap?: boolean; powerAlerts?: AccountRow['powerAlerts']; lastVisit?: AccountRow['lastVisit']; emptyMine?: boolean; status?: number; networkOnce?: boolean; paginate?: boolean; classes?: boolean; appContacts?: AccountRow['appContacts']; duplicatePhone?: boolean } = {}) {
+async function mockAccounts(page: Page, options: { location?: AccountRow['location']; actorEmail?: string; canSeeStyle?: boolean; canAssign?: boolean; canEraseContacts?: boolean; canSeePowerMap?: boolean; powerAlerts?: AccountRow['powerAlerts']; lastVisit?: AccountRow['lastVisit']; emptyMine?: boolean; status?: number; networkOnce?: boolean; paginate?: boolean; classes?: boolean; appContacts?: AccountRow['appContacts']; duplicatePhone?: boolean } = {}) {
   const gets: string[] = [];
   const posts: Command[] = [];
   const territories = [...fixture.territories];
@@ -29,7 +29,7 @@ async function mockAccounts(page: Page, options: { actorEmail?: string; canSeeSt
       const query = new URL(route.request().url()).searchParams;
       const classRows: AccountRow[] = (['A', 'B', 'below_b', 'not_available', 'not_linked'] as const).map((state, index) => ({ ...base, id: `class-${index}`, name: `Class ${state} Lab`, class: { ...base.class, state, monthlyPaise: index < 3 ? ['21000000', '7500000', '5000000'][index] : null } }));
       const accounts = options.classes ? classRows.filter(row => !query.get('class') || row.class.state === query.get('class')) : options.emptyMine && query.get('scope') === 'mine' ? [] : options.paginate ? [fixture.accounts[Number(query.get('page')) - 1]] : fixture.accounts;
-      await route.fulfill({ json: { ...fixture, actorEmail: options.actorEmail ?? fixture.actorEmail, accounts: accounts.map(row => ({ ...row, canSeeStyle: options.canSeeStyle ?? false, appContacts: row.id === customerId ? options.appContacts ?? [] : [], ...(row.id === customerId && options.powerAlerts ? { powerAlerts: options.powerAlerts } : {}), ...(row.id === customerId && options.lastVisit ? { lastVisit: options.lastVisit } : {}) })), territories, canAssign: options.canAssign ?? false, canEraseContacts: options.canEraseContacts ?? false, canSeePowerMap: options.canSeePowerMap ?? false, page: { page: Number(query.get('page')), pageSize: options.paginate ? 1 : 50, total: options.paginate ? 3 : accounts.length } } });
+      await route.fulfill({ json: { ...fixture, actorEmail: options.actorEmail ?? fixture.actorEmail, accounts: accounts.map(row => ({ ...row, ...(row.id === customerId && options.location ? { location: options.location } : {}), canSeeStyle: options.canSeeStyle ?? false, appContacts: row.id === customerId ? options.appContacts ?? [] : [], ...(row.id === customerId && options.powerAlerts ? { powerAlerts: options.powerAlerts } : {}), ...(row.id === customerId && options.lastVisit ? { lastVisit: options.lastVisit } : {}) })), territories, canAssign: options.canAssign ?? false, canEraseContacts: options.canEraseContacts ?? false, canSeePowerMap: options.canSeePowerMap ?? false, page: { page: Number(query.get('page')), pageSize: options.paginate ? 1 : 50, total: options.paginate ? 3 : accounts.length } } });
     }
   });
   await page.goto('/?view=accounts');
@@ -46,6 +46,33 @@ const powerContacts: AccountRow['appContacts'] = [
 
 const analytical: NonNullable<AccountRow['appContacts'][number]['style']> = { state: 'analytical', computedStyle: 'analytical', confidence: 'high', observations: 3, distinctDates: 3, assertiveness: 1.5, responsiveness: 1.5, override: null, cues: {} };
 const recentVisit: NonNullable<AccountRow['lastVisit']> = { id: visitId, visitedOn: '2026-10-03', outcome: 'met', visitedBy: 'sales@example.test', note: null, metContacts: powerContacts.map(({ id, name }) => ({ id, name })) };
+test('account states and rating choices use semantic colours and decorative icons', async ({ page }) => {
+  const blocker = { ...appContact, assessment: { ...powerContacts[0].assessment!, stance: 'blocker' as const } };
+  await mockAccounts(page, { canSeePowerMap: true, appContacts: [blocker], lastVisit: { ...recentVisit, metContacts: [{ id: blocker.id, name: blocker.name }] } });
+  const card = firstCard(page);
+  await expect(card.getByText('Visit overdue · due 3 Oct', { exact: true })).toHaveClass(/bg-sf-danger-soft/);
+  await expect(card.getByText('Blocker', { exact: true })).toHaveClass(/text-sf-danger/);
+  await expect(page.locator('[aria-label="Accounts"] svg:not([aria-hidden="true"])')).toHaveCount(0);
+  await card.getByRole('button', { name: /^Rate behaviour for App buyer/ }).click();
+  const choices = card.getByRole('radio').locator('..');
+  await expect(choices.nth(0)).toHaveClass(/bg-sf-cool-soft/);
+  await expect(choices.nth(3)).toHaveClass(/bg-sf-warm-soft/);
+  await expect(page.locator('[aria-label="Accounts"] svg:not([aria-hidden="true"])')).toHaveCount(0);
+});
+
+test('phone card fits alerts, outside pin, Power Map chips and open More actions', async ({ page }, testInfo) => {
+  test.skip(testInfo.project.name !== 'pricing-mobile', 'Phone layout');
+  await page.setViewportSize({ width: 375, height: 812 });
+  await mockAccounts(page, { location: { precision: 'pin', latitude: '18.52', longitude: '73.85', town: null, verifiedBy: 'sales@example.test', verifiedAt: '2026-10-14', version: 1 }, canSeePowerMap: true, canSeeStyle: true, canAssign: true, powerAlerts: ['no_decision_maker', 'decision_maker_not_met', 'influential_blocker'], appContacts: [{ ...appContact, assessment: powerContacts[0].assessment, style: analytical, styleObservations: [] }] });
+  const card = firstCard(page);
+  await expect(card.getByText('· outside market area', { exact: true })).toBeVisible();
+  await expect(card.getByText('High influence', { exact: true })).toBeVisible();
+  await card.getByRole('button', { name: 'More actions for App buyer', exact: true }).click();
+  await expect(card.getByRole('button', { name: 'Remove App buyer', exact: true })).toBeVisible();
+  expect(await page.evaluate(() => document.documentElement.scrollWidth <= document.documentElement.clientWidth)).toBe(true);
+  expect(await card.evaluate(element => element.scrollWidth <= element.clientWidth)).toBe(true);
+  await expect(page.locator('[aria-label="Accounts"] svg:not([aria-hidden="true"])')).toHaveCount(0);
+});
 const behaviours = [
   ['Speaks slowly and carefully', 'Speaks quickly and firmly'],
   ['Asks questions, holds back opinions', 'States opinions'],
@@ -178,7 +205,7 @@ test('management contact actions share a row and More toggles secondary buttons'
   const card = firstCard(page);
   const more = card.getByRole('button', { name: 'More actions for Asha', exact: true });
   const actions = more.locator('..');
-  await expect(actions.getByRole('button')).toHaveText(['Rate behaviour', 'Set role', 'Edit', 'More ▾']);
+  await expect(actions.getByRole('button')).toHaveText(['Rate behaviour', 'Set role', 'Edit', 'More']);
   for (const button of await actions.getByRole('button').all()) await expect(button).toBeVisible();
   await expect(more).toHaveAttribute('aria-expanded', 'false');
   await more.click();
@@ -338,8 +365,8 @@ test('management sees Power Map and saves a preset role assessment with a reload
   const { gets, posts } = await mockAccounts(page, { canSeePowerMap: true, powerAlerts: ['no_decision_maker', 'decision_maker_not_met', 'influential_blocker'], appContacts: powerContacts });
   const card = firstCard(page);
   for (const text of ['No decision maker known', 'Decision maker not met in 60 days', 'Influential blocker']) await expect(card.getByText(text, { exact: true })).toBeVisible();
-  await expect(card.getByText('Decision maker · Sceptical · High influence · Last met 3 Oct', { exact: true })).toBeVisible();
-  await expect(card.getByText('Role not set · Not met yet', { exact: true })).toBeVisible();
+  for (const text of ['Decision maker', 'Sceptical', 'High influence', 'Last met 3 Oct']) await expect(card.getByText(text, { exact: true })).toBeVisible();
+  for (const text of ['Role not set', 'Not met yet']) await expect(card.getByText(text, { exact: true })).toBeVisible();
   await card.getByRole('button', { name: 'Set role for Asha', exact: true }).click();
   const form = card.getByRole('form', { name: 'Set role for Asha at Care Lab', exact: false });
   await expect(form.getByLabel('Decision role for Asha', { exact: false })).toHaveValue('decision_maker');

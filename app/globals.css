@@ -86,6 +86,12 @@
   --color-sf-accent-line: #badfd4;
   --color-sf-info: #315f75;
   --color-sf-info-soft: #e8f4fa;
+  --color-sf-cool: #2d5f8f;
+  --color-sf-cool-soft: #ebf2fa;
+  --color-sf-cool-line: #c3d6ea;
+  --color-sf-warm: #a24a12;
+  --color-sf-warm-soft: #fdf0e6;
+  --color-sf-warm-line: #f1cfb4;
 }
 
 body {

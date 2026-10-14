@@ -2,6 +2,7 @@
 
 import { useCallback, useEffect, useId, useRef, useState, type ReactNode, type SubmitEvent } from 'react';
 import { Briefcase, Calculator, Check, Coffee, Crown, FileSearch, Gavel, Handshake, Heart, Hourglass, ListChecks, Megaphone, MessageCircleQuestionMark, Snail, Timer, Users, Zap } from 'lucide-react';
+import { ArrowLeft, Ban, CalendarCheck, CalendarClock, CalendarPlus, CalendarX, ChevronDown, CircleAlert, CircleCheck, CircleQuestionMark, ClipboardList, Ellipsis, FileClock, Info, Lightbulb, Mail, MapIcon, MapPin, MapPinOff, Network, Pencil, Phone, ShieldX, Signal, SkipForward, ThumbsUp, Trash2, TriangleAlert, User, UserCog, UserPlus, Wand } from 'lucide-react';
 import { isInsideMarketArea, MARKET_AREA, parseLocationInput, powerAlerts, socialStyles, styleCues, withAccountContacts, type ContactStyle, type SocialStyle, type StyleCue, type AppContact, type ContactAssessment, type PowerAlert, type AccountRow, type AccountsResponse, type VisitOutcome } from '@/lib/account-types';
 import { readJsonBody } from '@/lib/http-json';
 
@@ -11,11 +12,11 @@ const inputClass = 'min-h-11 w-full min-w-0 max-w-full rounded-xl border border-
 const buttonClass = 'min-h-11 rounded-xl border border-sf-line px-3 text-sm font-bold text-sf-body disabled:opacity-50';
 const primaryClass = 'min-h-11 rounded-xl bg-sf-ink-hover px-4 text-sm font-bold text-sf-soft disabled:opacity-50';
 const dangerClass = 'min-h-11 rounded-xl bg-sf-danger px-4 text-sm font-bold text-white disabled:opacity-50';
-const actionClass = 'min-h-11 rounded-xl border border-sf-line bg-white px-3 text-sm font-bold text-sf-brand disabled:opacity-50';
-const chipClass = 'inline-flex min-h-11 items-center rounded-lg border border-sf-line bg-white px-3 text-sm font-semibold text-sf-brand disabled:opacity-50';
-const chipPrimaryClass = 'inline-flex min-h-11 items-center rounded-lg bg-sf-brand px-3 text-sm font-semibold text-white disabled:opacity-50';
-const chipDangerClass = 'inline-flex min-h-11 items-center rounded-lg border border-sf-danger-line bg-white px-3 text-sm font-semibold text-sf-danger disabled:opacity-50';
-const contactActionClass = 'inline-flex min-h-11 items-center px-1 text-xs text-sf-brand/80 disabled:opacity-50';
+const actionClass = 'inline-flex items-center gap-2 min-h-11 rounded-xl border border-sf-line bg-white px-3 text-sm font-bold text-sf-brand disabled:opacity-50';
+const chipClass = 'inline-flex min-h-11 items-center gap-2 rounded-lg border border-sf-line bg-white px-3 text-sm font-semibold text-sf-brand disabled:opacity-50';
+const chipPrimaryClass = 'inline-flex min-h-11 items-center gap-2 rounded-lg bg-sf-brand px-3 text-sm font-semibold text-white disabled:opacity-50';
+const chipDangerClass = 'inline-flex min-h-11 items-center gap-2 rounded-lg border border-sf-danger-line bg-white px-3 text-sm font-semibold text-sf-danger disabled:opacity-50';
+const contactActionClass = 'inline-flex min-h-11 items-center gap-2 px-1 text-xs text-sf-brand/80 disabled:opacity-50';
 const outcomes: Record<VisitOutcome, string> = { met: 'Met', not_available: 'Not available', order_taken: 'Order taken', issue_raised: 'Issue raised', other: 'Other' };
 const pinError = 'Paste a Google Maps link or two numbers like 18.52, 73.85';
 const roleLabels = { unknown: 'Unknown', decision_maker: 'Decision maker', influencer: 'Influencer', user: 'User', gatekeeper: 'Gatekeeper' };
@@ -119,15 +120,15 @@ function ContactSocial({ contact, canSeeStyle, visitId, attribution, renderActio
   }
   const style = canSeeStyle ? contact.style : undefined;
   const tipKey = style?.override?.style ?? (style && socialStyles.includes(style.state as SocialStyle) ? style.state as SocialStyle : null);
-  const rateButton = <button type="button" disabled={busy} className={prompt ? chipPrimaryClass : chipClass} aria-label={`${prompt ? 'Rate' : 'Rate behaviour for'} ${who}`} aria-expanded={rating} onClick={event => { onOpen?.(); onRatingOpenChange?.(true); origin.current = event.currentTarget; setStep(0); setRatings(Array(8).fill(0)); setRating(true); setOverriding(false); setError(''); }}>{prompt ? 'Rate' : 'Rate behaviour'}</button>;
+  const rateButton = <button type="button" disabled={busy} className={prompt ? chipPrimaryClass : chipClass} aria-label={`${prompt ? 'Rate' : 'Rate behaviour for'} ${who}`} aria-expanded={rating} onClick={event => { onOpen?.(); onRatingOpenChange?.(true); origin.current = event.currentTarget; setStep(0); setRatings(Array(8).fill(0)); setRating(true); setOverriding(false); setError(''); }}><ClipboardList aria-hidden="true" size={18} className="shrink-0" />{prompt ? 'Rate' : 'Rate behaviour'}</button>;
   const secondary = !prompt && canSeeStyle && contact.styleObservations ? <>
-    <button type="button" className={chipClass} aria-label={`Ratings for ${who}`} aria-expanded={history} onClick={() => setHistory(value => !value)}>Ratings ({contact.styleObservations.length})</button>
-    <button type="button" disabled={busy} className={chipClass} aria-label={`Override style for ${who}`} aria-expanded={overriding} onClick={event => { onOpen?.(); origin.current = event.currentTarget; setOverride(contact.style?.override?.style ?? ''); setReason(''); setOverriding(true); setRating(false); setError(''); }}>Override style</button>
+    <button type="button" className={chipClass} aria-label={`Ratings for ${who}`} aria-expanded={history} onClick={() => setHistory(value => !value)}><FileClock aria-hidden="true" size={18} className="shrink-0" />Ratings ({contact.styleObservations.length})</button>
+    <button type="button" disabled={busy} className={chipClass} aria-label={`Override style for ${who}`} aria-expanded={overriding} onClick={event => { onOpen?.(); origin.current = event.currentTarget; setOverride(contact.style?.override?.style ?? ''); setReason(''); setOverriding(true); setRating(false); setError(''); }}><Wand aria-hidden="true" size={18} className="shrink-0" />Override style</button>
   </> : null;
   return <div className="min-w-0 space-y-1 break-words">
     {!rating && !prompt && style ? <>
       <p className={`text-xs ${tipKey ? 'text-sf-body' : 'text-sf-muted'}`}>{styleLine(style)}</p>
-      {tipKey ? <p className="text-xs text-sf-muted">{styleTip(tipKey)}</p> : null}
+      {tipKey ? <p className="flex items-start gap-1 text-xs text-sf-muted"><Lightbulb aria-hidden="true" size={16} className="shrink-0 text-sf-warning" />{styleTip(tipKey)}</p> : null}
       {style.override ? <p className="text-xs text-sf-muted">Observed: {style.computedStyle ? styleLabels[style.computedStyle] : 'not enough information'}</p> : null}
     </> : null}
     {!rating && attribution ? <p className="break-all text-xs text-sf-muted">{attribution}</p> : null}
@@ -136,12 +137,12 @@ function ContactSocial({ contact, canSeeStyle, visitId, attribution, renderActio
       {accountDate(entry.recordedAt.slice(0, 10))} · {entry.observer} · A {(entry.a.reduce((sum, value) => sum + value, 0) / 4).toFixed(2)} · R {(entry.r.reduce((sum, value) => sum + value, 0) / 4).toFixed(2)}{entry.cues.length ? ` · ${entry.cues.map(cue => cueLabels[cue]).join(', ')}` : ''}
     </li>)}</ul> : null}
     {rating ? <form ref={form} aria-label={`Rate behaviour for ${who}`} className="min-w-0 space-y-3 border-t border-sf-line-soft py-3" onSubmit={event => { event.preventDefault(); const unanswered = ratings.findIndex(value => value === 0); if (unanswered !== -1) { setStep(unanswered); return; } void post({ action: 'record_style_observation', contactId: contact.id, visitId, a: ratings.slice(0, 4), r: ratings.slice(4), cues }); }}>
-      <button type="button" disabled={busy} className={contactActionClass} aria-label={`Back to accounts, stop rating ${contact.name}`} onClick={cancel}>← Back to accounts</button>
+      <button type="button" disabled={busy} className={contactActionClass} aria-label={`Back to accounts, stop rating ${contact.name}`} onClick={cancel}><ArrowLeft aria-hidden="true" size={18} className="shrink-0" />Back to accounts</button>
       {sequence ? <p className="text-xs text-sf-muted">{sequence}</p> : null}
       <div className="flex flex-wrap items-center justify-between gap-2">
         <p ref={stepHeading} tabIndex={-1} className="text-xs font-semibold text-sf-muted">Rate {contact.name} · {step < 8 ? `${step + 1} of 8` : 'last step'}</p>
         <span className="flex items-center gap-2">
-        {prompt ? <button type="button" disabled={busy} className={chipClass} aria-label={`Skip rating ${who}`} onClick={() => { setDone(true); closeRating(); onComplete?.(); }}>Skip</button> : null}
+        {prompt ? <button type="button" disabled={busy} className={chipClass} aria-label={`Skip rating ${who}`} onClick={() => { setDone(true); closeRating(); onComplete?.(); }}><SkipForward aria-hidden="true" size={18} className="shrink-0" />Skip</button> : null}
         <button type="button" disabled={busy} className={chipClass} aria-label={`Cancel rating for ${who}`} onClick={cancel}>Cancel</button>
         </span>
       </div>
@@ -154,8 +155,8 @@ function ContactSocial({ contact, canSeeStyle, visitId, attribution, renderActio
             const Icon = behaviours[step].icons[side === 'left' ? 0 : 1];
             const selected = ratings[step] === value;
             const colours = side === 'left'
-              ? selected ? 'border-sf-info bg-sf-info text-white' : `border-sf-info/40 ${iconCount === 2 ? 'bg-sf-info-soft' : 'bg-white'} text-sf-info`
-              : selected ? 'border-sf-warning bg-sf-warning text-white' : `border-sf-warning-line ${iconCount === 2 ? 'bg-sf-warning-soft' : 'bg-white'} text-sf-warning`;
+              ? selected ? 'border-sf-cool bg-sf-cool text-white' : `border-sf-cool-line ${iconCount === 2 ? 'bg-sf-cool-soft' : 'bg-white'} text-sf-cool`
+              : selected ? 'border-sf-warm bg-sf-warm text-white' : `border-sf-warm-line ${iconCount === 2 ? 'bg-sf-warm-soft' : 'bg-white'} text-sf-warm`;
             return <label key={value} className={`flex min-h-12 w-full cursor-pointer items-center gap-3 rounded-xl border px-4 text-left text-sm has-[:focus-visible]:outline-2 has-[:focus-visible]:outline-sf-brand ${value === 3 ? 'mt-1 ' : ''}${colours}`} onClick={event => {
               if (event.detail > 0 && !busy) {
                 if (advanceTimer.current !== null) clearTimeout(advanceTimer.current);
@@ -165,7 +166,7 @@ function ContactSocial({ contact, canSeeStyle, visitId, attribution, renderActio
               <input type="radio" className="sr-only" name={`${prefix}-q${step}`} value={value} checked={ratings[step] === value} onChange={() => setRatings(previous => previous.map((old, position) => position === step ? value : old))} />
               {selected ? <Check size={18} aria-hidden="true" className="shrink-0" /> : null}
               <span className="min-w-0 flex-1"><strong>{strength}</strong> {phrase}</span>
-              <span className="flex shrink-0 gap-0.5" aria-hidden="true"><Icon aria-hidden="true" size={20} strokeWidth={2} />{iconCount === 2 ? <Icon aria-hidden="true" size={20} strokeWidth={2} /> : null}</span>
+              <span className="flex shrink-0 gap-0.5" aria-hidden="true"><Icon aria-hidden="true" size={20} strokeWidth={2} className="shrink-0" />{iconCount === 2 ? <Icon aria-hidden="true" size={20} strokeWidth={2} className="shrink-0" /> : null}</span>
             </label>;
           })}</div>
         </fieldset>
@@ -182,8 +183,8 @@ function ContactSocial({ contact, canSeeStyle, visitId, attribution, renderActio
       </fieldset>
       <div className="flex flex-wrap gap-2"><button type="submit" disabled={busy} className={primaryClass} aria-label={`Save override for ${who}`}>Save</button><button type="button" disabled={busy} className={buttonClass} aria-label={`Cancel override for ${who}`} onClick={cancel}>Cancel</button></div>
     </form> : null}
-    {notice ? <output aria-live="polite" className="block text-xs text-sf-muted">{notice}</output> : null}
-    {error ? <p role="alert" className="text-sm text-sf-danger">{error}</p> : null}
+    {notice ? <output aria-live="polite" className="inline-flex items-center gap-2 rounded-lg bg-sf-info-soft px-3 py-2 text-sm text-sf-info"><Info aria-hidden="true" size={16} className="shrink-0" />{notice}</output> : null}
+    {error ? <p role="alert" className="inline-flex items-center gap-2 rounded-lg border border-sf-danger-line bg-sf-danger-soft px-3 py-2 text-sm text-sf-danger"><CircleAlert aria-hidden="true" size={16} className="shrink-0" />{error}</p> : null}
   </div>;
 }
 export function assessmentSummary(contact: AppContact) {
@@ -221,9 +222,36 @@ function countLabel(count: number, singular: string, plural: string) {
 }
 export function visitChip(row: AccountRow, today: string) {
   if (row.nextVisitOn) return row.nextVisitOn <= today
-    ? { text: `Visit overdue · due ${accountDate(row.nextVisitOn)}`, className: 'bg-sf-warning-soft text-sf-warning' }
-    : { text: `Next visit ${accountDate(row.nextVisitOn)}`, className: 'bg-sf-soft-2 text-sf-label' };
-  return !row.lastVisit ? { text: 'Never visited', className: 'bg-sf-soft-0 text-sf-muted' } : null;
+    ? { text: `Visit overdue · due ${accountDate(row.nextVisitOn)}`, className: 'bg-sf-danger-soft text-sf-danger', icon: CalendarX }
+    : { text: `Next visit ${accountDate(row.nextVisitOn)}`, className: 'bg-sf-soft-2 text-sf-label', icon: CalendarClock };
+  return !row.lastVisit ? { text: 'Never visited', className: 'bg-sf-warning-soft text-sf-warning', icon: CalendarPlus } : null;
+}
+export function stanceTone(stance: ContactAssessment['stance']): 'success' | 'neutral' | 'warning' | 'danger' | null {
+  return ({ supporter: 'success', neutral: 'neutral', sceptical: 'warning', blocker: 'danger', unknown: null } as const)[stance];
+}
+const summaryChipClass = 'inline-flex items-center gap-1 rounded-full border px-2 py-0.5 text-xs font-semibold';
+const neutralToneClass = 'border-sf-line bg-sf-soft-2 text-sf-label';
+const stanceToneClasses = {
+  success: 'border-sf-success-line bg-sf-success-soft text-sf-success',
+  neutral: neutralToneClass,
+  warning: 'border-sf-warning-line bg-sf-warning-soft text-sf-warning',
+  danger: 'border-sf-danger-line bg-sf-danger-soft text-sf-danger',
+};
+function PowerMapSummary({ contact }: { contact: AppContact }) {
+  const role = contact.assessment?.decisionRole ?? 'unknown';
+  const stance = contact.assessment?.stance ?? 'unknown';
+  const influence = contact.assessment?.influence ?? 'unknown';
+  const tone = stanceTone(stance);
+  const RoleIcon = role === 'decision_maker' ? Crown : User;
+  const StanceIcon = stance === 'supporter' ? ThumbsUp : stance === 'sceptical' ? CircleQuestionMark : stance === 'blocker' ? Ban : null;
+  return <div className="flex flex-wrap gap-1.5">
+    <span className={`${summaryChipClass} ${role === 'decision_maker' ? 'border-sf-accent-line bg-sf-accent-soft text-sf-brand' : neutralToneClass}`}>
+      {role !== 'unknown' ? <RoleIcon aria-hidden="true" size={16} className="shrink-0" /> : null}{role === 'unknown' ? 'Role not set' : roleLabels[role]}
+    </span>
+    {tone ? <span className={`${summaryChipClass} ${stanceToneClasses[tone]}`}>{StanceIcon ? <StanceIcon aria-hidden="true" size={16} className="shrink-0" /> : null}{stanceLabels[stance]}</span> : null}
+    {influence !== 'unknown' ? <span className={`${summaryChipClass} ${neutralToneClass}`}><Signal aria-hidden="true" size={16} className="shrink-0" />{influenceLabels[influence]} influence</span> : null}
+    <span className="inline-flex items-center gap-1 text-xs text-sf-muted"><CalendarCheck aria-hidden="true" size={16} className="shrink-0" />{contact.lastMetOn ? `Last met ${accountDate(contact.lastMetOn)}` : 'Not met yet'}</span>
+  </div>;
 }
 export function classChip(row: AccountRow) {
   const value = row.class;
@@ -322,7 +350,7 @@ function AppContacts({ row, today, actorEmail, ratingContactId, onRatingFocus, b
   const accountLabel = `${row.name} (${row.id})`;
   const contacts = row.appContacts ?? [];
   const moreCount = Math.max(0, contacts.length - 2);
-  const addContact = <button type="button" disabled={busy} className={actionClass} aria-label={`Add contact for ${row.name}`} aria-expanded={editing === 'new'} onClick={event => open('new', event.currentTarget)}>Add contact</button>;
+  const addContact = <button type="button" disabled={busy} className={actionClass} aria-label={`Add contact for ${row.name}`} aria-expanded={editing === 'new'} onClick={event => open('new', event.currentTarget)}><UserPlus aria-hidden="true" size={18} className="shrink-0" />Add contact</button>;
   const contactForm = editing ? <form ref={form} aria-label={`${editing === 'new' ? 'Add contact' : `Edit ${editing.name}`} for ${accountLabel}`} onSubmit={submit} className="space-y-3 border-t border-sf-line-soft pt-4">
       <fieldset disabled={busy} className="min-w-0 space-y-3">
         <div><label htmlFor={`${prefix}-name`} className="text-sm text-sf-body">Name</label><input id={`${prefix}-name`} aria-label={`Contact name for ${accountLabel}`} required minLength={2} maxLength={120} value={name} onChange={event => setName(event.target.value)} className={inputClass} /></div>
@@ -338,10 +366,10 @@ function AppContacts({ row, today, actorEmail, ratingContactId, onRatingFocus, b
     {(contactsExpanded ? contacts : contacts.slice(0, 2)).map(contact => <div key={contact.id} hidden={!!ratingContactId && ratingContactId !== contact.id} className="min-w-0 space-y-2 rounded-lg border border-sf-line-soft bg-white/60 p-3">
       <p className="font-semibold text-sf-body [overflow-wrap:anywhere]">{contact.name}{contact.businessRole ? ` · ${contact.businessRole}` : ''}</p>
       <div hidden={!!ratingContactId}>
-      <p className="flex flex-wrap items-center gap-x-2 break-words text-sm text-sf-body">{contact.phone ? <a className="inline-flex min-h-11 items-center text-sf-brand" href={`tel:${contact.phone.replace(/\D/g, '')}`} aria-label={`Call ${contact.name} for ${accountLabel}`}>{contact.phone}</a> : null}
-        {contact.email ? <a className="inline-flex min-h-11 max-w-full items-center break-all text-sf-brand" href={`mailto:${contact.email}`} aria-label={`Email ${contact.name} for ${accountLabel}`}>{contact.email}</a> : null}
+      <p className="flex flex-wrap items-center gap-x-2 break-words text-sm text-sf-body">{contact.phone ? <a className="inline-flex min-h-11 items-center gap-1 text-sf-brand" href={`tel:${contact.phone.replace(/\D/g, '')}`} aria-label={`Call ${contact.name} for ${accountLabel}`}><Phone aria-hidden="true" size={16} className="shrink-0" />{contact.phone}</a> : null}
+        {contact.email ? <a className="inline-flex min-h-11 max-w-full items-center gap-1 break-all text-sf-brand" href={`mailto:${contact.email}`} aria-label={`Email ${contact.name} for ${accountLabel}`}><Mail aria-hidden="true" size={16} className="shrink-0" /><span className="min-w-0">{contact.email}</span></a> : null}
       </p>
-      {canSeePowerMap ? <p className="break-words text-xs text-sf-muted">{assessmentSummary(contact)} · {contact.lastMetOn ? `Last met ${accountDate(contact.lastMetOn)}` : 'Not met yet'}</p> : null}
+      {canSeePowerMap ? <PowerMapSummary contact={contact} /> : null}
       </div>
       <ContactSocial key={`${contact.id}-${row.lastVisit?.id ?? 'unvisited'}`} attribution={<span>added by {contact.addedBy}</span>}
         onRatingOpenChange={open => onRatingFocus?.(open ? contact.id : null)}
@@ -353,13 +381,13 @@ function AppContacts({ row, today, actorEmail, ratingContactId, onRatingFocus, b
           setCloseSocialVersion(value => value + 1);
           origin.current = event.currentTarget; setAssessing(contact.id); setEditing(null); setRemoving(null); setErasing(null); setError('');
           setDecisionRole(contact.assessment?.decisionRole ?? 'unknown'); setStance(contact.assessment?.stance ?? 'unknown'); setInfluence(contact.assessment?.influence ?? 'unknown'); setReason(contact.assessment?.reason ?? '');
-        }}>Set role</button> : null}
-        {contact.canEdit ? <button type="button" disabled={busy} className={chipClass} aria-label={`Edit ${contact.name}`} onClick={event => open(contact, event.currentTarget)}>Edit</button> : null}
-        {secondary || contact.canEdit ? <button type="button" className={chipClass} aria-label={`More actions for ${contact.name}`} aria-expanded={!!moreOpen[contact.id]} aria-controls={`${prefix}-${contact.id}-actions`} onClick={() => setMoreOpen(previous => ({ ...previous, [contact.id]: !previous[contact.id] }))}>More {moreOpen[contact.id] ? '▴' : '▾'}</button> : null}
+        }}><Network aria-hidden="true" size={18} className="shrink-0" />Set role</button> : null}
+        {contact.canEdit ? <button type="button" disabled={busy} className={chipClass} aria-label={`Edit ${contact.name}`} onClick={event => open(contact, event.currentTarget)}><Pencil aria-hidden="true" size={18} className="shrink-0" />Edit</button> : null}
+        {secondary || contact.canEdit ? <button type="button" className={chipClass} aria-label={`More actions for ${contact.name}`} aria-expanded={!!moreOpen[contact.id]} aria-controls={`${prefix}-${contact.id}-actions`} onClick={() => setMoreOpen(previous => ({ ...previous, [contact.id]: !previous[contact.id] }))}><Ellipsis aria-hidden="true" size={18} className="shrink-0" />More<ChevronDown aria-hidden="true" size={18} className={`shrink-0 ${moreOpen[contact.id] ? 'rotate-180' : ''}`} /></button> : null}
         </div>
         {moreOpen[contact.id] ? <div id={`${prefix}-${contact.id}-actions`} className="flex flex-wrap gap-2">
           {secondary}
-          {contact.canEdit ? <button type="button" disabled={busy} className={chipDangerClass} aria-label={`Remove ${contact.name}`} onClick={event => { setCloseSocialVersion(value => value + 1); origin.current = event.currentTarget; setRemoving(contact.id); setErasing(null); setEditing(null); setAssessing(null); setError(''); }}>Remove</button> : null}
+          {contact.canEdit ? <button type="button" disabled={busy} className={chipDangerClass} aria-label={`Remove ${contact.name}`} onClick={event => { setCloseSocialVersion(value => value + 1); origin.current = event.currentTarget; setRemoving(contact.id); setErasing(null); setEditing(null); setAssessing(null); setError(''); }}><Trash2 aria-hidden="true" size={18} className="shrink-0" />Remove</button> : null}
         </div> : null}
         </>} contact={contact} canSeeStyle={row.canSeeStyle} busy={busy} onBusy={onBusy} onSaved={onSaved}
         visitId={row.lastVisit?.id && row.lastVisit.visitedBy === actorEmail && row.lastVisit.visitedOn >= addAccountDays(today, -30) && row.lastVisit.visitedOn <= today && row.lastVisit.metContacts.some(met => met.id === contact.id) ? row.lastVisit.id : undefined} />
@@ -372,11 +400,11 @@ function AppContacts({ row, today, actorEmail, ratingContactId, onRatingFocus, b
         </fieldset>
         <div className="flex flex-wrap gap-2"><button type="submit" disabled={busy} className={primaryClass} aria-label={`Save role for ${contact.name} at ${accountLabel}`}>{busy ? 'Saving…' : 'Save'}</button><button type="button" disabled={busy} className={buttonClass} aria-label={`Cancel role for ${contact.name} at ${accountLabel}`} onClick={cancel}>Cancel</button></div>
       </form> : null}
-      {contact.canEdit && removing === contact.id ? <p className="flex flex-wrap items-center gap-x-2 text-sm text-sf-body"><span>Remove {contact.name}?</span><button type="button" disabled={busy} className={chipDangerClass} aria-label={`Confirm remove ${contact.name} for ${accountLabel}`} onClick={() => void post({ action: 'remove_contact', contactId: contact.id, expectedVersion: contact.version })}>Remove</button><button type="button" disabled={busy} className={chipClass} aria-label={`Keep ${contact.name} for ${accountLabel}`} onClick={cancel}>Keep</button>{canEraseContacts ? <button type="button" disabled={busy} className={chipDangerClass} aria-label={`Erase personal data of ${contact.name} for ${accountLabel}`} onClick={() => { setErasing(contact.id); setRemoving(null); setEditing(null); setAssessing(null); setEraseReason(''); setError(''); }}>Erase personal data</button> : null}</p> : null}
+      {contact.canEdit && removing === contact.id ? <p className="flex flex-wrap items-center gap-x-2 text-sm text-sf-body"><span>Remove {contact.name}?</span><button type="button" disabled={busy} className={chipDangerClass} aria-label={`Confirm remove ${contact.name} for ${accountLabel}`} onClick={() => void post({ action: 'remove_contact', contactId: contact.id, expectedVersion: contact.version })}><Trash2 aria-hidden="true" size={18} className="shrink-0" />Remove</button><button type="button" disabled={busy} className={chipClass} aria-label={`Keep ${contact.name} for ${accountLabel}`} onClick={cancel}>Keep</button>{canEraseContacts ? <button type="button" disabled={busy} className={chipDangerClass} aria-label={`Erase personal data of ${contact.name} for ${accountLabel}`} onClick={() => { setErasing(contact.id); setRemoving(null); setEditing(null); setAssessing(null); setEraseReason(''); setError(''); }}><ShieldX aria-hidden="true" size={18} className="shrink-0" />Erase personal data</button> : null}</p> : null}
       {contact.canEdit && erasing === contact.id ? <form noValidate aria-label={`Erase ${contact.name} at ${accountLabel}`} onSubmit={event => { event.preventDefault(); if (eraseReason.trim().length < 3) { setError('Enter a reason with at least 3 characters.'); return; } void post({ action: 'erase_contact', contactId: contact.id, reason: eraseReason.trim() }); }} className="min-w-0 space-y-3 border-t border-sf-line-soft py-3">
         <p className="text-sm text-sf-body">Replaces the name, role, phone and email with &quot;Erased contact&quot; and clears role and style reasons. Visits and ratings stay, without personal details. This can&apos;t be undone. Use it only when the person asks to be erased.</p>
         <div><label htmlFor={`${prefix}-erase-reason`} className="text-sm text-sf-body">Reason (checked, not stored)</label><input id={`${prefix}-erase-reason`} aria-label={`Erasure reason for ${contact.name} at ${accountLabel}`} required minLength={3} maxLength={300} placeholder="e.g. Erasure request by phone" value={eraseReason} onChange={event => setEraseReason(event.target.value)} className={inputClass} /></div>
-        {error ? <p role="alert" className="text-sm text-sf-danger">{error}</p> : null}
+        {error ? <p role="alert" className="inline-flex items-center gap-2 rounded-lg border border-sf-danger-line bg-sf-danger-soft px-3 py-2 text-sm text-sf-danger"><CircleAlert aria-hidden="true" size={16} className="shrink-0" />{error}</p> : null}
         <div className="flex flex-wrap gap-2"><button type="submit" disabled={busy} className={dangerClass} aria-label={`Erase permanently ${contact.name} for ${accountLabel}`}>Erase permanently</button><button type="button" disabled={busy} className={buttonClass} aria-label={`Cancel erase ${contact.name} for ${accountLabel}`} onClick={cancel}>Cancel</button></div>
       </form> : null}
       {editing !== 'new' && editing?.id === contact.id ? contactForm : null}
@@ -386,7 +414,7 @@ function AppContacts({ row, today, actorEmail, ratingContactId, onRatingFocus, b
     {moreCount ? <button type="button" className="min-h-11 text-sm font-semibold text-sf-brand" aria-label={`${contactsExpanded ? 'Hide' : `${moreCount} more`} contacts for ${row.name}`} aria-expanded={contactsExpanded} aria-controls={contactsId} onClick={() => setContactsExpanded(value => !value)}>{contactsExpanded ? 'Hide' : `+${moreCount} more`}</button> : null}
     {renderActions ? renderActions(addContact) : <div className="mt-3 flex flex-wrap gap-2">{addContact}</div>}
     {editing === 'new' ? contactForm : null}
-    {error && !erasing ? <p role="alert" className="text-sm text-sf-danger">{error}</p> : null}
+    {error && !erasing ? <p role="alert" className="inline-flex items-center gap-2 rounded-lg border border-sf-danger-line bg-sf-danger-soft px-3 py-2 text-sm text-sf-danger"><CircleAlert aria-hidden="true" size={16} className="shrink-0" />{error}</p> : null}
     </div>
   </>;
 }
@@ -397,13 +425,16 @@ export function AccountDetails({ row, mode, today, renderActions, ratingContactI
     <div className="flex flex-wrap items-start justify-between gap-2">
       <h3 tabIndex={-1} className="min-w-0 flex-1 break-words font-bold text-sf-strong">{row.name}</h3>
       {!ratingContactId && accountClass ? <span title={accountClass.title} aria-label={accountClass.title} className={`max-w-full shrink-0 text-xs ${accountClass.className}`}>{accountClass.text}</span> : null}
-      {!ratingContactId && chip ? <span className={`max-w-full shrink-0 rounded-full px-2 py-1 text-xs font-semibold ${chip.className}`}>{chip.text}</span> : null}
+      {!ratingContactId && chip ? <span className={`inline-flex items-center gap-1 max-w-full shrink-0 rounded-full px-2 py-1 text-xs font-semibold ${chip.className}`}><chip.icon aria-hidden="true" size={16} className="shrink-0" />{chip.text}</span> : null}
     </div>
     <p className="mt-2 break-words text-xs text-sf-muted">{accountMetaLine(row, mode)}</p>
     <div hidden={!!ratingContactId}>
-    {canSeePowerMap && row.powerAlerts?.length ? <div className="mt-2 flex flex-wrap gap-2">{row.powerAlerts.map(alert => <span key={alert} className="max-w-full rounded-full bg-sf-warning-soft px-2 py-1 text-xs font-semibold text-sf-warning">{alertLabel(alert)}</span>)}</div> : null}
-    {canSeePowerMap && whoDecidesLine(row) ? <p className="mt-2 break-words text-sm text-sf-body">{whoDecidesLine(row)}</p> : null}
-    <p className="mt-2 flex flex-wrap items-center gap-2 text-sm text-sf-body">{row.location?.precision === 'pin' ? <><span>📍 Pin set{!isInsideMarketArea(Number(row.location.latitude), Number(row.location.longitude)) ? <span className="text-sf-muted"> · outside market area</span> : null}</span><a className="inline-flex min-h-11 items-center font-semibold text-sf-brand" href={`https://www.google.com/maps?q=${row.location.latitude},${row.location.longitude}`} target="_blank" rel="noopener" aria-label={`Open map for ${row.name} (${row.id})`}>Open map</a></> : row.location?.precision === 'town' ? `Town: ${row.location.town}` : 'No location'}</p>
+    {canSeePowerMap && row.powerAlerts?.length ? <div className="mt-2 flex flex-wrap gap-2">{row.powerAlerts.map(alert => {
+      const Icon = alert === 'no_decision_maker' ? Crown : alert === 'decision_maker_not_met' ? CalendarX : Ban;
+      return <span key={alert} className={`${summaryChipClass} max-w-full ${alert === 'influential_blocker' ? stanceToneClasses.danger : stanceToneClasses.warning}`}><Icon aria-hidden="true" size={16} className="shrink-0" />{alertLabel(alert)}</span>;
+    })}</div> : null}
+    {canSeePowerMap && whoDecidesLine(row) ? <p className="mt-2 flex items-center gap-1 break-words text-sm text-sf-body"><Crown aria-hidden="true" size={16} className="shrink-0 text-sf-brand" /><span className="min-w-0">{whoDecidesLine(row)}</span></p> : null}
+    <p className="mt-2 flex flex-wrap items-center gap-2 text-sm text-sf-body">{row.location?.precision === 'pin' ? <><span className="inline-flex items-center gap-1"><MapPin aria-hidden="true" size={16} className="shrink-0 text-sf-success" />Pin set</span>{!isInsideMarketArea(Number(row.location.latitude), Number(row.location.longitude)) ? <span className={`${summaryChipClass} ${stanceToneClasses.warning}`}><MapPinOff aria-hidden="true" size={16} className="shrink-0" /> · outside market area</span> : null}<a className="inline-flex min-h-11 items-center gap-1 font-semibold text-sf-brand" href={`https://www.google.com/maps?q=${row.location.latitude},${row.location.longitude}`} target="_blank" rel="noopener" aria-label={`Open map for ${row.name} (${row.id})`}><MapIcon aria-hidden="true" size={16} className="shrink-0" />Open map</a></> : <span className="inline-flex items-center gap-1 text-sf-muted"><MapPin aria-hidden="true" size={16} className={`shrink-0 ${row.location?.precision === 'town' ? 'text-sf-muted' : 'text-sf-faint'}`} />{row.location?.precision === 'town' ? `Town: ${row.location.town}` : 'No location'}</span>}</p>
     </div>
     <div className="mt-2">
       <AppContacts row={row} today={today} ratingContactId={ratingContactId} canSeePowerMap={canSeePowerMap} canEraseContacts={canEraseContacts} renderActions={renderActions} {...contactCallbacks} />
@@ -532,14 +563,14 @@ export function AccountsWorkspace() {
     </div>
     {classesNote ? <p className="text-xs text-sf-muted">{classesNote}</p> : null}
     </div>
-    <output aria-live="polite" className="block text-sm text-sf-body">{notice}</output>
+    <output aria-live="polite" className={notice ? 'inline-flex items-center gap-2 rounded-lg border border-sf-success-line bg-sf-success-soft px-3 py-2 text-sm text-sf-success' : 'block text-sm text-sf-body'}>{notice ? <CircleCheck aria-hidden="true" size={16} className="shrink-0" /> : null}{notice}</output>
     {loading ? <p className="text-sm text-sf-muted">Loading accounts…</p> : null}
-    {error ? <div role="alert" className="text-sm text-sf-danger"><p>{error}</p><button type="button" className={buttonClass} onClick={() => void load()}>Retry</button></div> : null}
+    {error ? <div role="alert" className="rounded-lg border border-sf-danger-line bg-sf-danger-soft px-3 py-2 text-sm text-sf-danger"><p className="inline-flex items-center gap-2"><CircleAlert aria-hidden="true" size={16} className="shrink-0" />{error}</p><button type="button" className={buttonClass} onClick={() => void load()}>Retry</button></div> : null}
     {data && !error ? <>
       {!loading && !data.accounts.length ? <div className="rounded-xl border border-sf-line-soft bg-sf-soft-0 p-4 text-sm text-sf-body"><p>{mode === 'mine' ? 'No accounts are assigned to you yet.' : 'No accounts match.'}</p>{mode === 'mine' ? <button type="button" className={`${buttonClass} mt-3`} onClick={() => changeMode('all')}>Show all accounts</button> : null}</div> : null}
       <ul aria-label="Accounts" className="space-y-3">{data.accounts.filter(row => !ratingFocus || ratingFocus.accountId === row.id).map(row => <li key={row.id} ref={element => { if (element) cards.current.set(row.id, element); else cards.current.delete(row.id); }} className="min-w-0 rounded-xl border border-sf-line-soft bg-sf-soft-0 p-4">
         <div hidden={!!visitPrompts[row.id]?.contacts.length}>
-        <AccountDetails row={row} mode={mode} today={data.today} ratingContactId={ratingFocus?.accountId === row.id ? ratingFocus.contactId : undefined} onRatingFocus={contactId => focusRating(row.id, contactId)} actorEmail={data.actorEmail} canSeePowerMap={data.canSeePowerMap} canEraseContacts={data.canEraseContacts} busy={busy} onBusy={setBusy} onConflict={conflict} onSaved={async (duplicatePhone, erased) => { setNotice(erased ? 'Erased contact.' : duplicatePhone ? 'Saved. This phone is already on the account.' : 'Saved.'); await load(); }} renderActions={addContact => <div className="mt-3 flex flex-wrap gap-2">{(['visit', 'location'] as FormKind[]).map(kind => <button key={kind} type="button" disabled={busy} aria-label={`${kind === 'visit' ? 'Log visit' : 'Location'} for ${row.name} (${row.id})`} aria-expanded={open?.id === row.id && open.kind === kind} onClick={event => { origin.current = event.currentTarget; setNotice(''); setOpen({ id: row.id, kind }); }} className={kind === 'visit' ? primaryClass : actionClass}>{kind === 'visit' ? 'Log visit' : 'Location'}</button>)}{addContact}{data.canAssign ? <button type="button" disabled={busy} aria-label={`Owner for ${row.name} (${row.id})`} aria-expanded={open?.id === row.id && open.kind === 'owner'} onClick={event => { origin.current = event.currentTarget; setNotice(''); setOpen({ id: row.id, kind: 'owner' }); }} className={actionClass}>Owner</button> : null}</div>} />
+        <AccountDetails row={row} mode={mode} today={data.today} ratingContactId={ratingFocus?.accountId === row.id ? ratingFocus.contactId : undefined} onRatingFocus={contactId => focusRating(row.id, contactId)} actorEmail={data.actorEmail} canSeePowerMap={data.canSeePowerMap} canEraseContacts={data.canEraseContacts} busy={busy} onBusy={setBusy} onConflict={conflict} onSaved={async (duplicatePhone, erased) => { setNotice(erased ? 'Erased contact.' : duplicatePhone ? 'Saved. This phone is already on the account.' : 'Saved.'); await load(); }} renderActions={addContact => <div className="mt-3 flex flex-wrap gap-2">{(['visit', 'location'] as FormKind[]).map(kind => <button key={kind} type="button" disabled={busy} aria-label={`${kind === 'visit' ? 'Log visit' : 'Location'} for ${row.name} (${row.id})`} aria-expanded={open?.id === row.id && open.kind === kind} onClick={event => { origin.current = event.currentTarget; setNotice(''); setOpen({ id: row.id, kind }); }} className={kind === 'visit' ? `inline-flex items-center gap-2 ${primaryClass}` : actionClass}>{kind === 'visit' ? <CalendarCheck aria-hidden="true" size={18} className="shrink-0" /> : <MapPin aria-hidden="true" size={18} className="shrink-0" />}{kind === 'visit' ? 'Log visit' : 'Location'}</button>)}{addContact}{data.canAssign ? <button type="button" disabled={busy} aria-label={`Owner for ${row.name} (${row.id})`} aria-expanded={open?.id === row.id && open.kind === 'owner'} onClick={event => { origin.current = event.currentTarget; setNotice(''); setOpen({ id: row.id, kind: 'owner' }); }} className={actionClass}><UserCog aria-hidden="true" size={18} className="shrink-0" />Owner</button> : null}</div>} />
         </div>
         {open?.id === row.id && !ratingFocus ? <AccountForm key={`${row.id}-${open.kind}`} row={row} kind={open.kind} data={data} onCancel={cancel} onSaved={saved} onConflict={conflict} onBusy={setBusy} onVisitLogged={(visitId, contactIds) => {
           const contacts = row.appContacts.filter(contact => contactIds.includes(contact.id));
@@ -641,7 +672,7 @@ function AccountForm({ row, kind, data, onCancel, onSaved, onConflict, onBusy, o
       </> : null}
       {kind === 'location' ? <>
         <fieldset><legend className="text-sm text-sf-body">Location</legend><div className="flex gap-4">{(['pin', 'town'] as const).map(value => <label key={value} className="flex min-h-11 items-center gap-2 text-sm text-sf-body"><input type="radio" name={`${prefix}-precision`} checked={precision === value} onChange={() => { setPrecision(value); setError(''); }} />{value === 'pin' ? 'Pin' : 'Town'}</label>)}</div></fieldset>
-        {precision === 'pin' ? <><div className="block"><label htmlFor={`${prefix}-pin`} className="text-sm text-sf-body">Google Maps link or lat, long</label><input id={`${prefix}-pin`} value={pin} onChange={event => { setPin(event.target.value); setError(''); }} className={inputClass} /></div>{parsed.ok ? <><p className="text-sm text-sf-muted">{parsed.latitude}, {parsed.longitude}</p>{!isInsideMarketArea(Number(parsed.latitude), Number(parsed.longitude)) ? <p className="text-sm text-sf-warning">This pin is outside the five-district market area ({MARKET_AREA.name}). Check the link before saving.</p> : null}</> : pin ? <p className="text-sm text-sf-danger">{pinError}</p> : null}</> : <div className="block"><label htmlFor={`${prefix}-town`} className="text-sm text-sf-body">Town</label><input id={`${prefix}-town`} required minLength={2} maxLength={80} value={town} onChange={event => setTown(event.target.value)} className={inputClass} /></div>}
+        {precision === 'pin' ? <><div className="block"><label htmlFor={`${prefix}-pin`} className="text-sm text-sf-body">Google Maps link or lat, long</label><input id={`${prefix}-pin`} value={pin} onChange={event => { setPin(event.target.value); setError(''); }} className={inputClass} /></div>{parsed.ok ? <><p className="text-sm text-sf-muted">{parsed.latitude}, {parsed.longitude}</p>{!isInsideMarketArea(Number(parsed.latitude), Number(parsed.longitude)) ? <p className="flex items-start gap-1 text-sm text-sf-warning"><TriangleAlert aria-hidden="true" size={16} className="shrink-0" />This pin is outside the five-district market area ({MARKET_AREA.name}). Check the link before saving.</p> : null}</> : pin ? <p className="text-sm text-sf-danger">{pinError}</p> : null}</> : <div className="block"><label htmlFor={`${prefix}-town`} className="text-sm text-sf-body">Town</label><input id={`${prefix}-town`} required minLength={2} maxLength={80} value={town} onChange={event => setTown(event.target.value)} className={inputClass} /></div>}
       </> : null}
       {kind === 'owner' ? <>
         <div className="block"><label htmlFor={`${prefix}-owner`} className="text-sm text-sf-body">Owner</label><select id={`${prefix}-owner`} required value={ownerEmail} onChange={event => setOwnerEmail(event.target.value)} className={inputClass}><option value="">Select owner</option>{data.owners.map(item => <option key={item.email} value={item.email}>{item.name || item.email}</option>)}</select></div>
@@ -649,7 +680,7 @@ function AccountForm({ row, kind, data, onCancel, onSaved, onConflict, onBusy, o
         <div className="flex flex-wrap items-end gap-2"><div className="min-w-0 flex-1 basis-40"><label htmlFor={`${prefix}-new`} className="text-xs text-sf-muted">New territory</label><input id={`${prefix}-new`} maxLength={80} value={newTerritory} onChange={event => setNewTerritory(event.target.value)} className={inputClass} /></div><button type="button" disabled={newTerritory.trim().length < 2} className={buttonClass} onClick={() => void post({ action: 'create_territory', name: newTerritory.trim() }, true)}>New territory</button></div>
       </> : null}
     </fieldset>
-    {error ? <p role="alert" className="text-sm text-sf-danger">{error}</p> : null}
+    {error ? <p role="alert" className="inline-flex items-center gap-2 rounded-lg border border-sf-danger-line bg-sf-danger-soft px-3 py-2 text-sm text-sf-danger"><CircleAlert aria-hidden="true" size={16} className="shrink-0" />{error}</p> : null}
     <div className="flex flex-wrap gap-2"><button type="submit" disabled={busy} className={primaryClass}>{busy ? 'Saving…' : 'Save'}</button><button type="button" disabled={busy} className={buttonClass} onClick={onCancel}>Cancel</button></div>
   </form>;
 }
