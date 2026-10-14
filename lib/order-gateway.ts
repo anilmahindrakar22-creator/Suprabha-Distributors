@@ -7,6 +7,7 @@ export type GatewayAction =
   | 'assign_account'
   | 'set_location'
   | 'log_visit'
+  | 'set_class_policy'
   | 'get_instrument_economics'
   | 'recover_economic_command'
   | EconomicAction

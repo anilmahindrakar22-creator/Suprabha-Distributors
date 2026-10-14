@@ -1,9 +1,39 @@
 import { describe, expect, it } from 'vitest';
-import { parseAccountCommand, parseLocationInput } from '@/lib/account-types';
+import { parseAccountClass, parseAccountCommand, parseLocationInput } from '@/lib/account-types';
 
 const customerId = '12345678-1234-4234-8234-123456789abc';
 const idempotencyKey = 'accounts-parser-key-001';
 const pin = { action: 'set_location', customerId, idempotencyKey, precision: 'pin', latitude: '12.9716', longitude: '77.5946', source: 'manual_pin', expectedVersion: null };
+describe('account class parser', () => {
+  it.each(['A', 'B', 'below_b', 'not_available', 'not_linked'])('accepts %s', state => {
+    expect(parseAccountClass(state)).toBe(state);
+  });
+  it.each([null, '', 'a', 'b', 'Below B', 'unknown', ' A ', 'null'])('rejects %s', state => {
+    expect(parseAccountClass(state)).toBeNull();
+  });
+});
+describe('account class policy command', () => {
+  const policy = { action: 'set_class_policy', aMinPaise: '20000000', bMinPaise: '7500000', reason: ' Owner thresholds ', idempotencyKey };
+  it('extracts string thresholds and trims the reason without needing a customer', () => {
+    expect(parseAccountCommand(policy)).toEqual({ action: 'set_class_policy', payload: {
+      aMinPaise: '20000000', bMinPaise: '7500000', reason: 'Owner thresholds', idempotencyKey,
+    } });
+  });
+  it('preserves exact bigint thresholds through the maximum supported value', () => {
+    expect(parseAccountCommand({ ...policy, aMinPaise: '9223372036854775807', bMinPaise: '9223372036854775806' })?.payload)
+      .toMatchObject({ aMinPaise: '9223372036854775807', bMinPaise: '9223372036854775806' });
+  });
+  it.each([
+    { aMinPaise: 20000000 }, { bMinPaise: 7500000 }, { aMinPaise: undefined }, { bMinPaise: undefined },
+    { aMinPaise: '7500000' }, { aMinPaise: '7499999' }, { bMinPaise: '0' }, { bMinPaise: '-1' },
+    { aMinPaise: '20000000.5' }, { aMinPaise: '2e7' }, { aMinPaise: ' 20000000' }, { aMinPaise: '' },
+    { aMinPaise: '9223372036854775808' }, { bMinPaise: '9223372036854775808' }, { aMinPaise: '1'.repeat(20) },
+    { reason: null }, { reason: '  ab  ' }, { reason: 'x'.repeat(501) },
+    { idempotencyKey: 'short' }, { idempotencyKey: ' '.repeat(16) }, { idempotencyKey: 'x'.repeat(201) },
+  ])('rejects invalid policy %#', override => {
+    expect(parseAccountCommand({ ...policy, ...override })).toBeNull();
+  });
+});
 describe('account command parser', () => {
   it('accepts and trims territory names', () => {
     expect(parseAccountCommand({ action: 'create_territory', name: ' South ', idempotencyKey })).toEqual({ action: 'create_territory', payload: { name: 'South', idempotencyKey } });

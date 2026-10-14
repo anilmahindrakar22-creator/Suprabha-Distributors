@@ -10,7 +10,7 @@ const id = '12345678-1234-4234-8234-123456789abc';
 const command = { action: 'assign_account', customerId: id, territoryId: id, ownerEmail: 'sales@example.test', expectedVersion: null, idempotencyKey: 'accounts-route-key-001' };
 const post = (body: unknown) => new Request('https://example.test/api/accounts', { method: 'POST', headers: { 'content-type': 'application/json' }, body: JSON.stringify(body) });
 const get = (query = '') => GET(new Request(`https://example.test/api/accounts${query}`));
-const workspace = { accounts: [], page: { page: 1, pageSize: 50, total: 0 }, owners: [], territories: [], today: '2026-10-14' };
+const workspace = { classPolicy: { aMinPaise: '20000000', bMinPaise: '7500000' }, accounts: [], page: { page: 1, pageSize: 50, total: 0 }, owners: [], territories: [], today: '2026-10-14' };
 beforeEach(() => {
   vi.clearAllMocks();
   mocks.user.mockResolvedValue({ email: 'manager@example.test' });
@@ -42,6 +42,41 @@ describe('accounts API', () => {
   it('defaults GET filters and page', async () => {
     await get();
     expect(mocks.gateway).toHaveBeenCalledWith('manager@example.test', 'get_accounts', { search: '', scope: 'all', page: 1 });
+  });
+  it.each(['A', 'B', 'below_b', 'not_available', 'not_linked'])('forwards the %s class filter and preserves class data', async state => {
+    const classified = { ...workspace, accounts: [{ id, class: { state, monthlyPaise: state === 'not_available' || state === 'not_linked' ? null : '21000000', window: { from: '2026-07-01', to: '2026-09-30' } } }] };
+    mocks.gateway.mockResolvedValue(classified);
+    const response = await get(`?scope=mine&class=${state}`);
+    expect(response.status).toBe(200);
+    expect(mocks.gateway).toHaveBeenCalledWith('manager@example.test', 'get_accounts', { search: '', scope: 'mine', page: 1, class: state });
+    expect(await response.json()).toEqual({ ...classified, actorEmail: 'manager@example.test', canAssign: true });
+  });
+  it.each(['', 'a', 'b', 'Below%20B', 'unknown', '%20A%20', 'null'])('rejects invalid class=%s before calling the gateway', async state => {
+    const response = await get(`?class=${state}`);
+    expect(response.status).toBe(400);
+    expect(await response.json()).toEqual({ error: 'Invalid accounts request' });
+    expect(mocks.gateway).not.toHaveBeenCalled();
+  });
+  it('forwards set_class_policy with exact string thresholds and the trimmed reason', async () => {
+    mocks.session.mockResolvedValue({ email: 'admin@example.test', roles: ['administrator'] });
+    const result = { ok: true, policyId: id, classPolicy: workspace.classPolicy };
+    mocks.gateway.mockResolvedValue(result);
+    const response = await POST(post({ action: 'set_class_policy', ...workspace.classPolicy, reason: ' Owner thresholds ', idempotencyKey: 'accounts-policy-route-001' }));
+    expect(mocks.gateway).toHaveBeenCalledWith('admin@example.test', 'set_class_policy', { ...workspace.classPolicy, reason: 'Owner thresholds', idempotencyKey: 'accounts-policy-route-001' });
+    expect(response.status).toBe(200);
+    expect(await response.json()).toEqual(result);
+  });
+  it('preserves the database administrator restriction on policy changes', async () => {
+    mocks.gateway.mockRejectedValue(new OrderGatewayError('Administrator required to change account class policy', 403));
+    const response = await POST(post({ action: 'set_class_policy', ...workspace.classPolicy, reason: 'Owner thresholds', idempotencyKey: 'accounts-policy-route-002' }));
+    expect(response.status).toBe(403);
+    expect(await response.json()).toEqual({ error: 'Administrator required to change account class policy' });
+  });
+  it.each([{ aMinPaise: '7500000' }, { bMinPaise: '0' }, { aMinPaise: 20000000 }, { reason: 'ab' }])('rejects invalid class policy %#', override => {
+    return POST(post({ action: 'set_class_policy', ...workspace.classPolicy, reason: 'Owner thresholds', idempotencyKey: 'accounts-policy-route-003', ...override })).then(response => {
+      expect(response.status).toBe(400);
+      expect(mocks.gateway).not.toHaveBeenCalled();
+    });
   });
   it.each(['administrator', 'management', 'sales', 'operations'])('reports canAssign for %s', async role => {
     mocks.session.mockResolvedValue({ email: 'member@example.test', role, roles: [role] });

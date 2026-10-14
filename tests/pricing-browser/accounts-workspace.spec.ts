@@ -3,14 +3,15 @@ import type { AccountRow, AccountsResponse } from '../../lib/account-types';
 
 const customerId = '11111111-1111-4111-8111-111111111111';
 const territoryId = '22222222-2222-4222-8222-222222222222';
-const base: AccountRow = { id: customerId, name: 'Care Lab', city: 'Pune', owner: { email: 'sales@example.test', territoryId, territoryName: 'West', since: '2026-10-01', version: 3 }, location: null, lastVisit: null, nextVisitOn: '2026-10-03', lastOrderOn: null };
+const base: AccountRow = { id: customerId, name: 'Care Lab', city: 'Pune', owner: { email: 'sales@example.test', territoryId, territoryName: 'West', since: '2026-10-01', version: 3 }, location: null, lastVisit: null, nextVisitOn: '2026-10-03', lastOrderOn: null, class: { state: 'not_available', monthlyPaise: null, window: { from: '2026-07-01', to: '2026-09-30' } } };
 const fixture: AccountsResponse = {
   accounts: [base, { ...base, id: '33333333-3333-4333-8333-333333333333', name: 'City Lab', nextVisitOn: '2026-10-21' }, { ...base, id: '44444444-4444-4444-8444-444444444444', name: 'New Lab', nextVisitOn: null }],
   page: { page: 1, pageSize: 50, total: 3 }, owners: [{ email: 'sales@example.test', name: 'Salesperson' }, { email: 'other@example.test', name: 'Other salesperson' }],
   territories: [{ id: territoryId, name: 'West' }], canAssign: false, actorEmail: 'sales@example.test', today: '2026-10-14',
+  classPolicy: { aMinPaise: '20000000', bMinPaise: '7500000' },
 };
 type Command = Record<string, unknown>;
-async function mockAccounts(page: Page, options: { canAssign?: boolean; emptyMine?: boolean; status?: number; networkOnce?: boolean; paginate?: boolean } = {}) {
+async function mockAccounts(page: Page, options: { canAssign?: boolean; emptyMine?: boolean; status?: number; networkOnce?: boolean; paginate?: boolean; classes?: boolean } = {}) {
   const gets: string[] = [];
   const posts: Command[] = [];
   const territories = [...fixture.territories];
@@ -25,7 +26,8 @@ async function mockAccounts(page: Page, options: { canAssign?: boolean; emptyMin
     } else {
       gets.push(route.request().url());
       const query = new URL(route.request().url()).searchParams;
-      const accounts = options.emptyMine && query.get('scope') === 'mine' ? [] : options.paginate ? [fixture.accounts[Number(query.get('page')) - 1]] : fixture.accounts;
+      const classRows: AccountRow[] = (['A', 'B', 'below_b', 'not_available', 'not_linked'] as const).map((state, index) => ({ ...base, id: `class-${index}`, name: `Class ${state} Lab`, class: { ...base.class, state, monthlyPaise: index < 3 ? ['21000000', '7500000', '5000000'][index] : null } }));
+      const accounts = options.classes ? classRows.filter(row => !query.get('class') || row.class.state === query.get('class')) : options.emptyMine && query.get('scope') === 'mine' ? [] : options.paginate ? [fixture.accounts[Number(query.get('page')) - 1]] : fixture.accounts;
       await route.fulfill({ json: { ...fixture, accounts, territories, canAssign: options.canAssign ?? false, page: { page: Number(query.get('page')), pageSize: options.paginate ? 1 : 50, total: options.paginate ? 3 : accounts.length } } });
     }
   });
@@ -35,6 +37,33 @@ async function mockAccounts(page: Page, options: { canAssign?: boolean; emptyMin
   return { gets, posts };
 }
 const firstCard = (page: Page) => page.getByRole('list', { name: 'Accounts' }).getByRole('listitem').first();
+
+test('all class states render and the Class filter applies in Mine and All', async ({ page }) => {
+  const { gets } = await mockAccounts(page, { classes: true });
+  const cards = page.getByRole('list', { name: 'Accounts' });
+  await expect(cards.getByText('A', { exact: true })).toHaveAttribute('title', 'A · ₹2.1 L a month, Jul–Sep');
+  await expect(cards.getByText('B', { exact: true })).toHaveAttribute('title', 'B · ₹75 K a month, Jul–Sep');
+  await expect(cards.getByText('Below B', { exact: true })).toBeVisible();
+  await expect(cards.getByText('Class not available yet', { exact: true })).toHaveCount(0);
+  const unlinkedCard = cards.getByRole('listitem').filter({ has: page.getByRole('heading', { name: 'Class not_linked Lab', exact: true }) });
+  await expect(unlinkedCard.locator('p').first()).toHaveText('Pune · West · Not linked to Tally sales');
+  const note = page.getByText('Account classes appear once full Tally sales for Jul–Sep are imported.', { exact: true });
+  await expect(note).toHaveCount(1);
+  await expect(note).toBeVisible();
+  await page.getByLabel('Class', { exact: true }).selectOption('A');
+  await expect.poll(() => new URL(gets.at(-1)!).searchParams.get('class')).toBe('A');
+  await expect(cards.getByRole('listitem')).toHaveCount(1);
+  await expect(note).toHaveCount(0);
+  await page.getByRole('button', { name: 'All', exact: true }).click();
+  await expect(page.getByLabel('Class', { exact: true })).toHaveValue('A');
+  await expect.poll(() => new URL(gets.at(-1)!).searchParams.get('scope')).toBe('all');
+  expect(new URL(gets.at(-1)!).searchParams.get('class')).toBe('A');
+  await page.getByLabel('Class', { exact: true }).selectOption('not_available');
+  await expect.poll(() => new URL(gets.at(-1)!).searchParams.get('class')).toBe('not_available');
+  await expect(cards.getByRole('heading')).toHaveText(['Class not_available Lab']);
+  await expect(note).toHaveCount(1);
+  await expect(cards.getByText('Class not available yet', { exact: true })).toHaveCount(0);
+});
 
 // The pricing browser configuration runs this suite on pricing-desktop and pricing-mobile.
 test('server order and overdue, next and never chips', async ({ page }) => {

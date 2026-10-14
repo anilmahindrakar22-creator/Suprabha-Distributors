@@ -1,12 +1,19 @@
 export type VisitOutcome = 'met' | 'not_available' | 'order_taken' | 'issue_raised' | 'other';
+export const accountClassStates = ['A', 'B', 'below_b', 'not_available', 'not_linked'] as const;
+export type AccountClassState = typeof accountClassStates[number];
+export function parseAccountClass(value: string | null): AccountClassState | null {
+  return accountClassStates.includes(value as AccountClassState) ? value as AccountClassState : null;
+}
 export type AccountRow = {
   id: string; name: string; city: string | null;
+  class: { state: AccountClassState; monthlyPaise: string | null; window: { from: string; to: string }; policyId?: string };
   owner: { email: string; territoryId: string; territoryName: string; since: string; version: number } | null;
   location: { precision: 'pin' | 'town'; latitude: string | null; longitude: string | null; town: string | null; verifiedBy: string; verifiedAt: string; version: number } | null;
   lastVisit: { visitedOn: string; outcome: VisitOutcome; visitedBy: string; note: string | null } | null;
   nextVisitOn: string | null; lastOrderOn: string | null;
 };
 export type AccountsResponse = {
+  classPolicy: { aMinPaise: string; bMinPaise: string };
   accounts: AccountRow[];
   page: { page: number; pageSize: number; total: number };
   owners: { email: string; name: string | null }[];
@@ -16,6 +23,7 @@ export type AccountsResponse = {
 export type AccountsGatewayResponse = Omit<AccountsResponse, 'canAssign' | 'actorEmail'>;
 type CommandBase = { idempotencyKey: string };
 export type AccountCommand =
+  | { action: 'set_class_policy'; payload: CommandBase & { aMinPaise: string; bMinPaise: string; reason: string } }
   | { action: 'create_territory'; payload: CommandBase & { name: string } }
   | { action: 'assign_account'; payload: CommandBase & { customerId: string; ownerEmail: string; territoryId: string; expectedVersion: number | null } }
   | { action: 'set_location'; payload: CommandBase & { customerId: string; expectedVersion: number | null } & (
@@ -47,6 +55,14 @@ export function parseAccountCommand(body: unknown): AccountCommand | null {
   const p = body as Record<string, unknown>;
   if (typeof p.idempotencyKey !== 'string' || p.idempotencyKey.trim().length < 16 || p.idempotencyKey.length > 200) return null;
   const idempotencyKey = p.idempotencyKey;
+  if (p.action === 'set_class_policy') {
+    if (typeof p.aMinPaise !== 'string' || typeof p.bMinPaise !== 'string'
+      || !/^[0-9]{1,19}$/.test(p.aMinPaise) || !/^[0-9]{1,19}$/.test(p.bMinPaise)
+      || BigInt(p.aMinPaise) > BigInt('9223372036854775807') || BigInt(p.bMinPaise) <= BigInt(0)
+      || BigInt(p.aMinPaise) <= BigInt(p.bMinPaise)
+      || typeof p.reason !== 'string' || p.reason.trim().length < 3 || p.reason.trim().length > 500) return null;
+    return { action: p.action, payload: { aMinPaise: p.aMinPaise, bMinPaise: p.bMinPaise, reason: p.reason.trim(), idempotencyKey } };
+  }
   if (p.action === 'create_territory') {
     if (typeof p.name !== 'string' || p.name.trim().length < 2 || p.name.trim().length > 80) return null;
     return { action: p.action, payload: { name: p.name.trim(), idempotencyKey } };
