@@ -75,7 +75,7 @@ function priorityLabel(value: string) {
   return 'Review';
 }
 
-export function ProcurementRequirements() {
+export function ProcurementRequirements({ onOpenOrder }: { onOpenOrder?: (orderId: string, orderNumber: string) => void } = {}) {
   const [open, setOpen] = useState(false);
   const [page, setPage] = useState(1);
   const [result, setResult] = useState<RequirementsResponse | null>(null);
@@ -249,10 +249,11 @@ export function ProcurementRequirements() {
       {waitingLoading && !waitingResult ? <p className="mt-2 text-sm text-sf-subtle">Loading waiting orders…</p> : null}
       {waitingResult ? <>
         <div className="mt-2 space-y-2">
-          {waitingResult.orders.map((order) => <div key={order.orderId} className="break-words rounded-md border border-sf-line-soft bg-white p-2 text-xs">
-            <p className="font-semibold text-sf-strong">{order.customerName} · {order.orderNumber}</p>
-            <p className="mt-1 text-sf-muted">{order.status} · Remaining: {quantity(order.remainingQuantity)}</p>
-          </div>)}
+          {waitingResult.orders.map((order) => {
+            const content = <><span className="block font-semibold text-sf-strong">{order.customerName} · {order.orderNumber}</span><span className="mt-1 block text-sf-muted">{order.status} · Remaining: {quantity(order.remainingQuantity)}</span></>;
+            const rowClass = 'break-words rounded-md border border-sf-line-soft bg-white p-2 text-xs';
+            return onOpenOrder ? <button key={order.orderId} type="button" onClick={() => onOpenOrder(order.orderId, order.orderNumber)} aria-label={`Open order ${order.orderNumber}`} className={`${rowClass} min-h-11 w-full text-left hover:bg-sf-soft`}>{content}</button> : <div key={order.orderId} className={rowClass}>{content}</div>;
+          })}
           {!waitingResult.orders.length ? <p className="text-xs text-sf-subtle">No waiting orders on this page.</p> : null}
         </div>
         {waitingResult.pagination.pageCount > 1 ? <div className="mt-3 flex flex-wrap items-center justify-between gap-3 text-xs text-sf-muted">
