@@ -33,6 +33,7 @@ Items marked **decided below** have an owner decision in the Decided section. Al
 | D-18 | **Territories are created by management over time**, in the app (owner, 14 Oct 2026) | No seeded list |
 | D-19 | **Market area = the five districts around Gulbarga (Kalaburagi)** (owner, 14 Oct 2026). **Confirmed by the owner (14 Oct 2026): Kalaburagi, Bidar, Raichur, Yadgir, Bijapur (Vijayapura)** | Map bounds and location sanity checks (Phases 4 and 7) |
 | D-20 | **No Tally purchase orders or receipt notes are used** (owner, 14 Oct 2026) | Drop PO/GRN references from Phase 1; the aggregate "on order" quantity stays as it is |
+| D-07 *(source part)* | **Contact names come from the Tally ledger** (owner, 14 Oct 2026). The app never creates or edits contact names | [PHASE4-TALLY-CONTACTS-DESIGN](../PHASE4-TALLY-CONTACTS-DESIGN.md). Visibility and retention defaults are still open (ADR-0018) |
 | D-13 | **A/B classes next** (owner, 14 Oct 2026): A ≥ ₹2 L/month, B ₹75 k–<2 L, the rest "unclassified"; versioned policy | Phase 4 slice 2; needs the full-sales import (MARKET-FULL-SALES-IMPORT-PLAN) |
 | D-15 | **Placements with payback ≤ `attractive_months` (24) are approved automatically** (owner, 13 Oct 2026) | Placements only (groups stay manual); capital must be recorded. Approved in the same transaction as the command that makes them eligible, with the same frozen baseline and an "Automatic" reason. 25–36 months: Management; 37–48: Administrator; > 48: blocked. Only an Administrator can change the band (D-04) |
 
