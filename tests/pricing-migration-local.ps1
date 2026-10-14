@@ -148,6 +148,8 @@ create table public.test_upgrade_expected as select to_jsonb(o) as order_data,(s
   Invoke-DatabaseCommand $psqlProgram @('-U',$databaseUser,'-X','-q','-v','ON_ERROR_STOP=1','-d',$database,'-f',$stockAlertTestPath)
   Invoke-DatabaseCommand $psqlProgram @('-U',$databaseUser,'-X','-q','-v','ON_ERROR_STOP=1','-d',$database,'-f',(Join-Path $repository 'supabase/tests/requirements_decision_view.sql'))
   Write-Output 'PASS: requirements decision view: shortage-first order, counts, advisory coverage'
+  Invoke-DatabaseCommand $psqlProgram @('-U',$databaseUser,'-X','-q','-v','ON_ERROR_STOP=1','-d',$database,'-f',(Join-Path $repository 'supabase/tests/customer_accounts.sql'))
+  Write-Output 'PASS: account owner, territory, location and visit log with coverage order'
   Write-Output 'PASS: partial snapshots preserve customers and complete lists retain soft-deactivation'
   Invoke-DatabaseCommand $psqlProgram @('-U',$databaseUser,'-X','-q','-v','ON_ERROR_STOP=1','-d',$database,'-f',(Join-Path $repository 'supabase/tests/catalog_source_version.sql'))
   Write-Output 'PASS: catalog source version and legacy fallback across all order gateways'
