@@ -890,6 +890,14 @@
       "remoteSha256": null,
       "status": "not_deployed",
       "review": "14 October 2026 primary review of released D-04/D-15 approval controls: existing gateway roles, advisory lock, frozen baseline and stored idempotent receipts retained. Administrator required beyond review band and to change policy; short-payback placement approval only within the same preview policy, positive recorded net investment, never from rebuild, groups remain manual. Exact source and all four command seams reviewed; fresh combined replay/browser/static/CI required before integration. This is pending production evidence, not a hosted deployment record."
+    },
+    {
+      "localFile": "20261014090000_customer_accounts.sql",
+      "localSha256": "c1485c0492393e5f519d998411c8f25475b6a46137f51d76fc624f3deb61a72a",
+      "remoteVersion": null,
+      "remoteSha256": null,
+      "status": "not_deployed",
+      "review": "14 October 2026 primary Accounts W1 review: canonical customer FK; Management/Admin assignment and territory control; active eligible owner/territory locks; sales/operations location and visit provenance; global visibility with Mine only a filter (D16/D17 defaults); parent-row serialization, expected-version conflict and immutable histories; service-only gateway and private no-store API. Fresh combined SQL replay includes two-session first-write conflict and stored replay. Production remains pending; acceptance separately recorded."
     }
   ],
   "liveCheck": {

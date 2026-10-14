@@ -25,6 +25,7 @@ const pricingReleaseFiles = new Set([
   '20261011090000_requirements_decision_view.sql',
   '20261013120000_administrator_long_payback_approval.sql',
   '20261013130000_instrument_auto_approval.sql',
+  '20261014090000_customer_accounts.sql',
   '20261004070312_combined_member_role_assignments.sql',
   '20261004071246_combined_role_policy_helpers.sql',
   '20261004071720_combined_role_order_mutation_checks.sql',
