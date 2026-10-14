@@ -129,6 +129,27 @@ test('network retry keeps the same idempotency key and Cancel restores focus', a
   await form.getByRole('button', { name: 'Cancel', exact: true }).click();
   await expect(opener).toBeFocused();
 });
+
+test('gateway timeout retry preserves the command key when the first write may have committed', async ({ page }) => {
+  const { posts } = await mockAccounts(page);
+  const attempts: Command[] = [];
+  await page.route('**/api/accounts', async route => {
+    const body = route.request().postDataJSON() as Command;
+    attempts.push(body);
+    if (attempts.length === 1) {
+      await route.fulfill({ status: 502, json: { error: 'Accounts are temporarily unavailable' } });
+    } else await route.fulfill({ json: { ok: true } });
+  });
+  await firstCard(page).getByRole('button', { name: 'Log visit', exact: true }).click();
+  const form = page.getByRole('form', { name: 'Log visit' });
+  await form.getByRole('button', { name: 'Save', exact: true }).click();
+  await expect(form.getByRole('alert')).toHaveText('Accounts are temporarily unavailable');
+  await form.getByRole('button', { name: 'Save', exact: true }).click();
+  await expect(page.getByRole('status')).toHaveText('Saved.');
+  expect(attempts).toHaveLength(2);
+  expect(attempts[1]).toEqual(attempts[0]);
+  expect(posts).toHaveLength(0);
+});
 test('new territory reloads choices and selects the new territory', async ({ page }) => {
   const { posts } = await mockAccounts(page, { canAssign: true });
   await firstCard(page).getByRole('button', { name: 'Owner', exact: true }).click();

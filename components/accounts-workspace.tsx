@@ -1,6 +1,6 @@
 'use client';
 
-import { useCallback, useEffect, useId, useRef, useState, type FormEvent } from 'react';
+import { useCallback, useEffect, useId, useRef, useState, type SubmitEvent } from 'react';
 import { parseLocationInput, type AccountRow, type AccountsResponse, type VisitOutcome } from '@/lib/account-types';
 import { readJsonBody } from '@/lib/http-json';
 
@@ -90,8 +90,8 @@ export function AccountsWorkspace() {
   }, [query, search]);
   useEffect(() => {
     const controller = new AbortController();
-    void load(controller.signal);
-    return () => controller.abort();
+    const timer = setTimeout(() => void load(controller.signal), 0);
+    return () => { clearTimeout(timer); controller.abort(); };
   }, [load]);
   function changeMode(next: Mode) { setMode(next); setPage(1); setOpen(null); }
   function cancel() { setOpen(null); origin.current?.focus(); }
@@ -117,7 +117,7 @@ export function AccountsWorkspace() {
         <div className="min-w-0 flex-1 basis-40"><label htmlFor={`${prefix}-territory`} className="text-xs text-sf-muted">Territory</label><select id={`${prefix}-territory`} disabled={busy} value={territory} onChange={event => { setTerritory(event.target.value); setPage(1); setOpen(null); }} className={inputClass}><option value="">Any</option>{data.territories.map(item => <option key={item.id} value={item.id}>{item.name}</option>)}</select></div>
       </> : null}
     </div>
-    <p role="status" aria-live="polite" className="text-sm text-sf-body">{notice}</p>
+    <output aria-live="polite" className="block text-sm text-sf-body">{notice}</output>
     {loading ? <p className="text-sm text-sf-muted">Loading accounts…</p> : null}
     {error ? <div role="alert" className="text-sm text-sf-danger"><p>{error}</p><button type="button" className={buttonClass} onClick={() => void load()}>Retry</button></div> : null}
     {data && !error ? <>
@@ -136,8 +136,8 @@ export function AccountsWorkspace() {
 }
 
 function AccountForm({ row, kind, data, onCancel, onSaved, onConflict, onBusy }: {
-  row: AccountRow; kind: FormKind; data: AccountsResponse; onCancel(): void;
-  onSaved(keepOpen: boolean): Promise<AccountsResponse | null>; onConflict(): Promise<void>; onBusy(value: boolean): void;
+  row: AccountRow; kind: FormKind; data: AccountsResponse; onCancel: () => void;
+  onSaved: (keepOpen: boolean) => Promise<AccountsResponse | null>; onConflict: () => Promise<void>; onBusy: (value: boolean) => void;
 }) {
   const prefix = useId();
   const form = useRef<HTMLFormElement>(null);
@@ -166,7 +166,13 @@ function AccountForm({ row, kind, data, onCancel, onSaved, onConflict, onBusy }:
       const response = await fetch('/api/accounts', { method: 'POST', headers: { 'content-type': 'application/json' }, body: JSON.stringify({ ...body, idempotencyKey: pending.current.key }) });
       if (response.status === 409) { pending.current = null; await onConflict(); return; }
       const result = await readJsonBody<{ error?: string }>(response);
-      if (!response.ok) { setError(result.error || 'Not saved. Please try again.'); pending.current = null; return; }
+      if (!response.ok) {
+        setError(result.error || 'Not saved. Please try again.');
+        // A gateway failure can arrive after the database committed. Retrying
+        // the same form must recover its stored result, not create another visit.
+        if (response.status < 500 && response.status !== 408 && response.status !== 429) pending.current = null;
+        return;
+      }
       pending.current = null;
       const refreshed = await onSaved(keepOpen);
       if (keepOpen) {
@@ -177,7 +183,7 @@ function AccountForm({ row, kind, data, onCancel, onSaved, onConflict, onBusy }:
     } catch { setError('Not saved. Check the connection and try again.'); }
     finally { inFlight.current = false; setBusy(false); onBusy(false); }
   }
-  function submit(event: FormEvent) {
+  function submit(event: SubmitEvent<HTMLFormElement>) {
     event.preventDefault();
     if (kind === 'visit') void post({ action: 'log_visit', customerId: row.id, visitedOn, outcome, ...(note.trim() ? { note: note.trim() } : {}), ...(nextVisitOn ? { nextVisitOn } : {}) });
     if (kind === 'location') {
