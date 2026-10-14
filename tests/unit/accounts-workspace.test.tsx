@@ -118,7 +118,7 @@ describe('Accounts pure presentation', () => {
     expect(html).toContain('added by sales@example.test');
     expect(html).toContain('aria-label="Edit Asha"');
     expect(html).toContain('aria-label="Remove Asha"');
-    const contactLine = html.match(/<p[^>]*><span>Asha · Lab head<\/span>[\s\S]*?<\/p>/)?.[0];
+    const contactLine = html.match(/<p[^>]*><span[^>]*>Asha · Lab head<\/span>[\s\S]*?<\/p>/)?.[0];
     expect(contactLine).toContain('href="tel:919876543210"');
     expect(contactLine).toContain('href="mailto:asha@example.test"');
     expect(contactLine).not.toContain('<button');
