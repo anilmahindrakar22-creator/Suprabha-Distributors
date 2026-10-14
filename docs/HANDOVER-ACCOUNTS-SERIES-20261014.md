@@ -44,3 +44,20 @@ Owner named `nikitesh.am@gmail.com` and approved Sales first, then Management, p
 Phone check (f) passes in real Administrator session at 375 × 812: Jul–Sep incomplete-sales note visible, no class chip; document width/scroll width both 375. Screenshot `acceptance-accounts-class-note-mobile.png`. Fixture/SQL coverage exists for (a)–(e); real Sales/Management, one-of-three state, decision-role and disposable-contact erasure remain to be finished. Permanent erasure requires concrete action-time confirmation of the test contact. Do not describe fixture checks as real hosted staff acceptance.
 
 Directive items 2–4: [full-sales reply](FULL-SALES-IMPORT-INTEGRATION-REPLY-20261015.md), [customer-link decision](CUSTOMER-TALLY-LINK-CONFIRMATION-DECISION-20261015.md); instrument register remains held. Production read-only only; no import, class activation or production deployment. Both shared logs updated; docs branch reconciliation is the next recorded step. Final documentation follows the validated source head and does not alter its deployed code.
+
+## Final six phone checks
+
+The later owner responses and independent reads supersede the earlier pending staff-check record above. Owner performed the Sales/Management phone actions; Codex verified the real saved records and the Administrator phone UI. No staff-role impersonation or password handling.
+
+| Check | Outcome and evidence |
+| --- | --- |
+| (a) Sales contact + ticked visit | PASS. Owner's phone completion; contact `3fb7c438-4546-4c7d-8538-71c241982d51` added by Nikitesh at Acceptance Laboratory; two real met links verified |
+| (b) Optional rating + 1 of 3 | PASS. One real rating by Nikitesh, one distinct date; Management phone confirmation, DB `not_enough`/one date; Administrator phone independently displays `1 of 3 meetings` |
+| (c) Management role + Decides | PASS. Owner phone save; latest `decision_maker` assessment actor Nikitesh verified; Administrator phone displays `Decides: Release test contact · Neutral · met 15 Oct` |
+| (d) Sales hidden fields | PASS by owner phone confirmation in the earlier Sales role; non-owner Sales context. Backend role/field-omission SQL and automated UI checks additionally passed. D-22's current-account-owner style exception is preserved |
+| (e) Administrator erasure | PASS. Owner's action-time confirmation named the exact fictitious record; Codex submitted once through the real Administrator phone UI. Visible `Erased contact.`; independent DB placeholder, null role/phone/email, version 2, one erased event, zero retained contact value blobs/assessment/style reasons, two met links and one rating retained |
+| (f) Class unavailable | PASS. Real Administrator phone shows Jul–Sep incomplete-sales note and no class chip; 375 client/scroll widths. Completeness seam remains false |
+
+Screenshots include `acceptance-contact-before-erasure-mobile.png`, `acceptance-test-erasure-review-mobile.png`, `acceptance-test-contact-erased-mobile.png`, `acceptance-accounts-class-note-mobile.png` and audited Sales/Management/invitation proof, under the ignored evidence candidate. Temporary viewport reset and agent-created tab closed. Nikitesh's final acceptance role is Management as approved; no further role change inferred. The name is no longer returned on the active account or visit display. Structured erasure does not claim automatic redaction of arbitrary free text in unrelated business records.
+
+Docs branches reconciled on `codex/handover-integration-directive-docs`: decisions `3a711bd` at merge `31c0ecd`, installed-base-design `a8f9760` at `3479042` (empty file diff because the design was already copied into W1). [PR #51](https://github.com/anilmahindrakar22-creator/Suprabha-Distributors/pull/51) publishes these designs, corrected app-only source decision, full-sales reply/customer-link approval and final release readback. Application/SQL/Edge/connector source remains byte-equivalent to PR #50; no docs deployment required. Every directive outcome is recorded in the two shared logs. Native full-sales totals, financial reconciliation/coverage, production cutover and register gate remain open.
