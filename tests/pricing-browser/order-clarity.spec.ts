@@ -61,7 +61,7 @@ test('quantity shows its unit at 375px and Possible repeat allows submission', a
   expect((await quantity.boundingBox())!.width).toBeGreaterThan(70);
   expect(await dialog.evaluate((element) => element.scrollWidth <= element.clientWidth)).toBe(true);
   await quantity.fill('12');
-  const warning = dialog.getByRole('status').filter({ hasText: 'Possible repeat:' });
+  const warning = dialog.getByRole('region', { name: 'Possible repeat order', exact: true });
   await expect(warning).toContainText(`Possible repeat: order ${order.orderNumber} from`);
   await expect(warning).toContainText('already has 1 of these items (Glucose).');
   const showOrder = warning.getByRole('button', { name: `Show order ${order.orderNumber}`, exact: true });
@@ -87,7 +87,7 @@ test('Possible repeat details toggle inline and preserve entered lines', async (
   const dialog = await capture(page);
   const quantity = dialog.getByRole('spinbutton', { name: 'Quantity for Glucose in Nos', exact: true });
   await quantity.fill('7');
-  const warning = dialog.getByRole('status').filter({ hasText: 'Possible repeat:' });
+  const warning = dialog.getByRole('region', { name: 'Possible repeat order', exact: true });
   await warning.getByRole('button', { name: `Show order ${order.orderNumber}`, exact: true }).click();
   await expect(warning.getByText('Glucose — 2 Nos', { exact: true })).toBeVisible();
   await warning.getByRole('button', { name: `Hide order ${order.orderNumber}`, exact: true }).click();

@@ -1869,14 +1869,14 @@ export function HydratedNewOrderPanel({ data, templateOrder, onClose, onCreated,
             {initialDraft ? <button type="button" onClick={discardSavedOrder} className="min-h-10 rounded-xl px-4 text-sm font-bold text-sf-danger hover:bg-sf-danger-soft">Discard saved order</button> : null}
             {error ? <p role="alert" className="rounded-xl border border-sf-danger-line bg-sf-danger-soft px-4 py-3 text-sm text-sf-danger">{error}</p> : null}
           </div>
-          {possibleRepeat ? <div role="status" className="mx-5 mb-3 rounded-xl border border-sf-warning-line bg-sf-warning-soft p-3 text-sm text-sf-warning">
-            <p>Possible repeat: order {possibleRepeat.order.orderNumber} from {new Date(possibleRepeat.order.createdAt).toLocaleDateString('en-GB', { timeZone: 'Asia/Kolkata', day: 'numeric', month: 'short' })} already has {possibleRepeat.items.length} of these items ({possibleRepeat.items.slice(0, 2).map((item) => item.itemName).join(', ')}{possibleRepeat.items.length > 2 ? ', …' : ''}).</p>
+          {possibleRepeat ? <section aria-label="Possible repeat order" className="mx-5 mb-3 rounded-xl border border-sf-warning-line bg-sf-warning-soft p-3 text-sm text-sf-warning">
+            <output aria-live="polite" className="block">Possible repeat: order {possibleRepeat.order.orderNumber} from {new Date(possibleRepeat.order.createdAt).toLocaleDateString('en-GB', { timeZone: 'Asia/Kolkata', day: 'numeric', month: 'short' })} already has {possibleRepeat.items.length} of these items ({possibleRepeat.items.slice(0, 2).map((item) => item.itemName).join(', ')}{possibleRepeat.items.length > 2 ? ', …' : ''}).</output>
             <button type="button" aria-expanded={repeatExpanded} onClick={() => setExpandedRepeatOrderId(repeatExpanded ? null : possibleRepeat.order.id)} className="mt-1 min-h-11 text-left font-bold underline">{repeatExpanded ? 'Hide order' : 'Show order'} {possibleRepeat.order.orderNumber}</button>
             {repeatExpanded ? <div className="mt-1">
               <p>{statusLabel(possibleRepeat.order.status)} · <time dateTime={possibleRepeat.order.createdAt}>{new Date(possibleRepeat.order.createdAt).toLocaleString('en-GB', { timeZone: 'Asia/Kolkata', day: 'numeric', month: 'short', hour: '2-digit', minute: '2-digit', hour12: false })}</time></p>
               <ul className="mt-2 space-y-1">{possibleRepeat.items.map((item) => <li key={item.tallyKey}>{item.itemName} — {formatQuantity(item.quantity)}{item.baseUnit?.trim() ? ` ${item.baseUnit.trim()}` : ''}</li>)}</ul>
             </div> : null}
-          </div> : null}
+          </section> : null}
           <footer className="sticky bottom-0 flex items-center justify-between gap-4 border-t border-sf-line-soft bg-white/95 px-5 py-4 backdrop-blur"><p className="min-w-0 text-xs text-sf-subtle">{lines.length} product{lines.length === 1 ? '' : 's'} · {lines.some((line) => !line.item) ? 'product needs replacement' : draftState === 'pending' ? 'waiting to send' : saveOnDevice ? 'draft protected' : 'ready to save'}</p><button type="submit" disabled={submitting || lines.length === 0 || lines.some((line) => !line.item)} className="min-h-12 shrink-0 rounded-xl bg-sf-ink px-6 font-extrabold text-white hover:bg-sf-ink-hover disabled:opacity-50">{submitting ? 'Saving…' : draftState === 'pending' || draftState === 'error' ? 'Retry order' : 'Save order'}</button></footer>
         </form>
       </dialog>
