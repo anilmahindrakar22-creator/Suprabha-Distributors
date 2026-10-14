@@ -328,7 +328,7 @@ export function StockFlowFrame({ actorEmail, actorRole, actorRoles, staffAuth = 
         ) : surface === 'orders' ? (
           <Suspense fallback={<SectionLoading />}><OrderWorkspace key={`${orderFilter}:${orderView.nonce}`} actorEmail={actorEmail} initialStatus={orderFilter} initialQuery={orderView.query} focusOrder={orderView.focus} newOrderIds={newOrderIds} onOrderActed={() => workService.current?.reconcile()} /></Suspense>
         ) : surface === 'requests' ? (
-          <Suspense fallback={<SectionLoading />}><RequestsWorkspace roles={roles} /></Suspense>
+          <Suspense fallback={<SectionLoading />}><RequestsWorkspace roles={roles} onOpenOrder={(orderId, orderNumber) => openOrder({ orderId, orderNumber })} /></Suspense>
         ) : surface === 'accounts' && hasAnyStockFlowRole(roles, ['administrator', 'management', 'sales', 'operations']) ? (
           <Suspense fallback={<SectionLoading />}><AccountsWorkspace /></Suspense>
         ) : surface === 'pricing' ? (

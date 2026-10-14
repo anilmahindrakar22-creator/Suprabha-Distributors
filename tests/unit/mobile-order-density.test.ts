@@ -25,7 +25,7 @@ describe('order-list density (list-first redesign)', () => {
     expect(workspace).not.toContain('<ProductRequestInbox');
     expect(workspace).not.toContain('<ProcurementRequirements');
     expect(frame).toContain("'requests'");
-    expect(frame).toContain('<RequestsWorkspace roles={roles} />');
+    expect(frame).toContain('<RequestsWorkspace roles={roles} onOpenOrder=');
   });
 
   it('shows compact grouped rows on mobile and opens one order full screen', () => {
