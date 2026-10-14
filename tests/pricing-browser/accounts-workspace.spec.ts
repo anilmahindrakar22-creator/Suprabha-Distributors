@@ -3,9 +3,9 @@ import type { AccountRow, AccountsResponse } from '../../lib/account-types';
 
 const customerId = '11111111-1111-4111-8111-111111111111';
 const territoryId = '22222222-2222-4222-8222-222222222222';
-const base: AccountRow = { id: customerId, name: 'Care Lab', city: 'Pune', owner: { email: 'sales@example.test', territoryId, territoryName: 'West', since: '2026-10-01', version: 3 }, location: null, lastVisit: null, nextVisitOn: '2026-10-03', lastOrderOn: null, class: { state: 'not_available', monthlyPaise: null, window: { from: '2026-07-01', to: '2026-09-30' } } };
+const base: AccountRow = { id: customerId, name: 'Care Lab', city: 'Pune', contacts: [], owner: { email: 'sales@example.test', territoryId, territoryName: 'West', since: '2026-10-01', version: 3 }, location: null, lastVisit: null, nextVisitOn: '2026-10-03', lastOrderOn: null, class: { state: 'not_available', monthlyPaise: null, window: { from: '2026-07-01', to: '2026-09-30' } } };
 const fixture: AccountsResponse = {
-  accounts: [base, { ...base, id: '33333333-3333-4333-8333-333333333333', name: 'City Lab', nextVisitOn: '2026-10-21' }, { ...base, id: '44444444-4444-4444-8444-444444444444', name: 'New Lab', nextVisitOn: null }],
+  accounts: [{ ...base, contacts: [{ name: 'Asha', phone: '+91 98765 43210', email: null }, { name: 'Ravi', phone: '9876543211', email: 'ravi@example.test' }, { name: 'Meena', phone: null, email: 'meena@example.test' }] }, { ...base, id: '33333333-3333-4333-8333-333333333333', name: 'City Lab', nextVisitOn: '2026-10-21' }, { ...base, id: '44444444-4444-4444-8444-444444444444', name: 'New Lab', nextVisitOn: null }],
   page: { page: 1, pageSize: 50, total: 3 }, owners: [{ email: 'sales@example.test', name: 'Salesperson' }, { email: 'other@example.test', name: 'Other salesperson' }],
   territories: [{ id: territoryId, name: 'West' }], canAssign: false, actorEmail: 'sales@example.test', today: '2026-10-14',
   classPolicy: { aMinPaise: '20000000', bMinPaise: '7500000' },
@@ -37,6 +37,29 @@ async function mockAccounts(page: Page, options: { canAssign?: boolean; emptyMin
   return { gets, posts };
 }
 const firstCard = (page: Page) => page.getByRole('list', { name: 'Accounts' }).getByRole('listitem').first();
+
+test('Tally contacts expand with call and email links and can be hidden', async ({ page }) => {
+  await mockAccounts(page);
+  const card = firstCard(page);
+  await expect(card.getByText('Asha', { exact: true })).toBeVisible();
+  await expect(card.getByRole('link', { name: 'Call Asha', exact: true })).toHaveAttribute('href', 'tel:919876543210');
+  const toggle = card.getByRole('button', { name: '+2 more contacts for Care Lab', exact: false });
+  await expect(toggle).toHaveText('+2 more');
+  await expect(toggle).toHaveAttribute('aria-expanded', 'false');
+  await expect(card.getByText('Ravi', { exact: true })).toHaveCount(0);
+  await toggle.click();
+  await expect(card.getByText('Ravi', { exact: true })).toBeVisible();
+  await expect(card.getByText('Meena', { exact: true })).toBeVisible();
+  await expect(card.getByRole('link', { name: 'Call Ravi', exact: true })).toHaveAttribute('href', 'tel:9876543211');
+  await expect(card.getByRole('link', { name: 'Email Meena', exact: true })).toHaveAttribute('href', 'mailto:meena@example.test');
+  await expect(card.getByText('Contacts come from Tally. Update contacts in Tally.', { exact: true })).toBeVisible();
+  const hide = card.getByRole('button', { name: 'Hide contacts for Care Lab', exact: false });
+  await expect(hide).toHaveText('Hide');
+  await expect(hide).toHaveAttribute('aria-expanded', 'true');
+  await hide.click();
+  await expect(card.getByText('Ravi', { exact: true })).toHaveCount(0);
+  await expect(page.getByRole('list', { name: 'Accounts' }).getByRole('listitem').nth(1).getByText('No contact in Tally', { exact: true })).toBeVisible();
+});
 
 test('all class states render and the Class filter applies in Mine and All', async ({ page }) => {
   const { gets } = await mockAccounts(page, { classes: true });

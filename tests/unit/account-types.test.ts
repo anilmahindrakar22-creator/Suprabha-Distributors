@@ -1,5 +1,17 @@
 import { describe, expect, it } from 'vitest';
-import { isInsideMarketArea, parseAccountClass, parseAccountCommand, parseLocationInput } from '@/lib/account-types';
+import { isInsideMarketArea, parseAccountClass, parseAccountCommand, parseLocationInput, withAccountContacts } from '@/lib/account-types';
+import type { AccountRow } from '@/lib/account-types';
+
+describe('optional snapshot contacts response', () => {
+  it('defaults absent contacts to an empty array and preserves supplied contacts', () => {
+    const older = { id: 'older' } as Omit<AccountRow, 'contacts'>;
+    const contacts = [{ name: 'Asha', phone: null, email: null }];
+    const response = withAccountContacts({ accounts: [older, { ...older, contacts }] });
+    expect(response.accounts[0].contacts).toEqual([]);
+    expect(response.accounts[1].contacts).toEqual(contacts);
+    expect(older).not.toHaveProperty('contacts');
+  });
+});
 
 describe('market area warning bounds', () => {
   it.each([

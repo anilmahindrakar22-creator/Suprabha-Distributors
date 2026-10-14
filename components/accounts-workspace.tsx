@@ -1,7 +1,7 @@
 'use client';
 
 import { useCallback, useEffect, useId, useRef, useState, type SubmitEvent } from 'react';
-import { isInsideMarketArea, MARKET_AREA, parseLocationInput, type AccountRow, type AccountsResponse, type VisitOutcome } from '@/lib/account-types';
+import { isInsideMarketArea, MARKET_AREA, parseLocationInput, withAccountContacts, type AccountRow, type AccountsResponse, type VisitOutcome } from '@/lib/account-types';
 import { readJsonBody } from '@/lib/http-json';
 
 type Mode = 'mine' | 'all';
@@ -62,7 +62,20 @@ export function accountMetaLine(row: AccountRow, mode: Mode) {
     row.lastOrderOn ? `Last order ${accountDate(row.lastOrderOn)}` : null,
     row.class?.state === 'not_linked' ? 'Not linked to Tally sales' : null].filter(Boolean).join(' · ');
 }
+export function contactSummary(row: Pick<AccountRow, 'contacts'>) {
+  const contacts = row.contacts ?? [];
+  return { first: contacts[0] ?? null, rest: contacts.slice(1) };
+}
+function ContactLine({ contact }: { contact: AccountRow['contacts'][number] }) {
+  return <p className="flex flex-wrap items-center gap-2 break-words text-sm text-sf-body"><span>{contact.name}</span>
+    {contact.phone ? <a className="inline-flex min-h-11 items-center text-sf-brand" href={`tel:${contact.phone.replace(/\D/g, '')}`} aria-label={`Call ${contact.name}`}>{contact.phone}</a> : null}
+    {contact.email ? <a className="inline-flex min-h-11 max-w-full items-center break-all text-sf-brand" href={`mailto:${contact.email}`} aria-label={`Email ${contact.name}`}>{contact.email}</a> : null}
+  </p>;
+}
 export function AccountDetails({ row, mode, today }: { row: AccountRow; mode: Mode; today: string }) {
+  const [contactsExpanded, setContactsExpanded] = useState(false);
+  const contactsId = useId();
+  const { first, rest } = contactSummary(row);
   const chip = visitChip(row, today);
   const accountClass = classChip(row);
   return <>
@@ -73,6 +86,11 @@ export function AccountDetails({ row, mode, today }: { row: AccountRow; mode: Mo
     </div>
     <p className="mt-2 break-words text-xs text-sf-muted">{accountMetaLine(row, mode)}</p>
     <p className="mt-2 flex flex-wrap items-center gap-2 text-sm text-sf-body">{row.location?.precision === 'pin' ? <><span>📍 Pin set{!isInsideMarketArea(Number(row.location.latitude), Number(row.location.longitude)) ? <span className="text-sf-muted"> · outside market area</span> : null}</span><a className="inline-flex min-h-11 items-center font-semibold text-sf-brand" href={`https://www.google.com/maps?q=${row.location.latitude},${row.location.longitude}`} target="_blank" rel="noopener">Open map</a></> : row.location?.precision === 'town' ? `Town: ${row.location.town}` : 'No location'}</p>
+    <div className="mt-2">
+      {first ? <ContactLine contact={first} /> : <p className="text-xs text-sf-muted">No contact in Tally</p>}
+      {rest.length ? <button type="button" className="min-h-11 text-sm font-semibold text-sf-brand" aria-label={`${contactsExpanded ? 'Hide' : `+${rest.length} more`} contacts for ${row.name} (${row.id})`} aria-expanded={contactsExpanded} aria-controls={contactsId} onClick={() => setContactsExpanded(value => !value)}>{contactsExpanded ? 'Hide' : `+${rest.length} more`}</button> : null}
+      {contactsExpanded ? <div id={contactsId}>{rest.map((contact, index) => <ContactLine key={index} contact={contact} />)}<p className="mt-2 text-xs text-sf-muted">Contacts come from Tally. Update contacts in Tally.</p></div> : null}
+    </div>
   </>;
 }
 
@@ -108,8 +126,9 @@ export function AccountsWorkspace() {
       const body = await readJsonBody<AccountsResponse & { error?: string }>(response);
       if (!response.ok) throw new Error(body.error || 'Accounts could not be loaded. Please try again.');
       if (current !== request.current || signal?.aborted) return null;
-      setData(body);
-      return body;
+      const normalized = withAccountContacts(body);
+      setData(normalized);
+      return normalized;
     } catch (cause) {
       if (current === request.current && !signal?.aborted) setError(cause instanceof Error ? cause.message : 'Accounts could not be loaded. Please try again.');
       return null;

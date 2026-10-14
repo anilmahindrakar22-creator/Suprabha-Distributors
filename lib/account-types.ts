@@ -14,6 +14,7 @@ export function parseAccountClass(value: string | null): AccountClassState | nul
 }
 export type AccountRow = {
   id: string; name: string; city: string | null;
+  contacts: { name: string; phone: string | null; email: string | null }[];
   class: { state: AccountClassState; monthlyPaise: string | null; window: { from: string; to: string }; policyId?: string };
   owner: { email: string; territoryId: string; territoryName: string; since: string; version: number } | null;
   location: { precision: 'pin' | 'town'; latitude: string | null; longitude: string | null; town: string | null; verifiedBy: string; verifiedAt: string; version: number } | null;
@@ -29,6 +30,9 @@ export type AccountsResponse = {
   canAssign: boolean; actorEmail: string; today: string;
 };
 export type AccountsGatewayResponse = Omit<AccountsResponse, 'canAssign' | 'actorEmail'>;
+export function withAccountContacts<T extends { accounts: (Omit<AccountRow, 'contacts'> & { contacts?: AccountRow['contacts'] })[] }>(response: T): T & { accounts: AccountRow[] } {
+  return { ...response, accounts: response.accounts.map(row => ({ ...row, contacts: row.contacts ?? [] })) };
+}
 type CommandBase = { idempotencyKey: string };
 export type AccountCommand =
   | { action: 'set_class_policy'; payload: CommandBase & { aMinPaise: string; bMinPaise: string; reason: string } }

@@ -2,16 +2,31 @@ import React from 'react';
 import { renderToStaticMarkup } from 'react-dom/server';
 import { describe, expect, it } from 'vitest';
 import type { AccountRow } from '@/lib/account-types';
-import { AccountDetails, accountClassesNote, accountDate, accountMetaLine, addAccountDays, classChip, visitChip } from '@/components/accounts-workspace';
+import { AccountDetails, accountClassesNote, accountDate, accountMetaLine, addAccountDays, classChip, contactSummary, visitChip } from '@/components/accounts-workspace';
 
 const row: AccountRow = {
   id: '11111111-1111-4111-8111-111111111111', name: 'Care Lab', city: 'Pune',
+  contacts: [],
   owner: { email: 'sales@example.test', territoryId: 'territory', territoryName: 'West', since: '2026-10-01', version: 2 },
   location: null, lastVisit: { visitedOn: '2026-10-03', outcome: 'order_taken', visitedBy: 'sales@example.test', note: null },
   nextVisitOn: null, lastOrderOn: '2026-10-04',
   class: { state: 'not_available', monthlyPaise: null, window: { from: '2026-07-01', to: '2026-09-30' } },
 };
 describe('Accounts pure presentation', () => {
+  it('summarizes none, one and three Tally contacts', () => {
+    const first = { name: 'Asha', phone: '+91 123', email: null };
+    const rest = [{ name: 'Ravi', phone: null, email: 'ravi@example.test' }, { name: 'Meena', phone: null, email: null }];
+    expect(contactSummary(row)).toEqual({ first: null, rest: [] });
+    expect(contactSummary({ ...row, contacts: [first] })).toEqual({ first, rest: [] });
+    expect(contactSummary({ ...row, contacts: [first, ...rest] })).toEqual({ first, rest });
+    const html = renderToStaticMarkup(<AccountDetails row={{ ...row, contacts: [first, ...rest] }} mode="mine" today="2026-10-14" />);
+    expect(html).toContain('href="tel:91123"');
+    expect(html).toContain('aria-label="Call Asha"');
+    expect(html).toContain('+2 more');
+    expect(html).toContain('aria-expanded="false"');
+    expect(html).not.toContain('ravi@example.test');
+    expect(renderToStaticMarkup(<AccountDetails row={row} mode="mine" today="2026-10-14" />)).toContain('No contact in Tally');
+  });
   it.each([
     ['A', '21000000', 'A', 'A · ₹2.1 L a month, Jul–Sep'],
     ['B', '7500000', 'B', 'B · ₹75 K a month, Jul–Sep'],
