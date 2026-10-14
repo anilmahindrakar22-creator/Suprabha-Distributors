@@ -141,6 +141,28 @@ describe('Power Map commands', () => {
     for (const metContactIds of [null, contactId, ['bad'], [1], Array(11).fill(contactId)]) expect(parseAccountCommand({ ...visit, metContactIds })).toBeNull();
   });
 });
+describe('Social Styles commands', () => {
+  const contactId = '12345678-1234-4234-8234-123456789abc';
+  const observation = { action: 'record_style_observation', contactId, visitId: contactId, a: [1, 2, 3, 4], r: [4, 3, 2, 1], idempotencyKey: 'social-types-key-0001' };
+  it('parses ratings and preserves omitted or empty cues', () => {
+    const { action, ...payload } = observation;
+    expect(parseAccountCommand(observation)).toEqual({ action, payload });
+    expect(parseAccountCommand({ ...observation, cues: [] })?.payload).toHaveProperty('cues', []);
+    expect(parseAccountCommand({ ...observation, cues: ['cost_per_test', 'validation_data'] })?.payload).toHaveProperty('cues', ['cost_per_test', 'validation_data']);
+  });
+  it.each([{ contactId: 'bad' }, { visitId: 'bad' }, { a: null }, { a: [1, 2, 3] }, { r: [1, 2, 3, 4, 1] },
+    { a: [0, 1, 2, 3] }, { r: [1, 2, 3, 5] }, { a: [1, 2, 3, 2.5] }, { a: ['1', 2, 3, 4] },
+    { cues: null }, { cues: 'cost_per_test' }, { cues: ['bad'] }, { cues: [null] }, { idempotencyKey: 'short' }])('rejects malformed observation %#', override => {
+    expect(parseAccountCommand({ ...observation, ...override })).toBeNull();
+  });
+  it.each(['analytical', 'driving', 'expressive', 'amiable', null])('parses override %s', style => {
+    expect(parseAccountCommand({ action: 'set_style_override', contactId, style, reason: ' Reviewed evidence ', idempotencyKey: observation.idempotencyKey }))
+      .toEqual({ action: 'set_style_override', payload: { contactId, style, reason: 'Reviewed evidence', idempotencyKey: observation.idempotencyKey } });
+  });
+  it.each([{ style: undefined }, { style: 'bad' }, { reason: null }, { reason: ' ab ' }, { reason: 'x'.repeat(301) }, { contactId: 'bad' }])('rejects malformed override %#', override => {
+    expect(parseAccountCommand({ action: 'set_style_override', contactId, style: null, reason: 'Clear override', idempotencyKey: observation.idempotencyKey, ...override })).toBeNull();
+  });
+});
 describe('account location input', () => {
   it('parses bare coordinates and rounds to six decimals', () => {
     expect(parseLocationInput('12.9715999, 77.5946')).toEqual({ ok: true, latitude: '12.9716', longitude: '77.5946', source: 'manual_pin' });

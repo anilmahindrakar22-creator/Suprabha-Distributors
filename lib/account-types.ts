@@ -7,13 +7,27 @@ export function isInsideMarketArea(latitude: number, longitude: number): boolean
 }
 
 export type VisitOutcome = 'met' | 'not_available' | 'order_taken' | 'issue_raised' | 'other';
+export const socialStyles = ['analytical', 'driving', 'expressive', 'amiable'] as const;
+export type SocialStyle = typeof socialStyles[number];
+export const styleCues = ['cost_per_test', 'validation_data', 'uptime_tat', 'price_fast_decision', 'new_tech_demo', 'reference_labs', 'service_training', 'stay_current_supplier'] as const;
+export type StyleCue = typeof styleCues[number];
+export type StyleRatings = [number, number, number, number];
+export type ContactStyle = {
+  state: SocialStyle | 'not_enough' | 'not_clear'; computedStyle: SocialStyle | null;
+  confidence: 'high' | 'medium' | 'low' | null; observations: number; distinctDates: number;
+  assertiveness: number | null; responsiveness: number | null;
+  override: { style: SocialStyle; reason: string; actor: string; recordedAt: string } | null;
+  cues: Partial<Record<StyleCue, number>>;
+};
+export type StyleObservation = { observer: string; recordedAt: string; a: StyleRatings; r: StyleRatings; cues: StyleCue[] };
+export type LogVisitResult = { ok: true; customerId: string; visitId: string };
 export const powerAlerts = ['no_decision_maker', 'decision_maker_not_met', 'influential_blocker'] as const;
 export type PowerAlert = typeof powerAlerts[number];
 export const decisionRoles = ['decision_maker', 'influencer', 'user', 'gatekeeper', 'unknown'] as const;
 export const contactStances = ['supporter', 'neutral', 'sceptical', 'blocker', 'unknown'] as const;
 export const contactInfluences = ['high', 'medium', 'low', 'unknown'] as const;
 export type ContactAssessment = { decisionRole: typeof decisionRoles[number]; stance: typeof contactStances[number]; influence: typeof contactInfluences[number]; reason: string | null; recordedAt: string; actor: string };
-export type AppContact = { id: string; name: string; businessRole: string | null; phone: string | null; email: string | null; addedBy: string; version: number; canEdit: boolean; assessment?: ContactAssessment | null; lastMetOn?: string | null };
+export type AppContact = { id: string; name: string; businessRole: string | null; phone: string | null; email: string | null; addedBy: string; version: number; canEdit: boolean; assessment?: ContactAssessment | null; lastMetOn?: string | null; style?: ContactStyle; styleObservations?: StyleObservation[] };
 export const accountClassStates = ['A', 'B', 'below_b', 'not_available', 'not_linked'] as const;
 export type AccountClassState = typeof accountClassStates[number];
 export function parseAccountClass(value: string | null): AccountClassState | null {
@@ -23,10 +37,11 @@ export type AccountRow = {
   id: string; name: string; city: string | null;
   appContacts: AppContact[];
   powerAlerts?: PowerAlert[];
+  canSeeStyle?: boolean;
   class: { state: AccountClassState; monthlyPaise: string | null; window: { from: string; to: string }; policyId?: string };
   owner: { email: string; territoryId: string; territoryName: string; since: string; version: number } | null;
   location: { precision: 'pin' | 'town'; latitude: string | null; longitude: string | null; town: string | null; verifiedBy: string; verifiedAt: string; version: number } | null;
-  lastVisit: { visitedOn: string; outcome: VisitOutcome; visitedBy: string; note: string | null; metContacts: { id: string; name: string }[] } | null;
+  lastVisit: { id: string; visitedOn: string; outcome: VisitOutcome; visitedBy: string; note: string | null; metContacts: { id: string; name: string }[] } | null;
   nextVisitOn: string | null; lastOrderOn: string | null;
 };
 export type AccountsResponse = {
@@ -44,6 +59,8 @@ export function withAccountContacts<T extends { accounts: (Omit<AccountRow, 'app
 type CommandBase = { idempotencyKey: string };
 type ContactFields = { name: string; businessRole: string | null; phone: string | null; email: string | null };
 export type AccountCommand =
+  | { action: 'record_style_observation'; payload: CommandBase & { contactId: string; visitId: string; a: StyleRatings; r: StyleRatings; cues?: StyleCue[] } }
+  | { action: 'set_style_override'; payload: CommandBase & { contactId: string; style: SocialStyle | null; reason: string } }
   | { action: 'set_assessment'; payload: CommandBase & Pick<ContactAssessment, 'decisionRole' | 'stance' | 'influence'> & { contactId: string; reason?: string | null } }
   | { action: 'erase_contact'; payload: CommandBase & { contactId: string; reason: string } }
   | { action: 'add_contact'; payload: CommandBase & ContactFields & { customerId: string } }
@@ -81,6 +98,21 @@ export function parseAccountCommand(body: unknown): AccountCommand | null {
   const p = body as Record<string, unknown>;
   if (typeof p.idempotencyKey !== 'string' || p.idempotencyKey.trim().length < 16 || p.idempotencyKey.length > 200) return null;
   const idempotencyKey = p.idempotencyKey;
+  if (p.action === 'record_style_observation' || p.action === 'set_style_override') {
+    if (typeof p.contactId !== 'string' || !accountUuidPattern.test(p.contactId)) return null;
+    if (p.action === 'set_style_override') {
+      if ((p.style !== null && !socialStyles.includes(p.style as SocialStyle))
+        || typeof p.reason !== 'string' || p.reason.trim().length < 3 || p.reason.trim().length > 300) return null;
+      return { action: p.action, payload: { contactId: p.contactId, style: p.style as SocialStyle | null, reason: p.reason.trim(), idempotencyKey } };
+    }
+    if (typeof p.visitId !== 'string' || !accountUuidPattern.test(p.visitId)) return null;
+    for (const ratings of [p.a, p.r]) {
+      if (!Array.isArray(ratings) || ratings.length !== 4 || ratings.some(value => !Number.isInteger(value) || value < 1 || value > 4)) return null;
+    }
+    if (p.cues !== undefined && (!Array.isArray(p.cues) || p.cues.some(cue => !styleCues.includes(cue as StyleCue)))) return null;
+    return { action: p.action, payload: { contactId: p.contactId, visitId: p.visitId, a: p.a as StyleRatings, r: p.r as StyleRatings,
+      ...(p.cues === undefined ? {} : { cues: p.cues as StyleCue[] }), idempotencyKey } };
+  }
   if (p.action === 'set_assessment' || p.action === 'erase_contact') {
     if (typeof p.contactId !== 'string' || !accountUuidPattern.test(p.contactId)) return null;
     if (p.action === 'erase_contact') {

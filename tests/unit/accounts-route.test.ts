@@ -18,6 +18,25 @@ beforeEach(() => {
   mocks.gateway.mockResolvedValue(workspace);
 });
 describe('accounts API', () => {
+  it.each(['record_style_observation', 'set_style_override'])('forwards %s and preserves SQL authorization', async action => {
+    const fields = action === 'record_style_observation' ? { visitId: id, a: [1, 2, 3, 4], r: [4, 3, 2, 1], cues: ['cost_per_test'] } : { style: null, reason: 'Clear override' };
+    const payload = { contactId: id, ...fields, idempotencyKey: 'social-route-command-0001' };
+    expect((await POST(post({ action, ...payload }))).status).toBe(200);
+    expect(mocks.gateway).toHaveBeenCalledWith('manager@example.test', action, payload);
+    mocks.gateway.mockRejectedValue(new OrderGatewayError('Role required', 403));
+    expect((await POST(post({ action, ...payload }))).status).toBe(403);
+  });
+  it('preserves account-specific style visibility and visit ids', async () => {
+    const data = { ...workspace, accounts: [
+      { id, canSeeStyle: true, appContacts: [{ id, style: { state: 'not_enough' } }], lastVisit: { id } },
+      { id: 'other', canSeeStyle: false, appContacts: [{ id }] },
+    ] };
+    mocks.gateway.mockResolvedValue(data);
+    expect(await (await get()).json()).toEqual({ ...data, actorEmail: 'manager@example.test', canAssign: true });
+    mocks.gateway.mockResolvedValue({ ok: true, customerId: id, visitId: id });
+    const response = await POST(post({ action: 'log_visit', customerId: id, visitedOn: '2026-10-14', outcome: 'met', idempotencyKey: 'social-route-visit-0001' }));
+    expect(await response.json()).toHaveProperty('visitId', id);
+  });
   it.each(['no_decision_maker', 'decision_maker_not_met', 'influential_blocker'])('maps alert=%s with class filtering', async alert => {
     expect((await get(`?alert=${alert}&class=A`)).status).toBe(200);
     expect(mocks.gateway).toHaveBeenCalledWith('manager@example.test', 'get_accounts', { search: '', scope: 'all', page: 1, class: 'A', alert });

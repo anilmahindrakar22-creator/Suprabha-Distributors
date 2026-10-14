@@ -1,7 +1,7 @@
 'use client';
 
 import { useCallback, useEffect, useId, useRef, useState, type ReactNode, type SubmitEvent } from 'react';
-import { isInsideMarketArea, MARKET_AREA, parseLocationInput, powerAlerts, withAccountContacts, type AppContact, type ContactAssessment, type PowerAlert, type AccountRow, type AccountsResponse, type VisitOutcome } from '@/lib/account-types';
+import { isInsideMarketArea, MARKET_AREA, parseLocationInput, powerAlerts, socialStyles, styleCues, withAccountContacts, type ContactStyle, type SocialStyle, type StyleCue, type AppContact, type ContactAssessment, type PowerAlert, type AccountRow, type AccountsResponse, type VisitOutcome } from '@/lib/account-types';
 import { readJsonBody } from '@/lib/http-json';
 
 type Mode = 'mine' | 'all';
@@ -16,6 +16,128 @@ const pinError = 'Paste a Google Maps link or two numbers like 18.52, 73.85';
 const roleLabels = { unknown: 'Unknown', decision_maker: 'Decision maker', influencer: 'Influencer', user: 'User', gatekeeper: 'Gatekeeper' };
 const stanceLabels = { unknown: 'Unknown', supporter: 'Supporter', neutral: 'Neutral', sceptical: 'Sceptical', blocker: 'Blocker' };
 const influenceLabels = { unknown: 'Unknown', high: 'High', medium: 'Medium', low: 'Low' };
+const styleLabels: Record<SocialStyle, string> = { analytical: 'Analytical', driving: 'Driving', expressive: 'Expressive', amiable: 'Amiable' };
+export function styleTip(styleKey: ContactStyle['state']) {
+  if (styleKey === 'not_enough' || styleKey === 'not_clear') return null;
+  return {
+    analytical: "Bring the data: cost per test, validation papers, a written comparison. Don't rush.",
+    driving: 'Lead with the result: savings, uptime, a clear recommendation. Keep it short.',
+    expressive: 'Demo it, name reference labs, tell the bigger story.',
+    amiable: 'Build trust: service plan, training, reliability. Reduce the risk of switching.',
+  }[styleKey];
+}
+export function styleLine(style: ContactStyle) {
+  if (style.override) return `${styleLabels[style.override.style]} (set by ${style.override.actor})`;
+  if (style.state === 'not_enough') return `Style: not enough information (${style.distinctDates} of 3 meetings)`;
+  if (style.state === 'not_clear') return 'Style: not clear yet. Keep rating after visits.';
+  return `${styleLabels[style.state]} · ${style.confidence} confidence`;
+}
+const cueLabels: Record<StyleCue, string> = {
+  cost_per_test: 'Cost per test or comparison', validation_data: 'Validation or QC papers', uptime_tat: 'Uptime or turnaround time',
+  price_fast_decision: 'Price or a fast decision', new_tech_demo: 'New technology or demos', reference_labs: 'Reference labs',
+  service_training: 'Service and training', stay_current_supplier: 'Staying with current supplier',
+};
+const behaviours = [
+  ['Speaks slowly and carefully', 'Speaks quickly and firmly'],
+  ['Asks questions, holds back opinions', 'States opinions'],
+  ['Follows our agenda', 'Takes control of the meeting'],
+  ['Wants time and consults others', 'Decides on the spot'],
+  ['Talks tasks, facts, numbers', 'Talks people, stories'],
+  ['Formal, reserved', 'Warm, animated'],
+  ['Strict on time, straight to business', 'Relaxed, enjoys small talk'],
+  ['Asks for proof and data', 'Goes by trust and peer labs'],
+] as const;
+
+function ContactSocial({ contact, canSeeStyle, visitId, attribution, prompt = false, busy = false, onBusy, onSaved }: {
+  contact: AppContact; canSeeStyle?: boolean; visitId?: string; attribution?: ReactNode; prompt?: boolean;
+} & ContactCallbacks) {
+  const prefix = useId();
+  const [rating, setRating] = useState(false);
+  const [done, setDone] = useState(false);
+  const [ratings, setRatings] = useState<number[]>(Array(8).fill(0));
+  const [cues, setCues] = useState<StyleCue[]>([]);
+  const [history, setHistory] = useState(false);
+  const [overriding, setOverriding] = useState(false);
+  const [override, setOverride] = useState<SocialStyle | ''>(contact.style?.override?.style ?? '');
+  const [reason, setReason] = useState('');
+  const [error, setError] = useState('');
+  const [notice, setNotice] = useState('');
+  const pending = useRef<{ fingerprint: string; key: string } | null>(null);
+  const inFlight = useRef(false);
+  const origin = useRef<HTMLButtonElement | null>(null);
+  const form = useRef<HTMLFormElement>(null);
+  const who = `${contact.name} (${contact.id})${prompt ? ` after visit ${visitId}` : ''}`;
+  useEffect(() => { if (rating || overriding) form.current?.querySelector<HTMLElement>('input, select')?.focus(); }, [rating, overriding]);
+  function cancel() { setRating(false); setOverriding(false); setError(''); origin.current?.focus(); }
+  async function post(body: Record<string, unknown>) {
+    if (busy || inFlight.current) return;
+    inFlight.current = true; onBusy?.(true); setError(''); setNotice('');
+    const fingerprint = JSON.stringify(body);
+    if (pending.current?.fingerprint !== fingerprint) pending.current = { fingerprint, key: crypto.randomUUID() };
+    try {
+      const response = await fetch('/api/accounts', { method: 'POST', headers: { 'content-type': 'application/json' }, body: JSON.stringify({ ...body, idempotencyKey: pending.current.key }) });
+      if (response.status >= 400 && response.status < 500 && response.status !== 408 && response.status !== 429) pending.current = null;
+      const result = await readJsonBody<{ error?: string; code?: string }>(response);
+      if (response.status === 409 && body.action === 'record_style_observation' && (result.code === 'PT409' || result.error?.includes('Already rated for this visit'))) {
+        setNotice('Already rated for this visit'); setRating(false); setDone(true); return;
+      }
+      if (!response.ok) { setError(result.error || 'Not saved. Please try again.'); return; }
+      pending.current = null; setRating(false); setOverriding(false);
+      if (body.action === 'record_style_observation') setDone(true);
+      await onSaved?.(false);
+    } catch { setError('Not saved. Check the connection and try again.'); }
+    finally { inFlight.current = false; onBusy?.(false); }
+  }
+  const style = canSeeStyle ? contact.style : undefined;
+  const tipKey = style?.override?.style ?? (style && socialStyles.includes(style.state as SocialStyle) ? style.state as SocialStyle : null);
+  const rateButton = <button type="button" disabled={busy} className={contactActionClass} aria-label={`${prompt ? 'Rate' : 'Rate behaviour for'} ${who}`} aria-expanded={rating} onClick={event => { origin.current = event.currentTarget; setRating(true); setOverriding(false); setError(''); }}>{prompt ? 'Rate' : 'Rate behaviour'}</button>;
+  return <div className="min-w-0 space-y-1 break-words">
+    {attribution ? <p className="break-all text-xs text-sf-muted">{attribution}{visitId && !done ? <>{' · '}{rateButton}</> : null}</p> : null}
+    {!prompt && style ? <>
+      <p className={`text-xs ${tipKey ? 'text-sf-body' : 'text-sf-muted'}`}>{styleLine(style)}</p>
+      {tipKey ? <p className="text-xs text-sf-muted">{styleTip(tipKey)}</p> : null}
+      {style.override ? <p className="text-xs text-sf-muted">Observed: {style.computedStyle ? styleLabels[style.computedStyle] : 'not enough information'}</p> : null}
+    </> : null}
+    {prompt && visitId && !done ? <div className="flex flex-wrap items-center gap-x-2">
+      {prompt ? <p className="text-sm text-sf-body">How did {contact.name} behave? (optional, 30 seconds)</p> : null}
+      {rateButton}
+      {prompt ? <button type="button" disabled={busy} className={contactActionClass} aria-label={`Skip rating ${who}`} onClick={() => { setDone(true); setRating(false); }}>Skip</button> : null}
+    </div> : null}
+    {!prompt && canSeeStyle && contact.styleObservations ? <div className="flex flex-wrap gap-x-2">
+      <button type="button" className={contactActionClass} aria-label={`Ratings for ${who}`} aria-expanded={history} onClick={() => setHistory(value => !value)}>Ratings ({contact.styleObservations.length})</button>
+      <button type="button" disabled={busy} className={contactActionClass} aria-label={`Override style for ${who}`} aria-expanded={overriding} onClick={event => { origin.current = event.currentTarget; setOverride(contact.style?.override?.style ?? ''); setReason(''); setOverriding(true); setRating(false); setError(''); }}>Override style</button>
+    </div> : null}
+    {!prompt && canSeeStyle && history ? <ul aria-label={`Ratings for ${who}`} className="space-y-1 text-xs text-sf-muted">{contact.styleObservations?.map((entry, index) => <li key={`${entry.recordedAt}-${index}`}>
+      {accountDate(entry.recordedAt.slice(0, 10))} · {entry.observer} · A {(entry.a.reduce((sum, value) => sum + value, 0) / 4).toFixed(2)} · R {(entry.r.reduce((sum, value) => sum + value, 0) / 4).toFixed(2)}{entry.cues.length ? ` · ${entry.cues.map(cue => cueLabels[cue]).join(', ')}` : ''}
+    </li>)}</ul> : null}
+    {rating ? <form ref={form} aria-label={`Rate behaviour for ${who}`} className="min-w-0 space-y-3 border-t border-sf-line-soft py-3" onSubmit={event => { event.preventDefault(); void post({ action: 'record_style_observation', contactId: contact.id, visitId, a: ratings.slice(0, 4), r: ratings.slice(4), cues }); }}>
+      {!prompt ? <p className="text-sm text-sf-body">How did {contact.name} behave? (optional, 30 seconds)</p> : null}
+      <fieldset disabled={busy} className="min-w-0 space-y-3">
+        {behaviours.map(([left, right], index) => <div key={left} className="min-w-0">
+          {index === 0 || index === 4 ? <h4 className="text-xs font-semibold text-sf-muted">{index === 0 ? 'Pace and control' : 'Warmth and focus'}</h4> : null}
+          <fieldset className="min-w-0"><legend className="sr-only">{left} → {right}</legend>
+            <div className="grid min-w-0 grid-cols-2 items-center gap-x-3 gap-y-1 sm:grid-cols-[minmax(0,1fr)_minmax(0,2fr)_minmax(0,1fr)]">
+              <span aria-hidden="true" className="order-1 min-w-0 text-xs text-sf-muted">{left}</span>
+              <div className="order-3 col-span-2 grid min-w-0 grid-cols-4 gap-1 sm:order-2 sm:col-span-1">{[1, 2, 3, 4].map(value => <input key={value} type="radio" required name={`${prefix}-${index}`} aria-label={`${value} of 4`} className="min-h-11 w-full min-w-0 cursor-pointer appearance-none rounded-lg border border-sf-line bg-sf-soft-0 checked:border-sf-brand checked:bg-sf-brand focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-sf-brand disabled:cursor-default disabled:opacity-50" value={value} checked={ratings[index] === value} onChange={() => setRatings(previous => previous.map((old, position) => position === index ? value : old))} />)}</div>
+              <span aria-hidden="true" className="order-2 min-w-0 text-right text-xs text-sf-muted sm:order-3">{right}</span>
+            </div>
+          </fieldset>
+        </div>)}
+        <fieldset className="min-w-0" aria-label={`They asked for — ${who}`}><legend className="text-sm text-sf-body">They asked for</legend><div className="grid grid-cols-2 gap-x-3 gap-y-1">{styleCues.map(cue => <label key={cue} className="flex min-h-11 items-center gap-2 text-sm text-sf-body"><input type="checkbox" aria-label={`${cueLabels[cue]} for ${who}`} checked={cues.includes(cue)} onChange={event => setCues(previous => event.target.checked ? [...previous, cue] : previous.filter(value => value !== cue))} />{cueLabels[cue]}</label>)}</div></fieldset>
+      </fieldset>
+      <div className="flex flex-wrap gap-2"><button type="submit" disabled={busy} className={primaryClass} aria-label={`Save rating for ${who}`}>Save</button><button type="button" disabled={busy} className={buttonClass} aria-label={`Cancel rating for ${who}`} onClick={cancel}>Cancel</button></div>
+    </form> : null}
+    {overriding ? <form ref={form} aria-label={`Override style for ${who}`} className="min-w-0 space-y-3" onSubmit={event => { event.preventDefault(); if (reason.trim().length < 3) { setError('Enter a reason with 3–300 characters.'); return; } void post({ action: 'set_style_override', contactId: contact.id, style: override || null, reason: reason.trim() }); }}>
+      <fieldset disabled={busy} className="min-w-0 space-y-3">
+        <div><label htmlFor={`${prefix}-style`} className="text-sm text-sf-body">Style</label><select id={`${prefix}-style`} aria-label={`Style for ${who}`} className={inputClass} value={override} onChange={event => setOverride(event.target.value as SocialStyle | '')}><option value="">None</option>{socialStyles.map(key => <option key={key} value={key}>{styleLabels[key]}</option>)}</select></div>
+        <div><label htmlFor={`${prefix}-reason`} className="text-sm text-sf-body">Reason</label><input id={`${prefix}-reason`} aria-label={`Override reason for ${who}`} required minLength={3} maxLength={300} className={inputClass} value={reason} onChange={event => setReason(event.target.value)} /></div>
+      </fieldset>
+      <div className="flex flex-wrap gap-2"><button type="submit" disabled={busy} className={primaryClass} aria-label={`Save override for ${who}`}>Save</button><button type="button" disabled={busy} className={buttonClass} aria-label={`Cancel override for ${who}`} onClick={cancel}>Cancel</button></div>
+    </form> : null}
+    {notice ? <p role="status" className="text-xs text-sf-muted">{notice}</p> : null}
+    {error ? <p role="alert" className="text-sm text-sf-danger">{error}</p> : null}
+  </div>;
+}
 export function assessmentSummary(contact: AppContact) {
   const value = contact.assessment;
   return value ? [value.decisionRole !== 'unknown' ? roleLabels[value.decisionRole] : null,
@@ -78,7 +200,7 @@ export function accountMetaLine(row: AccountRow, mode: Mode) {
 }
 type ContactCallbacks = { busy?: boolean; onSaved?: (duplicatePhone: boolean) => Promise<unknown>; onConflict?: () => Promise<void>; onBusy?: (busy: boolean) => void };
 type ContactActions = { renderActions?: (addContact: ReactNode) => ReactNode; canSeePowerMap?: boolean };
-function AppContacts({ row, busy = false, onSaved, onConflict, onBusy, renderActions, canSeePowerMap = false }: { row: AccountRow } & ContactCallbacks & ContactActions) {
+function AppContacts({ row, today, busy = false, onSaved, onConflict, onBusy, renderActions, canSeePowerMap = false }: { row: AccountRow; today: string } & ContactCallbacks & ContactActions) {
   const [contactsExpanded, setContactsExpanded] = useState(false);
   const contactsId = useId();
   const [editing, setEditing] = useState<AccountRow['appContacts'][number] | 'new' | null>(null);
@@ -144,7 +266,7 @@ function AppContacts({ row, busy = false, onSaved, onConflict, onBusy, renderAct
         {contact.email ? <a className="inline-flex min-h-11 max-w-full items-center break-all text-sf-brand" href={`mailto:${contact.email}`} aria-label={`Email ${contact.name} for ${accountLabel}`}>{contact.email}</a> : null}
       </p>
       {canSeePowerMap ? <p className="break-words text-xs text-sf-muted">{assessmentSummary(contact)} · {contact.lastMetOn ? `Last met ${accountDate(contact.lastMetOn)}` : 'Not met yet'}</p> : null}
-      <p className="break-all text-xs text-sf-muted"><span>added by {contact.addedBy}</span>{contact.canEdit ? <span className="inline-flex items-center whitespace-nowrap">{' · '}
+      <ContactSocial key={`${contact.id}-${row.lastVisit?.id ?? 'unvisited'}`} attribution={<><span>added by {contact.addedBy}</span>{contact.canEdit ? <span className="inline-flex items-center whitespace-nowrap">{' · '}
           <button type="button" disabled={busy} className={contactActionClass} aria-label={`Edit ${contact.name}`} onClick={event => open(contact, event.currentTarget)}>Edit</button>
           {' · '}<button type="button" disabled={busy} className={contactActionClass} aria-label={`Remove ${contact.name}`} onClick={event => { origin.current = event.currentTarget; setRemoving(contact.id); setEditing(null); setAssessing(null); setError(''); }}>Remove</button>
         </span> : null}
@@ -152,7 +274,8 @@ function AppContacts({ row, busy = false, onSaved, onConflict, onBusy, renderAct
           origin.current = event.currentTarget; setAssessing(contact.id); setEditing(null); setRemoving(null); setError('');
           setDecisionRole(contact.assessment?.decisionRole ?? 'unknown'); setStance(contact.assessment?.stance ?? 'unknown'); setInfluence(contact.assessment?.influence ?? 'unknown'); setReason(contact.assessment?.reason ?? '');
         }}>Set role</button></> : null}
-      </p>
+      </>} contact={contact} canSeeStyle={row.canSeeStyle} busy={busy} onBusy={onBusy} onSaved={onSaved}
+        visitId={row.lastVisit?.id && row.lastVisit.visitedOn >= addAccountDays(today, -30) && row.lastVisit.visitedOn <= today && row.lastVisit.metContacts.some(met => met.id === contact.id) ? row.lastVisit.id : undefined} />
       {canSeePowerMap && assessing === contact.id ? <form aria-label={`Set role for ${contact.name} at ${accountLabel}`} onSubmit={event => { event.preventDefault(); void post({ action: 'set_assessment', contactId: contact.id, decisionRole, stance, influence, reason: reason.trim() || null }); }} className="min-w-0 space-y-3 border-t border-sf-line-soft py-3">
         <fieldset disabled={busy} className="min-w-0 space-y-3">
           <div><label htmlFor={`${prefix}-decision`} className="text-sm text-sf-body">Decision role</label><select id={`${prefix}-decision`} aria-label={`Decision role for ${contact.name} at ${accountLabel}`} value={decisionRole} onChange={event => setDecisionRole(event.target.value as ContactAssessment['decisionRole'])} className={inputClass}>{Object.entries(roleLabels).map(([value, label]) => <option key={value} value={value}>{label}</option>)}</select></div>
@@ -192,7 +315,7 @@ export function AccountDetails({ row, mode, today, renderActions, canSeePowerMap
     {canSeePowerMap && row.powerAlerts?.length ? <div className="mt-2 flex flex-wrap gap-2">{row.powerAlerts.map(alert => <span key={alert} className="max-w-full rounded-full bg-sf-warning-soft px-2 py-1 text-xs font-semibold text-sf-warning">{alertLabel(alert)}</span>)}</div> : null}
     <p className="mt-2 flex flex-wrap items-center gap-2 text-sm text-sf-body">{row.location?.precision === 'pin' ? <><span>📍 Pin set{!isInsideMarketArea(Number(row.location.latitude), Number(row.location.longitude)) ? <span className="text-sf-muted"> · outside market area</span> : null}</span><a className="inline-flex min-h-11 items-center font-semibold text-sf-brand" href={`https://www.google.com/maps?q=${row.location.latitude},${row.location.longitude}`} target="_blank" rel="noopener" aria-label={`Open map for ${row.name} (${row.id})`}>Open map</a></> : row.location?.precision === 'town' ? `Town: ${row.location.town}` : 'No location'}</p>
     <div className="mt-2">
-      <AppContacts row={row} canSeePowerMap={canSeePowerMap} renderActions={renderActions} {...contactCallbacks} />
+      <AppContacts row={row} today={today} canSeePowerMap={canSeePowerMap} renderActions={renderActions} {...contactCallbacks} />
     </div>
   </>;
 }
@@ -211,6 +334,7 @@ export function AccountsWorkspace() {
   const [error, setError] = useState('');
   const [notice, setNotice] = useState('');
   const [open, setOpen] = useState<{ id: string; kind: FormKind } | null>(null);
+  const [visitPrompts, setVisitPrompts] = useState<Record<string, { visitId: string; contacts: AppContact[] }>>({});
   const [busy, setBusy] = useState(false);
   const origin = useRef<HTMLButtonElement | null>(null);
   const request = useRef(0);
@@ -284,7 +408,8 @@ export function AccountsWorkspace() {
       {!loading && !data.accounts.length ? <div className="rounded-xl border border-sf-line-soft bg-sf-soft-0 p-4 text-sm text-sf-body"><p>{mode === 'mine' ? 'No accounts are assigned to you yet.' : 'No accounts match.'}</p>{mode === 'mine' ? <button type="button" className={`${buttonClass} mt-3`} onClick={() => changeMode('all')}>Show all accounts</button> : null}</div> : null}
       <ul aria-label="Accounts" className="space-y-3">{data.accounts.map(row => <li key={row.id} className="min-w-0 rounded-xl border border-sf-line-soft bg-sf-soft-0 p-4">
         <AccountDetails row={row} mode={mode} today={data.today} canSeePowerMap={data.canSeePowerMap} busy={busy} onBusy={setBusy} onConflict={conflict} onSaved={async duplicatePhone => { setNotice(duplicatePhone ? 'Saved. This phone is already on the account.' : 'Saved.'); await load(); }} renderActions={addContact => <div className="mt-3 flex flex-wrap gap-2">{(['visit', 'location'] as FormKind[]).map(kind => <button key={kind} type="button" disabled={busy} aria-label={`${kind === 'visit' ? 'Log visit' : 'Location'} for ${row.name} (${row.id})`} aria-expanded={open?.id === row.id && open.kind === kind} onClick={event => { origin.current = event.currentTarget; setNotice(''); setOpen({ id: row.id, kind }); }} className={kind === 'visit' ? primaryClass : actionClass}>{kind === 'visit' ? 'Log visit' : 'Location'}</button>)}{addContact}{data.canAssign ? <button type="button" disabled={busy} aria-label={`Owner for ${row.name} (${row.id})`} aria-expanded={open?.id === row.id && open.kind === 'owner'} onClick={event => { origin.current = event.currentTarget; setNotice(''); setOpen({ id: row.id, kind: 'owner' }); }} className={actionClass}>Owner</button> : null}</div>} />
-        {open?.id === row.id ? <AccountForm key={`${row.id}-${open.kind}`} row={row} kind={open.kind} data={data} onCancel={cancel} onSaved={saved} onConflict={conflict} onBusy={setBusy} /> : null}
+        {open?.id === row.id ? <AccountForm key={`${row.id}-${open.kind}`} row={row} kind={open.kind} data={data} onCancel={cancel} onSaved={saved} onConflict={conflict} onBusy={setBusy} onVisitLogged={(visitId, contactIds) => setVisitPrompts(current => ({ ...current, [row.id]: { visitId, contacts: row.appContacts.filter(contact => contactIds.includes(contact.id)) } }))} /> : null}
+        {visitPrompts[row.id]?.contacts.map(contact => <ContactSocial key={`${visitPrompts[row.id].visitId}-${contact.id}`} contact={contact} visitId={visitPrompts[row.id].visitId} prompt busy={busy} onBusy={setBusy} onSaved={async () => { await saved(false); }} />)}
       </li>)}</ul>
       <div className="flex flex-wrap items-center justify-between gap-3 text-sm text-sf-muted"><span>Showing {from}–{to} of {data.page.total}</span><div className="flex gap-2">
         {page > 1 ? <button type="button" disabled={loading || busy} className={buttonClass} onClick={() => { setPage(page - 1); setOpen(null); }}>Previous</button> : null}
@@ -294,9 +419,10 @@ export function AccountsWorkspace() {
   </section></div>;
 }
 
-function AccountForm({ row, kind, data, onCancel, onSaved, onConflict, onBusy }: {
+function AccountForm({ row, kind, data, onCancel, onSaved, onConflict, onBusy, onVisitLogged }: {
   row: AccountRow; kind: FormKind; data: AccountsResponse; onCancel: () => void;
   onSaved: (keepOpen: boolean) => Promise<AccountsResponse | null>; onConflict: () => Promise<void>; onBusy: (value: boolean) => void;
+  onVisitLogged: (visitId: string, contactIds: string[]) => void;
 }) {
   const prefix = useId();
   const form = useRef<HTMLFormElement>(null);
@@ -325,7 +451,7 @@ function AccountForm({ row, kind, data, onCancel, onSaved, onConflict, onBusy }:
     try {
       const response = await fetch('/api/accounts', { method: 'POST', headers: { 'content-type': 'application/json' }, body: JSON.stringify({ ...body, idempotencyKey: pending.current.key }) });
       if (response.status === 409) { pending.current = null; await onConflict(); return; }
-      const result = await readJsonBody<{ error?: string }>(response);
+      const result = await readJsonBody<{ error?: string; visitId?: string }>(response);
       if (!response.ok) {
         setError(result.error || 'Not saved. Please try again.');
         // A gateway failure can arrive after the database committed. Retrying
@@ -334,6 +460,7 @@ function AccountForm({ row, kind, data, onCancel, onSaved, onConflict, onBusy }:
         return;
       }
       pending.current = null;
+      if (body.action === 'log_visit' && result.visitId && metContactIds.length) onVisitLogged(result.visitId, metContactIds);
       const refreshed = await onSaved(keepOpen);
       if (keepOpen) {
         const created = refreshed?.territories.find(item => item.name === newTerritory.trim());

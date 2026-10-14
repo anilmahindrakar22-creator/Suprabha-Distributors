@@ -52,6 +52,7 @@ export async function POST(request: Request) {
   const startedAt = performance.now();
   try {
     const session = await actor();
+    // Includes Social Styles commands; SQL enforces per-action authorization.
     const command = parseAccountCommand(await readBoundedJsonRequest(request, 8_192));
     if (!command) return failure('Invalid accounts request', 400);
     return measuredJsonResponse(await callOrderGateway(session.email, command.action, command.payload), startedAt);

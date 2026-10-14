@@ -1,18 +1,60 @@
 import React from 'react';
 import { renderToStaticMarkup } from 'react-dom/server';
 import { describe, expect, it } from 'vitest';
-import type { AccountRow } from '@/lib/account-types';
-import { AccountDetails, accountClassesNote, accountDate, accountMetaLine, addAccountDays, alertLabel, assessmentSummary, classChip, visitChip } from '@/components/accounts-workspace';
+import type { AccountRow, ContactStyle } from '@/lib/account-types';
+import { AccountDetails, accountClassesNote, accountDate, accountMetaLine, addAccountDays, alertLabel, assessmentSummary, classChip, visitChip, styleLine, styleTip } from '@/components/accounts-workspace';
 
 const row: AccountRow = {
   id: '11111111-1111-4111-8111-111111111111', name: 'Care Lab', city: 'Pune',
   appContacts: [],
   owner: { email: 'sales@example.test', territoryId: 'territory', territoryName: 'West', since: '2026-10-01', version: 2 },
-  location: null, lastVisit: { visitedOn: '2026-10-03', outcome: 'order_taken', visitedBy: 'sales@example.test', note: null, metContacts: [] },
+  location: null, lastVisit: { id: '88888888-8888-4888-8888-888888888888', visitedOn: '2026-10-03', outcome: 'order_taken', visitedBy: 'sales@example.test', note: null, metContacts: [] },
   nextVisitOn: null, lastOrderOn: '2026-10-04',
   class: { state: 'not_available', monthlyPaise: null, window: { from: '2026-07-01', to: '2026-09-30' } },
 };
 describe('Accounts pure presentation', () => {
+  const style: ContactStyle = { state: 'analytical', computedStyle: 'analytical', confidence: 'high', observations: 3, distinctDates: 3, assertiveness: 1, responsiveness: 1, override: null, cues: {} };
+  it.each([
+    ['analytical', 'Analytical', "Bring the data: cost per test, validation papers, a written comparison. Don't rush."],
+    ['driving', 'Driving', 'Lead with the result: savings, uptime, a clear recommendation. Keep it short.'],
+    ['expressive', 'Expressive', 'Demo it, name reference labs, tell the bigger story.'],
+    ['amiable', 'Amiable', 'Build trust: service plan, training, reliability. Reduce the risk of switching.'],
+  ] as const)('formats %s and its override with the exact tip', (state, label, tip) => {
+    for (const confidence of ['high', 'medium', 'low'] as const) expect(styleLine({ ...style, state, confidence })).toBe(`${label} · ${confidence} confidence`);
+    expect(styleTip(state)).toBe(tip);
+    expect(styleLine({ ...style, override: { style: state, actor: 'Manager', reason: 'Observed', recordedAt: '2026-10-14' } })).toBe(`${label} (set by Manager)`);
+  });
+  it('formats both unresolved states and gives overrides precedence', () => {
+    expect(styleTip('not_enough')).toBeNull();
+    expect(styleTip('not_clear')).toBeNull();
+    expect(styleLine({ ...style, state: 'not_enough', distinctDates: 2 })).toBe('Style: not enough information (2 of 3 meetings)');
+    expect(styleLine({ ...style, state: 'not_clear' })).toBe('Style: not clear yet. Keep rating after visits.');
+    expect(styleLine({ ...style, state: 'not_enough', override: { style: 'amiable', actor: 'Manager', reason: 'Observed', recordedAt: '2026-10-14' } })).toBe('Amiable (set by Manager)');
+  });
+  it('gates styles and management extras while keeping recent rating access', () => {
+    const appContact = { id: 'asha', name: 'Asha', businessRole: null, phone: null, email: null, addedBy: 'sales@example.test', version: 1, canEdit: false, style, styleObservations: [] };
+    const account = { ...row, appContacts: [appContact], lastVisit: { ...row.lastVisit!, metContacts: [{ id: appContact.id, name: appContact.name }] } };
+    const hidden = renderToStaticMarkup(<AccountDetails row={account} mode="mine" today="2026-10-14" />);
+    expect(hidden).toContain('Rate behaviour');
+    expect(hidden).not.toContain('Analytical');
+    expect(hidden).not.toContain('Ratings (');
+    expect(hidden).not.toContain('Override style');
+    const visible = renderToStaticMarkup(<AccountDetails row={{ ...account, canSeeStyle: true }} mode="mine" today="2026-10-14" />);
+    expect(visible).toContain('Analytical · high confidence');
+    expect(visible).toContain('Bring the data');
+    expect(visible).toContain('Ratings (0)');
+    expect(visible).toContain('Override style');
+    for (const visitedOn of ['2026-09-13', '2026-10-15']) expect(renderToStaticMarkup(<AccountDetails row={{ ...account, lastVisit: { ...account.lastVisit, visitedOn } }} mode="mine" today="2026-10-14" />)).not.toContain('Rate behaviour');
+  });
+  it('renders the override tip and underlying observed style', () => {
+    const appContact = { id: 'asha', name: 'Asha', businessRole: null, phone: null, email: null, addedBy: 'Sales', version: 1, canEdit: false, style: { ...style, override: { style: 'driving' as const, actor: 'Manager', reason: 'Observed', recordedAt: '2026-10-14' } } };
+    const html = renderToStaticMarkup(<AccountDetails row={{ ...row, canSeeStyle: true, appContacts: [appContact] }} mode="mine" today="2026-10-14" />);
+    expect(html).toContain('Driving (set by Manager)');
+    expect(html).toContain('Lead with the result');
+    expect(html).toContain('Observed: Analytical');
+    appContact.style.computedStyle = null;
+    expect(renderToStaticMarkup(<AccountDetails row={{ ...row, canSeeStyle: true, appContacts: [appContact] }} mode="mine" today="2026-10-14" />)).toContain('Observed: not enough information');
+  });
   const contact = { id: 'asha', name: 'Asha', businessRole: null, phone: null, email: null, addedBy: 'sales@example.test', version: 1, canEdit: false };
   const assessment = { decisionRole: 'decision_maker', stance: 'sceptical', influence: 'high', reason: null, actor: 'manager@example.test', recordedAt: '2026-10-14' } as const;
   it('summarises known assessment parts and defaults to Role not set', () => {

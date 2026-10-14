@@ -3,6 +3,7 @@ import type { AccountRow, AccountsResponse } from '../../lib/account-types';
 
 const customerId = '11111111-1111-4111-8111-111111111111';
 const territoryId = '22222222-2222-4222-8222-222222222222';
+const visitId = '88888888-8888-4888-8888-888888888888';
 const base: AccountRow = { id: customerId, name: 'Care Lab', city: 'Pune', appContacts: [], owner: { email: 'sales@example.test', territoryId, territoryName: 'West', since: '2026-10-01', version: 3 }, location: null, lastVisit: null, nextVisitOn: '2026-10-03', lastOrderOn: null, class: { state: 'not_available', monthlyPaise: null, window: { from: '2026-07-01', to: '2026-09-30' } } };
 const fixture: AccountsResponse = {
   accounts: [{ ...base }, { ...base, id: '33333333-3333-4333-8333-333333333333', name: 'City Lab', nextVisitOn: '2026-10-21' }, { ...base, id: '44444444-4444-4444-8444-444444444444', name: 'New Lab', nextVisitOn: null }],
@@ -11,7 +12,7 @@ const fixture: AccountsResponse = {
   classPolicy: { aMinPaise: '20000000', bMinPaise: '7500000' },
 };
 type Command = Record<string, unknown>;
-async function mockAccounts(page: Page, options: { canAssign?: boolean; canSeePowerMap?: boolean; powerAlerts?: AccountRow['powerAlerts']; lastVisit?: AccountRow['lastVisit']; emptyMine?: boolean; status?: number; networkOnce?: boolean; paginate?: boolean; classes?: boolean; appContacts?: AccountRow['appContacts']; duplicatePhone?: boolean } = {}) {
+async function mockAccounts(page: Page, options: { canSeeStyle?: boolean; canAssign?: boolean; canSeePowerMap?: boolean; powerAlerts?: AccountRow['powerAlerts']; lastVisit?: AccountRow['lastVisit']; emptyMine?: boolean; status?: number; networkOnce?: boolean; paginate?: boolean; classes?: boolean; appContacts?: AccountRow['appContacts']; duplicatePhone?: boolean } = {}) {
   const gets: string[] = [];
   const posts: Command[] = [];
   const territories = [...fixture.territories];
@@ -22,13 +23,13 @@ async function mockAccounts(page: Page, options: { canAssign?: boolean; canSeePo
       if (options.networkOnce && posts.length === 1) { await route.abort('failed'); return; }
       if (options.status) { await route.fulfill({ status: options.status, json: { error: 'Account changed' } }); return; }
       if (body.action === 'create_territory') territories.push({ id: '55555555-5555-4555-8555-555555555555', name: String(body.name) });
-      await route.fulfill({ json: { ok: true, duplicatePhone: options.duplicatePhone ?? false } });
+      await route.fulfill({ json: { ok: true, ...(body.action === 'log_visit' ? { visitId } : {}), duplicatePhone: options.duplicatePhone ?? false } });
     } else {
       gets.push(route.request().url());
       const query = new URL(route.request().url()).searchParams;
       const classRows: AccountRow[] = (['A', 'B', 'below_b', 'not_available', 'not_linked'] as const).map((state, index) => ({ ...base, id: `class-${index}`, name: `Class ${state} Lab`, class: { ...base.class, state, monthlyPaise: index < 3 ? ['21000000', '7500000', '5000000'][index] : null } }));
       const accounts = options.classes ? classRows.filter(row => !query.get('class') || row.class.state === query.get('class')) : options.emptyMine && query.get('scope') === 'mine' ? [] : options.paginate ? [fixture.accounts[Number(query.get('page')) - 1]] : fixture.accounts;
-      await route.fulfill({ json: { ...fixture, accounts: accounts.map(row => ({ ...row, appContacts: row.id === customerId ? options.appContacts ?? [] : [], ...(row.id === customerId && options.powerAlerts ? { powerAlerts: options.powerAlerts } : {}), ...(row.id === customerId && options.lastVisit ? { lastVisit: options.lastVisit } : {}) })), territories, canAssign: options.canAssign ?? false, canSeePowerMap: options.canSeePowerMap ?? false, page: { page: Number(query.get('page')), pageSize: options.paginate ? 1 : 50, total: options.paginate ? 3 : accounts.length } } });
+      await route.fulfill({ json: { ...fixture, accounts: accounts.map(row => ({ ...row, canSeeStyle: options.canSeeStyle ?? false, appContacts: row.id === customerId ? options.appContacts ?? [] : [], ...(row.id === customerId && options.powerAlerts ? { powerAlerts: options.powerAlerts } : {}), ...(row.id === customerId && options.lastVisit ? { lastVisit: options.lastVisit } : {}) })), territories, canAssign: options.canAssign ?? false, canSeePowerMap: options.canSeePowerMap ?? false, page: { page: Number(query.get('page')), pageSize: options.paginate ? 1 : 50, total: options.paginate ? 3 : accounts.length } } });
     }
   });
   await page.goto('/?view=accounts');
@@ -42,6 +43,119 @@ const powerContacts: AccountRow['appContacts'] = [
   { ...appContact, name: 'Asha', canEdit: false, lastMetOn: '2026-10-03', assessment: { decisionRole: 'decision_maker', stance: 'sceptical', influence: 'high', reason: 'Chose competitor', recordedAt: '2026-10-14', actor: 'manager@example.test' } },
   { ...appContact, id: '77777777-7777-4777-8777-777777777777', name: 'Ravi' },
 ];
+
+const analytical: NonNullable<AccountRow['appContacts'][number]['style']> = { state: 'analytical', computedStyle: 'analytical', confidence: 'high', observations: 3, distinctDates: 3, assertiveness: 1.5, responsiveness: 1.5, override: null, cues: {} };
+const recentVisit: NonNullable<AccountRow['lastVisit']> = { id: visitId, visitedOn: '2026-10-03', outcome: 'met', visitedBy: 'sales@example.test', note: null, metContacts: powerContacts.map(({ id, name }) => ({ id, name })) };
+async function fillRating(page: Page, name: string) {
+  const form = firstCard(page).getByRole('form', { name: `Rate behaviour for ${name}`, exact: false });
+  const legends = [
+    'Speaks slowly and carefully → Speaks quickly and firmly',
+    'Asks questions, holds back opinions → States opinions',
+    'Follows our agenda → Takes control of the meeting',
+    'Wants time and consults others → Decides on the spot',
+    'Talks tasks, facts, numbers → Talks people, stories',
+    'Formal, reserved → Warm, animated',
+    'Strict on time, straight to business → Relaxed, enjoys small talk',
+    'Asks for proof and data → Goes by trust and peer labs',
+  ];
+  for (const [index, value] of [1, 2, 3, 4, 4, 3, 2, 1].entries()) await form.getByRole('group', { name: legends[index], exact: true }).getByRole('radio', { name: `${value} of 4`, exact: true }).check();
+  await form.getByRole('checkbox', { name: `Validation or QC papers for ${name}`, exact: false }).check();
+  await form.getByRole('checkbox', { name: `Reference labs for ${name}`, exact: false }).check();
+  return form;
+}
+
+test('two met contacts get collapsed prompts and rating sends the returned visit id', async ({ page }) => {
+  const { posts } = await mockAccounts(page, { appContacts: powerContacts });
+  await firstCard(page).getByRole('button', { name: 'Log visit for Care Lab', exact: false }).click();
+  const visit = firstCard(page).getByRole('form', { name: 'Log visit' });
+  for (const name of ['Asha', 'Ravi']) await visit.getByRole('checkbox', { name: `Met ${name} for Care Lab`, exact: false }).check();
+  await visit.getByRole('button', { name: 'Save', exact: true }).click();
+  for (const name of ['Asha', 'Ravi']) await expect(firstCard(page).getByText(`How did ${name} behave? (optional, 30 seconds)`, { exact: true })).toBeVisible();
+  await expect(firstCard(page).getByRole('form', { name: /^Rate behaviour/ })).toHaveCount(0);
+  await firstCard(page).getByRole('button', { name: /^Rate Asha/ }).click();
+  const form = await fillRating(page, 'Asha');
+  await expect(form.getByRole('heading')).toHaveText(['Pace and control', 'Warmth and focus']);
+  await expect(form.getByRole('radio')).toHaveCount(32);
+  await form.getByRole('button', { name: /^Save rating for Asha/ }).click();
+  await expect(form).toHaveCount(0);
+  expect(posts[1]).toEqual({ action: 'record_style_observation', contactId: powerContacts[0].id, visitId, a: [1, 2, 3, 4], r: [4, 3, 2, 1], cues: ['validation_data', 'reference_labs'], idempotencyKey: expect.any(String) });
+  await firstCard(page).getByRole('button', { name: /^Skip rating Ravi/ }).click();
+  await expect(firstCard(page).getByText(/How did Ravi behave/)).toHaveCount(0);
+});
+
+test('owner sees style and tip without management controls', async ({ page }) => {
+  await mockAccounts(page, { canSeeStyle: true, appContacts: [{ ...appContact, style: analytical }] });
+  await expect(firstCard(page).getByText('Analytical · high confidence', { exact: true })).toBeVisible();
+  await expect(firstCard(page).getByText("Bring the data: cost per test, validation papers, a written comparison. Don't rush.", { exact: true })).toBeVisible();
+  await expect(firstCard(page).getByRole('button', { name: /^Ratings|^Override style/ })).toHaveCount(0);
+});
+
+test('management expands ratings and saves an override with its reason', async ({ page }) => {
+  const { posts } = await mockAccounts(page, { canSeeStyle: true, appContacts: [{ ...appContact, style: analytical, styleObservations: [{ observer: 'Manager', recordedAt: '2026-10-03T10:00:00Z', a: [1, 2, 3, 4], r: [1, 1, 2, 2], cues: ['validation_data'] }] }] });
+  await firstCard(page).getByRole('button', { name: /^Ratings for App buyer/ }).click();
+  await expect(firstCard(page).getByRole('list', { name: /^Ratings for App buyer/ })).toHaveText('3 Oct · Manager · A 2.50 · R 1.50 · Validation or QC papers');
+  await firstCard(page).getByRole('button', { name: /^Override style for App buyer/ }).click();
+  const form = firstCard(page).getByRole('form', { name: /^Override style for App buyer/ });
+  await expect(form.locator('label select')).toHaveCount(0);
+  await form.getByLabel(/^Style for App buyer/).selectOption('amiable');
+  await form.getByLabel(/^Override reason for App buyer/).fill('Prefers a trusted service team');
+  await form.getByRole('button', { name: /^Save override for App buyer/ }).click();
+  await expect(form).toHaveCount(0);
+  expect(posts[0]).toEqual({ action: 'set_style_override', contactId: appContact.id, style: 'amiable', reason: 'Prefers a trusted service team', idempotencyKey: expect.any(String) });
+});
+
+test('non-owner sales can rate a recent meeting without seeing styles', async ({ page }) => {
+  await mockAccounts(page, { lastVisit: recentVisit, appContacts: powerContacts.map(contact => ({ ...contact, style: analytical, styleObservations: [] })) });
+  await expect(firstCard(page).getByText(/confidence|Bring the data/)).toHaveCount(0);
+  await expect(firstCard(page).getByRole('button', { name: /^Ratings|^Override style/ })).toHaveCount(0);
+  const opener = firstCard(page).getByRole('button', { name: /^Rate behaviour for Asha/ });
+  await expect(opener.locator('..')).toContainText('added by');
+  await opener.click();
+  const form = await fillRating(page, 'Asha');
+  await form.getByRole('button', { name: /^Cancel rating for Asha/ }).click();
+  await expect(opener).toBeFocused();
+});
+
+test('phone rating form has no horizontal overflow', async ({ page }, testInfo) => {
+  test.skip(testInfo.project.name !== 'pricing-mobile', 'Phone layout');
+  await mockAccounts(page, { lastVisit: recentVisit, appContacts: powerContacts });
+  await page.setViewportSize({ width: 375, height: 812 });
+  await firstCard(page).getByRole('button', { name: /^Rate behaviour for Asha/ }).click();
+  await fillRating(page, 'Asha');
+  expect(await page.evaluate(() => document.documentElement.scrollWidth <= document.documentElement.clientWidth)).toBe(true);
+});
+
+test('already rated PT409 is a notice', async ({ page }) => {
+  await mockAccounts(page, { lastVisit: recentVisit, appContacts: powerContacts });
+  await page.route('**/api/accounts', route => route.fulfill({ status: 409, json: { code: 'PT409', error: 'Already rated for this visit' } }));
+  await firstCard(page).getByRole('button', { name: /^Rate behaviour for Asha/ }).click();
+  const form = await fillRating(page, 'Asha');
+  await form.getByRole('button', { name: /^Save rating for Asha/ }).click();
+  await expect(firstCard(page).getByRole('status')).toHaveText('Already rated for this visit');
+  await expect(firstCard(page).getByRole('alert')).toHaveCount(0);
+});
+
+for (const failure of [502, 408, 429, 422, 'network'] as const) {
+  test(`rating retry handles ${failure} with the correct key`, async ({ page }) => {
+    await mockAccounts(page, { lastVisit: recentVisit, appContacts: powerContacts });
+    const attempts: Command[] = [];
+    await page.route('**/api/accounts', async route => {
+      attempts.push(route.request().postDataJSON() as Command);
+      if (attempts.length === 1 && failure === 'network') { await route.abort('failed'); return; }
+      await route.fulfill(attempts.length === 1 ? { status: failure as number, json: { error: 'Try again' } } : { json: { ok: true } });
+    });
+    await firstCard(page).getByRole('button', { name: /^Rate behaviour for Asha/ }).click();
+    const form = await fillRating(page, 'Asha');
+    const save = form.getByRole('button', { name: /^Save rating for Asha/ });
+    await save.click();
+    await expect(firstCard(page).getByRole('alert')).toHaveText(failure === 'network' ? 'Not saved. Check the connection and try again.' : 'Try again');
+    await save.click();
+    await expect(form).toHaveCount(0);
+    expect(attempts).toHaveLength(2);
+    if (failure === 422) expect(attempts[1].idempotencyKey).not.toEqual(attempts[0].idempotencyKey);
+    else expect(attempts[1]).toEqual(attempts[0]);
+  });
+}
 
 test('management sees Power Map and saves a preset role assessment with a reload', async ({ page }) => {
   const { gets, posts } = await mockAccounts(page, { canSeePowerMap: true, powerAlerts: ['no_decision_maker', 'decision_maker_not_met', 'influential_blocker'], appContacts: powerContacts });
@@ -79,7 +193,7 @@ test('sales response without Power Map contact keys hides all Power Map UI', asy
 
 test('visit contacts are available to sales and send two met ids with last visit names', async ({ page }) => {
   const appContacts = powerContacts.map(({ assessment, lastMetOn, ...contact }) => contact);
-  const { posts } = await mockAccounts(page, { appContacts, lastVisit: { visitedOn: '2026-10-03', outcome: 'met', visitedBy: 'sales@example.test', note: null, metContacts: appContacts.map(({ id, name }) => ({ id, name })) } });
+  const { posts } = await mockAccounts(page, { appContacts, lastVisit: { id: visitId, visitedOn: '2026-10-03', outcome: 'met', visitedBy: 'sales@example.test', note: null, metContacts: appContacts.map(({ id, name }) => ({ id, name })) } });
   await expect(firstCard(page).getByText(/Last visit 3 Oct · Met · with Asha, Ravi/)).toBeVisible();
   await firstCard(page).getByRole('button', { name: 'Log visit for Care Lab', exact: false }).click();
   const form = page.getByRole('form', { name: 'Log visit' });
