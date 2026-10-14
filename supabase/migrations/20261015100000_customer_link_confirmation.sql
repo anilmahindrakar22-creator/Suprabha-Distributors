@@ -14,7 +14,7 @@ create trigger immutable before update or delete on private.stockflow_economic_l
 
 create function private.stockflow_import_customer_ledgers() returns trigger
 language plpgsql security definer set search_path=pg_catalog,private as $$
-declare v_doc jsonb:=new.payload->'economicEvidence'; v_rows jsonb; v_company text; v_version text;
+declare v_doc jsonb:=new.payload->'economicEvidence'; v_rows jsonb; v_company text; v_version text; v_current text;
 begin
  v_rows:=v_doc->'customerLedgers';v_company:=v_doc->>'companyId';v_version:=v_doc->>'sourceVersion';
  if jsonb_typeof(v_rows) is distinct from 'array' or nullif(btrim(v_company),'') is null
@@ -28,6 +28,16 @@ begin
    or exists(select 1 from jsonb_array_elements(v_rows) e group by btrim(e->>'name') having count(distinct btrim(e->>'guid'))>1)
    or exists(select 1 from jsonb_array_elements(v_rows) e group by btrim(e->>'guid') having count(distinct btrim(e->>'name'))>1)
   then raise exception 'Invalid or ambiguous customer ledger master array';end if;
+  -- Every upload resends the last evidence; store a new generation only when the
+  -- list differs from the current accepted one (about 1,800 rows per generation).
+  v_current:=private.stockflow_current_ledger_generation(v_company);
+  if v_current is not null and v_current<>v_version
+   and (select count(*) from private.stockflow_economic_ledger_masters where company_id=v_company and source_version=v_current)
+    =(select count(distinct btrim(e->>'guid')) from jsonb_array_elements(v_rows) e)
+   and not exists(select 1 from jsonb_array_elements(v_rows) e where not exists(
+    select 1 from private.stockflow_economic_ledger_masters m where m.company_id=v_company and m.source_version=v_current
+     and m.guid=btrim(e->>'guid') and m.name=btrim(e->>'name')))
+  then return new;end if;
   insert into private.stockflow_economic_ledger_masters(company_id,source_version,guid,name)
    select v_company,v_version,btrim(e->>'guid'),btrim(e->>'name') from jsonb_array_elements(v_rows) e on conflict do nothing;
  exception when raise_exception or data_exception or integrity_constraint_violation then
@@ -36,7 +46,7 @@ begin
  end;
  return new;
 end$$;
-revoke all on function private.stockflow_import_customer_ledgers() from public,anon,authenticated,service_role;
+revoke all on function private.stockflow_import_customer_ledgers() from public,anon,authenticated;
 -- Alphabetical BEFORE trigger order is essential: this fires before
 -- stockflow_import_economic_vouchers, which strips economicEvidence.
 create trigger stockflow_import_customer_ledgers before insert or update of payload on public.stockflow_snapshots
@@ -44,9 +54,12 @@ create trigger stockflow_import_customer_ledgers before insert or update of payl
 
 create function private.stockflow_current_ledger_generation(p_company text) returns text
 language sql stable set search_path=pg_catalog,private as $$
- select max(l.source_version) from private.stockflow_economic_ledger_masters l
+ -- Latest stored accepted generation by arrival, not by text order of source_version
+ -- (exports may differ in timezone notation).
+ select l.source_version from private.stockflow_economic_ledger_masters l
  where l.company_id=p_company and exists(select 1 from private.stockflow_economic_source_coverage c
   where c.company_id=l.company_id and c.source_version=l.source_version)
+ group by l.source_version order by max(l.imported_at) desc,l.source_version desc limit 1
 $$;
 revoke all on function private.stockflow_current_ledger_generation(text) from public,anon,authenticated,service_role;
 
@@ -85,8 +98,8 @@ begin
   v_page:=coalesce((p_payload->>'page')::integer,1);
   if v_company is null then
    select coalesce(jsonb_agg(c.company_id order by c.company_id),'[]'::jsonb) into v_companies
-    from (select distinct company_id from private.stockflow_economic_ledger_masters l
-     where private.stockflow_current_ledger_generation(l.company_id) is not null) c;
+    from (select d.company_id from (select distinct company_id from private.stockflow_economic_ledger_masters) d
+     where private.stockflow_current_ledger_generation(d.company_id) is not null) c;
    if jsonb_array_length(v_companies)>1 then return jsonb_build_object('companies',v_companies);end if;
    v_company:=v_companies->>0;
   end if;
@@ -137,7 +150,9 @@ begin
  if v_result is not null then return v_result;end if;
  if v_version is distinct from private.stockflow_current_ledger_generation(v_company) then
   raise exception 'The Tally ledger list changed. Reload and review.' using errcode='PT409';end if;
- -- Do not lock customer rows: snapshot import holds them before taking the economics lock.
+ -- No customer row locks: identity writes are serialized by the economics advisory lock and
+ -- the identity unique keys; the identity FK takes only KEY SHARE, compatible with the
+ -- AFTER-trigger customer sync's non-key updates.
  for v_row in select value from jsonb_array_elements(v_rows) order by (value->>'customerId')::uuid loop
   select * into v_customer from private.stockflow_customers where id=(v_row->>'customerId')::uuid;
   select name into v_name from private.stockflow_economic_ledger_masters

@@ -18,7 +18,9 @@ begin
   update public.stockflow_snapshots set payload=jsonb_build_object('economicEvidence',jsonb_build_object(
    'schemaVersion','1','companyId','link-test-company','sourceVersion',v_version,
    'completeWindow',true,'windowFrom','2026-10-01','windowTo','2026-11-01','vouchers','[]'::jsonb,
-   'customerLedgers','[{"guid":"alpha","name":" Link Alpha "},{"guid":"beta","name":"Link Beta"},{"guid":"gamma","name":"Link Gamma"},{"guid":"delta","name":"Link Delta"},{"guid":"fuzzy","name":"Link Fuzzy."}]'::jsonb)) where id='suprabha';
+   'customerLedgers','[{"guid":"alpha","name":" Link Alpha "},{"guid":"beta","name":"Link Beta"},{"guid":"gamma","name":"Link Gamma"},{"guid":"delta","name":"Link Delta"},{"guid":"fuzzy","name":"Link Fuzzy."}]'::jsonb
+    -- The second export adds a ledger, so it is a new generation (identical lists are deduplicated).
+    ||(case when v_version='2026-10-15T10:00:00Z' then '[{"guid":"epsilon","name":"Link Epsilon"}]' else '[]' end)::jsonb)) where id='suprabha';
  end loop;
  update public.stockflow_snapshots set payload=jsonb_build_object('economicEvidence',jsonb_build_object(
   'schemaVersion','1','companyId','link-waiting-company','sourceVersion','2026-10-15T10:00:00Z','vouchers','[]'::jsonb,
@@ -112,5 +114,20 @@ begin
  -- A historical successful request still replays after the generation changes.
  if private.stockflow_customer_link_command('link-manager@test.local',array['management'],'confirm_customer_links',
   '{"companyId":"link-test-company","sourceVersion":"2026-10-15T10:00:00Z","rows":[{"customerId":"15100000-0000-4000-8000-000000000001","ledgerGuid":"alpha"},{"customerId":"15100000-0000-4000-8000-000000000002","ledgerGuid":"beta"}],"reason":"Person reviewed exact matches","idempotencyKey":"link-confirm-batch-0001"}')<>v_result then raise exception 'Historical replay failed';end if;
+
+ -- An unchanged list under a new export version is not stored again.
+ update public.stockflow_snapshots set payload=jsonb_build_object('economicEvidence',jsonb_build_object(
+  'schemaVersion','1','companyId','link-test-company','sourceVersion','2026-10-17T10:00:00Z','completeWindow',true,
+  'windowFrom','2026-10-01','windowTo','2026-11-01','vouchers','[]'::jsonb,
+  'customerLedgers','[{"guid":"alpha","name":" Renamed Alpha "}]'::jsonb)) where id='suprabha';
+ if exists(select 1 from private.stockflow_economic_ledger_masters where company_id='link-test-company' and source_version='2026-10-17T10:00:00Z')
+  or private.stockflow_current_ledger_generation('link-test-company') is distinct from '2026-10-16T10:00:00Z' then raise exception 'Unchanged ledger list was stored again';end if;
+
+ -- Current generation follows arrival, not text order: -05:00 notation sorts lower as text but arrives later.
+ update public.stockflow_snapshots set payload=jsonb_build_object('economicEvidence',jsonb_build_object(
+  'schemaVersion','1','companyId','link-test-company','sourceVersion','2026-10-16T09:00:00-05:00','completeWindow',true,
+  'windowFrom','2026-10-01','windowTo','2026-11-01','vouchers','[]'::jsonb,
+  'customerLedgers','[{"guid":"alpha","name":"Renamed Alpha"},{"guid":"zeta","name":"Link Zeta"}]'::jsonb)) where id='suprabha';
+ if private.stockflow_current_ledger_generation('link-test-company') is distinct from '2026-10-16T09:00:00-05:00' then raise exception 'Generation chosen by text order';end if;
 end$test$;
 rollback;
