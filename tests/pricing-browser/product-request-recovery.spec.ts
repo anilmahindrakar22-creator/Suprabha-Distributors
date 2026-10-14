@@ -16,7 +16,9 @@ test('trusted-device request resumes the exact command after restart without aut
   await expect(page.getByText(/Recovered request for this account/)).toBeVisible();
   expect(commands).toHaveLength(1);
   await page.getByRole('button', { name: 'Retry product request' }).click();
-  await expect(page.getByText('Product request saved for office review. No product was added to Tally.')).toBeVisible();
+  const success = page.getByText('Product request saved for office review. No product was added to Tally.');
+  await expect(success).toBeVisible();
+  await expect(page.locator('output', { hasText: 'Product request saved for office review.' })).toHaveClass(/bg-sf-success-soft/);
   expect(commands).toHaveLength(2);
   expect(commands[0]).toEqual(commands[1]);
   expect(await page.evaluate(() => localStorage.getItem('stockflow:product-request-retry:v1:sales@example.test'))).toBeNull();
@@ -27,7 +29,9 @@ test('request recovery is account separated and opt-in', async ({ page }) => {
   await page.goto('/?view=product-request-recovery');
   await page.getByRole('button', { name: 'Request new product', exact: true }).click();
   await page.getByRole('button', { name: 'Send product request' }).click();
-  await expect(page.getByText(/Unknown outcome/)).toBeVisible();
+  const failure = page.getByText(/Unknown outcome/);
+  await expect(failure).toBeVisible();
+  await expect(page.locator('output', { hasText: 'Unknown outcome' })).toHaveClass(/bg-sf-danger-soft/);
   expect(await page.evaluate(() => localStorage.length)).toBe(0);
   await page.reload();
   await page.getByRole('button', { name: 'Request new product', exact: true }).click();
