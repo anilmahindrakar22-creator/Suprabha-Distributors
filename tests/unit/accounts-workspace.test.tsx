@@ -2,17 +2,49 @@ import React from 'react';
 import { renderToStaticMarkup } from 'react-dom/server';
 import { describe, expect, it } from 'vitest';
 import type { AccountRow } from '@/lib/account-types';
-import { AccountDetails, accountClassesNote, accountDate, accountMetaLine, addAccountDays, classChip, visitChip } from '@/components/accounts-workspace';
+import { AccountDetails, accountClassesNote, accountDate, accountMetaLine, addAccountDays, alertLabel, assessmentSummary, classChip, visitChip } from '@/components/accounts-workspace';
 
 const row: AccountRow = {
   id: '11111111-1111-4111-8111-111111111111', name: 'Care Lab', city: 'Pune',
   appContacts: [],
   owner: { email: 'sales@example.test', territoryId: 'territory', territoryName: 'West', since: '2026-10-01', version: 2 },
-  location: null, lastVisit: { visitedOn: '2026-10-03', outcome: 'order_taken', visitedBy: 'sales@example.test', note: null },
+  location: null, lastVisit: { visitedOn: '2026-10-03', outcome: 'order_taken', visitedBy: 'sales@example.test', note: null, metContacts: [] },
   nextVisitOn: null, lastOrderOn: '2026-10-04',
   class: { state: 'not_available', monthlyPaise: null, window: { from: '2026-07-01', to: '2026-09-30' } },
 };
 describe('Accounts pure presentation', () => {
+  const contact = { id: 'asha', name: 'Asha', businessRole: null, phone: null, email: null, addedBy: 'sales@example.test', version: 1, canEdit: false };
+  const assessment = { decisionRole: 'decision_maker', stance: 'sceptical', influence: 'high', reason: null, actor: 'manager@example.test', recordedAt: '2026-10-14' } as const;
+  it('summarises known assessment parts and defaults to Role not set', () => {
+    expect(assessmentSummary(contact)).toBe('Role not set');
+    expect(assessmentSummary({ ...contact, assessment: null })).toBe('Role not set');
+    expect(assessmentSummary({ ...contact, assessment })).toBe('Decision maker · Sceptical · High influence');
+    expect(assessmentSummary({ ...contact, assessment: { ...assessment, decisionRole: 'unknown', influence: 'unknown' } })).toBe('Sceptical');
+    expect(assessmentSummary({ ...contact, assessment: { ...assessment, decisionRole: 'unknown', stance: 'unknown', influence: 'unknown' } })).toBe('Role not set');
+  });
+  it.each([
+    ['no_decision_maker', 'No decision maker known'],
+    ['decision_maker_not_met', 'Decision maker not met in 60 days'],
+    ['influential_blocker', 'Influential blocker'],
+  ] as const)('labels Power Map alert %s', (alert, label) => expect(alertLabel(alert)).toBe(label));
+  it('gates alerts, assessments and Set role on Power Map permission, including read-only contacts', () => {
+    const powerRow: AccountRow = { ...row, powerAlerts: ['no_decision_maker', 'decision_maker_not_met', 'influential_blocker'], appContacts: [{ ...contact, assessment, lastMetOn: '2026-10-03' }, { ...contact, id: 'ravi', name: 'Ravi' }] };
+    const visible = renderToStaticMarkup(<AccountDetails row={powerRow} mode="mine" today="2026-10-14" canSeePowerMap />);
+    expect(visible).toContain('Decision maker · Sceptical · High influence · Last met 3 Oct');
+    expect(visible).toContain('Role not set · Not met yet');
+    expect(visible).toContain('Set role for Asha');
+    for (const alert of powerRow.powerAlerts!) expect(visible).toContain(alertLabel(alert));
+    const hidden = renderToStaticMarkup(<AccountDetails row={powerRow} mode="mine" today="2026-10-14" />);
+    expect(hidden).not.toContain('Set role');
+    expect(hidden).not.toContain('Last met');
+    expect(hidden).not.toContain('Role not set');
+    for (const alert of powerRow.powerAlerts!) expect(hidden).not.toContain(alertLabel(alert));
+  });
+  it('adds at most two met names and the remaining count to last visit metadata', () => {
+    const metContacts = ['Asha', 'Ravi', 'Meena', 'Rohan'].map(name => ({ id: name, name }));
+    expect(accountMetaLine({ ...row, lastVisit: { ...row.lastVisit!, metContacts } }, 'mine')).toContain('Last visit 3 Oct · Order taken · with Asha, Ravi +2');
+    expect(accountMetaLine({ ...row, lastVisit: { ...row.lastVisit!, metContacts: metContacts.slice(0, 1) } }, 'mine')).toContain('with Asha · Last order');
+  });
   it('lists app contacts with links, ownership and editing permissions', () => {
     const html = renderToStaticMarkup(<AccountDetails row={{ ...row, appContacts: [
       { id: 'editable', name: 'Asha', businessRole: 'Lab head', phone: '+91 98765 43210', email: 'asha@example.test', addedBy: 'sales@example.test', version: 2, canEdit: true },

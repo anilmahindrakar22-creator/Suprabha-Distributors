@@ -10,7 +10,7 @@ const id = '12345678-1234-4234-8234-123456789abc';
 const command = { action: 'assign_account', customerId: id, territoryId: id, ownerEmail: 'sales@example.test', expectedVersion: null, idempotencyKey: 'accounts-route-key-001' };
 const post = (body: unknown) => new Request('https://example.test/api/accounts', { method: 'POST', headers: { 'content-type': 'application/json' }, body: JSON.stringify(body) });
 const get = (query = '') => GET(new Request(`https://example.test/api/accounts${query}`));
-const workspace = { classPolicy: { aMinPaise: '20000000', bMinPaise: '7500000' }, accounts: [], page: { page: 1, pageSize: 50, total: 0 }, owners: [], territories: [], today: '2026-10-14' };
+const workspace = { canSeePowerMap: true, classPolicy: { aMinPaise: '20000000', bMinPaise: '7500000' }, accounts: [], page: { page: 1, pageSize: 50, total: 0 }, owners: [], territories: [], today: '2026-10-14' };
 beforeEach(() => {
   vi.clearAllMocks();
   mocks.user.mockResolvedValue({ email: 'manager@example.test' });
@@ -18,6 +18,35 @@ beforeEach(() => {
   mocks.gateway.mockResolvedValue(workspace);
 });
 describe('accounts API', () => {
+  it.each(['no_decision_maker', 'decision_maker_not_met', 'influential_blocker'])('maps alert=%s with class filtering', async alert => {
+    expect((await get(`?alert=${alert}&class=A`)).status).toBe(200);
+    expect(mocks.gateway).toHaveBeenCalledWith('manager@example.test', 'get_accounts', { search: '', scope: 'all', page: 1, class: 'A', alert });
+  });
+  it.each(['', 'bad', 'NO_DECISION_MAKER'])('rejects invalid alert=%s', async alert => {
+    expect((await get(`?alert=${alert}`)).status).toBe(400);
+    expect(mocks.gateway).not.toHaveBeenCalled();
+  });
+  it('preserves SQL visibility and alert filter authorization for sales', async () => {
+    mocks.session.mockResolvedValue({ email: 'sales@example.test', roles: ['sales'] });
+    const sales = { ...workspace, canSeePowerMap: false, accounts: [{ id, appContacts: [{ id, name: 'Contact' }], lastVisit: { metContacts: [{ id, name: 'Contact' }] } }] };
+    mocks.gateway.mockResolvedValue(sales);
+    expect(await (await get()).json()).toEqual({ ...sales, actorEmail: 'sales@example.test', canAssign: false });
+    mocks.gateway.mockRejectedValue(new OrderGatewayError('Management required for alert filter', 403));
+    expect((await get('?alert=no_decision_maker')).status).toBe(403);
+  });
+  it.each(['set_assessment', 'erase_contact'])('forwards %s and preserves SQL authorization', async action => {
+    const fields = action === 'set_assessment' ? { decisionRole: 'decision_maker', stance: 'neutral', influence: 'high' } : { reason: 'Privacy request' };
+    const payload = { contactId: id, ...fields, idempotencyKey: 'power-route-command-0001' };
+    expect((await POST(post({ action, ...payload }))).status).toBe(200);
+    expect(mocks.gateway).toHaveBeenCalledWith('manager@example.test', action, payload);
+    mocks.gateway.mockRejectedValue(new OrderGatewayError('Role required', 403));
+    expect((await POST(post({ action, ...payload }))).status).toBe(403);
+  });
+  it('forwards met contacts on visits', async () => {
+    const payload = { customerId: id, visitedOn: '2026-10-14', outcome: 'met', metContactIds: [id], idempotencyKey: 'power-route-visit-0001' };
+    expect((await POST(post({ action: 'log_visit', ...payload }))).status).toBe(200);
+    expect(mocks.gateway).toHaveBeenCalledWith('manager@example.test', 'log_visit', payload);
+  });
   it.each(['add_contact', 'update_contact', 'remove_contact'])('forwards %s for eligible sales', async action => {
     mocks.session.mockResolvedValue({ email: 'sales@example.test', roles: ['sales'] });
     mocks.gateway.mockResolvedValue({ ok: true, version: 2, duplicatePhone: true });

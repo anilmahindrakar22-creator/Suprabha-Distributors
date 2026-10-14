@@ -1,7 +1,7 @@
 'use client';
 
 import { useCallback, useEffect, useId, useRef, useState, type ReactNode, type SubmitEvent } from 'react';
-import { isInsideMarketArea, MARKET_AREA, parseLocationInput, withAccountContacts, type AccountRow, type AccountsResponse, type VisitOutcome } from '@/lib/account-types';
+import { isInsideMarketArea, MARKET_AREA, parseLocationInput, powerAlerts, withAccountContacts, type AppContact, type ContactAssessment, type PowerAlert, type AccountRow, type AccountsResponse, type VisitOutcome } from '@/lib/account-types';
 import { readJsonBody } from '@/lib/http-json';
 
 type Mode = 'mine' | 'all';
@@ -13,6 +13,18 @@ const actionClass = 'min-h-11 rounded-xl px-3 text-sm font-bold text-sf-brand di
 const contactActionClass = 'inline-flex min-h-11 items-center px-1 text-xs text-sf-brand/80 disabled:opacity-50';
 const outcomes: Record<VisitOutcome, string> = { met: 'Met', not_available: 'Not available', order_taken: 'Order taken', issue_raised: 'Issue raised', other: 'Other' };
 const pinError = 'Paste a Google Maps link or two numbers like 18.52, 73.85';
+const roleLabels = { unknown: 'Unknown', decision_maker: 'Decision maker', influencer: 'Influencer', user: 'User', gatekeeper: 'Gatekeeper' };
+const stanceLabels = { unknown: 'Unknown', supporter: 'Supporter', neutral: 'Neutral', sceptical: 'Sceptical', blocker: 'Blocker' };
+const influenceLabels = { unknown: 'Unknown', high: 'High', medium: 'Medium', low: 'Low' };
+export function assessmentSummary(contact: AppContact) {
+  const value = contact.assessment;
+  return value ? [value.decisionRole !== 'unknown' ? roleLabels[value.decisionRole] : null,
+    value.stance !== 'unknown' ? stanceLabels[value.stance] : null,
+    value.influence !== 'unknown' ? `${influenceLabels[value.influence]} influence` : null].filter(Boolean).join(' · ') || 'Role not set' : 'Role not set';
+}
+export function alertLabel(alert: PowerAlert) {
+  return { no_decision_maker: 'No decision maker known', decision_maker_not_met: 'Decision maker not met in 60 days', influential_blocker: 'Influential blocker' }[alert];
+}
 
 export function accountDate(date: string) {
   return new Date(`${date}T00:00:00Z`).toLocaleDateString('en-IN', { day: 'numeric', month: 'short', timeZone: 'UTC' });
@@ -60,17 +72,22 @@ export function accountClassesNote(rows: AccountRow[]) {
 }
 export function accountMetaLine(row: AccountRow, mode: Mode) {
   return [row.city, row.owner?.territoryName, mode === 'all' ? row.owner?.email : null,
-    row.lastVisit ? `Last visit ${accountDate(row.lastVisit.visitedOn)} · ${outcomes[row.lastVisit.outcome]}` : null,
+    row.lastVisit ? `Last visit ${accountDate(row.lastVisit.visitedOn)} · ${outcomes[row.lastVisit.outcome]}${row.lastVisit.metContacts?.length ? ` · with ${row.lastVisit.metContacts.slice(0, 2).map(contact => contact.name).join(', ')}${row.lastVisit.metContacts.length > 2 ? ` +${row.lastVisit.metContacts.length - 2}` : ''}` : ''}` : null,
     row.lastOrderOn ? `Last order ${accountDate(row.lastOrderOn)}` : null,
     row.class?.state === 'not_linked' ? 'Not linked to Tally sales' : null].filter(Boolean).join(' · ');
 }
 type ContactCallbacks = { busy?: boolean; onSaved?: (duplicatePhone: boolean) => Promise<unknown>; onConflict?: () => Promise<void>; onBusy?: (busy: boolean) => void };
-type ContactActions = { renderActions?: (addContact: ReactNode) => ReactNode };
-function AppContacts({ row, busy = false, onSaved, onConflict, onBusy, renderActions }: { row: AccountRow } & ContactCallbacks & ContactActions) {
+type ContactActions = { renderActions?: (addContact: ReactNode) => ReactNode; canSeePowerMap?: boolean };
+function AppContacts({ row, busy = false, onSaved, onConflict, onBusy, renderActions, canSeePowerMap = false }: { row: AccountRow } & ContactCallbacks & ContactActions) {
   const [contactsExpanded, setContactsExpanded] = useState(false);
   const contactsId = useId();
   const [editing, setEditing] = useState<AccountRow['appContacts'][number] | 'new' | null>(null);
   const [removing, setRemoving] = useState<string | null>(null);
+  const [assessing, setAssessing] = useState<string | null>(null);
+  const [decisionRole, setDecisionRole] = useState<ContactAssessment['decisionRole']>('unknown');
+  const [stance, setStance] = useState<ContactAssessment['stance']>('unknown');
+  const [influence, setInfluence] = useState<ContactAssessment['influence']>('unknown');
+  const [reason, setReason] = useState('');
   const [name, setName] = useState('');
   const [businessRole, setBusinessRole] = useState('');
   const [phone, setPhone] = useState('');
@@ -84,13 +101,13 @@ function AppContacts({ row, busy = false, onSaved, onConflict, onBusy, renderAct
   useEffect(() => { if (editing) form.current?.querySelector<HTMLInputElement>('input')?.focus(); }, [editing]);
   function open(contact: AccountRow['appContacts'][number] | 'new', button: HTMLButtonElement) {
     origin.current = button;
-    setEditing(contact); setRemoving(null); setError('');
+    setEditing(contact); setRemoving(null); setAssessing(null); setError('');
     setName(contact === 'new' ? '' : contact.name);
     setBusinessRole(contact === 'new' ? '' : contact.businessRole ?? '');
     setPhone(contact === 'new' ? '' : contact.phone ?? '');
     setEmail(contact === 'new' ? '' : contact.email ?? '');
   }
-  function cancel() { setEditing(null); setRemoving(null); setError(''); origin.current?.focus(); }
+  function cancel() { setEditing(null); setRemoving(null); setAssessing(null); setError(''); origin.current?.focus(); }
   async function post(body: Record<string, unknown>) {
     if (inFlight.current || busy) return;
     inFlight.current = true; onBusy?.(true); setError('');
@@ -98,13 +115,13 @@ function AppContacts({ row, busy = false, onSaved, onConflict, onBusy, renderAct
     if (pending.current?.fingerprint !== fingerprint) pending.current = { fingerprint, key: crypto.randomUUID() };
     try {
       const response = await fetch('/api/accounts', { method: 'POST', headers: { 'content-type': 'application/json' }, body: JSON.stringify({ ...body, idempotencyKey: pending.current.key }) });
-      if (response.status === 409) { pending.current = null; setEditing(null); setRemoving(null); await onConflict?.(); return; }
+      if (response.status === 409) { pending.current = null; setEditing(null); setRemoving(null); setAssessing(null); await onConflict?.(); return; }
       if (response.status >= 400 && response.status < 500 && response.status !== 408 && response.status !== 429) pending.current = null;
       const result = await readJsonBody<{ error?: string; duplicatePhone?: boolean }>(response);
       if (!response.ok) {
         setError(result.error || 'Not saved. Please try again.'); return;
       }
-      pending.current = null; setEditing(null); setRemoving(null);
+      pending.current = null; setEditing(null); setRemoving(null); setAssessing(null);
       await onSaved?.(result.duplicatePhone === true);
     } catch { setError('Not saved. Check the connection and try again.'); }
     finally { inFlight.current = false; onBusy?.(false); }
@@ -126,11 +143,25 @@ function AppContacts({ row, busy = false, onSaved, onConflict, onBusy, renderAct
       <p className="flex flex-wrap items-center gap-x-2 break-words text-sm text-sf-body"><span>{contact.name}{contact.businessRole ? ` · ${contact.businessRole}` : ''}</span>{contact.phone ? <a className="inline-flex min-h-11 items-center text-sf-brand" href={`tel:${contact.phone.replace(/\D/g, '')}`} aria-label={`Call ${contact.name} for ${accountLabel}`}>{contact.phone}</a> : null}
         {contact.email ? <a className="inline-flex min-h-11 max-w-full items-center break-all text-sf-brand" href={`mailto:${contact.email}`} aria-label={`Email ${contact.name} for ${accountLabel}`}>{contact.email}</a> : null}
       </p>
+      {canSeePowerMap ? <p className="break-words text-xs text-sf-muted">{assessmentSummary(contact)} · {contact.lastMetOn ? `Last met ${accountDate(contact.lastMetOn)}` : 'Not met yet'}</p> : null}
       <p className="break-all text-xs text-sf-muted"><span>added by {contact.addedBy}</span>{contact.canEdit ? <span className="inline-flex items-center whitespace-nowrap">{' · '}
           <button type="button" disabled={busy} className={contactActionClass} aria-label={`Edit ${contact.name}`} onClick={event => open(contact, event.currentTarget)}>Edit</button>
-          {' · '}<button type="button" disabled={busy} className={contactActionClass} aria-label={`Remove ${contact.name}`} onClick={event => { origin.current = event.currentTarget; setRemoving(contact.id); setEditing(null); setError(''); }}>Remove</button>
+          {' · '}<button type="button" disabled={busy} className={contactActionClass} aria-label={`Remove ${contact.name}`} onClick={event => { origin.current = event.currentTarget; setRemoving(contact.id); setEditing(null); setAssessing(null); setError(''); }}>Remove</button>
         </span> : null}
+        {canSeePowerMap ? <>{' · '}<button type="button" disabled={busy} className={contactActionClass} aria-label={`Set role for ${contact.name}`} aria-expanded={assessing === contact.id} onClick={event => {
+          origin.current = event.currentTarget; setAssessing(contact.id); setEditing(null); setRemoving(null); setError('');
+          setDecisionRole(contact.assessment?.decisionRole ?? 'unknown'); setStance(contact.assessment?.stance ?? 'unknown'); setInfluence(contact.assessment?.influence ?? 'unknown'); setReason(contact.assessment?.reason ?? '');
+        }}>Set role</button></> : null}
       </p>
+      {canSeePowerMap && assessing === contact.id ? <form aria-label={`Set role for ${contact.name} at ${accountLabel}`} onSubmit={event => { event.preventDefault(); void post({ action: 'set_assessment', contactId: contact.id, decisionRole, stance, influence, reason: reason.trim() || null }); }} className="min-w-0 space-y-3 border-t border-sf-line-soft py-3">
+        <fieldset disabled={busy} className="min-w-0 space-y-3">
+          <div><label htmlFor={`${prefix}-decision`} className="text-sm text-sf-body">Decision role</label><select id={`${prefix}-decision`} aria-label={`Decision role for ${contact.name} at ${accountLabel}`} value={decisionRole} onChange={event => setDecisionRole(event.target.value as ContactAssessment['decisionRole'])} className={inputClass}>{Object.entries(roleLabels).map(([value, label]) => <option key={value} value={value}>{label}</option>)}</select></div>
+          <div><label htmlFor={`${prefix}-stance`} className="text-sm text-sf-body">Stance</label><select id={`${prefix}-stance`} aria-label={`Stance for ${contact.name} at ${accountLabel}`} value={stance} onChange={event => setStance(event.target.value as ContactAssessment['stance'])} className={inputClass}>{Object.entries(stanceLabels).map(([value, label]) => <option key={value} value={value}>{label}</option>)}</select></div>
+          <div><label htmlFor={`${prefix}-influence`} className="text-sm text-sf-body">Influence</label><select id={`${prefix}-influence`} aria-label={`Influence for ${contact.name} at ${accountLabel}`} value={influence} onChange={event => setInfluence(event.target.value as ContactAssessment['influence'])} className={inputClass}>{Object.entries(influenceLabels).map(([value, label]) => <option key={value} value={value}>{label}</option>)}</select></div>
+          <div><label htmlFor={`${prefix}-reason`} className="text-sm text-sf-body">Reason</label><input id={`${prefix}-reason`} aria-label={`Reason for ${contact.name} at ${accountLabel}`} maxLength={300} placeholder="Business reason, e.g. chose competitor in tender" value={reason} onChange={event => setReason(event.target.value)} className={inputClass} /></div>
+        </fieldset>
+        <div className="flex flex-wrap gap-2"><button type="submit" disabled={busy} className={primaryClass} aria-label={`Save role for ${contact.name} at ${accountLabel}`}>{busy ? 'Saving…' : 'Save'}</button><button type="button" disabled={busy} className={buttonClass} aria-label={`Cancel role for ${contact.name} at ${accountLabel}`} onClick={cancel}>Cancel</button></div>
+      </form> : null}
       {contact.canEdit && removing === contact.id ? <p className="flex flex-wrap items-center gap-x-2 text-sm text-sf-body"><span>Remove {contact.name}?</span><button type="button" disabled={busy} className={contactActionClass} aria-label={`Confirm remove ${contact.name} for ${accountLabel}`} onClick={() => void post({ action: 'remove_contact', contactId: contact.id, expectedVersion: contact.version })}>Remove</button><button type="button" disabled={busy} className={contactActionClass} aria-label={`Keep ${contact.name} for ${accountLabel}`} onClick={cancel}>Keep</button></p> : null}
     </div>)}
     </div>
@@ -148,7 +179,7 @@ function AppContacts({ row, busy = false, onSaved, onConflict, onBusy, renderAct
     {error ? <p role="alert" className="text-sm text-sf-danger">{error}</p> : null}
   </>;
 }
-export function AccountDetails({ row, mode, today, renderActions, ...contactCallbacks }: { row: AccountRow; mode: Mode; today: string } & ContactCallbacks & ContactActions) {
+export function AccountDetails({ row, mode, today, renderActions, canSeePowerMap = false, ...contactCallbacks }: { row: AccountRow; mode: Mode; today: string } & ContactCallbacks & ContactActions) {
   const chip = visitChip(row, today);
   const accountClass = classChip(row);
   return <>
@@ -158,9 +189,10 @@ export function AccountDetails({ row, mode, today, renderActions, ...contactCall
       {chip ? <span className={`max-w-full shrink-0 rounded-full px-2 py-1 text-xs font-semibold ${chip.className}`}>{chip.text}</span> : null}
     </div>
     <p className="mt-2 break-words text-xs text-sf-muted">{accountMetaLine(row, mode)}</p>
-    <p className="mt-2 flex flex-wrap items-center gap-2 text-sm text-sf-body">{row.location?.precision === 'pin' ? <><span>📍 Pin set{!isInsideMarketArea(Number(row.location.latitude), Number(row.location.longitude)) ? <span className="text-sf-muted"> · outside market area</span> : null}</span><a className="inline-flex min-h-11 items-center font-semibold text-sf-brand" href={`https://www.google.com/maps?q=${row.location.latitude},${row.location.longitude}`} target="_blank" rel="noopener">Open map</a></> : row.location?.precision === 'town' ? `Town: ${row.location.town}` : 'No location'}</p>
+    {canSeePowerMap && row.powerAlerts?.length ? <div className="mt-2 flex flex-wrap gap-2">{row.powerAlerts.map(alert => <span key={alert} className="max-w-full rounded-full bg-sf-warning-soft px-2 py-1 text-xs font-semibold text-sf-warning">{alertLabel(alert)}</span>)}</div> : null}
+    <p className="mt-2 flex flex-wrap items-center gap-2 text-sm text-sf-body">{row.location?.precision === 'pin' ? <><span>📍 Pin set{!isInsideMarketArea(Number(row.location.latitude), Number(row.location.longitude)) ? <span className="text-sf-muted"> · outside market area</span> : null}</span><a className="inline-flex min-h-11 items-center font-semibold text-sf-brand" href={`https://www.google.com/maps?q=${row.location.latitude},${row.location.longitude}`} target="_blank" rel="noopener" aria-label={`Open map for ${row.name} (${row.id})`}>Open map</a></> : row.location?.precision === 'town' ? `Town: ${row.location.town}` : 'No location'}</p>
     <div className="mt-2">
-      <AppContacts row={row} renderActions={renderActions} {...contactCallbacks} />
+      <AppContacts row={row} canSeePowerMap={canSeePowerMap} renderActions={renderActions} {...contactCallbacks} />
     </div>
   </>;
 }
@@ -173,6 +205,7 @@ export function AccountsWorkspace() {
   const [owner, setOwner] = useState('');
   const [territory, setTerritory] = useState('');
   const [accountClass, setAccountClass] = useState('');
+  const [powerAlert, setPowerAlert] = useState('');
   const [page, setPage] = useState(1);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState('');
@@ -189,6 +222,7 @@ export function AccountsWorkspace() {
       const params = new URLSearchParams({ scope: mode, page: String(page) });
       if (search) params.set('search', search);
       if (accountClass) params.set('class', accountClass);
+      if (powerAlert) params.set('alert', powerAlert);
       if (mode === 'all') {
         if (owner) params.set('owner', owner);
         if (territory) params.set('territory', territory);
@@ -204,7 +238,7 @@ export function AccountsWorkspace() {
       if (current === request.current && !signal?.aborted) setError(cause instanceof Error ? cause.message : 'Accounts could not be loaded. Please try again.');
       return null;
     } finally { if (current === request.current && !signal?.aborted) setLoading(false); }
-  }, [mode, page, search, owner, territory, accountClass]);
+  }, [mode, page, search, owner, territory, accountClass, powerAlert]);
   useEffect(() => {
     if (query === search) return;
     const timer = setTimeout(() => { setSearch(query); setPage(1); setOpen(null); }, 300);
@@ -236,6 +270,7 @@ export function AccountsWorkspace() {
       <div aria-label="Account scope" className="inline-flex rounded-xl border border-sf-line-soft bg-sf-soft-0 p-1">{(['mine', 'all'] as const).map(value => <button key={value} type="button" disabled={busy} aria-pressed={mode === value} onClick={() => changeMode(value)} className={`${buttonClass} ${mode === value ? 'bg-sf-brand text-sf-soft-0' : ''}`}>{value === 'mine' ? 'Mine' : 'All'}</button>)}</div>
       <div className="min-w-0 flex-1 basis-44"><label htmlFor={`${prefix}-search`} className="text-xs text-sf-muted">Search accounts</label><input id={`${prefix}-search`} value={query} disabled={busy} onChange={event => setQuery(event.target.value)} maxLength={120} placeholder="Name or town" className={inputClass} /></div>
       <div className="min-w-0 flex-1 basis-40"><label htmlFor={`${prefix}-class`} className="text-xs text-sf-muted">Class</label><select id={`${prefix}-class`} disabled={busy} value={accountClass} onChange={event => { setAccountClass(event.target.value); setPage(1); setOpen(null); }} className={inputClass}><option value="">Any</option><option value="A">A</option><option value="B">B</option><option value="below_b">Below B</option><option value="not_available">Not available</option><option value="not_linked">Not linked</option></select></div>
+      {data?.canSeePowerMap ? <div className="min-w-0 flex-1 basis-40"><label htmlFor={prefix + '-power'} className="text-xs text-sf-muted">Power Map</label><select id={prefix + '-power'} disabled={busy} value={powerAlert} onChange={event => { setPowerAlert(event.target.value); setPage(1); setOpen(null); }} className={inputClass}><option value="">Any</option>{powerAlerts.map(alert => <option key={alert} value={alert}>{alert === 'decision_maker_not_met' ? 'Decision maker not met' : alertLabel(alert)}</option>)}</select></div> : null}
       {data?.canAssign && mode === 'all' ? <>
         <div className="min-w-0 flex-1 basis-40"><label htmlFor={`${prefix}-owner`} className="text-xs text-sf-muted">Owner</label><select id={`${prefix}-owner`} disabled={busy} value={owner} onChange={event => { setOwner(event.target.value); setPage(1); setOpen(null); }} className={inputClass}><option value="">Any</option>{data.owners.map(item => <option key={item.email} value={item.email}>{item.name || item.email}</option>)}</select></div>
         <div className="min-w-0 flex-1 basis-40"><label htmlFor={`${prefix}-territory`} className="text-xs text-sf-muted">Territory</label><select id={`${prefix}-territory`} disabled={busy} value={territory} onChange={event => { setTerritory(event.target.value); setPage(1); setOpen(null); }} className={inputClass}><option value="">Any</option>{data.territories.map(item => <option key={item.id} value={item.id}>{item.name}</option>)}</select></div>
@@ -248,7 +283,7 @@ export function AccountsWorkspace() {
     {data && !error ? <>
       {!loading && !data.accounts.length ? <div className="rounded-xl border border-sf-line-soft bg-sf-soft-0 p-4 text-sm text-sf-body"><p>{mode === 'mine' ? 'No accounts are assigned to you yet.' : 'No accounts match.'}</p>{mode === 'mine' ? <button type="button" className={`${buttonClass} mt-3`} onClick={() => changeMode('all')}>Show all accounts</button> : null}</div> : null}
       <ul aria-label="Accounts" className="space-y-3">{data.accounts.map(row => <li key={row.id} className="min-w-0 rounded-xl border border-sf-line-soft bg-sf-soft-0 p-4">
-        <AccountDetails row={row} mode={mode} today={data.today} busy={busy} onBusy={setBusy} onConflict={conflict} onSaved={async duplicatePhone => { setNotice(duplicatePhone ? 'Saved. This phone is already on the account.' : 'Saved.'); await load(); }} renderActions={addContact => <div className="mt-3 flex flex-wrap gap-2">{(['visit', 'location'] as FormKind[]).map(kind => <button key={kind} type="button" disabled={busy} aria-expanded={open?.id === row.id && open.kind === kind} onClick={event => { origin.current = event.currentTarget; setNotice(''); setOpen({ id: row.id, kind }); }} className={kind === 'visit' ? primaryClass : actionClass}>{kind === 'visit' ? 'Log visit' : 'Location'}</button>)}{addContact}{data.canAssign ? <button type="button" disabled={busy} aria-expanded={open?.id === row.id && open.kind === 'owner'} onClick={event => { origin.current = event.currentTarget; setNotice(''); setOpen({ id: row.id, kind: 'owner' }); }} className={actionClass}>Owner</button> : null}</div>} />
+        <AccountDetails row={row} mode={mode} today={data.today} canSeePowerMap={data.canSeePowerMap} busy={busy} onBusy={setBusy} onConflict={conflict} onSaved={async duplicatePhone => { setNotice(duplicatePhone ? 'Saved. This phone is already on the account.' : 'Saved.'); await load(); }} renderActions={addContact => <div className="mt-3 flex flex-wrap gap-2">{(['visit', 'location'] as FormKind[]).map(kind => <button key={kind} type="button" disabled={busy} aria-label={`${kind === 'visit' ? 'Log visit' : 'Location'} for ${row.name} (${row.id})`} aria-expanded={open?.id === row.id && open.kind === kind} onClick={event => { origin.current = event.currentTarget; setNotice(''); setOpen({ id: row.id, kind }); }} className={kind === 'visit' ? primaryClass : actionClass}>{kind === 'visit' ? 'Log visit' : 'Location'}</button>)}{addContact}{data.canAssign ? <button type="button" disabled={busy} aria-label={`Owner for ${row.name} (${row.id})`} aria-expanded={open?.id === row.id && open.kind === 'owner'} onClick={event => { origin.current = event.currentTarget; setNotice(''); setOpen({ id: row.id, kind: 'owner' }); }} className={actionClass}>Owner</button> : null}</div>} />
         {open?.id === row.id ? <AccountForm key={`${row.id}-${open.kind}`} row={row} kind={open.kind} data={data} onCancel={cancel} onSaved={saved} onConflict={conflict} onBusy={setBusy} /> : null}
       </li>)}</ul>
       <div className="flex flex-wrap items-center justify-between gap-3 text-sm text-sf-muted"><span>Showing {from}–{to} of {data.page.total}</span><div className="flex gap-2">
@@ -271,6 +306,7 @@ function AccountForm({ row, kind, data, onCancel, onSaved, onConflict, onBusy }:
   const [error, setError] = useState('');
   const [visitedOn, setVisitedOn] = useState(data.today);
   const [outcome, setOutcome] = useState<VisitOutcome>('met');
+  const [metContactIds, setMetContactIds] = useState<string[]>([]);
   const [note, setNote] = useState('');
   const [nextVisitOn, setNextVisitOn] = useState('');
   const [precision, setPrecision] = useState<'pin' | 'town'>(row.location?.precision ?? 'pin');
@@ -309,7 +345,7 @@ function AccountForm({ row, kind, data, onCancel, onSaved, onConflict, onBusy }:
   }
   function submit(event: SubmitEvent<HTMLFormElement>) {
     event.preventDefault();
-    if (kind === 'visit') void post({ action: 'log_visit', customerId: row.id, visitedOn, outcome, ...(note.trim() ? { note: note.trim() } : {}), ...(nextVisitOn ? { nextVisitOn } : {}) });
+    if (kind === 'visit') void post({ action: 'log_visit', customerId: row.id, visitedOn, outcome, ...(row.appContacts.length ? { metContactIds } : {}), ...(note.trim() ? { note: note.trim() } : {}), ...(nextVisitOn ? { nextVisitOn } : {}) });
     if (kind === 'location') {
       if (precision === 'pin' && !parsed.ok) { setError(pinError); return; }
       void post({ action: 'set_location', customerId: row.id, expectedVersion: row.location?.version ?? null,
@@ -321,6 +357,7 @@ function AccountForm({ row, kind, data, onCancel, onSaved, onConflict, onBusy }:
     <fieldset disabled={busy} className="min-w-0 space-y-3">
       {kind === 'visit' ? <>
         <div className="block"><label htmlFor={`${prefix}-date`} className="text-sm text-sf-body">Date</label><input id={`${prefix}-date`} type="date" required value={visitedOn} min={addAccountDays(data.today, -30)} max={data.today} onChange={event => setVisitedOn(event.target.value)} className={inputClass} /></div>
+        {row.appContacts.length ? <fieldset className="min-w-0"><legend className="text-sm text-sf-body">Who did you meet?</legend><div className="flex flex-wrap gap-x-4">{row.appContacts.map(contact => <label key={contact.id} className="flex min-h-11 min-w-0 items-center gap-2 break-words text-sm text-sf-body"><input type="checkbox" aria-label={`Met ${contact.name} for ${row.name} (${contact.id})`} checked={metContactIds.includes(contact.id)} onChange={event => setMetContactIds(ids => event.target.checked ? [...ids, contact.id] : ids.filter(id => id !== contact.id))} />{contact.name}{contact.businessRole ? ` · ${contact.businessRole}` : ''}</label>)}</div></fieldset> : null}
         <fieldset><legend className="text-sm text-sf-body">Outcome</legend><div className="flex flex-wrap gap-x-4">{(Object.entries(outcomes) as [VisitOutcome, string][]).map(([value, label]) => <label key={value} className="flex min-h-11 items-center gap-2 text-sm text-sf-body"><input type="radio" name={`${prefix}-outcome`} value={value} checked={outcome === value} onChange={() => setOutcome(value)} />{label}</label>)}</div></fieldset>
         <div className="block"><label htmlFor={`${prefix}-note`} className="text-sm text-sf-body">Note</label><textarea id={`${prefix}-note`} maxLength={500} value={note} onChange={event => setNote(event.target.value)} className={`${inputClass} py-2`} /></div>
         <div className="block"><label htmlFor={`${prefix}-next`} className="text-sm text-sf-body">Next visit</label><input id={`${prefix}-next`} type="date" min={visitedOn ? addAccountDays(visitedOn, 1) : undefined} value={nextVisitOn} onChange={event => setNextVisitOn(event.target.value)} className={inputClass} /></div>

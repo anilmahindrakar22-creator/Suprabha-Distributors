@@ -2,6 +2,8 @@ import type { OrderCommand } from './order-types';
 import type { EconomicAction } from './instrument-economics-types';
 
 export type GatewayAction =
+  | 'set_assessment'
+  | 'erase_contact'
   | 'add_contact'
   | 'update_contact'
   | 'remove_contact'

@@ -118,6 +118,29 @@ describe('account command parser', () => {
     { action: 'log_visit', customerId, idempotencyKey, visitedOn: '2026-10-14', outcome: 'met', note: 'x'.repeat(501) },
   ])('rejects malformed commands %#', input => { expect(parseAccountCommand(input)).toBeNull(); });
 });
+describe('Power Map commands', () => {
+  const contactId = '12345678-1234-4234-8234-123456789abc';
+  const idempotencyKey = 'power-map-types-key-0001';
+  const assessment = { action: 'set_assessment', contactId, decisionRole: 'decision_maker', stance: 'sceptical', influence: 'high', idempotencyKey };
+  it('parses assessments with optional and null reasons', () => {
+    expect(parseAccountCommand(assessment)).toEqual({ action: 'set_assessment', payload: { contactId, decisionRole: 'decision_maker', stance: 'sceptical', influence: 'high', idempotencyKey } });
+    expect(parseAccountCommand({ ...assessment, reason: null })?.payload).toHaveProperty('reason', null);
+    expect(parseAccountCommand({ ...assessment, reason: 'x'.repeat(300) })).not.toBeNull();
+  });
+  it.each([{ decisionRole: 'bad' }, { stance: 'bad' }, { influence: 'bad' }, { contactId: 'bad' }, { reason: 1 }, { reason: 'x'.repeat(301) }, { idempotencyKey: 'short' }])('rejects malformed assessment %#', override => {
+    expect(parseAccountCommand({ ...assessment, ...override })).toBeNull();
+  });
+  it('parses erasure and requires a bounded reason', () => {
+    expect(parseAccountCommand({ action: 'erase_contact', contactId, reason: ' Privacy request ', idempotencyKey })).toEqual({ action: 'erase_contact', payload: { contactId, reason: 'Privacy request', idempotencyKey } });
+    for (const reason of [undefined, null, 1, 'ab', 'x'.repeat(301)]) expect(parseAccountCommand({ action: 'erase_contact', contactId, reason, idempotencyKey })).toBeNull();
+  });
+  it('parses bounded UUID arrays on visits and preserves omission', () => {
+    const visit = { action: 'log_visit', customerId: contactId, visitedOn: '2026-10-14', outcome: 'met', idempotencyKey };
+    expect(parseAccountCommand(visit)?.payload).not.toHaveProperty('metContactIds');
+    for (const metContactIds of [[], [contactId], Array(10).fill(contactId)]) expect(parseAccountCommand({ ...visit, metContactIds })?.payload).toHaveProperty('metContactIds', metContactIds);
+    for (const metContactIds of [null, contactId, ['bad'], [1], Array(11).fill(contactId)]) expect(parseAccountCommand({ ...visit, metContactIds })).toBeNull();
+  });
+});
 describe('account location input', () => {
   it('parses bare coordinates and rounds to six decimals', () => {
     expect(parseLocationInput('12.9715999, 77.5946')).toEqual({ ok: true, latitude: '12.9716', longitude: '77.5946', source: 'manual_pin' });

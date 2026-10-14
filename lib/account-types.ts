@@ -7,6 +7,13 @@ export function isInsideMarketArea(latitude: number, longitude: number): boolean
 }
 
 export type VisitOutcome = 'met' | 'not_available' | 'order_taken' | 'issue_raised' | 'other';
+export const powerAlerts = ['no_decision_maker', 'decision_maker_not_met', 'influential_blocker'] as const;
+export type PowerAlert = typeof powerAlerts[number];
+export const decisionRoles = ['decision_maker', 'influencer', 'user', 'gatekeeper', 'unknown'] as const;
+export const contactStances = ['supporter', 'neutral', 'sceptical', 'blocker', 'unknown'] as const;
+export const contactInfluences = ['high', 'medium', 'low', 'unknown'] as const;
+export type ContactAssessment = { decisionRole: typeof decisionRoles[number]; stance: typeof contactStances[number]; influence: typeof contactInfluences[number]; reason: string | null; recordedAt: string; actor: string };
+export type AppContact = { id: string; name: string; businessRole: string | null; phone: string | null; email: string | null; addedBy: string; version: number; canEdit: boolean; assessment?: ContactAssessment | null; lastMetOn?: string | null };
 export const accountClassStates = ['A', 'B', 'below_b', 'not_available', 'not_linked'] as const;
 export type AccountClassState = typeof accountClassStates[number];
 export function parseAccountClass(value: string | null): AccountClassState | null {
@@ -14,11 +21,12 @@ export function parseAccountClass(value: string | null): AccountClassState | nul
 }
 export type AccountRow = {
   id: string; name: string; city: string | null;
-  appContacts: { id: string; name: string; businessRole: string | null; phone: string | null; email: string | null; addedBy: string; version: number; canEdit: boolean }[];
+  appContacts: AppContact[];
+  powerAlerts?: PowerAlert[];
   class: { state: AccountClassState; monthlyPaise: string | null; window: { from: string; to: string }; policyId?: string };
   owner: { email: string; territoryId: string; territoryName: string; since: string; version: number } | null;
   location: { precision: 'pin' | 'town'; latitude: string | null; longitude: string | null; town: string | null; verifiedBy: string; verifiedAt: string; version: number } | null;
-  lastVisit: { visitedOn: string; outcome: VisitOutcome; visitedBy: string; note: string | null } | null;
+  lastVisit: { visitedOn: string; outcome: VisitOutcome; visitedBy: string; note: string | null; metContacts: { id: string; name: string }[] } | null;
   nextVisitOn: string | null; lastOrderOn: string | null;
 };
 export type AccountsResponse = {
@@ -27,7 +35,7 @@ export type AccountsResponse = {
   page: { page: number; pageSize: number; total: number };
   owners: { email: string; name: string | null }[];
   territories: { id: string; name: string }[];
-  canAssign: boolean; actorEmail: string; today: string;
+  canAssign: boolean; canSeePowerMap: boolean; actorEmail: string; today: string;
 };
 export type AccountsGatewayResponse = Omit<AccountsResponse, 'canAssign' | 'actorEmail'>;
 export function withAccountContacts<T extends { accounts: (Omit<AccountRow, 'appContacts'> & { appContacts?: AccountRow['appContacts'] })[] }>(response: T): T & { accounts: AccountRow[] } {
@@ -36,6 +44,8 @@ export function withAccountContacts<T extends { accounts: (Omit<AccountRow, 'app
 type CommandBase = { idempotencyKey: string };
 type ContactFields = { name: string; businessRole: string | null; phone: string | null; email: string | null };
 export type AccountCommand =
+  | { action: 'set_assessment'; payload: CommandBase & Pick<ContactAssessment, 'decisionRole' | 'stance' | 'influence'> & { contactId: string; reason?: string | null } }
+  | { action: 'erase_contact'; payload: CommandBase & { contactId: string; reason: string } }
   | { action: 'add_contact'; payload: CommandBase & ContactFields & { customerId: string } }
   | { action: 'update_contact'; payload: CommandBase & ContactFields & { contactId: string; expectedVersion: number } }
   | { action: 'remove_contact'; payload: CommandBase & { contactId: string; expectedVersion: number } }
@@ -46,7 +56,7 @@ export type AccountCommand =
     { precision: 'pin'; latitude: string; longitude: string; source: 'manual_pin' | 'pasted_link' } |
     { precision: 'town'; town: string; source: 'town' }
   ) }
-  | { action: 'log_visit'; payload: CommandBase & { customerId: string; visitedOn: string; outcome: VisitOutcome; note?: string | null; nextVisitOn?: string | null } };
+  | { action: 'log_visit'; payload: CommandBase & { customerId: string; visitedOn: string; outcome: VisitOutcome; note?: string | null; nextVisitOn?: string | null; metContactIds?: string[] } };
 
 export const accountUuidPattern = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
 const coordinatePattern = /^-?[0-9]{1,3}(\.[0-9]{1,6})?$/;
@@ -71,6 +81,20 @@ export function parseAccountCommand(body: unknown): AccountCommand | null {
   const p = body as Record<string, unknown>;
   if (typeof p.idempotencyKey !== 'string' || p.idempotencyKey.trim().length < 16 || p.idempotencyKey.length > 200) return null;
   const idempotencyKey = p.idempotencyKey;
+  if (p.action === 'set_assessment' || p.action === 'erase_contact') {
+    if (typeof p.contactId !== 'string' || !accountUuidPattern.test(p.contactId)) return null;
+    if (p.action === 'erase_contact') {
+      if (typeof p.reason !== 'string' || p.reason.trim().length < 3 || p.reason.trim().length > 300) return null;
+      return { action: p.action, payload: { contactId: p.contactId, reason: p.reason.trim(), idempotencyKey } };
+    }
+    if (!decisionRoles.includes(p.decisionRole as ContactAssessment['decisionRole'])
+      || !contactStances.includes(p.stance as ContactAssessment['stance'])
+      || !contactInfluences.includes(p.influence as ContactAssessment['influence'])
+      || (p.reason != null && (typeof p.reason !== 'string' || p.reason.length > 300))) return null;
+    return { action: p.action, payload: { contactId: p.contactId, decisionRole: p.decisionRole as ContactAssessment['decisionRole'],
+      stance: p.stance as ContactAssessment['stance'], influence: p.influence as ContactAssessment['influence'], idempotencyKey,
+      ...(p.reason === undefined ? {} : { reason: p.reason as string | null }) } };
+  }
   if (p.action === 'add_contact' || p.action === 'update_contact' || p.action === 'remove_contact') {
     const editing = p.action !== 'add_contact';
     const target = editing ? p.contactId : p.customerId;
@@ -119,11 +143,14 @@ export function parseAccountCommand(body: unknown): AccountCommand | null {
     return null;
   }
   if (p.action === 'log_visit') {
+    if (p.metContactIds !== undefined && (!Array.isArray(p.metContactIds) || p.metContactIds.length > 10
+      || p.metContactIds.some(id => typeof id !== 'string' || !accountUuidPattern.test(id)))) return null;
     if (!validDate(p.visitedOn) || typeof p.outcome !== 'string' || !outcomes.includes(p.outcome as VisitOutcome)
       || (p.note != null && (typeof p.note !== 'string' || p.note.length > 500))
       || (p.nextVisitOn != null && (!validDate(p.nextVisitOn) || p.nextVisitOn <= p.visitedOn))) return null;
     return { action: p.action, payload: { customerId, visitedOn: p.visitedOn, outcome: p.outcome as VisitOutcome, idempotencyKey,
       ...(p.note === undefined ? {} : { note: p.note as string | null }),
+      ...(p.metContactIds === undefined ? {} : { metContactIds: p.metContactIds as string[] }),
       ...(p.nextVisitOn === undefined ? {} : { nextVisitOn: p.nextVisitOn as string | null }) } };
   }
   return null;

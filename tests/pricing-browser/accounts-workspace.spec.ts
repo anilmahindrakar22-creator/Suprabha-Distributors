@@ -7,11 +7,11 @@ const base: AccountRow = { id: customerId, name: 'Care Lab', city: 'Pune', appCo
 const fixture: AccountsResponse = {
   accounts: [{ ...base }, { ...base, id: '33333333-3333-4333-8333-333333333333', name: 'City Lab', nextVisitOn: '2026-10-21' }, { ...base, id: '44444444-4444-4444-8444-444444444444', name: 'New Lab', nextVisitOn: null }],
   page: { page: 1, pageSize: 50, total: 3 }, owners: [{ email: 'sales@example.test', name: 'Salesperson' }, { email: 'other@example.test', name: 'Other salesperson' }],
-  territories: [{ id: territoryId, name: 'West' }], canAssign: false, actorEmail: 'sales@example.test', today: '2026-10-14',
+  territories: [{ id: territoryId, name: 'West' }], canAssign: false, canSeePowerMap: false, actorEmail: 'sales@example.test', today: '2026-10-14',
   classPolicy: { aMinPaise: '20000000', bMinPaise: '7500000' },
 };
 type Command = Record<string, unknown>;
-async function mockAccounts(page: Page, options: { canAssign?: boolean; emptyMine?: boolean; status?: number; networkOnce?: boolean; paginate?: boolean; classes?: boolean; appContacts?: AccountRow['appContacts']; duplicatePhone?: boolean } = {}) {
+async function mockAccounts(page: Page, options: { canAssign?: boolean; canSeePowerMap?: boolean; powerAlerts?: AccountRow['powerAlerts']; lastVisit?: AccountRow['lastVisit']; emptyMine?: boolean; status?: number; networkOnce?: boolean; paginate?: boolean; classes?: boolean; appContacts?: AccountRow['appContacts']; duplicatePhone?: boolean } = {}) {
   const gets: string[] = [];
   const posts: Command[] = [];
   const territories = [...fixture.territories];
@@ -28,7 +28,7 @@ async function mockAccounts(page: Page, options: { canAssign?: boolean; emptyMin
       const query = new URL(route.request().url()).searchParams;
       const classRows: AccountRow[] = (['A', 'B', 'below_b', 'not_available', 'not_linked'] as const).map((state, index) => ({ ...base, id: `class-${index}`, name: `Class ${state} Lab`, class: { ...base.class, state, monthlyPaise: index < 3 ? ['21000000', '7500000', '5000000'][index] : null } }));
       const accounts = options.classes ? classRows.filter(row => !query.get('class') || row.class.state === query.get('class')) : options.emptyMine && query.get('scope') === 'mine' ? [] : options.paginate ? [fixture.accounts[Number(query.get('page')) - 1]] : fixture.accounts;
-      await route.fulfill({ json: { ...fixture, accounts: accounts.map(row => ({ ...row, appContacts: row.id === customerId ? options.appContacts ?? [] : [] })), territories, canAssign: options.canAssign ?? false, page: { page: Number(query.get('page')), pageSize: options.paginate ? 1 : 50, total: options.paginate ? 3 : accounts.length } } });
+      await route.fulfill({ json: { ...fixture, accounts: accounts.map(row => ({ ...row, appContacts: row.id === customerId ? options.appContacts ?? [] : [], ...(row.id === customerId && options.powerAlerts ? { powerAlerts: options.powerAlerts } : {}), ...(row.id === customerId && options.lastVisit ? { lastVisit: options.lastVisit } : {}) })), territories, canAssign: options.canAssign ?? false, canSeePowerMap: options.canSeePowerMap ?? false, page: { page: Number(query.get('page')), pageSize: options.paginate ? 1 : 50, total: options.paginate ? 3 : accounts.length } } });
     }
   });
   await page.goto('/?view=accounts');
@@ -38,13 +38,121 @@ async function mockAccounts(page: Page, options: { canAssign?: boolean; emptyMin
 }
 const firstCard = (page: Page) => page.getByRole('list', { name: 'Accounts' }).getByRole('listitem').first();
 const appContact: AccountRow['appContacts'][number] = { id: '66666666-6666-4666-8666-666666666666', name: 'App buyer', businessRole: 'Purchase', phone: '+91 98765 43210', email: 'buyer@example.test', addedBy: 'sales@example.test', version: 3, canEdit: true };
+const powerContacts: AccountRow['appContacts'] = [
+  { ...appContact, name: 'Asha', canEdit: false, lastMetOn: '2026-10-03', assessment: { decisionRole: 'decision_maker', stance: 'sceptical', influence: 'high', reason: 'Chose competitor', recordedAt: '2026-10-14', actor: 'manager@example.test' } },
+  { ...appContact, id: '77777777-7777-4777-8777-777777777777', name: 'Ravi' },
+];
+
+test('management sees Power Map and saves a preset role assessment with a reload', async ({ page }) => {
+  const { gets, posts } = await mockAccounts(page, { canSeePowerMap: true, powerAlerts: ['no_decision_maker', 'decision_maker_not_met', 'influential_blocker'], appContacts: powerContacts });
+  const card = firstCard(page);
+  for (const text of ['No decision maker known', 'Decision maker not met in 60 days', 'Influential blocker']) await expect(card.getByText(text, { exact: true })).toBeVisible();
+  await expect(card.getByText('Decision maker · Sceptical · High influence · Last met 3 Oct', { exact: true })).toBeVisible();
+  await expect(card.getByText('Role not set · Not met yet', { exact: true })).toBeVisible();
+  await card.getByRole('button', { name: 'Set role for Asha', exact: true }).click();
+  const form = card.getByRole('form', { name: 'Set role for Asha at Care Lab', exact: false });
+  await expect(form.getByLabel('Decision role for Asha', { exact: false })).toHaveValue('decision_maker');
+  await expect(form.getByLabel('Stance for Asha', { exact: false })).toHaveValue('sceptical');
+  await expect(form.getByLabel('Influence for Asha', { exact: false })).toHaveValue('high');
+  await expect(form.getByLabel('Reason for Asha', { exact: false })).toHaveValue('Chose competitor');
+  await expect(form.getByLabel('Reason for Asha', { exact: false })).toHaveAttribute('maxlength', '300');
+  await expect(form.locator('label select')).toHaveCount(0);
+  await form.getByLabel('Decision role for Asha', { exact: false }).selectOption('influencer');
+  await form.getByLabel('Stance for Asha', { exact: false }).selectOption('supporter');
+  await form.getByLabel('Influence for Asha', { exact: false }).selectOption('medium');
+  await form.getByLabel('Reason for Asha', { exact: false }).fill('Recommended our offer');
+  const before = gets.length;
+  await form.getByRole('button', { name: 'Save role for Asha', exact: false }).click();
+  await expect(page.getByRole('status')).toHaveText('Saved.');
+  expect(posts[0]).toEqual({ action: 'set_assessment', contactId: appContact.id, decisionRole: 'influencer', stance: 'supporter', influence: 'medium', reason: 'Recommended our offer', idempotencyKey: expect.any(String) });
+  await expect.poll(() => gets.length).toBeGreaterThan(before);
+  await expect(form).toHaveCount(0);
+});
+
+test('sales response without Power Map contact keys hides all Power Map UI', async ({ page }) => {
+  await mockAccounts(page, { appContacts: [appContact] });
+  await expect(page.getByLabel('Power Map', { exact: true })).toHaveCount(0);
+  await expect(page.getByRole('button', { name: /^Set role for/ })).toHaveCount(0);
+  for (const text of ['No decision maker known', 'Decision maker not met in 60 days', 'Influential blocker', 'Role not set · Not met yet']) await expect(page.getByText(text, { exact: true })).toHaveCount(0);
+  await expect(firstCard(page).getByText(/Last met|influence/)).toHaveCount(0);
+});
+
+test('visit contacts are available to sales and send two met ids with last visit names', async ({ page }) => {
+  const appContacts = powerContacts.map(({ assessment, lastMetOn, ...contact }) => contact);
+  const { posts } = await mockAccounts(page, { appContacts, lastVisit: { visitedOn: '2026-10-03', outcome: 'met', visitedBy: 'sales@example.test', note: null, metContacts: appContacts.map(({ id, name }) => ({ id, name })) } });
+  await expect(firstCard(page).getByText(/Last visit 3 Oct · Met · with Asha, Ravi/)).toBeVisible();
+  await firstCard(page).getByRole('button', { name: 'Log visit for Care Lab', exact: false }).click();
+  const form = page.getByRole('form', { name: 'Log visit' });
+  await expect(form.getByRole('group', { name: 'Who did you meet?', exact: true })).toBeVisible();
+  await form.getByRole('checkbox', { name: 'Met Asha for Care Lab', exact: false }).check();
+  await form.getByRole('checkbox', { name: 'Met Ravi for Care Lab', exact: false }).check();
+  await form.getByRole('button', { name: 'Save', exact: true }).click();
+  await expect(page.getByRole('status')).toHaveText('Saved.');
+  expect(posts[0]).toMatchObject({ action: 'log_visit', metContactIds: appContacts.map(contact => contact.id) });
+});
+
+test('visit hides the meeting fieldset without contacts', async ({ page }) => {
+  await mockAccounts(page);
+  await firstCard(page).getByRole('button', { name: 'Log visit for Care Lab', exact: false }).click();
+  await expect(page.getByRole('group', { name: 'Who did you meet?', exact: true })).toHaveCount(0);
+});
+
+test('Power Map filter sends the alert query parameter', async ({ page }) => {
+  const { gets } = await mockAccounts(page, { canSeePowerMap: true });
+  await page.getByLabel('Power Map', { exact: true }).selectOption('no_decision_maker');
+  await expect.poll(() => new URL(gets.at(-1)!).searchParams.get('alert')).toBe('no_decision_maker');
+});
+
+for (const failure of [502, 408, 429, 422, 'network'] as const) {
+  test(`assessment retry handles ${failure} with the correct idempotency key`, async ({ page }) => {
+    await mockAccounts(page, { canSeePowerMap: true, appContacts: powerContacts });
+    const attempts: Command[] = [];
+    await page.route('**/api/accounts', async route => {
+      attempts.push(route.request().postDataJSON() as Command);
+      if (attempts.length === 1 && failure === 'network') { await route.abort('failed'); return; }
+      await route.fulfill(attempts.length === 1 ? { status: failure as number, json: { error: 'Try again' } } : { json: { ok: true } });
+    });
+    await firstCard(page).getByRole('button', { name: 'Set role for Asha', exact: true }).click();
+    const save = firstCard(page).getByRole('button', { name: 'Save role for Asha', exact: false });
+    await save.click();
+    await expect(firstCard(page).getByRole('alert')).toHaveText(failure === 'network' ? 'Not saved. Check the connection and try again.' : 'Try again');
+    await save.click();
+    await expect(page.getByRole('status')).toHaveText('Saved.');
+    expect(attempts).toHaveLength(2);
+    if (failure === 422) expect(attempts[1].idempotencyKey).not.toEqual(attempts[0].idempotencyKey);
+    else expect(attempts[1]).toEqual(attempts[0]);
+  });
+}
+
+test('assessment conflict closes the form and refreshes; Cancel restores focus', async ({ page }) => {
+  const { gets } = await mockAccounts(page, { canSeePowerMap: true, appContacts: powerContacts, status: 409 });
+  const opener = firstCard(page).getByRole('button', { name: 'Set role for Asha', exact: true });
+  await opener.click();
+  await firstCard(page).getByRole('button', { name: 'Cancel role for Asha', exact: false }).click();
+  await expect(opener).toBeFocused();
+  await opener.click();
+  const before = gets.length;
+  await firstCard(page).getByRole('button', { name: 'Save role for Asha', exact: false }).click();
+  await expect(page.getByRole('status')).toHaveText('Someone else changed this account. The list has been refreshed.');
+  await expect.poll(() => gets.length).toBeGreaterThan(before);
+  await expect(firstCard(page).getByRole('form')).toHaveCount(0);
+});
+
+test('phone layout has no horizontal overflow with Set role open', async ({ page }, testInfo) => {
+  test.skip(testInfo.project.name !== 'pricing-mobile', 'Phone layout');
+  await mockAccounts(page, { canSeePowerMap: true, appContacts: powerContacts });
+  await page.setViewportSize({ width: 375, height: 812 });
+  await firstCard(page).getByRole('button', { name: 'Set role for Asha', exact: true }).click();
+  await expect(firstCard(page).getByLabel('Decision role for Asha', { exact: false })).toBeVisible();
+  expect(await page.evaluate(() => document.documentElement.scrollWidth <= document.documentElement.clientWidth)).toBe(true);
+});
 
 test('adds an app contact with a flat command and duplicate-phone notice', async ({ page }) => {
   const { gets, posts } = await mockAccounts(page, { duplicatePhone: true });
   const addContact = firstCard(page).getByRole('button', { name: 'Add contact for Care Lab', exact: true });
   const actions = addContact.locator('..');
   await expect(actions.getByRole('button')).toHaveText(['Log visit', 'Location', 'Add contact']);
-  expect(await addContact.getAttribute('class')).toEqual(await actions.getByRole('button', { name: 'Location', exact: true }).getAttribute('class'));
+  expect(await addContact.getAttribute('class')).toEqual(await actions.getByRole('button', { name: 'Location for Care Lab', exact: false }).getAttribute('class'));
   await addContact.click();
   const form = page.getByRole('form', { name: 'Add contact for Care Lab', exact: false });
   await expect(form.getByLabel('Contact name for Care Lab', { exact: false })).toBeFocused();
@@ -227,7 +335,7 @@ test('Mine empty switches to All', async ({ page }) => {
 });
 test('log visit quick date posts the flat body and reloads', async ({ page }) => {
   const { gets, posts } = await mockAccounts(page);
-  await firstCard(page).getByRole('button', { name: 'Log visit', exact: true }).click();
+  await firstCard(page).getByRole('button', { name: 'Log visit for Care Lab', exact: false }).click();
   const form = page.getByRole('form', { name: 'Log visit' });
   await expect(form.getByLabel('Date', { exact: true })).toBeFocused();
   await expect(form.getByLabel('Date', { exact: true })).toHaveAttribute('min', '2026-09-14');
@@ -245,7 +353,7 @@ test('log visit quick date posts the flat body and reloads', async ({ page }) =>
 });
 test('location parses a map link and blocks invalid input', async ({ page }) => {
   const { posts } = await mockAccounts(page);
-  await firstCard(page).getByRole('button', { name: 'Location', exact: true }).click();
+  await firstCard(page).getByRole('button', { name: 'Location for Care Lab', exact: false }).click();
   const form = page.getByRole('form', { name: 'Account location' });
   await form.getByLabel('Google Maps link or lat, long').fill('not a location');
   await form.getByRole('button', { name: 'Save', exact: true }).click();
@@ -259,7 +367,7 @@ test('location parses a map link and blocks invalid input', async ({ page }) => 
 });
 test('location warns outside the market area without blocking Save and clears inside', async ({ page }) => {
   const { posts } = await mockAccounts(page);
-  await firstCard(page).getByRole('button', { name: 'Location', exact: true }).click();
+  await firstCard(page).getByRole('button', { name: 'Location for Care Lab', exact: false }).click();
   const form = page.getByRole('form', { name: 'Account location' });
   const input = form.getByLabel('Google Maps link or lat, long');
   const warning = form.getByText('This pin is outside the five-district market area (Kalaburagi, Bidar, Raichur, Yadgir, Bijapur). Check the link before saving.', { exact: true });
@@ -281,7 +389,7 @@ test('location warns outside the market area without blocking Save and clears in
 });
 test('assignment controls respect canAssign', async ({ page }) => {
   await mockAccounts(page);
-  await expect(page.getByRole('button', { name: 'Owner', exact: true })).toHaveCount(0);
+  await expect(page.getByRole('button', { name: 'Owner for Care Lab', exact: false })).toHaveCount(0);
   await page.getByRole('button', { name: 'All', exact: true }).click();
   await expect(page.getByLabel('Owner', { exact: true })).toHaveCount(0);
   await expect(page.getByLabel('Territory', { exact: true })).toHaveCount(0);
@@ -294,7 +402,7 @@ test('All filters and owner form use assignment choices and version', async ({ p
   await page.getByLabel('Territory', { exact: true }).selectOption(territoryId);
   await expect.poll(() => new URL(gets.at(-1)!).searchParams.get('territory')).toBe(territoryId);
   expect(new URL(gets.at(-1)!).searchParams.get('owner')).toBe('other@example.test');
-  await firstCard(page).getByRole('button', { name: 'Owner', exact: true }).click();
+  await firstCard(page).getByRole('button', { name: 'Owner for Care Lab', exact: false }).click();
   const form = page.getByRole('form', { name: 'Account owner' });
   await form.getByLabel('Owner', { exact: true }).selectOption('other@example.test');
   await form.getByRole('button', { name: 'Save', exact: true }).click();
@@ -303,7 +411,7 @@ test('All filters and owner form use assignment choices and version', async ({ p
 });
 test('409 refreshes the list with a clear notice', async ({ page }) => {
   const { gets } = await mockAccounts(page, { status: 409 });
-  await firstCard(page).getByRole('button', { name: 'Log visit', exact: true }).click();
+  await firstCard(page).getByRole('button', { name: 'Log visit for Care Lab', exact: false }).click();
   const before = gets.length;
   await page.getByRole('form', { name: 'Log visit' }).getByRole('button', { name: 'Save', exact: true }).click();
   await expect(page.getByRole('status')).toHaveText('Someone else changed this account. The list has been refreshed.');
@@ -311,7 +419,7 @@ test('409 refreshes the list with a clear notice', async ({ page }) => {
 });
 test('network retry keeps the same idempotency key and Cancel restores focus', async ({ page }) => {
   const { posts } = await mockAccounts(page, { networkOnce: true });
-  const opener = firstCard(page).getByRole('button', { name: 'Log visit', exact: true });
+  const opener = firstCard(page).getByRole('button', { name: 'Log visit for Care Lab', exact: false });
   await opener.click();
   const form = page.getByRole('form', { name: 'Log visit' });
   await form.getByRole('button', { name: 'Save', exact: true }).click();
@@ -334,7 +442,7 @@ test('gateway timeout retry preserves the command key when the first write may h
       await route.fulfill({ status: 502, json: { error: 'Accounts are temporarily unavailable' } });
     } else await route.fulfill({ json: { ok: true } });
   });
-  await firstCard(page).getByRole('button', { name: 'Log visit', exact: true }).click();
+  await firstCard(page).getByRole('button', { name: 'Log visit for Care Lab', exact: false }).click();
   const form = page.getByRole('form', { name: 'Log visit' });
   await form.getByRole('button', { name: 'Save', exact: true }).click();
   await expect(form.getByRole('alert')).toHaveText('Accounts are temporarily unavailable');
@@ -346,7 +454,7 @@ test('gateway timeout retry preserves the command key when the first write may h
 });
 test('new territory reloads choices and selects the new territory', async ({ page }) => {
   const { posts } = await mockAccounts(page, { canAssign: true });
-  await firstCard(page).getByRole('button', { name: 'Owner', exact: true }).click();
+  await firstCard(page).getByRole('button', { name: 'Owner for Care Lab', exact: false }).click();
   const form = page.getByRole('form', { name: 'Account owner' });
   await form.getByLabel('New territory', { exact: true }).fill('North');
   await form.getByRole('button', { name: 'New territory', exact: true }).click();
@@ -375,7 +483,7 @@ test('phone layout has no horizontal overflow including open forms', async ({ pa
   expect(await page.evaluate(() => document.documentElement.scrollWidth <= document.documentElement.clientWidth)).toBe(true);
   await firstCard(page).getByRole('button', { name: 'Keep App buyer for Care Lab', exact: false }).click();
   for (const action of ['Log visit', 'Location', 'Owner']) {
-    await firstCard(page).getByRole('button', { name: action, exact: true }).click();
+    await firstCard(page).getByRole('button', { name: `${action} for Care Lab`, exact: false }).click();
     expect(await page.evaluate(() => document.documentElement.scrollWidth <= document.documentElement.clientWidth)).toBe(true);
   }
   await firstCard(page).getByRole('button', { name: 'Add contact for Care Lab', exact: false }).click();
