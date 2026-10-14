@@ -2,11 +2,19 @@ import type { OrderCommand } from './order-types';
 import type { EconomicAction } from './instrument-economics-types';
 
 export type GatewayAction =
+  | 'record_style_observation'
+  | 'set_style_override'
+  | 'set_assessment'
+  | 'erase_contact'
+  | 'add_contact'
+  | 'update_contact'
+  | 'remove_contact'
   | 'get_accounts'
   | 'create_territory'
   | 'assign_account'
   | 'set_location'
   | 'log_visit'
+  | 'set_class_policy'
   | 'get_instrument_economics'
   | 'recover_economic_command'
   | EconomicAction

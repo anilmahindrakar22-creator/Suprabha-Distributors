@@ -898,6 +898,38 @@
       "remoteSha256": null,
       "status": "not_deployed",
       "review": "14 October 2026 primary Accounts W1 review: canonical customer FK; Management/Admin assignment and territory control; active eligible owner/territory locks; sales/operations location and visit provenance; global visibility with Mine only a filter (D16/D17 defaults); parent-row serialization, expected-version conflict and immutable histories; service-only gateway and private no-store API. Fresh combined SQL replay includes two-session first-write conflict and stored replay. Production remains pending; acceptance separately recorded."
+    },
+    {
+      "localFile": "20261014120000_account_classes.sql",
+      "localSha256": "386f7bcd9c001d7b54b928d62d020bcc806b57d3b391b8b152fb41568d31740e",
+      "remoteVersion": null,
+      "remoteSha256": null,
+      "status": "not_deployed",
+      "review": "14 October 2026 primary Accounts series review: service-only gateway/private RLS tables, role-sensitive fields omitted server-side, contact parent/row lock order and version conflicts, immutable audit and stored command receipts. False complete-sales seam prevents class activation. Style ratings require the actual visitor and active same-account met contact; erasure removes contact/event/assessment/style free-text personal values while retaining immutable metadata. Fresh combined disposable deployment-order replay, units/static/phone browsers and exact-head CI required. Pending production; acceptance separately recorded."
+    },
+    {
+      "localFile": "20261014160000_account_contacts.sql",
+      "localSha256": "46c7f7ef43721ab405455f1230c79ddc7b6494425ff89bb52c1cb013f8df3c30",
+      "remoteVersion": null,
+      "remoteSha256": null,
+      "status": "not_deployed",
+      "review": "14 October 2026 primary Accounts series review: service-only gateway/private RLS tables, role-sensitive fields omitted server-side, contact parent/row lock order and version conflicts, immutable audit and stored command receipts. False complete-sales seam prevents class activation. Style ratings require the actual visitor and active same-account met contact; erasure removes contact/event/assessment/style free-text personal values while retaining immutable metadata. Fresh combined disposable deployment-order replay, units/static/phone browsers and exact-head CI required. Pending production; acceptance separately recorded."
+    },
+    {
+      "localFile": "20261014180000_power_map.sql",
+      "localSha256": "903e8e513f92aa6f216b2bca34f60e71b72771ab15944246c9bf861e75008034",
+      "remoteVersion": null,
+      "remoteSha256": null,
+      "status": "not_deployed",
+      "review": "14 October 2026 primary Accounts series review: service-only gateway/private RLS tables, role-sensitive fields omitted server-side, contact parent/row lock order and version conflicts, immutable audit and stored command receipts. False complete-sales seam prevents class activation. Style ratings require the actual visitor and active same-account met contact; erasure removes contact/event/assessment/style free-text personal values while retaining immutable metadata. Fresh combined disposable deployment-order replay, units/static/phone browsers and exact-head CI required. Pending production; acceptance separately recorded."
+    },
+    {
+      "localFile": "20261014190000_social_styles.sql",
+      "localSha256": "e3627b1902ff944c047afa19a0d72c285ca53bb03ae52d0a99937477871ad41c",
+      "remoteVersion": null,
+      "remoteSha256": null,
+      "status": "not_deployed",
+      "review": "14 October 2026 primary Accounts series review: service-only gateway/private RLS tables, role-sensitive fields omitted server-side, contact parent/row lock order and version conflicts, immutable audit and stored command receipts. False complete-sales seam prevents class activation. Style ratings require the actual visitor and active same-account met contact; erasure removes contact/event/assessment/style free-text personal values while retaining immutable metadata. Fresh combined disposable deployment-order replay, units/static/phone browsers and exact-head CI required. Pending production; acceptance separately recorded."
     }
   ],
   "liveCheck": {
