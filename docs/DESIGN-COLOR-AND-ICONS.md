@@ -23,6 +23,8 @@ People read colour before words, so each colour carries **one** meaning across t
 5. **Soft tints for states, solid only for the selected or primary.** A chip uses `-soft` background + `-line` border + the strong text colour. A selected choice is solid with white text and a check.
 6. Text colour on tints must pass contrast: always use the strong token (`sf-success`, `sf-warning`, …) on its `-soft` background.
 
+Order stages are a sequence with their own hues (Confirm blue, Pack purple, Bill magenta, Dispatch teal, Delivered green); they are categories, not status. Bill uses `sf-stage-bill` and `sf-stage-bill-soft`.
+
 ## 2. Icons: one concept, one icon
 - **Library:** `lucide-react` 1.31 (already installed). Use the canonical names in the registry; old aliases such as `AlertTriangle` and `CheckCircle2` still work in existing screens. Size 16 in chips and meta lines, 18 in buttons, 20 in rating choices. Stroke 2. Always `aria-hidden`, because the text carries the meaning.
 - **An icon never replaces a word** on actions. Icon-only is allowed only for universally known controls (close ×, phone, email) and then needs an aria-label.
@@ -47,6 +49,13 @@ People read colour before words, so each colour carries **one** meaning across t
 | Saved / done | `CircleCheck` | Warning | `TriangleAlert` |
 | Error | `CircleAlert` | Info / hint | `Info` |
 | Back | `ArrowLeft` | Skip | `SkipForward` |
+| Urgent priority | `Flame` | High priority | `ArrowUp` |
+| Delivery due/overdue | `Truck` | Follow-up | `PhoneCall` |
+| Billing mismatch | `ReceiptText` | Pricing verified | `ShieldCheck` |
+| Approval required | `ShieldAlert` | Short by N / shortage | `PackageX` |
+| Assigned to | `UserCheck` | Possible repeat order | `Copy` |
+| Order changed since editing | `RefreshCw` | Open (request) | `CircleDot` |
+| Pricing review required | `ShieldQuestionMark` | | |
 
 **Social Style rating icons** (content icons, one for Slightly, two for Clearly) are listed in `components/accounts-workspace.tsx` next to the behaviour texts.
 

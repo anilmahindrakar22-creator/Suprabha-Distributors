@@ -1,6 +1,7 @@
 'use client';
 
 import type { KeyboardEvent } from 'react';
+import { ArrowUp, Flame, Hourglass, PackageCheck, PackageX, TriangleAlert, Truck, Wrench, type LucideIcon } from 'lucide-react';
 import type { OrderSummary } from '@/lib/order-types';
 import { orderStage } from '@/lib/order-types';
 import { orderListFlag, orderProgressIndex, orderProgressSteps, orderStageKey, type StageKey } from '@/lib/order-list-groups';
@@ -9,7 +10,7 @@ import { orderListFlag, orderProgressIndex, orderProgressSteps, orderStageKey, t
 export const stageStyles: Record<StageKey, { bar: string; chip: string; label: string }> = {
   confirm: { bar: 'bg-sf-stage-confirm', chip: 'bg-sf-stage-confirm-soft text-sf-stage-confirm', label: 'Confirm' },
   pack: { bar: 'bg-sf-stage-pack', chip: 'bg-sf-stage-pack-soft text-sf-stage-pack', label: 'Pack' },
-  bill: { bar: 'bg-sf-warning', chip: 'bg-sf-warning-soft text-sf-warning', label: 'Bill' },
+  bill: { bar: 'bg-sf-stage-bill', chip: 'bg-sf-stage-bill-soft text-sf-stage-bill', label: 'Bill' },
   dispatch: { bar: 'bg-sf-accent', chip: 'bg-sf-accent-soft text-sf-accent', label: 'Dispatch' },
   done: { bar: 'bg-sf-success', chip: 'bg-sf-success-soft text-sf-success', label: 'Delivered' },
   cancelled: { bar: 'bg-sf-faint', chip: 'bg-sf-soft-2 text-sf-muted', label: 'Cancelled' },
@@ -44,8 +45,14 @@ export function orderStageStyle(status: string) {
 export function OrderFlagBadge({ order }: { order: OrderSummary }) {
   const flag = orderListFlag(order);
   if (!flag) return null;
-  return <span className={`shrink-0 rounded-full px-2 py-0.5 text-[10px] font-extrabold ${flag.tone === 'alert' ? 'bg-sf-danger-soft text-sf-danger' : 'bg-sf-warning-soft text-sf-warning'}`}>{flag.label}</span>;
+  const Icon = flagIcons[flag.label] ?? TriangleAlert;
+  return <span className={`inline-flex items-center gap-1 shrink-0 rounded-full px-2 py-0.5 text-[10px] font-extrabold ${flag.tone === 'alert' ? 'bg-sf-danger-soft text-sf-danger' : 'bg-sf-warning-soft text-sf-warning'}`}><Icon aria-hidden="true" className="shrink-0" size={12} />{flag.label}</span>;
 }
+/** One icon per flag, from the colour and icon registry (docs/DESIGN-COLOR-AND-ICONS.md). */
+const flagIcons: Record<string, LucideIcon> = {
+  Urgent: Flame, Overdue: Truck, 'Delivery issue': TriangleAlert, Stalled: Hourglass, 'Installation due': Wrench,
+  'Back-order': PackageX, 'Dispatch details': Truck, 'Confirm delivery': PackageCheck, 'Check order': TriangleAlert, 'High priority': ArrowUp,
+};
 
 function compactAge(createdAt: string, now = Date.now()) {
   const minutes = Math.max(0, Math.floor((now - new Date(createdAt).getTime()) / 60_000));
