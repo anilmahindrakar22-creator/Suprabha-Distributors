@@ -354,7 +354,7 @@ test('administrator can erase personal data with a checked reason and reloads th
   expect(posts).toHaveLength(0);
   await form.getByLabel('Erasure reason for App buyer at Care Lab', { exact: false }).fill('Erasure request by phone');
   await form.getByRole('button', { name: 'Erase permanently App buyer for Care Lab', exact: false }).click();
-  await expect(page.getByRole('status')).toHaveText('Saved.');
+  await expect(page.getByRole('status')).toHaveText('Erased contact.');
   expect(posts[0]).toEqual({ action: 'erase_contact', contactId: appContact.id, reason: 'Erasure request by phone', idempotencyKey: expect.any(String) });
   await expect.poll(() => gets.length).toBeGreaterThan(before);
 });
