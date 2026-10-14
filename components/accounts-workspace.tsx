@@ -150,7 +150,19 @@ export function alertLabel(alert: PowerAlert) {
 }
 
 export function accountDate(date: string) {
-  return new Date(`${date}T00:00:00Z`).toLocaleDateString('en-IN', { day: 'numeric', month: 'short', timeZone: 'UTC' });
+  return new Date(`${date}T00:00:00Z`).toLocaleDateString('en-IN', { day: 'numeric', month: 'short', timeZone: 'UTC' }).replace('Sept', 'Sep');
+}
+export function whoDecidesLine(row: AccountRow): string | null {
+  const decisionMakers = row.appContacts.filter(contact => contact.assessment?.decisionRole === 'decision_maker').sort((a, b) => a.name.localeCompare(b.name));
+  const blockers = row.appContacts.filter(contact => contact.assessment?.stance === 'blocker' && contact.assessment!.decisionRole !== 'decision_maker').sort((a, b) => a.name.localeCompare(b.name));
+  const shownDecisionMakers = decisionMakers.slice(0, 2).map(contact => [contact.name,
+    contact.assessment && contact.assessment.stance !== 'unknown' ? stanceLabels[contact.assessment.stance] : null,
+    contact.style?.override ? styleLabels[contact.style.override.style] : contact.style?.computedStyle ? styleLabels[contact.style.computedStyle] : null,
+    contact.lastMetOn ? `met ${accountDate(contact.lastMetOn)}` : 'not met'].filter(Boolean).join(' · '));
+  if (decisionMakers.length > 2) shownDecisionMakers.push(`+${decisionMakers.length - 2} more`);
+  const parts = shownDecisionMakers.length ? [`Decides: ${shownDecisionMakers.join('; ')}`] : [];
+  if (blockers.length) parts.push(`Blocking: ${[...blockers.slice(0, 2).map(contact => contact.name), ...(blockers.length > 2 ? [`+${blockers.length - 2} more`] : [])].join(', ')}`);
+  return parts.length ? parts.join(' | ') : null;
 }
 export function addAccountDays(date: string, days: number) {
   const value = new Date(`${date}T00:00:00Z`);
@@ -265,7 +277,7 @@ function AppContacts({ row, today, busy = false, onSaved, onConflict, onBusy, re
     <div id={contactsId} className="space-y-2">
     {!contacts.length ? <p className="text-xs text-sf-muted">No contacts yet</p> : null}
     {(contactsExpanded ? contacts : contacts.slice(0, 2)).map(contact => <div key={contact.id} className="min-w-0">
-      <p className="flex flex-wrap items-center gap-x-2 break-words text-sm text-sf-body"><span>{contact.name}{contact.businessRole ? ` · ${contact.businessRole}` : ''}</span>{contact.phone ? <a className="inline-flex min-h-11 items-center text-sf-brand" href={`tel:${contact.phone.replace(/\D/g, '')}`} aria-label={`Call ${contact.name} for ${accountLabel}`}>{contact.phone}</a> : null}
+      <p className="flex flex-wrap items-center gap-x-2 break-words text-sm text-sf-body"><span className="min-w-0 [overflow-wrap:anywhere]">{contact.name}{contact.businessRole ? ` · ${contact.businessRole}` : ''}</span>{contact.phone ? <a className="inline-flex min-h-11 items-center text-sf-brand" href={`tel:${contact.phone.replace(/\D/g, '')}`} aria-label={`Call ${contact.name} for ${accountLabel}`}>{contact.phone}</a> : null}
         {contact.email ? <a className="inline-flex min-h-11 max-w-full items-center break-all text-sf-brand" href={`mailto:${contact.email}`} aria-label={`Email ${contact.name} for ${accountLabel}`}>{contact.email}</a> : null}
       </p>
       {canSeePowerMap ? <p className="break-words text-xs text-sf-muted">{assessmentSummary(contact)} · {contact.lastMetOn ? `Last met ${accountDate(contact.lastMetOn)}` : 'Not met yet'}</p> : null}
@@ -322,6 +334,7 @@ export function AccountDetails({ row, mode, today, renderActions, canSeePowerMap
     </div>
     <p className="mt-2 break-words text-xs text-sf-muted">{accountMetaLine(row, mode)}</p>
     {canSeePowerMap && row.powerAlerts?.length ? <div className="mt-2 flex flex-wrap gap-2">{row.powerAlerts.map(alert => <span key={alert} className="max-w-full rounded-full bg-sf-warning-soft px-2 py-1 text-xs font-semibold text-sf-warning">{alertLabel(alert)}</span>)}</div> : null}
+    {canSeePowerMap && whoDecidesLine(row) ? <p className="mt-2 break-words text-sm text-sf-body">{whoDecidesLine(row)}</p> : null}
     <p className="mt-2 flex flex-wrap items-center gap-2 text-sm text-sf-body">{row.location?.precision === 'pin' ? <><span>📍 Pin set{!isInsideMarketArea(Number(row.location.latitude), Number(row.location.longitude)) ? <span className="text-sf-muted"> · outside market area</span> : null}</span><a className="inline-flex min-h-11 items-center font-semibold text-sf-brand" href={`https://www.google.com/maps?q=${row.location.latitude},${row.location.longitude}`} target="_blank" rel="noopener" aria-label={`Open map for ${row.name} (${row.id})`}>Open map</a></> : row.location?.precision === 'town' ? `Town: ${row.location.town}` : 'No location'}</p>
     <div className="mt-2">
       <AppContacts row={row} today={today} canSeePowerMap={canSeePowerMap} canEraseContacts={canEraseContacts} renderActions={renderActions} {...contactCallbacks} />

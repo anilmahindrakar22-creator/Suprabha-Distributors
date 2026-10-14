@@ -183,6 +183,22 @@ test('management sees Power Map and saves a preset role assessment with a reload
   await expect(form).toHaveCount(0);
 });
 
+test('management sees Who decides while sales does not, and the line fits on mobile', async ({ page }, testInfo) => {
+  const decisionMaker = { ...appContact, name: 'Asha', assessment: { decisionRole: 'decision_maker' as const, stance: 'supporter' as const, influence: 'high' as const, reason: null, recordedAt: '2026-10-14', actor: 'manager@example.test' }, lastMetOn: '2026-09-12' };
+  await mockAccounts(page, { canSeePowerMap: true, appContacts: [decisionMaker] });
+  const line = 'Decides: Asha · Supporter · met 12 Sep';
+  await expect(firstCard(page).getByText(line, { exact: true })).toBeVisible();
+  await mockAccounts(page, { appContacts: [decisionMaker] });
+  await expect(firstCard(page).getByText(/^Decides:/)).toHaveCount(0);
+
+  test.skip(testInfo.project.name !== 'pricing-mobile', 'Phone layout');
+  const longName = 'L'.repeat(60);
+  await mockAccounts(page, { canSeePowerMap: true, appContacts: [{ ...decisionMaker, name: longName }] });
+  await page.setViewportSize({ width: 375, height: 812 });
+  await expect(firstCard(page).getByText(new RegExp(`^Decides: ${longName}`))).toBeVisible();
+  expect(await page.evaluate(() => document.documentElement.scrollWidth <= document.documentElement.clientWidth)).toBe(true);
+});
+
 test('sales response without Power Map contact keys hides all Power Map UI', async ({ page }) => {
   await mockAccounts(page, { appContacts: [appContact] });
   await expect(page.getByLabel('Power Map', { exact: true })).toHaveCount(0);

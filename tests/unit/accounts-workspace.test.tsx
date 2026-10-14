@@ -2,7 +2,7 @@ import React from 'react';
 import { renderToStaticMarkup } from 'react-dom/server';
 import { describe, expect, it } from 'vitest';
 import type { AccountRow, ContactStyle } from '@/lib/account-types';
-import { AccountDetails, accountClassesNote, accountDate, accountMetaLine, addAccountDays, alertLabel, assessmentSummary, classChip, visitChip, styleLine, styleTip } from '@/components/accounts-workspace';
+import { AccountDetails, accountClassesNote, accountDate, accountMetaLine, addAccountDays, alertLabel, assessmentSummary, classChip, visitChip, styleLine, styleTip, whoDecidesLine } from '@/components/accounts-workspace';
 
 const row: AccountRow = {
   id: '11111111-1111-4111-8111-111111111111', name: 'Care Lab', city: 'Pune',
@@ -81,6 +81,26 @@ describe('Accounts pure presentation', () => {
     expect(hidden).not.toContain('Last met');
     expect(hidden).not.toContain('Role not set');
     for (const alert of powerRow.powerAlerts!) expect(hidden).not.toContain(alertLabel(alert));
+  });
+  it('summarises decision makers and blockers for Power Map', () => {
+    const makeContact = (name: string, changes: Partial<AccountRow['appContacts'][number]> = {}): AccountRow['appContacts'][number] => ({ ...contact, id: name, name, ...changes });
+    const decisionMaker = makeContact('Dr Rao', { assessment: { ...assessment, stance: 'supporter' }, lastMetOn: '2026-09-12', style });
+    expect(whoDecidesLine({ ...row, appContacts: [decisionMaker] })).toBe('Decides: Dr Rao · Supporter · Analytical · met 12 Sep');
+    const blocker = makeContact('Mr Iyer', { assessment: { ...assessment, decisionRole: 'influencer', stance: 'blocker' } });
+    expect(whoDecidesLine({ ...row, appContacts: [decisionMaker, blocker] })).toBe('Decides: Dr Rao · Supporter · Analytical · met 12 Sep | Blocking: Mr Iyer');
+    const unknown = makeContact('Asha', { assessment: { ...assessment, stance: 'unknown' } });
+    expect(whoDecidesLine({ ...row, appContacts: [unknown] })).toBe('Decides: Asha · not met');
+    const overridden = makeContact('Zara', { assessment, style: { ...style, override: { style: 'driving', reason: 'Observed', actor: 'Manager', recordedAt: '2026-10-14' } } });
+    expect(whoDecidesLine({ ...row, appContacts: [overridden] })).toContain('Zara · Sceptical · Driving · not met');
+    const decisionMakers = ['Meena', 'Asha', 'Ravi'].map(name => makeContact(name, { assessment }));
+    expect(whoDecidesLine({ ...row, appContacts: decisionMakers })).toBe('Decides: Asha · Sceptical · not met; Meena · Sceptical · not met; +1 more');
+    const blockers = ['Zed', 'Asha', 'Meena'].map(name => makeContact(name, { assessment: { ...assessment, decisionRole: 'influencer', stance: 'blocker' } }));
+    expect(whoDecidesLine({ ...row, appContacts: blockers })).toBe('Blocking: Asha, Meena, +1 more');
+    expect(whoDecidesLine({ ...row, appContacts: [contact] })).toBeNull();
+  });
+  it('never renders Who decides without Power Map permission', () => {
+    const assessed = { ...contact, assessment };
+    expect(renderToStaticMarkup(<AccountDetails row={{ ...row, appContacts: [assessed] }} mode="mine" today="2026-10-14" />)).not.toContain('Decides:');
   });
   it('adds at most two met names and the remaining count to last visit metadata', () => {
     const metContacts = ['Asha', 'Ravi', 'Meena', 'Rohan'].map(name => ({ id: name, name }));
