@@ -70,27 +70,84 @@ async function fillRating(page: Page, name: string) {
   return form;
 }
 
-test('two met contacts get collapsed prompts and rating sends the returned visit id', async ({ page }) => {
+test('two met contacts open focused ratings in order and send the returned visit id', async ({ page }) => {
   const { posts } = await mockAccounts(page, { appContacts: powerContacts });
   await firstCard(page).getByRole('button', { name: 'Log visit for Care Lab', exact: false }).click();
   const visit = firstCard(page).getByRole('form', { name: 'Log visit' });
   for (const name of ['Asha', 'Ravi']) await visit.getByRole('checkbox', { name: `Met ${name} for Care Lab`, exact: false }).check();
   await visit.getByRole('button', { name: 'Save', exact: true }).click();
-  for (const name of ['Asha', 'Ravi']) await expect(firstCard(page).getByText(`How did ${name} behave? (optional, 30 seconds)`, { exact: true })).toBeVisible();
-  await expect(firstCard(page).getByRole('form', { name: /^Rate behaviour/ })).toHaveCount(0);
-  await firstCard(page).getByRole('button', { name: /^Rate Asha/ }).click();
+  await expect(page.getByRole('listitem')).toHaveCount(1);
+  await expect(page.getByRole('button', { name: /^Log visit for/ })).toHaveCount(0);
+  await expect(page.getByLabel('Search accounts')).toBeHidden();
+  await expect(page.getByText('After visit · person 1 of 2 people met', { exact: true })).toBeVisible();
   const openedForm = firstCard(page).getByRole('form', { name: /^Rate behaviour for Asha/ });
   await expect(openedForm.getByText('Rate Asha · 1 of 8', { exact: true })).toBeVisible();
+  const headerBox = await openedForm.getByText('Rate Asha · 1 of 8', { exact: true }).boundingBox();
+  expect(headerBox).not.toBeNull();
+  expect(headerBox!.y).toBeGreaterThanOrEqual(0);
+  expect(headerBox!.y + headerBox!.height).toBeLessThanOrEqual(400);
+  expect(await page.evaluate(() => document.documentElement.scrollWidth <= document.documentElement.clientWidth)).toBe(true);
   await expect(openedForm.getByRole('radio')).toHaveCount(4);
   for (const radio of await openedForm.getByRole('radio').all()) await expect(radio).toBeVisible();
   await expect(openedForm.getByText('Pace and control', { exact: true })).toBeVisible();
   const form = await fillRating(page, 'Asha');
   await form.getByRole('button', { name: /^Save rating for Asha/ }).click();
   await expect(form).toHaveCount(0);
+  await expect(page.getByText('Rate Ravi · 1 of 8', { exact: true })).toBeVisible();
+  await expect(page.getByText('After visit · person 2 of 2 people met', { exact: true })).toBeVisible();
   expect(posts[1]).toEqual({ action: 'record_style_observation', contactId: powerContacts[0].id, visitId, a: [1, 2, 3, 4], r: [4, 3, 2, 1], cues: ['validation_data', 'reference_labs'], idempotencyKey: expect.any(String) });
   await firstCard(page).getByRole('button', { name: /^Skip rating Ravi/ }).click();
-  await expect(firstCard(page).getByText(/How did Ravi behave/)).toHaveCount(0);
+  await expect(page.getByRole('listitem')).toHaveCount(3);
+  await expect(page.getByRole('form', { name: /^Rate behaviour/ })).toHaveCount(0);
+  await expect(page.getByRole('status')).toHaveText('Saved.');
 });
+
+test('already rated after a visit advances the queue and finishes with Saved', async ({ page }) => {
+  await mockAccounts(page, { appContacts: powerContacts });
+  await firstCard(page).getByRole('button', { name: /^Log visit for/ }).click();
+  const visit = page.getByRole('form', { name: 'Log visit', exact: true });
+  for (const name of ['Asha', 'Ravi']) await visit.getByRole('checkbox', { name: `Met ${name} for Care Lab`, exact: false }).check();
+  await visit.getByRole('button', { name: 'Save', exact: true }).click();
+  await expect(page.getByText('Rate Asha · 1 of 8', { exact: true })).toBeVisible();
+  await page.route('**/api/accounts', route => route.fulfill({ status: 409, json: { code: 'PT409', error: 'Already rated for this visit' } }));
+  const form = await fillRating(page, 'Asha');
+  await form.getByRole('button', { name: /^Save rating for Asha/ }).click();
+  await expect(page.getByText('Rate Ravi · 1 of 8', { exact: true })).toBeVisible();
+  await expect(page.getByText('After visit · person 2 of 2 people met', { exact: true })).toBeVisible();
+  await page.getByRole('button', { name: /^Skip rating Ravi/ }).click();
+  await expect(page.getByRole('listitem')).toHaveCount(3);
+  await expect(page.getByRole('status')).toHaveText('Saved.');
+});
+
+for (const leave of ['Cancel', 'Back to accounts']) {
+  test(`${leave} ends the whole after-visit queue without a rating POST`, async ({ page }) => {
+    const { posts } = await mockAccounts(page, { appContacts: powerContacts });
+    await firstCard(page).getByRole('button', { name: /^Log visit for/ }).click();
+    const visit = page.getByRole('form', { name: 'Log visit', exact: true });
+    for (const name of ['Ravi', 'Asha']) await visit.getByRole('checkbox', { name: `Met ${name} for Care Lab`, exact: false }).check();
+    await visit.getByRole('button', { name: 'Save', exact: true }).click();
+    await expect(page.getByText('Rate Asha · 1 of 8', { exact: true })).toBeVisible();
+    await page.getByRole('button', { name: leave === 'Cancel' ? /^Cancel rating for Asha/ : /^Back to accounts, stop rating Asha/ }).click();
+    await expect(page.getByRole('listitem')).toHaveCount(3);
+    await expect(page.getByRole('heading', { name: 'Care Lab', exact: true })).toBeFocused();
+    await expect(page.getByRole('form', { name: /^Rate behaviour/ })).toHaveCount(0);
+    expect(posts).toHaveLength(1);
+    expect(posts[0].action).toBe('log_visit');
+  });
+
+  test(`${leave} restores focus after a contact rating`, async ({ page }) => {
+    const { posts } = await mockAccounts(page, { lastVisit: recentVisit, appContacts: powerContacts });
+    const opener = firstCard(page).getByRole('button', { name: /^Rate behaviour for Asha/ });
+    await opener.click();
+    await expect(page.getByRole('listitem')).toHaveCount(1);
+    await expect(page.getByLabel('Search accounts')).toBeHidden();
+    await expect(page.getByRole('button', { name: /^Skip rating/ })).toHaveCount(0);
+    await page.getByRole('button', { name: leave === 'Cancel' ? /^Cancel rating for Asha/ : /^Back to accounts, stop rating Asha/ }).click();
+    await expect(page.getByRole('listitem')).toHaveCount(3);
+    await expect(opener).toBeFocused();
+    expect(posts).toHaveLength(0);
+  });
+}
 
 test('owner sees style and tip without management controls', async ({ page }) => {
   await mockAccounts(page, { canSeeStyle: true, appContacts: [{ ...appContact, style: analytical }] });
@@ -211,6 +268,10 @@ test('phone rating choices have large tap targets and no horizontal overflow', a
   await firstCard(page).getByRole('button', { name: /^Rate behaviour for Asha/ }).click();
   const form = firstCard(page).getByRole('form', { name: /^Rate behaviour for Asha/ });
   await expect(form.getByText('Rate Asha · 1 of 8', { exact: true })).toBeVisible();
+  const headingBox = await form.getByText('Rate Asha · 1 of 8', { exact: true }).boundingBox();
+  expect(headingBox).not.toBeNull();
+  expect(headingBox!.y).toBeGreaterThanOrEqual(0);
+  expect(headingBox!.y + headingBox!.height).toBeLessThanOrEqual(300);
   expect(await page.evaluate(() => document.documentElement.scrollWidth <= document.documentElement.clientWidth)).toBe(true);
   for (const radio of await form.getByRole('radio').all()) {
     const box = await radio.locator('..').boundingBox();

@@ -52,12 +52,13 @@ const behaviours = [
   ['Asks for proof and data', 'Goes by trust and peer labs'],
 ] as const;
 
-function ContactSocial({ contact, canSeeStyle, visitId, attribution, renderActions, closeVersion, onOpen, prompt = false, busy = false, onBusy, onSaved }: {
+function ContactSocial({ contact, canSeeStyle, visitId, attribution, renderActions, closeVersion, onOpen, prompt = false, autoOpen = false, sequence, onRatingOpenChange, onComplete, onCancel, busy = false, onBusy, onSaved }: {
   contact: AppContact; canSeeStyle?: boolean; visitId?: string; attribution?: ReactNode; prompt?: boolean;
   renderActions?: (rateButton: ReactNode, secondary: ReactNode) => ReactNode; closeVersion?: number; onOpen?: () => void;
+  autoOpen?: boolean; sequence?: string; onRatingOpenChange?: (open: boolean) => void; onComplete?: () => void; onCancel?: () => void;
 } & ContactCallbacks) {
   const prefix = useId();
-  const [rating, setRating] = useState(false);
+  const [rating, setRating] = useState(autoOpen);
   const [step, setStep] = useState(0);
   const [done, setDone] = useState(false);
   const [ratings, setRatings] = useState<number[]>(Array(8).fill(0));
@@ -77,14 +78,18 @@ function ContactSocial({ contact, canSeeStyle, visitId, attribution, renderActio
   const previousStep = useRef(0);
   const wasRating = useRef(false);
   const who = `${contact.name} (${contact.id})${prompt ? ` after visit ${visitId}` : ''}`;
-  useEffect(() => { setRating(false); setOverriding(false); setHistory(false); }, [closeVersion]);
+  useEffect(() => { if (!autoOpen) setRating(false); setOverriding(false); setHistory(false); }, [closeVersion, autoOpen]);
+  const ratingCallback = useRef(onRatingOpenChange);
+  ratingCallback.current = onRatingOpenChange;
+  useEffect(() => { if (rating) ratingCallback.current?.(true); }, [rating]);
   useEffect(() => { if (rating || overriding) form.current?.querySelector<HTMLElement>('input, select')?.focus(); }, [rating, overriding]);
   useEffect(() => {
     if (rating && wasRating.current && previousStep.current !== step) stepHeading.current?.focus();
     previousStep.current = step; wasRating.current = rating;
     return () => { if (advanceTimer.current !== null) clearTimeout(advanceTimer.current); };
   }, [step, rating]);
-  function cancel() { if (advanceTimer.current !== null) clearTimeout(advanceTimer.current); setRating(false); setOverriding(false); setError(''); origin.current?.focus(); }
+  function closeRating() { setRating(false); onRatingOpenChange?.(false); }
+  function cancel() { if (advanceTimer.current !== null) clearTimeout(advanceTimer.current); closeRating(); onCancel?.(); setOverriding(false); setError(''); origin.current?.focus(); }
   async function post(body: Record<string, unknown>) {
     if (busy || inFlight.current) return;
     inFlight.current = true; onBusy?.(true); setError(''); setNotice('');
@@ -95,42 +100,43 @@ function ContactSocial({ contact, canSeeStyle, visitId, attribution, renderActio
       if (response.status >= 400 && response.status < 500 && response.status !== 408 && response.status !== 429) pending.current = null;
       const result = await readJsonBody<{ error?: string; code?: string }>(response);
       if (response.status === 409 && body.action === 'record_style_observation' && (result.code === 'PT409' || result.error?.includes('Already rated for this visit'))) {
-        setNotice('Already rated for this visit'); setRating(false); setDone(true); return;
+        setNotice('Already rated for this visit'); closeRating(); setDone(true); onComplete?.(); return;
       }
       if (!response.ok) { setError(result.error || 'Not saved. Please try again.'); return; }
-      pending.current = null; setRating(false); setOverriding(false);
+      pending.current = null; closeRating(); setOverriding(false);
       if (body.action === 'record_style_observation') setDone(true);
       await onSaved?.(false);
+      if (body.action === 'record_style_observation') onComplete?.();
     } catch { setError('Not saved. Check the connection and try again.'); }
     finally { inFlight.current = false; onBusy?.(false); }
   }
   const style = canSeeStyle ? contact.style : undefined;
   const tipKey = style?.override?.style ?? (style && socialStyles.includes(style.state as SocialStyle) ? style.state as SocialStyle : null);
-  const rateButton = <button type="button" disabled={busy} className={prompt ? chipPrimaryClass : chipClass} aria-label={`${prompt ? 'Rate' : 'Rate behaviour for'} ${who}`} aria-expanded={rating} onClick={event => { onOpen?.(); origin.current = event.currentTarget; setStep(0); setRatings(Array(8).fill(0)); setRating(true); setOverriding(false); setError(''); }}>{prompt ? 'Rate' : 'Rate behaviour'}</button>;
+  const rateButton = <button type="button" disabled={busy} className={prompt ? chipPrimaryClass : chipClass} aria-label={`${prompt ? 'Rate' : 'Rate behaviour for'} ${who}`} aria-expanded={rating} onClick={event => { onOpen?.(); onRatingOpenChange?.(true); origin.current = event.currentTarget; setStep(0); setRatings(Array(8).fill(0)); setRating(true); setOverriding(false); setError(''); }}>{prompt ? 'Rate' : 'Rate behaviour'}</button>;
   const secondary = !prompt && canSeeStyle && contact.styleObservations ? <>
     <button type="button" className={chipClass} aria-label={`Ratings for ${who}`} aria-expanded={history} onClick={() => setHistory(value => !value)}>Ratings ({contact.styleObservations.length})</button>
     <button type="button" disabled={busy} className={chipClass} aria-label={`Override style for ${who}`} aria-expanded={overriding} onClick={event => { onOpen?.(); origin.current = event.currentTarget; setOverride(contact.style?.override?.style ?? ''); setReason(''); setOverriding(true); setRating(false); setError(''); }}>Override style</button>
   </> : null;
   return <div className="min-w-0 space-y-1 break-words">
-    {!prompt && style ? <>
+    {!rating && !prompt && style ? <>
       <p className={`text-xs ${tipKey ? 'text-sf-body' : 'text-sf-muted'}`}>{styleLine(style)}</p>
       {tipKey ? <p className="text-xs text-sf-muted">{styleTip(tipKey)}</p> : null}
       {style.override ? <p className="text-xs text-sf-muted">Observed: {style.computedStyle ? styleLabels[style.computedStyle] : 'not enough information'}</p> : null}
     </> : null}
-    {attribution ? <p className="break-all text-xs text-sf-muted">{attribution}</p> : null}
-    {renderActions?.(visitId && !done ? rateButton : null, secondary)}
-    {prompt && visitId && !done ? <div className="flex flex-wrap items-center gap-x-2">
-      {prompt ? <p className="text-sm text-sf-body">How did {contact.name} behave? (optional, 30 seconds)</p> : null}
-      {rateButton}
-      {prompt ? <button type="button" disabled={busy} className={chipClass} aria-label={`Skip rating ${who}`} onClick={() => { setDone(true); setRating(false); }}>Skip</button> : null}
-    </div> : null}
-    {!prompt && canSeeStyle && history ? <ul aria-label={`Ratings for ${who}`} className="space-y-1 text-xs text-sf-muted">{contact.styleObservations?.map((entry, index) => <li key={`${entry.recordedAt}-${index}`}>
+    {!rating && attribution ? <p className="break-all text-xs text-sf-muted">{attribution}</p> : null}
+    <div hidden={rating}>{renderActions?.(visitId && !done ? rateButton : null, secondary)}</div>
+    {!rating && !prompt && canSeeStyle && history ? <ul aria-label={`Ratings for ${who}`} className="space-y-1 text-xs text-sf-muted">{contact.styleObservations?.map((entry, index) => <li key={`${entry.recordedAt}-${index}`}>
       {accountDate(entry.recordedAt.slice(0, 10))} · {entry.observer} · A {(entry.a.reduce((sum, value) => sum + value, 0) / 4).toFixed(2)} · R {(entry.r.reduce((sum, value) => sum + value, 0) / 4).toFixed(2)}{entry.cues.length ? ` · ${entry.cues.map(cue => cueLabels[cue]).join(', ')}` : ''}
     </li>)}</ul> : null}
     {rating ? <form ref={form} aria-label={`Rate behaviour for ${who}`} className="min-w-0 space-y-3 border-t border-sf-line-soft py-3" onSubmit={event => { event.preventDefault(); const unanswered = ratings.findIndex(value => value === 0); if (unanswered !== -1) { setStep(unanswered); return; } void post({ action: 'record_style_observation', contactId: contact.id, visitId, a: ratings.slice(0, 4), r: ratings.slice(4), cues }); }}>
-      <div className="flex items-center justify-between gap-2">
+      <button type="button" disabled={busy} className={contactActionClass} aria-label={`Back to accounts, stop rating ${contact.name}`} onClick={cancel}>← Back to accounts</button>
+      {sequence ? <p className="text-xs text-sf-muted">{sequence}</p> : null}
+      <div className="flex flex-wrap items-center justify-between gap-2">
         <p ref={stepHeading} tabIndex={-1} className="text-sm font-semibold text-sf-body">Rate {contact.name} · {step < 8 ? `${step + 1} of 8` : 'last step'}</p>
-        <button type="button" disabled={busy} className={contactActionClass} aria-label={`Cancel rating for ${who}`} onClick={cancel}>Cancel</button>
+        <span className="flex items-center gap-2">
+        {prompt ? <button type="button" disabled={busy} className={chipClass} aria-label={`Skip rating ${who}`} onClick={() => { setDone(true); closeRating(); onComplete?.(); }}>Skip</button> : null}
+        <button type="button" disabled={busy} className={chipClass} aria-label={`Cancel rating for ${who}`} onClick={cancel}>Cancel</button>
+        </span>
       </div>
       <div aria-hidden="true" className="h-1 w-full rounded-full bg-sf-line-soft"><div aria-hidden="true" className="h-1 rounded-full bg-sf-brand" style={{ width: `${Math.round(step / 8 * 100)}%` }} /></div>
       {step < 8 ? <>
@@ -241,8 +247,8 @@ export function accountMetaLine(row: AccountRow, mode: Mode) {
     row.class?.state === 'not_linked' ? 'Not linked to Tally sales' : null].filter(Boolean).join(' · ');
 }
 type ContactCallbacks = { busy?: boolean; onSaved?: (duplicatePhone: boolean, erased?: boolean) => Promise<unknown>; onConflict?: () => Promise<void>; onBusy?: (busy: boolean) => void };
-type ContactActions = { renderActions?: (addContact: ReactNode) => ReactNode; canSeePowerMap?: boolean; canEraseContacts?: boolean; actorEmail?: string };
-function AppContacts({ row, today, actorEmail, busy = false, onSaved, onConflict, onBusy, renderActions, canSeePowerMap = false, canEraseContacts = false }: { row: AccountRow; today: string } & ContactCallbacks & ContactActions) {
+type ContactActions = { renderActions?: (addContact: ReactNode) => ReactNode; canSeePowerMap?: boolean; canEraseContacts?: boolean; actorEmail?: string; ratingContactId?: string; onRatingFocus?: (contactId: string | null) => void };
+function AppContacts({ row, today, actorEmail, ratingContactId, onRatingFocus, busy = false, onSaved, onConflict, onBusy, renderActions, canSeePowerMap = false, canEraseContacts = false }: { row: AccountRow; today: string } & ContactCallbacks & ContactActions) {
   const [contactsExpanded, setContactsExpanded] = useState(false);
   const [moreOpen, setMoreOpen] = useState<Record<string, boolean>>({});
   const [closeSocialVersion, setCloseSocialVersion] = useState(0);
@@ -317,13 +323,16 @@ function AppContacts({ row, today, actorEmail, busy = false, onSaved, onConflict
   return <>
     <div id={contactsId} className="space-y-2">
     {!contacts.length ? <p className="text-xs text-sf-muted">No contacts yet</p> : null}
-    {(contactsExpanded ? contacts : contacts.slice(0, 2)).map(contact => <div key={contact.id} className="min-w-0 space-y-2 rounded-lg border border-sf-line-soft bg-white/60 p-3">
+    {(contactsExpanded ? contacts : contacts.slice(0, 2)).map(contact => <div key={contact.id} hidden={!!ratingContactId && ratingContactId !== contact.id} className="min-w-0 space-y-2 rounded-lg border border-sf-line-soft bg-white/60 p-3">
       <p className="font-semibold text-sf-body [overflow-wrap:anywhere]">{contact.name}{contact.businessRole ? ` · ${contact.businessRole}` : ''}</p>
+      <div hidden={!!ratingContactId}>
       <p className="flex flex-wrap items-center gap-x-2 break-words text-sm text-sf-body">{contact.phone ? <a className="inline-flex min-h-11 items-center text-sf-brand" href={`tel:${contact.phone.replace(/\D/g, '')}`} aria-label={`Call ${contact.name} for ${accountLabel}`}>{contact.phone}</a> : null}
         {contact.email ? <a className="inline-flex min-h-11 max-w-full items-center break-all text-sf-brand" href={`mailto:${contact.email}`} aria-label={`Email ${contact.name} for ${accountLabel}`}>{contact.email}</a> : null}
       </p>
       {canSeePowerMap ? <p className="break-words text-xs text-sf-muted">{assessmentSummary(contact)} · {contact.lastMetOn ? `Last met ${accountDate(contact.lastMetOn)}` : 'Not met yet'}</p> : null}
+      </div>
       <ContactSocial key={`${contact.id}-${row.lastVisit?.id ?? 'unvisited'}`} attribution={<span>added by {contact.addedBy}</span>}
+        onRatingOpenChange={open => onRatingFocus?.(open ? contact.id : null)}
         closeVersion={closeSocialVersion} onOpen={() => { setEditing(null); setRemoving(null); setErasing(null); setAssessing(null); setError(''); }}
         renderActions={(rateButton, secondary) => <>
         <div className="flex flex-wrap gap-2">
@@ -361,27 +370,31 @@ function AppContacts({ row, today, actorEmail, busy = false, onSaved, onConflict
       {editing !== 'new' && editing?.id === contact.id ? contactForm : null}
     </div>)}
     </div>
+    <div hidden={!!ratingContactId}>
     {moreCount ? <button type="button" className="min-h-11 text-sm font-semibold text-sf-brand" aria-label={`${contactsExpanded ? 'Hide' : `${moreCount} more`} contacts for ${row.name}`} aria-expanded={contactsExpanded} aria-controls={contactsId} onClick={() => setContactsExpanded(value => !value)}>{contactsExpanded ? 'Hide' : `+${moreCount} more`}</button> : null}
     {renderActions ? renderActions(addContact) : <div className="mt-3 flex flex-wrap gap-2">{addContact}</div>}
     {editing === 'new' ? contactForm : null}
     {error && !erasing ? <p role="alert" className="text-sm text-sf-danger">{error}</p> : null}
+    </div>
   </>;
 }
-export function AccountDetails({ row, mode, today, renderActions, canSeePowerMap = false, canEraseContacts, ...contactCallbacks }: { row: AccountRow; mode: Mode; today: string } & ContactCallbacks & ContactActions) {
+export function AccountDetails({ row, mode, today, renderActions, ratingContactId, canSeePowerMap = false, canEraseContacts, ...contactCallbacks }: { row: AccountRow; mode: Mode; today: string } & ContactCallbacks & ContactActions) {
   const chip = visitChip(row, today);
   const accountClass = classChip(row);
   return <>
     <div className="flex flex-wrap items-start justify-between gap-2">
-      <h3 className="min-w-0 flex-1 break-words font-bold text-sf-strong">{row.name}</h3>
-      {accountClass ? <span title={accountClass.title} aria-label={accountClass.title} className={`max-w-full shrink-0 text-xs ${accountClass.className}`}>{accountClass.text}</span> : null}
-      {chip ? <span className={`max-w-full shrink-0 rounded-full px-2 py-1 text-xs font-semibold ${chip.className}`}>{chip.text}</span> : null}
+      <h3 tabIndex={-1} className="min-w-0 flex-1 break-words font-bold text-sf-strong">{row.name}</h3>
+      {!ratingContactId && accountClass ? <span title={accountClass.title} aria-label={accountClass.title} className={`max-w-full shrink-0 text-xs ${accountClass.className}`}>{accountClass.text}</span> : null}
+      {!ratingContactId && chip ? <span className={`max-w-full shrink-0 rounded-full px-2 py-1 text-xs font-semibold ${chip.className}`}>{chip.text}</span> : null}
     </div>
     <p className="mt-2 break-words text-xs text-sf-muted">{accountMetaLine(row, mode)}</p>
+    <div hidden={!!ratingContactId}>
     {canSeePowerMap && row.powerAlerts?.length ? <div className="mt-2 flex flex-wrap gap-2">{row.powerAlerts.map(alert => <span key={alert} className="max-w-full rounded-full bg-sf-warning-soft px-2 py-1 text-xs font-semibold text-sf-warning">{alertLabel(alert)}</span>)}</div> : null}
     {canSeePowerMap && whoDecidesLine(row) ? <p className="mt-2 break-words text-sm text-sf-body">{whoDecidesLine(row)}</p> : null}
     <p className="mt-2 flex flex-wrap items-center gap-2 text-sm text-sf-body">{row.location?.precision === 'pin' ? <><span>📍 Pin set{!isInsideMarketArea(Number(row.location.latitude), Number(row.location.longitude)) ? <span className="text-sf-muted"> · outside market area</span> : null}</span><a className="inline-flex min-h-11 items-center font-semibold text-sf-brand" href={`https://www.google.com/maps?q=${row.location.latitude},${row.location.longitude}`} target="_blank" rel="noopener" aria-label={`Open map for ${row.name} (${row.id})`}>Open map</a></> : row.location?.precision === 'town' ? `Town: ${row.location.town}` : 'No location'}</p>
+    </div>
     <div className="mt-2">
-      <AppContacts row={row} today={today} canSeePowerMap={canSeePowerMap} canEraseContacts={canEraseContacts} renderActions={renderActions} {...contactCallbacks} />
+      <AppContacts row={row} today={today} ratingContactId={ratingContactId} canSeePowerMap={canSeePowerMap} canEraseContacts={canEraseContacts} renderActions={renderActions} {...contactCallbacks} />
     </div>
   </>;
 }
@@ -400,7 +413,45 @@ export function AccountsWorkspace() {
   const [error, setError] = useState('');
   const [notice, setNotice] = useState('');
   const [open, setOpen] = useState<{ id: string; kind: FormKind } | null>(null);
-  const [visitPrompts, setVisitPrompts] = useState<Record<string, { visitId: string; contacts: AppContact[] }>>({});
+  const [ratingFocus, setRatingFocus] = useState<{ accountId: string; contactId: string } | null>(null);
+  const [visitPrompts, setVisitPrompts] = useState<Record<string, { visitId: string; contacts: AppContact[]; total: number }>>({});
+  const cards = useRef(new Map<string, HTMLLIElement>());
+  const ratingOrigin = useRef<HTMLElement | null>(null);
+  const previousRatingFocus = useRef<typeof ratingFocus>(null);
+  useEffect(() => {
+    const previous = previousRatingFocus.current;
+    const card = cards.current.get((ratingFocus ?? previous)?.accountId ?? '');
+    if (ratingFocus || previous) card?.scrollIntoView?.({ block: 'start' });
+    if (!ratingFocus && previous) {
+      const opener = ratingOrigin.current;
+      if (opener?.isConnected && !opener.closest('[hidden]')) opener.focus({ preventScroll: true });
+      else card?.querySelector<HTMLElement>('h3')?.focus({ preventScroll: true });
+    }
+    previousRatingFocus.current = ratingFocus;
+  }, [ratingFocus]);
+  function focusRating(accountId: string, contactId: string | null) {
+    if (contactId) {
+      if (!ratingFocus) {
+        const contact = data?.accounts.find(row => row.id === accountId)?.appContacts.find(person => person.id === contactId);
+        ratingOrigin.current = Array.from(cards.current.get(accountId)?.querySelectorAll('button') ?? [])
+          .find(button => button.getAttribute('aria-label') === `Rate behaviour for ${contact?.name} (${contactId})`) ?? null;
+      }
+      setOpen(null);
+      setRatingFocus(current => current?.accountId === accountId && current.contactId === contactId ? current : { accountId, contactId });
+    } else setRatingFocus(null);
+  }
+  function finishVisitRating(accountId: string, cancelQueue = false) {
+    const queue = visitPrompts[accountId];
+    const contacts = cancelQueue ? [] : queue.contacts.slice(1);
+    setVisitPrompts(current => {
+      const next = { ...current };
+      if (contacts.length) next[accountId] = { ...queue, contacts };
+      else delete next[accountId];
+      return next;
+    });
+    if (contacts.length) focusRating(accountId, contacts[0].id);
+    else { setRatingFocus(null); if (!cancelQueue) setNotice('Saved.'); }
+  }
   const [busy, setBusy] = useState(false);
   const origin = useRef<HTMLButtonElement | null>(null);
   const request = useRef(0);
@@ -456,6 +507,7 @@ export function AccountsWorkspace() {
   const classesNote = accountClassesNote(data?.accounts ?? []);
   return <div className="h-full overflow-y-auto bg-sf-page"><section aria-label="Accounts" className="mx-auto max-w-7xl space-y-4 p-4 sm:p-6">
     <header className="flex items-baseline gap-3"><h2 className="text-xl font-bold text-sf-strong">Accounts</h2>{data ? <span className="text-xs text-sf-muted">{countLabel(data.page.total, 'account', 'accounts')} · {countLabel(data.accounts.filter(row => row.nextVisitOn && row.nextVisitOn <= data.today).length, 'visit due', 'visits due')} on this page</span> : null}</header>
+    <div hidden={!!ratingFocus}>
     <div className="flex flex-wrap items-end gap-3">
       <div aria-label="Account scope" className="inline-flex rounded-xl border border-sf-line-soft bg-sf-soft-0 p-1">{(['mine', 'all'] as const).map(value => <button key={value} type="button" disabled={busy} aria-pressed={mode === value} onClick={() => changeMode(value)} className={`${buttonClass} ${mode === value ? 'bg-sf-brand text-sf-soft-0' : ''}`}>{value === 'mine' ? 'Mine' : 'All'}</button>)}</div>
       <div className="min-w-0 flex-1 basis-44"><label htmlFor={`${prefix}-search`} className="text-xs text-sf-muted">Search accounts</label><input id={`${prefix}-search`} value={query} disabled={busy} onChange={event => setQuery(event.target.value)} maxLength={120} placeholder="Name or town" className={inputClass} /></div>
@@ -467,20 +519,39 @@ export function AccountsWorkspace() {
       </> : null}
     </div>
     {classesNote ? <p className="text-xs text-sf-muted">{classesNote}</p> : null}
+    </div>
     <output aria-live="polite" className="block text-sm text-sf-body">{notice}</output>
     {loading ? <p className="text-sm text-sf-muted">Loading accounts…</p> : null}
     {error ? <div role="alert" className="text-sm text-sf-danger"><p>{error}</p><button type="button" className={buttonClass} onClick={() => void load()}>Retry</button></div> : null}
     {data && !error ? <>
       {!loading && !data.accounts.length ? <div className="rounded-xl border border-sf-line-soft bg-sf-soft-0 p-4 text-sm text-sf-body"><p>{mode === 'mine' ? 'No accounts are assigned to you yet.' : 'No accounts match.'}</p>{mode === 'mine' ? <button type="button" className={`${buttonClass} mt-3`} onClick={() => changeMode('all')}>Show all accounts</button> : null}</div> : null}
-      <ul aria-label="Accounts" className="space-y-3">{data.accounts.map(row => <li key={row.id} className="min-w-0 rounded-xl border border-sf-line-soft bg-sf-soft-0 p-4">
-        <AccountDetails row={row} mode={mode} today={data.today} actorEmail={data.actorEmail} canSeePowerMap={data.canSeePowerMap} canEraseContacts={data.canEraseContacts} busy={busy} onBusy={setBusy} onConflict={conflict} onSaved={async (duplicatePhone, erased) => { setNotice(erased ? 'Erased contact.' : duplicatePhone ? 'Saved. This phone is already on the account.' : 'Saved.'); await load(); }} renderActions={addContact => <div className="mt-3 flex flex-wrap gap-2">{(['visit', 'location'] as FormKind[]).map(kind => <button key={kind} type="button" disabled={busy} aria-label={`${kind === 'visit' ? 'Log visit' : 'Location'} for ${row.name} (${row.id})`} aria-expanded={open?.id === row.id && open.kind === kind} onClick={event => { origin.current = event.currentTarget; setNotice(''); setOpen({ id: row.id, kind }); }} className={kind === 'visit' ? primaryClass : actionClass}>{kind === 'visit' ? 'Log visit' : 'Location'}</button>)}{addContact}{data.canAssign ? <button type="button" disabled={busy} aria-label={`Owner for ${row.name} (${row.id})`} aria-expanded={open?.id === row.id && open.kind === 'owner'} onClick={event => { origin.current = event.currentTarget; setNotice(''); setOpen({ id: row.id, kind: 'owner' }); }} className={actionClass}>Owner</button> : null}</div>} />
-        {open?.id === row.id ? <AccountForm key={`${row.id}-${open.kind}`} row={row} kind={open.kind} data={data} onCancel={cancel} onSaved={saved} onConflict={conflict} onBusy={setBusy} onVisitLogged={(visitId, contactIds) => setVisitPrompts(current => ({ ...current, [row.id]: { visitId, contacts: row.appContacts.filter(contact => contactIds.includes(contact.id)) } }))} /> : null}
-        {visitPrompts[row.id]?.contacts.map(contact => <ContactSocial key={`${visitPrompts[row.id].visitId}-${contact.id}`} contact={contact} visitId={visitPrompts[row.id].visitId} prompt busy={busy} onBusy={setBusy} onSaved={async () => { await saved(false); }} />)}
+      <ul aria-label="Accounts" className="space-y-3">{data.accounts.filter(row => !ratingFocus || ratingFocus.accountId === row.id).map(row => <li key={row.id} ref={element => { if (element) cards.current.set(row.id, element); else cards.current.delete(row.id); }} className="min-w-0 rounded-xl border border-sf-line-soft bg-sf-soft-0 p-4">
+        <div hidden={!!visitPrompts[row.id]?.contacts.length}>
+        <AccountDetails row={row} mode={mode} today={data.today} ratingContactId={ratingFocus?.accountId === row.id ? ratingFocus.contactId : undefined} onRatingFocus={contactId => focusRating(row.id, contactId)} actorEmail={data.actorEmail} canSeePowerMap={data.canSeePowerMap} canEraseContacts={data.canEraseContacts} busy={busy} onBusy={setBusy} onConflict={conflict} onSaved={async (duplicatePhone, erased) => { setNotice(erased ? 'Erased contact.' : duplicatePhone ? 'Saved. This phone is already on the account.' : 'Saved.'); await load(); }} renderActions={addContact => <div className="mt-3 flex flex-wrap gap-2">{(['visit', 'location'] as FormKind[]).map(kind => <button key={kind} type="button" disabled={busy} aria-label={`${kind === 'visit' ? 'Log visit' : 'Location'} for ${row.name} (${row.id})`} aria-expanded={open?.id === row.id && open.kind === kind} onClick={event => { origin.current = event.currentTarget; setNotice(''); setOpen({ id: row.id, kind }); }} className={kind === 'visit' ? primaryClass : actionClass}>{kind === 'visit' ? 'Log visit' : 'Location'}</button>)}{addContact}{data.canAssign ? <button type="button" disabled={busy} aria-label={`Owner for ${row.name} (${row.id})`} aria-expanded={open?.id === row.id && open.kind === 'owner'} onClick={event => { origin.current = event.currentTarget; setNotice(''); setOpen({ id: row.id, kind: 'owner' }); }} className={actionClass}>Owner</button> : null}</div>} />
+        </div>
+        {open?.id === row.id && !ratingFocus ? <AccountForm key={`${row.id}-${open.kind}`} row={row} kind={open.kind} data={data} onCancel={cancel} onSaved={saved} onConflict={conflict} onBusy={setBusy} onVisitLogged={(visitId, contactIds) => {
+          const contacts = row.appContacts.filter(contact => contactIds.includes(contact.id));
+          setOpen(null);
+          if (!contacts.length) return;
+          ratingOrigin.current = null;
+          setVisitPrompts(current => ({ ...current, [row.id]: { visitId, contacts, total: contacts.length } }));
+          setRatingFocus({ accountId: row.id, contactId: contacts[0].id });
+        }} /> : null}
+        {visitPrompts[row.id]?.contacts.slice(0, 1).map(contact => <div key={`${visitPrompts[row.id].visitId}-${contact.id}`}>
+          <h3 tabIndex={-1} className="break-words font-bold text-sf-strong">{row.name}</h3>
+          <p className="mt-2 break-words text-xs text-sf-muted">{accountMetaLine(row, mode)}</p>
+          <p className="mt-2 break-words font-semibold text-sf-body">{contact.name}{contact.businessRole ? ` · ${contact.businessRole}` : ''}</p>
+          <ContactSocial contact={contact} visitId={visitPrompts[row.id].visitId} prompt autoOpen
+            sequence={visitPrompts[row.id].total > 1 ? `After visit · person ${visitPrompts[row.id].total - visitPrompts[row.id].contacts.length + 1} of ${visitPrompts[row.id].total} people met` : undefined}
+            onRatingOpenChange={open => { if (open) focusRating(row.id, contact.id); }} onCancel={() => finishVisitRating(row.id, true)} onComplete={() => finishVisitRating(row.id)} busy={busy} onBusy={setBusy} onSaved={async () => { await saved(false); }} />
+        </div>)}
       </li>)}</ul>
+      <div hidden={!!ratingFocus}>
       <div className="flex flex-wrap items-center justify-between gap-3 text-sm text-sf-muted"><span>Showing {from}–{to} of {data.page.total}</span><div className="flex gap-2">
         {page > 1 ? <button type="button" disabled={loading || busy} className={buttonClass} onClick={() => { setPage(page - 1); setOpen(null); }}>Previous</button> : null}
         {page * data.page.pageSize < data.page.total ? <button type="button" disabled={loading || busy} className={buttonClass} onClick={() => { setPage(page + 1); setOpen(null); }}>Next</button> : null}
       </div></div>
+      </div>
     </> : null}
   </section></div>;
 }

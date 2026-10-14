@@ -59,6 +59,18 @@ describe('Accounts pure presentation', () => {
   });
   const contact = { id: 'asha', name: 'Asha', businessRole: null, phone: null, email: null, addedBy: 'sales@example.test', version: 1, canEdit: false };
   const assessment = { decisionRole: 'decision_maker', stance: 'sceptical', influence: 'high', reason: null, actor: 'manager@example.test', recordedAt: '2026-10-14' } as const;
+  it('focuses account presentation on one contact and keeps a focusable account heading', () => {
+    const account: AccountRow = { ...row, nextVisitOn: '2026-10-14', appContacts: [contact, { ...contact, id: 'ravi', name: 'Ravi' }] };
+    const normal = renderToStaticMarkup(<AccountDetails row={account} mode="mine" today="2026-10-14" />);
+    const focused = renderToStaticMarkup(<AccountDetails row={account} mode="mine" today="2026-10-14" ratingContactId="asha" />);
+    expect(normal).toContain('Visit overdue');
+    expect(focused).not.toContain('Visit overdue');
+    expect(focused).toMatch(/<h3 tabindex="-1"[^>]*>Care Lab<\/h3>/);
+    expect(focused).toMatch(/<div hidden=""[^>]*><p[^>]*>Ravi<\/p>/);
+    expect(focused).not.toMatch(/<div hidden=""[^>]*><p[^>]*>Asha<\/p>/);
+    expect(focused).toContain(accountMetaLine(account, 'mine'));
+    expect(focused).toMatch(/<div hidden=""><div class="mt-3 flex flex-wrap gap-2"><button[^>]*aria-label="Add contact for Care Lab"/);
+  });
   it('summarises known assessment parts and defaults to Role not set', () => {
     expect(assessmentSummary(contact)).toBe('Role not set');
     expect(assessmentSummary({ ...contact, assessment: null })).toBe('Role not set');
