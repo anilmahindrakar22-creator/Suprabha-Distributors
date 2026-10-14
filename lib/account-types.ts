@@ -14,6 +14,7 @@ export function parseAccountClass(value: string | null): AccountClassState | nul
 }
 export type AccountRow = {
   id: string; name: string; city: string | null;
+  appContacts: { id: string; name: string; businessRole: string | null; phone: string | null; email: string | null; addedBy: string; version: number; canEdit: boolean }[];
   class: { state: AccountClassState; monthlyPaise: string | null; window: { from: string; to: string }; policyId?: string };
   owner: { email: string; territoryId: string; territoryName: string; since: string; version: number } | null;
   location: { precision: 'pin' | 'town'; latitude: string | null; longitude: string | null; town: string | null; verifiedBy: string; verifiedAt: string; version: number } | null;
@@ -29,8 +30,15 @@ export type AccountsResponse = {
   canAssign: boolean; actorEmail: string; today: string;
 };
 export type AccountsGatewayResponse = Omit<AccountsResponse, 'canAssign' | 'actorEmail'>;
+export function withAccountContacts<T extends { accounts: (Omit<AccountRow, 'appContacts'> & { appContacts?: AccountRow['appContacts'] })[] }>(response: T): T & { accounts: AccountRow[] } {
+  return { ...response, accounts: response.accounts.map(row => ({ ...row, appContacts: row.appContacts ?? [] })) };
+}
 type CommandBase = { idempotencyKey: string };
+type ContactFields = { name: string; businessRole: string | null; phone: string | null; email: string | null };
 export type AccountCommand =
+  | { action: 'add_contact'; payload: CommandBase & ContactFields & { customerId: string } }
+  | { action: 'update_contact'; payload: CommandBase & ContactFields & { contactId: string; expectedVersion: number } }
+  | { action: 'remove_contact'; payload: CommandBase & { contactId: string; expectedVersion: number } }
   | { action: 'set_class_policy'; payload: CommandBase & { aMinPaise: string; bMinPaise: string; reason: string } }
   | { action: 'create_territory'; payload: CommandBase & { name: string } }
   | { action: 'assign_account'; payload: CommandBase & { customerId: string; ownerEmail: string; territoryId: string; expectedVersion: number | null } }
@@ -63,6 +71,23 @@ export function parseAccountCommand(body: unknown): AccountCommand | null {
   const p = body as Record<string, unknown>;
   if (typeof p.idempotencyKey !== 'string' || p.idempotencyKey.trim().length < 16 || p.idempotencyKey.length > 200) return null;
   const idempotencyKey = p.idempotencyKey;
+  if (p.action === 'add_contact' || p.action === 'update_contact' || p.action === 'remove_contact') {
+    const editing = p.action !== 'add_contact';
+    const target = editing ? p.contactId : p.customerId;
+    if (typeof target !== 'string' || !accountUuidPattern.test(target)) return null;
+    if (editing && (p.expectedVersion === null || !validVersion(p.expectedVersion))) return null;
+    if (p.action === 'remove_contact') return { action: p.action, payload: { contactId: target, expectedVersion: p.expectedVersion as number, idempotencyKey } };
+    if (typeof p.name !== 'string' || p.name.trim().length < 2 || p.name.trim().length > 120) return null;
+    for (const [field, limit] of [['businessRole', 80], ['phone', 40], ['email', 160]] as const) {
+      if (p[field] != null && (typeof p[field] !== 'string' || p[field].trim().length > limit)) return null;
+    }
+    const email = typeof p.email === 'string' ? p.email.trim() || null : null;
+    if (email && !email.includes('@')) return null;
+    const fields = { name: p.name.trim(), businessRole: typeof p.businessRole === 'string' ? p.businessRole.trim() || null : null,
+      phone: typeof p.phone === 'string' ? p.phone.trim() || null : null, email, idempotencyKey };
+    return p.action === 'add_contact' ? { action: p.action, payload: { ...fields, customerId: target } }
+      : { action: p.action, payload: { ...fields, contactId: target, expectedVersion: p.expectedVersion as number } };
+  }
   if (p.action === 'set_class_policy') {
     if (typeof p.aMinPaise !== 'string' || typeof p.bMinPaise !== 'string'
       || !/^[0-9]{1,19}$/.test(p.aMinPaise) || !/^[0-9]{1,19}$/.test(p.bMinPaise)

@@ -4,7 +4,7 @@ import { hasAnyStockFlowRole } from '@/lib/user-types';
 import { BoundedJsonRequestError, readBoundedJsonRequest } from '@/lib/bounded-json-request';
 import { callOrderGateway, OrderGatewayError } from '@/lib/order-gateway';
 import { measuredJsonResponse } from '@/lib/measured-json-response';
-import { accountUuidPattern, parseAccountClass, parseAccountCommand, type AccountsGatewayResponse } from '@/lib/account-types';
+import { accountUuidPattern, parseAccountClass, parseAccountCommand, withAccountContacts, type AccountsGatewayResponse } from '@/lib/account-types';
 
 const headers = { 'cache-control': 'private, no-store' };
 const failure = (error: string, status: number) => Response.json({ error }, { status, headers });
@@ -42,7 +42,7 @@ export async function GET(request: Request) {
       ...(territoryId === null ? {} : { territoryId }),
       ...(classFilter === null ? {} : { class: classFilter }),
     });
-    return measuredJsonResponse({ ...workspace, actorEmail: session.email, canAssign: hasAnyStockFlowRole(session.roles, ['administrator', 'management']) }, startedAt);
+    return measuredJsonResponse({ ...withAccountContacts(workspace), actorEmail: session.email, canAssign: hasAnyStockFlowRole(session.roles, ['administrator', 'management']) }, startedAt);
   } catch (error) { return failed(error); }
 }
 export async function POST(request: Request) {

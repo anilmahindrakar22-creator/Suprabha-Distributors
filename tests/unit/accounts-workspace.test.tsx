@@ -6,12 +6,60 @@ import { AccountDetails, accountClassesNote, accountDate, accountMetaLine, addAc
 
 const row: AccountRow = {
   id: '11111111-1111-4111-8111-111111111111', name: 'Care Lab', city: 'Pune',
+  appContacts: [],
   owner: { email: 'sales@example.test', territoryId: 'territory', territoryName: 'West', since: '2026-10-01', version: 2 },
   location: null, lastVisit: { visitedOn: '2026-10-03', outcome: 'order_taken', visitedBy: 'sales@example.test', note: null },
   nextVisitOn: null, lastOrderOn: '2026-10-04',
   class: { state: 'not_available', monthlyPaise: null, window: { from: '2026-07-01', to: '2026-09-30' } },
 };
 describe('Accounts pure presentation', () => {
+  it('lists app contacts with links, ownership and editing permissions', () => {
+    const html = renderToStaticMarkup(<AccountDetails row={{ ...row, appContacts: [
+      { id: 'editable', name: 'Asha', businessRole: 'Lab head', phone: '+91 98765 43210', email: 'asha@example.test', addedBy: 'sales@example.test', version: 2, canEdit: true },
+      { id: 'readonly', name: 'Ravi', businessRole: null, phone: null, email: null, addedBy: 'other@example.test', version: 1, canEdit: false },
+    ] }} mode="mine" today="2026-10-14" />);
+    expect(html).toContain('Asha · Lab head');
+    expect(html).toContain('href="tel:919876543210"');
+    expect(html).toContain('href="mailto:asha@example.test"');
+    expect(html).toContain('added by sales@example.test');
+    expect(html).toContain('aria-label="Edit Asha"');
+    expect(html).toContain('aria-label="Remove Asha"');
+    const contactLine = html.match(/<p[^>]*><span>Asha · Lab head<\/span>[\s\S]*?<\/p>/)?.[0];
+    expect(contactLine).toContain('href="tel:919876543210"');
+    expect(contactLine).toContain('href="mailto:asha@example.test"');
+    expect(contactLine).not.toContain('<button');
+    expect(contactLine).not.toContain('border');
+    expect(contactLine).not.toContain('added by');
+    const attributionLine = html.match(/<p[^>]*><span>added by sales@example.test<\/span>[\s\S]*?<\/p>/)?.[0];
+    expect(attributionLine).toContain('aria-label="Edit Asha"');
+    expect(attributionLine).toContain('aria-label="Remove Asha"');
+    expect(attributionLine).toContain('inline-flex min-h-11 items-center px-1 text-xs text-sf-brand/80');
+    expect(attributionLine).toContain('inline-flex items-center whitespace-nowrap');
+    expect(attributionLine).not.toContain('border');
+    expect(html).not.toContain('aria-label="Edit Ravi');
+    expect(html).not.toContain('aria-label="Remove Ravi');
+    expect(html).toContain('Add contact');
+  });
+  it('shows two of three app contacts and an accessible more toggle', () => {
+    const appContacts = ['Asha', 'Ravi', 'Meena'].map(name => ({ id: name, name, businessRole: null, phone: null, email: null, addedBy: 'sales@example.test', version: 1, canEdit: false }));
+    const html = renderToStaticMarkup(<AccountDetails row={{ ...row, appContacts }} mode="mine" today="2026-10-14" />);
+    expect(html).toContain('Asha');
+    expect(html).toContain('Ravi');
+    expect(html).not.toContain('Meena');
+    expect(html).toContain('+1 more');
+    expect(html).toContain('aria-label="1 more contacts for Care Lab"');
+    expect(html).toContain('aria-expanded="false"');
+    const empty = renderToStaticMarkup(<AccountDetails row={row} mode="mine" today="2026-10-14" />);
+    expect(empty).toContain('No contacts yet');
+  });
+  it('shows one app contact without the empty message or more toggle', () => {
+    const html = renderToStaticMarkup(<AccountDetails row={{ ...row, appContacts: [
+      { id: 'app-only', name: 'Asha', businessRole: null, phone: null, email: null, addedBy: 'sales@example.test', version: 1, canEdit: true },
+    ] }} mode="mine" today="2026-10-14" />);
+    expect(html).toContain('Asha');
+    expect(html).not.toContain('No contacts yet');
+    expect(html).not.toContain('more contacts for');
+  });
   it.each([
     ['A', '21000000', 'A', 'A · ₹2.1 L a month, Jul–Sep'],
     ['B', '7500000', 'B', 'B · ₹75 K a month, Jul–Sep'],

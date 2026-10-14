@@ -3,15 +3,15 @@ import type { AccountRow, AccountsResponse } from '../../lib/account-types';
 
 const customerId = '11111111-1111-4111-8111-111111111111';
 const territoryId = '22222222-2222-4222-8222-222222222222';
-const base: AccountRow = { id: customerId, name: 'Care Lab', city: 'Pune', owner: { email: 'sales@example.test', territoryId, territoryName: 'West', since: '2026-10-01', version: 3 }, location: null, lastVisit: null, nextVisitOn: '2026-10-03', lastOrderOn: null, class: { state: 'not_available', monthlyPaise: null, window: { from: '2026-07-01', to: '2026-09-30' } } };
+const base: AccountRow = { id: customerId, name: 'Care Lab', city: 'Pune', appContacts: [], owner: { email: 'sales@example.test', territoryId, territoryName: 'West', since: '2026-10-01', version: 3 }, location: null, lastVisit: null, nextVisitOn: '2026-10-03', lastOrderOn: null, class: { state: 'not_available', monthlyPaise: null, window: { from: '2026-07-01', to: '2026-09-30' } } };
 const fixture: AccountsResponse = {
-  accounts: [base, { ...base, id: '33333333-3333-4333-8333-333333333333', name: 'City Lab', nextVisitOn: '2026-10-21' }, { ...base, id: '44444444-4444-4444-8444-444444444444', name: 'New Lab', nextVisitOn: null }],
+  accounts: [{ ...base }, { ...base, id: '33333333-3333-4333-8333-333333333333', name: 'City Lab', nextVisitOn: '2026-10-21' }, { ...base, id: '44444444-4444-4444-8444-444444444444', name: 'New Lab', nextVisitOn: null }],
   page: { page: 1, pageSize: 50, total: 3 }, owners: [{ email: 'sales@example.test', name: 'Salesperson' }, { email: 'other@example.test', name: 'Other salesperson' }],
   territories: [{ id: territoryId, name: 'West' }], canAssign: false, actorEmail: 'sales@example.test', today: '2026-10-14',
   classPolicy: { aMinPaise: '20000000', bMinPaise: '7500000' },
 };
 type Command = Record<string, unknown>;
-async function mockAccounts(page: Page, options: { canAssign?: boolean; emptyMine?: boolean; status?: number; networkOnce?: boolean; paginate?: boolean; classes?: boolean } = {}) {
+async function mockAccounts(page: Page, options: { canAssign?: boolean; emptyMine?: boolean; status?: number; networkOnce?: boolean; paginate?: boolean; classes?: boolean; appContacts?: AccountRow['appContacts']; duplicatePhone?: boolean } = {}) {
   const gets: string[] = [];
   const posts: Command[] = [];
   const territories = [...fixture.territories];
@@ -22,13 +22,13 @@ async function mockAccounts(page: Page, options: { canAssign?: boolean; emptyMin
       if (options.networkOnce && posts.length === 1) { await route.abort('failed'); return; }
       if (options.status) { await route.fulfill({ status: options.status, json: { error: 'Account changed' } }); return; }
       if (body.action === 'create_territory') territories.push({ id: '55555555-5555-4555-8555-555555555555', name: String(body.name) });
-      await route.fulfill({ json: { ok: true } });
+      await route.fulfill({ json: { ok: true, duplicatePhone: options.duplicatePhone ?? false } });
     } else {
       gets.push(route.request().url());
       const query = new URL(route.request().url()).searchParams;
       const classRows: AccountRow[] = (['A', 'B', 'below_b', 'not_available', 'not_linked'] as const).map((state, index) => ({ ...base, id: `class-${index}`, name: `Class ${state} Lab`, class: { ...base.class, state, monthlyPaise: index < 3 ? ['21000000', '7500000', '5000000'][index] : null } }));
       const accounts = options.classes ? classRows.filter(row => !query.get('class') || row.class.state === query.get('class')) : options.emptyMine && query.get('scope') === 'mine' ? [] : options.paginate ? [fixture.accounts[Number(query.get('page')) - 1]] : fixture.accounts;
-      await route.fulfill({ json: { ...fixture, accounts, territories, canAssign: options.canAssign ?? false, page: { page: Number(query.get('page')), pageSize: options.paginate ? 1 : 50, total: options.paginate ? 3 : accounts.length } } });
+      await route.fulfill({ json: { ...fixture, accounts: accounts.map(row => ({ ...row, appContacts: row.id === customerId ? options.appContacts ?? [] : [] })), territories, canAssign: options.canAssign ?? false, page: { page: Number(query.get('page')), pageSize: options.paginate ? 1 : 50, total: options.paginate ? 3 : accounts.length } } });
     }
   });
   await page.goto('/?view=accounts');
@@ -37,6 +37,149 @@ async function mockAccounts(page: Page, options: { canAssign?: boolean; emptyMin
   return { gets, posts };
 }
 const firstCard = (page: Page) => page.getByRole('list', { name: 'Accounts' }).getByRole('listitem').first();
+const appContact: AccountRow['appContacts'][number] = { id: '66666666-6666-4666-8666-666666666666', name: 'App buyer', businessRole: 'Purchase', phone: '+91 98765 43210', email: 'buyer@example.test', addedBy: 'sales@example.test', version: 3, canEdit: true };
+
+test('adds an app contact with a flat command and duplicate-phone notice', async ({ page }) => {
+  const { gets, posts } = await mockAccounts(page, { duplicatePhone: true });
+  const addContact = firstCard(page).getByRole('button', { name: 'Add contact for Care Lab', exact: true });
+  const actions = addContact.locator('..');
+  await expect(actions.getByRole('button')).toHaveText(['Log visit', 'Location', 'Add contact']);
+  expect(await addContact.getAttribute('class')).toEqual(await actions.getByRole('button', { name: 'Location', exact: true }).getAttribute('class'));
+  await addContact.click();
+  const form = page.getByRole('form', { name: 'Add contact for Care Lab', exact: false });
+  await expect(form.getByLabel('Contact name for Care Lab', { exact: false })).toBeFocused();
+  await form.getByLabel('Contact name for Care Lab', { exact: false }).fill('App buyer');
+  await form.getByLabel('Contact role for Care Lab', { exact: false }).fill('Purchase');
+  await form.getByLabel('Contact phone for Care Lab', { exact: false }).fill('+91 98765 43210');
+  await form.getByLabel('Contact email for Care Lab', { exact: false }).fill('buyer@example.test');
+  const before = gets.length;
+  await form.getByRole('button', { name: 'Save contact for Care Lab', exact: false }).click();
+  await expect(page.getByRole('status')).toHaveText('Saved. This phone is already on the account.');
+  expect(posts[0]).toEqual({ action: 'add_contact', customerId, name: 'App buyer', businessRole: 'Purchase', phone: '+91 98765 43210', email: 'buyer@example.test', idempotencyKey: expect.any(String) });
+  expect(String(posts[0].idempotencyKey).length).toBeGreaterThanOrEqual(16);
+  await expect.poll(() => gets.length).toBeGreaterThan(before);
+  await expect(form).toHaveCount(0);
+});
+
+test('edits an app contact using its current version', async ({ page }) => {
+  const { posts } = await mockAccounts(page, { appContacts: [appContact] });
+  const card = firstCard(page);
+  await expect(card.getByText('App buyer · Purchase', { exact: true })).toBeVisible();
+  await expect(card.getByText('added by sales@example.test', { exact: true })).toBeVisible();
+  await expect(card.getByRole('link', { name: 'Call App buyer for Care Lab', exact: false })).toHaveAttribute('href', 'tel:919876543210');
+  await expect(card.getByRole('link', { name: 'Email App buyer for Care Lab', exact: false })).toHaveAttribute('href', 'mailto:buyer@example.test');
+  const contactLine = card.getByText('App buyer · Purchase', { exact: true }).locator('..');
+  await expect(contactLine.getByRole('link')).toHaveCount(2);
+  await expect(contactLine.getByRole('button')).toHaveCount(0);
+  await expect(contactLine).not.toContainText('added by');
+  const attributionLine = card.getByText('added by sales@example.test', { exact: true }).locator('..');
+  await expect(attributionLine.getByRole('button')).toHaveText(['Edit', 'Remove']);
+  await card.getByRole('button', { name: 'Edit App buyer', exact: true }).click();
+  const form = page.getByRole('form', { name: 'Edit App buyer for Care Lab', exact: false });
+  await expect(form.getByLabel('Contact name for Care Lab', { exact: false })).toHaveValue('App buyer');
+  await form.getByLabel('Contact role for Care Lab', { exact: false }).fill('Lab head');
+  await form.getByRole('button', { name: 'Save contact for Care Lab', exact: false }).click();
+  await expect(page.getByRole('status')).toHaveText('Saved.');
+  expect(posts[0]).toMatchObject({ action: 'update_contact', contactId: appContact.id, expectedVersion: 3, name: 'App buyer', businessRole: 'Lab head' });
+});
+
+test('remove uses an inline confirmation with Keep and the current version', async ({ page }) => {
+  const { posts } = await mockAccounts(page, { appContacts: [appContact] });
+  const card = firstCard(page);
+  const remove = card.getByRole('button', { name: 'Remove App buyer', exact: true });
+  await remove.click();
+  await expect(card.getByText('Remove App buyer?', { exact: true })).toBeVisible();
+  expect(posts).toHaveLength(0);
+  await card.getByRole('button', { name: 'Keep App buyer for Care Lab', exact: false }).click();
+  await expect(card.getByText('Remove App buyer?', { exact: true })).toHaveCount(0);
+  await remove.click();
+  await card.getByRole('button', { name: 'Confirm remove App buyer for Care Lab', exact: false }).click();
+  await expect(page.getByRole('status')).toHaveText('Saved.');
+  expect(posts[0]).toMatchObject({ action: 'remove_contact', contactId: appContact.id, expectedVersion: 3, idempotencyKey: expect.any(String) });
+});
+
+test('app contacts without canEdit have no Edit or Remove controls', async ({ page }) => {
+  await mockAccounts(page, { appContacts: [{ ...appContact, canEdit: false }] });
+  const card = firstCard(page);
+  await expect(card.getByText('App buyer · Purchase', { exact: true })).toBeVisible();
+  await expect(card.getByRole('button', { name: /Edit App buyer|Remove App buyer/ })).toHaveCount(0);
+  await expect(card.getByRole('button', { name: 'Add contact for Care Lab', exact: false })).toBeVisible();
+});
+
+test('a contact conflict closes its form and refreshes accounts', async ({ page }) => {
+  const { gets } = await mockAccounts(page, { appContacts: [appContact], status: 409 });
+  await firstCard(page).getByRole('button', { name: 'Edit App buyer', exact: true }).click();
+  const form = page.getByRole('form', { name: 'Edit App buyer for Care Lab', exact: false });
+  const before = gets.length;
+  await form.getByRole('button', { name: 'Save contact for Care Lab', exact: false }).click();
+  await expect(page.getByRole('status')).toHaveText('Someone else changed this account. The list has been refreshed.');
+  await expect.poll(() => gets.length).toBeGreaterThan(before);
+  await expect(form).toHaveCount(0);
+});
+
+test('a contact network retry preserves its idempotency key', async ({ page }) => {
+  const { posts } = await mockAccounts(page, { networkOnce: true });
+  await firstCard(page).getByRole('button', { name: 'Add contact for Care Lab', exact: false }).click();
+  const form = page.getByRole('form', { name: 'Add contact for Care Lab', exact: false });
+  await form.getByLabel('Contact name for Care Lab', { exact: false }).fill('App buyer');
+  await form.getByRole('button', { name: 'Save contact for Care Lab', exact: false }).click();
+  await expect(firstCard(page).getByRole('alert')).toHaveText('Not saved. Check the connection and try again.');
+  await form.getByRole('button', { name: 'Save contact for Care Lab', exact: false }).click();
+  await expect(page.getByRole('status')).toHaveText('Saved.');
+  expect(posts[1]).toEqual(posts[0]);
+});
+
+for (const status of [502, 408, 429, 422]) {
+  test(`contact retry ${status < 500 && status !== 408 && status !== 429 ? 'renews' : 'preserves'} the key after ${status}`, async ({ page }) => {
+    await mockAccounts(page);
+    const attempts: Command[] = [];
+    await page.route('**/api/accounts', async route => {
+      attempts.push(route.request().postDataJSON() as Command);
+      await route.fulfill(attempts.length === 1 ? { status, json: { error: 'Try again' } } : { json: { ok: true } });
+    });
+    await firstCard(page).getByRole('button', { name: 'Add contact for Care Lab', exact: false }).click();
+    const form = page.getByRole('form', { name: 'Add contact for Care Lab', exact: false });
+    await form.getByLabel('Contact name for Care Lab', { exact: false }).fill('App buyer');
+    await form.getByRole('button', { name: 'Save contact for Care Lab', exact: false }).click();
+    await expect(firstCard(page).getByRole('alert')).toHaveText('Try again');
+    await form.getByRole('button', { name: 'Save contact for Care Lab', exact: false }).click();
+    await expect(page.getByRole('status')).toHaveText('Saved.');
+    expect(attempts).toHaveLength(2);
+    if (status === 422) expect(attempts[1].idempotencyKey).not.toEqual(attempts[0].idempotencyKey);
+    else expect(attempts[1]).toEqual(attempts[0]);
+  });
+}
+
+test("3 app contacts show 2 + '+1 more'", async ({ page }) => {
+  await mockAccounts(page, { appContacts: [
+    { ...appContact, id: 'asha', name: 'Asha', businessRole: null },
+    { ...appContact, id: 'ravi', name: 'Ravi', businessRole: null, phone: '9876543211' },
+    { ...appContact, id: 'meena', name: 'Meena', businessRole: null, email: 'meena@example.test' },
+  ] });
+  const card = firstCard(page);
+  await expect(card.getByText('Asha', { exact: true })).toBeVisible();
+  await expect(card.getByText('Ravi', { exact: true })).toBeVisible();
+  await expect(card.getByText('Meena', { exact: true })).toHaveCount(0);
+  await expect(card.getByRole('link', { name: 'Call Asha for Care Lab', exact: false })).toHaveAttribute('href', 'tel:919876543210');
+  const toggle = card.getByRole('button', { name: '1 more contacts for Care Lab', exact: true });
+  await expect(toggle).toHaveText('+1 more');
+  await expect(toggle).toHaveAttribute('aria-expanded', 'false');
+  const controls = await toggle.getAttribute('aria-controls');
+  await toggle.click();
+  await expect(card.getByText('Ravi', { exact: true })).toBeVisible();
+  await expect(card.getByText('Meena', { exact: true })).toBeVisible();
+  await expect(card.getByRole('link', { name: 'Call Ravi for Care Lab', exact: false })).toHaveAttribute('href', 'tel:9876543211');
+  await expect(card.getByRole('link', { name: 'Email Meena for Care Lab', exact: false })).toHaveAttribute('href', 'mailto:meena@example.test');
+  const expanded = card.locator(`[id="${controls}"]`);
+  await expect(expanded).toContainText('Meena');
+  const hide = card.getByRole('button', { name: 'Hide contacts for Care Lab', exact: false });
+  await expect(hide).toHaveText('Hide');
+  await expect(hide).toHaveAttribute('aria-expanded', 'true');
+  await hide.click();
+  await expect(card.getByText('Ravi', { exact: true })).toBeVisible();
+  await expect(card.getByText('Meena', { exact: true })).toHaveCount(0);
+  await expect(page.getByRole('list', { name: 'Accounts' }).getByRole('listitem').nth(1).getByText('No contacts yet', { exact: true })).toBeVisible();
+});
 
 test('all class states render and the Class filter applies in Mine and All', async ({ page }) => {
   const { gets } = await mockAccounts(page, { classes: true });
@@ -224,11 +367,17 @@ test('search debounces and pagination returns the server page', async ({ page })
 });
 test('phone layout has no horizontal overflow including open forms', async ({ page }, testInfo) => {
   test.skip(testInfo.project.name !== 'pricing-mobile', 'Phone layout');
-  await mockAccounts(page, { canAssign: true });
+  await mockAccounts(page, { canAssign: true, appContacts: [appContact] });
   await page.setViewportSize({ width: 375, height: 812 });
   await page.getByRole('button', { name: 'All', exact: true }).click();
+  await expect(firstCard(page).getByRole('button', { name: 'Add contact for Care Lab', exact: true }).locator('..').getByRole('button')).toHaveText(['Log visit', 'Location', 'Add contact', 'Owner']);
+  await firstCard(page).getByRole('button', { name: 'Remove App buyer', exact: true }).click();
+  expect(await page.evaluate(() => document.documentElement.scrollWidth <= document.documentElement.clientWidth)).toBe(true);
+  await firstCard(page).getByRole('button', { name: 'Keep App buyer for Care Lab', exact: false }).click();
   for (const action of ['Log visit', 'Location', 'Owner']) {
     await firstCard(page).getByRole('button', { name: action, exact: true }).click();
     expect(await page.evaluate(() => document.documentElement.scrollWidth <= document.documentElement.clientWidth)).toBe(true);
   }
+  await firstCard(page).getByRole('button', { name: 'Add contact for Care Lab', exact: false }).click();
+  expect(await page.evaluate(() => document.documentElement.scrollWidth <= document.documentElement.clientWidth)).toBe(true);
 });
