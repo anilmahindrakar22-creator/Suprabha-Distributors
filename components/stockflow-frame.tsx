@@ -19,8 +19,9 @@ const InstrumentEconomicsWorkspace = lazy(() => import('./instrument-economics-w
 const UserManagement = lazy(() => import('./user-management').then((module) => ({ default: module.UserManagement })));
 const PricingWorkspace = lazy(() => import('./pricing-workspace').then((module) => ({ default: module.PricingWorkspace })));
 const RequestsWorkspace = lazy(() => import('./requests-workspace').then((module) => ({ default: module.RequestsWorkspace })));
+const AccountsWorkspace = lazy(() => import('./accounts-workspace').then((module) => ({ default: module.AccountsWorkspace })));
 
-type Surface = 'stock' | 'orders' | 'requests' | 'pricing' | 'economics' | 'service' | 'users';
+type Surface = 'stock' | 'orders' | 'requests' | 'accounts' | 'pricing' | 'economics' | 'service' | 'users';
 const initialWork: WorkNotificationState = { connection: 'checking', work: [], workTotal: 0, workMore: false, queues: [], fresh: [], reminders: [], checkedAt: null };
 
 async function warmOrderData(actorEmail: string) {
@@ -210,7 +211,7 @@ export function StockFlowFrame({ actorEmail, actorRole, actorRoles, staffAuth = 
     }
     setSurface(item);
   }
-  const surfaces: Surface[] = ['stock', 'orders', 'requests', ...(hasAnyStockFlowRole(roles, ['administrator', 'management', 'accounts']) ? ['pricing' as const, 'economics' as const] : []), ...(hasAnyStockFlowRole(roles, ['administrator', 'operations', 'sales', 'management']) ? ['service' as const] : []), ...(hasAnyStockFlowRole(roles, ['administrator']) ? ['users' as const] : [])];
+  const surfaces: Surface[] = ['stock', 'orders', 'requests', ...(hasAnyStockFlowRole(roles, ['administrator', 'management', 'sales', 'operations']) ? ['accounts' as const] : []), ...(hasAnyStockFlowRole(roles, ['administrator', 'management', 'accounts']) ? ['pricing' as const, 'economics' as const] : []), ...(hasAnyStockFlowRole(roles, ['administrator', 'operations', 'sales', 'management']) ? ['service' as const] : []), ...(hasAnyStockFlowRole(roles, ['administrator']) ? ['users' as const] : [])];
   const phoneMain: Surface[] = ['stock', 'orders', 'requests'];
   const phoneMore = surfaces.filter((item) => !phoneMain.includes(item));
   // Phone push: dormant until the server reports it is enabled (docs/PUSH-NOTIFICATIONS.md).
@@ -328,6 +329,8 @@ export function StockFlowFrame({ actorEmail, actorRole, actorRoles, staffAuth = 
           <Suspense fallback={<SectionLoading />}><OrderWorkspace key={`${orderFilter}:${orderView.nonce}`} actorEmail={actorEmail} initialStatus={orderFilter} initialQuery={orderView.query} focusOrder={orderView.focus} newOrderIds={newOrderIds} onOrderActed={() => workService.current?.reconcile()} /></Suspense>
         ) : surface === 'requests' ? (
           <Suspense fallback={<SectionLoading />}><RequestsWorkspace roles={roles} /></Suspense>
+        ) : surface === 'accounts' && hasAnyStockFlowRole(roles, ['administrator', 'management', 'sales', 'operations']) ? (
+          <Suspense fallback={<SectionLoading />}><AccountsWorkspace /></Suspense>
         ) : surface === 'pricing' ? (
           <Suspense fallback={<SectionLoading />}><PricingWorkspace actorEmail={actorEmail} actorRole={actorRole} actorRoles={roles} /></Suspense>
         ) : surface === 'economics' ? (

@@ -1,8 +1,8 @@
 # Implementation status (evidence-based)
 
-**Last source review:** 14 Oct 2026; latest acceptance release below was independently verified on 13 Oct.
-- **Code and git:** latest completed RC integration `codex/staff-signin-session-redirect` `e13c993` ([PR #46](https://github.com/anilmahindrakar22-creator/Suprabha-Distributors/pull/46)). D-04/D-15 approval controls are under primary review on `codex/handover-economics-approvals`; the register remains separate. The RC is not merged to `main` and this source status does not certify the production deployment.
-- **Acceptance:** Worker `da9b3d61-f785-4147-b422-bc79fd256733` runs frozen source `e353c8fffb2c5763a72c04cfb5c60472f558904c` (PR #46); rollback `0cd18741-fa5b-46a3-8c2a-c240eb714b31`. Requirements migration `20261013100714` matches the reviewed hash; 59 recorded migrations. Existing Administrator requirements/drill-down reads and phone fit passed; anonymous APIs deny access, served assets match the artifact, business fingerprints were preserved. [ROLLOUT-RECORD](../INSTRUMENT-ECONOMICS-ROLLOUT-RECORD.md). Production and financial/Accounts gates remain open.
+**Last source and acceptance review:** 14 Oct 2026.
+- **Code and git:** latest completed RC integration `codex/staff-signin-session-redirect` `b99cbe1` ([PR #47](https://github.com/anilmahindrakar22-creator/Suprabha-Distributors/pull/47)). D-04/D-15 approval controls are merged; the register remains separate. The RC is not merged to `main` and this source status does not certify the production deployment.
+- **Acceptance:** Worker `e053201a-5dd5-4e09-8558-f7c7e73a53fa` runs frozen source `94577a7e7c0175a04940a06b36938a3ad3d9ca55` (PR #47); rollback `da9b3d61-f785-4147-b422-bc79fd256733`. Administrator controls and automatic-approval migrations `20261014062009` / `20261014062014` match the reviewed hashes; 61 recorded migrations. Existing approvals, ledger/audit/policy values and business fingerprints preserved. Administrator summary/policy reads and phone fit passed; anonymous APIs deny access and served assets match the artifact. No hosted financial command executed. [ROLLOUT-RECORD](../INSTRUMENT-ECONOMICS-ROLLOUT-RECORD.md). Production and financial/Accounts gates remain open.
 - **Production:** recorded migration count is 103, matching `main`. **The deployed commit is unverified** ([PRODUCTION-PILOT-2026-09.md](../PRODUCTION-PILOT-2026-09.md) records public v55 from PR #36, 3 Oct).
 - **Pilot:** **HOLD** (same file, lines 51 and 63).
 - **Original documentation audit:** did not inspect CI runs or the live database. Acceptance evidence above comes from the integration owner's readback, not that audit.
@@ -49,7 +49,7 @@
 | Capability | Status | Evidence |
 | --- | --- | --- |
 | Instrument Economics: placements, investment, attribution, auto purchase cost, GP/recovery, historical instruments | PARTIALLY IMPLEMENTED (acceptance only) | 15 RC migrations `20261007180000`–`20261011010000`; [ROLLOUT-RECORD](../INSTRUMENT-ECONOMICS-ROLLOUT-RECORD.md); pilot ABG. Open: financial sign-off, LDL-C, 11 import exceptions, role sessions |
-| Placement policy 24/36/48 months | IMPLEMENTED BUT NOT VERIFIED IN PRODUCTION | D-04/D-15 approval controls built and under primary integration review: Management within review band, Administrator beyond it and for policy changes; eligible short-payback placements approve atomically with a frozen baseline. Separate register and production cutover remain gated; hosted rollout must be checked in the record |
+| Placement policy 24/36/48 months | IMPLEMENTED BUT NOT VERIFIED IN PRODUCTION | D-04/D-15 merged in PR #47 and deployed to acceptance: Management within review band, Administrator beyond it and for policy changes; eligible short-payback placements approve atomically with a frozen baseline. All four command triggers verified in disposable SQL; live Administrator checks are read-only. Separate role sessions, register and production cutover remain gated |
 | Reagent leakage cases | PARTIALLY IMPLEMENTED (acceptance only) | `leakage-*` components; Economics "Reagent leakage" tab |
 | Complete full-sales Tally coverage (all customers and items) | APPROVED DESIGN ONLY (owner, 13 Oct) | integration owner's untracked `MARKET-FULL-SALES-IMPORT-PLAN.md`; current connector export includes all customers/items in its configured window, but this does not establish complete historical coverage. Coverage publication and native reconciliation remain open |
 | Market / wallet (pins, divisions, append-only estimates, overview, Market list) | PARTIALLY IMPLEMENTED, **parked** | branch `claude/market-w1` (`2807fd8`); local SQL, unit and browser tests only; needs rework (ADR-0006/0007) |
@@ -57,7 +57,8 @@
 | CONSTRAINT diagnosis, ACTION (Action Center), LEARNING (outcomes) | APPROVED DESIGN ONLY | spec §§4–8, 15 |
 | Strategic account classes, stages, 80% scorecard | APPROVED DESIGN ONLY | dominance framework `12a5679` (unmerged branch) |
 | Power Maps, Social Styles | APPROVED DESIGN ONLY | `cba7f67` (unmerged branch) |
-| Territory/assignment, contacts, prospects, visit log | APPROVED DESIGN ONLY / gaps | see [DOCUMENT-INVENTORY §4](DOCUMENT-INVENTORY.md) |
+| Account owners/territories, locations and visit coverage | PARTIALLY IMPLEMENTED (integration candidate; no production release) | Released Claude Accounts W1 `14058cc`; [integration checks](../HANDOVER-CUSTOMER-ACCOUNTS-20261014.md) include full SQL replay, real two-session conflicts, role/idempotency checks and desktop/phone forms. Exact-head CI and acceptance migration/Edge/Worker promotion pending. Mine is a filter; global visibility retained (recommended D-16/D-17 defaults) |
+| Contacts and prospects | APPROVED DESIGN ONLY / gaps | see [DOCUMENT-INVENTORY §4](DOCUMENT-INVENTORY.md); excluded from Accounts W1 |
 | Canonical Market Map | APPROVED DESIGN ONLY | spec §26 |
 | Command Center / KPI registry | APPROVED DESIGN ONLY | KPI framework `828803b` (unmerged branch) |
 | Standalone Tally dashboard and native reconciliation | PARTIALLY IMPLEMENTED (local prototype, untracked) | `standalone/tally-dashboard/` |

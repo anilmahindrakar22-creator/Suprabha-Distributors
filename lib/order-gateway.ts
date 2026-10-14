@@ -2,6 +2,11 @@ import type { OrderCommand } from './order-types';
 import type { EconomicAction } from './instrument-economics-types';
 
 export type GatewayAction =
+  | 'get_accounts'
+  | 'create_territory'
+  | 'assign_account'
+  | 'set_location'
+  | 'log_visit'
   | 'get_instrument_economics'
   | 'recover_economic_command'
   | EconomicAction

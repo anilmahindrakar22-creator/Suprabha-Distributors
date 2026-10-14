@@ -56,7 +56,16 @@ try {
     ) | Where-Object { $_ -and (Test-Path (Join-Path $_ 'PG_VERSION')) }
     $postgresData = $dataCandidates | Select-Object -First 1
     if (-not $postgresData) { throw 'A PostgreSQL server is not running and no initialized portable data directory was found. Set STOCKFLOW_POSTGRES_DATA.' }
-    Invoke-DatabaseCommand $pgCtlProgram @('-D',$postgresData,'-l',(Join-Path $work 'postgres.log'),'-w','start')
+    if ($IsWindows) {
+      # pg_ctl's detached server inherits native pipeline handles on Windows.
+      # Wait for pg_ctl itself, not an output pipe kept open by postgres.
+      $startArguments = @('-D', ('"' + $postgresData + '"'), '-l', ('"' + (Join-Path $work 'postgres.log') + '"'), '-w', 'start')
+      $starter = Start-Process -FilePath $pgCtlProgram -ArgumentList $startArguments -WindowStyle Hidden -PassThru
+      if (-not $starter.WaitForExit(30000)) { throw 'PostgreSQL startup timed out after 30 seconds' }
+      if ($starter.ExitCode -ne 0) { throw "PostgreSQL startup failed with exit code $($starter.ExitCode)" }
+    } else {
+      Invoke-DatabaseCommand $pgCtlProgram @('-D',$postgresData,'-l',(Join-Path $work 'postgres.log'),'-w','start')
+    }
     $serverStartedByScript = $true
   }
   Copy-Item (Join-Path $migrationSource '*.sql') -Destination $work
@@ -148,6 +157,8 @@ create table public.test_upgrade_expected as select to_jsonb(o) as order_data,(s
   Invoke-DatabaseCommand $psqlProgram @('-U',$databaseUser,'-X','-q','-v','ON_ERROR_STOP=1','-d',$database,'-f',$stockAlertTestPath)
   Invoke-DatabaseCommand $psqlProgram @('-U',$databaseUser,'-X','-q','-v','ON_ERROR_STOP=1','-d',$database,'-f',(Join-Path $repository 'supabase/tests/requirements_decision_view.sql'))
   Write-Output 'PASS: requirements decision view: shortage-first order, counts, advisory coverage'
+  Invoke-DatabaseCommand $psqlProgram @('-U',$databaseUser,'-X','-q','-v','ON_ERROR_STOP=1','-d',$database,'-f',(Join-Path $repository 'supabase/tests/customer_accounts.sql'))
+  Write-Output 'PASS: account owner, territory, location and visit log with coverage order'
   Write-Output 'PASS: partial snapshots preserve customers and complete lists retain soft-deactivation'
   Invoke-DatabaseCommand $psqlProgram @('-U',$databaseUser,'-X','-q','-v','ON_ERROR_STOP=1','-d',$database,'-f',(Join-Path $repository 'supabase/tests/catalog_source_version.sql'))
   Write-Output 'PASS: catalog source version and legacy fallback across all order gateways'
@@ -206,6 +217,8 @@ end$$;
   Write-Output 'PASS: complete migration replay, pricing ACID and role-storage tests'
   Invoke-DatabaseCommand $psqlProgram @('-U',$databaseUser,'-X','-q','-v','ON_ERROR_STOP=1','-d',$database,'-f',(Join-Path $repository 'supabase/tests/product_request_concurrency.sql'))
   Write-Output 'PASS: two-session product request review and replay'
+  Invoke-DatabaseCommand $psqlProgram @('-U',$databaseUser,'-X','-q','-v','ON_ERROR_STOP=1','-d',$database,'-f',(Join-Path $repository 'supabase/tests/customer_accounts_concurrency.sql'))
+  Write-Output 'PASS: two-session Accounts first-write conflict, stored replay and audit'
   Invoke-DatabaseCommand $psqlProgram @('-U',$databaseUser,'-X','-q','-v','ON_ERROR_STOP=1','-d',$database,'-f',(Join-Path $repository 'supabase/tests/order_summary_revision.sql'))
   Write-Output 'PASS: access-scoped order revision detects equal-count stage changes'
   Invoke-DatabaseCommand $psqlProgram @('-U',$databaseUser,'-X','-q','-v','ON_ERROR_STOP=1','-d',$database,'-f',(Join-Path $repository 'supabase/tests/price_book_concurrency.sql'))
