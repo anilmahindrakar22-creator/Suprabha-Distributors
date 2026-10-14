@@ -43,8 +43,9 @@ describe('Accounts pure presentation', () => {
     const visible = renderToStaticMarkup(<AccountDetails row={{ ...account, canSeeStyle: true }} mode="mine" today="2026-10-14" />);
     expect(visible).toContain('Analytical · high confidence');
     expect(visible).toContain('Bring the data');
-    expect(visible).toContain('Ratings (0)');
-    expect(visible).toContain('Override style');
+    expect(visible).toContain('More actions for Asha');
+    expect(visible).not.toContain('Ratings (0)');
+    expect(visible).not.toContain('Override style');
     for (const visitedOn of ['2026-09-13', '2026-10-15']) expect(renderToStaticMarkup(<AccountDetails row={{ ...account, lastVisit: { ...account.lastVisit, visitedOn } }} mode="mine" today="2026-10-14" />)).not.toContain('Rate behaviour');
   });
   it('renders the override tip and underlying observed style', () => {
@@ -118,19 +119,18 @@ describe('Accounts pure presentation', () => {
     expect(html).toContain('href="mailto:asha@example.test"');
     expect(html).toContain('added by sales@example.test');
     expect(html).toContain('aria-label="Edit Asha"');
-    expect(html).toContain('aria-label="Remove Asha"');
-    const contactLine = html.match(/<p[^>]*><span[^>]*>Asha · Lab head<\/span>[\s\S]*?<\/p>/)?.[0];
+    expect(html).toMatch(/<button[^>]*aria-label="Edit Asha"[^>]*>Edit<\/button>/);
+    expect(html).toContain('aria-label="More actions for Asha"');
+    expect(html).not.toContain('aria-label="Remove Asha"');
+    const contactLine = html.match(/<p[^>]*><a[^>]*href="tel:919876543210"[\s\S]*?<\/p>/)?.[0];
     expect(contactLine).toContain('href="tel:919876543210"');
     expect(contactLine).toContain('href="mailto:asha@example.test"');
     expect(contactLine).not.toContain('<button');
     expect(contactLine).not.toContain('border');
     expect(contactLine).not.toContain('added by');
     const attributionLine = html.match(/<p[^>]*><span>added by sales@example.test<\/span>[\s\S]*?<\/p>/)?.[0];
-    expect(attributionLine).toContain('aria-label="Edit Asha"');
-    expect(attributionLine).toContain('aria-label="Remove Asha"');
-    expect(attributionLine).toContain('inline-flex min-h-11 items-center px-1 text-xs text-sf-brand/80');
-    expect(attributionLine).toContain('inline-flex items-center whitespace-nowrap');
-    expect(attributionLine).not.toContain('border');
+    expect(attributionLine).not.toContain('<button');
+    expect(html).not.toContain('added by sales@example.test</span> · ');
     expect(html).not.toContain('aria-label="Edit Ravi');
     expect(html).not.toContain('aria-label="Remove Ravi');
     expect(html).toContain('Add contact');

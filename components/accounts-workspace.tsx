@@ -10,7 +10,10 @@ const inputClass = 'min-h-11 w-full min-w-0 max-w-full rounded-xl border border-
 const buttonClass = 'min-h-11 rounded-xl border border-sf-line px-3 text-sm font-bold text-sf-body disabled:opacity-50';
 const primaryClass = 'min-h-11 rounded-xl bg-sf-ink-hover px-4 text-sm font-bold text-sf-soft disabled:opacity-50';
 const dangerClass = 'min-h-11 rounded-xl bg-sf-danger px-4 text-sm font-bold text-white disabled:opacity-50';
-const actionClass = 'min-h-11 rounded-xl px-3 text-sm font-bold text-sf-brand disabled:opacity-50';
+const actionClass = 'min-h-11 rounded-xl border border-sf-line bg-white px-3 text-sm font-bold text-sf-brand disabled:opacity-50';
+const chipClass = 'inline-flex min-h-11 items-center rounded-lg border border-sf-line bg-white px-3 text-sm font-semibold text-sf-brand disabled:opacity-50';
+const chipPrimaryClass = 'inline-flex min-h-11 items-center rounded-lg bg-sf-brand px-3 text-sm font-semibold text-white disabled:opacity-50';
+const chipDangerClass = 'inline-flex min-h-11 items-center rounded-lg border border-sf-danger-line bg-white px-3 text-sm font-semibold text-sf-danger disabled:opacity-50';
 const contactActionClass = 'inline-flex min-h-11 items-center px-1 text-xs text-sf-brand/80 disabled:opacity-50';
 const outcomes: Record<VisitOutcome, string> = { met: 'Met', not_available: 'Not available', order_taken: 'Order taken', issue_raised: 'Issue raised', other: 'Other' };
 const pinError = 'Paste a Google Maps link or two numbers like 18.52, 73.85';
@@ -49,11 +52,13 @@ const behaviours = [
   ['Asks for proof and data', 'Goes by trust and peer labs'],
 ] as const;
 
-function ContactSocial({ contact, canSeeStyle, visitId, attribution, prompt = false, busy = false, onBusy, onSaved }: {
+function ContactSocial({ contact, canSeeStyle, visitId, attribution, renderActions, closeVersion, onOpen, prompt = false, busy = false, onBusy, onSaved }: {
   contact: AppContact; canSeeStyle?: boolean; visitId?: string; attribution?: ReactNode; prompt?: boolean;
+  renderActions?: (rateButton: ReactNode, secondary: ReactNode) => ReactNode; closeVersion?: number; onOpen?: () => void;
 } & ContactCallbacks) {
   const prefix = useId();
   const [rating, setRating] = useState(false);
+  const [step, setStep] = useState(0);
   const [done, setDone] = useState(false);
   const [ratings, setRatings] = useState<number[]>(Array(8).fill(0));
   const [cues, setCues] = useState<StyleCue[]>([]);
@@ -67,9 +72,19 @@ function ContactSocial({ contact, canSeeStyle, visitId, attribution, prompt = fa
   const inFlight = useRef(false);
   const origin = useRef<HTMLButtonElement | null>(null);
   const form = useRef<HTMLFormElement>(null);
+  const stepHeading = useRef<HTMLParagraphElement>(null);
+  const advanceTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const previousStep = useRef(0);
+  const wasRating = useRef(false);
   const who = `${contact.name} (${contact.id})${prompt ? ` after visit ${visitId}` : ''}`;
+  useEffect(() => { setRating(false); setOverriding(false); setHistory(false); }, [closeVersion]);
   useEffect(() => { if (rating || overriding) form.current?.querySelector<HTMLElement>('input, select')?.focus(); }, [rating, overriding]);
-  function cancel() { setRating(false); setOverriding(false); setError(''); origin.current?.focus(); }
+  useEffect(() => {
+    if (rating && wasRating.current && previousStep.current !== step) stepHeading.current?.focus();
+    previousStep.current = step; wasRating.current = rating;
+    return () => { if (advanceTimer.current !== null) clearTimeout(advanceTimer.current); };
+  }, [step, rating]);
+  function cancel() { if (advanceTimer.current !== null) clearTimeout(advanceTimer.current); setRating(false); setOverriding(false); setError(''); origin.current?.focus(); }
   async function post(body: Record<string, unknown>) {
     if (busy || inFlight.current) return;
     inFlight.current = true; onBusy?.(true); setError(''); setNotice('');
@@ -91,42 +106,56 @@ function ContactSocial({ contact, canSeeStyle, visitId, attribution, prompt = fa
   }
   const style = canSeeStyle ? contact.style : undefined;
   const tipKey = style?.override?.style ?? (style && socialStyles.includes(style.state as SocialStyle) ? style.state as SocialStyle : null);
-  const rateButton = <button type="button" disabled={busy} className={contactActionClass} aria-label={`${prompt ? 'Rate' : 'Rate behaviour for'} ${who}`} aria-expanded={rating} onClick={event => { origin.current = event.currentTarget; setRating(true); setOverriding(false); setError(''); }}>{prompt ? 'Rate' : 'Rate behaviour'}</button>;
+  const rateButton = <button type="button" disabled={busy} className={prompt ? chipPrimaryClass : chipClass} aria-label={`${prompt ? 'Rate' : 'Rate behaviour for'} ${who}`} aria-expanded={rating} onClick={event => { onOpen?.(); origin.current = event.currentTarget; setStep(0); setRatings(Array(8).fill(0)); setRating(true); setOverriding(false); setError(''); }}>{prompt ? 'Rate' : 'Rate behaviour'}</button>;
+  const secondary = !prompt && canSeeStyle && contact.styleObservations ? <>
+    <button type="button" className={chipClass} aria-label={`Ratings for ${who}`} aria-expanded={history} onClick={() => setHistory(value => !value)}>Ratings ({contact.styleObservations.length})</button>
+    <button type="button" disabled={busy} className={chipClass} aria-label={`Override style for ${who}`} aria-expanded={overriding} onClick={event => { onOpen?.(); origin.current = event.currentTarget; setOverride(contact.style?.override?.style ?? ''); setReason(''); setOverriding(true); setRating(false); setError(''); }}>Override style</button>
+  </> : null;
   return <div className="min-w-0 space-y-1 break-words">
-    {attribution ? <p className="break-all text-xs text-sf-muted">{attribution}{visitId && !done ? <>{' · '}{rateButton}</> : null}</p> : null}
     {!prompt && style ? <>
       <p className={`text-xs ${tipKey ? 'text-sf-body' : 'text-sf-muted'}`}>{styleLine(style)}</p>
       {tipKey ? <p className="text-xs text-sf-muted">{styleTip(tipKey)}</p> : null}
       {style.override ? <p className="text-xs text-sf-muted">Observed: {style.computedStyle ? styleLabels[style.computedStyle] : 'not enough information'}</p> : null}
     </> : null}
+    {attribution ? <p className="break-all text-xs text-sf-muted">{attribution}</p> : null}
+    {renderActions?.(visitId && !done ? rateButton : null, secondary)}
     {prompt && visitId && !done ? <div className="flex flex-wrap items-center gap-x-2">
       {prompt ? <p className="text-sm text-sf-body">How did {contact.name} behave? (optional, 30 seconds)</p> : null}
       {rateButton}
-      {prompt ? <button type="button" disabled={busy} className={contactActionClass} aria-label={`Skip rating ${who}`} onClick={() => { setDone(true); setRating(false); }}>Skip</button> : null}
-    </div> : null}
-    {!prompt && canSeeStyle && contact.styleObservations ? <div className="flex flex-wrap gap-x-2">
-      <button type="button" className={contactActionClass} aria-label={`Ratings for ${who}`} aria-expanded={history} onClick={() => setHistory(value => !value)}>Ratings ({contact.styleObservations.length})</button>
-      <button type="button" disabled={busy} className={contactActionClass} aria-label={`Override style for ${who}`} aria-expanded={overriding} onClick={event => { origin.current = event.currentTarget; setOverride(contact.style?.override?.style ?? ''); setReason(''); setOverriding(true); setRating(false); setError(''); }}>Override style</button>
+      {prompt ? <button type="button" disabled={busy} className={chipClass} aria-label={`Skip rating ${who}`} onClick={() => { setDone(true); setRating(false); }}>Skip</button> : null}
     </div> : null}
     {!prompt && canSeeStyle && history ? <ul aria-label={`Ratings for ${who}`} className="space-y-1 text-xs text-sf-muted">{contact.styleObservations?.map((entry, index) => <li key={`${entry.recordedAt}-${index}`}>
       {accountDate(entry.recordedAt.slice(0, 10))} · {entry.observer} · A {(entry.a.reduce((sum, value) => sum + value, 0) / 4).toFixed(2)} · R {(entry.r.reduce((sum, value) => sum + value, 0) / 4).toFixed(2)}{entry.cues.length ? ` · ${entry.cues.map(cue => cueLabels[cue]).join(', ')}` : ''}
     </li>)}</ul> : null}
-    {rating ? <form ref={form} aria-label={`Rate behaviour for ${who}`} className="min-w-0 space-y-3 border-t border-sf-line-soft py-3" onSubmit={event => { event.preventDefault(); void post({ action: 'record_style_observation', contactId: contact.id, visitId, a: ratings.slice(0, 4), r: ratings.slice(4), cues }); }}>
-      {!prompt ? <p className="text-sm text-sf-body">How did {contact.name} behave? (optional, 30 seconds)</p> : null}
-      <fieldset disabled={busy} className="min-w-0 space-y-3">
-        {behaviours.map(([left, right], index) => <div key={left} className="min-w-0">
-          {index === 0 || index === 4 ? <h4 className="text-xs font-semibold text-sf-muted">{index === 0 ? 'Pace and control' : 'Warmth and focus'}</h4> : null}
-          <fieldset className="min-w-0"><legend className="sr-only">{left} → {right}</legend>
-            <div className="grid min-w-0 grid-cols-2 items-center gap-x-3 gap-y-1 sm:grid-cols-[minmax(0,1fr)_minmax(0,2fr)_minmax(0,1fr)]">
-              <span aria-hidden="true" className="order-1 min-w-0 text-xs text-sf-muted">{left}</span>
-              <div className="order-3 col-span-2 grid min-w-0 grid-cols-4 gap-1 sm:order-2 sm:col-span-1">{[1, 2, 3, 4].map(value => <input key={value} type="radio" required name={`${prefix}-${index}`} aria-label={`${value} of 4`} className="min-h-11 w-full min-w-0 cursor-pointer appearance-none rounded-lg border border-sf-line bg-sf-soft-0 checked:border-sf-brand checked:bg-sf-brand focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-sf-brand disabled:cursor-default disabled:opacity-50" value={value} checked={ratings[index] === value} onChange={() => setRatings(previous => previous.map((old, position) => position === index ? value : old))} />)}</div>
-              <span aria-hidden="true" className="order-2 min-w-0 text-right text-xs text-sf-muted sm:order-3">{right}</span>
-            </div>
-          </fieldset>
-        </div>)}
-        <fieldset className="min-w-0" aria-label={`They asked for — ${who}`}><legend className="text-sm text-sf-body">They asked for</legend><div className="grid grid-cols-2 gap-x-3 gap-y-1">{styleCues.map(cue => <label key={cue} className="flex min-h-11 items-center gap-2 text-sm text-sf-body"><input type="checkbox" aria-label={`${cueLabels[cue]} for ${who}`} checked={cues.includes(cue)} onChange={event => setCues(previous => event.target.checked ? [...previous, cue] : previous.filter(value => value !== cue))} />{cueLabels[cue]}</label>)}</div></fieldset>
-      </fieldset>
-      <div className="flex flex-wrap gap-2"><button type="submit" disabled={busy} className={primaryClass} aria-label={`Save rating for ${who}`}>Save</button><button type="button" disabled={busy} className={buttonClass} aria-label={`Cancel rating for ${who}`} onClick={cancel}>Cancel</button></div>
+    {rating ? <form ref={form} aria-label={`Rate behaviour for ${who}`} className="min-w-0 space-y-3 border-t border-sf-line-soft py-3" onSubmit={event => { event.preventDefault(); const unanswered = ratings.findIndex(value => value === 0); if (unanswered !== -1) { setStep(unanswered); return; } void post({ action: 'record_style_observation', contactId: contact.id, visitId, a: ratings.slice(0, 4), r: ratings.slice(4), cues }); }}>
+      <div className="flex items-center justify-between gap-2">
+        <p ref={stepHeading} tabIndex={-1} className="text-sm font-semibold text-sf-body">Rate {contact.name} · {step < 8 ? `${step + 1} of 8` : 'last step'}</p>
+        <button type="button" disabled={busy} className={contactActionClass} aria-label={`Cancel rating for ${who}`} onClick={cancel}>Cancel</button>
+      </div>
+      <div aria-hidden="true" className="h-1 w-full rounded-full bg-sf-line-soft"><div aria-hidden="true" className="h-1 rounded-full bg-sf-brand" style={{ width: `${Math.round(step / 8 * 100)}%` }} /></div>
+      {step < 8 ? <>
+        <p className="text-xs font-semibold text-sf-muted">{step < 4 ? 'Pace and control' : 'Warmth and focus'}</p>
+        <fieldset key={step} disabled={busy} className="min-w-0"><legend className="text-sm text-sf-body">In this meeting, {contact.name}…</legend>
+          <div className="grid gap-2">{[1, 2, 3, 4].map(value => {
+            const strength = value === 1 || value === 4 ? 'Clearly' : 'Slightly';
+            const behaviour = behaviours[step][value <= 2 ? 0 : 1];
+            const phrase = behaviour.charAt(0).toLowerCase() + behaviour.slice(1);
+            return <label key={value} className={`flex min-h-12 w-full cursor-pointer items-center rounded-xl border px-4 text-left text-sm has-[:focus-visible]:outline-2 has-[:focus-visible]:outline-sf-brand ${value === 3 ? 'mt-1 ' : ''}${ratings[step] === value ? 'border-sf-brand bg-sf-brand text-white' : 'border-sf-line bg-sf-soft-0 text-sf-body'}`} onClick={event => {
+              if (event.detail > 0 && !busy) {
+                if (advanceTimer.current !== null) clearTimeout(advanceTimer.current);
+                advanceTimer.current = setTimeout(() => setStep(step + 1), 200);
+              }
+            }}>
+              <input type="radio" className="sr-only" name={`${prefix}-q${step}`} value={value} checked={ratings[step] === value} onChange={() => setRatings(previous => previous.map((old, position) => position === step ? value : old))} />
+              <span><strong>{strength}</strong> {phrase}</span>
+            </label>;
+          })}</div>
+        </fieldset>
+      </> : <fieldset disabled={busy} className="min-w-0" aria-label={`They asked for — ${who}`}><legend className="text-sm text-sf-body">They asked for (optional)</legend><div className="grid gap-1">{styleCues.map(cue => <label key={cue} className="flex min-h-11 items-center gap-3 text-sm text-sf-body"><input type="checkbox" aria-label={`${cueLabels[cue]} for ${who}`} checked={cues.includes(cue)} onChange={event => setCues(previous => event.target.checked ? [...previous, cue] : previous.filter(value => value !== cue))} />{cueLabels[cue]}</label>)}</div></fieldset>}
+      <div className="flex flex-wrap gap-2">
+        {step > 0 ? <button type="button" disabled={busy} className={buttonClass} aria-label={`Back, rating ${who}`} onClick={() => setStep(step - 1)}>Back</button> : null}
+        {step < 8 ? <button type="button" disabled={busy || ratings[step] === 0} className={primaryClass} aria-label={`Next, rating ${who}`} onClick={() => setStep(step + 1)}>Next</button> : <button type="submit" disabled={busy} className={primaryClass} aria-label={`Save rating for ${who}`}>Save</button>}
+      </div>
     </form> : null}
     {overriding ? <form ref={form} aria-label={`Override style for ${who}`} className="min-w-0 space-y-3" onSubmit={event => { event.preventDefault(); if (reason.trim().length < 3) { setError('Enter a reason with 3–300 characters.'); return; } void post({ action: 'set_style_override', contactId: contact.id, style: override || null, reason: reason.trim() }); }}>
       <fieldset disabled={busy} className="min-w-0 space-y-3">
@@ -215,6 +244,8 @@ type ContactCallbacks = { busy?: boolean; onSaved?: (duplicatePhone: boolean, er
 type ContactActions = { renderActions?: (addContact: ReactNode) => ReactNode; canSeePowerMap?: boolean; canEraseContacts?: boolean; actorEmail?: string };
 function AppContacts({ row, today, actorEmail, busy = false, onSaved, onConflict, onBusy, renderActions, canSeePowerMap = false, canEraseContacts = false }: { row: AccountRow; today: string } & ContactCallbacks & ContactActions) {
   const [contactsExpanded, setContactsExpanded] = useState(false);
+  const [moreOpen, setMoreOpen] = useState<Record<string, boolean>>({});
+  const [closeSocialVersion, setCloseSocialVersion] = useState(0);
   const contactsId = useId();
   const [editing, setEditing] = useState<AccountRow['appContacts'][number] | 'new' | null>(null);
   const [removing, setRemoving] = useState<string | null>(null);
@@ -237,6 +268,7 @@ function AppContacts({ row, today, actorEmail, busy = false, onSaved, onConflict
   const inFlight = useRef(false);
   useEffect(() => { if (editing) form.current?.querySelector<HTMLInputElement>('input')?.focus(); }, [editing]);
   function open(contact: AccountRow['appContacts'][number] | 'new', button: HTMLButtonElement) {
+    setCloseSocialVersion(value => value + 1);
     origin.current = button;
     setEditing(contact); setRemoving(null); setErasing(null); setAssessing(null); setError('');
     setName(contact === 'new' ? '' : contact.name);
@@ -273,23 +305,42 @@ function AppContacts({ row, today, actorEmail, busy = false, onSaved, onConflict
   const contacts = row.appContacts ?? [];
   const moreCount = Math.max(0, contacts.length - 2);
   const addContact = <button type="button" disabled={busy} className={actionClass} aria-label={`Add contact for ${row.name}`} aria-expanded={editing === 'new'} onClick={event => open('new', event.currentTarget)}>Add contact</button>;
+  const contactForm = editing ? <form ref={form} aria-label={`${editing === 'new' ? 'Add contact' : `Edit ${editing.name}`} for ${accountLabel}`} onSubmit={submit} className="space-y-3 border-t border-sf-line-soft pt-4">
+      <fieldset disabled={busy} className="min-w-0 space-y-3">
+        <div><label htmlFor={`${prefix}-name`} className="text-sm text-sf-body">Name</label><input id={`${prefix}-name`} aria-label={`Contact name for ${accountLabel}`} required minLength={2} maxLength={120} value={name} onChange={event => setName(event.target.value)} className={inputClass} /></div>
+        <div><label htmlFor={`${prefix}-role`} className="text-sm text-sf-body">Role</label><input id={`${prefix}-role`} aria-label={`Contact role for ${accountLabel}`} maxLength={80} placeholder="e.g. Lab head, Purchase" value={businessRole} onChange={event => setBusinessRole(event.target.value)} className={inputClass} /></div>
+        <div><label htmlFor={`${prefix}-phone`} className="text-sm text-sf-body">Phone</label><input id={`${prefix}-phone`} aria-label={`Contact phone for ${accountLabel}`} type="tel" maxLength={40} value={phone} onChange={event => setPhone(event.target.value)} className={inputClass} /></div>
+        <div><label htmlFor={`${prefix}-email`} className="text-sm text-sf-body">Email</label><input id={`${prefix}-email`} aria-label={`Contact email for ${accountLabel}`} type="email" maxLength={160} value={email} onChange={event => setEmail(event.target.value)} className={inputClass} /></div>
+      </fieldset>
+      <div className="flex flex-wrap gap-2"><button type="submit" disabled={busy} className={primaryClass} aria-label={`Save contact for ${accountLabel}`}>{busy ? 'Saving…' : 'Save'}</button><button type="button" disabled={busy} className={buttonClass} aria-label={`Cancel contact for ${accountLabel}`} onClick={cancel}>Cancel</button></div>
+    </form> : null;
   return <>
     <div id={contactsId} className="space-y-2">
     {!contacts.length ? <p className="text-xs text-sf-muted">No contacts yet</p> : null}
-    {(contactsExpanded ? contacts : contacts.slice(0, 2)).map(contact => <div key={contact.id} className="min-w-0">
-      <p className="flex flex-wrap items-center gap-x-2 break-words text-sm text-sf-body"><span className="min-w-0 [overflow-wrap:anywhere]">{contact.name}{contact.businessRole ? ` · ${contact.businessRole}` : ''}</span>{contact.phone ? <a className="inline-flex min-h-11 items-center text-sf-brand" href={`tel:${contact.phone.replace(/\D/g, '')}`} aria-label={`Call ${contact.name} for ${accountLabel}`}>{contact.phone}</a> : null}
+    {(contactsExpanded ? contacts : contacts.slice(0, 2)).map(contact => <div key={contact.id} className="min-w-0 space-y-2 rounded-lg border border-sf-line-soft bg-white/60 p-3">
+      <p className="font-semibold text-sf-body [overflow-wrap:anywhere]">{contact.name}{contact.businessRole ? ` · ${contact.businessRole}` : ''}</p>
+      <p className="flex flex-wrap items-center gap-x-2 break-words text-sm text-sf-body">{contact.phone ? <a className="inline-flex min-h-11 items-center text-sf-brand" href={`tel:${contact.phone.replace(/\D/g, '')}`} aria-label={`Call ${contact.name} for ${accountLabel}`}>{contact.phone}</a> : null}
         {contact.email ? <a className="inline-flex min-h-11 max-w-full items-center break-all text-sf-brand" href={`mailto:${contact.email}`} aria-label={`Email ${contact.name} for ${accountLabel}`}>{contact.email}</a> : null}
       </p>
       {canSeePowerMap ? <p className="break-words text-xs text-sf-muted">{assessmentSummary(contact)} · {contact.lastMetOn ? `Last met ${accountDate(contact.lastMetOn)}` : 'Not met yet'}</p> : null}
-      <ContactSocial key={`${contact.id}-${row.lastVisit?.id ?? 'unvisited'}`} attribution={<><span>added by {contact.addedBy}</span>{contact.canEdit ? <span className="inline-flex items-center whitespace-nowrap">{' · '}
-          <button type="button" disabled={busy} className={contactActionClass} aria-label={`Edit ${contact.name}`} onClick={event => open(contact, event.currentTarget)}>Edit</button>
-          {' · '}<button type="button" disabled={busy} className={contactActionClass} aria-label={`Remove ${contact.name}`} onClick={event => { origin.current = event.currentTarget; setRemoving(contact.id); setErasing(null); setEditing(null); setAssessing(null); setError(''); }}>Remove</button>
-        </span> : null}
-        {canSeePowerMap ? <>{' · '}<button type="button" disabled={busy} className={contactActionClass} aria-label={`Set role for ${contact.name}`} aria-expanded={assessing === contact.id} onClick={event => {
-          origin.current = event.currentTarget; setAssessing(contact.id); setEditing(null); setRemoving(null); setError('');
+      <ContactSocial key={`${contact.id}-${row.lastVisit?.id ?? 'unvisited'}`} attribution={<span>added by {contact.addedBy}</span>}
+        closeVersion={closeSocialVersion} onOpen={() => { setEditing(null); setRemoving(null); setErasing(null); setAssessing(null); setError(''); }}
+        renderActions={(rateButton, secondary) => <>
+        <div className="flex flex-wrap gap-2">
+        {rateButton}
+        {canSeePowerMap ? <button type="button" disabled={busy} className={chipClass} aria-label={`Set role for ${contact.name}`} aria-expanded={assessing === contact.id} onClick={event => {
+          setCloseSocialVersion(value => value + 1);
+          origin.current = event.currentTarget; setAssessing(contact.id); setEditing(null); setRemoving(null); setErasing(null); setError('');
           setDecisionRole(contact.assessment?.decisionRole ?? 'unknown'); setStance(contact.assessment?.stance ?? 'unknown'); setInfluence(contact.assessment?.influence ?? 'unknown'); setReason(contact.assessment?.reason ?? '');
-        }}>Set role</button></> : null}
-      </>} contact={contact} canSeeStyle={row.canSeeStyle} busy={busy} onBusy={onBusy} onSaved={onSaved}
+        }}>Set role</button> : null}
+        {contact.canEdit ? <button type="button" disabled={busy} className={chipClass} aria-label={`Edit ${contact.name}`} onClick={event => open(contact, event.currentTarget)}>Edit</button> : null}
+        {secondary || contact.canEdit ? <button type="button" className={chipClass} aria-label={`More actions for ${contact.name}`} aria-expanded={!!moreOpen[contact.id]} aria-controls={`${prefix}-${contact.id}-actions`} onClick={() => setMoreOpen(previous => ({ ...previous, [contact.id]: !previous[contact.id] }))}>More {moreOpen[contact.id] ? '▴' : '▾'}</button> : null}
+        </div>
+        {moreOpen[contact.id] ? <div id={`${prefix}-${contact.id}-actions`} className="flex flex-wrap gap-2">
+          {secondary}
+          {contact.canEdit ? <button type="button" disabled={busy} className={chipDangerClass} aria-label={`Remove ${contact.name}`} onClick={event => { setCloseSocialVersion(value => value + 1); origin.current = event.currentTarget; setRemoving(contact.id); setErasing(null); setEditing(null); setAssessing(null); setError(''); }}>Remove</button> : null}
+        </div> : null}
+        </>} contact={contact} canSeeStyle={row.canSeeStyle} busy={busy} onBusy={onBusy} onSaved={onSaved}
         visitId={row.lastVisit?.id && row.lastVisit.visitedBy === actorEmail && row.lastVisit.visitedOn >= addAccountDays(today, -30) && row.lastVisit.visitedOn <= today && row.lastVisit.metContacts.some(met => met.id === contact.id) ? row.lastVisit.id : undefined} />
       {canSeePowerMap && assessing === contact.id ? <form aria-label={`Set role for ${contact.name} at ${accountLabel}`} onSubmit={event => { event.preventDefault(); void post({ action: 'set_assessment', contactId: contact.id, decisionRole, stance, influence, reason: reason.trim() || null }); }} className="min-w-0 space-y-3 border-t border-sf-line-soft py-3">
         <fieldset disabled={busy} className="min-w-0 space-y-3">
@@ -300,26 +351,19 @@ function AppContacts({ row, today, actorEmail, busy = false, onSaved, onConflict
         </fieldset>
         <div className="flex flex-wrap gap-2"><button type="submit" disabled={busy} className={primaryClass} aria-label={`Save role for ${contact.name} at ${accountLabel}`}>{busy ? 'Saving…' : 'Save'}</button><button type="button" disabled={busy} className={buttonClass} aria-label={`Cancel role for ${contact.name} at ${accountLabel}`} onClick={cancel}>Cancel</button></div>
       </form> : null}
-      {contact.canEdit && removing === contact.id ? <p className="flex flex-wrap items-center gap-x-2 text-sm text-sf-body"><span>Remove {contact.name}?</span><button type="button" disabled={busy} className={contactActionClass} aria-label={`Confirm remove ${contact.name} for ${accountLabel}`} onClick={() => void post({ action: 'remove_contact', contactId: contact.id, expectedVersion: contact.version })}>Remove</button><button type="button" disabled={busy} className={contactActionClass} aria-label={`Keep ${contact.name} for ${accountLabel}`} onClick={cancel}>Keep</button>{canEraseContacts ? <button type="button" disabled={busy} className="inline-flex min-h-11 items-center px-1 text-xs text-sf-danger disabled:opacity-50" aria-label={`Erase personal data of ${contact.name} for ${accountLabel}`} onClick={() => { setErasing(contact.id); setRemoving(null); setEditing(null); setAssessing(null); setEraseReason(''); setError(''); }}>Erase personal data</button> : null}</p> : null}
+      {contact.canEdit && removing === contact.id ? <p className="flex flex-wrap items-center gap-x-2 text-sm text-sf-body"><span>Remove {contact.name}?</span><button type="button" disabled={busy} className={chipDangerClass} aria-label={`Confirm remove ${contact.name} for ${accountLabel}`} onClick={() => void post({ action: 'remove_contact', contactId: contact.id, expectedVersion: contact.version })}>Remove</button><button type="button" disabled={busy} className={chipClass} aria-label={`Keep ${contact.name} for ${accountLabel}`} onClick={cancel}>Keep</button>{canEraseContacts ? <button type="button" disabled={busy} className={chipDangerClass} aria-label={`Erase personal data of ${contact.name} for ${accountLabel}`} onClick={() => { setErasing(contact.id); setRemoving(null); setEditing(null); setAssessing(null); setEraseReason(''); setError(''); }}>Erase personal data</button> : null}</p> : null}
       {contact.canEdit && erasing === contact.id ? <form noValidate aria-label={`Erase ${contact.name} at ${accountLabel}`} onSubmit={event => { event.preventDefault(); if (eraseReason.trim().length < 3) { setError('Enter a reason with at least 3 characters.'); return; } void post({ action: 'erase_contact', contactId: contact.id, reason: eraseReason.trim() }); }} className="min-w-0 space-y-3 border-t border-sf-line-soft py-3">
         <p className="text-sm text-sf-body">Replaces the name, role, phone and email with &quot;Erased contact&quot; and clears role and style reasons. Visits and ratings stay, without personal details. This can&apos;t be undone. Use it only when the person asks to be erased.</p>
         <div><label htmlFor={`${prefix}-erase-reason`} className="text-sm text-sf-body">Reason (checked, not stored)</label><input id={`${prefix}-erase-reason`} aria-label={`Erasure reason for ${contact.name} at ${accountLabel}`} required minLength={3} maxLength={300} placeholder="e.g. Erasure request by phone" value={eraseReason} onChange={event => setEraseReason(event.target.value)} className={inputClass} /></div>
         {error ? <p role="alert" className="text-sm text-sf-danger">{error}</p> : null}
         <div className="flex flex-wrap gap-2"><button type="submit" disabled={busy} className={dangerClass} aria-label={`Erase permanently ${contact.name} for ${accountLabel}`}>Erase permanently</button><button type="button" disabled={busy} className={buttonClass} aria-label={`Cancel erase ${contact.name} for ${accountLabel}`} onClick={cancel}>Cancel</button></div>
       </form> : null}
+      {editing !== 'new' && editing?.id === contact.id ? contactForm : null}
     </div>)}
     </div>
     {moreCount ? <button type="button" className="min-h-11 text-sm font-semibold text-sf-brand" aria-label={`${contactsExpanded ? 'Hide' : `${moreCount} more`} contacts for ${row.name}`} aria-expanded={contactsExpanded} aria-controls={contactsId} onClick={() => setContactsExpanded(value => !value)}>{contactsExpanded ? 'Hide' : `+${moreCount} more`}</button> : null}
     {renderActions ? renderActions(addContact) : <div className="mt-3 flex flex-wrap gap-2">{addContact}</div>}
-    {editing ? <form ref={form} aria-label={`${editing === 'new' ? 'Add contact' : `Edit ${editing.name}`} for ${accountLabel}`} onSubmit={submit} className="space-y-3 border-t border-sf-line-soft pt-4">
-      <fieldset disabled={busy} className="min-w-0 space-y-3">
-        <div><label htmlFor={`${prefix}-name`} className="text-sm text-sf-body">Name</label><input id={`${prefix}-name`} aria-label={`Contact name for ${accountLabel}`} required minLength={2} maxLength={120} value={name} onChange={event => setName(event.target.value)} className={inputClass} /></div>
-        <div><label htmlFor={`${prefix}-role`} className="text-sm text-sf-body">Role</label><input id={`${prefix}-role`} aria-label={`Contact role for ${accountLabel}`} maxLength={80} placeholder="e.g. Lab head, Purchase" value={businessRole} onChange={event => setBusinessRole(event.target.value)} className={inputClass} /></div>
-        <div><label htmlFor={`${prefix}-phone`} className="text-sm text-sf-body">Phone</label><input id={`${prefix}-phone`} aria-label={`Contact phone for ${accountLabel}`} type="tel" maxLength={40} value={phone} onChange={event => setPhone(event.target.value)} className={inputClass} /></div>
-        <div><label htmlFor={`${prefix}-email`} className="text-sm text-sf-body">Email</label><input id={`${prefix}-email`} aria-label={`Contact email for ${accountLabel}`} type="email" maxLength={160} value={email} onChange={event => setEmail(event.target.value)} className={inputClass} /></div>
-      </fieldset>
-      <div className="flex flex-wrap gap-2"><button type="submit" disabled={busy} className={primaryClass} aria-label={`Save contact for ${accountLabel}`}>{busy ? 'Saving…' : 'Save'}</button><button type="button" disabled={busy} className={buttonClass} aria-label={`Cancel contact for ${accountLabel}`} onClick={cancel}>Cancel</button></div>
-    </form> : null}
+    {editing === 'new' ? contactForm : null}
     {error && !erasing ? <p role="alert" className="text-sm text-sf-danger">{error}</p> : null}
   </>;
 }

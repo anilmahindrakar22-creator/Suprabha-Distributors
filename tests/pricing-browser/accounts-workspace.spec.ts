@@ -12,7 +12,7 @@ const fixture: AccountsResponse = {
   classPolicy: { aMinPaise: '20000000', bMinPaise: '7500000' },
 };
 type Command = Record<string, unknown>;
-async function mockAccounts(page: Page, options: { canSeeStyle?: boolean; canAssign?: boolean; canEraseContacts?: boolean; canSeePowerMap?: boolean; powerAlerts?: AccountRow['powerAlerts']; lastVisit?: AccountRow['lastVisit']; emptyMine?: boolean; status?: number; networkOnce?: boolean; paginate?: boolean; classes?: boolean; appContacts?: AccountRow['appContacts']; duplicatePhone?: boolean } = {}) {
+async function mockAccounts(page: Page, options: { actorEmail?: string; canSeeStyle?: boolean; canAssign?: boolean; canEraseContacts?: boolean; canSeePowerMap?: boolean; powerAlerts?: AccountRow['powerAlerts']; lastVisit?: AccountRow['lastVisit']; emptyMine?: boolean; status?: number; networkOnce?: boolean; paginate?: boolean; classes?: boolean; appContacts?: AccountRow['appContacts']; duplicatePhone?: boolean } = {}) {
   const gets: string[] = [];
   const posts: Command[] = [];
   const territories = [...fixture.territories];
@@ -29,7 +29,7 @@ async function mockAccounts(page: Page, options: { canSeeStyle?: boolean; canAss
       const query = new URL(route.request().url()).searchParams;
       const classRows: AccountRow[] = (['A', 'B', 'below_b', 'not_available', 'not_linked'] as const).map((state, index) => ({ ...base, id: `class-${index}`, name: `Class ${state} Lab`, class: { ...base.class, state, monthlyPaise: index < 3 ? ['21000000', '7500000', '5000000'][index] : null } }));
       const accounts = options.classes ? classRows.filter(row => !query.get('class') || row.class.state === query.get('class')) : options.emptyMine && query.get('scope') === 'mine' ? [] : options.paginate ? [fixture.accounts[Number(query.get('page')) - 1]] : fixture.accounts;
-      await route.fulfill({ json: { ...fixture, accounts: accounts.map(row => ({ ...row, canSeeStyle: options.canSeeStyle ?? false, appContacts: row.id === customerId ? options.appContacts ?? [] : [], ...(row.id === customerId && options.powerAlerts ? { powerAlerts: options.powerAlerts } : {}), ...(row.id === customerId && options.lastVisit ? { lastVisit: options.lastVisit } : {}) })), territories, canAssign: options.canAssign ?? false, canEraseContacts: options.canEraseContacts ?? false, canSeePowerMap: options.canSeePowerMap ?? false, page: { page: Number(query.get('page')), pageSize: options.paginate ? 1 : 50, total: options.paginate ? 3 : accounts.length } } });
+      await route.fulfill({ json: { ...fixture, actorEmail: options.actorEmail ?? fixture.actorEmail, accounts: accounts.map(row => ({ ...row, canSeeStyle: options.canSeeStyle ?? false, appContacts: row.id === customerId ? options.appContacts ?? [] : [], ...(row.id === customerId && options.powerAlerts ? { powerAlerts: options.powerAlerts } : {}), ...(row.id === customerId && options.lastVisit ? { lastVisit: options.lastVisit } : {}) })), territories, canAssign: options.canAssign ?? false, canEraseContacts: options.canEraseContacts ?? false, canSeePowerMap: options.canSeePowerMap ?? false, page: { page: Number(query.get('page')), pageSize: options.paginate ? 1 : 50, total: options.paginate ? 3 : accounts.length } } });
     }
   });
   await page.goto('/?view=accounts');
@@ -46,19 +46,25 @@ const powerContacts: AccountRow['appContacts'] = [
 
 const analytical: NonNullable<AccountRow['appContacts'][number]['style']> = { state: 'analytical', computedStyle: 'analytical', confidence: 'high', observations: 3, distinctDates: 3, assertiveness: 1.5, responsiveness: 1.5, override: null, cues: {} };
 const recentVisit: NonNullable<AccountRow['lastVisit']> = { id: visitId, visitedOn: '2026-10-03', outcome: 'met', visitedBy: 'sales@example.test', note: null, metContacts: powerContacts.map(({ id, name }) => ({ id, name })) };
+const behaviours = [
+  ['Speaks slowly and carefully', 'Speaks quickly and firmly'],
+  ['Asks questions, holds back opinions', 'States opinions'],
+  ['Follows our agenda', 'Takes control of the meeting'],
+  ['Wants time and consults others', 'Decides on the spot'],
+  ['Talks tasks, facts, numbers', 'Talks people, stories'],
+  ['Formal, reserved', 'Warm, animated'],
+  ['Strict on time, straight to business', 'Relaxed, enjoys small talk'],
+  ['Asks for proof and data', 'Goes by trust and peer labs'],
+] as const;
 async function fillRating(page: Page, name: string) {
   const form = firstCard(page).getByRole('form', { name: `Rate behaviour for ${name}`, exact: false });
-  const legends = [
-    'Speaks slowly and carefully → Speaks quickly and firmly',
-    'Asks questions, holds back opinions → States opinions',
-    'Follows our agenda → Takes control of the meeting',
-    'Wants time and consults others → Decides on the spot',
-    'Talks tasks, facts, numbers → Talks people, stories',
-    'Formal, reserved → Warm, animated',
-    'Strict on time, straight to business → Relaxed, enjoys small talk',
-    'Asks for proof and data → Goes by trust and peer labs',
-  ];
-  for (const [index, value] of [1, 2, 3, 4, 4, 3, 2, 1].entries()) await form.getByRole('group', { name: legends[index], exact: true }).getByRole('radio', { name: `${value} of 4`, exact: true }).check();
+  for (const [index, value] of [1, 2, 3, 4, 4, 3, 2, 1].entries()) {
+    const strength = value === 1 || value === 4 ? 'Clearly' : 'Slightly';
+    const behaviour = behaviours[index][value <= 2 ? 0 : 1];
+    const phrase = behaviour.charAt(0).toLowerCase() + behaviour.slice(1);
+    await form.getByRole('radio', { name: `${strength} ${phrase}`, exact: true }).locator('..').click();
+    await expect(form.getByText(`Rate ${name} · ${index < 7 ? `${index + 2} of 8` : 'last step'}`, { exact: true })).toBeVisible();
+  }
   await form.getByRole('checkbox', { name: `Validation or QC papers for ${name}`, exact: false }).check();
   await form.getByRole('checkbox', { name: `Reference labs for ${name}`, exact: false }).check();
   return form;
@@ -73,9 +79,12 @@ test('two met contacts get collapsed prompts and rating sends the returned visit
   for (const name of ['Asha', 'Ravi']) await expect(firstCard(page).getByText(`How did ${name} behave? (optional, 30 seconds)`, { exact: true })).toBeVisible();
   await expect(firstCard(page).getByRole('form', { name: /^Rate behaviour/ })).toHaveCount(0);
   await firstCard(page).getByRole('button', { name: /^Rate Asha/ }).click();
+  const openedForm = firstCard(page).getByRole('form', { name: /^Rate behaviour for Asha/ });
+  await expect(openedForm.getByText('Rate Asha · 1 of 8', { exact: true })).toBeVisible();
+  await expect(openedForm.getByRole('radio')).toHaveCount(4);
+  for (const radio of await openedForm.getByRole('radio').all()) await expect(radio).toBeVisible();
+  await expect(openedForm.getByText('Pace and control', { exact: true })).toBeVisible();
   const form = await fillRating(page, 'Asha');
-  await expect(form.getByRole('heading')).toHaveText(['Pace and control', 'Warmth and focus']);
-  await expect(form.getByRole('radio')).toHaveCount(32);
   await form.getByRole('button', { name: /^Save rating for Asha/ }).click();
   await expect(form).toHaveCount(0);
   expect(posts[1]).toEqual({ action: 'record_style_observation', contactId: powerContacts[0].id, visitId, a: [1, 2, 3, 4], r: [4, 3, 2, 1], cues: ['validation_data', 'reference_labs'], idempotencyKey: expect.any(String) });
@@ -92,6 +101,7 @@ test('owner sees style and tip without management controls', async ({ page }) =>
 
 test('management expands ratings and saves an override with its reason', async ({ page }) => {
   const { posts } = await mockAccounts(page, { canSeeStyle: true, appContacts: [{ ...appContact, style: analytical, styleObservations: [{ observer: 'Manager', recordedAt: '2026-10-03T10:00:00Z', a: [1, 2, 3, 4], r: [1, 1, 2, 2], cues: ['validation_data'] }] }] });
+  await firstCard(page).getByRole('button', { name: 'More actions for App buyer', exact: true }).click();
   await firstCard(page).getByRole('button', { name: /^Ratings for App buyer/ }).click();
   await expect(firstCard(page).getByRole('list', { name: /^Ratings for App buyer/ })).toHaveText('3 Oct · Manager · A 2.50 · R 1.50 · Validation or QC papers');
   await firstCard(page).getByRole('button', { name: /^Override style for App buyer/ }).click();
@@ -104,12 +114,58 @@ test('management expands ratings and saves an override with its reason', async (
   expect(posts[0]).toEqual({ action: 'set_style_override', contactId: appContact.id, style: 'amiable', reason: 'Prefers a trusted service team', idempotencyKey: expect.any(String) });
 });
 
+test('management contact actions share a row and More toggles secondary buttons', async ({ page }) => {
+  await mockAccounts(page, { canSeeStyle: true, canSeePowerMap: true, lastVisit: recentVisit, appContacts: [{ ...powerContacts[0], canEdit: true, style: analytical, styleObservations: [] }] });
+  const card = firstCard(page);
+  const more = card.getByRole('button', { name: 'More actions for Asha', exact: true });
+  const actions = more.locator('..');
+  await expect(actions.getByRole('button')).toHaveText(['Rate behaviour', 'Set role', 'Edit', 'More ▾']);
+  for (const button of await actions.getByRole('button').all()) await expect(button).toBeVisible();
+  await expect(more).toHaveAttribute('aria-expanded', 'false');
+  await more.click();
+  await expect(more).toHaveAttribute('aria-expanded', 'true');
+  const secondary = card.locator(`[id="${await more.getAttribute('aria-controls')}"]`);
+  await expect(secondary.getByRole('button')).toHaveText(['Ratings (0)', 'Override style', 'Remove']);
+  for (const button of await secondary.getByRole('button').all()) await expect(button).toBeVisible();
+  await secondary.getByRole('button', { name: /^Override style for Asha/ }).click();
+  await expect(more).toHaveAttribute('aria-expanded', 'true');
+  await actions.getByRole('button', { name: 'Set role for Asha', exact: true }).click();
+  await expect(card.getByRole('form', { name: /^Override style for Asha/ })).toHaveCount(0);
+  await expect(card.getByRole('form', { name: /^Set role for Asha at/ })).toBeVisible();
+  await more.click();
+  await expect(more).toHaveAttribute('aria-expanded', 'false');
+  await expect(secondary).toHaveCount(0);
+});
+
+test('phone contact action buttons are at least 44 pixels high with More and role form open', async ({ page }, testInfo) => {
+  test.skip(testInfo.project.name !== 'pricing-mobile', 'Phone layout');
+  await mockAccounts(page, { canSeeStyle: true, canSeePowerMap: true, lastVisit: recentVisit, appContacts: [{ ...powerContacts[0], canEdit: true, style: analytical, styleObservations: [] }] });
+  await page.setViewportSize({ width: 375, height: 812 });
+  const card = firstCard(page);
+  const more = card.getByRole('button', { name: 'More actions for Asha', exact: true });
+  const contact = more.locator('../..');
+  await more.click();
+  for (const button of await contact.getByRole('button').all()) {
+    const box = await button.boundingBox();
+    expect(box).not.toBeNull();
+    expect(box!.height).toBeGreaterThanOrEqual(44);
+  }
+  expect(await page.evaluate(() => document.documentElement.scrollWidth <= document.documentElement.clientWidth)).toBe(true);
+  await card.getByRole('button', { name: 'Set role for Asha', exact: true }).click();
+  await expect(card.getByRole('form', { name: /^Set role for Asha at/ })).toBeVisible();
+  expect(await page.evaluate(() => document.documentElement.scrollWidth <= document.documentElement.clientWidth)).toBe(true);
+  for (const button of await card.getByRole('form', { name: /^Set role for Asha at/ }).getByRole('button').all()) {
+    expect((await button.boundingBox())!.height).toBeGreaterThanOrEqual(44);
+  }
+});
+
 test('non-owner sales can rate a recent meeting without seeing styles', async ({ page }) => {
-  await mockAccounts(page, { lastVisit: recentVisit, appContacts: powerContacts.map(contact => ({ ...contact, style: analytical, styleObservations: [] })) });
+  await mockAccounts(page, { actorEmail: 'other@example.test', lastVisit: { ...recentVisit, visitedBy: 'other@example.test' }, appContacts: powerContacts.map(contact => ({ ...contact, canEdit: false, style: analytical, styleObservations: [] })) });
   await expect(firstCard(page).getByText(/confidence|Bring the data/)).toHaveCount(0);
   await expect(firstCard(page).getByRole('button', { name: /^Ratings|^Override style/ })).toHaveCount(0);
   const opener = firstCard(page).getByRole('button', { name: /^Rate behaviour for Asha/ });
-  await expect(opener.locator('..')).toContainText('added by');
+  await expect(opener.locator('..').getByRole('button')).toHaveText(['Rate behaviour']);
+  await expect(firstCard(page).getByRole('button', { name: 'More actions for Asha', exact: true })).toHaveCount(0);
   await opener.click();
   const form = await fillRating(page, 'Asha');
   await form.getByRole('button', { name: /^Cancel rating for Asha/ }).click();
@@ -121,12 +177,48 @@ test('a different visitors meeting has no rating action', async ({ page }) => {
   await expect(firstCard(page).getByRole('button', { name: /^Rate behaviour/ })).toHaveCount(0);
 });
 
-test('phone rating form has no horizontal overflow', async ({ page }, testInfo) => {
+test('Back keeps the rating answer', async ({ page }) => {
+  await mockAccounts(page, { lastVisit: recentVisit, appContacts: powerContacts });
+  await firstCard(page).getByRole('button', { name: /^Rate behaviour for Asha/ }).click();
+  const form = firstCard(page).getByRole('form', { name: /^Rate behaviour for Asha/ });
+  const firstChoice = form.getByRole('radio', { name: 'Clearly speaks slowly and carefully', exact: true });
+  await firstChoice.locator('..').click();
+  await expect(form.getByText('Rate Asha · 2 of 8', { exact: true })).toBeVisible();
+  await form.getByRole('button', { name: /^Back, rating Asha/ }).click();
+  await expect(form.getByText('Rate Asha · 1 of 8', { exact: true })).toBeVisible();
+  await expect(firstChoice).toBeChecked();
+  await form.getByRole('button', { name: /^Next, rating Asha/ }).click();
+  await expect(form.getByText('Rate Asha · 2 of 8', { exact: true })).toBeVisible();
+});
+
+test('keyboard rating selection does not auto-advance', async ({ page }) => {
+  await mockAccounts(page, { lastVisit: recentVisit, appContacts: powerContacts });
+  await firstCard(page).getByRole('button', { name: /^Rate behaviour for Asha/ }).click();
+  const form = firstCard(page).getByRole('form', { name: /^Rate behaviour for Asha/ });
+  const firstChoice = form.getByRole('radio', { name: 'Clearly speaks slowly and carefully', exact: true });
+  await firstChoice.focus();
+  await firstChoice.press('ArrowDown');
+  await expect(form.getByRole('radio', { name: 'Slightly speaks slowly and carefully', exact: true })).toBeChecked();
+  await page.waitForTimeout(300); // Wait beyond the pointer advance delay.
+  await expect(form.getByText('Rate Asha · 1 of 8', { exact: true })).toBeVisible();
+  await expect(form.getByRole('button', { name: /^Next, rating Asha/ })).toBeEnabled();
+});
+
+test('phone rating choices have large tap targets and no horizontal overflow', async ({ page }, testInfo) => {
   test.skip(testInfo.project.name !== 'pricing-mobile', 'Phone layout');
   await mockAccounts(page, { lastVisit: recentVisit, appContacts: powerContacts });
   await page.setViewportSize({ width: 375, height: 812 });
   await firstCard(page).getByRole('button', { name: /^Rate behaviour for Asha/ }).click();
+  const form = firstCard(page).getByRole('form', { name: /^Rate behaviour for Asha/ });
+  await expect(form.getByText('Rate Asha · 1 of 8', { exact: true })).toBeVisible();
+  expect(await page.evaluate(() => document.documentElement.scrollWidth <= document.documentElement.clientWidth)).toBe(true);
+  for (const radio of await form.getByRole('radio').all()) {
+    const box = await radio.locator('..').boundingBox();
+    expect(box).not.toBeNull();
+    expect(box!.height).toBeGreaterThanOrEqual(48);
+  }
   await fillRating(page, 'Asha');
+  await expect(form.getByText('Rate Asha · last step', { exact: true })).toBeVisible();
   expect(await page.evaluate(() => document.documentElement.scrollWidth <= document.documentElement.clientWidth)).toBe(true);
 });
 
@@ -311,12 +403,12 @@ test('edits an app contact using its current version', async ({ page }) => {
   await expect(card.getByText('added by sales@example.test', { exact: true })).toBeVisible();
   await expect(card.getByRole('link', { name: 'Call App buyer for Care Lab', exact: false })).toHaveAttribute('href', 'tel:919876543210');
   await expect(card.getByRole('link', { name: 'Email App buyer for Care Lab', exact: false })).toHaveAttribute('href', 'mailto:buyer@example.test');
-  const contactLine = card.getByText('App buyer · Purchase', { exact: true }).locator('..');
+  const contactLine = card.getByRole('link', { name: 'Call App buyer for Care Lab', exact: false }).locator('..');
   await expect(contactLine.getByRole('link')).toHaveCount(2);
   await expect(contactLine.getByRole('button')).toHaveCount(0);
   await expect(contactLine).not.toContainText('added by');
   const attributionLine = card.getByText('added by sales@example.test', { exact: true }).locator('..');
-  await expect(attributionLine.getByRole('button')).toHaveText(['Edit', 'Remove']);
+  await expect(attributionLine.getByRole('button')).toHaveCount(0);
   await card.getByRole('button', { name: 'Edit App buyer', exact: true }).click();
   const form = page.getByRole('form', { name: 'Edit App buyer for Care Lab', exact: false });
   await expect(form.getByLabel('Contact name for Care Lab', { exact: false })).toHaveValue('App buyer');
@@ -329,6 +421,7 @@ test('edits an app contact using its current version', async ({ page }) => {
 test('remove uses an inline confirmation with Keep and the current version', async ({ page }) => {
   const { posts } = await mockAccounts(page, { appContacts: [appContact] });
   const card = firstCard(page);
+  await card.getByRole('button', { name: 'More actions for App buyer', exact: true }).click();
   const remove = card.getByRole('button', { name: 'Remove App buyer', exact: true });
   await remove.click();
   await expect(card.getByText('Remove App buyer?', { exact: true })).toBeVisible();
@@ -345,6 +438,7 @@ test('administrator can erase personal data with a checked reason and reloads th
   const { gets, posts } = await mockAccounts(page, { canEraseContacts: true, appContacts: [appContact] });
   const card = firstCard(page);
   const before = gets.length;
+  await card.getByRole('button', { name: 'More actions for App buyer', exact: true }).click();
   await card.getByRole('button', { name: 'Remove App buyer', exact: true }).click();
   await card.getByRole('button', { name: 'Erase personal data of App buyer for Care Lab', exact: false }).click();
   const form = card.getByRole('form', { name: 'Erase App buyer at Care Lab', exact: false });
@@ -362,6 +456,7 @@ test('administrator can erase personal data with a checked reason and reloads th
 test('management can remove a contact but cannot erase personal data', async ({ page }) => {
   await mockAccounts(page, { canEraseContacts: false, appContacts: [appContact] });
   const card = firstCard(page);
+  await card.getByRole('button', { name: 'More actions for App buyer', exact: true }).click();
   await card.getByRole('button', { name: 'Remove App buyer', exact: true }).click();
   await expect(card.getByRole('button', { name: 'Confirm remove App buyer for Care Lab', exact: false })).toBeVisible();
   await expect(card.getByRole('button', { name: 'Keep App buyer for Care Lab', exact: false })).toBeVisible();
@@ -373,6 +468,7 @@ test('phone layout has no horizontal overflow with erase form open', async ({ pa
   await mockAccounts(page, { canEraseContacts: true, appContacts: [appContact] });
   await page.setViewportSize({ width: 375, height: 812 });
   const card = firstCard(page);
+  await card.getByRole('button', { name: 'More actions for App buyer', exact: true }).click();
   await card.getByRole('button', { name: 'Remove App buyer', exact: true }).click();
   await card.getByRole('button', { name: 'Erase personal data of App buyer for Care Lab', exact: false }).click();
   await expect(card.getByRole('form', { name: 'Erase App buyer at Care Lab', exact: false })).toBeVisible();
@@ -652,6 +748,7 @@ test('phone layout has no horizontal overflow including open forms', async ({ pa
   await page.setViewportSize({ width: 375, height: 812 });
   await page.getByRole('button', { name: 'All', exact: true }).click();
   await expect(firstCard(page).getByRole('button', { name: 'Add contact for Care Lab', exact: false }).locator('..').getByRole('button')).toHaveText(['Log visit', 'Location', 'Add contact', 'Owner']);
+  await firstCard(page).getByRole('button', { name: 'More actions for App buyer', exact: true }).click();
   await firstCard(page).getByRole('button', { name: 'Remove App buyer', exact: true }).click();
   expect(await page.evaluate(() => document.documentElement.scrollWidth <= document.documentElement.clientWidth)).toBe(true);
   await firstCard(page).getByRole('button', { name: 'Keep App buyer for Care Lab', exact: false }).click();
