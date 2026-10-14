@@ -18,6 +18,16 @@ beforeEach(() => {
   mocks.gateway.mockResolvedValue(workspace);
 });
 describe('accounts API', () => {
+  it.each(['add_contact', 'update_contact', 'remove_contact'])('forwards %s for eligible sales', async action => {
+    mocks.session.mockResolvedValue({ email: 'sales@example.test', roles: ['sales'] });
+    mocks.gateway.mockResolvedValue({ ok: true, version: 2, duplicatePhone: true });
+    const fields = action === 'remove_contact' ? {} : { name: ' Asha ', phone: '9000000000' };
+    const target = action === 'add_contact' ? { customerId: id } : { contactId: id, expectedVersion: 1 };
+    const response = await POST(post({ action, ...target, ...fields, idempotencyKey: 'contacts-route-key-001' }));
+    expect(response.status).toBe(200);
+    expect(mocks.gateway).toHaveBeenCalledWith('sales@example.test', action, { ...target, ...(action === 'remove_contact' ? {} : { name: 'Asha', phone: '9000000000', businessRole: null, email: null }), idempotencyKey: 'contacts-route-key-001' });
+    expect(await response.json()).toEqual({ ok: true, version: 2, duplicatePhone: true });
+  });
   it('requires authentication for reads and writes', async () => {
     mocks.user.mockResolvedValue(null);
     expect((await get()).status).toBe(401);
@@ -49,7 +59,7 @@ describe('accounts API', () => {
     const response = await get(`?scope=mine&class=${state}`);
     expect(response.status).toBe(200);
     expect(mocks.gateway).toHaveBeenCalledWith('manager@example.test', 'get_accounts', { search: '', scope: 'mine', page: 1, class: state });
-    expect(await response.json()).toEqual({ ...classified, actorEmail: 'manager@example.test', canAssign: true });
+    expect(await response.json()).toEqual({ ...classified, accounts: classified.accounts.map(row => ({ ...row, contacts: [], appContacts: [] })), actorEmail: 'manager@example.test', canAssign: true });
   });
   it.each(['', 'a', 'b', 'Below%20B', 'unknown', '%20A%20', 'null'])('rejects invalid class=%s before calling the gateway', async state => {
     const response = await get(`?class=${state}`);

@@ -8,6 +8,7 @@ describe('optional snapshot contacts response', () => {
     const contacts = [{ name: 'Asha', phone: null, email: null }];
     const response = withAccountContacts({ accounts: [older, { ...older, contacts }] });
     expect(response.accounts[0].contacts).toEqual([]);
+    expect(response.accounts[0].appContacts).toEqual([]);
     expect(response.accounts[1].contacts).toEqual(contacts);
     expect(older).not.toHaveProperty('contacts');
   });
@@ -38,6 +39,24 @@ describe('market area warning bounds', () => {
 
 const customerId = '12345678-1234-4234-8234-123456789abc';
 const idempotencyKey = 'accounts-parser-key-001';
+describe('app contact commands', () => {
+  const contact = { action: 'add_contact', customerId, name: ' Asha ', businessRole: ' Lab head ', phone: ' 9000000000 ', email: ' a@example.test ', idempotencyKey };
+  it('trims fields and extracts add/update/remove targets', () => {
+    expect(parseAccountCommand(contact)).toEqual({ action: 'add_contact', payload: { customerId, name: 'Asha', businessRole: 'Lab head', phone: '9000000000', email: 'a@example.test', idempotencyKey } });
+    expect(parseAccountCommand({ ...contact, action: 'update_contact', customerId: undefined, contactId: customerId, expectedVersion: 2 })?.payload).toMatchObject({ contactId: customerId, expectedVersion: 2 });
+    expect(parseAccountCommand({ action: 'remove_contact', contactId: customerId, expectedVersion: 1, idempotencyKey })).toEqual({ action: 'remove_contact', payload: { contactId: customerId, expectedVersion: 1, idempotencyKey } });
+  });
+  it('normalizes optional blanks and omitted fields', () => {
+    expect(parseAccountCommand({ action: 'add_contact', customerId, name: 'Asha', idempotencyKey })?.payload).toMatchObject({ businessRole: null, phone: null, email: null });
+    expect(parseAccountCommand({ ...contact, businessRole: ' ', phone: '', email: ' ' })?.payload).toMatchObject({ businessRole: null, phone: null, email: null });
+  });
+  it.each([{ name: 'x' }, { name: 'x'.repeat(121) }, { businessRole: 'x'.repeat(81) }, { phone: 'x'.repeat(41) }, { email: 'invalid' }, { email: 'a'.repeat(160)+'@' }, { phone: 123 }, { customerId: 'bad' }, { idempotencyKey: 'short' }])('rejects invalid fields %#', override => {
+    expect(parseAccountCommand({ ...contact, ...override })).toBeNull();
+  });
+  it.each([undefined, null, 0, 1.5, 2147483648, '1'])('requires an integer edit/removal version %s', expectedVersion => {
+    for (const action of ['update_contact', 'remove_contact']) expect(parseAccountCommand({ ...contact, action, contactId: customerId, expectedVersion })).toBeNull();
+  });
+});
 const pin = { action: 'set_location', customerId, idempotencyKey, precision: 'pin', latitude: '12.9716', longitude: '77.5946', source: 'manual_pin', expectedVersion: null };
 describe('account class parser', () => {
   it.each(['A', 'B', 'below_b', 'not_available', 'not_linked'])('accepts %s', state => {
