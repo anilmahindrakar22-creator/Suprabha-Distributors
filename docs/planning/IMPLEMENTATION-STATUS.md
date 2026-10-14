@@ -1,12 +1,12 @@
 # Implementation status (evidence-based)
 
-**Last verified:** 13 Oct 2026, read-only.
-- **Code and git:** `main` `3804421` (103 migrations); release candidate (RC) `codex/staff-signin-session-redirect` `9cd36e0` (118 migrations, 62 commits ahead of `main`, **not merged**).
-- **Acceptance:** Worker `0cd18741-fa5b-46a3-8c2a-c240eb714b31` runs frozen source `172e56e+7d7cc0d+codex-economics-summary-read` (integration owner readback, 13 Oct). The uncommitted summary-read overrides are captured by exact manifests; this is not a released Git commit. Evidence: `docs/STOCKFLOW-ECONOMICS-SUMMARY-READ-20261013.md` in the integration workspace and [ROLLOUT-RECORD](../INSTRUMENT-ECONOMICS-ROLLOUT-RECORD.md). Production and financial/Accounts gates remain open.
+**Last source review:** 14 Oct 2026; latest acceptance release below was independently verified on 13 Oct.
+- **Code and git:** latest completed RC integration `codex/staff-signin-session-redirect` `e13c993` ([PR #46](https://github.com/anilmahindrakar22-creator/Suprabha-Distributors/pull/46)). D-04/D-15 approval controls are under primary review on `codex/handover-economics-approvals`; the register remains separate. The RC is not merged to `main` and this source status does not certify the production deployment.
+- **Acceptance:** Worker `da9b3d61-f785-4147-b422-bc79fd256733` runs frozen source `e353c8fffb2c5763a72c04cfb5c60472f558904c` (PR #46); rollback `0cd18741-fa5b-46a3-8c2a-c240eb714b31`. Requirements migration `20261013100714` matches the reviewed hash; 59 recorded migrations. Existing Administrator requirements/drill-down reads and phone fit passed; anonymous APIs deny access, served assets match the artifact, business fingerprints were preserved. [ROLLOUT-RECORD](../INSTRUMENT-ECONOMICS-ROLLOUT-RECORD.md). Production and financial/Accounts gates remain open.
 - **Production:** recorded migration count is 103, matching `main`. **The deployed commit is unverified** ([PRODUCTION-PILOT-2026-09.md](../PRODUCTION-PILOT-2026-09.md) records public v55 from PR #36, 3 Oct).
 - **Pilot:** **HOLD** (same file, lines 51 and 63).
 - **Original documentation audit:** did not inspect CI runs or the live database. Acceptance evidence above comes from the integration owner's readback, not that audit.
-- **PR integration check:** [PR #43 CI run](https://github.com/anilmahindrakar22-creator/Suprabha-Distributors/actions/runs/38303150980) failed on the inherited recovery-image lint and group-margin SQL regression. Application, SQL and test trees are identical to the base branch. Documentation integration does not close these code/release gates; the locally validated acceptance source includes uncommitted overrides.
+- **Completed RC checks:** PR #45 fixed the inherited recovery-image lint, group-margin fixture calendar and notification-permission fixture. [PR #46 exact-head CI](https://github.com/anilmahindrakar22-creator/Suprabha-Distributors/actions/runs/38379641369) passed SQL replay, 1,091 units, static/build/connector checks, 36 general / 372 staff (+ two intended device skips) / 20 offline browser checks and dependency audit. These code checks do not close the production pilot or financial/Accounts gates.
 
 **Rules for this file:**
 - A document doesn't prove a feature exists.
@@ -33,7 +33,7 @@
 | Picking/packing, dispatch, delivery, delivery exceptions | IMPLEMENTED BUT NOT VERIFIED | `20260901…fulfilment`, `20260910…delivery_attention_queue` |
 | Roles: combined role sets, row scope | IMPLEMENTED BUT NOT VERIFIED | `20261004…`, `20261005…`; `supabase/tests/combined_role_*.sql` |
 | Customer pricing engine, price book, group margin, governed approval | IMPLEMENTED BUT NOT VERIFIED | `20260912…`–`20260928…`; [PRICE-BOOK-IMPLEMENTATION-STATUS](../PRICE-BOOK-IMPLEMENTATION-STATUS.md) says "not pilot-ready" |
-| Fast ordering: repeat order, keyboard entry | PARTIALLY IMPLEMENTED | `repeatOrder` in `order-workspace.tsx`; `feature/keyboard-order-entry` merged. **Customer-specific frequent products: not found** |
+| Fast ordering: repeat order, keyboard entry, recent customer products | PARTIALLY IMPLEMENTED (acceptance) | PR #46 ranks active products from up to 20 existing recent OMS orders, excluding cancellations; last quantity defaults and keyboard entry verified. This is recent history, not full Tally frequency; staff timing trial remains open |
 | Offline PIN-protected drafts, encrypted catalogue, reconnect | PARTIALLY IMPLEMENTED | RC commits of 7 Oct; in acceptance; Android device acceptance open |
 | Demand-driven procurement requirements, waiting orders, stock-increase alerts | PARTIALLY IMPLEMENTED | `20261001061531…`, `20261001070000…`, `20261001073000…`; `procurement-requirements.tsx`. PO/GRN references not built; consolidation and arrival-matching depth unverified |
 | Order notifications / push | PARTIALLY IMPLEMENTED | RC; phone push dormant (handover log) |
@@ -49,7 +49,7 @@
 | Capability | Status | Evidence |
 | --- | --- | --- |
 | Instrument Economics: placements, investment, attribution, auto purchase cost, GP/recovery, historical instruments | PARTIALLY IMPLEMENTED (acceptance only) | 15 RC migrations `20261007180000`–`20261011010000`; [ROLLOUT-RECORD](../INSTRUMENT-ECONOMICS-ROLLOUT-RECORD.md); pilot ABG. Open: financial sign-off, LDL-C, 11 import exceptions, role sessions |
-| Placement policy 24/36/48 months | PARTIALLY IMPLEMENTED | `stockflow_economic_policy_versions` (versioned); payback status labels only, **no role routing** (ADR-0013) |
+| Placement policy 24/36/48 months | IMPLEMENTED BUT NOT VERIFIED IN PRODUCTION | D-04/D-15 approval controls built and under primary integration review: Management within review band, Administrator beyond it and for policy changes; eligible short-payback placements approve atomically with a frozen baseline. Separate register and production cutover remain gated; hosted rollout must be checked in the record |
 | Reagent leakage cases | PARTIALLY IMPLEMENTED (acceptance only) | `leakage-*` components; Economics "Reagent leakage" tab |
 | Complete full-sales Tally coverage (all customers and items) | APPROVED DESIGN ONLY (owner, 13 Oct) | integration owner's untracked `MARKET-FULL-SALES-IMPORT-PLAN.md`; current connector export includes all customers/items in its configured window, but this does not establish complete historical coverage. Coverage publication and native reconciliation remain open |
 | Market / wallet (pins, divisions, append-only estimates, overview, Market list) | PARTIALLY IMPLEMENTED, **parked** | branch `claude/market-w1` (`2807fd8`); local SQL, unit and browser tests only; needs rework (ADR-0006/0007) |

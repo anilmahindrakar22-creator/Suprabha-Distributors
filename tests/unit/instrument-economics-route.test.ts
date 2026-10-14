@@ -18,6 +18,20 @@ beforeEach(() => {
 });
 
 describe('instrument economics API', () => {
+  it.each([
+    ['administrator', 'full', true],
+    ['administrator', 'summary', true],
+    ['management', 'full', false],
+    ['management', 'summary', false],
+  ] as const)('returns canAdministrator for %s on the %s read', async (role, view, canAdministrator) => {
+    mocks.session.mockResolvedValue({ email: 'staff@example.com', roles: [role] });
+    const workspace = { readView: view, targets: [], canAdministrator: !canAdministrator };
+    mocks.gateway.mockResolvedValue(workspace);
+    const response = await GET(new Request('http://localhost/api/instrument-economics', { headers: { 'x-stockflow-economics-view': view } }));
+    expect(response.status).toBe(200);
+    expect(await response.json()).toEqual({ ...workspace, actorEmail: 'staff@example.com', canAdministrator });
+  });
+
   it('registers an invoice-backed existing instrument only for Management', async () => {
     const command = { action: 'register_historical_instrument', payload: { sourceLineId: 'invoice-line', expectedSourceRevision: '2', customerId: 'customer', installedOn: '2026-07-30', serialNumber: 'SERIAL-01', reason: 'Confirmed installation record', expectedActorEmail: 'staff@example.com', idempotencyKey: 'historical-instrument-0001' } };
     expect((await POST(jsonRequest(command))).status).toBe(403);
@@ -62,7 +76,7 @@ describe('instrument economics API', () => {
     const workspace = { targets: [], leakage: [], knownGpPaise: '2300000', customer: 'आरोग्य Lab' };
     mocks.gateway.mockResolvedValue(workspace);
     const response = await GET();
-    const expected = new TextEncoder().encode(JSON.stringify({ ...workspace, actorEmail: 'staff@example.com' }));
+    const expected = new TextEncoder().encode(JSON.stringify({ ...workspace, actorEmail: 'staff@example.com', canAdministrator: false }));
     expect(response.headers.get('server-timing')).toMatch(/^stockflow;dur=\d+\.\d, auth;dur=\d+\.\d, member;dur=\d+\.\d, rpc;dur=\d+\.\d, json;dur=\d+\.\d$/);
     expect(response.headers.get('x-stockflow-response-bytes')).toBe(String(expected.byteLength));
     expect(response.headers.get('cache-control')).toBe('private, no-store');

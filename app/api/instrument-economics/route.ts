@@ -36,7 +36,7 @@ export async function GET(request?: Request) {
     if (view === 'summary' && workspace.readView !== 'summary') throw new OrderGatewayError('The Economics summary is not available yet. Refresh after the read-model update.', 503);
     const rpc = performance.now() - rpcStartedAt;
     const { auth, member } = timings;
-    return measuredJsonResponse({ ...workspace, actorEmail: session.email }, startedAt, performance.now(), { auth, member, rpc });
+    return measuredJsonResponse({ ...workspace, actorEmail: session.email, canAdministrator: hasAnyStockFlowRole(session.roles, ['administrator']) }, startedAt, performance.now(), { auth, member, rpc });
   }
   catch (error) { return failure(error); }
 }

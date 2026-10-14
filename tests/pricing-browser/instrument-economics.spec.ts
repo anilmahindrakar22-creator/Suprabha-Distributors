@@ -109,6 +109,18 @@ async function mockWorkspace(page: Page, body = economicsData()) {
   await expect(page.getByText('Business date 9 Oct 2026', { exact: false })).toBeVisible();
 }
 
+test('only administrators see the policy action', async ({ page }) => {
+  await mockWorkspace(page, economicsData({ canAdministrator: false }));
+  await openAdvanced(page);
+  await expect(page.getByLabel('Action', { exact: true }).locator('option[value="set_policy"]')).toHaveCount(0);
+  await page.unroute('**/api/instrument-economics');
+  await mockWorkspace(page, economicsData({ canAdministrator: true }));
+  await openAdvanced(page);
+  await expect(page.getByLabel('Action', { exact: true }).locator('option[value="set_policy"]')).toHaveCount(1);
+  await page.getByLabel('Action', { exact: true }).selectOption('set_policy');
+  await expect(page.getByLabel('Management can approve up to (months)', { exact: true })).toBeVisible();
+});
+
 test('proposed reagent totals say pending approval instead of zero sales or no billed items', async ({ page }, testInfo) => {
   await mockWorkspace(page, economicsData({ targets: [{ ...target, approval: 'proposed', health: 'proposed', expectation: null, revenuePaise: '0', knownGpPaise: '0', forecastMonths: null, itemBreakdown: [] }] }));
   await expect(page.getByText('Waiting for approval in Set up.', { exact: false })).toBeVisible();
@@ -179,25 +191,42 @@ test('verified placement can start actual tracking without an expected target', 
   expect(posts[0]).toMatchObject({ action: 'approve_target', payload: { expectedGeneration: 'run-1', expectedVersion: '2', decision: 'approved' } });
 });
 
-test('proposal above the review band requires an explicit director exception', async ({ page }) => {
+test('proposal above the review band requires explicit administrator approval', async ({ page }) => {
   const posts: Record<string, unknown>[] = [];
   await page.route('**/api/instrument-economics', route => {
-    if (route.request().method() === 'GET') return route.fulfill({ json: economicsData({ canApprove: true, targets: [{ ...target, approval: 'proposed', health: 'proposed',
+    if (route.request().method() === 'GET') return route.fulfill({ json: economicsData({ canAdministrator: true, canApprove: true, targets: [{ ...target, approval: 'proposed', health: 'proposed',
       approvalPreview: { status: 'director_exception_required', capitalPaise: '40000000', instrumentBillingPaise: '0', netInvestmentPaise: '40000000', expectedMonthlyGpPaise: '1000000', expectedPaybackMonths: 40, expectationId: 'start-baseline', expectationEffectiveFrom: '2025-01-01', policyId: 'policy-1', reviewMonths: 36, exceptionMonths: 48 } }] }) });
     posts.push(route.request().postDataJSON());
     return route.fulfill({ status: 400, json: { error: 'Review retained for test' } });
   });
   await page.goto('/?view=instrument-economics');
   await openAdvanced(page);
-  await expect(page.getByText('Director exception required', { exact: true })).toBeVisible();
+  await expect(page.getByText('Administrator approval required', { exact: true })).toBeVisible();
   await page.getByRole('combobox', { name: 'Decision', exact: true }).selectOption('approved');
-  await page.getByLabel('Decision reason', { exact: true }).fill('Director reviewed the extended investment payback');
+  await page.getByLabel('Decision reason', { exact: true }).fill('Administrator reviewed the extended investment payback');
   await page.getByRole('button', { name: 'Submit review', exact: true }).click();
   expect(posts).toHaveLength(0);
-  await page.getByRole('checkbox', { name: 'Director exception for expected investment payback above 36 months' }).check();
+  await page.getByRole('checkbox', { name: 'Administrator approval: I confirm this payback beyond the review band' }).check();
   await page.getByRole('button', { name: 'Submit review', exact: true }).click();
   await expect(page.getByText('Review retained for test', { exact: true })).toBeVisible();
   expect(posts[0]).toMatchObject({ action: 'approve_target', payload: { directorException: true, expectedGeneration: 'run-1' } });
+});
+
+test('management above the review band needs an administrator and can still reject', async ({ page }) => {
+  const posts: Record<string, unknown>[] = [];
+  await page.route('**/api/instrument-economics', route => {
+    if (route.request().method() === 'GET') return route.fulfill({ json: economicsData({ canAdministrator: false, canApprove: true, targets: [{ ...target, approval: 'proposed', health: 'proposed', approvalPreview: { status: 'director_exception_required', capitalPaise: '40000000', instrumentBillingPaise: '0', netInvestmentPaise: '40000000', expectedMonthlyGpPaise: '1000000', expectedPaybackMonths: 40, expectationId: 'start-baseline', expectationEffectiveFrom: '2025-01-01', policyId: 'policy-1', reviewMonths: 36, exceptionMonths: 48 } }] }) });
+    posts.push(route.request().postDataJSON()); return route.fulfill({ status: 400, json: { error: 'Rejection retained for test' } });
+  });
+  await page.goto('/?view=instrument-economics'); await openAdvanced(page);
+  await expect(page.getByText('Needs an Administrator to approve (payback over 36 months).', { exact: true })).toBeVisible();
+  await expect(page.getByRole('checkbox', { name: 'Administrator approval: I confirm this payback beyond the review band' })).toHaveCount(0);
+  await expect(page.locator('select[name="decision"] option[value="approved"]')).toHaveAttribute('disabled', '');
+  await page.getByRole('combobox', { name: 'Decision', exact: true }).selectOption('rejected');
+  await page.getByLabel('Decision reason', { exact: true }).fill('Management rejected capital exposure');
+  await page.getByRole('button', { name: 'Submit review', exact: true }).click();
+  await expect(page.getByText('Rejection retained for test', { exact: true })).toBeVisible();
+  expect(posts[0]).toMatchObject({ action: 'approve_target', payload: { decision: 'rejected' } });
 });
 
 test('blocked proposal can be rejected explicitly while approval remains unavailable', async ({ page }) => {
@@ -589,10 +618,10 @@ test('preserves the exact sign and paise of a capital adjustment with surroundin
   expect(posts).toHaveLength(1); expect(posts[0].payload.amountPaise).toBe('-150');
 });
 
-test('capital review sends an explicit director exception without changing the investment amount', async ({ page }) => {
+test('capital review sends explicit administrator approval without changing the investment amount', async ({ page }) => {
   const posts: Array<{ action: string; payload: Record<string, unknown> }> = [];
   await page.route('**/api/instrument-economics', route => {
-    if (route.request().method() === 'GET') return route.fulfill({ json: economicsData() });
+    if (route.request().method() === 'GET') return route.fulfill({ json: economicsData({ canAdministrator: true }) });
     posts.push(route.request().postDataJSON()); return route.fulfill({ status: 400, json: { error: 'Review configured approval limit' } });
   });
   await page.goto('/?view=instrument-economics');
@@ -603,7 +632,7 @@ test('capital review sends an explicit director exception without changing the i
   await page.getByLabel('Entry kind').selectOption('capital');
   await page.getByLabel('Effective date').fill('2026-09-10');
   await page.getByLabel('Reason').fill('Approved additional capital review');
-  await page.getByLabel('Director exception for increased capital payback', { exact: true }).check();
+  await page.getByLabel('Administrator approval: I confirm this payback beyond the review band', { exact: true }).check();
   await page.getByRole('button', { name: 'Record capital or contribution', exact: true }).click();
   await expect(page.getByRole('alert')).toContainText('Review configured approval limit');
   expect(posts).toHaveLength(1);

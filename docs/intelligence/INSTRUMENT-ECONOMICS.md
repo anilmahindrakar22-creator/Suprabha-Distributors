@@ -42,12 +42,12 @@
 
   | Payback | Status |
   | --- | --- |
-  | ≤ 24 months | attractive |
-  | 25–36 months | management review |
-  | 37–48 months | director exception |
+  | ≤ 24 months | approved automatically (D-15; capital must be recorded) |
+  | 25–36 months | Management approves |
+  | 37–48 months | Administrator approves (D-04) |
   | > 48 months | blocked |
 
-  - **As built:** thresholds are stored and status labels are computed; **approval routing by role is not built**, and there is no director role ([D-04](../planning/OPEN-DECISIONS.md)).
+  - **Implementation:** administrator routing (D-04) and automatic approval (D-15) are built on the released `claude/auto-approval` stack and under primary integration review. Automatic approval requires an open proposed placement, recorded positive net investment and a valid expected-GP baseline; groups stay manual. Hosted/production status must be checked in the rollout record; an integrated branch does not certify the production cutover. [D-15](../planning/OPEN-DECISIONS.md), [design](../INSTRUMENT-AUTO-APPROVAL-DESIGN.md).
 - **No complex accounting in V1:** no depreciation, NPV or IRR (owner brief).
 - **Leakage (plan §6):**
   - consumption-based vs commercial-expectation tiers;

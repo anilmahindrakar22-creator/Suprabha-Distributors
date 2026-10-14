@@ -1,7 +1,8 @@
 -- Disposable local replay database only. Fixtures commit for independent sessions.
 create extension if not exists dblink with schema public;
+insert into private.stockflow_economic_policy_versions(actor,reason,automatic_approval) values('test','Manual approval path fixture',false);
 update private.stockflow_gateway_config set secret_sha256=encode(extensions.digest('economic-race-key','sha256'),'hex') where name='orders';
-insert into public.stockflow_members(email,role,status) values('economic-race@test.local','management','active');
+insert into public.stockflow_members(email,role,status) values('economic-race@test.local','administrator','active');
 insert into private.stockflow_customers(id,name,tally_key,created_by_email) values('cccccccc-cccc-4ccc-8ccc-ccccccccccc1','Approval race fixture','approval-race-customer','test') on conflict(id) do nothing;
 create function public.test_economic_call(payload jsonb, action text default 'set_policy') returns jsonb language plpgsql as $$
 begin return public.stockflow_economics_gateway('economic-race-key','economic-race@test.local',action,payload);

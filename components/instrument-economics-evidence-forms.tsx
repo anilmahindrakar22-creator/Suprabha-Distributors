@@ -1,6 +1,6 @@
 'use client';
 
-import { useId, useState } from 'react';
+import { useEffect, useId, useState } from 'react';
 import { compatiblePurchaseLines, costVerificationSaleLines, maxEconomicEvidenceRows, purchaseMatchKind, type PurchaseMatchKind } from '@/lib/instrument-economics-forms';
 import type { EconomicTarget, EconomicsWorkspaceData } from '@/lib/instrument-economics-types';
 import { Combobox, ComboboxInput, ComboboxContent, ComboboxList, ComboboxItem, ComboboxEmpty } from '@/components/ui/combobox';
@@ -133,10 +133,24 @@ function formatAcquisitionCost(paise: string) {
   const value = BigInt(paise); const absolute = value < BigInt(0) ? -value : value;
   return `${value < BigInt(0) ? '−' : ''}₹${(absolute / BigInt(100)).toLocaleString('en-IN')}.${(absolute % BigInt(100)).toString().padStart(2, '0')}`;
 }
-export function AcquisitionReviewFields({ items }: { items: NonNullable<EconomicsWorkspaceData['acquisitionReviewItems']> }) {
+export function capitalPreviewPaise(input: string): bigint {
+  const parts = /^([+-]?)(\d+)(?:\.(\d{1,2}))?$/.exec(input.trim());
+  return parts ? (BigInt(parts[2]) * BigInt(100) + BigInt((parts[3] ?? '').padEnd(2, '0'))) * (parts[1] === '-' ? BigInt(-1) : BigInt(1)) : BigInt(0);
+}
+export function capitalBeyondManagementReview(target: EconomicTarget | undefined, deltaPaise: bigint, reviewMonths: number) {
+  const gp = target?.investmentReview?.expectedMonthlyGpPaise;
+  if (target?.approval !== 'approved' || deltaPaise <= BigInt(0) || gp == null || BigInt(gp) <= BigInt(0)) return false;
+  // Add the increase before clamping exposure, so surplus instrument billing is retained.
+  const exposure = BigInt(target.capitalPaise) + deltaPaise - BigInt(target.instrumentBillingPaise ?? '0');
+  return exposure > BigInt(gp) * BigInt(reviewMonths);
+}
+export function AcquisitionReviewFields({ items, targets = [], groupMemberships = [], canAdministrator = false, reviewMonths = 36, onBlockedChange }: { items: NonNullable<EconomicsWorkspaceData['acquisitionReviewItems']>; targets?: EconomicTarget[]; groupMemberships?: EconomicsWorkspaceData['groupMemberships']; canAdministrator?: boolean; reviewMonths?: number; onBlockedChange?: (blocked: boolean) => void }) {
   const [targetId, setTargetId] = useState('');
   const changed = items.filter(item => item.changed);
   const selected = changed.find(item => item.targetId === targetId);
+  const affectedIds = new Set([targetId, ...groupMemberships.filter(member => member.placementId === targetId).map(member => member.groupId)]);
+  const beyondReview = selected?.capitalDeltaPaise != null && targets.some(target => affectedIds.has(target.id) && capitalBeyondManagementReview(target, BigInt(selected.capitalDeltaPaise!), reviewMonths));
+  useEffect(() => { onBlockedChange?.(beyondReview && !canAdministrator); }, [beyondReview, canAdministrator, onBlockedChange]);
   return <section aria-label="Acquisition revision review" className="grid min-w-0 gap-3 rounded-xl border border-sf-line-soft p-3 sm:col-span-2">
     <p className="text-xs text-sf-muted">Verify the latest Tally purchase revision. Saving appends a capital adjustment and review; original values remain in the ledger.</p>
     <label className="grid min-w-0 gap-1 text-xs font-semibold">Acquisition to review<select aria-label="Acquisition to review" name="targetId" required value={targetId} onChange={event => setTargetId(event.target.value)} className={inputStyle}><option value="">Select changed acquisition…</option>{changed.map(item => <option key={item.targetId} value={item.targetId}>{item.targetName} · {item.voucherId} rev {item.expectedSourceRevision}</option>)}</select></label>
@@ -149,7 +163,7 @@ export function AcquisitionReviewFields({ items }: { items: NonNullable<Economic
         {selected.cancelled ? <label className="flex items-start gap-2 rounded-lg bg-amber-50 p-3 text-sm text-amber-900"><input type="checkbox" name="confirmCancellation" required className="mt-1" /> I verified this cancellation and approve reducing this acquisition cost to zero.</label> : null}
       </>}
       <label className="grid gap-1 text-xs font-semibold">Acquisition review evidence<input name="reason" required minLength={3} className={inputStyle} /></label>
-      <label className="flex items-start gap-2 text-xs"><input type="checkbox" name="directorException" /> Director exception for increased capital above the configured review payback band</label>
+      {canAdministrator ? <label className="flex items-start gap-2 text-xs"><input type="checkbox" name="directorException" required={beyondReview} /> Administrator approval: I confirm this payback beyond the review band</label> : beyondReview ? <p className="text-xs text-sf-muted">Needs an Administrator to approve (payback over {reviewMonths} months).</p> : null}
     </div> : null}
   </section>;
 }
