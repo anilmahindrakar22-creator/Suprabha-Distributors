@@ -49,7 +49,7 @@ export type EconomicsWorkspaceData = {
   allocations?: { id: string; companyId: string; customerSourceId: string; siteId: string; productId: string; effectiveFrom: string; effectiveTo: string | null; reason: string; shares: { targetId: string; basisPoints: number }[] }[];
   observations?: Record<string, unknown>[];
   groupMemberships?: { id: string; groupId: string; placementId: string; effectiveFrom: string; effectiveTo: string | null }[];
-  sourceLines?: { id: string; companyId: string; voucherId: string; voucherNumber?: string | null; revision: string; lineKey: string; date: string; kind: 'sale' | 'purchase' | 'credit' | 'return'; customerSourceId: string | null; productId: string; productName?: string; quantity: string; unit: string; netSalesPaise: string; batchId: string | null }[];
+  sourceLines?: { id: string; companyId: string; voucherId: string; voucherNumber?: string | null; revision: string; lineKey: string; date: string; kind: 'sale' | 'purchase' | 'purchase_return' | 'credit' | 'return'; customerSourceId: string | null; productId: string; productName?: string; quantity: string; unit: string; netSalesPaise: string; batchId: string | null }[];
   ledger?: Record<string, unknown>[];
   expectationHistory?: Record<string, unknown>[];
   targets: EconomicTarget[]; mappings: EconomicMapping[]; exceptions: EconomicException[];

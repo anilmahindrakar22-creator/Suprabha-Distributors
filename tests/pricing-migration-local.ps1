@@ -249,6 +249,8 @@ end$$;
   Write-Output 'PASS: two-session member role edits, stale denial, replay and audit'
   Invoke-DatabaseCommand $psqlProgram @('-U',$databaseUser,'-X','-q','-v','ON_ERROR_STOP=1','-d',$database,'-f',(Join-Path $repository 'supabase/tests/import_problem_details.sql'))
   Write-Output 'PASS: import problem invoice details and null evidence through the workspace entry point'
+  Invoke-DatabaseCommand $psqlProgram @('-U',$databaseUser,'-X','-q','-v','ON_ERROR_STOP=1','-d',$database,'-f',(Join-Path $repository 'supabase/tests/native_tally_debit_notes.sql'))
+  Write-Output 'PASS: native Debit Note stock depletion, cost conservation, replay and cancellation'
 } finally {
   if ($databaseCreated) { & $dropdbProgram -U $databaseUser --if-exists $database | Out-Null }
   if ($serverStartedByScript) { & $pgCtlProgram -D $postgresData -m fast -w stop | Out-Null }

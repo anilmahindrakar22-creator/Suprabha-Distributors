@@ -40,6 +40,7 @@ describe('read-only pricing release preflight', () => {
       '20261015082020_visit_customers_without_ledger.sql',
       '20261015100000_customer_link_confirmation.sql',
       '20261015120000_import_problem_details.sql',
+      '20261015190800_native_tally_debit_notes.sql',
     ]);
     expect(result.deployed.at(-1)?.localFile).toBe('20261005055748_activate_governed_role_union.sql');
     expect(result.deployed).toHaveLength(103);
@@ -55,7 +56,7 @@ describe('read-only pricing release preflight', () => {
   });
   it('accepts documented CRLF normalization without modifying source', () => {
     const crlf = new Map([...source].map(([name, sql]) => [name, sql.replace(/\r/g, '').replace(/\n/g, '\r\n')]));
-    expect(pricingReleasePreflight(original, crlf).pending).toHaveLength(28);
+    expect(pricingReleasePreflight(original, crlf).pending).toHaveLength(29);
   });
   it('rejects changed SQL including changes inside literals', () => {
     const files = new Map(source);

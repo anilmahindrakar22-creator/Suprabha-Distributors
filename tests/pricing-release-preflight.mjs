@@ -33,6 +33,7 @@ const pricingReleaseFiles = new Set([
   '20261015082020_visit_customers_without_ledger.sql',
   '20261015100000_customer_link_confirmation.sql',
   '20261015120000_import_problem_details.sql',
+  '20261015190800_native_tally_debit_notes.sql',
   '20261004070312_combined_member_role_assignments.sql',
   '20261004071246_combined_role_policy_helpers.sql',
   '20261004071720_combined_role_order_mutation_checks.sql',

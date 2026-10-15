@@ -954,6 +954,14 @@
       "remoteSha256": null,
       "status": "not_deployed",
       "review": "15 October 2026 primary review: additive existing import-exception evidence in private workspace read only; existing role checks, grants and financial/source coverage unchanged. Guard requires exactly one expected projection. Full deployment-order replay and Accounts/null evidence regression required. Production pending; acceptance recorded separately."
+    },
+    {
+      "localFile": "20261015190800_native_tally_debit_notes.sql",
+      "localSha256": "7e63bbf82f43db608cba33de742e8d1096cfa3393b3a58388a8cf9f603bf999a",
+      "remoteVersion": null,
+      "remoteSha256": null,
+      "status": "not_deployed",
+      "review": "Owner16October accepts Debit Notes as booked. Native trade-side extraction; signed supplier returns consume purchase stock before later sale cost without reagent revenue/GP; unresolved returned-stock deficits block later verified costs. Retains immutable source/replay/cancellation audit and private role boundaries. Primary review, disposable deployment-order replay and source CI required before acceptance. Production pending."
     }
   ],
   "liveCheck": {

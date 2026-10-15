@@ -119,7 +119,7 @@ function Convert-TallyEconomicEvidence([xml]$CompanyDocument,[xml]$LedgerDocumen
     foreach ($voucher in $VoucherDocument.SelectNodes('//VOUCHER')) {
         $type = Get-EconomicXmlText $voucher './VOUCHERTYPENAME'
         if ((Get-EconomicXmlText $voucher './ISOPTIONAL') -eq 'Yes') { continue }
-        $kind = switch ($type) { 'Sales' {'sale'} 'GST SALE' {'sale'} 'Purchase' {'purchase'} 'Credit Note' {'return'} default {$VoucherRoles[$type]} }
+        $kind = switch ($type) { 'Sales' {'sale'} 'GST SALE' {'sale'} 'Purchase' {'purchase'} 'Credit Note' {'return'} 'Debit Note' {'native_debit_note'} default {$VoucherRoles[$type]} }
         # Ordinary non-stock banking/accounting documents are outside this ledger.
         # Unknown stock documents must be visible exceptions, never silently omitted.
         $inventoryEntries=@(Get-EconomicVoucherEntries $voucher 'INVENTORY' | Where-Object { $_.SelectSingleNode('./STOCKITEMNAME | ./AMOUNT | ./ACTUALQTY | ./BILLEDQTY') })
@@ -132,13 +132,33 @@ function Convert-TallyEconomicEvidence([xml]$CompanyDocument,[xml]$LedgerDocumen
         $entry.voucherType=$type
         $entry.classificationPolicy=if($type -in @('Sales','GST SALE','Purchase','Credit Note')){'native_economic_v1'}else{'configured_economic_v1'}
         try {
-            if ($kind -notin @('sale','purchase','return','non_economic')) { throw 'Unclassified inventory voucher type; configure its verified voucher role.' }
             if (-not $id -or $revision -notmatch '^\d+$') { throw 'Voucher GUID or AlterID unavailable.' }
             if ($seen.ContainsKey($id)) { throw 'Duplicate voucher GUID in economic export.' }
             $seen[$id] = $true
             $date = [datetime]::ParseExact($dateText,'yyyyMMdd',[Globalization.CultureInfo]::InvariantCulture)
             if ($date -lt $From.Date -or $date -ge $To.Date) { throw 'Tally ignored the economic date window.' }
             $entry.date = $date.ToString('yyyy-MM-dd')
+            if($kind -eq 'native_debit_note'){
+                # Owner: accept Debit Notes as booked. Determine the trade side
+                # from canonical Tally ledger masters, never the voucher title,
+                # supplier/customer name or a blanket configurable sale mapping.
+                $tradeSides=[Collections.Generic.HashSet[string]]::new([StringComparer]::Ordinal)
+                $tradeIds=[Collections.Generic.HashSet[string]]::new([StringComparer]::Ordinal)
+                $debitTradeEntries=@(Get-EconomicVoucherEntries $voucher 'LEDGER')+@($inventoryEntries | ForEach-Object { $_.SelectNodes('./ACCOUNTINGALLOCATIONS.LIST') })
+                foreach($ledgerLine in $debitTradeEntries){
+                    $ledgerName=Get-EconomicXmlText $ledgerLine './LEDGERNAME'
+                    if(-not $ledgers.ContainsKey($ledgerName)){continue}
+                    $ledgerMaster=$ledgers[$ledgerName]
+                    $side=switch($ledgerMaster.parent){'Purchase Accounts' {'purchase'} 'Sales Accounts' {'sale'} default {$null}}
+                    if($side){[void]$tradeSides.Add($side);[void]$tradeIds.Add([string]$ledgerMaster.guid)}
+                }
+                if($cancelled){$entry.kind='purchase_return';$entry.nativeTradeSide='cancelled'}
+                elseif($tradeSides.Count -eq 1){$entry.nativeTradeSide=@($tradeSides)[0];$entry.kind=if($entry.nativeTradeSide -eq 'purchase'){'purchase_return'}else{'sale'}}
+                else{throw 'Debit Note needs one recorded purchase or sales trade side; mixed or missing allocations cannot be guessed.'}
+                $entry.classificationPolicy='native_debit_note_v1';$entry.nativeTradeLedgerIds=@($tradeIds | Sort-Object)
+                $kind=$entry.kind
+            }
+            if ($kind -notin @('sale','purchase','purchase_return','return','non_economic')) { throw 'Unclassified inventory voucher type; configure its verified voucher role.' }
             if($kind -eq 'non_economic'){
                 $entry.classificationPolicy='explicit_non_economic_v1'
                 $entry.exclusionReason='Explicitly configured non-economic document; excluded from revenue, GP and supply.'
@@ -149,11 +169,11 @@ function Convert-TallyEconomicEvidence([xml]$CompanyDocument,[xml]$LedgerDocumen
             # Their canonical identity/revision still reverses the prior economic event.
             if ($cancelled) { $entry.amountStatus='verified';$vouchers.Add($entry);continue }
             $party = Get-EconomicXmlText $voucher './PARTYLEDGERNAME'
-            if ($entry.kind -ne 'purchase') {
+            if ($entry.kind -notin @('purchase','purchase_return')) {
                 if (-not $ledgers.ContainsKey($party)) { throw 'Canonical customer GUID unavailable in the master export.' }
                 $entry.customerSourceId = $ledgers[$party].guid
             }
-            $direction = if ($entry.kind -eq 'purchase') { -1 } else { 1 }
+            $direction = if ($entry.kind -in @('purchase','purchase_return')) { -1 } else { 1 }
             $lineNumber=0; $totalInventory=[long]0; $discount=[long]0; $rounding=[long]0; $tax=[long]0; $charges=[long]0; $partyTotal=[long]0
             $lines=[Collections.Generic.List[object]]::new()
             foreach ($line in $inventoryEntries) {
@@ -181,11 +201,17 @@ function Convert-TallyEconomicEvidence([xml]$CompanyDocument,[xml]$LedgerDocumen
                     $zeroEvidence=[ordered]@{method='tally_numeric_zero_v1';voucherId=$id;revision=$revision;inventoryOrdinal=$lineNumber;sourceNumeric='0'}
                 }
                 $amount=(Convert-EconomicAmount $nativeAmount)*$direction
-                if ($entry.kind -eq 'return') { $qty=-[Math]::Abs($qty) } else { $qty=[Math]::Abs($qty) }
-                if (($entry.kind -in @('sale','purchase') -and $amount -lt 0) -or ($entry.kind -eq 'return' -and $amount -gt 0)) { throw 'Mixed economic signs require review.' }
+                $nativeQuantity=$qty
+                if ($entry.kind -in @('return','purchase_return')) { $qty=-[Math]::Abs($qty) } else { $qty=[Math]::Abs($qty) }
+                if (($entry.kind -in @('sale','purchase') -and $amount -lt 0) -or ($entry.kind -in @('return','purchase_return') -and $amount -gt 0)) { throw 'Mixed economic signs require review.' }
+                if($entry.kind -eq 'purchase_return' -and $qty -eq 0){throw 'Purchase value adjustment needs original purchase allocation; stock movement cannot be invented.'}
                 $totalInventory+=$amount
                 $lines.Add([ordered]@{ lineKey=[string]$lineNumber; productId=$master.guid; quantity=$qty.ToString([Globalization.CultureInfo]::InvariantCulture); unit=$unit; netSalesPaise=[string]$amount; batchId=$(if($line.SelectNodes('./BATCHALLOCATIONS.LIST').Count -eq 1){Get-EconomicXmlText $line './BATCHALLOCATIONS.LIST/BATCHNAME'}else{$null}); focReason=$(if($amount -eq 0 -and $qty -gt 0){'UNKNOWN'}else{$null}); label=$name })
                 if($zeroEvidence){$lines[$lines.Count-1].amountEvidence=$zeroEvidence}
+                if($type -eq 'Debit Note'){
+                    $lines[$lines.Count-1].nativeInventoryAmountPaise=[string](Convert-EconomicAmount $nativeAmount)
+                    $lines[$lines.Count-1].nativeQuantity=$nativeQuantity.ToString([Globalization.CultureInfo]::InvariantCulture)
+                }
             }
             if ($lines.Count -eq 0) { throw 'Accounting-only credit or voucher needs verified product/original-sale linkage.' }
             foreach ($ledgerLine in (Get-EconomicVoucherEntries $voucher 'LEDGER')) {
