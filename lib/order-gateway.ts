@@ -2,6 +2,7 @@ import type { OrderCommand } from './order-types';
 import type { EconomicAction } from './instrument-economics-types';
 
 export type GatewayAction =
+  | 'create_customer'
   | 'record_style_observation'
   | 'set_style_override'
   | 'set_assessment'
@@ -16,6 +17,8 @@ export type GatewayAction =
   | 'log_visit'
   | 'set_class_policy'
   | 'get_instrument_economics'
+  | 'get_link_suggestions'
+  | 'confirm_customer_links'
   | 'recover_economic_command'
   | EconomicAction
   | 'session'

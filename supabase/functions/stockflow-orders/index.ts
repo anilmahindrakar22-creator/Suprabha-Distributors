@@ -6,7 +6,7 @@ const reply = (body: unknown, status = 200, extraHeaders: Record<string, string>
 const actions = ["session", "bootstrap", "get_catalog", "get_customers", "get_order_summary", "list_orders", "get_order_events", "get_order_details", "get_order_pricing", "submit_order_pricing", "apply_governed_order_pricing", "approve_price_exception", "reject_price_exception", "list_price_contracts", "create_price_contract", "approve_price_contract", "reject_price_contract", "list_pricing_policies", "create_pricing_policy", "get_customer_price_book", "preview_customer_prices", "preview_customer_group_margin", "get_product_price_impact", "apply_price_book", "approve_customer_price_book", "approve_customer_group_margin", "apply_product_price_impact", "list_standard_item_prices", "set_standard_item_price", "recover_order_submission", "create_order", "transition_order", "save_fulfilment", "save_dispatch", "confirm_delivery", "edit_order", "create_exception", "resolve_exception", "schedule_installation", "complete_installation", "record_billing_review", "add_order_note", "set_order_priority", "set_order_assignee", "set_order_follow_up", "complete_order_follow_up", "get_service_workspace", "create_service_ticket", "resolve_service_ticket", "list_users", "list_assignable_users", "upsert_user"];
 const readActions = new Set(["session", "bootstrap", "get_catalog", "get_customers", "get_order_summary", "list_orders", "get_order_events", "get_order_details", "get_order_pricing", "list_price_contracts", "list_pricing_policies", "get_customer_price_book", "preview_customer_prices", "preview_customer_group_margin", "get_product_price_impact", "list_standard_item_prices", "recover_order_submission", "get_service_workspace", "list_users", "list_assignable_users"]);
 const requestGate = new RequestGate();
-const accountActions = ['get_accounts', 'create_territory', 'assign_account', 'set_location', 'log_visit', 'set_class_policy', 'add_contact', 'update_contact', 'remove_contact', 'set_assessment', 'erase_contact', 'record_style_observation', 'set_style_override'];
+const accountActions = ['create_customer', 'get_accounts', 'create_territory', 'assign_account', 'set_location', 'log_visit', 'set_class_policy', 'add_contact', 'update_contact', 'remove_contact', 'set_assessment', 'erase_contact', 'record_style_observation', 'set_style_override'];
 actions.push(...accountActions);
 readActions.add('get_accounts');
 const productRequestActions = ['list_product_requests', 'create_product_request', 'review_product_request'];
@@ -18,9 +18,10 @@ actions.push('get_requirement_orders');
 readActions.add('get_requirement_orders');
 actions.push('get_stock_alerts');
 readActions.add('get_stock_alerts');
-const economicActions = ['get_instrument_economics','recover_economic_command','register_historical_instrument','create_target','set_mapping','set_item_group_mapping','set_expectation','record_observation','approve_target','link_instrument_billing','review_acquisition','record_capital','set_group_members','close_group_membership','set_allocation','close_allocation','close_target','set_policy','rebuild','create_case','update_case','claim_recovery','verify_cost','resolve_line'];
+const economicActions = ['get_link_suggestions','confirm_customer_links','get_instrument_economics','recover_economic_command','register_historical_instrument','create_target','set_mapping','set_item_group_mapping','set_expectation','record_observation','approve_target','link_instrument_billing','review_acquisition','record_capital','set_group_members','close_group_membership','set_allocation','close_allocation','close_target','set_policy','rebuild','create_case','update_case','claim_recovery','verify_cost','resolve_line'];
 actions.push(...economicActions);
 readActions.add('get_instrument_economics');
+readActions.add('get_link_suggestions');
 
 Deno.serve(async (request: Request) => {
   if (request.method !== "POST") return reply({ error: "Method not allowed" }, 405);

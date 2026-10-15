@@ -18,6 +18,15 @@ beforeEach(() => {
   mocks.gateway.mockResolvedValue(workspace);
 });
 describe('accounts API', () => {
+  it.each(['sales', 'operations', 'management', 'administrator'])('forwards ledger-free customer creation for current %s access', async role => {
+    mocks.session.mockResolvedValue({ email: 'staff@example.test', roles: [role] });
+    const payload = { name: 'New visit customer', city: null, phone: null, idempotencyKey: 'accounts-create-customer-001' };
+    mocks.gateway.mockResolvedValue({ ok: true, customerId: id, name: payload.name, tallyLedgerState: 'no_ledger' });
+    const response = await POST(post({ action: 'create_customer', ...payload }));
+    expect(response.status).toBe(200);
+    expect(mocks.gateway).toHaveBeenCalledWith('staff@example.test', 'create_customer', payload);
+    expect(response.headers.get('cache-control')).toBe('private, no-store');
+  });
   it.each(['record_style_observation', 'set_style_override'])('forwards %s and preserves SQL authorization', async action => {
     const fields = action === 'record_style_observation' ? { visitId: id, a: [1, 2, 3, 4], r: [4, 3, 2, 1], cues: ['cost_per_test'] } : { style: null, reason: 'Clear override' };
     const payload = { contactId: id, ...fields, idempotencyKey: 'social-route-command-0001' };
