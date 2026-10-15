@@ -82,6 +82,15 @@ foreach($changed in @($numericZero.OuterXml.Replace('REVISION>10','REVISION>11')
 }
 Assert-Economic ((Get-TallyEconomicNumericAmountCollection 'SUPRABHA DISTRIBUTORS' $from $to) -match 'EconomicVoucherRevision : \$\$Owner:\$AlterID') 'Numeric evidence export lacks revision binding'
 Assert-Economic ((Get-TallyEconomicCollection 'SUPRABHA DISTRIBUTORS' 'CompanyTest' 'Company' 'Name,GUID' $from $to) -match 'EconomicCompany') 'Company export lacks canonical company filter'
+foreach($invalidName in @('release-company-before','202604Vouchers','Bad<Name','Bad"Name','', 'Company_Test')){
+    $rejected=$false
+    try { Get-TallyEconomicCollection 'SUPRABHA DISTRIBUTORS' $invalidName 'Company' 'Name,GUID' $from $to | Out-Null }
+    catch { $rejected=$_.Exception.Message -eq 'Economic collection name must start with a letter and contain only letters and digits.' }
+    Assert-Economic $rejected 'Invalid TDL collection name was allowed to reach request transport'
+}
+$safeCompanyRequest=[xml](Get-TallyEconomicCollection 'SUPRABHA DISTRIBUTORS' 'StockFlowReleaseCompanyBefore' 'Company' 'Name,GUID' $from $to)
+Assert-Economic ($safeCompanyRequest.ENVELOPE.HEADER.ID -ceq 'StockFlowReleaseCompanyBefore' -and $safeCompanyRequest.ENVELOPE.BODY.DESC.TDL.TDLMESSAGE.COLLECTION.NAME -ceq $safeCompanyRequest.ENVELOPE.HEADER.ID) 'TDL definition and export identity differ'
+Write-Output 'PASS: invalid TDL names fail before transport; safe collection identity matches its definition'
 [xml]$custom=$vouchers.OuterXml.Replace('<VOUCHERTYPENAME>Sales</VOUCHERTYPENAME>','<VOUCHERTYPENAME>Lab Sales</VOUCHERTYPENAME>')
 $unknown=Convert-TallyEconomicEvidence $company $ledgers $products $custom $from $to
 Assert-Economic ($unknown.vouchers.Count -eq 1 -and $unknown.vouchers[0].amountStatus -eq 'unverified') 'Custom stock voucher silently omitted'

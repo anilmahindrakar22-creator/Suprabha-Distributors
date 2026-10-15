@@ -251,6 +251,11 @@ function Convert-TallyEconomicEvidence([xml]$CompanyDocument,[xml]$LedgerDocumen
     return $result
 }
 function Get-TallyEconomicCollection([string]$Company,[string]$Name,[string]$Type,[string]$Fetch,[datetime]$From,[datetime]$To) {
+    # Generated TDL definitions use simple identifiers. Invalid names can make
+    # Tally open a blocking error dialog instead of returning an HTTP error.
+    if($Name -cnotmatch '^[A-Za-z][A-Za-z0-9]*$'){
+        throw 'Economic collection name must start with a letter and contain only letters and digits.'
+    }
     $escaped=[Security.SecurityElement]::Escape($Company)
     $filter=if($Type -eq 'Voucher'){'<FILTER>EconomicPeriod</FILTER>'}else{''}
     $formula=if($Type -eq 'Voucher'){'<SYSTEM TYPE="Formulae" NAME="EconomicPeriod">$Date &gt;= ##SVFromDate AND $Date &lt;= ##SVToDate</SYSTEM>'}else{''}
