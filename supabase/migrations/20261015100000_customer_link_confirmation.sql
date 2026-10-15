@@ -91,13 +91,13 @@ create trigger stockflow_import_customer_ledgers before insert or update of payl
 
 create function private.stockflow_current_ledger_generation(p_company text) returns text
 language sql stable set search_path=pg_catalog,private as $$
- -- Inspect the latest accepted observation, including explicit empty/rejected lists.
+ -- Ledger identity is accepted independently of voucher/financial coverage.
+ -- Inspect the latest committed observation, including empty/rejected lists.
  -- Failed same-version replacement cannot leave that version selectable.
  select case when l.valid and not exists(select 1 from private.stockflow_economic_import_exceptions e
    where e.company_id=l.company_id and e.evidence->>'kind'='customer_ledger_master' and e.recorded_at>=l.imported_at
     and (e.evidence->>'sourceVersion'=l.source_version or e.evidence->>'blocking'='true')) then l.source_version end
  from private.stockflow_economic_ledger_generations l where l.company_id=p_company
-  and exists(select 1 from private.stockflow_economic_source_coverage c where c.company_id=l.company_id and c.source_version=l.source_version)
  order by l.observed_at desc,l.imported_at desc,l.source_version desc limit 1
 $$;
 revoke all on function private.stockflow_current_ledger_generation(text) from public,anon,authenticated,service_role;

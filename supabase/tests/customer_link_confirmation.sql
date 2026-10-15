@@ -75,7 +75,15 @@ begin
    raise exception 'Sales access accepted';exception when insufficient_privilege then null;end;
  end loop;
  v_read:=private.stockflow_customer_link_command('test',array['management'],'get_link_suggestions','{"companyId":"link-waiting-company"}');
- if v_read->>'waiting' is distinct from 'true' then raise exception 'Unaccepted export offered';end if;
+ if v_read->>'companyId' is distinct from 'link-waiting-company' or jsonb_array_length(v_read->'rows')<>1 then
+  raise exception 'REGRESSION: verified ledger identities are blocked by unrelated voucher coverage';end if;
+ if exists(select 1 from private.stockflow_economic_source_coverage where company_id='link-waiting-company') then
+  raise exception 'Master-only identity list certified sales coverage';end if;
+ perform public.stockflow_economics_gateway('link-test-key','link-manager@test.local','confirm_customer_links',
+  '{"companyId":"link-waiting-company","sourceVersion":"2026-10-15T10:00:00Z","rows":[{"customerId":"15100000-0000-4000-8000-000000000004","ledgerGuid":"foreign"}],"reason":"Verified native ledger only","idempotencyKey":"link-master-only-confirm-001"}');
+ if private.stockflow_account_class('15100000-0000-4000-8000-000000000004',(now() at time zone 'Asia/Kolkata')::date)->>'state' is distinct from 'not_available'
+  or exists(select 1 from private.stockflow_economic_source_coverage where company_id='link-waiting-company') then
+  raise exception 'Identity confirmation activated unverified financial coverage/class';end if;
  -- Create both conflict directions using the real shared identity authority.
  insert into private.stockflow_economic_customer_identities(company_id,source_id,customer_id,verified_by)
   values('link-test-company','gamma','15100000-0000-4000-8000-000000000004','test');

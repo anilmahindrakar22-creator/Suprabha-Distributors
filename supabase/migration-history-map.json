@@ -941,11 +941,11 @@
     },
     {
       "localFile": "20261015100000_customer_link_confirmation.sql",
-      "localSha256": "eead14544682f3d8bf23477dd74a33d5309104abe62896f6600953c3c3d24b67",
+      "localSha256": "93af57647d4bfeddf5d5c1ca3ecfa9380d6059385aa40c1b388312cb4b80ad14",
       "remoteVersion": null,
       "remoteSha256": null,
       "status": "not_deployed",
-      "review": "15 October 2026 restored one-time customer links and visit-only customers: private immutable provenance and canonical master generations, shared first advisory lock, strict current-role gateway, retained customer UUID, atomic command receipts, exact name-only suggestions and governed conflicts. Local replay and phone fixtures required. No hosted release; Economics cutover gates retained."
+      "review": "15 October 2026 restored one-time customer links and visit-only customers: private immutable provenance and canonical master generations, shared first advisory lock, strict current-role gateway, retained customer UUID, atomic command receipts, exact name-only suggestions and governed conflicts. Local replay and phone fixtures required. No hosted release; Economics cutover gates retained. Primary release correction: accepted immutable ledger identity is independent of voucher coverage; ledger-only confirmation cannot certify sales/classes."
     }
   ],
   "liveCheck": {
