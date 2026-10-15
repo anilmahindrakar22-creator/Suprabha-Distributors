@@ -1263,7 +1263,7 @@ test('review documents remain readable and scrollable on a narrow phone', async 
   await page.setViewportSize({ width: 375, height: 532 });
   const exceptions = Array.from({ length: 11 }, (_, i) => ({ sourceId: `review-source-${i}`, productId: '', date: '2026-10-10', netSalesPaise: '0', status: 'import_rejected', reason: 'Review required', voucherNumber: i ? `DN/${i}` : 'SD/26-27/VERY-LONG-UNBROKEN-INVOICE-REFERENCE-0123456789012345678901234567890', voucherType: i ? 'Debit Note' : 'GST SALE', voucherDate: '2026-10-10', detail: i ? 'Unclassified inventory voucher type; configure its verified voucher role.' : 'Accounting-only credit or voucher needs verified product/original-sale linkage.' }));
   await mockWorkspace(page, economicsData({ exceptions }));
-  await page.getByRole('navigation', { name: 'Economics sections' }).getByRole('button', { name: 'To do', exact: true }).click();
+  await page.getByRole('navigation', { name: 'Economics sections' }).getByRole('button', { name: 'To do (11)', exact: true }).click();
   const region = page.getByRole('region', { name: 'Tally import problems' });
   await region.getByText('Show document details (11)', { exact: true }).click();
   await expect(region.getByRole('listitem')).toHaveCount(11);
