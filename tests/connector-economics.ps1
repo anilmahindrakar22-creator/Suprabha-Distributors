@@ -21,6 +21,7 @@ $nativeDebit=Convert-TallyEconomicEvidence $company $debitLedgers $products $pur
 Assert-Economic ($nativeDebit.vouchers[0].amountStatus -eq 'verified' -and $nativeDebit.vouchers[0].kind -eq 'purchase_return') 'Native purchase Debit Note was not accepted as supplier stock return'
 Assert-Economic ($nativeDebit.vouchers[0].lines[0].quantity -eq '-70' -and $nativeDebit.vouchers[0].lines[0].netSalesPaise -eq '-5000000' -and $nativeDebit.vouchers[0].taxPaise -eq '-900000') 'Supplier return lost recorded signed economics or included GST'
 Assert-Economic ($nativeDebit.vouchers[0].nativeTradeSide -eq 'purchase' -and $nativeDebit.vouchers[0].lines[0].nativeInventoryAmountPaise -eq '5000000') 'Debit Note native classification/amount evidence missing'
+Assert-Economic ($nativeDebit.vouchers[0].nativePartySourceId -eq 'customer-guid-1' -and -not $nativeDebit.vouchers[0].Contains('customerSourceId')) 'Supplier canonical identity was lost or misrepresented as customer revenue'
 [xml]$salesDebit=$vouchers.OuterXml.Replace('<VOUCHERTYPENAME>Sales</VOUCHERTYPENAME>','<VOUCHERTYPENAME>Debit Note</VOUCHERTYPENAME>')
 $nativeSalesDebit=Convert-TallyEconomicEvidence $company $ledgers $products $salesDebit $from $to
 Assert-Economic ($nativeSalesDebit.vouchers[0].amountStatus -eq 'verified' -and $nativeSalesDebit.vouchers[0].kind -eq 'sale' -and $nativeSalesDebit.vouchers[0].lines[0].netSalesPaise -eq '5000000') 'Native sales Debit Note was incorrectly treated as supplier return'

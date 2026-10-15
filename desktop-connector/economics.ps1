@@ -169,6 +169,12 @@ function Convert-TallyEconomicEvidence([xml]$CompanyDocument,[xml]$LedgerDocumen
             # Their canonical identity/revision still reverses the prior economic event.
             if ($cancelled) { $entry.amountStatus='verified';$vouchers.Add($entry);continue }
             $party = Get-EconomicXmlText $voucher './PARTYLEDGERNAME'
+            if($type -eq 'Debit Note'){
+                if(-not $ledgers.ContainsKey($party)){throw 'Canonical party GUID unavailable in the master export.'}
+                $entry.nativePartySourceId=$ledgers[$party].guid
+                $entry.nativePartyName=$party
+                $entry.nativeReference=Get-EconomicXmlText $voucher './REFERENCE'
+            }
             if ($entry.kind -notin @('purchase','purchase_return')) {
                 if (-not $ledgers.ContainsKey($party)) { throw 'Canonical customer GUID unavailable in the master export.' }
                 $entry.customerSourceId = $ledgers[$party].guid
