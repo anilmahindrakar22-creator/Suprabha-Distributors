@@ -167,6 +167,10 @@ create table public.test_upgrade_expected as select to_jsonb(o) as order_data,(s
   Write-Output 'PASS: Power Map assessments, met contacts, alerts, visibility and erasure'
   Invoke-DatabaseCommand $psqlProgram @('-U',$databaseUser,'-X','-q','-v','ON_ERROR_STOP=1','-d',$database,'-f',(Join-Path $repository 'supabase/tests/social_styles.sql'))
   Write-Output 'PASS: Social Styles observation, computation, visibility and overrides'
+  Invoke-DatabaseCommand $psqlProgram @('-U',$databaseUser,'-X','-q','-v','ON_ERROR_STOP=1','-d',$database,'-f',(Join-Path $repository 'supabase/tests/customer_link_confirmation.sql'))
+  Write-Output 'PASS: Customer link confirmation integrity'
+  Invoke-DatabaseCommand $psqlProgram @('-U',$databaseUser,'-X','-q','-v','ON_ERROR_STOP=1','-d',$database,'-f',(Join-Path $repository 'supabase/tests/customer_link_confirmation_concurrency.sql'))
+  Write-Output 'PASS: Customer link confirmation concurrency'
   Write-Output 'PASS: partial snapshots preserve customers and complete lists retain soft-deactivation'
   Invoke-DatabaseCommand $psqlProgram @('-U',$databaseUser,'-X','-q','-v','ON_ERROR_STOP=1','-d',$database,'-f',(Join-Path $repository 'supabase/tests/catalog_source_version.sql'))
   Write-Output 'PASS: catalog source version and legacy fallback across all order gateways'

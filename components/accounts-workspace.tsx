@@ -1,12 +1,14 @@
 'use client';
 
-import { useCallback, useEffect, useEffectEvent, useId, useRef, useState, type ReactNode, type SubmitEvent } from 'react';
+import { lazy, Suspense, useCallback, useEffect, useEffectEvent, useId, useRef, useState, type ReactNode, type SubmitEvent } from 'react';
+import { Link2 } from 'lucide-react';
 import { Briefcase, Calculator, Check, Coffee, Crown, FileSearch, Gavel, Handshake, Heart, Hourglass, ListChecks, Megaphone, MessageCircleQuestionMark, Snail, Timer, Users, Zap } from 'lucide-react';
 import { ArrowLeft, Ban, CalendarCheck, CalendarClock, CalendarPlus, CalendarX, ChevronDown, CircleAlert, CircleCheck, CircleQuestionMark, ClipboardList, Ellipsis, FileClock, Info, Lightbulb, Mail, MapIcon, MapPin, MapPinOff, Network, Pencil, Phone, ShieldX, Signal, SkipForward, ThumbsUp, Trash2, TriangleAlert, User, UserCog, UserPlus, Wand } from 'lucide-react';
 import { isInsideMarketArea, MARKET_AREA, parseLocationInput, powerAlerts, socialStyles, styleCues, withAccountContacts, type ContactStyle, type SocialStyle, type StyleCue, type AppContact, type ContactAssessment, type PowerAlert, type AccountRow, type AccountsResponse, type VisitOutcome } from '@/lib/account-types';
 import { readJsonBody } from '@/lib/http-json';
 
 type Mode = 'mine' | 'all';
+const CustomerLinks = lazy(() => import('./customer-links').then(module => ({ default: module.CustomerLinks })));
 type FormKind = 'visit' | 'location' | 'owner';
 const inputClass = 'min-h-11 w-full min-w-0 max-w-full rounded-xl border border-sf-line bg-sf-soft-0 px-3 text-sm text-sf-body outline-none focus:border-sf-mint';
 const buttonClass = 'min-h-11 rounded-xl border border-sf-line px-3 text-sm font-bold text-sf-body disabled:opacity-50';
@@ -448,6 +450,7 @@ export function AccountDetails({ row, mode, today, renderActions, ratingContactI
 }
 
 export function AccountsWorkspace() {
+  const [view, setView] = useState<'accounts' | 'links'>('accounts');
   const [data, setData] = useState<AccountsResponse | null>(null);
   const [mode, setMode] = useState<Mode>('mine');
   const [query, setQuery] = useState('');
@@ -554,7 +557,8 @@ export function AccountsWorkspace() {
   const to = data ? Math.min(data.page.total, from ? from + data.accounts.length - 1 : 0) : 0;
   const classesNote = accountClassesNote(data?.accounts ?? []);
   return <div className="h-full overflow-y-auto bg-sf-page"><section aria-label="Accounts" className="mx-auto max-w-7xl space-y-4 p-4 sm:p-6">
-    <header className="flex items-baseline gap-3"><h2 className="text-xl font-bold text-sf-strong">Accounts</h2>{data ? <span className="text-xs text-sf-muted">{countLabel(data.page.total, 'account', 'accounts')} · {countLabel(data.accounts.filter(row => row.nextVisitOn && row.nextVisitOn <= data.today).length, 'visit due', 'visits due')} on this page</span> : null}</header>
+    <header className="flex flex-wrap items-baseline gap-3"><h2 className="text-xl font-bold text-sf-strong">Accounts</h2>{data && view === 'accounts' ? <span className="text-xs text-sf-muted">{countLabel(data.page.total, 'account', 'accounts')} · {countLabel(data.accounts.filter(row => row.nextVisitOn && row.nextVisitOn <= data.today).length, 'visit due', 'visits due')} on this page</span> : null}{data?.canAssign && view === 'accounts' ? <button type="button" className={actionClass} disabled={busy} onClick={() => setView('links')}><Link2 aria-hidden="true" size={18} />Link to Tally</button> : null}</header>
+    {view === 'links' && data?.canAssign ? <Suspense fallback={<p className="text-sm text-sf-muted">Loading customer links…</p>}><CustomerLinks onBack={() => setView('accounts')} /></Suspense> : <>
     <div hidden={!!ratingFocus}>
     <div className="flex flex-wrap items-end gap-3">
       <div aria-label="Account scope" className="inline-flex rounded-xl border border-sf-line-soft bg-sf-soft-0 p-1">{(['mine', 'all'] as const).map(value => <button key={value} type="button" disabled={busy} aria-pressed={mode === value} onClick={() => changeMode(value)} className={`${buttonClass} ${mode === value ? 'bg-sf-brand text-sf-soft-0' : ''}`}>{value === 'mine' ? 'Mine' : 'All'}</button>)}</div>
@@ -601,6 +605,7 @@ export function AccountsWorkspace() {
       </div></div>
       </div>
     </> : null}
+    </>}
   </section></div>;
 }
 
