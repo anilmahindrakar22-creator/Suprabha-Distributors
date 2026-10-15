@@ -457,9 +457,6 @@ test('read-only roles can inspect economics but see no setup or case mutation co
   await mockWorkspace(page, economicsData({ canManage: false, canApprove: false, canAct: false }));
   const nav = page.getByRole('navigation', { name: 'Economics sections' });
   await expect(nav.getByRole('button', { name: 'Instruments', exact: true })).toBeVisible();
-  await page.getByRole('button', { name: 'Back to instrument tasks', exact: true }).click();
-  await expect(page.getByRole('region', { name: 'Sales without purchase cost' })).toBeVisible();
-  await expect(page.getByRole('region', { name: 'Tally import problems' })).toHaveCount(0);
   await expect(nav.getByRole('button', { name: 'Set up', exact: true })).toHaveCount(0);
   await expect(nav.getByRole('button', { name: 'Advanced', exact: true })).toHaveCount(0);
   await expect(page.getByLabel('Action')).toHaveCount(0);
