@@ -1,6 +1,6 @@
 'use client';
 
-import { useCallback, useEffect, useId, useRef, useState, type ReactNode, type SubmitEvent } from 'react';
+import { useCallback, useEffect, useEffectEvent, useId, useRef, useState, type ReactNode, type SubmitEvent } from 'react';
 import { Briefcase, Calculator, Check, Coffee, Crown, FileSearch, Gavel, Handshake, Heart, Hourglass, ListChecks, Megaphone, MessageCircleQuestionMark, Snail, Timer, Users, Zap } from 'lucide-react';
 import { ArrowLeft, Ban, CalendarCheck, CalendarClock, CalendarPlus, CalendarX, ChevronDown, CircleAlert, CircleCheck, CircleQuestionMark, ClipboardList, Ellipsis, FileClock, Info, Lightbulb, Mail, MapIcon, MapPin, MapPinOff, Network, Pencil, Phone, ShieldX, Signal, SkipForward, ThumbsUp, Trash2, TriangleAlert, User, UserCog, UserPlus, Wand } from 'lucide-react';
 import { isInsideMarketArea, MARKET_AREA, parseLocationInput, powerAlerts, socialStyles, styleCues, withAccountContacts, type ContactStyle, type SocialStyle, type StyleCue, type AppContact, type ContactAssessment, type PowerAlert, type AccountRow, type AccountsResponse, type VisitOutcome } from '@/lib/account-types';
@@ -86,10 +86,15 @@ function ContactSocial({ contact, canSeeStyle, visitId, attribution, renderActio
   const previousStep = useRef(0);
   const wasRating = useRef(false);
   const who = `${contact.name} (${contact.id})${prompt ? ` after visit ${visitId}` : ''}`;
-  useEffect(() => { if (!autoOpen) setRating(false); setOverriding(false); setHistory(false); }, [closeVersion, autoOpen]);
-  const ratingCallback = useRef(onRatingOpenChange);
-  ratingCallback.current = onRatingOpenChange;
-  useEffect(() => { if (rating) ratingCallback.current?.(true); }, [rating]);
+  const [panelContext, setPanelContext] = useState({ closeVersion, autoOpen });
+  if (panelContext.closeVersion !== closeVersion || panelContext.autoOpen !== autoOpen) {
+    setPanelContext({ closeVersion, autoOpen });
+    if (!autoOpen) setRating(false);
+    setOverriding(false);
+    setHistory(false);
+  }
+  const notifyRatingOpen = useEffectEvent(() => onRatingOpenChange?.(true));
+  useEffect(() => { if (rating) notifyRatingOpen(); }, [rating]);
   useEffect(() => { if (rating || overriding) form.current?.querySelector<HTMLElement>('input, select')?.focus(); }, [rating, overriding]);
   useEffect(() => {
     if (rating && wasRating.current && previousStep.current !== step) stepHeading.current?.focus();
@@ -157,13 +162,13 @@ function ContactSocial({ contact, canSeeStyle, visitId, attribution, renderActio
             const colours = side === 'left'
               ? selected ? 'border-sf-cool bg-sf-cool text-white' : `border-sf-cool-line ${iconCount === 2 ? 'bg-sf-cool-soft' : 'bg-white'} text-sf-cool`
               : selected ? 'border-sf-warm bg-sf-warm text-white' : `border-sf-warm-line ${iconCount === 2 ? 'bg-sf-warm-soft' : 'bg-white'} text-sf-warm`;
-            return <label key={value} className={`flex min-h-12 w-full cursor-pointer items-center gap-3 rounded-xl border px-4 text-left text-sm has-[:focus-visible]:outline-2 has-[:focus-visible]:outline-sf-brand ${value === 3 ? 'mt-1 ' : ''}${colours}`} onClick={event => {
+            return <label key={value} className={`flex min-h-12 w-full cursor-pointer items-center gap-3 rounded-xl border px-4 text-left text-sm has-[:focus-visible]:outline-2 has-[:focus-visible]:outline-sf-brand ${value === 3 ? 'mt-1 ' : ''}${colours}`}>
+              <input type="radio" className="sr-only" name={`${prefix}-q${step}`} value={value} checked={ratings[step] === value} onClick={event => {
               if (event.detail > 0 && !busy) {
                 if (advanceTimer.current !== null) clearTimeout(advanceTimer.current);
                 advanceTimer.current = setTimeout(() => setStep(step + 1), 200);
               }
-            }}>
-              <input type="radio" className="sr-only" name={`${prefix}-q${step}`} value={value} checked={ratings[step] === value} onChange={() => setRatings(previous => previous.map((old, position) => position === step ? value : old))} />
+              }} onChange={() => setRatings(previous => previous.map((old, position) => position === step ? value : old))} />
               {selected ? <Check size={18} aria-hidden="true" className="shrink-0" /> : null}
               <span className="min-w-0 flex-1"><strong>{strength}</strong> {phrase}</span>
               <span className="flex shrink-0 gap-0.5" aria-hidden="true"><Icon aria-hidden="true" size={20} strokeWidth={2} className="shrink-0" />{iconCount === 2 ? <Icon aria-hidden="true" size={20} strokeWidth={2} className="shrink-0" /> : null}</span>
