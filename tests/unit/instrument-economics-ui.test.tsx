@@ -2,7 +2,7 @@ import { readFileSync } from 'node:fs';
 import { describe, expect, it, vi } from 'vitest';
 vi.mock('next/link', () => ({ default: 'a' }));
 import { renderToStaticMarkup } from 'react-dom/server';
-import { importProblemText, ImportProblemItem } from '@/components/instrument-economics-workspace';
+import { CumulativeFinancialBreakdown, importProblemText, ImportProblemItem } from '@/components/instrument-economics-workspace';
 import { EconomicActionOptions, ProposedTargetReview, EconomicApprovalPreview, EconomicHealthBadge, EconomicTargetAdvancedDetails, EconomicTargetCard, InstrumentEconomicsWorkspace, economicCommandNotice, ItemGpBreakdown, reagentLifetime, reportingPeriodLabel } from '@/components/instrument-economics-workspace';
 import { capitalBeyondManagementReview, capitalPreviewPaise } from '@/components/instrument-economics-evidence-forms';
 import type { EconomicTarget } from '@/lib/instrument-economics-types';
@@ -16,6 +16,26 @@ const target: EconomicTarget = {
 };
 
 describe('instrument economics presentation', () => {
+  it('keeps cumulative financial totals separate from a zero-sale selected month and upfront billing', () => {
+    const recorded = { ...target, salesFrom: '2026-07-23', capitalPaise: '62500000', instrumentBillingPaise: '40000000', netInvestmentPaise: '22500000', recoveryPaise: '69853706', outstandingPaise: '0', revenuePaise: '0', knownGpPaise: '0', reagentLifetime: { salesPaise: '45266952', knownGpPaise: '29853706', lines: 35, missingCostLines: 0 } };
+    const html = renderToStaticMarkup(<CumulativeFinancialBreakdown target={recorded} />);
+    expect(html).toContain('₹4,52,669.52'); expect(html).toContain('₹2,98,537.06'); expect(html).toContain('₹6,98,537.06'); expect(html).toContain('₹73,537.06');
+    expect(html).toContain('Recovered investment'); expect(html).toContain('Total including instrument billing'); expect(html).toContain('Cumulative since 23 Jul 2026');
+    expect(html).not.toContain('Attributed revenue'); expect(html).not.toContain('Known GP</dt>');
+    const withContribution = renderToStaticMarkup(<CumulativeFinancialBreakdown target={{ ...recorded, recoveryPaise: '70853706' }} />);
+    expect(withContribution).toContain('₹3,08,537.06'); expect(withContribution).toContain('₹2,98,537.06');
+  });
+  it('never replaces unavailable lifetime evidence or wholly missing purchase cost with a monthly zero', () => {
+    const noEvidence = renderToStaticMarkup(<CumulativeFinancialBreakdown target={{ ...target, revenuePaise: '0', knownGpPaise: '0' }} />);
+    expect(noEvidence).toContain('Lifetime evidence unavailable'); expect(noEvidence.match(/Unavailable/g)?.length).toBeGreaterThanOrEqual(2);
+    const lifetime = { salesPaise: '10000', knownGpPaise: '0', lines: 2, missingCostLines: 2 };
+    const unknown = renderToStaticMarkup(<CumulativeFinancialBreakdown target={target} lifetime={lifetime} />);
+    expect(unknown).toContain('2 lines without purchase cost'); expect(unknown).toContain('Unavailable');
+    const partial = renderToStaticMarkup(<CumulativeFinancialBreakdown target={target} lifetime={{ ...lifetime, knownGpPaise: '1000', missingCostLines: 1 }} />);
+    expect(partial).toContain('Partial · 1 line without purchase cost'); expect(partial).toContain('₹10.00');
+    const missingDate = renderToStaticMarkup(<CumulativeFinancialBreakdown target={{ ...target, salesFrom: null }} lifetime={lifetime} />);
+    expect(missingDate).toContain('Instrument sale date needs review');
+  });
   it('explains connector import problems and preserves unknown messages', () => {
     expect(importProblemText('Canonical customer GUID unavailable in the master export.')).toBe("The party ledger on this invoice wasn't found in Tally's customer list.");
     expect(importProblemText('Quantity/base-unit evidence unavailable.')).toBe('A line has no quantity or unit.');
