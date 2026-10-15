@@ -5,18 +5,19 @@ import { InstrumentStatusBadge } from './instrument-status-badge';
 import { useCallback, useEffect, useMemo, useState } from 'react';
 import { searchServiceWorkspace, type InstalledAsset, type ServiceWorkspaceData } from '@/lib/service-types';
 import { serviceStatusForTickets } from '@/lib/instrument-portfolio';
+import { ArrowUp, CircleCheck, CircleDot, Clock, Flame, type LucideIcon } from 'lucide-react';
 import { readJsonBody } from '@/lib/http-json';
 
 const emptyData: ServiceWorkspaceData = { assets: [], tickets: [] };
 const labels: Record<string, string> = { breakdown: 'Breakdown', preventive_maintenance: 'Preventive maintenance', calibration: 'Calibration', training: 'Training', other: 'Other' };
-const priorityBadge: Record<string, { label: string; className: string }> = {
-  urgent: { label: 'Urgent', className: 'bg-sf-danger-soft text-sf-danger' },
-  high: { label: 'High', className: 'bg-sf-warning-soft text-sf-warning' },
+const priorityBadge: Record<string, { label: string; className: string; icon?: LucideIcon }> = {
+  urgent: { label: 'Urgent', icon: Flame, className: 'bg-sf-danger-soft text-sf-danger' },
+  high: { label: 'High', icon: ArrowUp, className: 'bg-sf-warning-soft text-sf-warning' },
   normal: { label: 'Normal', className: 'bg-sf-soft-2 text-sf-label' },
 };
-const statusBadge: Record<string, { label: string; className: string }> = {
-  open: { label: 'Open', className: 'bg-sf-warning-soft text-sf-warning' },
-  resolved: { label: 'Resolved', className: 'bg-sf-success-soft text-sf-success' },
+const statusBadge: Record<string, { label: string; className: string; icon?: LucideIcon }> = {
+  open: { label: 'Open', icon: CircleDot, className: 'bg-sf-soft-2 text-sf-label' },
+  resolved: { label: 'Resolved', icon: CircleCheck, className: 'bg-sf-success-soft text-sf-success' },
 };
 type FormSubmission = { preventDefault(): void; currentTarget: HTMLFormElement };
 
@@ -88,8 +89,10 @@ export function ServiceWorkspace() {
     {visible.tickets.length ? <section className="space-y-3" aria-label="Service tickets"><h2 className="text-lg font-extrabold text-sf-ink">Service tickets</h2>{visible.tickets.map((ticket) => {
       const asset = workspace.assets.find((item) => item.installationId === ticket.installationId);
       const priority = priorityBadge[ticket.priority] ?? { label: ticket.priority, className: 'bg-sf-soft-2 text-sf-label' };
-      const status = statusBadge[ticket.status] ?? { label: ticket.status, className: 'bg-sf-soft-2 text-sf-label' };
-      return <article key={ticket.id} className="rounded-2xl border border-sf-line-soft bg-white p-5"><div className="flex flex-wrap justify-between gap-2"><div><p className="text-xs font-extrabold text-sf-accent">{ticket.ticketNumber}</p><h3 className="mt-1 font-extrabold text-sf-ink">{ticket.summary}</h3><p className="mt-1 text-sm text-sf-muted">{asset?.customerName} · {asset?.itemName} · {asset?.serialNumber}</p></div><div className="flex gap-2"><span className={`rounded-full px-3 py-1 text-xs font-extrabold ${priority.className}`}>{priority.label}</span><span className={`rounded-full px-3 py-1 text-xs font-extrabold ${status.className}`}>{status.label}</span></div></div>
+      const status = statusBadge[ticket.status] ?? { label: ticket.status, className: 'bg-sf-info-soft text-sf-info', icon: Clock };
+      const PriorityIcon = priority.icon;
+      const StatusIcon = status.icon;
+      return <article key={ticket.id} className="rounded-2xl border border-sf-line-soft bg-white p-5"><div className="flex flex-wrap justify-between gap-2"><div><p className="text-xs font-extrabold text-sf-accent">{ticket.ticketNumber}</p><h3 className="mt-1 font-extrabold text-sf-ink">{ticket.summary}</h3><p className="mt-1 text-sm text-sf-muted">{asset?.customerName} · {asset?.itemName} · {asset?.serialNumber}</p></div><div className="flex gap-2"><span className={`inline-flex items-center gap-1 rounded-full px-3 py-1 text-xs font-extrabold ${priority.className}`}>{PriorityIcon ? <PriorityIcon size={12} aria-hidden="true" className="shrink-0" /> : null}{priority.label}</span><span className={`inline-flex items-center gap-1 rounded-full px-3 py-1 text-xs font-extrabold ${status.className}`}>{StatusIcon ? <StatusIcon size={12} aria-hidden="true" className="shrink-0" /> : null}{status.label}</span></div></div>
         <p className="mt-3 text-xs text-sf-subtle">{labels[ticket.category]} · Opened by {ticket.createdBy} on {new Date(ticket.createdAt).toLocaleString('en-IN', { timeZone: 'Asia/Kolkata', day: 'numeric', month: 'short', year: 'numeric', hour: 'numeric', minute: '2-digit' })}</p>{ticket.resolution ? <p className="mt-3 rounded-xl bg-sf-soft p-3 text-sm text-sf-strong"><strong>Resolution:</strong> {ticket.resolution}</p> : null}
         {ticket.status === 'open' ? <details className="mt-4"><summary className="cursor-pointer font-bold text-sf-brand">Resolve ticket</summary><form onSubmit={(event) => void resolveTicket(event, ticket.id, ticket.version)} className="mt-3 flex flex-col gap-2 sm:flex-row"><input aria-label="Resolution" name="resolution" required minLength={3} maxLength={1000} placeholder="Work completed and outcome" className="min-h-11 flex-1 rounded-xl border border-sf-line px-3"/><button disabled={Boolean(busy)} className="min-h-11 rounded-xl bg-sf-ink-hover px-5 font-bold text-white disabled:opacity-50">{busy === `ticket-${ticket.id}` ? 'Saving…' : 'Mark resolved'}</button></form></details> : null}
       </article>;

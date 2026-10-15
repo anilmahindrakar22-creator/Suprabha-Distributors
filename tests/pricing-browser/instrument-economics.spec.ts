@@ -411,12 +411,12 @@ test('portfolio shows API health colors, reporting dates and fits the browser vi
     { ...target, id: 'target-proposed', name: 'Proposed analyzer', health: 'proposed', approval: 'proposed', effectiveFrom: '2026-11-01', revenuePaise: '0', knownGpPaise: '0', recoveryPaise: '0', outstandingPaise: '120000000', attributedLines: 0, forecastMonths: null, expectation: null },
   ] }));
   const cards = page.getByRole('region', { name: 'Economic targets', exact: true });
-  await expect(cards.getByText('Healthy', { exact: true }).first()).toHaveClass(/text-emerald-800/);
-  await expect(cards.getByText('Critical', { exact: true }).first()).toHaveClass(/text-red-800/);
-  await expect(cards.getByText('Inactive', { exact: true }).first()).toHaveClass(/text-slate-600/);
-  await expect(cards.getByText('Watch', { exact: true }).first()).toHaveClass(/text-amber-900/);
-  await expect(cards.getByText('Data incomplete', { exact: true }).first()).toHaveClass(/text-slate-700/);
-  await expect(cards.getByText('Proposed', { exact: true }).first()).toHaveClass(/text-blue-800/);
+  await expect(cards.getByText('Healthy', { exact: true }).first()).toHaveClass(/text-sf-success/);
+  await expect(cards.getByText('Critical', { exact: true }).first()).toHaveClass(/text-sf-danger/);
+  await expect(cards.getByText('Inactive', { exact: true }).first()).toHaveClass(/text-sf-muted/);
+  await expect(cards.getByText('Watch', { exact: true }).first()).toHaveClass(/text-sf-warning/);
+  await expect(cards.getByText('Data incomplete', { exact: true }).first()).toHaveClass(/text-sf-body/);
+  await expect(cards.getByText('Proposed', { exact: true }).first()).toHaveClass(/text-sf-info/);
   await expect(page.getByText('Tally data from', { exact: false })).toBeVisible();
   const widths = await page.evaluate(() => ({ viewport: document.documentElement.clientWidth, document: document.documentElement.scrollWidth }));
   expect(widths.document).toBeLessThanOrEqual(widths.viewport);
@@ -836,8 +836,8 @@ test('leakage separates signed financial variance from supply-gap estimates and 
 });
 
 for (const [status, months, label, color] of [
-  ['review_required', 40, 'Investment review required', 'border-amber-200'],
-  ['limit_exceeded', 55, 'Investment payback limit exceeded', 'border-red-200'],
+  ['review_required', 40, 'Investment review required', 'border-sf-warning-line'],
+  ['limit_exceeded', 55, 'Investment payback limit exceeded', 'border-sf-danger-line'],
 ] as const) {
   test(`instrument billing restatement exposes ${status} separately from the actual forecast`, async ({ page }, testInfo) => {
     await mockWorkspace(page, economicsData({ targets: [{ ...target, capitalPaise: '55000000', instrumentBillingPaise: String(55000000 - months * 1000000), netInvestmentPaise: String(months * 1000000), recoveryPaise: String(78000000 - months * 1000000), outstandingPaise: String(months * 1000000 - 23000000), health: status === 'limit_exceeded' ? 'critical' : 'watch', forecastMonths: 18, investmentReview: { status, expectedPaybackMonths: months, expectationId: 'approved-start-baseline', policyId: 'policy-1', expectedMonthlyGpPaise: '1000000', netInvestmentPaise: String(months * 1000000), reviewMonths: 36, exceptionMonths: 48, approvedPaybackMonths: 35, approvedNetInvestmentPaise: '35000000', approvedDirectorException: false } }] }));

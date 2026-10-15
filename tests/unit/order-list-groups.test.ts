@@ -1,6 +1,7 @@
 import { describe, expect, it } from 'vitest';
 import type { OrderSummary } from '@/lib/order-types';
 import { deliveredTodayOrders, groupOrdersForList, istDateKey, orderListFlag, orderProgressIndex } from '@/lib/order-list-groups';
+import { stageStyles } from '@/components/order-list';
 
 // 11 Oct 2026, 15:00 IST.
 const now = new Date('2026-10-11T09:30:00Z');
@@ -15,6 +16,11 @@ function order(id: string, overrides: Partial<OrderSummary> = {}): OrderSummary 
 }
 
 describe('Orders list grouping', () => {
+  it('uses the Bill stage colour instead of warning for its chip', () => {
+    expect(stageStyles.bill.chip).toContain('sf-stage-bill');
+    expect(stageStyles.bill.chip).not.toContain('sf-warning');
+  });
+
   it('uses the India calendar day', () => {
     expect(istDateKey('2026-10-10T19:00:00Z')).toBe('2026-10-11');
     expect(istDateKey('2026-10-10T18:00:00Z')).toBe('2026-10-10');

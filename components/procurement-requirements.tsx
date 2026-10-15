@@ -1,6 +1,7 @@
 'use client';
 
 import { Fragment, useEffect, useRef, useState } from 'react';
+import { CircleAlert, CircleCheck, PackageX } from 'lucide-react';
 import { readJsonBody } from '@/lib/http-json';
 
 type RequirementRow = {
@@ -245,7 +246,7 @@ export function ProcurementRequirements({ onOpenOrder }: { onOpenOrder?: (orderI
         <p className="text-xs font-semibold text-sf-label">Waiting orders</p>
         <button type="button" disabled={waitingLoading} onClick={() => void loadWaitingOrders(itemKey, waitingPage)} className="min-h-11 rounded-lg border border-sf-line bg-white px-3 text-xs font-bold text-sf-body disabled:opacity-50">{waitingLoading ? 'Loading…' : 'Refresh orders'}</button>
       </div>
-      {waitingError ? <p role="alert" className="mt-2 text-sm text-sf-danger">{waitingError}</p> : null}
+      {waitingError ? <p role="alert" className="mt-2 inline-flex items-center gap-1 text-sm text-sf-danger"><CircleAlert size={14} aria-hidden="true" className="shrink-0" />{waitingError}</p> : null}
       {waitingLoading && !waitingResult ? <p className="mt-2 text-sm text-sf-subtle">Loading waiting orders…</p> : null}
       {waitingResult ? <>
         <div className="mt-2 space-y-2">
@@ -303,13 +304,14 @@ export function ProcurementRequirements({ onOpenOrder }: { onOpenOrder?: (orderI
       <div className="mt-3 rounded-lg border border-sf-line-soft bg-sf-soft-0 p-3">
         {alertsResult && alertsResult.pagination.total > 0 ? <h2 className="text-sm font-bold text-sf-body">New stock for waiting orders ({alertsResult.pagination.total})</h2> : null}
         <div>
-          {alertsError ? <p role="alert" className="mt-2 text-sm text-sf-danger">{alertsError}</p> : null}
+          {alertsError ? <p role="alert" className="mt-2 inline-flex items-center gap-1 text-sm text-sf-danger"><CircleAlert size={14} aria-hidden="true" className="shrink-0" />{alertsError}</p> : null}
           {alertsLoading && !alertsResult ? <p className="mt-2 text-sm text-sf-subtle">Loading reported stock increases…</p> : null}
           {alertsResult ? <>
             <div className="mt-2 space-y-2">
               {alertsResult.alerts.map((alert, index) => <article key={`${alert.tallyKey}-${alert.sourceAt}-${index}`} className="rounded-lg border border-sf-line-soft bg-white p-3">
                 <h3 className="break-words text-sm font-bold text-sf-strong">{alert.itemName}</h3>
-                <p className={`mt-1 text-xs ${alert.coveredOrders !== null && alert.coveredOrders === alert.waitingOrders ? 'font-semibold text-sf-success' : 'text-sf-body'}`}>
+                <p className={`mt-1 text-xs ${alert.coveredOrders !== null && alert.coveredOrders === alert.waitingOrders ? 'inline-flex items-center gap-1 font-semibold text-sf-success' : 'text-sf-body'}`}>
+                  {alert.coveredOrders !== null && alert.coveredOrders === alert.waitingOrders ? <CircleCheck size={14} aria-hidden="true" className="shrink-0" /> : null}
                   {alert.coveredOrders === null ? 'current stock unknown' : <>Tally now shows {quantity(alert.currentStock!)} · {alert.coveredOrders === alert.waitingOrders ? (alert.waitingOrders === 1 ? 'enough for the waiting order' : alert.waitingOrders === 2 ? 'enough for both waiting orders' : `enough for all ${alert.waitingOrders} waiting orders`) : `enough for ${alert.coveredOrders} of ${alert.waitingOrders} waiting orders`}</>}
                 </p>
                 <p className="mt-1 text-xs text-sf-muted">{quantity(alert.stockBefore)} → {quantity(alert.stockAfter)} on {displayDate(alert.sourceAt)}</p>
@@ -328,7 +330,7 @@ export function ProcurementRequirements({ onOpenOrder }: { onOpenOrder?: (orderI
           </> : null}
         </div>
       </div>
-      {error ? <p role="alert" className="mt-2 text-sm text-sf-danger">{error}</p> : null}
+      {error ? <p role="alert" className="mt-2 inline-flex items-center gap-1 text-sm text-sf-danger"><CircleAlert size={14} aria-hidden="true" className="shrink-0" />{error}</p> : null}
       {loading && !result ? <p className="mt-3 text-sm text-sf-subtle">Loading customer demand…</p> : null}
       {result ? <>
         <div className="mt-2 space-y-2">
@@ -342,7 +344,7 @@ export function ProcurementRequirements({ onOpenOrder }: { onOpenOrder?: (orderI
             <dl className="mt-2 grid grid-cols-2 gap-x-3 gap-y-2 break-words text-xs sm:grid-cols-4">
               <div><dt className="text-sf-subtle">Open demand</dt><dd className="mt-0.5 font-semibold text-sf-strong">{quantity(row.openDemand)}</dd></div>
               <div><dt className="text-sf-subtle">Current stock</dt><dd className="mt-0.5 font-semibold text-sf-strong">{row.currentStock === null ? 'Unknown · review' : quantity(row.currentStock)}</dd></div>
-              <div><dt className="text-sf-subtle">Shortage</dt><dd className={row.state === 'shortage' ? 'mt-0.5 text-sm font-bold text-sf-warning' : 'mt-0.5 font-semibold text-sf-strong'}>{row.shortage === null ? 'Unknown · review' : quantity(row.shortage)}</dd></div>
+              <div><dt className="text-sf-subtle">Shortage</dt><dd className={row.state === 'shortage' ? 'mt-0.5 inline-flex items-center gap-1 text-sm font-bold text-sf-warning' : 'mt-0.5 font-semibold text-sf-strong'}>{row.state === 'shortage' ? <PackageX size={14} aria-hidden="true" className="shrink-0" /> : null}{row.shortage === null ? 'Unknown · review' : quantity(row.shortage)}</dd></div>
               <div><dt className="text-sf-subtle">Affected orders</dt><dd className="mt-0.5 font-semibold text-sf-strong">{quantity(row.affectedOrders)}</dd></div>
             </dl>
             <p className="mt-2 text-xs text-sf-subtle">Oldest open order: {displayDate(row.oldestOrderAt)}</p>
