@@ -544,8 +544,9 @@ export function ImportProblemItem({ row }: { row: EconomicException }) {
   const labels: Record<string, string> = { Sales: 'Sales invoice', 'GST SALE': 'Sales invoice', Purchase: 'Purchase invoice', 'Credit Note': 'Credit note' };
   const type = row.voucherType ? labels[row.voucherType] ?? row.voucherType : 'Tally document';
   const heading = row.voucherNumber ? `${type} ${row.voucherNumber}` : 'Tally document';
+  const date = row.voucherDate?.trim() ? displayDate(row.voucherDate) : 'Date unavailable';
   return <li className="min-w-0 break-words py-3">
-    <p className="flex items-center gap-1.5 font-semibold text-sf-warning"><TriangleAlert size={18} aria-hidden="true" className="shrink-0" /><span className="min-w-0 break-words">{heading} · {displayDate(row.voucherDate ?? row.date)}</span></p>
+    <p className="flex items-center gap-1.5 font-semibold text-sf-warning"><TriangleAlert size={18} aria-hidden="true" className="shrink-0" /><span className="min-w-0 break-words">{heading} · {date}</span></p>
     <p className="mt-1 text-sm text-sf-body">{importProblemText(row.detail ?? row.reason)}</p>
     <p className="mt-1 text-xs text-sf-muted" title={row.sourceId}>Tally reference …{row.sourceId.slice(-8)}</p>
   </li>;
