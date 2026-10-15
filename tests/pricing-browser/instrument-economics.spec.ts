@@ -398,7 +398,7 @@ test('below-cost instrument billing previews the investment and displays the aut
   await openAdvanced(page, 'Reports');
   const details = page.getByRole('region', { name: 'Selected target details', exact: true });
   await details.locator('summary').filter({ hasText: 'Full financial breakdown' }).click();
-  await expect(details.getByText('Placement investment', { exact: true }).locator('..').getByText('₹3,50,000.00', { exact: true })).toBeVisible();
+  await expect(details.getByText('Net investment', { exact: true }).locator('..').getByText('₹3,50,000.00', { exact: true })).toBeVisible();
   await expect(details.getByText('Instrument billing', { exact: true }).locator('..').getByText('₹2,00,000.00', { exact: true })).toBeVisible();
   await expect(details.getByText('Net invoiced recovery; not cash receipts', { exact: true })).toBeVisible();
 });
@@ -1141,6 +1141,8 @@ test('simple view sends missing Tally purchases to To do and shows the three set
   await expect(todo).toContainText('SYS 480 Calcium AS FS · 2 qty · ₹5,860.00');
   await expect(todo).toContainText('Tally SD/26-27/0404 line 5 · batch 0652605');
   await expect(todo).toContainText('Tally purchases of this item are less than the quantity sold.');
+  await expect(page.getByRole('region', { name: 'Tally import problems' })).toHaveCount(0);
+  await page.getByRole('button', { name: 'Accounts review (1)', exact: true }).click();
   const problems = page.getByRole('region', { name: 'Tally import problems' });
   await expect(problems.getByRole('heading', { name: 'Tally documents needing review (1)' })).toBeVisible();
   await expect(problems).toContainText('This covers imported Tally data across instruments.');
@@ -1264,6 +1266,7 @@ test('review documents remain readable and scrollable on a narrow phone', async 
   const exceptions = Array.from({ length: 11 }, (_, i) => ({ sourceId: `review-source-${i}`, productId: '', date: '2026-10-10', netSalesPaise: '0', status: 'import_rejected', reason: 'Review required', voucherNumber: i ? `DN/${i}` : 'SD/26-27/VERY-LONG-UNBROKEN-INVOICE-REFERENCE-0123456789012345678901234567890', voucherType: i ? 'Debit Note' : 'GST SALE', voucherDate: i === 10 ? '' : '2026-10-10', detail: i ? 'Unclassified inventory voucher type; configure its verified voucher role.' : 'Accounting-only credit or voucher needs verified product/original-sale linkage.' }));
   await mockWorkspace(page, economicsData({ exceptions }));
   await page.getByRole('navigation', { name: 'Economics sections' }).getByRole('button', { name: 'To do (11)', exact: true }).click();
+  await page.getByRole('button', { name: 'Accounts review (11)', exact: true }).click();
   const region = page.getByRole('region', { name: 'Tally import problems' });
   await region.getByText('Show document details (11)', { exact: true }).click();
   await expect(region.getByRole('listitem')).toHaveCount(11);
@@ -1276,4 +1279,43 @@ test('review documents remain readable and scrollable on a narrow phone', async 
   const list = region.getByRole('list');
   await list.evaluate(el => { el.scrollTop = el.scrollHeight; });
   await expect(region.getByText('Debit Note DN/10 · Date unavailable', { exact: true })).toBeInViewport();
+});
+
+
+test('financial breakdown uses cumulative reagent totals and distinguishes billing from recovered investment on a phone', async ({ page }, testInfo) => {
+  await page.setViewportSize({ width: 375, height: 532 });
+  const lifetime = { salesPaise: '45266952', knownGpPaise: '29853706', lines: 35, missingCostLines: 0 };
+  await mockWorkspace(page, economicsData({ targets: [{ ...target, salesFrom: '2026-07-23', expectation: null, capitalPaise: '62500000', instrumentBillingPaise: '40000000', netInvestmentPaise: '22500000', recoveryPaise: '69853706', outstandingPaise: '0', revenuePaise: '0', knownGpPaise: '0', attributedLines: 0, reagentLifetime: lifetime }] }));
+  await openAdvanced(page, 'Reports');
+  const details = page.getByRole('region', { name: 'Selected target details', exact: true });
+  await details.getByText('Full financial breakdown', { exact: true }).click();
+  const breakdown = details.getByRole('region', { name: 'Cumulative financial breakdown' });
+  await expect(details).toContainText('₹4,52,669.52');
+  await expect(breakdown.getByText('Reagent sales since sale', { exact: true }).locator('..')).toContainText('₹4,52,669.52');
+  await expect(breakdown.getByText('Reagent GP since sale', { exact: true }).locator('..')).toContainText('₹2,98,537.06');
+  await expect(breakdown.getByText('Recovered investment', { exact: true }).locator('..')).toContainText('₹2,98,537.06');
+  await expect(breakdown.getByText('Total including instrument billing', { exact: true }).locator('..')).toContainText('₹6,98,537.06');
+  await expect(breakdown.getByText('Recorded surplus', { exact: true }).locator('..')).toContainText('₹73,537.06');
+  await expect(breakdown).toContainText('23 Jul 2026');
+  await expect(breakdown).not.toContainText('Attributed revenue');
+  expect(await breakdown.locator('dd').evaluateAll(nodes => nodes.filter(node => node.textContent?.includes('₹')).every(node => {const range=document.createRange();range.selectNodeContents(node);return range.getClientRects().length===1;}))).toBe(true);
+  expect(await page.evaluate(() => document.documentElement.scrollWidth <= innerWidth)).toBe(true);
+  await breakdown.screenshot({ path: testInfo.outputPath('financial-breakdown-phone.png') });
+});
+
+
+test('Accounts can read document review without setup or financial edit actions', async ({ page }) => {
+  await mockWorkspace(page, economicsData({ canManage: false, canApprove: false, canAct: false, exceptions: [{ sourceId: 'debit-1', productId: '', date: '2026-10-10', netSalesPaise: '0', status: 'import_rejected', reason: 'Unclassified inventory voucher type; configure its verified voucher role.', voucherNumber: '1', voucherType: 'Debit Note', voucherDate: '' }] }));
+  const nav=page.getByRole('navigation', { name: 'Economics sections' });
+  await nav.getByRole('button', { name: /^To do/ }).click();
+  await expect(page.getByRole('region', { name: 'Tally import problems' })).toHaveCount(0);
+  await page.getByRole('button', { name: 'Accounts review (1)', exact: true }).click();
+  await page.getByText('Show document details (1)', { exact: true }).click();
+  await expect(page.getByText('Debit Note 1 · Date unavailable', { exact: true })).toBeVisible();
+  await page.getByRole('button', { name: 'Back to instrument tasks', exact: true }).click();
+  await expect(page.getByRole('region', { name: 'Sales without purchase cost' })).toBeVisible();
+  await expect(page.getByRole('region', { name: 'Tally import problems' })).toHaveCount(0);
+  await expect(nav.getByRole('button', { name: 'Set up', exact: true })).toHaveCount(0);
+  await expect(nav.getByRole('button', { name: 'Advanced', exact: true })).toHaveCount(0);
+  await expect(page.getByRole('button', { name: /Approve|Rebuild|Save/ })).toHaveCount(0);
 });
