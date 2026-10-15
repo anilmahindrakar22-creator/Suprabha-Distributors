@@ -1,7 +1,7 @@
 'use client';
 
 import { lazy, Suspense, useEffect, useMemo, useRef, useState } from 'react';
-import { TriangleAlert } from 'lucide-react';
+import { Boxes, Building2, Ellipsis, Inbox, ShoppingCart, Tags, TrendingUp, TriangleAlert, Users, Wrench } from 'lucide-react';
 import { NotificationBell } from './notification-bell';
 import { BellIcon } from './order-list';
 import { startWorkNotifications, type WorkItem, type WorkNotificationState } from '@/lib/work-notifications';
@@ -23,6 +23,11 @@ const RequestsWorkspace = lazy(() => import('./requests-workspace').then((module
 const AccountsWorkspace = lazy(() => import('./accounts-workspace').then((module) => ({ default: module.AccountsWorkspace })));
 
 type Surface = 'stock' | 'orders' | 'requests' | 'accounts' | 'pricing' | 'economics' | 'service' | 'users';
+const surfaceIcons = { stock: Boxes, orders: ShoppingCart, requests: Inbox, accounts: Building2, pricing: Tags, economics: TrendingUp, service: Wrench, users: Users };
+function SurfaceIcon({ surface, size }: { surface: Surface; size: number }) {
+  const Icon = surfaceIcons[surface];
+  return <Icon size={size} aria-hidden="true" className="shrink-0" />;
+}
 const initialWork: WorkNotificationState = { connection: 'checking', work: [], workTotal: 0, workMore: false, queues: [], fresh: [], reminders: [], checkedAt: null };
 
 async function warmOrderData(actorEmail: string) {
@@ -296,13 +301,13 @@ export function StockFlowFrame({ actorEmail, actorRole, actorRoles, staffAuth = 
               onPointerDown={item === 'orders' ? warmOrders : undefined}
               aria-pressed={surface === item}
               aria-describedby={item === 'orders' && waitingCount ? 'orders-new-work' : undefined}
-              className={`inline-flex min-h-10 shrink-0 items-center rounded-lg px-3 text-sm font-bold capitalize transition sm:px-4 ${
+              className={`inline-flex min-h-11 shrink-0 items-center gap-1.5 rounded-lg px-3 text-sm font-bold capitalize transition sm:px-4 ${
                 surface === item
-                  ? 'bg-white text-sf-ink shadow-sm'
+                  ? 'bg-white text-sf-brand shadow-sm'
                   : 'text-sf-muted hover:text-sf-ink'
               }`}
             >
-              {item}{item === 'orders' ? ordersBadge : null}
+              <SurfaceIcon surface={item} size={18} />{item}{item === 'orders' ? ordersBadge : null}
             </button>
           ))}
           {/* Full navigation re-verifies the staff session before local preparation. */}
@@ -353,17 +358,18 @@ export function StockFlowFrame({ actorEmail, actorRole, actorRoles, staffAuth = 
       ) : null}
       <nav aria-label="Application sections" className="relative flex shrink-0 border-t border-sf-line-soft bg-white sm:hidden">
         {phoneMain.map((item) => (
-          <button key={item} type="button" aria-label={item} onClick={() => openSurface(item)} onPointerDown={item === 'orders' ? warmOrders : undefined} aria-pressed={surface === item} aria-describedby={item === 'orders' && waitingCount ? 'orders-new-work-phone' : undefined} className={`flex min-h-14 flex-1 flex-col items-center justify-center gap-0.5 text-xs font-bold capitalize ${surface === item ? 'text-sf-ink' : 'text-sf-subtle'}`}>
+          <button key={item} type="button" aria-label={item} onClick={() => openSurface(item)} onPointerDown={item === 'orders' ? warmOrders : undefined} aria-pressed={surface === item} aria-describedby={item === 'orders' && waitingCount ? 'orders-new-work-phone' : undefined} className={`flex min-h-14 flex-1 flex-col items-center justify-center gap-0.5 text-xs font-bold capitalize ${surface === item ? 'text-sf-brand' : 'text-sf-muted'}`}>
             <span className="relative">
               <span aria-hidden="true" className={`block h-1 w-6 rounded-full ${surface === item ? 'bg-sf-ink' : 'bg-transparent'}`} />
               {item === 'orders' && waitingCount ? <span id="orders-new-work-phone" className={`absolute -right-5 -top-2 min-w-5 rounded-full px-1 text-center text-[11px] font-black leading-5 text-white ${badgeTone}`}>{badgeText}<span className="sr-only"> waiting{freshCount ? `, ${freshCount} new` : ''}</span></span> : null}
             </span>
-            {item}
+            <SurfaceIcon surface={item} size={22} />
+            <span className="text-xs">{item}</span>
           </button>
         ))}
-        {phoneMore.length || offlineLink ? <button type="button" aria-expanded={moreOpen} aria-controls="more-sections" onClick={() => setMoreOpen(!moreOpen)} className={`flex min-h-14 flex-1 flex-col items-center justify-center gap-0.5 text-xs font-bold ${phoneMore.includes(surface) || moreOpen ? 'text-sf-ink' : 'text-sf-subtle'}`}><span aria-hidden="true" className={`block h-1 w-6 rounded-full ${phoneMore.includes(surface) ? 'bg-sf-ink' : 'bg-transparent'}`} />More</button> : null}
+        {phoneMore.length || offlineLink ? <button type="button" aria-expanded={moreOpen} aria-controls="more-sections" onClick={() => setMoreOpen(!moreOpen)} className={`flex min-h-14 flex-1 flex-col items-center justify-center gap-0.5 text-xs font-bold ${phoneMore.includes(surface) || moreOpen ? 'text-sf-brand' : 'text-sf-muted'}`}><span aria-hidden="true" className={`block h-1 w-6 rounded-full ${phoneMore.includes(surface) ? 'bg-sf-ink' : 'bg-transparent'}`} /><Ellipsis size={22} aria-hidden="true" className="shrink-0" /><span className="text-xs">More</span></button> : null}
         {moreOpen ? <div id="more-sections" className="absolute inset-x-2 bottom-[calc(100%+0.5rem)] z-40 grid gap-1 rounded-2xl border border-sf-line-soft bg-white p-2 shadow-xl">
-          {phoneMore.map((item) => <button key={item} type="button" onClick={() => openSurface(item)} aria-pressed={surface === item} className="min-h-11 rounded-xl px-3 text-left text-sm font-bold capitalize text-sf-body hover:bg-sf-soft aria-pressed:bg-sf-soft aria-pressed:text-sf-ink">{item}</button>)}
+          {phoneMore.map((item) => <button key={item} type="button" onClick={() => openSurface(item)} aria-pressed={surface === item} className="flex min-h-11 items-center gap-1.5 rounded-xl px-3 text-left text-sm font-bold capitalize text-sf-muted hover:bg-sf-soft aria-pressed:bg-sf-soft aria-pressed:text-sf-brand"><SurfaceIcon surface={item} size={18} />{item}</button>)}
           {/* oxlint-disable-next-line next/no-html-link-for-pages */}
           {offlineLink ? <a href="/offline-preparation" className="flex min-h-11 items-center rounded-xl px-3 text-sm font-bold text-sf-body hover:bg-sf-soft">Offline</a> : null}
         </div> : null}

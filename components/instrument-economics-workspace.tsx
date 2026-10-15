@@ -10,7 +10,7 @@ import { LeakageCaseStatus } from '@/components/leakage-case-status';
 import { LeakageClassificationFields } from '@/components/leakage-classification-fields';
 import { buildLeakageClassification, leakageReasonLabels } from '@/lib/leakage-classification';
 import { Activity, AlertTriangle, CheckCircle2, CircleDollarSign, CircleAlert, CircleCheck, Info, TriangleAlert, RefreshCw, ShieldAlert } from 'lucide-react';
-import type { EconomicAction, EconomicTarget, EconomicsWorkspaceData as BaseEconomicsWorkspaceData, LeakageCase } from '@/lib/instrument-economics-types';
+import type { EconomicAction, EconomicException, EconomicTarget, EconomicsWorkspaceData as BaseEconomicsWorkspaceData, LeakageCase } from '@/lib/instrument-economics-types';
 import { buildAllocationShares, buildPurchaseAllocations, costVerificationSaleLines, purchaseMatchKind } from '@/lib/instrument-economics-forms';
 import { clearEconomicRecoveryReference, readEconomicRecoveryReference, writeEconomicRecoveryReference, type EconomicRecoveryReference } from '@/lib/instrument-economics-recovery';
 import { capitalBeyondManagementReview, capitalPreviewPaise, MappingOptions, HistoricalInstrumentFields, AcquisitionReviewFields, EconomicMappingIdentityFields, EconomicAllocationRows, InstrumentAcquisitionFields, InstrumentBillingFields, ItemGroupMappingFields, PurchaseCostVerificationFields } from '@/components/instrument-economics-evidence-forms';
@@ -518,11 +518,44 @@ function missingPurchaseReason(sale: NonNullable<EconomicsWorkspaceData['sourceL
     default: return 'Earlier sales already used the available purchase stock.';
   }
 }
+const importProblemMessages: Record<string, string> = {
+  'Canonical customer GUID unavailable in the master export.': "The party ledger on this invoice wasn't found in Tally's customer list.",
+  'Canonical product GUID unavailable in the master export.': "A product on this invoice isn't in Tally's stock item list.",
+  'Quantity/base-unit evidence unavailable.': 'A line has no quantity or unit.',
+  'Alternative or composite unit requires a verified conversion.': 'A line uses an alternate unit without a set conversion.',
+  'Inventory, GST, adjustments and party value do not reconcile.': "The invoice total doesn't match its items, GST and adjustments.",
+  'Mixed economic signs require review.': 'The invoice mixes positive and negative lines.',
+  'Unclassified document adjustment; configure its canonical ledger role.': "An extra ledger on this invoice (discount, freight or rounding) isn't classified yet.",
+  'Unclassified inventory voucher type; configure its verified voucher role.': "This voucher type isn't set up as a sale, purchase or return.",
+  'Accounting-only credit or voucher needs verified product/original-sale linkage.': "This credit isn't linked to products or to the original sale.",
+  'Economic amount is not exact decimal currency.': "An amount isn't an exact rupee value.",
+  'Tally did not verify a zero-valued inventory amount.': "A zero-value line couldn't be verified in Tally.",
+  'Zero-value amount evidence does not match the voucher revision and inventory line.': "A zero-value line doesn't match the invoice version.",
+  'Cannot allocate a document adjustment over zero inventory value.': "An adjustment can't be spread over an invoice with no item value.",
+  'Voucher GUID or AlterID unavailable.': "Tally didn't provide this voucher's identity.",
+  'Numeric amount evidence lacks canonical voucher revision.': "Tally's amount export didn't match this invoice version.",
+  'Ledger classification evidence unavailable.': "Ledger classification wasn't available from Tally.",
+  'Incomplete voucher identity, lines or net economic values': 'Tally sent this document without complete lines or verified amounts.',
+};
+export function importProblemText(message: string): string {
+  return Object.hasOwn(importProblemMessages, message) ? importProblemMessages[message] : message;
+}
+export function ImportProblemItem({ row }: { row: EconomicException }) {
+  const labels: Record<string, string> = { Sales: 'Sales invoice', 'GST SALE': 'Sales invoice', Purchase: 'Purchase invoice', 'Credit Note': 'Credit note' };
+  const type = row.voucherType ? labels[row.voucherType] ?? row.voucherType : 'Tally document';
+  const heading = row.voucherNumber ? `${type} ${row.voucherNumber}` : 'Tally document';
+  return <li className="py-3">
+    <p className="flex items-center gap-1.5 font-semibold text-sf-warning"><TriangleAlert size={18} aria-hidden="true" className="shrink-0" />{heading} · {displayDate(row.voucherDate ?? row.date)}</p>
+    <p className="mt-1 text-sm text-sf-body">{importProblemText(row.detail ?? row.reason)}</p>
+    <p className="mt-1 text-xs text-sf-muted" title={row.sourceId}>Tally reference …{row.sourceId.slice(-8)}</p>
+  </li>;
+}
 function TodoPanel({ data }: { data: EconomicsWorkspaceData }) {
   const lines = data.sourceLines ?? [];
   const numbers = voucherNumbers(data);
   const sales = costVerificationSaleLines(lines, data.attributionLines ?? []);
-  const problems = data.exceptions.filter(row => row.status === 'import_rejected');
+  const problems = data.exceptions.filter(row => row.status === 'import_rejected')
+    .sort((a, b) => (b.voucherDate ?? b.date).localeCompare(a.voucherDate ?? a.date));
   return <div className="space-y-4">
     <section aria-label="Sales without purchase cost" className="rounded-2xl border border-sf-line-soft bg-white p-4 sm:p-6">
       <h2 className="text-lg font-extrabold">Sales without a matching Tally purchase ({sales.length})</h2>
@@ -536,7 +569,7 @@ function TodoPanel({ data }: { data: EconomicsWorkspaceData }) {
         <p className="mt-1 text-sm text-sf-muted">Accounts needs to review these documents before their amounts can be used. This covers imported Tally data across instruments.</p>
         <details className="mt-3 rounded-xl bg-sf-soft p-3">
           <summary className="-m-3 list-item cursor-pointer p-3 text-sm font-bold">Show document details ({problems.length})</summary>
-          <ul className="mt-2 max-h-80 divide-y divide-sf-soft overflow-y-auto">{problems.map((row, index) => <li key={`${row.sourceId}-${index}`} className="py-3"><p className="text-sm font-semibold">{row.reason}</p><p className="mt-1 break-all text-xs text-sf-muted">{displayDate(row.date)} · {row.sourceId}</p></li>)}</ul>
+          <ul className="mt-2 max-h-80 divide-y divide-sf-soft overflow-y-auto">{problems.map((row, index) => <ImportProblemItem key={`${row.sourceId}-${index}`} row={row} />)}</ul>
         </details>
       </>
         : <p className="mt-3 text-sm text-sf-success inline-flex items-center gap-1"><CircleCheck size={14} aria-hidden="true" className="shrink-0" />No import problems.</p>}
