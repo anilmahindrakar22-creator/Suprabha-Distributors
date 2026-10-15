@@ -15,6 +15,28 @@ foreach($invalid in @('<!DOCTYPE ENVELOPE [<!ENTITY secret SYSTEM "file:///not-r
 [xml]$vouchers='<ENVELOPE><VOUCHER><GUID>voucher-guid-1</GUID><ALTERID>10</ALTERID><DATE>20260915</DATE><VOUCHERTYPENAME>Sales</VOUCHERTYPENAME><PARTYLEDGERNAME>Customer A</PARTYLEDGERNAME><ALLINVENTORYENTRIES.LIST><STOCKITEMNAME>Reagent A</STOCKITEMNAME><ACTUALQTY>70 pack</ACTUALQTY><AMOUNT>50000.00</AMOUNT></ALLINVENTORYENTRIES.LIST><ALLLEDGERENTRIES.LIST><LEDGERNAME>Customer A</LEDGERNAME><ISPARTYLEDGER>Yes</ISPARTYLEDGER><AMOUNT>-59000.00</AMOUNT></ALLLEDGERENTRIES.LIST><ALLLEDGERENTRIES.LIST><LEDGERNAME>Sales</LEDGERNAME><AMOUNT>50000.00</AMOUNT></ALLLEDGERENTRIES.LIST><ALLLEDGERENTRIES.LIST><LEDGERNAME>GST</LEDGERNAME><AMOUNT>9000.00</AMOUNT></ALLLEDGERENTRIES.LIST></VOUCHER></ENVELOPE>'
 $from=[datetime]'2026-09-01';$to=[datetime]'2026-10-01'
 $result=Convert-TallyEconomicEvidence $company $ledgers $products $vouchers $from $to
+$debitLedgers=ConvertFrom-TallyEconomicXml ($ledgers.OuterXml.Replace('</ENVELOPE>','<LEDGER NAME="Purchase"><GUID>purchase-guid-1</GUID><PARENT>Purchase Accounts</PARENT></LEDGER></ENVELOPE>'))
+[xml]$purchaseDebit=$vouchers.OuterXml.Replace('<VOUCHERTYPENAME>Sales</VOUCHERTYPENAME>','<VOUCHERTYPENAME>Debit Note</VOUCHERTYPENAME>').Replace('<LEDGERNAME>Sales</LEDGERNAME>','<LEDGERNAME>Purchase</LEDGERNAME>')
+$nativeDebit=Convert-TallyEconomicEvidence $company $debitLedgers $products $purchaseDebit $from $to
+Assert-Economic ($nativeDebit.vouchers[0].amountStatus -eq 'verified' -and $nativeDebit.vouchers[0].kind -eq 'purchase_return') 'Native purchase Debit Note was not accepted as supplier stock return'
+Assert-Economic ($nativeDebit.vouchers[0].lines[0].quantity -eq '-70' -and $nativeDebit.vouchers[0].lines[0].netSalesPaise -eq '-5000000' -and $nativeDebit.vouchers[0].taxPaise -eq '-900000') 'Supplier return lost recorded signed economics or included GST'
+Assert-Economic ($nativeDebit.vouchers[0].nativeTradeSide -eq 'purchase' -and $nativeDebit.vouchers[0].lines[0].nativeInventoryAmountPaise -eq '5000000') 'Debit Note native classification/amount evidence missing'
+Assert-Economic ($nativeDebit.vouchers[0].nativePartySourceId -eq 'customer-guid-1' -and -not $nativeDebit.vouchers[0].Contains('customerSourceId')) 'Supplier canonical identity was lost or misrepresented as customer revenue'
+[xml]$salesDebit=$vouchers.OuterXml.Replace('<VOUCHERTYPENAME>Sales</VOUCHERTYPENAME>','<VOUCHERTYPENAME>Debit Note</VOUCHERTYPENAME>')
+$nativeSalesDebit=Convert-TallyEconomicEvidence $company $ledgers $products $salesDebit $from $to
+Assert-Economic ($nativeSalesDebit.vouchers[0].amountStatus -eq 'verified' -and $nativeSalesDebit.vouchers[0].kind -eq 'sale' -and $nativeSalesDebit.vouchers[0].lines[0].netSalesPaise -eq '5000000') 'Native sales Debit Note was incorrectly treated as supplier return'
+[xml]$valueDebit=$salesDebit.OuterXml.Replace('70 pack','0 pack')
+$nativeValueDebit=Convert-TallyEconomicEvidence $company $ledgers $products $valueDebit $from $to
+Assert-Economic ($nativeValueDebit.vouchers[0].amountStatus -eq 'unverified' -and $nativeValueDebit.vouchers[0].error -match 'original-sale linkage') 'Sales value-only Debit Note guessed an original instrument or zero new cost'
+[xml]$freeDebit=$purchaseDebit.OuterXml.Replace('50000.00','0.00').Replace('-59000.00','0.00').Replace('9000.00','0.00')
+$nativeFreeDebit=Convert-TallyEconomicEvidence $company $debitLedgers $products $freeDebit $from $to
+Assert-Economic ($nativeFreeDebit.vouchers[0].amountStatus -eq 'verified' -and $nativeFreeDebit.vouchers[0].lines[0].quantity -eq '-70' -and $nativeFreeDebit.vouchers[0].lines[0].netSalesPaise -eq '0') 'Zero-value supplier return lost its stock movement'
+[xml]$mixedDebit=$purchaseDebit.OuterXml.Replace('</VOUCHER>','<ALLLEDGERENTRIES.LIST><LEDGERNAME>Sales</LEDGERNAME><AMOUNT>1.00</AMOUNT></ALLLEDGERENTRIES.LIST></VOUCHER>')
+$nativeMixed=Convert-TallyEconomicEvidence $company $debitLedgers $products $mixedDebit $from $to
+Assert-Economic ($nativeMixed.vouchers[0].amountStatus -eq 'unverified' -and $nativeMixed.vouchers[0].date -eq '2026-09-15') 'Mixed Debit Note was guessed or lost its native date'
+[xml]$clearedDebit='<ENVELOPE><VOUCHER><GUID>debit-cancel-guid</GUID><ALTERID>12</ALTERID><DATE>20260915</DATE><VOUCHERTYPENAME>Debit Note</VOUCHERTYPENAME><ISCANCELLED>Yes</ISCANCELLED></VOUCHER></ENVELOPE>'
+$nativeCancelledDebit=Convert-TallyEconomicEvidence $company $ledgers $products $clearedDebit $from $to
+Assert-Economic ($nativeCancelledDebit.vouchers[0].amountStatus -eq 'verified' -and $nativeCancelledDebit.vouchers[0].cancelled -and $nativeCancelledDebit.vouchers[0].lines.Count -eq 0) 'Cleared cancelled Debit Note required invented trade/stock entries'
 Assert-Economic (@($result.customerLedgers | Where-Object {$_.name -ceq 'Customer A' -and $_.guid -ceq 'customer-guid-1'}).Count -eq 1) 'Canonical customer ledger identities were not exported'
 [xml]$subgroupLedgers=$ledgers.OuterXml.Replace('<GUID>customer-guid-1</GUID>','<GUID>customer-guid-1</GUID><PARENT>Local Hospitals</PARENT>')
 $subgroup=Convert-TallyEconomicEvidence $company $subgroupLedgers $products $vouchers $from $to
