@@ -1261,7 +1261,7 @@ test('simple individual mapping submits canonical IDs and clears item on placeme
 
 test('review documents remain readable and scrollable on a narrow phone', async ({ page }, testInfo) => {
   await page.setViewportSize({ width: 375, height: 532 });
-  const exceptions = Array.from({ length: 11 }, (_, i) => ({ sourceId: `review-source-${i}`, productId: '', date: '2026-10-10', netSalesPaise: '0', status: 'import_rejected', reason: 'Review required', voucherNumber: i ? `DN/${i}` : 'SD/26-27/VERY-LONG-UNBROKEN-INVOICE-REFERENCE-0123456789012345678901234567890', voucherType: i ? 'Debit Note' : 'GST SALE', voucherDate: '2026-10-10', detail: i ? 'Unclassified inventory voucher type; configure its verified voucher role.' : 'Accounting-only credit or voucher needs verified product/original-sale linkage.' }));
+  const exceptions = Array.from({ length: 11 }, (_, i) => ({ sourceId: `review-source-${i}`, productId: '', date: '2026-10-10', netSalesPaise: '0', status: 'import_rejected', reason: 'Review required', voucherNumber: i ? `DN/${i}` : 'SD/26-27/VERY-LONG-UNBROKEN-INVOICE-REFERENCE-0123456789012345678901234567890', voucherType: i ? 'Debit Note' : 'GST SALE', voucherDate: i === 10 ? '' : '2026-10-10', detail: i ? 'Unclassified inventory voucher type; configure its verified voucher role.' : 'Accounting-only credit or voucher needs verified product/original-sale linkage.' }));
   await mockWorkspace(page, economicsData({ exceptions }));
   await page.getByRole('navigation', { name: 'Economics sections' }).getByRole('button', { name: 'To do (11)', exact: true }).click();
   const region = page.getByRole('region', { name: 'Tally import problems' });
@@ -1275,5 +1275,5 @@ test('review documents remain readable and scrollable on a narrow phone', async 
   await page.screenshot({ path: testInfo.outputPath('invoice-review-phone.png') });
   const list = region.getByRole('list');
   await list.evaluate(el => { el.scrollTop = el.scrollHeight; });
-  await expect(region.getByText('Debit Note DN/10 · 10 Oct 2026', { exact: true })).toBeInViewport();
+  await expect(region.getByText('Debit Note DN/10 · Date unavailable', { exact: true })).toBeInViewport();
 });

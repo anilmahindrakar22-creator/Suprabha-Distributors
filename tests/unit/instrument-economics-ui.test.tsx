@@ -30,9 +30,11 @@ describe('instrument economics presentation', () => {
     expect(html).toContain('title="internal-voucher-12345678"');
     expect(html).toContain('Tally reference …12345678');
     const fallback = renderToStaticMarkup(<ImportProblemItem row={row} />);
-    expect(fallback).toContain('Tally document · 11 Oct 2026');
+    expect(fallback).toContain('Tally document · Date unavailable');
     expect(fallback).toContain('Tally sent this document without complete lines or verified amounts.');
-    expect(renderToStaticMarkup(<ImportProblemItem row={{ ...row, voucherType: 'Sales' }} />)).toContain('Tally document · 11 Oct 2026');
+    expect(renderToStaticMarkup(<ImportProblemItem row={{ ...row, voucherType: 'Debit Note', voucherNumber: '1', voucherDate: '' }} />)).toContain('Debit Note 1 · Date unavailable');
+    expect(fallback).not.toContain('11 Oct 2026');
+    expect(renderToStaticMarkup(<ImportProblemItem row={{ ...row, voucherType: 'Sales' }} />)).toContain('Tally document · Date unavailable');
   });
   it('uses semantic tokens instead of raw palette classes', () => {
     const source = readFileSync('components/instrument-economics-workspace.tsx', 'utf8');
