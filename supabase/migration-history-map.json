@@ -957,7 +957,7 @@
     },
     {
       "localFile": "20261015190800_native_tally_debit_notes.sql",
-      "localSha256": "7e63bbf82f43db608cba33de742e8d1096cfa3393b3a58388a8cf9f603bf999a",
+      "localSha256": "0921309ce4d5c139b3293a9fd619fdadc8efbeac80a30fe99e54a30ab82716a7",
       "remoteVersion": null,
       "remoteSha256": null,
       "status": "not_deployed",

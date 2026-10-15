@@ -211,6 +211,7 @@ function Convert-TallyEconomicEvidence([xml]$CompanyDocument,[xml]$LedgerDocumen
                 if ($entry.kind -in @('return','purchase_return')) { $qty=-[Math]::Abs($qty) } else { $qty=[Math]::Abs($qty) }
                 if (($entry.kind -in @('sale','purchase') -and $amount -lt 0) -or ($entry.kind -in @('return','purchase_return') -and $amount -gt 0)) { throw 'Mixed economic signs require review.' }
                 if($entry.kind -eq 'purchase_return' -and $qty -eq 0){throw 'Purchase value adjustment needs original purchase allocation; stock movement cannot be invented.'}
+                if($type -eq 'Debit Note' -and $entry.kind -eq 'sale' -and $qty -eq 0){throw 'Accounting-only credit or voucher needs verified product/original-sale linkage.'}
                 $totalInventory+=$amount
                 $lines.Add([ordered]@{ lineKey=[string]$lineNumber; productId=$master.guid; quantity=$qty.ToString([Globalization.CultureInfo]::InvariantCulture); unit=$unit; netSalesPaise=[string]$amount; batchId=$(if($line.SelectNodes('./BATCHALLOCATIONS.LIST').Count -eq 1){Get-EconomicXmlText $line './BATCHALLOCATIONS.LIST/BATCHNAME'}else{$null}); focReason=$(if($amount -eq 0 -and $qty -gt 0){'UNKNOWN'}else{$null}); label=$name })
                 if($zeroEvidence){$lines[$lines.Count-1].amountEvidence=$zeroEvidence}

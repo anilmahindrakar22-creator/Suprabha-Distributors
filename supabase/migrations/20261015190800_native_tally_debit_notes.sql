@@ -28,6 +28,7 @@ begin
    insert into private.stockflow_economic_source_vouchers(company_id,source_id,source_revision,business_date,customer_source_id,site_id,kind,cancelled,evidence)$q$),
   ($q$    if entry->>'kind'='credit' and$q$,
    $q$    if entry->>'kind'='purchase_return' and ((line->>'quantity')::numeric>=0 or (line->>'netSalesPaise')::bigint>0) then raise exception 'Supplier returns require signed outward stock and nonpositive purchase value';end if;
+    if entry->>'voucherType'='Debit Note' and entry->>'kind'='sale' and (line->>'quantity')::numeric=0 then raise exception 'Native value-only sales Debit Note requires original-sale linkage';end if;
     if entry->>'kind'='credit' and$q$)
  ) patches(old_value,new_value) loop
   occurrences:=(length(definition)-length(replace(definition,pair.old_value,'')))/length(pair.old_value);
@@ -69,8 +70,7 @@ begin
   end if;
   recovery_origin:=row.business_date;shares:=null;$q$),
   ($q$  if row.kind='sale' and cost is null and row.quantity>0$q$,
-   $q$  if row.kind='sale' and private.stockflow_economic_purchase_return_blocked(run,row.company_id,row.product_id,row.unit,row.business_date) then cost:=null;
-  elsif row.kind='sale' and row.quantity=0 and exists(select 1 from private.stockflow_economic_source_vouchers v where v.id=row.voucher_id and v.evidence->>'voucherType'='Debit Note' and v.evidence->>'classificationPolicy'='native_debit_note_v1' and v.evidence->>'nativeTradeSide'='sale') then cost:=0;end if;
+   $q$  if row.kind='sale' and private.stockflow_economic_purchase_return_blocked(run,row.company_id,row.product_id,row.unit,row.business_date) then cost:=null;end if;
   if row.kind='sale' and cost is null and row.quantity>0$q$)
  ) patches(old_value,new_value) loop
   occurrences:=(length(definition)-length(replace(definition,pair.old_value,'')))/length(pair.old_value);

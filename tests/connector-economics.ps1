@@ -27,7 +27,7 @@ $nativeSalesDebit=Convert-TallyEconomicEvidence $company $ledgers $products $sal
 Assert-Economic ($nativeSalesDebit.vouchers[0].amountStatus -eq 'verified' -and $nativeSalesDebit.vouchers[0].kind -eq 'sale' -and $nativeSalesDebit.vouchers[0].lines[0].netSalesPaise -eq '5000000') 'Native sales Debit Note was incorrectly treated as supplier return'
 [xml]$valueDebit=$salesDebit.OuterXml.Replace('70 pack','0 pack')
 $nativeValueDebit=Convert-TallyEconomicEvidence $company $ledgers $products $valueDebit $from $to
-Assert-Economic ($nativeValueDebit.vouchers[0].amountStatus -eq 'verified' -and $nativeValueDebit.vouchers[0].lines[0].quantity -eq '0') 'Sales value-only Debit Note invented stock movement'
+Assert-Economic ($nativeValueDebit.vouchers[0].amountStatus -eq 'unverified' -and $nativeValueDebit.vouchers[0].error -match 'original-sale linkage') 'Sales value-only Debit Note guessed an original instrument or zero new cost'
 [xml]$freeDebit=$purchaseDebit.OuterXml.Replace('50000.00','0.00').Replace('-59000.00','0.00').Replace('9000.00','0.00')
 $nativeFreeDebit=Convert-TallyEconomicEvidence $company $debitLedgers $products $freeDebit $from $to
 Assert-Economic ($nativeFreeDebit.vouchers[0].amountStatus -eq 'verified' -and $nativeFreeDebit.vouchers[0].lines[0].quantity -eq '-70' -and $nativeFreeDebit.vouchers[0].lines[0].netSalesPaise -eq '0') 'Zero-value supplier return lost its stock movement'
