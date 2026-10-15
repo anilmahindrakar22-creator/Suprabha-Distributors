@@ -1,52 +1,89 @@
 begin;
 
+-- Evidence versions advance even when their immutable ledger content is reused.
+-- An explicit empty/rejected version must never fall back to an older list.
+create table private.stockflow_economic_ledger_generations (
+ company_id text not null,source_version text not null,observed_at timestamptz not null,
+ imported_at timestamptz not null default clock_timestamp(),valid boolean not null,
+ catalog_version text,content_hash text,row_count integer,
+ primary key(company_id,source_version),
+ foreign key(company_id,catalog_version) references private.stockflow_economic_ledger_generations(company_id,source_version),
+ check((valid and catalog_version is not null and content_hash is not null and row_count is not null and row_count between 0 and 10000)
+  or (not valid and catalog_version is null and content_hash is null and row_count is null))
+);
+alter table private.stockflow_economic_ledger_generations enable row level security;
+revoke all on private.stockflow_economic_ledger_generations from public,anon,authenticated,service_role;
+create trigger immutable before update or delete on private.stockflow_economic_ledger_generations
+ for each row execute function private.prevent_order_event_mutation();
+
 create table private.stockflow_economic_ledger_masters (
  company_id text not null, source_version text not null,
  guid text not null check(length(btrim(guid)) between 1 and 240),
  name text not null check(length(btrim(name)) between 1 and 240),
  imported_at timestamptz not null default clock_timestamp(),
- primary key(company_id,source_version,guid),unique(company_id,source_version,name)
+ primary key(company_id,source_version,guid),unique(company_id,source_version,name),
+ foreign key(company_id,source_version) references private.stockflow_economic_ledger_generations(company_id,source_version)
 );
 alter table private.stockflow_economic_ledger_masters enable row level security;
-revoke all on private.stockflow_economic_ledger_masters from public,anon,authenticated;
+revoke all on private.stockflow_economic_ledger_masters from public,anon,authenticated,service_role;
 create trigger immutable before update or delete on private.stockflow_economic_ledger_masters
  for each row execute function private.prevent_order_event_mutation();
 
 create function private.stockflow_import_customer_ledgers() returns trigger
-language plpgsql security definer set search_path=pg_catalog,private as $$
-declare v_doc jsonb:=new.payload->'economicEvidence'; v_rows jsonb; v_company text; v_version text; v_current text;
+language plpgsql security definer set search_path=pg_catalog,private,extensions as $$
+declare v_doc jsonb:=new.payload->'economicEvidence';v_rows jsonb;v_content jsonb;v_company text;v_version text;
+ v_seen timestamptz;v_hash text;v_catalog text;v_existing private.stockflow_economic_ledger_generations%rowtype;
 begin
+ if new.id<>'suprabha' or not coalesce(v_doc ? 'customerLedgers',false) then return new;end if;
  v_rows:=v_doc->'customerLedgers';v_company:=v_doc->>'companyId';v_version:=v_doc->>'sourceVersion';
- if jsonb_typeof(v_rows) is distinct from 'array' or nullif(btrim(v_company),'') is null
-  or nullif(btrim(v_version),'') is null then return new;end if;
  -- Serialize master generations with confirmation and the existing evidence importer.
  perform pg_advisory_xact_lock(hashtextextended('instrument-economics-v1',0));
  begin
+  if jsonb_typeof(v_doc) is distinct from 'object' or v_doc->>'schemaVersion' is distinct from '1'
+   or jsonb_typeof(v_doc->'companyId') is distinct from 'string' or length(v_company) not between 1 and 240 or v_company<>btrim(v_company)
+   or jsonb_typeof(v_doc->'sourceVersion') is distinct from 'string' or length(v_version) not between 1 and 240
+   or v_version !~ '^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}(\.\d+)?(Z|[+-]\d{2}:\d{2})$'
+  then raise exception 'Invalid customer ledger source identity';end if;
+  v_seen:=v_version::timestamptz;
+  if jsonb_typeof(v_rows) is distinct from 'array' then raise exception 'Invalid customer ledger master array';end if;
+  if jsonb_array_length(v_rows)>10000 then raise exception 'Customer ledger list exceeds supported limit';end if;
   if exists(select 1 from jsonb_array_elements(v_rows) e
-    where jsonb_typeof(e->'guid') is distinct from 'string' or jsonb_typeof(e->'name') is distinct from 'string'
+    where jsonb_typeof(e) is distinct from 'object' or jsonb_typeof(e->'guid') is distinct from 'string' or jsonb_typeof(e->'name') is distinct from 'string'
      or length(btrim(e->>'guid')) not between 1 and 240 or length(btrim(e->>'name')) not between 1 and 240)
-   or exists(select 1 from jsonb_array_elements(v_rows) e group by btrim(e->>'name') having count(distinct btrim(e->>'guid'))>1)
-   or exists(select 1 from jsonb_array_elements(v_rows) e group by btrim(e->>'guid') having count(distinct btrim(e->>'name'))>1)
+   or exists(select 1 from jsonb_array_elements(v_rows) e group by btrim(e->>'name') having count(*)>1)
+   or exists(select 1 from jsonb_array_elements(v_rows) e group by btrim(e->>'guid') having count(*)>1)
   then raise exception 'Invalid or ambiguous customer ledger master array';end if;
-  -- Every upload resends the last evidence; store a new generation only when the
-  -- list differs from the current accepted one (about 1,800 rows per generation).
-  v_current:=private.stockflow_current_ledger_generation(v_company);
-  if v_current is not null and v_current<>v_version
-   and (select count(*) from private.stockflow_economic_ledger_masters where company_id=v_company and source_version=v_current)
-    =(select count(distinct btrim(e->>'guid')) from jsonb_array_elements(v_rows) e)
-   and not exists(select 1 from jsonb_array_elements(v_rows) e where not exists(
-    select 1 from private.stockflow_economic_ledger_masters m where m.company_id=v_company and m.source_version=v_current
-     and m.guid=btrim(e->>'guid') and m.name=btrim(e->>'name')))
-  then return new;end if;
-  insert into private.stockflow_economic_ledger_masters(company_id,source_version,guid,name)
-   select v_company,v_version,btrim(e->>'guid'),btrim(e->>'name') from jsonb_array_elements(v_rows) e on conflict do nothing;
+  select coalesce(jsonb_agg(jsonb_build_object('guid',btrim(e->>'guid'),'name',btrim(e->>'name')) order by btrim(e->>'guid')),'[]'::jsonb)
+   into v_content from jsonb_array_elements(v_rows) e;
+  v_hash:=encode(extensions.digest(v_content::text,'sha256'),'hex');
+  select * into v_existing from private.stockflow_economic_ledger_generations where company_id=v_company and source_version=v_version;
+  if found then
+   if not v_existing.valid or v_existing.content_hash<>v_hash then raise exception 'Customer ledger version reused with different content';end if;
+   return new;
+  end if;
+  if exists(select 1 from private.stockflow_economic_ledger_generations where company_id=v_company and
+    (observed_at>v_seen or (observed_at=v_seen and content_hash is distinct from v_hash))) then
+   raise exception 'Stale or conflicting customer ledger observation';end if;
+  select catalog_version into v_catalog from private.stockflow_economic_ledger_generations
+   where company_id=v_company and valid and content_hash=v_hash order by observed_at desc limit 1;
+  v_catalog:=coalesce(v_catalog,v_version);
+  insert into private.stockflow_economic_ledger_generations(company_id,source_version,observed_at,valid,catalog_version,content_hash,row_count)
+   values(v_company,v_version,v_seen,true,v_catalog,v_hash,jsonb_array_length(v_content));
+  if v_catalog=v_version then
+   insert into private.stockflow_economic_ledger_masters(company_id,source_version,guid,name)
+    select v_company,v_version,e->>'guid',e->>'name' from jsonb_array_elements(v_content) e;
+  end if;
  exception when raise_exception or data_exception or integrity_constraint_violation then
-  insert into private.stockflow_economic_import_exceptions(company_id,reason,evidence)
-   values(v_company,sqlerrm,jsonb_build_object('kind','customer_ledger_master','sourceVersion',v_version));
+  insert into private.stockflow_economic_import_exceptions(company_id,reason,evidence,recorded_at)
+   values(v_company,sqlerrm,jsonb_build_object('kind','customer_ledger_master','sourceVersion',v_version,'blocking',v_seen is null),clock_timestamp());
+  if v_seen is not null and length(v_company) between 1 and 240 and length(v_version) between 1 and 240 then
+   insert into private.stockflow_economic_ledger_generations(company_id,source_version,observed_at,valid)
+    values(v_company,v_version,v_seen,false) on conflict do nothing;
+  end if;
  end;
  return new;
 end$$;
-revoke all on function private.stockflow_import_customer_ledgers() from public,anon,authenticated;
+revoke all on function private.stockflow_import_customer_ledgers() from public,anon,authenticated,service_role;
 -- Alphabetical BEFORE trigger order is essential: this fires before
 -- stockflow_import_economic_vouchers, which strips economicEvidence.
 create trigger stockflow_import_customer_ledgers before insert or update of payload on public.stockflow_snapshots
@@ -54,12 +91,14 @@ create trigger stockflow_import_customer_ledgers before insert or update of payl
 
 create function private.stockflow_current_ledger_generation(p_company text) returns text
 language sql stable set search_path=pg_catalog,private as $$
- -- Latest stored accepted generation by arrival, not by text order of source_version
- -- (exports may differ in timezone notation).
- select l.source_version from private.stockflow_economic_ledger_masters l
- where l.company_id=p_company and exists(select 1 from private.stockflow_economic_source_coverage c
-  where c.company_id=l.company_id and c.source_version=l.source_version)
- group by l.source_version order by max(l.imported_at) desc,l.source_version desc limit 1
+ -- Inspect the latest accepted observation, including explicit empty/rejected lists.
+ -- Failed same-version replacement cannot leave that version selectable.
+ select case when l.valid and not exists(select 1 from private.stockflow_economic_import_exceptions e
+   where e.company_id=l.company_id and e.evidence->>'kind'='customer_ledger_master' and e.recorded_at>=l.imported_at
+    and (e.evidence->>'sourceVersion'=l.source_version or e.evidence->>'blocking'='true')) then l.source_version end
+ from private.stockflow_economic_ledger_generations l where l.company_id=p_company
+  and exists(select 1 from private.stockflow_economic_source_coverage c where c.company_id=l.company_id and c.source_version=l.source_version)
+ order by l.observed_at desc,l.imported_at desc,l.source_version desc limit 1
 $$;
 revoke all on function private.stockflow_current_ledger_generation(text) from public,anon,authenticated,service_role;
 
@@ -105,14 +144,14 @@ begin
   end if;
   v_version:=private.stockflow_current_ledger_generation(v_company);
   if v_version is null then return jsonb_build_object('companyId',null,'sourceVersion',null,'rows','[]'::jsonb,'waiting',true);end if;
-  select imported_at into v_observed from private.stockflow_economic_source_coverage where company_id=v_company and source_version=v_version;
+  select observed_at into v_observed from private.stockflow_economic_ledger_generations where company_id=v_company and source_version=v_version;
   with matches as (
    select c.id,c.name,c.city,l.name ledger_name,l.guid,
     case when ci.source_id=l.guid then 'linked' when ci.source_id is not null or gi.customer_id is not null then 'conflict' else 'suggested' end state,
     case when gi.customer_id is not null and gi.customer_id<>c.id then jsonb_build_object('linkedTo',jsonb_build_object('customerId',gi.customer_id,'name',gc.name))
      when ci.source_id is not null and ci.source_id<>l.guid then jsonb_build_object('linkedTo',jsonb_build_object('guid',ci.source_id)) else '{}'::jsonb end extra
-   from private.stockflow_customers c join private.stockflow_economic_ledger_masters l
-    on l.company_id=v_company and l.source_version=v_version and c.tally_key=btrim(l.name)
+   from private.stockflow_customers c join private.stockflow_economic_ledger_generations g on g.company_id=v_company and g.source_version=v_version
+   join private.stockflow_economic_ledger_masters l on l.company_id=g.company_id and l.source_version=g.catalog_version and c.tally_key=btrim(l.name)
    left join private.stockflow_economic_customer_identities ci on ci.company_id=v_company and ci.customer_id=c.id
    left join private.stockflow_economic_customer_identities gi on gi.company_id=v_company and gi.source_id=l.guid
    left join private.stockflow_customers gc on gc.id=gi.customer_id
@@ -155,8 +194,9 @@ begin
  -- AFTER-trigger customer sync's non-key updates.
  for v_row in select value from jsonb_array_elements(v_rows) order by (value->>'customerId')::uuid loop
   select * into v_customer from private.stockflow_customers where id=(v_row->>'customerId')::uuid;
-  select name into v_name from private.stockflow_economic_ledger_masters
-   where company_id=v_company and source_version=v_version and guid=btrim(v_row->>'ledgerGuid');
+  select l.name into v_name from private.stockflow_economic_ledger_masters l
+   join private.stockflow_economic_ledger_generations g on g.company_id=l.company_id and g.catalog_version=l.source_version
+   where g.company_id=v_company and g.source_version=v_version and l.guid=btrim(v_row->>'ledgerGuid');
   if v_customer.id is null or not v_customer.active or v_name is null or btrim(v_name) is distinct from v_customer.tally_key
    or exists(select 1 from private.stockflow_economic_customer_identities where company_id=v_company
     and (source_id=btrim(v_row->>'ledgerGuid') or customer_id=v_customer.id)) then
@@ -186,6 +226,21 @@ begin
  end if;$anchor$;
  if (length(v_definition)-length(replace(v_definition,v_anchor,'')))/length(v_anchor)<>1 then raise exception 'Unexpected economics gateway customer link seam';end if;
  v_definition:=replace(v_definition,v_anchor,v_anchor||E'\n'||$line$ if p_action in ('get_link_suggestions','confirm_customer_links') then return private.stockflow_customer_link_command(actor,roles,p_action,p_payload);end if;$line$);
+ -- The existing triple FK already prevents a mismatched target from committing.
+ -- Return one governed error for conflicts on either side instead of raw 23503/23505.
+ v_anchor:=$identity$  insert into private.stockflow_economic_customer_identities(company_id,source_id,customer_id,verified_by)
+  values(btrim(p_payload->>'companyId'),btrim(p_payload->>'customerSourceId'),(p_payload->>'customerId')::uuid,actor) on conflict(company_id,source_id) do nothing;$identity$;
+ if (length(v_definition)-length(replace(v_definition,v_anchor,'')))/length(v_anchor)<>1 then raise exception 'Unexpected create_target identity seam';end if;
+ v_definition:=replace(v_definition,v_anchor,$guard$  if exists(select 1 from private.stockflow_economic_customer_identities i
+   where i.company_id=btrim(p_payload->>'companyId') and
+    ((i.source_id=btrim(p_payload->>'customerSourceId') and i.customer_id<>(p_payload->>'customerId')::uuid)
+     or (i.customer_id=(p_payload->>'customerId')::uuid and i.source_id<>btrim(p_payload->>'customerSourceId')))) then
+   raise exception 'Canonical customer identity conflicts with existing verification' using errcode='22023';end if;
+  insert into private.stockflow_economic_customer_identities(company_id,source_id,customer_id,verified_by)
+   values(btrim(p_payload->>'companyId'),btrim(p_payload->>'customerSourceId'),(p_payload->>'customerId')::uuid,actor) on conflict do nothing;
+  if not exists(select 1 from private.stockflow_economic_customer_identities i where i.company_id=btrim(p_payload->>'companyId')
+    and i.source_id=btrim(p_payload->>'customerSourceId') and i.customer_id=(p_payload->>'customerId')::uuid) then
+   raise exception 'Canonical customer identity conflicts with existing verification' using errcode='22023';end if;$guard$);
  execute v_definition;
 end$patch$;
 revoke all on function public.stockflow_economics_gateway(text,text,text,jsonb) from public,anon,authenticated;

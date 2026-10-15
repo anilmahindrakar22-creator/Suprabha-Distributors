@@ -229,6 +229,24 @@ function Convert-TallyEconomicEvidence([xml]$CompanyDocument,[xml]$LedgerDocumen
     }
     if ($vouchers.Count -gt 2000) { throw 'Economic window exceeds 2000 vouchers; reduce EconomicHistoryMonths.' }
     $result=[ordered]@{ schemaVersion=1;companyId=$company;sourceVersion=[datetimeoffset]::UtcNow.ToString('o');completeWindow=$true;windowFrom=$From.ToString('yyyy-MM-dd');windowTo=$To.ToString('yyyy-MM-dd');vouchers=$vouchers.ToArray() }
+    # Reuse the same canonical master index; active app customers and an explicit
+    # person confirmation determine eligibility, never a ledger's display group.
+    # Custom debtor subgroups must not disappear from the reference list.
+    try {
+        if($LedgerDocument.SelectNodes('//LEDGER[@NAME or NAME or GUID]').Count -ne $ledgers.Count -or $ledgers.Count -gt 10000){throw 'Incomplete customer ledger identities.'}
+        $seenLedgerGuids=[Collections.Generic.HashSet[string]]::new([StringComparer]::Ordinal)
+        $customerLedgers=@(foreach($name in ($ledgers.Keys | Sort-Object -CaseSensitive)){
+            $guid=[string]$ledgers[$name].guid
+            if($name.Length -gt 240 -or $guid.Length -gt 240 -or -not $seenLedgerGuids.Add($guid)){throw 'Ambiguous customer ledger identities.'}
+            [ordered]@{guid=$guid;name=$name}
+        })
+        $result.customerLedgers=$customerLedgers
+    } catch {
+        # A bad optional master list does not discard otherwise valid voucher facts.
+        # Explicit null is imported as a rejected list, with an auditable exception.
+        $result.customerLedgers=$null
+        $result.customerLedgerError='Canonical Tally ledger list is incomplete, ambiguous or exceeds the supported limit.'
+    }
     if($GroupDocument){$result.itemCatalog=Convert-TallyEconomicItemCatalog $ProductDocument $GroupDocument}
     return $result
 }

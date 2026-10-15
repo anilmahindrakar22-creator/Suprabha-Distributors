@@ -15,6 +15,16 @@ foreach($invalid in @('<!DOCTYPE ENVELOPE [<!ENTITY secret SYSTEM "file:///not-r
 [xml]$vouchers='<ENVELOPE><VOUCHER><GUID>voucher-guid-1</GUID><ALTERID>10</ALTERID><DATE>20260915</DATE><VOUCHERTYPENAME>Sales</VOUCHERTYPENAME><PARTYLEDGERNAME>Customer A</PARTYLEDGERNAME><ALLINVENTORYENTRIES.LIST><STOCKITEMNAME>Reagent A</STOCKITEMNAME><ACTUALQTY>70 pack</ACTUALQTY><AMOUNT>50000.00</AMOUNT></ALLINVENTORYENTRIES.LIST><ALLLEDGERENTRIES.LIST><LEDGERNAME>Customer A</LEDGERNAME><ISPARTYLEDGER>Yes</ISPARTYLEDGER><AMOUNT>-59000.00</AMOUNT></ALLLEDGERENTRIES.LIST><ALLLEDGERENTRIES.LIST><LEDGERNAME>Sales</LEDGERNAME><AMOUNT>50000.00</AMOUNT></ALLLEDGERENTRIES.LIST><ALLLEDGERENTRIES.LIST><LEDGERNAME>GST</LEDGERNAME><AMOUNT>9000.00</AMOUNT></ALLLEDGERENTRIES.LIST></VOUCHER></ENVELOPE>'
 $from=[datetime]'2026-09-01';$to=[datetime]'2026-10-01'
 $result=Convert-TallyEconomicEvidence $company $ledgers $products $vouchers $from $to
+Assert-Economic (@($result.customerLedgers | Where-Object {$_.name -ceq 'Customer A' -and $_.guid -ceq 'customer-guid-1'}).Count -eq 1) 'Canonical customer ledger identities were not exported'
+[xml]$subgroupLedgers=$ledgers.OuterXml.Replace('<GUID>customer-guid-1</GUID>','<GUID>customer-guid-1</GUID><PARENT>Local Hospitals</PARENT>')
+$subgroup=Convert-TallyEconomicEvidence $company $subgroupLedgers $products $vouchers $from $to
+Assert-Economic (@($subgroup.customerLedgers | Where-Object {$_.guid -ceq 'customer-guid-1'}).Count -eq 1) 'Custom debtor subgroups lost canonical ledger references'
+[xml]$missingLedger=$ledgers.OuterXml.Replace('</ENVELOPE>','<LEDGER NAME="Incomplete" /></ENVELOPE>')
+$missingMaster=Convert-TallyEconomicEvidence $company $missingLedger $products $vouchers $from $to
+Assert-Economic ($null -eq $missingMaster.customerLedgers -and $missingMaster.customerLedgerError -and $missingMaster.vouchers[0].amountStatus -eq 'verified') 'Incomplete master list was silently published or discarded verified vouchers'
+[xml]$aliasLedger=$ledgers.OuterXml.Replace('</ENVELOPE>','<LEDGER NAME="Alias"><GUID>customer-guid-1</GUID></LEDGER></ENVELOPE>')
+$aliasMaster=Convert-TallyEconomicEvidence $company $aliasLedger $products $vouchers $from $to
+Assert-Economic ($null -eq $aliasMaster.customerLedgers -and $aliasMaster.customerLedgerError) 'Duplicate GUID names were exported as customer suggestions'
 [xml]$companyWithCounts=$company.OuterXml.Replace('<ENVELOPE>','<ENVELOPE><HEADER><CMPINFO><COMPANY>0</COMPANY><LEDGER>0</LEDGER></CMPINFO></HEADER>')
 $counted=Convert-TallyEconomicEvidence $companyWithCounts $ledgers $products $vouchers $from $to
 Assert-Economic ($counted.companyId -eq 'company-guid-1' -and $counted.vouchers.Count -eq 1) 'Tally CMPINFO company count was treated as a second company'

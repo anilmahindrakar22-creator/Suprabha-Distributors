@@ -115,19 +115,40 @@ begin
  if private.stockflow_customer_link_command('link-manager@test.local',array['management'],'confirm_customer_links',
   '{"companyId":"link-test-company","sourceVersion":"2026-10-15T10:00:00Z","rows":[{"customerId":"15100000-0000-4000-8000-000000000001","ledgerGuid":"alpha"},{"customerId":"15100000-0000-4000-8000-000000000002","ledgerGuid":"beta"}],"reason":"Person reviewed exact matches","idempotencyKey":"link-confirm-batch-0001"}')<>v_result then raise exception 'Historical replay failed';end if;
 
- -- An unchanged list under a new export version is not stored again.
+ -- A fresh observation advances its version while reusing the stored master content.
  update public.stockflow_snapshots set payload=jsonb_build_object('economicEvidence',jsonb_build_object(
   'schemaVersion','1','companyId','link-test-company','sourceVersion','2026-10-17T10:00:00Z','completeWindow',true,
   'windowFrom','2026-10-01','windowTo','2026-11-01','vouchers','[]'::jsonb,
   'customerLedgers','[{"guid":"alpha","name":" Renamed Alpha "}]'::jsonb)) where id='suprabha';
  if exists(select 1 from private.stockflow_economic_ledger_masters where company_id='link-test-company' and source_version='2026-10-17T10:00:00Z')
-  or private.stockflow_current_ledger_generation('link-test-company') is distinct from '2026-10-16T10:00:00Z' then raise exception 'Unchanged ledger list was stored again';end if;
+  or private.stockflow_current_ledger_generation('link-test-company') is distinct from '2026-10-17T10:00:00Z' then raise exception 'Unchanged ledger list did not advance without duplication';end if;
 
- -- Current generation follows arrival, not text order: -05:00 notation sorts lower as text but arrives later.
+ -- Source instant, not text or arrival order: 09:00-05:00 is 14:00 UTC.
  update public.stockflow_snapshots set payload=jsonb_build_object('economicEvidence',jsonb_build_object(
-  'schemaVersion','1','companyId','link-test-company','sourceVersion','2026-10-16T09:00:00-05:00','completeWindow',true,
+  'schemaVersion','1','companyId','link-test-company','sourceVersion','2026-10-17T09:00:00-05:00','completeWindow',true,
   'windowFrom','2026-10-01','windowTo','2026-11-01','vouchers','[]'::jsonb,
   'customerLedgers','[{"guid":"alpha","name":"Renamed Alpha"},{"guid":"zeta","name":"Link Zeta"}]'::jsonb)) where id='suprabha';
- if private.stockflow_current_ledger_generation('link-test-company') is distinct from '2026-10-16T09:00:00-05:00' then raise exception 'Generation chosen by text order';end if;
+ if private.stockflow_current_ledger_generation('link-test-company') is distinct from '2026-10-17T09:00:00-05:00' then raise exception 'Generation chosen by text order';end if;
 end$test$;
+do $target_guard$
+declare v_source text;v_customer text;v_before bigint;v_payload jsonb;
+begin
+ select count(*) into v_before from private.stockflow_economic_targets;
+ foreach v_source in array array['alpha','new-guid'] loop
+  v_customer:=case when v_source='alpha' then '15100000-0000-4000-8000-000000000005' else '15100000-0000-4000-8000-000000000001' end;
+  v_payload:=jsonb_build_object('kind','group','name','Identity conflict fixture','companyId','link-test-company',
+   'customerId',v_customer,'customerSourceId',v_source,'siteId','test-site','modelId','SYS240','effectiveFrom','2026-10-01',
+   'idempotencyKey','target-identity-conflict-'||v_source);
+  begin
+   perform public.stockflow_economics_gateway('link-test-key','link-manager@test.local','create_target',v_payload);
+   raise exception 'Conflicting create_target identity accepted';
+  exception when invalid_parameter_value then
+   if sqlerrm<>'Canonical customer identity conflicts with existing verification' then raise;end if;
+  end;
+ end loop;
+ if (select count(*) from private.stockflow_economic_targets)<>v_before
+  or exists(select 1 from private.stockflow_command_results where idempotency_key like 'target-identity-conflict-%')
+  or exists(select 1 from private.stockflow_economic_customer_identities where company_id='link-test-company' and source_id='new-guid') then
+  raise exception 'Identity conflict left target, identity or receipt writes';end if;
+end$target_guard$;
 rollback;
