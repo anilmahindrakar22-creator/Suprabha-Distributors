@@ -1133,7 +1133,7 @@ test('simple view sends missing Tally purchases to To do and shows the three set
   const purchase = { ...sale, id: 'purchase-calcium', voucherId: 'tally-guid-1164', voucherNumber: '1164MF/CDI/2627', kind: 'purchase', customerSourceId: null, quantity: '1.000000', netSalesPaise: '0', batchId: '0652505' };
   await mockWorkspace(page, economicsData({ targets: [{ ...target, health: 'data_incomplete', missingCostLines: 1 }], sourceLines: [sale, purchase],
     attributionLines: [{ id: 'result-calcium', sourceLineId: sale.id, targetId: target.id, status: 'cost_unavailable', reason: 'Historical purchase linkage unavailable', shareBasisPoints: 10000, quantity: '2', revenuePaise: '586000', costPaise: null, gpPaise: null, date: sale.date, voucherId: sale.voucherId, revision: '1', productId: sale.productId, productName: sale.productName, unit: 'qty', costEvidence: null }],
-    exceptions: [{ sourceId: 'import', productId: '', date: '2026-08-05', netSalesPaise: '0', status: 'import_rejected', reason: 'Packing charge ledger not approved' }, { sourceId: 'other-customer:1', productId: 'x', date: '2026-08-05', netSalesPaise: '1000', status: 'unattributed', reason: 'no_verified_compatible_placement' }] }));
+    exceptions: [{ sourceId: 'import', productId: '', date: '2026-08-05', netSalesPaise: '0', status: 'import_rejected', reason: 'Incomplete voucher identity, lines or net economic values', voucherNumber: '6466', voucherType: 'Sales', voucherDate: '2026-10-10', detail: 'Canonical customer GUID unavailable in the master export.' }, { sourceId: 'other-customer:1', productId: 'x', date: '2026-08-05', netSalesPaise: '1000', status: 'unattributed', reason: 'no_verified_compatible_placement' }] }));
   const card = page.getByRole('article').filter({ has: page.getByRole('heading', { name: target.name, exact: true }) });
   await expect(card.getByText('Reagent sales since 1 Jan 2025', { exact: true })).toBeVisible();
   await card.getByRole('button', { name: '1 sale needs purchase-cost review · See To do', exact: true }).click();
@@ -1144,9 +1144,10 @@ test('simple view sends missing Tally purchases to To do and shows the three set
   const problems = page.getByRole('region', { name: 'Tally import problems' });
   await expect(problems.getByRole('heading', { name: 'Tally documents needing review (1)' })).toBeVisible();
   await expect(problems).toContainText('This covers imported Tally data across instruments.');
-  await expect(problems.getByText('Packing charge ledger not approved', { exact: true })).not.toBeVisible();
+  await expect(problems.getByText("The party ledger on this invoice wasn't found in Tally's customer list.", { exact: true })).not.toBeVisible();
   await problems.getByText('Show document details (1)', { exact: true }).click();
-  await expect(problems.getByText('Packing charge ledger not approved', { exact: true })).toBeVisible();
+  await expect(problems.getByText('Sales invoice 6466 · 10 Oct 2026', { exact: true })).toBeVisible();
+  await expect(problems.getByText("The party ledger on this invoice wasn't found in Tally's customer list.", { exact: true })).toBeVisible();
   await expect(problems).not.toContainText('no_verified_compatible_placement');
   await page.getByRole('navigation', { name: 'Economics sections' }).getByRole('button', { name: 'Set up', exact: true }).click();
   for (const step of ['Step 1: Choose the instrument', 'Step 2: Investment and approval', 'Step 3: Choose reagent items']) await expect(page.getByRole('region', { name: step })).toBeVisible();
@@ -1255,4 +1256,24 @@ test('simple individual mapping submits canonical IDs and clears item on placeme
   await page.getByRole('button', { name: 'Set product mapping', exact: true }).click();
   await expect.poll(() => posts.length).toBe(1);
   expect(posts[0]).toMatchObject({ payload: { targetId: target.id, companyId: 'company-guid', modelId: 'model-1', productId: 'product-guid-one', effect: 'include', effectiveFrom: '2026-10-09' } });
+});
+
+
+test('review documents remain readable and scrollable on a narrow phone', async ({ page }, testInfo) => {
+  await page.setViewportSize({ width: 375, height: 532 });
+  const exceptions = Array.from({ length: 11 }, (_, i) => ({ sourceId: `review-source-${i}`, productId: '', date: '2026-10-10', netSalesPaise: '0', status: 'import_rejected', reason: 'Review required', voucherNumber: i ? `DN/${i}` : 'SD/26-27/VERY-LONG-UNBROKEN-INVOICE-REFERENCE-0123456789012345678901234567890', voucherType: i ? 'Debit Note' : 'GST SALE', voucherDate: '2026-10-10', detail: i ? 'Unclassified inventory voucher type; configure its verified voucher role.' : 'Accounting-only credit or voucher needs verified product/original-sale linkage.' }));
+  await mockWorkspace(page, economicsData({ exceptions }));
+  await page.getByRole('navigation', { name: 'Economics sections' }).getByRole('button', { name: 'To do (11)', exact: true }).click();
+  const region = page.getByRole('region', { name: 'Tally import problems' });
+  await region.getByText('Show document details (11)', { exact: true }).click();
+  await expect(region.getByRole('listitem')).toHaveCount(11);
+  await region.scrollIntoViewIfNeeded();
+  expect(await region.evaluate(el => el.scrollWidth <= el.clientWidth)).toBe(true);
+  expect(await page.evaluate(() => document.documentElement.scrollWidth <= innerWidth)).toBe(true);
+  await expect(region).toContainText('Sales invoice SD/26-27/VERY-LONG');
+  await expect(region).toContainText("This document isn't linked");
+  await page.screenshot({ path: testInfo.outputPath('invoice-review-phone.png') });
+  const list = region.getByRole('list');
+  await list.evaluate(el => { el.scrollTop = el.scrollHeight; });
+  await expect(region.getByText('Debit Note DN/10 · 10 Oct 2026', { exact: true })).toBeInViewport();
 });

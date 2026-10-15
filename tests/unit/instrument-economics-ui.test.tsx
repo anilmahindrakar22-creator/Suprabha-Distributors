@@ -2,6 +2,7 @@ import { readFileSync } from 'node:fs';
 import { describe, expect, it, vi } from 'vitest';
 vi.mock('next/link', () => ({ default: 'a' }));
 import { renderToStaticMarkup } from 'react-dom/server';
+import { importProblemText, ImportProblemItem } from '@/components/instrument-economics-workspace';
 import { EconomicActionOptions, ProposedTargetReview, EconomicApprovalPreview, EconomicHealthBadge, EconomicTargetAdvancedDetails, EconomicTargetCard, InstrumentEconomicsWorkspace, economicCommandNotice, ItemGpBreakdown, reagentLifetime, reportingPeriodLabel } from '@/components/instrument-economics-workspace';
 import { capitalBeyondManagementReview, capitalPreviewPaise } from '@/components/instrument-economics-evidence-forms';
 import type { EconomicTarget } from '@/lib/instrument-economics-types';
@@ -15,6 +16,24 @@ const target: EconomicTarget = {
 };
 
 describe('instrument economics presentation', () => {
+  it('explains connector import problems and preserves unknown messages', () => {
+    expect(importProblemText('Canonical customer GUID unavailable in the master export.')).toBe("The party ledger on this invoice wasn't found in Tally's customer list.");
+    expect(importProblemText('Quantity/base-unit evidence unavailable.')).toBe('A line has no quantity or unit.');
+    expect(importProblemText('Incomplete voucher identity, lines or net economic values')).toBe('Tally sent this document without complete lines or verified amounts.');
+    expect(importProblemText('A new connector problem')).toBe('A new connector problem');
+  });
+  it('identifies rejected invoices and falls back for absent voucher evidence', () => {
+    const row = { sourceId: 'internal-voucher-12345678', productId: '', date: '2026-10-11', netSalesPaise: '0', status: 'import_rejected', reason: 'Incomplete voucher identity, lines or net economic values' };
+    const html = renderToStaticMarkup(<ImportProblemItem row={{ ...row, voucherNumber: '6466', voucherType: 'Sales', voucherDate: '2026-10-10', detail: 'Quantity/base-unit evidence unavailable.' }} />);
+    expect(html).toContain('Sales invoice 6466 · 10 Oct 2026');
+    expect(html).toContain('A line has no quantity or unit.');
+    expect(html).toContain('title="internal-voucher-12345678"');
+    expect(html).toContain('Tally reference …12345678');
+    const fallback = renderToStaticMarkup(<ImportProblemItem row={row} />);
+    expect(fallback).toContain('Tally document · 11 Oct 2026');
+    expect(fallback).toContain('Tally sent this document without complete lines or verified amounts.');
+    expect(renderToStaticMarkup(<ImportProblemItem row={{ ...row, voucherType: 'Sales' }} />)).toContain('Tally document · 11 Oct 2026');
+  });
   it('uses semantic tokens instead of raw palette classes', () => {
     const source = readFileSync('components/instrument-economics-workspace.tsx', 'utf8');
     expect(source).not.toMatch(/(emerald|amber|red|blue|slate)-\d{2,3}/);
