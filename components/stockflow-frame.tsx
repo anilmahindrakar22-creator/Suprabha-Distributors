@@ -1,6 +1,7 @@
 'use client';
 
 import { lazy, Suspense, useEffect, useMemo, useRef, useState } from 'react';
+import { TriangleAlert } from 'lucide-react';
 import { NotificationBell } from './notification-bell';
 import { BellIcon } from './order-list';
 import { startWorkNotifications, type WorkItem, type WorkNotificationState } from '@/lib/work-notifications';
@@ -315,7 +316,7 @@ export function StockFlowFrame({ actorEmail, actorRole, actorRoles, staffAuth = 
         {staffAuth ? <button type="button" disabled={signingOut} onClick={() => void staffSignOut()} aria-label={`Sign out ${actorEmail}`} className="min-h-11 rounded-lg border px-3 text-sm font-bold disabled:opacity-50">{signingOut ? 'Signing out…' : 'Sign out'}</button> : <a href="/signout-with-chatgpt?return_to=/" target="_top" aria-label={`Sign out ${actorEmail}`} title={`Signed in as ${actorEmail}`} className="inline-flex min-h-11 shrink-0 items-center rounded-lg border border-sf-line-soft px-2 text-xs font-bold text-sf-strong hover:bg-sf-soft sm:px-3 sm:text-sm">Sign out</a>}
         </div>
       </header>
-      {deviceNotice ? <output className="flex shrink-0 items-center justify-between gap-3 border-b border-sf-warning-line bg-sf-warning-soft px-4 py-2 text-xs font-semibold text-sf-warning sm:px-6"><span>{deviceNotice}</span><button type="button" onClick={() => setDeviceNotice('')} className="min-h-8 shrink-0 rounded-lg px-3 font-bold hover:bg-sf-warning-line">Dismiss</button></output> : null}
+      {deviceNotice ? <output className="flex shrink-0 items-center justify-between gap-3 border-b border-sf-warning-line bg-sf-warning-soft px-4 py-2 text-xs font-semibold text-sf-warning sm:px-6"><span className="inline-flex items-center gap-1"><TriangleAlert size={16} aria-hidden="true" className="shrink-0" />{deviceNotice}</span><button type="button" onClick={() => setDeviceNotice('')} className="min-h-8 shrink-0 rounded-lg px-3 font-bold hover:bg-sf-warning-line">Dismiss</button></output> : null}
       <section className="min-h-0 flex-1 overflow-hidden">
         {readyEmail !== actorEmail ? <SectionLoading /> : surface === 'stock' ? (
           <iframe

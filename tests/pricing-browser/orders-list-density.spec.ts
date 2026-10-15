@@ -40,6 +40,9 @@ test('Active shows pending orders first and only orders delivered today', async 
   await mockOrders(page);
   await page.goto('/?view=orders-workspace');
   await expect(page.getByRole('region', { name: 'Needs action' })).toContainText('Laboratory 1');
+  const urgentChip = page.getByRole('region', { name: 'Needs action' }).getByText('Urgent', { exact: true }).first();
+  await expect(urgentChip).toHaveText('Urgent');
+  await expect(urgentChip.locator('svg[aria-hidden="true"]')).toHaveCount(1);
   await expect(page.getByRole('region', { name: 'Delivered today' })).toContainText('Delivered Today Lab');
   await expect(page.getByText('Delivered Last Week Lab')).toHaveCount(0);
   await expect(page.getByText('Cancelled Lab')).toHaveCount(0);
