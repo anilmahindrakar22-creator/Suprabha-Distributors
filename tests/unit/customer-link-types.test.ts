@@ -1,9 +1,22 @@
 import { describe, expect, it } from 'vitest';
-import { parseLinkCommand } from '@/lib/customer-link-types';
+import { isConfirmCustomerLinksResult, isCustomerLinksResponse, parseLinkCommand } from '@/lib/customer-link-types';
 
 const id = '12345678-1234-4234-8234-123456789abc';
 const valid = { action: 'confirm_customer_links', companyId: 'company', sourceVersion: 'export-1', rows: [{ customerId: id, ledgerGuid: 'guid' }], reason: 'Verified ledger', idempotencyKey: 'customer-links-key-001' };
 describe('customer link commands', () => {
+  it('accepts only a receipt for exactly the submitted customers', () => {
+    expect(isConfirmCustomerLinksResult({ ok: true, confirmed: 1, customerIds: [id] }, [id])).toBe(true);
+    for (const value of [null, {}, { ok: true }, { ok: true, confirmed: 2, customerIds: [id] }, { ok: true, confirmed: 1, customerIds: ['other'] }, { ok: true, confirmed: 2, customerIds: [id, id] }]) {
+      expect(isConfirmCustomerLinksResult(value, [id])).toBe(false);
+    }
+  });
+  it('rejects malformed source lists rather than displaying unverified matches', () => {
+    const row = { customerId: id, customerName: 'Care Lab', city: null, ledgerName: 'Care Lab', guid: 'guid', state: 'suggested' };
+    const list = { companyId: 'company', sourceVersion: 'v1', observedAt: '2026-10-15T01:00:00Z', rows: [row], page: { page: 1, pageSize: 25, total: 1 } };
+    expect(isCustomerLinksResponse(list)).toBe(true);
+    expect(isCustomerLinksResponse({ waiting: true, companyId: null, sourceVersion: null, rows: [] })).toBe(true);
+    for (const value of [null, {}, { ...list, rows: null }, { ...list, observedAt: 'invalid' }, { ...list, rows: [{ ...row, guid: null }] }, { ...list, page: { page: 1, pageSize: 25, total: 0 } }]) expect(isCustomerLinksResponse(value)).toBe(false);
+  });
   it('extracts the flat command and trims user text', () => {
     expect(parseLinkCommand({ ...valid, companyId: ' company ', sourceVersion: ' export-1 ', reason: ' Verified ledger ', rows: [{ customerId: id.toUpperCase(), ledgerGuid: ' guid ' }], idempotencyKey: ' customer-links-key-001 ' }))
       .toEqual({ action: valid.action, payload: { companyId: 'company', sourceVersion: 'export-1', rows: valid.rows, reason: valid.reason, idempotencyKey: valid.idempotencyKey } });

@@ -151,11 +151,15 @@ begin
     case when gi.customer_id is not null and gi.customer_id<>c.id then jsonb_build_object('linkedTo',jsonb_build_object('customerId',gi.customer_id,'name',gc.name))
      when ci.source_id is not null and ci.source_id<>l.guid then jsonb_build_object('linkedTo',jsonb_build_object('guid',ci.source_id)) else '{}'::jsonb end extra
    from private.stockflow_customers c join private.stockflow_economic_ledger_generations g on g.company_id=v_company and g.source_version=v_version
-   join private.stockflow_economic_ledger_masters l on l.company_id=g.company_id and l.source_version=g.catalog_version and c.tally_key=btrim(l.name)
    left join private.stockflow_economic_customer_identities ci on ci.company_id=v_company and ci.customer_id=c.id
+   join private.stockflow_economic_ledger_masters l on l.company_id=g.company_id and l.source_version=g.catalog_version
+    and (coalesce(c.tally_key,c.name)=btrim(l.name) or ci.source_id=l.guid)
    left join private.stockflow_economic_customer_identities gi on gi.company_id=v_company and gi.source_id=l.guid
    left join private.stockflow_customers gc on gc.id=gi.customer_id
-   where c.active and (strpos(lower(c.name),lower(v_search))>0 or strpos(lower(l.name),lower(v_search))>0)
+   where c.active and (c.tally_key is not null or ci.source_id=l.guid or exists(
+    select 1 from public.stockflow_snapshots s,jsonb_array_elements(case when jsonb_typeof(s.payload->'customers')='array' then s.payload->'customers' else '[]'::jsonb end) d
+    where s.id='suprabha' and d->>'tallyKey'=c.name and d->>'name'=c.name))
+    and (strpos(lower(c.name),lower(v_search))>0 or strpos(lower(l.name),lower(v_search))>0)
   ), filtered as (select * from matches where v_state is null or state=v_state),
   paged as (select * from filtered order by name,id limit 25 offset (v_page::bigint-1)*25)
   select (select count(*) from filtered),coalesce(jsonb_agg(jsonb_build_object('customerId',id,'customerName',name,'city',city,
@@ -197,7 +201,10 @@ begin
   select l.name into v_name from private.stockflow_economic_ledger_masters l
    join private.stockflow_economic_ledger_generations g on g.company_id=l.company_id and g.catalog_version=l.source_version
    where g.company_id=v_company and g.source_version=v_version and l.guid=btrim(v_row->>'ledgerGuid');
-  if v_customer.id is null or not v_customer.active or v_name is null or btrim(v_name) is distinct from v_customer.tally_key
+  if v_customer.id is null or not v_customer.active or v_name is null or btrim(v_name) is distinct from coalesce(v_customer.tally_key,v_customer.name)
+   or (v_customer.tally_key is null and not exists(
+    select 1 from public.stockflow_snapshots s,jsonb_array_elements(case when jsonb_typeof(s.payload->'customers')='array' then s.payload->'customers' else '[]'::jsonb end) d
+    where s.id='suprabha' and d->>'tallyKey'=v_customer.name and d->>'name'=v_customer.name))
    or exists(select 1 from private.stockflow_economic_customer_identities where company_id=v_company
     and (source_id=btrim(v_row->>'ledgerGuid') or customer_id=v_customer.id)) then
    raise exception '%: no longer an exact unlinked match. Reload.',coalesce(v_customer.name,v_row->>'customerId') using errcode='PT409';end if;
@@ -245,4 +252,39 @@ begin
 end$patch$;
 revoke all on function public.stockflow_economics_gateway(text,text,text,jsonb) from public,anon,authenticated;
 grant execute on function public.stockflow_economics_gateway(text,text,text,jsonb) to service_role;
+
+-- Preserve the existing customer UUID when a visit-only customer gains a ledger,
+-- and use its confirmed GUID after a ledger rename. No fuzzy automatic links.
+do $sync_upgrade$
+declare v_definition text;v_anchor text;
+begin
+ v_definition:=replace(pg_get_functiondef('private.stockflow_sync_tally_customers()'::regprocedure),chr(13),'');
+ v_anchor:='v_balance numeric(18,2);';
+ if (length(v_definition)-length(replace(v_definition,v_anchor,'')))/length(v_anchor)<>1 then raise exception 'Unexpected customer sync declaration';end if;
+ v_definition:=replace(v_definition,v_anchor,v_anchor||' v_linked_ids uuid[];');
+ v_anchor:=$old$    insert into private.stockflow_customers(tally_key,name,phone,city,active,created_by_email,updated_at,tally_balance,balance_as_of)$old$;
+ if (length(v_definition)-length(replace(v_definition,v_anchor,'')))/length(v_anchor)<>1 then raise exception 'Unexpected customer sync insert seam';end if;
+ v_definition:=replace(v_definition,v_anchor,$new$    select array_agg(distinct i.customer_id) into v_linked_ids
+    from private.stockflow_economic_customer_identities i
+    join private.stockflow_economic_ledger_generations g on g.company_id=i.company_id
+      and g.source_version=private.stockflow_current_ledger_generation(i.company_id)
+    join private.stockflow_economic_ledger_masters l on l.company_id=g.company_id and l.source_version=g.catalog_version
+      and l.guid=i.source_id and btrim(l.name)=v_tally_key;
+    if cardinality(v_linked_ids)>1 then raise exception 'Customer ledger identity is ambiguous across companies' using errcode='22023';end if;
+    if cardinality(v_linked_ids)=1 then
+      if exists(select 1 from private.stockflow_customers where tally_key=v_tally_key and id<>v_linked_ids[1]) then
+        raise exception 'Ledger already has a different customer record; review the conflict' using errcode='22023';end if;
+      update private.stockflow_customers set tally_key=v_tally_key,name=v_name,
+        phone=coalesce(nullif(left(btrim(coalesce(v_customer->>'phone','')),80),''),phone),
+        city=coalesce(nullif(left(btrim(coalesce(v_customer->>'city','')),160),''),city),
+        active=true,updated_at=now(),tally_balance=v_balance,balance_as_of=case when v_balance is null then null else now() end
+      where id=v_linked_ids[1];
+      continue;
+    end if;
+    -- Keep the visit customer pending for explicit exact-name confirmation.
+    -- The source snapshot retains the ledger while its financial fields stay unavailable.
+    if exists(select 1 from private.stockflow_customers where active and tally_key is null and name=v_tally_key) then continue;end if;
+$new$||v_anchor);
+ execute v_definition;
+end $sync_upgrade$;
 commit;

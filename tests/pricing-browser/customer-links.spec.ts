@@ -9,7 +9,7 @@ const rows: CustomerLinkRow[] = [
   { customerId: '44444444-4444-4444-8444-444444444444', customerName: 'Conflict Lab', city: null, ledgerName: 'Conflict ledger', guid: 'ledger-conflict', state: 'conflict', linkedTo: { customerId: 'other', name: 'Other Lab' } },
   { customerId: '55555555-5555-4555-8555-555555555555', customerName: 'Other ledger Lab', city: null, ledgerName: 'Other ledger', guid: 'ledger-other', state: 'conflict', linkedTo: { guid: 'other-abcdefgh' } },
 ];
-async function mockLinks(page: Page, options: { canAssign?: boolean; waiting?: boolean; conflict?: boolean; retryStatus?: number | 'network'; companies?: boolean } = {}) {
+async function mockLinks(page: Page, options: { canAssign?: boolean; waiting?: boolean; conflict?: boolean; retryStatus?: number | 'network' | 'malformed'; companies?: boolean } = {}) {
   const gets: string[] = [];
   const posts: Record<string, unknown>[] = [];
   let currentRows = rows.map(row => ({ ...row }));
@@ -23,6 +23,7 @@ async function mockLinks(page: Page, options: { canAssign?: boolean; waiting?: b
       posts.push(body);
       if (options.retryStatus && posts.length === 1) {
         if (options.retryStatus === 'network') await route.abort('failed');
+        else if (options.retryStatus === 'malformed') await route.fulfill({ json: { ok: true } });
         else await route.fulfill({ status: options.retryStatus, json: { error: 'Try again' } });
         return;
       }
@@ -132,7 +133,7 @@ test('phone selection bar reserves its height and leaves the last row accessible
   const lastBox = await last.boundingBox(); const barBox = await bar.boundingBox();
   expect(lastBox!.y + lastBox!.height).toBeLessThanOrEqual(barBox!.y);
 });
-for (const status of [502, 408, 429, 'network', 422] as const) {
+for (const status of [502, 408, 429, 'network', 'malformed', 422] as const) {
   test(`retry after ${status} uses the appropriate idempotency key`, async ({ page }) => {
     const { posts } = await mockLinks(page, { retryStatus: status }); await openLinks(page);
     await page.getByLabel('Select all on this page', { exact: true }).check();
@@ -140,6 +141,11 @@ for (const status of [502, 408, 429, 'network', 422] as const) {
     await page.getByRole('button', { name: 'Confirm 2 links' }).click();
     await expect(page.getByRole('alert')).toBeVisible();
     await expect(page.getByText('2 selected', { exact: true })).toBeVisible();
+    if (status !== 422) {
+      await expect(page.getByLabel('Reason', { exact: true })).toBeDisabled();
+      await expect(page.getByRole('button', { name: 'Clear', exact: true })).toBeDisabled();
+      await expect(page.getByRole('button', { name: 'Back to accounts', exact: true })).toBeDisabled();
+    }
     await page.getByRole('button', { name: 'Confirm 2 links' }).click();
     await expect(page.getByRole('status')).toHaveText('2 linked');
     expect(posts).toHaveLength(2);

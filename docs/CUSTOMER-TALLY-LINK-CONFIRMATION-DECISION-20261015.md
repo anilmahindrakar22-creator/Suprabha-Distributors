@@ -1,5 +1,9 @@
 # Decision: person-confirmed customer–Tally links
 
+**RESTORED by the owner's latest direction on 15 October 2026:** continue this one-time confirmation design and allow new customers for visits without a ledger. This supersedes the intervening withdrawal recorded in [the Tally-authority note](TALLY-AUTHORITATIVE-CUSTOMERS-DECISION-20261015.md). Confirm once; subsequent sales use the stable company/ledger identity, without routine repeated matching. Implementation and release evidence: [current handover](HANDOVER-CUSTOMER-TALLY-LINKS-20261015.md).
+
+Addition: Sales, Operations, Management and Administrator can create a customer in the existing master with a name and optional town/phone, then record visits and contacts before a ledger exists. Do not manufacture a Tally key, balance, revenue or class. Reject an existing active customer name visibly and keep uncertain submissions on the same command key. When an exact ledger later appears in the actual Tally customer export, retain the visit customer rather than importing a duplicate; Management/Administrator confirm its canonical GUID once. Accepted GUID evidence must preserve that UUID and related history across a rename. Nonexact or conflicting records require explicit technical reconciliation; V1 must not merge histories or guess from similar names.
+
 15 October 2026. Codex integration decision under the owner's directive item 3: **approve a Management/Administrator screen for batch person confirmation**, with the following small scope. This is approval to implement the screen, not automatic confirmation of any customer.
 
 - Reuse the existing Customer master and verified Economics customer-identity authority. Do not create a second customer master or a Market-only identity table.

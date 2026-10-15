@@ -930,6 +930,22 @@
       "remoteSha256": null,
       "status": "not_deployed",
       "review": "14 October 2026 primary Accounts series review: service-only gateway/private RLS tables, role-sensitive fields omitted server-side, contact parent/row lock order and version conflicts, immutable audit and stored command receipts. False complete-sales seam prevents class activation. Style ratings require the actual visitor and active same-account met contact; erasure removes contact/event/assessment/style free-text personal values while retaining immutable metadata. Fresh combined disposable deployment-order replay, units/static/phone browsers and exact-head CI required. Pending production; acceptance separately recorded."
+    },
+    {
+      "localFile": "20261015082020_visit_customers_without_ledger.sql",
+      "localSha256": "fe682c7fe6690e2948f0f3afe9f6235c1d6be98b334802a6505bc897d87b4025",
+      "remoteVersion": null,
+      "remoteSha256": null,
+      "status": "not_deployed",
+      "review": "15 October 2026 restored one-time customer links and visit-only customers: private immutable provenance and canonical master generations, shared first advisory lock, strict current-role gateway, retained customer UUID, atomic command receipts, exact name-only suggestions and governed conflicts. Local replay and phone fixtures required. No hosted release; Economics cutover gates retained."
+    },
+    {
+      "localFile": "20261015100000_customer_link_confirmation.sql",
+      "localSha256": "eead14544682f3d8bf23477dd74a33d5309104abe62896f6600953c3c3d24b67",
+      "remoteVersion": null,
+      "remoteSha256": null,
+      "status": "not_deployed",
+      "review": "15 October 2026 restored one-time customer links and visit-only customers: private immutable provenance and canonical master generations, shared first advisory lock, strict current-role gateway, retained customer UUID, atomic command receipts, exact name-only suggestions and governed conflicts. Local replay and phone fixtures required. No hosted release; Economics cutover gates retained."
     }
   ],
   "liveCheck": {

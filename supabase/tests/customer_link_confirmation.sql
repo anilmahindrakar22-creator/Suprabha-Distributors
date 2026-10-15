@@ -81,7 +81,8 @@ begin
   values('link-test-company','gamma','15100000-0000-4000-8000-000000000004','test');
  foreach v_state in array array['suggested','linked','conflict'] loop
   v_read:=private.stockflow_customer_link_command('test',array['management'],'get_link_suggestions',jsonb_build_object('companyId','link-test-company','state',v_state));
-  if (v_read->'page'->>'total')::int<>(case when v_state='suggested' then 0 else 2 end)
+  -- The canonical GUID remains visible even when the legacy name points elsewhere.
+  if (v_read->'page'->>'total')::int<>(case when v_state='suggested' then 0 when v_state='linked' then 3 else 2 end)
    or exists(select 1 from jsonb_array_elements(v_read->'rows') r where r->>'state'<>v_state) then raise exception 'State filter incorrect: %',v_state;end if;
   if v_state='conflict' and (not exists(select 1 from jsonb_array_elements(v_read->'rows') r where r->'linkedTo'->>'customerId'='15100000-0000-4000-8000-000000000004')
    or not exists(select 1 from jsonb_array_elements(v_read->'rows') r where r->'linkedTo'->>'guid'='gamma')) then raise exception 'Conflict detail missing';end if;

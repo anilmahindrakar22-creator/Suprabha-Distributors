@@ -22,7 +22,7 @@ function fixture() {
   return { send, fetcher };
 }
 describe('Accounts Edge routing and existing admission boundary', () => {
-  it.each(['get_accounts', 'create_territory', 'assign_account', 'set_location', 'log_visit', 'set_class_policy', 'add_contact', 'update_contact', 'remove_contact', 'set_assessment', 'erase_contact', 'record_style_observation', 'set_style_override'])('routes %s to Accounts with server credentials only', async action => {
+  it.each(['create_customer', 'get_accounts', 'create_territory', 'assign_account', 'set_location', 'log_visit', 'set_class_policy', 'add_contact', 'update_contact', 'remove_contact', 'set_assessment', 'erase_contact', 'record_style_observation', 'set_style_override'])('routes %s to Accounts with server credentials only', async action => {
     const { send, fetcher } = fixture();
     expect((await send(action)).status).toBe(200);
     const [url, options] = fetcher.mock.calls[0];

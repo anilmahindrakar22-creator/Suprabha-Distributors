@@ -35,6 +35,7 @@ export function parseAccountClass(value: string | null): AccountClassState | nul
 }
 export type AccountRow = {
   id: string; name: string; city: string | null;
+  tallyLedgerState?: 'no_ledger' | 'unlinked' | 'linked';
   appContacts: AppContact[];
   powerAlerts?: PowerAlert[];
   canSeeStyle?: boolean;
@@ -59,6 +60,7 @@ export function withAccountContacts<T extends { accounts: (Omit<AccountRow, 'app
 type CommandBase = { idempotencyKey: string };
 type ContactFields = { name: string; businessRole: string | null; phone: string | null; email: string | null };
 export type AccountCommand =
+  | { action: 'create_customer'; payload: CommandBase & { name: string; city: string | null; phone: string | null } }
   | { action: 'record_style_observation'; payload: CommandBase & { contactId: string; visitId: string; a: StyleRatings; r: StyleRatings; cues?: StyleCue[] } }
   | { action: 'set_style_override'; payload: CommandBase & { contactId: string; style: SocialStyle | null; reason: string } }
   | { action: 'set_assessment'; payload: CommandBase & Pick<ContactAssessment, 'decisionRole' | 'stance' | 'influence'> & { contactId: string; reason?: string | null } }
@@ -98,6 +100,15 @@ export function parseAccountCommand(body: unknown): AccountCommand | null {
   const p = body as Record<string, unknown>;
   if (typeof p.idempotencyKey !== 'string' || p.idempotencyKey.trim().length < 16 || p.idempotencyKey.length > 200) return null;
   const idempotencyKey = p.idempotencyKey;
+  if (p.action === 'create_customer') {
+    if (Object.keys(p).some(key => !['action', 'name', 'city', 'phone', 'idempotencyKey'].includes(key))
+      || typeof p.name !== 'string' || p.name.trim().length < 2 || p.name.trim().length > 160) return null;
+    for (const [key, limit] of [['city', 160], ['phone', 80]] as const) {
+      if (p[key] != null && (typeof p[key] !== 'string' || p[key].trim().length > limit)) return null;
+    }
+    return { action: p.action, payload: { name: p.name.trim(), city: typeof p.city === 'string' ? p.city.trim() || null : null,
+      phone: typeof p.phone === 'string' ? p.phone.trim() || null : null, idempotencyKey } };
+  }
   if (p.action === 'record_style_observation' || p.action === 'set_style_override') {
     if (typeof p.contactId !== 'string' || !accountUuidPattern.test(p.contactId)) return null;
     if (p.action === 'set_style_override') {

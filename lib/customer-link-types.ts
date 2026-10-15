@@ -22,6 +22,24 @@ function record(value: unknown): value is Record<string, unknown> {
 function exactKeys(value: Record<string, unknown>, keys: string[]) {
   return Object.keys(value).length === keys.length && keys.every(key => Object.hasOwn(value, key));
 }
+export function isConfirmCustomerLinksResult(value: unknown, customerIds: string[]): value is ConfirmCustomerLinksResult {
+  return record(value) && value.ok === true && value.confirmed === customerIds.length && Array.isArray(value.customerIds)
+    && value.customerIds.length === customerIds.length && new Set(value.customerIds).size === customerIds.length
+    && value.customerIds.every(id => typeof id === 'string' && customerIds.includes(id));
+}
+export function isCustomerLinksResponse(value: unknown): value is CustomerLinksResponse {
+  if (!record(value)) return false;
+  const text = (v: unknown): v is string => typeof v === 'string' && v.trim().length > 0 && v.length <= 240;
+  if ('companies' in value) return Array.isArray(value.companies) && value.companies.length > 1 && value.companies.length <= 100 && value.companies.every(text);
+  if (value.waiting === true) return value.companyId === null && value.sourceVersion === null && Array.isArray(value.rows) && value.rows.length === 0;
+  if (!text(value.companyId) || !text(value.sourceVersion) || typeof value.observedAt !== 'string' || !Number.isFinite(Date.parse(value.observedAt))
+    || !record(value.page) || value.page.pageSize !== 25 || !Number.isInteger(value.page.page) || Number(value.page.page) < 1
+    || !Number.isSafeInteger(value.page.total) || Number(value.page.total) < 0 || !Array.isArray(value.rows) || value.rows.length > 25 || value.rows.length > Number(value.page.total)) return false;
+  return value.rows.every(row => record(row) && typeof row.customerId === 'string' && uuidPattern.test(row.customerId)
+    && text(row.customerName) && (row.city === null || typeof row.city === 'string') && text(row.ledgerName) && text(row.guid)
+    && customerLinkStates.includes(row.state as CustomerLinkState)
+    && (row.linkedTo === undefined || record(row.linkedTo) && (text(row.linkedTo.guid) || text(row.linkedTo.customerId) && text(row.linkedTo.name))));
+}
 export function parseLinkCommand(value: unknown): CustomerLinkCommand | null {
   if (!record(value) || !exactKeys(value, ['action', 'companyId', 'sourceVersion', 'rows', 'reason', 'idempotencyKey'])
     || value.action !== 'confirm_customer_links') return null;
