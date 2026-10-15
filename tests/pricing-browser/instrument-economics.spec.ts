@@ -1257,3 +1257,23 @@ test('simple individual mapping submits canonical IDs and clears item on placeme
   await expect.poll(() => posts.length).toBe(1);
   expect(posts[0]).toMatchObject({ payload: { targetId: target.id, companyId: 'company-guid', modelId: 'model-1', productId: 'product-guid-one', effect: 'include', effectiveFrom: '2026-10-09' } });
 });
+
+
+test('review documents remain readable and scrollable on a narrow phone', async ({ page }, testInfo) => {
+  await page.setViewportSize({ width: 375, height: 532 });
+  const exceptions = Array.from({ length: 11 }, (_, i) => ({ sourceId: `review-source-${i}`, productId: '', date: '2026-10-10', netSalesPaise: '0', status: 'import_rejected', reason: 'Review required', voucherNumber: i ? `DN/${i}` : 'SD/26-27/VERY-LONG-UNBROKEN-INVOICE-REFERENCE-0123456789012345678901234567890', voucherType: i ? 'Debit Note' : 'GST SALE', voucherDate: '2026-10-10', detail: i ? 'Unclassified inventory voucher type; configure its verified voucher role.' : 'Accounting-only credit or voucher needs verified product/original-sale linkage.' }));
+  await mockWorkspace(page, economicsData({ exceptions }));
+  await page.getByRole('navigation', { name: 'Economics sections' }).getByRole('button', { name: 'To do', exact: true }).click();
+  const region = page.getByRole('region', { name: 'Tally import problems' });
+  await region.getByText('Show document details (11)', { exact: true }).click();
+  await expect(region.getByRole('listitem')).toHaveCount(11);
+  await region.scrollIntoViewIfNeeded();
+  expect(await region.evaluate(el => el.scrollWidth <= el.clientWidth)).toBe(true);
+  expect(await page.evaluate(() => document.documentElement.scrollWidth <= innerWidth)).toBe(true);
+  await expect(region).toContainText('Sales invoice SD/26-27/VERY-LONG');
+  await expect(region).toContainText("This document isn't linked");
+  await page.screenshot({ path: testInfo.outputPath('invoice-review-phone.png') });
+  const list = region.getByRole('list');
+  await list.evaluate(el => { el.scrollTop = el.scrollHeight; });
+  await expect(region.getByText('Debit Note DN/10 · 10 Oct 2026', { exact: true })).toBeInViewport();
+});

@@ -946,6 +946,14 @@
       "remoteSha256": null,
       "status": "not_deployed",
       "review": "15 October 2026 restored one-time customer links and visit-only customers: private immutable provenance and canonical master generations, shared first advisory lock, strict current-role gateway, retained customer UUID, atomic command receipts, exact name-only suggestions and governed conflicts. Local replay and phone fixtures required. No hosted release; Economics cutover gates retained. Primary release correction: accepted immutable ledger identity is independent of voucher coverage; ledger-only confirmation cannot certify sales/classes."
+    },
+    {
+      "localFile": "20261015120000_import_problem_details.sql",
+      "localSha256": "fcb59f6564239fba1be0804ec26f5b754e3d3bcb18e31dd3d16c6c25add9accd",
+      "remoteVersion": null,
+      "remoteSha256": null,
+      "status": "not_deployed",
+      "review": "15 October 2026 primary review: additive existing import-exception evidence in private workspace read only; existing role checks, grants and financial/source coverage unchanged. Guard requires exactly one expected projection. Full deployment-order replay and Accounts/null evidence regression required. Production pending; acceptance recorded separately."
     }
   ],
   "liveCheck": {

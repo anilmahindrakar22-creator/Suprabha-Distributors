@@ -527,7 +527,7 @@ const importProblemMessages: Record<string, string> = {
   'Mixed economic signs require review.': 'The invoice mixes positive and negative lines.',
   'Unclassified document adjustment; configure its canonical ledger role.': "An extra ledger on this invoice (discount, freight or rounding) isn't classified yet.",
   'Unclassified inventory voucher type; configure its verified voucher role.': "This voucher type isn't set up as a sale, purchase or return.",
-  'Accounting-only credit or voucher needs verified product/original-sale linkage.': "This credit isn't linked to products or to the original sale.",
+  'Accounting-only credit or voucher needs verified product/original-sale linkage.': "This document isn't linked to products or to the original sale.",
   'Economic amount is not exact decimal currency.': "An amount isn't an exact rupee value.",
   'Tally did not verify a zero-valued inventory amount.': "A zero-value line couldn't be verified in Tally.",
   'Zero-value amount evidence does not match the voucher revision and inventory line.': "A zero-value line doesn't match the invoice version.",
@@ -544,8 +544,8 @@ export function ImportProblemItem({ row }: { row: EconomicException }) {
   const labels: Record<string, string> = { Sales: 'Sales invoice', 'GST SALE': 'Sales invoice', Purchase: 'Purchase invoice', 'Credit Note': 'Credit note' };
   const type = row.voucherType ? labels[row.voucherType] ?? row.voucherType : 'Tally document';
   const heading = row.voucherNumber ? `${type} ${row.voucherNumber}` : 'Tally document';
-  return <li className="py-3">
-    <p className="flex items-center gap-1.5 font-semibold text-sf-warning"><TriangleAlert size={18} aria-hidden="true" className="shrink-0" />{heading} · {displayDate(row.voucherDate ?? row.date)}</p>
+  return <li className="min-w-0 break-words py-3">
+    <p className="flex items-center gap-1.5 font-semibold text-sf-warning"><TriangleAlert size={18} aria-hidden="true" className="shrink-0" /><span className="min-w-0 break-words">{heading} · {displayDate(row.voucherDate ?? row.date)}</span></p>
     <p className="mt-1 text-sm text-sf-body">{importProblemText(row.detail ?? row.reason)}</p>
     <p className="mt-1 text-xs text-sf-muted" title={row.sourceId}>Tally reference …{row.sourceId.slice(-8)}</p>
   </li>;
