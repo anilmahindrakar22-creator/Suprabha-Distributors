@@ -5,6 +5,7 @@ import { isOrderDeliveryOverdue, orderNeedsBillingAttention, ordersCsv, validate
 import { measuredJsonResponse } from '@/lib/measured-json-response';
 import { matchingOrderList, parseOrderListQuery, queryBillingAttentionList, queryOrderList } from '@/lib/order-list-query';
 import { BoundedJsonRequestError, readBoundedJsonRequest } from '@/lib/bounded-json-request';
+import type { TallyRecentProducts } from '@/lib/tally-recent-products';
 
 const privateHeaders = { 'cache-control': 'private, no-store' };
 
@@ -42,6 +43,14 @@ export async function GET(request: Request) {
   try {
     const user = await authorizedUser();
     const parameters = new URL(request.url).searchParams;
+    const recentProductsFor = parameters.get('recentProductsFor');
+    if (recentProductsFor !== null) {
+      if (!/^[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i.test(recentProductsFor)) return failure('Valid customer ID is required', 400);
+      return measuredJsonResponse(
+        await callOrderGateway<TallyRecentProducts>(user.email, 'get_tally_recent_products', { customerId: recentProductsFor }),
+        startedAt,
+      );
+    }
     const eventsFor = parameters.get('eventsFor');
     if (eventsFor) {
       if (!/^[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i.test(eventsFor)) return failure('Valid order ID is required', 400);

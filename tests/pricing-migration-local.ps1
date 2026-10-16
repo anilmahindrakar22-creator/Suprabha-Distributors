@@ -255,6 +255,8 @@ end$$;
   Write-Output 'PASS: bounded service-only snapshot ingest, unchanged-generation replay and changed-source publication'
   Invoke-DatabaseCommand $psqlProgram @('-U',$databaseUser,'-X','-q','-v','ON_ERROR_STOP=1','-d',$database,'-f',(Join-Path $repository 'supabase/tests/mapped_instrument_cost_scope.sql'))
   Write-Output 'PASS: mapped-only costing retains earlier consumption, historical group members and native-return depletion'
+  Invoke-DatabaseCommand $psqlProgram @('-U',$databaseUser,'-X','-q','-v','ON_ERROR_STOP=1','-d',$database,'-f',(Join-Path $repository 'supabase/tests/tally_recent_products.sql'))
+  Write-Output 'PASS: customer-scoped Tally recent products, deduplication, quantities, prospect and authorization'
 } finally {
   if ($databaseCreated) { & $dropdbProgram -U $databaseUser --if-exists $database | Out-Null }
   if ($serverStartedByScript) { & $pgCtlProgram -D $postgresData -m fast -w stop | Out-Null }

@@ -32,6 +32,7 @@ import { BackIcon, ChevronDownIcon, CompactOrderRow, OrderFlagBadge, OrderProgre
 import { deliveredTodayOrders, groupOrdersForList } from '@/lib/order-list-groups';
 import { readJsonBody } from '@/lib/http-json';
 import { hasAnyStockFlowRole, type StockFlowRole } from '@/lib/user-types';
+import type { TallyRecentProducts } from '@/lib/tally-recent-products';
 
 type DraftLine = { tallyKey: string; item: CatalogItem | null; quantity: number };
 // A null draft means no customer is selected; callers supply only that customer's history.
@@ -1409,6 +1410,10 @@ export function HydratedNewOrderPanel({ data, templateOrder, onClose, onCreated,
   const [customerHistoryState, setCustomerHistoryState] = useState<'idle' | 'loading' | 'error'>('idle');
   const customerHistoryCacheRef = useRef(new Map<string, { ownerKey: string; orders: OrderSummary[]; rankingOrders: OrderSummary[]; total: number }>());
   const currentCustomerKeyRef = useRef(selectedCustomerKey);
+  const [tallyRecent, setTallyRecent] = useState<{ key: string; value: TallyRecentProducts } | null>(null);
+  const [tallyRecentError, setTallyRecentError] = useState('');
+  const [tallyRecentRetry, setTallyRecentRetry] = useState(0);
+  const tallyRecentCache = useRef(new Map<string, { value: TallyRecentProducts; expiresAt: number }>());
   const [notes, setNotes] = useState(initialPayload?.notes || '');
   const [source, setSource] = useState<'phone' | 'email' | 'whatsapp' | 'walk_in'>(initialPayload?.source || 'phone');
   const [priority, setPriority] = useState<'normal' | 'high' | 'urgent'>(initialPayload?.priority || 'normal');
@@ -1546,26 +1551,42 @@ export function HydratedNewOrderPanel({ data, templateOrder, onClose, onCreated,
   );
   const repeatExpanded = !!possibleRepeat && expandedRepeatOrderId === possibleRepeat.order.id;
   const recentProducts = useMemo(() => {
-    if (!selectedCustomerId || customerHistory?.ownerKey !== selectedCustomerKey || lines.length >= 50) return [];
+    if (!selectedCustomerId || tallyRecent?.key !== selectedCustomerKey || lines.length >= 50) return [];
     const catalogByKey = new Map(data.snapshot.catalog.filter((item) => item.active).map((item) => [item.tallyKey, item]));
     const seen = new Set(lines.map((line) => line.tallyKey));
-    const products = new Map<string, { item: CatalogItem; orderCount: number; lastOrderedAt: string; lastQuantity: number }>();
-    const ordersByItem = new Map<string, Set<string>>();
-    for (const order of [...customerHistory.rankingOrders].sort((left, right) => Date.parse(right.createdAt) - Date.parse(left.createdAt))) {
-      for (const line of order.lines || []) {
-        const item = catalogByKey.get(line.tallyKey);
-        if (!item || seen.has(line.tallyKey)) continue;
-        const orderIds = ordersByItem.get(item.tallyKey) || new Set<string>();
-        if (orderIds.has(order.id)) continue;
-        orderIds.add(order.id);
-        ordersByItem.set(item.tallyKey, orderIds);
-        const entry = products.get(item.tallyKey);
-        if (entry) entry.orderCount = orderIds.size;
-        else products.set(item.tallyKey, { item, orderCount: 1, lastOrderedAt: order.createdAt, lastQuantity: line.quantity });
-      }
+    return tallyRecent.value.products.flatMap((entry) => {
+      const item = catalogByKey.get(entry.tallyKey);
+      return item && !seen.has(entry.tallyKey) ? [{ ...entry, item }] : [];
+    }).slice(0, 8);
+  }, [tallyRecent, data.snapshot.catalog, lines, selectedCustomerId, selectedCustomerKey]);
+
+  useEffect(() => {
+    if (!selectedCustomerId) return;
+    const controller = new AbortController();
+    const cacheKey = `${selectedCustomerKey}:${selectedCustomer?.tallyKey ?? ''}:${data.snapshot.catalogVersion ?? ''}:${data.snapshot.fetchedAt}`;
+    const cached = tallyRecentCache.current.get(cacheKey);
+    if (cached && cached.expiresAt > Date.now() && !tallyRecentRetry) {
+      setTallyRecent({ key: selectedCustomerKey, value: cached.value });
+      setTallyRecentError('');
+      return;
     }
-    return [...products.values()].sort((left, right) => right.orderCount - left.orderCount || Date.parse(right.lastOrderedAt) - Date.parse(left.lastOrderedAt) || left.item.item.localeCompare(right.item.item)).slice(0, 8);
-  }, [customerHistory, data.snapshot.catalog, lines, selectedCustomerId, selectedCustomerKey]);
+    setTallyRecent(null);
+    setTallyRecentError('');
+    fetch(`/api/orders?recentProductsFor=${encodeURIComponent(selectedCustomerId)}`, { cache: 'no-store', signal: controller.signal })
+      .then(response => readResponse<TallyRecentProducts>(response))
+      .then(value => {
+        if (controller.signal.aborted || currentCustomerKeyRef.current !== selectedCustomerKey) return;
+        if (value.customerId !== selectedCustomerId || !Array.isArray(value.products)) throw new Error('Invalid Tally history response');
+        tallyRecentCache.current.delete(cacheKey);
+        tallyRecentCache.current.set(cacheKey, { value, expiresAt: Date.now() + 30000 });
+        if (tallyRecentCache.current.size > 20) tallyRecentCache.current.delete(tallyRecentCache.current.keys().next().value!);
+        setTallyRecent({ key: selectedCustomerKey, value });
+      })
+      .catch(() => {
+        if (!controller.signal.aborted && currentCustomerKeyRef.current === selectedCustomerKey) setTallyRecentError(selectedCustomerKey);
+      });
+    return () => controller.abort();
+  }, [selectedCustomerId, selectedCustomerKey, selectedCustomer?.tallyKey, data.snapshot.catalogVersion, data.snapshot.fetchedAt, tallyRecentRetry]);
 
   useEffect(() => {
     if (!selectedCustomer) return;
@@ -1825,21 +1846,23 @@ export function HydratedNewOrderPanel({ data, templateOrder, onClose, onCreated,
             <fieldset className="rounded-2xl border border-sf-line-soft bg-white p-5">
               <legend className="px-2 text-sm font-extrabold text-sf-strong">Products</legend>
               {recentProducts.length ? <section aria-label="Recently ordered products" className="mb-4">
-                <p className="mb-2 text-xs font-bold text-sf-muted">Recently ordered · enter quantity and press Enter</p>
+                <p className="mb-2 text-xs font-bold text-sf-muted">Recent Tally purchases · enter quantity and press Enter</p>
                 <div className="grid gap-2 sm:grid-cols-2">{recentProducts.map((entry) => {
                   const item = entry.item;
-                  const quantity = recentQuantities[item.tallyKey] ?? String(entry.lastQuantity ?? 1);
+                  const quantity = recentQuantities[item.tallyKey] ?? String(Number.isInteger(entry.lastQuantity) ? entry.lastQuantity : 1);
                   const valid = Number.isInteger(Number(quantity)) && Number(quantity) >= 1 && Number(quantity) <= 1000000;
                   return <div key={item.tallyKey} className="flex min-w-0 items-center gap-2 rounded-lg border border-sf-line bg-sf-accent-soft p-2">
                     <div className="min-w-0 flex-1">
                       <div title={item.item} className="truncate text-sm font-bold text-sf-body">{item.item}</div>
-                      <div className="text-xs text-sf-muted">{`${entry.orderCount} of last ${customerHistory?.rankingOrders.length} orders · last ${new Date(entry.lastOrderedAt).toLocaleDateString('en-IN', { timeZone: 'Asia/Kolkata', day: 'numeric', month: 'short' })}`}</div>
+                      <div className="text-xs text-sf-muted">{`${entry.billCount} of last ${tallyRecent?.value.billCount} imported Tally bills · last ${new Date(entry.lastBilledAt).toLocaleDateString('en-IN', { timeZone: 'Asia/Kolkata', day: 'numeric', month: 'short' })}`}</div>
                     </div>
                     <input type="number" form="recent-product-quantities" aria-label={`Recent quantity for ${item.item}`} min="1" max="1000000" step="1" value={quantity} onChange={(event) => setRecentQuantities((current) => ({ ...current, [item.tallyKey]: event.target.value }))} onKeyDown={(event) => { if (event.key === 'Enter') { event.preventDefault(); if (valid) addProduct(item, Number(quantity)); } }} className="min-h-10 w-20 rounded-lg border border-sf-line bg-white px-2 text-right" />
                     <button type="button" aria-label={`Add ${item.item}`} disabled={!valid} onClick={() => addProduct(item, Number(quantity))} className="min-h-10 rounded-lg px-2 text-sm font-bold text-sf-body disabled:opacity-50">Add</button>
                   </div>;
                 })}</div>
               </section> : null}
+              {selectedCustomerId && tallyRecent?.key !== selectedCustomerKey ? <p className="mb-3 text-xs text-sf-muted">{tallyRecentError === selectedCustomerKey ? <>Tally purchases could not load. <button type="button" className="min-h-10 underline" onClick={() => setTallyRecentRetry(value => value + 1)}>Retry Tally purchases</button></> : 'Loading recent Tally purchases…'}</p> : null}
+              {tallyRecent?.key === selectedCustomerKey && !tallyRecent.value.products.length ? <p className="mb-3 text-xs text-sf-muted">{tallyRecent.value.linked ? 'No recent Tally purchases in the imported billing history. Search products below.' : 'No linked Tally ledger yet. Search products below to create this order.'}</p> : null}
               <label className="text-sm font-bold text-sf-label">Find product<input ref={productInputRef} maxLength={200} value={productQuery} onChange={(event) => { setProductQuery(event.target.value); setActiveProductIndex(0); }} onKeyDown={(event) => {
                 if (event.key === 'Enter') event.preventDefault();
                 if (matches.length === 0) return;

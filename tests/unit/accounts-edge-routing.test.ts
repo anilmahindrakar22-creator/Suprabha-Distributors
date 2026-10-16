@@ -40,6 +40,11 @@ describe('Accounts Edge routing and existing admission boundary', () => {
     expect((await send('get_order_summary')).status).toBe(200);
     expect(fetcher.mock.calls[0][0]).toBe('https://database.example.test/rest/v1/rpc/stockflow_order_summary_gateway');
   });
+  it('routes the Tally recent-products read to its scoped RPC', async () => {
+    const { send, fetcher } = fixture();
+    expect((await send('get_tally_recent_products')).status).toBe(200);
+    expect(fetcher.mock.calls[0][0]).toBe('https://database.example.test/rest/v1/rpc/stockflow_recent_products_gateway');
+  });
   it('passes database role denial and conflict through and cools down a stale command', async () => {
     const { send, fetcher } = fixture();
     fetcher.mockResolvedValueOnce(Response.json({ code: '42501', message: 'Accounts access required' }, { status: 400 }));
