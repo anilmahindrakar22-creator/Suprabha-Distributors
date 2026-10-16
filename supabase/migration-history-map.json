@@ -1,9 +1,9 @@
 {
   "projectId": "aormuidjbdqruglmyseh",
-  "checkedAt": "2026-10-10T06:52:00.814Z",
+  "checkedAt": "2026-10-15T20:05:26.285Z",
   "purpose": "Read-only release evidence; NOT an executable migration plan or authority to repair history.",
   "normalization": "Remove CR characters and trim surrounding whitespace only; SHA-256 over UTF-8.",
-  "localGitHead": "6925c9140b5e3908e8f6a3bbe6823ee7ed6b2f25",
+  "localGitHead": "1a9544d3005c5584cdbf98b55097145014d6bbce",
   "remoteOnly": [
     {
       "localFile": "20260829054025_create_stockflow_private_snapshots.sql",
@@ -734,234 +734,241 @@
     {
       "localFile": "20261007180000_instrument_economics_foundation.sql",
       "localSha256": "f00abf0bd0b69a8a4f7f5f9af06ed2b6059e4d3d1356c8cd2cad65ab07086037",
-      "remoteVersion": null,
-      "remoteSha256": null,
-      "status": "not_deployed",
+      "remoteVersion": "20261015195704",
+      "remoteSha256": "f00abf0bd0b69a8a4f7f5f9af06ed2b6059e4d3d1356c8cd2cad65ab07086037",
+      "status": "exact_normalized_match",
       "review": "Local instrument economics V1; disposable Postgres replay and integrity checks. Hosted history has not been rechecked and deployment is not certified."
     },
     {
       "localFile": "20261007181000_instrument_economic_import_and_rebuild.sql",
       "localSha256": "f3ab94b1c368f5cfb5049dc1ddb8e6a4ae60f2e4a7d6a220a3d3d304f1574403",
-      "remoteVersion": null,
-      "remoteSha256": null,
-      "status": "not_deployed",
+      "remoteVersion": "20261015195706",
+      "remoteSha256": "f3ab94b1c368f5cfb5049dc1ddb8e6a4ae60f2e4a7d6a220a3d3d304f1574403",
+      "status": "exact_normalized_match",
       "review": "Local instrument economics V1; disposable Postgres replay and integrity checks. Hosted history has not been rechecked and deployment is not certified."
     },
     {
       "localFile": "20261007182000_instrument_economics_workspace.sql",
       "localSha256": "339fbdae778fe292f4c2134d556bff0b6b8a5377ac123f2591409c75e2f5e432",
-      "remoteVersion": null,
-      "remoteSha256": null,
-      "status": "not_deployed",
+      "remoteVersion": "20261015195708",
+      "remoteSha256": "339fbdae778fe292f4c2134d556bff0b6b8a5377ac123f2591409c75e2f5e432",
+      "status": "exact_normalized_match",
       "review": "Local instrument economics V1; disposable Postgres replay and integrity checks. Hosted history has not been rechecked and deployment is not certified."
     },
     {
       "localFile": "20261007183000_instrument_economics_commands.sql",
       "localSha256": "c6c7f81db15bf3ab250f5cd89c369504284b07e5013e535397462ed3538ff27d",
-      "remoteVersion": null,
-      "remoteSha256": null,
-      "status": "not_deployed",
+      "remoteVersion": "20261015195711",
+      "remoteSha256": "c6c7f81db15bf3ab250f5cd89c369504284b07e5013e535397462ed3538ff27d",
+      "status": "exact_normalized_match",
       "review": "Local instrument economics V1; disposable Postgres replay and integrity checks. Hosted history has not been rechecked and deployment is not certified."
     },
     {
       "localFile": "20261010071925_historical_instrument_registration.sql",
       "localSha256": "f645c79431534703db3dfb18bd880faf84988623233f0b12d793d416c4c086de",
-      "remoteVersion": null,
-      "remoteSha256": null,
-      "status": "not_deployed",
+      "remoteVersion": "20261015195737",
+      "remoteSha256": "f645c79431534703db3dfb18bd880faf84988623233f0b12d793d416c4c086de",
+      "status": "exact_normalized_match",
       "review": "Historical invoice-backed instrument registration; local deployment replay and role/idempotency/service checks passed; production pending candidate acceptance."
     },
     {
       "localFile": "20261010170000_instrument_actuals_without_plan.sql",
       "localSha256": "6c92797279f7b32254ad138798b3d69f34964bd208da346cb4ef300994bdfcb6",
-      "remoteVersion": null,
-      "remoteSha256": null,
-      "status": "not_deployed",
+      "remoteVersion": "20261015195743",
+      "remoteSha256": "6c92797279f7b32254ad138798b3d69f34964bd208da346cb4ef300994bdfcb6",
+      "status": "exact_normalized_match",
       "review": "Optional planning target for instrument actual tracking; full disposable deployment-order replay passed and isolated acceptance migration 20261010170000 was applied. Production remains pending acceptance."
     },
     {
       "localFile": "20261010172000_optional_plan_health.sql",
       "localSha256": "78d94694fd46f6259ccac32849bc694e4fbb87abdb65b8a2ba499f9b5258efbb",
-      "remoteVersion": null,
-      "remoteSha256": null,
-      "status": "not_deployed",
+      "remoteVersion": "20261015195748",
+      "remoteSha256": "78d94694fd46f6259ccac32849bc694e4fbb87abdb65b8a2ba499f9b5258efbb",
+      "status": "exact_normalized_match",
       "review": "Optional planning target no longer causes Data incomplete when actual evidence is otherwise complete; production remains pending acceptance."
     },
     {
       "localFile": "20261010200000_source_voucher_number.sql",
       "localSha256": "b31b676ad7f7cd95cb4cc3db1f5cf0c58be41cecc024747a469b062d8cefd129",
-      "remoteVersion": null,
-      "remoteSha256": null,
-      "status": "not_deployed",
+      "remoteVersion": "20261015195753",
+      "remoteSha256": "b31b676ad7f7cd95cb4cc3db1f5cf0c58be41cecc024747a469b062d8cefd129",
+      "status": "exact_normalized_match",
       "review": "Display-only readable Tally voucher number on workspace source lines via guarded single-fragment function replacement; production remains pending acceptance."
     },
     {
       "localFile": "20261010210000_automatic_purchase_cost.sql",
       "localSha256": "f0b3affd36289d3844beee4cf721f93ab4e8591792d61edb2fbf1f78cc9240f1",
-      "remoteVersion": null,
-      "remoteSha256": null,
-      "status": "not_deployed",
+      "remoteVersion": "20261015195758",
+      "remoteSha256": "f0b3affd36289d3844beee4cf721f93ab4e8591792d61edb2fbf1f78cc9240f1",
+      "status": "exact_normalized_match",
       "review": "Owner policy 10 Oct 2026: automatic reagent purchase cost from imported Tally purchases (batch, then oldest first; zero-value purchases are genuine zero cost; no quantity reuse). Per-run append-only allocations; manual verification keeps precedence. Production remains pending acceptance."
     },
     {
       "localFile": "20261010220000_auto_cost_batch_fallback.sql",
       "localSha256": "b35c2b5a87667b60b19787e05f9bd65330bf1df3bdf2e78303950857840af6ac",
-      "remoteVersion": null,
-      "remoteSha256": null,
-      "status": "not_deployed",
+      "remoteVersion": "20261015195803",
+      "remoteSha256": "b35c2b5a87667b60b19787e05f9bd65330bf1df3bdf2e78303950857840af6ac",
+      "status": "exact_normalized_match",
       "review": "Owner policy 10 Oct 2026: when the sale batch does not match purchases that cover it, cost by FIFO across all batches (weighted average over consumed purchases). Production remains pending acceptance."
     },
     {
       "localFile": "20261010230000_auto_cost_one_year_lookback.sql",
       "localSha256": "51bf0b88901e16ff87fd24aecd1860a6793e9865f10790fc040a0f25b13b18dd",
-      "remoteVersion": null,
-      "remoteSha256": null,
-      "status": "not_deployed",
+      "remoteVersion": "20261015195809",
+      "remoteSha256": "51bf0b88901e16ff87fd24aecd1860a6793e9865f10790fc040a0f25b13b18dd",
+      "status": "exact_normalized_match",
       "review": "Owner policy 10 Oct 2026: automatic reagent cost uses only purchases within one year before the sale (batch match and FIFO fallback); the connector sends 12 months of purchase history. Production remains pending acceptance."
     },
     {
       "localFile": "20261010240000_unmapped_items_not_unresolved.sql",
       "localSha256": "38f5d9a5b7627c61b0cf8215a3e3b63b4de96a97a7f20c489497740b8c3bb591",
-      "remoteVersion": null,
-      "remoteSha256": null,
-      "status": "not_deployed",
+      "remoteVersion": "20261015195822",
+      "remoteSha256": "38f5d9a5b7627c61b0cf8215a3e3b63b4de96a97a7f20c489497740b8c3bb591",
+      "status": "exact_normalized_match",
       "review": "Owner decision 10 Oct 2026: a same-customer sale of an item mapped to no instrument no longer makes a placement Data incomplete; ambiguous placements, invalid adjustments and missing costs still do. Production remains pending acceptance."
     },
     {
       "localFile": "20261011000000_instrument_reagent_sale_date.sql",
       "localSha256": "36f71cf47685815a44e34fc3629eaca2b45dea8cdc6556e44cf4b0a0f3aa6ca7",
-      "remoteVersion": null,
-      "remoteSha256": null,
-      "status": "not_deployed",
+      "remoteVersion": "20261015195827",
+      "remoteSha256": "36f71cf47685815a44e34fc3629eaca2b45dea8cdc6556e44cf4b0a0f3aa6ca7",
+      "status": "exact_normalized_match",
       "review": "Owner instruction 10 Oct 2026: sold instruments count mapped reagent sales and GP inclusively from the current linked Tally instrument invoice date, separately from physical installation. Cancelled/invalid linked invoices leave sales start unavailable; non-billed placements retain their start. Also reserves available stock for incompletely covered sales without claiming full cost/GP. Acceptance applied as 20261010171033; local date/revision/cancellation/stock-reservation/concurrency replay passed. Production deployment pending."
     },
     {
       "localFile": "20261011010000_active_economic_import_exceptions.sql",
       "localSha256": "687980d14a26871b7c6ecad38bfe9728925528b7db65f8662d390c4271e481c8",
-      "remoteVersion": null,
-      "remoteSha256": null,
-      "status": "not_deployed",
+      "remoteVersion": "20261015195832",
+      "remoteSha256": "687980d14a26871b7c6ecad38bfe9728925528b7db65f8662d390c4271e481c8",
+      "status": "exact_normalized_match",
       "review": "Integration fix 11 Oct 2026: current document-review queue excludes failures superseded by compatible canonical source admission. Rejection evidence remains immutable. Newer/same-revision conflicts, unadmitted sources and global failures remain open. Full disposable deployment-order/integrity/concurrency replay passed. Acceptance applied as 20261010191809 with identical normalized hash and hosted queue readback. Production deployment pending."
     },
     {
       "localFile": "20261011060830_order_summary_revision.sql",
       "localSha256": "33c69fe40ff220c0fbc5735935ee1aecae5af0fddfb02cfbe8543db72ea165b5",
-      "remoteVersion": null,
-      "remoteSha256": null,
-      "status": "not_deployed",
+      "remoteVersion": "20261015195838",
+      "remoteSha256": "33c69fe40ff220c0fbc5735935ee1aecae5af0fddfb02cfbe8543db72ea165b5",
+      "status": "exact_normalized_match",
       "review": "Cross-session Orders live refresh: access-scoped canonical ID/version/status revision in existing authenticated summary. Full disposable deployment and role/concurrency replay passed; same-count replacement and invisible-order isolation regression passed. Acceptance applied as 20261011062329; hosted normalized SHA-256 matches local and private helper remains denied to authenticated/anon. Production deployment pending."
     },
     {
       "localFile": "20261012184457_instrument_economics_summary_read.sql",
       "localSha256": "e16dabba10b6bf88434d00fc2af0a5811d5f0c9560e1251919829c2762a2a0d1",
-      "remoteVersion": null,
-      "remoteSha256": null,
-      "status": "not_deployed",
+      "remoteVersion": "20261015195854",
+      "remoteSha256": "e16dabba10b6bf88434d00fc2af0a5811d5f0c9560e1251919829c2762a2a0d1",
+      "status": "exact_normalized_match",
       "review": "13 October 2026: summary-first Economics uses one shared canonical calculator with guarded evidence/catalogue reads and lifetime/To do metadata. Existing full entry point and authenticated economics action retained; private helpers denied to anon/authenticated. Local parity/deferred-query/sale-date/access replay passed; final FOC/missing-cost checks recorded in the handover. No hosted application or production promotion is implied by this pending entry."
     },
     {
       "localFile": "20261011070000_product_master_refresh.sql",
       "localSha256": "5722fa89190ed3621587aa745644e2d72816e6b14e1966a17078d6fc755c7bb5",
-      "remoteVersion": null,
-      "remoteSha256": null,
-      "status": "not_deployed",
+      "remoteVersion": "20261015195843",
+      "remoteSha256": "5722fa89190ed3621587aa745644e2d72816e6b14e1966a17078d6fc755c7bb5",
+      "status": "exact_normalized_match",
       "review": "13 October 2026 primary integration review: governed product identity mirror from accepted catalogue snapshots, change-only upserts and no deactivation/stock/ledger writes. Private denied helpers, failure state, bounded lock wait and next-upload retry. Full disposable replay passed, including new-item public pricing regression and two-session snapshot-upload contention. Production coverage gap read-only confirmed; no production deployment implied."
     },
     {
       "localFile": "20261011090000_requirements_decision_view.sql",
       "localSha256": "eead8a9418bafcf5035cfdbb667dd8d0c5cbecaf560826ea650b05f97bd3d6b8",
-      "remoteVersion": null,
-      "remoteSha256": null,
-      "status": "not_deployed",
+      "remoteVersion": "20261015195849",
+      "remoteSha256": "eead8a9418bafcf5035cfdbb667dd8d0c5cbecaf560826ea650b05f97bd3d6b8",
+      "status": "exact_normalized_match",
       "review": "13 October 2026 primary integration review: read-only requirements/stock-alert gateways retain gateway key and active-member checks with service-only execute. Shortage-first ordering, whole-list counts, duplicate/invalid stock remains unknown; coverage is priority/oldest-first advisory per item, no allocation or commercial-rate reads. Exact additive source reviewed; combined disposable replay and browser checks required before release. No hosted or production deployment implied."
     },
     {
       "localFile": "20261013120000_administrator_long_payback_approval.sql",
       "localSha256": "fa84a9766b178d0332e3ca0dcd8b8ead994940f34feafa49a76648628b422b79",
-      "remoteVersion": null,
-      "remoteSha256": null,
-      "status": "not_deployed",
+      "remoteVersion": "20261015195900",
+      "remoteSha256": "fa84a9766b178d0332e3ca0dcd8b8ead994940f34feafa49a76648628b422b79",
+      "status": "exact_normalized_match",
       "review": "14 October 2026 primary review of released D-04/D-15 approval controls: existing gateway roles, advisory lock, frozen baseline and stored idempotent receipts retained. Administrator required beyond review band and to change policy; short-payback placement approval only within the same preview policy, positive recorded net investment, never from rebuild, groups remain manual. Exact source and all four command seams reviewed; fresh combined replay/browser/static/CI required before integration. This is pending production evidence, not a hosted deployment record."
     },
     {
       "localFile": "20261013130000_instrument_auto_approval.sql",
       "localSha256": "4191edced4e34a0bcc27c183ac93bfaacf581cdb5f614f1d4707d3e0ff95e228",
-      "remoteVersion": null,
-      "remoteSha256": null,
-      "status": "not_deployed",
+      "remoteVersion": "20261015195905",
+      "remoteSha256": "4191edced4e34a0bcc27c183ac93bfaacf581cdb5f614f1d4707d3e0ff95e228",
+      "status": "exact_normalized_match",
       "review": "14 October 2026 primary review of released D-04/D-15 approval controls: existing gateway roles, advisory lock, frozen baseline and stored idempotent receipts retained. Administrator required beyond review band and to change policy; short-payback placement approval only within the same preview policy, positive recorded net investment, never from rebuild, groups remain manual. Exact source and all four command seams reviewed; fresh combined replay/browser/static/CI required before integration. This is pending production evidence, not a hosted deployment record."
     },
     {
       "localFile": "20261014090000_customer_accounts.sql",
       "localSha256": "c1485c0492393e5f519d998411c8f25475b6a46137f51d76fc624f3deb61a72a",
-      "remoteVersion": null,
-      "remoteSha256": null,
-      "status": "not_deployed",
+      "remoteVersion": "20261015195919",
+      "remoteSha256": "c1485c0492393e5f519d998411c8f25475b6a46137f51d76fc624f3deb61a72a",
+      "status": "exact_normalized_match",
       "review": "14 October 2026 primary Accounts W1 review: canonical customer FK; Management/Admin assignment and territory control; active eligible owner/territory locks; sales/operations location and visit provenance; global visibility with Mine only a filter (D16/D17 defaults); parent-row serialization, expected-version conflict and immutable histories; service-only gateway and private no-store API. Fresh combined SQL replay includes two-session first-write conflict and stored replay. Production remains pending; acceptance separately recorded."
     },
     {
       "localFile": "20261014120000_account_classes.sql",
       "localSha256": "386f7bcd9c001d7b54b928d62d020bcc806b57d3b391b8b152fb41568d31740e",
-      "remoteVersion": null,
-      "remoteSha256": null,
-      "status": "not_deployed",
+      "remoteVersion": "20261015195924",
+      "remoteSha256": "386f7bcd9c001d7b54b928d62d020bcc806b57d3b391b8b152fb41568d31740e",
+      "status": "exact_normalized_match",
       "review": "14 October 2026 primary Accounts series review: service-only gateway/private RLS tables, role-sensitive fields omitted server-side, contact parent/row lock order and version conflicts, immutable audit and stored command receipts. False complete-sales seam prevents class activation. Style ratings require the actual visitor and active same-account met contact; erasure removes contact/event/assessment/style free-text personal values while retaining immutable metadata. Fresh combined disposable deployment-order replay, units/static/phone browsers and exact-head CI required. Pending production; acceptance separately recorded."
     },
     {
       "localFile": "20261014160000_account_contacts.sql",
       "localSha256": "46c7f7ef43721ab405455f1230c79ddc7b6494425ff89bb52c1cb013f8df3c30",
-      "remoteVersion": null,
-      "remoteSha256": null,
-      "status": "not_deployed",
+      "remoteVersion": "20261015195930",
+      "remoteSha256": "46c7f7ef43721ab405455f1230c79ddc7b6494425ff89bb52c1cb013f8df3c30",
+      "status": "exact_normalized_match",
       "review": "14 October 2026 primary Accounts series review: service-only gateway/private RLS tables, role-sensitive fields omitted server-side, contact parent/row lock order and version conflicts, immutable audit and stored command receipts. False complete-sales seam prevents class activation. Style ratings require the actual visitor and active same-account met contact; erasure removes contact/event/assessment/style free-text personal values while retaining immutable metadata. Fresh combined disposable deployment-order replay, units/static/phone browsers and exact-head CI required. Pending production; acceptance separately recorded."
     },
     {
       "localFile": "20261014180000_power_map.sql",
       "localSha256": "903e8e513f92aa6f216b2bca34f60e71b72771ab15944246c9bf861e75008034",
-      "remoteVersion": null,
-      "remoteSha256": null,
-      "status": "not_deployed",
+      "remoteVersion": "20261015195936",
+      "remoteSha256": "903e8e513f92aa6f216b2bca34f60e71b72771ab15944246c9bf861e75008034",
+      "status": "exact_normalized_match",
       "review": "14 October 2026 primary Accounts series review: service-only gateway/private RLS tables, role-sensitive fields omitted server-side, contact parent/row lock order and version conflicts, immutable audit and stored command receipts. False complete-sales seam prevents class activation. Style ratings require the actual visitor and active same-account met contact; erasure removes contact/event/assessment/style free-text personal values while retaining immutable metadata. Fresh combined disposable deployment-order replay, units/static/phone browsers and exact-head CI required. Pending production; acceptance separately recorded."
     },
     {
       "localFile": "20261014190000_social_styles.sql",
       "localSha256": "e3627b1902ff944c047afa19a0d72c285ca53bb03ae52d0a99937477871ad41c",
-      "remoteVersion": null,
-      "remoteSha256": null,
-      "status": "not_deployed",
+      "remoteVersion": "20261015195941",
+      "remoteSha256": "e3627b1902ff944c047afa19a0d72c285ca53bb03ae52d0a99937477871ad41c",
+      "status": "exact_normalized_match",
       "review": "14 October 2026 primary Accounts series review: service-only gateway/private RLS tables, role-sensitive fields omitted server-side, contact parent/row lock order and version conflicts, immutable audit and stored command receipts. False complete-sales seam prevents class activation. Style ratings require the actual visitor and active same-account met contact; erasure removes contact/event/assessment/style free-text personal values while retaining immutable metadata. Fresh combined disposable deployment-order replay, units/static/phone browsers and exact-head CI required. Pending production; acceptance separately recorded."
     },
     {
       "localFile": "20261015082020_visit_customers_without_ledger.sql",
       "localSha256": "fe682c7fe6690e2948f0f3afe9f6235c1d6be98b334802a6505bc897d87b4025",
-      "remoteVersion": null,
-      "remoteSha256": null,
-      "status": "not_deployed",
+      "remoteVersion": "20261015195947",
+      "remoteSha256": "fe682c7fe6690e2948f0f3afe9f6235c1d6be98b334802a6505bc897d87b4025",
+      "status": "exact_normalized_match",
       "review": "15 October 2026 restored one-time customer links and visit-only customers: private immutable provenance and canonical master generations, shared first advisory lock, strict current-role gateway, retained customer UUID, atomic command receipts, exact name-only suggestions and governed conflicts. Local replay and phone fixtures required. No hosted release; Economics cutover gates retained."
     },
     {
       "localFile": "20261015100000_customer_link_confirmation.sql",
       "localSha256": "93af57647d4bfeddf5d5c1ca3ecfa9380d6059385aa40c1b388312cb4b80ad14",
-      "remoteVersion": null,
-      "remoteSha256": null,
-      "status": "not_deployed",
+      "remoteVersion": "20261015195952",
+      "remoteSha256": "93af57647d4bfeddf5d5c1ca3ecfa9380d6059385aa40c1b388312cb4b80ad14",
+      "status": "exact_normalized_match",
       "review": "15 October 2026 restored one-time customer links and visit-only customers: private immutable provenance and canonical master generations, shared first advisory lock, strict current-role gateway, retained customer UUID, atomic command receipts, exact name-only suggestions and governed conflicts. Local replay and phone fixtures required. No hosted release; Economics cutover gates retained. Primary release correction: accepted immutable ledger identity is independent of voucher coverage; ledger-only confirmation cannot certify sales/classes."
     },
     {
       "localFile": "20261015120000_import_problem_details.sql",
       "localSha256": "fcb59f6564239fba1be0804ec26f5b754e3d3bcb18e31dd3d16c6c25add9accd",
-      "remoteVersion": null,
-      "remoteSha256": null,
-      "status": "not_deployed",
+      "remoteVersion": "20261015195957",
+      "remoteSha256": "fcb59f6564239fba1be0804ec26f5b754e3d3bcb18e31dd3d16c6c25add9accd",
+      "status": "exact_normalized_match",
       "review": "15 October 2026 primary review: additive existing import-exception evidence in private workspace read only; existing role checks, grants and financial/source coverage unchanged. Guard requires exactly one expected projection. Full deployment-order replay and Accounts/null evidence regression required. Production pending; acceptance recorded separately."
     },
     {
       "localFile": "20261015190800_native_tally_debit_notes.sql",
       "localSha256": "0921309ce4d5c139b3293a9fd619fdadc8efbeac80a30fe99e54a30ab82716a7",
+      "remoteVersion": "20261015200002",
+      "remoteSha256": "0921309ce4d5c139b3293a9fd619fdadc8efbeac80a30fe99e54a30ab82716a7",
+      "status": "exact_normalized_match",
+      "review": "Owner16October accepts Debit Notes as booked. Native trade-side extraction; signed supplier returns consume purchase stock before later sale cost without reagent revenue/GP; unresolved returned-stock deficits block later verified costs. Retains immutable source/replay/cancellation audit and private role boundaries. Primary review, disposable deployment-order replay and source CI required before acceptance. Production pending."
+    },
+    {
+      "localFile": "20261016053720_economic_import_execution_budget.sql",
+      "localSha256": "4786a9b33edbc493b741f96c464146e45a13c174da0d4d2cfb36f78e4d345cb4",
       "remoteVersion": null,
       "remoteSha256": null,
-      "status": "not_deployed",
-      "review": "Owner16October accepts Debit Notes as booked. Native trade-side extraction; signed supplier returns consume purchase stock before later sale cost without reagent revenue/GP; unresolved returned-stock deficits block later verified costs. Retains immutable source/replay/cancellation audit and private role boundaries. Primary review, disposable deployment-order replay and source CI required before acceptance. Production pending."
+      "status": "not_deployed"
     }
   ],
   "liveCheck": {

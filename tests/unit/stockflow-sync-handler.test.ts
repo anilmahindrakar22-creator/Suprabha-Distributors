@@ -146,16 +146,15 @@ describe('Stockflow sync edge handler', () => {
     expect(fetchFn).toHaveBeenCalledTimes(1);
     const [url, init] = fetchFn.mock.calls[0];
     const target = new URL(url as string);
-    expect(target.searchParams.get('on_conflict')).toBe('id');
+    expect(target.pathname).toBe('/rest/v1/rpc/stockflow_sync_snapshot');
     expect(init).toMatchObject({
       method: 'POST',
       headers: {
         apikey: databaseSecret,
         'content-type': 'application/json',
-        prefer: 'resolution=merge-duplicates,return=minimal',
       },
     });
-    expect(JSON.parse(init?.body as string)).toMatchObject({ id: 'suprabha', company: validPayload.company, payload: validPayload });
+    expect(JSON.parse(init?.body as string)).toEqual({ p_payload: validPayload });
   });
 
   it.each(['OTHER COMPANY', '', 'SUPRABHA DISTRIBUTORS BRANCH'])('rejects a snapshot from %j before writing the single-company row', async company => {
@@ -191,7 +190,7 @@ describe('Stockflow sync edge handler', () => {
     const { handler } = makeHandler({ fetchFn });
     const response = await handler(postRequest(JSON.stringify({ ...validPayload, fetchedAtIso }), 'upload-key'));
     expect(response.status).toBe(200);
-    expect(JSON.parse(fetchFn.mock.calls[0][1]?.body as string).fetched_at).toBe(fetchedAtIso);
+    expect(JSON.parse(fetchFn.mock.calls[0][1]?.body as string).p_payload.fetchedAtIso).toBe(fetchedAtIso);
   });
 
   it('accepts an ISO-only snapshot and preserves legacy display-only extraction times', async () => {
@@ -202,7 +201,7 @@ describe('Stockflow sync edge handler', () => {
       { ...validPayload, fetchedAt: '30 Sep 2026, 05:30:00 PM' },
     ]) {
       expect((await handler(postRequest(JSON.stringify(payload), 'upload-key'))).status).toBe(200);
-      expect(JSON.parse(fetchFn.mock.calls.at(-1)?.[1]?.body as string).fetched_at).toBe('fetchedAtIso' in payload ? payload.fetchedAtIso : payload.fetchedAt);
+      expect(JSON.parse(fetchFn.mock.calls.at(-1)?.[1]?.body as string).p_payload).toEqual(JSON.parse(JSON.stringify(payload)));
     }
   });
 
@@ -253,7 +252,7 @@ describe('Stockflow sync edge handler', () => {
     const response = await pending;
     expect(response.status).toBe(502);
     expect(await response.json()).toEqual({ error: 'Stock service is temporarily unavailable' });
-    expect(timeout).toHaveBeenCalledWith(10_000);
+    expect(timeout).toHaveBeenCalledWith(method === 'POST' ? 25_000 : 10_000);
     expect(fetchFn).toHaveBeenCalledOnce();
   });
 });

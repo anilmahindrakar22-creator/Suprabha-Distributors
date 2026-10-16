@@ -5,6 +5,7 @@ import { resolve } from 'node:path';
 
 // Evidence-only: no database connection, SQL execution or migration-history repair.
 const pricingReleaseFiles = new Set([
+  '20261016053720_economic_import_execution_budget.sql',
   '20261007180000_instrument_economics_foundation.sql',
   '20261007181000_instrument_economic_import_and_rebuild.sql',
   '20261007182000_instrument_economics_workspace.sql',

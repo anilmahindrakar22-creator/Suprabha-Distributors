@@ -11,39 +11,9 @@ const source = new Map(readdirSync(fileURLToPath(directory)).filter((name) => na
 describe('read-only pricing release preflight', () => {
   it('validates the saved production evidence after deployment', () => {
     const result = pricingReleasePreflight(original, source);
-    expect(result.pending).toEqual([
-      '20261007180000_instrument_economics_foundation.sql',
-      '20261007181000_instrument_economic_import_and_rebuild.sql',
-      '20261007182000_instrument_economics_workspace.sql',
-      '20261007183000_instrument_economics_commands.sql',
-      '20261010071925_historical_instrument_registration.sql',
-      '20261010170000_instrument_actuals_without_plan.sql',
-      '20261010172000_optional_plan_health.sql',
-      '20261010200000_source_voucher_number.sql',
-      '20261010210000_automatic_purchase_cost.sql',
-      '20261010220000_auto_cost_batch_fallback.sql',
-      '20261010230000_auto_cost_one_year_lookback.sql',
-      '20261010240000_unmapped_items_not_unresolved.sql',
-      '20261011000000_instrument_reagent_sale_date.sql',
-      '20261011010000_active_economic_import_exceptions.sql',
-      '20261011060830_order_summary_revision.sql',
-      '20261011070000_product_master_refresh.sql',
-      '20261011090000_requirements_decision_view.sql',
-      '20261012184457_instrument_economics_summary_read.sql',
-      '20261013120000_administrator_long_payback_approval.sql',
-      '20261013130000_instrument_auto_approval.sql',
-      '20261014090000_customer_accounts.sql',
-      '20261014120000_account_classes.sql',
-      '20261014160000_account_contacts.sql',
-      '20261014180000_power_map.sql',
-      '20261014190000_social_styles.sql',
-      '20261015082020_visit_customers_without_ledger.sql',
-      '20261015100000_customer_link_confirmation.sql',
-      '20261015120000_import_problem_details.sql',
-      '20261015190800_native_tally_debit_notes.sql',
-    ]);
-    expect(result.deployed.at(-1)?.localFile).toBe('20261005055748_activate_governed_role_union.sql');
-    expect(result.deployed).toHaveLength(103);
+    expect(result.pending).toEqual(['20261016053720_economic_import_execution_budget.sql']);
+    expect(result.deployed.at(-1)?.localFile).toBe('20261015190800_native_tally_debit_notes.sql');
+    expect(result.deployed).toHaveLength(132);
     const names = result.deployed.map((entry: { localFile: string }) => entry.localFile);
     expect(names.slice(0, 2)).toEqual([
       '20260829054025_create_stockflow_private_snapshots.sql',
@@ -56,7 +26,7 @@ describe('read-only pricing release preflight', () => {
   });
   it('accepts documented CRLF normalization without modifying source', () => {
     const crlf = new Map([...source].map(([name, sql]) => [name, sql.replace(/\r/g, '').replace(/\n/g, '\r\n')]));
-    expect(pricingReleasePreflight(original, crlf).pending).toHaveLength(29);
+    expect(pricingReleasePreflight(original, crlf).pending).toHaveLength(1);
   });
   it('rejects changed SQL including changes inside literals', () => {
     const files = new Map(source);
@@ -100,11 +70,7 @@ describe('read-only pricing release preflight', () => {
     const evidence = structuredClone(original);
     for (const entry of evidence.migrations) {
       if (entry.status !== 'not_deployed') continue;
-      Object.assign(entry, {
-        status: 'exact_normalized_match',
-        remoteVersion: entry.localFile.slice(0, 14),
-        remoteSha256: entry.localSha256,
-      });
+      Object.assign(entry, { status: 'exact_normalized_match', remoteVersion: entry.localFile.slice(0, 14), remoteSha256: entry.localSha256 });
     }
     const result = pricingReleasePreflight(evidence, source);
     expect(result.pending).toEqual([]);
