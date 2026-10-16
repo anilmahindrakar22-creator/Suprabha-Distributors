@@ -933,9 +933,11 @@ function OrderRow({
   const [cancelling, setCancelling] = useState(false);
   const [cancelReason, setCancelReason] = useState('');
   const [detailsLoaded, setDetailsLoaded] = useState(false);
+  const [pricingLoaded, setPricingLoaded] = useState(false);
   const [detailHistory, setDetailHistory] = useState<{ exceptions: DeliveryException[]; installations: EquipmentInstallation[] } | null>(null);
   const [detailState, setDetailState] = useState<'idle' | 'loading' | 'error'>('idle');
   const action = nextStatus[order.status];
+  const canReviewPricing = hasAnyStockFlowRole(roles, ['administrator', 'accounts', 'management']) && !['billed_in_tally','ready_for_dispatch','dispatched','delivered','cancelled'].includes(order.status);
   const canAdvance = Boolean(action && canRoleTransitionOrder(roles, order.status, action.status)
     && (action.status !== 'awaiting_tally_billing' || order.pricingState === 'approved'));
   const nextOwner = orderNextOwnerLabel(order.status) ?? (['ready_for_dispatch', 'dispatched'].includes(order.status) ? 'Operations' : null);
@@ -1009,6 +1011,10 @@ function OrderRow({
         </div>
       ) : <span className="text-xs font-bold text-sf-subtle">{action?.status === 'awaiting_tally_billing' && order.pricingState !== 'approved' ? 'Pricing approval required' : nextOwner ? `Waiting for ${nextOwner}` : 'No action due'}</span>}
       </div>
+      {canReviewPricing ? <details onToggle={event => { if (event.currentTarget.open) setPricingLoaded(true); }} className="mt-3 rounded-xl border border-sf-accent-line bg-white p-3 text-sm">
+        <summary className="min-h-10 cursor-pointer font-bold text-sf-strong">{order.pricingState === 'approved' ? 'View pricing' : 'Review pricing'}</summary>
+        {pricingLoaded ? <PricingPanel order={order} actorRole={actorRole} actorRoles={roles} onChanged={onPricingChanged} /> : null}
+      </details> : null}
       <details className="mt-3 rounded-xl border border-sf-line-soft bg-sf-soft-0 text-sm">
         <summary className="flex min-h-10 cursor-pointer list-none items-center justify-between gap-3 px-3 font-bold text-sf-label marker:hidden [&::-webkit-details-marker]:hidden">
           <span>More order controls</span>
@@ -1044,7 +1050,6 @@ function OrderRow({
           </dl>
         </div>
           {lineMatch.state === 'mismatch' ? <div className="mt-3 rounded-xl border border-sf-danger-line bg-sf-danger-soft p-3"><p className="text-xs font-extrabold uppercase tracking-wide text-sf-danger">Tally invoice differences</p><ul className="mt-2 space-y-1 text-sm text-sf-danger">{lineMatch.differences.map((difference) => <li key={difference.itemName}>{difference.itemName}: ordered {formatQuantity(difference.orderedQuantity)}, invoiced {formatQuantity(difference.invoicedQuantity)}</li>)}</ul><BillingReviewPanel order={order} actorRole={actorRole} actorRoles={roles} onSave={onBillingReview} /></div> : null}
-        {hasAnyStockFlowRole(roles, ['administrator', 'accounts', 'management']) && !['billed_in_tally','ready_for_dispatch','dispatched','delivered','cancelled'].includes(order.status) ? <PricingPanel order={order} actorRole={actorRole} actorRoles={roles} onChanged={onPricingChanged} /> : null}
         {!['cancelled', 'delivered'].includes(order.status) ? <FulfilmentEditor order={order} onSave={onSaveFulfilment} /> : null}
         {['ready_for_dispatch', 'dispatched', 'delivered'].includes(order.status) ? <DispatchPanel key={order.status} order={order} actorRole={actorRole} actorRoles={roles} onSave={onDelivery} /> : null}
         {['phone_order_received','awaiting_confirmation','awaiting_approval','confirmed','partially_reserved','fully_reserved','ready_for_picking','picked','packed'].includes(order.status) ? <OrderEditPanel order={order} onSave={onEdit} /> : null}
@@ -1076,19 +1081,21 @@ function PricingPanel({ order, actorRole, actorRoles, onChanged }: { order: Orde
   const [message, setMessage] = useState('');
   const [manualReview, setManualReview] = useState(false);
   const governedRequest = useRef<{ orderId: string; version: number; idempotencyKey: string } | null>(null);
+  const pricingIsStale = Boolean(workspace && workspace.orderVersion < order.version);
   async function loadPricing(force = false) {
     if ((!force && workspace) || state === 'loading') return;
     setState('loading'); setMessage('');
     try {
       const result = await readResponse<OrderPricingWorkspace>(await fetch(`/api/pricing?orderId=${encodeURIComponent(order.id)}`, { cache: 'no-store' }));
       setWorkspace(result);
+      governedRequest.current = null;
       setEntries(Object.fromEntries(result.lines.map((line) => [line.lineId, { rate: line.proposedRate == null ? '' : String(line.proposedRate), reason: '' }])));
       setManualReview(false);
       setState('idle');
     } catch (error) { setState('error'); setMessage(error instanceof Error ? error.message : 'Pricing could not load'); }
   }
   async function submit() {
-    if (!workspace) return;
+    if (!workspace || pricingIsStale || state === 'loading' || state === 'saving') return;
     setState('saving'); setMessage('');
     try {
       const response = await readResponse<{ pricingState?: string }>(await fetch('/api/pricing', {
@@ -1105,7 +1112,7 @@ function PricingPanel({ order, actorRole, actorRoles, onChanged }: { order: Orde
     finally { setState('idle'); }
   }
   async function applyGoverned() {
-    if (!workspace) return;
+    if (!workspace || pricingIsStale || state === 'loading' || state === 'saving') return;
     const request = governedRequest.current?.orderId === order.id && governedRequest.current.version === workspace.orderVersion
       ? governedRequest.current
       : { orderId: order.id, version: workspace.orderVersion, idempotencyKey: crypto.randomUUID() };
@@ -1132,15 +1139,17 @@ function PricingPanel({ order, actorRole, actorRoles, onChanged }: { order: Orde
   return <section className="mt-5 border-t border-sf-line-soft pt-4" aria-label="Price review">
     <div className="flex flex-wrap items-center justify-between gap-2"><h4 className="text-xs font-extrabold uppercase tracking-wide text-sf-body">Price review</h4><span className={`rounded-full px-2 py-1 text-[11px] font-extrabold ${order.pricingState === 'approved' ? 'bg-sf-accent-soft text-sf-success' : order.pricingState === 'approval_required' ? 'bg-sf-warning-soft text-sf-warning' : 'bg-sf-soft text-sf-muted'}`}>{order.pricingState === 'approved' ? 'Verified' : order.pricingState === 'approval_required' ? 'Approval required' : 'Review required'}</span></div>
     {order.pricingState === 'approved' && !workspace ? <button type="button" onClick={() => void loadPricing()} className="mt-2 text-xs font-bold text-sf-body">View pricing details</button> : null}
+    <button type="button" disabled={state === 'loading' || state === 'saving'} onClick={() => void loadPricing(true)} className="mt-2 min-h-10 rounded-lg border border-sf-line px-3 text-xs font-bold disabled:opacity-50">Reload pricing</button>
+    {pricingIsStale ? <p role="alert" className="mt-2 rounded-lg bg-amber-50 p-3 text-sm text-amber-900">This order changed. Reload pricing before submitting. Reloading replaces unsaved rates and reasons.</p> : null}
     {state === 'loading' ? <p className="mt-3 text-xs text-sf-subtle">Loading governed pricing evidence…</p> : null}
     {message ? <output className={`mt-3 block rounded-lg px-3 py-2 text-xs font-bold ${state === 'error' ? 'bg-sf-danger-soft text-sf-danger' : 'bg-sf-accent-soft text-sf-body'}`}>{message}</output> : null}
-    {workspace ? <div className="mt-3 space-y-3">
+    {workspace ? <fieldset disabled={pricingIsStale || state === 'loading' || state === 'saving'} className="mt-3 space-y-3">
       {workspace.exceptions.map((exception) => <PriceExceptionDecision key={exception.id} exception={exception} actorRole={actorRole} actorRoles={actorRoles} onChanged={async () => { setWorkspace(null); await onChanged(); await loadPricing(true); }} />)}
       {workspace.lines.map((line) => <PricingLineCard key={line.lineId} line={line} compact={governedReady && !manualReview} entry={entries[line.lineId] || { rate: '', reason: '' }} onChange={(entry) => setEntries((current) => ({ ...current, [line.lineId]: entry }))} />)}
       {workspace.exceptions.length === 0 && workspace.pricingState !== 'approved' && governedReady && !manualReview ? <div className="flex flex-wrap items-center gap-3">{order.status === 'awaiting_confirmation' || order.status === 'phone_order_received' ? <p className="text-xs font-bold text-sf-success">Governed prices will apply when this order is confirmed.</p> : <button type="button" disabled={state === 'saving'} onClick={() => void applyGoverned()} className="min-h-10 rounded-xl bg-sf-ink-hover px-4 text-sm font-bold text-white disabled:opacity-50">{state === 'saving' ? 'Applying prices…' : 'Apply governed prices'}</button>}<button type="button" disabled={state === 'saving'} onClick={() => setManualReview(true)} className="min-h-10 rounded-xl border border-sf-accent-line px-4 text-sm font-bold text-sf-body">Review price exception</button></div> : null}
       {workspace.exceptions.length === 0 && workspace.pricingState !== 'approved' && (!governedReady || manualReview) ? <button type="button" disabled={state === 'saving' || workspace.lines.some((line) => !Number(entries[line.lineId]?.rate))} onClick={() => void submit()} className="min-h-10 rounded-xl bg-sf-ink-hover px-4 text-sm font-bold text-white disabled:opacity-50">{state === 'saving' ? 'Saving pricing…' : governedReady ? 'Submit price override' : 'Submit price exception'}</button> : null}
       <PricingDecisionHistory history={workspace.history || []} />
-    </div> : null}
+    </fieldset> : null}
   </section>;
 }
 

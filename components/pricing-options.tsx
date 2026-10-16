@@ -7,12 +7,20 @@ const format = (amount: number | null) => amount == null ? 'Unavailable' : new I
 
 export function PricingOptions({ line, entry, onChange }: { line: PricingLineResolution; entry: { rate: string; reason: string }; onChange: (entry: { rate: string; reason: string }) => void }) {
   const [custom, setCustom] = useState(false);
+  const needsRate = line.proposedRate == null && line.continuityPrice == null && line.recommendedPrice == null;
   const inputId = useId();
   const choose = (amount: number | null, reason: string) => {
     if (amount == null) return;
     setCustom(false);
     onChange({ rate: String(amount), reason });
   };
+  if (needsRate) return <div className="mt-3 space-y-3">
+    <p className="rounded-lg bg-amber-50 p-3 text-sm text-amber-900">No usable selling price is available for this customer and item. Enter the agreed rate and reason to request approval.</p>
+    <p className="text-sm">Current purchase cost: <strong>{format(line.currentCost)}</strong></p>
+    <label className="block text-sm font-bold" htmlFor={inputId}>Custom selling rate<input id={inputId} type="number" min="0.01" max="100000000" step="0.01" value={entry.rate} onChange={event => onChange({ ...entry, rate: event.target.value })} className="mt-1 min-h-11 w-full rounded-lg border px-3 font-normal"/></label>
+    <label className="block text-sm font-bold">Decision reason<input maxLength={1000} value={entry.reason} onChange={event => onChange({ ...entry, reason: event.target.value })} className="mt-1 min-h-11 w-full rounded-lg border px-3 font-normal"/></label>
+    {entry.rate ? <p className="text-xs font-bold">Selected rate: {format(Number(entry.rate))}</p> : null}
+  </div>;
   return <div className="mt-3 space-y-3">
     {line.costChange != null && line.costChange > 0 && line.guardrail === 'PRICE_REVIEW_REQUIRED' ? <p className="rounded-lg bg-amber-50 p-3 text-xs font-bold text-amber-900">Purchase cost increased. This order needs administrator price review before billing, including fixed agreements.</p> : null}
     <dl className="grid grid-cols-2 gap-3 text-xs sm:grid-cols-3">

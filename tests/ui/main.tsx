@@ -31,7 +31,7 @@ function OrderRecoveryFixture({ data }: { data: OrderBootstrap }) {
   return result ? <output>Accepted {result}</output> : <><button onClick={() => setRevision(current => current + 1)}>Refresh fixture props {revision}</button><HydratedNewOrderPanel data={data} templateOrder={null} onClose={() => setResult('discarded')} onCreated={number => setResult(number)} onViewCustomer={() => undefined} /></>;
 }
 function Fixture() {
-  const [entry, setEntry] = useState({ rate: '445', reason: '' });
+  const [entry, setEntry] = useState({ rate: new URLSearchParams(location.search).has('noHistory') ? '' : '445', reason: '' });
   const parameters = new URLSearchParams(location.search);
   if (parameters.get('view') === 'staff-signin') return <StaffSignIn />;
   if (parameters.get('view') === 'staff-signin-resume') return <StaffSignIn resume />;
@@ -70,7 +70,7 @@ function Fixture() {
   }
   if (parameters.get('view') === 'workspace') return <PricingWorkspace actorEmail="fixture@example.test" actorRole="management"/>;
   return <main className="mx-auto max-w-5xl p-4"><h1>Pricing test fixture</h1>{parameters.get('view') === 'order'
-    ? <PricingOptions line={{ ...row, fixed: parameters.has('fixed') }} entry={entry} onChange={setEntry}/>
+    ? <PricingOptions line={{ ...row, fixed: parameters.has('fixed'), ...(parameters.has('noHistory') ? { lastRate: null, historicCost: null, continuityPrice: null, recommendedPrice: null, proposedRate: null, targetMarginPrice: null } : {}) }} entry={entry} onChange={setEntry}/>
     : <CustomerPriceBook actorEmail="fixture@example.test" actorRole={parameters.get('role') || 'management'}/>}</main>;
 }
 // The isolated fixture omits RootLayout's next/font loader; keep its sans fallback.
