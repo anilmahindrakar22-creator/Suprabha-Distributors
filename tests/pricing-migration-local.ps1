@@ -253,6 +253,8 @@ end$$;
   Write-Output 'PASS: native Debit Note stock depletion, cost conservation, replay and cancellation'
   Invoke-DatabaseCommand $psqlProgram @('-U',$databaseUser,'-X','-q','-v','ON_ERROR_STOP=1','-d',$database,'-f',(Join-Path $repository 'supabase/tests/economic_import_execution_budget.sql'))
   Write-Output 'PASS: bounded service-only snapshot ingest, unchanged-generation replay and changed-source publication'
+  Invoke-DatabaseCommand $psqlProgram @('-U',$databaseUser,'-X','-q','-v','ON_ERROR_STOP=1','-d',$database,'-f',(Join-Path $repository 'supabase/tests/mapped_instrument_cost_scope.sql'))
+  Write-Output 'PASS: mapped-only costing retains earlier consumption, historical group members and native-return depletion'
 } finally {
   if ($databaseCreated) { & $dropdbProgram -U $databaseUser --if-exists $database | Out-Null }
   if ($serverStartedByScript) { & $pgCtlProgram -D $postgresData -m fast -w stop | Out-Null }
