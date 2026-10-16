@@ -37,7 +37,7 @@ begin
   and proconfig@>array['statement_timeout=20s']) then raise exception 'Economics command budget missing';end if;
  if (select count(*) from private.stockflow_economic_runs)<>(select runs+1 from execution_budget_before) then raise exception 'First import did not publish exactly once';end if;
  select id into generation from private.stockflow_economic_runs where active;
- if (select sum(a.cost_paise) from private.stockflow_economic_auto_cost_links a where a.run_id=generation)<>100 then raise exception 'Cached costing changed actual purchase cost';end if;
+ if exists(select 1 from private.stockflow_economic_auto_cost_links a where a.run_id=generation) then raise exception 'Unmapped product triggered automatic costing';end if;
  select count(*) into run_count from private.stockflow_economic_runs;
  select count(*) into catalog_count from private.stockflow_economic_item_catalogs;
 

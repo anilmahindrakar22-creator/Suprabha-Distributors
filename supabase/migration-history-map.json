@@ -1,9 +1,9 @@
 {
   "projectId": "aormuidjbdqruglmyseh",
-  "checkedAt": "2026-10-15T20:05:26.285Z",
+  "checkedAt": "2026-10-16T06:18:07.858Z",
   "purpose": "Read-only release evidence; NOT an executable migration plan or authority to repair history.",
   "normalization": "Remove CR characters and trim surrounding whitespace only; SHA-256 over UTF-8.",
-  "localGitHead": "1a9544d3005c5584cdbf98b55097145014d6bbce",
+  "localGitHead": "b304edc205f7d3c3c756673132330134a190cbca",
   "remoteOnly": [
     {
       "localFile": "20260829054025_create_stockflow_private_snapshots.sql",
@@ -966,6 +966,13 @@
     {
       "localFile": "20261016053720_economic_import_execution_budget.sql",
       "localSha256": "4786a9b33edbc493b741f96c464146e45a13c174da0d4d2cfb36f78e4d345cb4",
+      "remoteVersion": "20261016055922",
+      "remoteSha256": "4786a9b33edbc493b741f96c464146e45a13c174da0d4d2cfb36f78e4d345cb4",
+      "status": "exact_normalized_match"
+    },
+    {
+      "localFile": "20261016061635_mapped_instrument_cost_scope.sql",
+      "localSha256": "e58f089291ff42839312ebf0ea37444c3344151871cfef3cdc646be04c1f3031",
       "remoteVersion": null,
       "remoteSha256": null,
       "status": "not_deployed"
