@@ -11,9 +11,9 @@ const source = new Map(readdirSync(fileURLToPath(directory)).filter((name) => na
 describe('read-only pricing release preflight', () => {
   it('validates the saved production evidence after deployment', () => {
     const result = pricingReleasePreflight(original, source);
-    expect(result.pending).toEqual(['20261016061635_mapped_instrument_cost_scope.sql']);
-    expect(result.deployed.at(-1)?.localFile).toBe('20261016053720_economic_import_execution_budget.sql');
-    expect(result.deployed).toHaveLength(133);
+    expect(result.pending).toEqual(['20261016130829_tally_recent_products.sql']);
+    expect(result.deployed.at(-1)?.localFile).toBe('20261016061635_mapped_instrument_cost_scope.sql');
+    expect(result.deployed).toHaveLength(134);
     const names = result.deployed.map((entry: { localFile: string }) => entry.localFile);
     expect(names.slice(0, 2)).toEqual([
       '20260829054025_create_stockflow_private_snapshots.sql',

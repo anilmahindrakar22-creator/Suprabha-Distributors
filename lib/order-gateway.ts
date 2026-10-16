@@ -28,6 +28,7 @@ export type GatewayAction =
   | 'bootstrap'
   | 'get_catalog'
   | 'get_customers'
+  | 'get_tally_recent_products'
   | 'get_order_summary'
   | 'list_orders'
   | 'get_order_events'

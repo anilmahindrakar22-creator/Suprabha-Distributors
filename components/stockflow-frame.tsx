@@ -281,7 +281,7 @@ export function StockFlowFrame({ actorEmail, actorRole, actorRoles, staffAuth = 
   }
 
   return (
-    <main className="flex h-dvh w-full flex-col overflow-hidden bg-sf-page text-sf-strong" style={{ paddingTop: 'env(safe-area-inset-top)', paddingBottom: 'env(safe-area-inset-bottom)' }}>
+    <main className="fixed inset-0 flex w-full flex-col overflow-hidden bg-sf-page text-sf-strong" style={{ paddingTop: 'env(safe-area-inset-top)', paddingBottom: 'env(safe-area-inset-bottom)' }}>
       <header className="flex shrink-0 flex-wrap items-center justify-between gap-2 border-b border-sf-line-soft bg-white px-4 py-2 sm:h-16 sm:flex-nowrap sm:px-6 sm:py-0">
         <div className="flex min-w-0 items-center gap-3">
           <Image src="/suprabha-logo.png" alt="" width={36} height={36} priority className="size-9 shrink-0 object-contain" />
