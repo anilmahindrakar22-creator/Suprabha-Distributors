@@ -3,7 +3,7 @@
 import { PageHeader, pageActionClass, SummaryStrip } from './page-header';
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { CustomerPriceBook, savePricingReference } from './customer-price-book';
-import { loadOrderCatalog, loadOrderCustomers } from '@/lib/order-capture-masters';
+import { clearOrderCaptureMasterCache, loadOrderCatalog, loadOrderCustomers } from '@/lib/order-capture-masters';
 import type { CatalogItem, CustomerDirectoryEntry } from '@/lib/order-types';
 import type { CustomerPriceContract, PricingCommand, PricingPolicy } from '@/lib/pricing-types';
 import { hasAnyStockFlowRole, type StockFlowRole } from '@/lib/user-types';
@@ -50,6 +50,7 @@ export function PricingWorkspace({ actorEmail, actorRole, actorRoles }: { actorE
   }
   const [loading, setLoading] = useState(true);
   const [message, setMessage] = useState('');
+  const [refreshVersion, setRefreshVersion] = useState(0);
 
   const refresh = useCallback(async () => {
     setLoading(true); setMessage('');
@@ -73,14 +74,14 @@ export function PricingWorkspace({ actorEmail, actorRole, actorRoles }: { actorE
 
   return <div className="h-full overflow-y-auto">
     <div className="mx-auto max-w-7xl space-y-5 p-4 pb-24 sm:p-6 lg:p-8">
-      <PageHeader eyebrow="Restricted commercial workspace" title="Pricing" description="Govern customer rates and margins. Tally remains read-only and untouched." actions={<button type="button" disabled={loading} onClick={() => void refresh()} className={pageActionClass}>{loading ? 'Loading…' : 'Refresh'}</button>} />
+      <PageHeader eyebrow="Restricted commercial workspace" title="Pricing" description="Govern customer rates and margins. Tally remains read-only and untouched." actions={<button type="button" disabled={loading} onClick={() => { clearOrderCaptureMasterCache(); setRefreshVersion(value => value + 1); void refresh(); }} className={pageActionClass}>{loading ? 'Loading…' : 'Refresh'}</button>} />
       {message ? <p role="alert" className="rounded-xl border border-sf-danger-line bg-sf-danger-soft p-3 text-sm font-bold text-sf-danger">{message}</p> : null}
       <SummaryStrip label="Pricing overview" items={[
         { label: 'Awaiting approval', value: pending.length, note: 'Customer price proposals', tone: pending.length > 0 ? 'attention' : 'normal' },
         { label: 'Expiring in 30 days', value: expiring, note: 'Renew before the end date', tone: expiring > 0 ? 'attention' : 'normal' },
         { label: 'Minimum gross margin', value: current ? `${current.minimumMarginPercent}%` : 'Not set', note: current ? `Policy ${current.policyVersion}` : 'Management policy required', tone: current ? 'normal' : 'attention' },
       ]} />
-      <CustomerPriceBook actorEmail={actorEmail} actorRole={actorRole} actorRoles={roles} onRecoveryBlocked={setRecoveryBlocked} onAccessDenied={denyAccess} />
+      <CustomerPriceBook actorEmail={actorEmail} actorRole={actorRole} actorRoles={roles} refreshVersion={refreshVersion} onRecoveryBlocked={setRecoveryBlocked} onAccessDenied={denyAccess} />
       <fieldset disabled={recoveryBlocked} className="space-y-5">
       <ApprovalInbox items={pending} actorRole={actorRole} actorRoles={roles} onChanged={refresh} send={send} />
       <details className="rounded-2xl border border-sf-line-soft bg-sf-soft-0 p-4"><summary className="cursor-pointer list-none"><span className="block text-lg font-extrabold text-sf-strong">Pricing administration</span><span className="mt-1 block text-xs font-normal text-sf-subtle">Customer agreements, proposals and commercial policy</span></summary><div className="mt-4 space-y-5">

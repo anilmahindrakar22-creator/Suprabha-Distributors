@@ -1,5 +1,82 @@
 import { test, expect } from '@playwright/test';
 
+test('missing customer pricing exposes the agreed-rate input without guessing a price', async ({ page }) => {
+  await page.goto('/?view=order&noHistory=1');
+  await expect(page.getByText(/No usable selling price is available for this customer and item/)).toBeVisible();
+  await expect(page.getByLabel('Custom selling rate')).toBeVisible();
+  await expect(page.getByLabel('Custom selling rate')).toHaveValue('');
+  await expect(page.getByRole('button', { name: 'Recommended Unavailable', exact: true })).toBeDisabled();
+  await page.getByLabel('Custom selling rate').fill('440');
+  await page.getByLabel('Decision reason').fill('Agreed with customer');
+  await expect(page.getByText('Selected rate: ₹440.00')).toBeVisible();
+});
+
+test('pricing explains customer selection and distinguishes no search matches', async ({ page }) => {
+  await page.route('**/api/orders?customers=1', route => route.fulfill({ json: { customers: [{ id: customerId, name: 'Test Laboratory' }] } }));
+  await page.goto('/');
+  await expect(page.getByRole('status')).toContainText('Search for a customer to see their Tally selling prices');
+  await page.getByLabel('Select customer').fill('Unknown customer');
+  await expect(page.getByRole('status')).toHaveText('No matches. Try another name.');
+  await page.getByLabel('Select customer').fill('Test');
+  await expect(page.getByRole('button', { name: 'Test Laboratory', exact: true })).toBeVisible();
+});
+
+test('failed customer search can retry without reopening Pricing', async ({ page }) => {
+  let requests = 0;
+  await page.route('**/api/orders?customers=1', route => {
+    requests++;
+    return route.fulfill(requests === 1 ? { status: 502, json: { error: 'Unavailable' } } : { json: { customers: [{ id: customerId, name: 'Test Laboratory' }] } });
+  });
+  await page.goto('/');
+  await expect(page.getByRole('alert')).toContainText('Customer or product list could not load.');
+  await page.getByLabel('Select customer').fill('Test');
+  await page.getByRole('button', { name: 'Retry list', exact: true }).click();
+  await expect(page.getByRole('button', { name: 'Test Laboratory', exact: true })).toBeVisible();
+  await expect(page.getByRole('alert')).toHaveCount(0);
+  expect(requests).toBe(2);
+});
+
+test('workspace Refresh reloads selected prices and customer search without resetting selection', async ({ page }) => {
+  let priceReads = 0;
+  let masterReads = 0;
+  const posts: string[] = [];
+  await page.route('**/api/orders?customers=1', route => { masterReads++; return route.fulfill({ json: { customers: [{ id: customerId, name: 'Test Laboratory' }] } }); });
+  await page.route('**/api/pricing**', route => {
+    if (route.request().method() === 'POST') posts.push(route.request().postData() || '');
+    const url = new URL(route.request().url());
+    if (url.searchParams.has('book')) { priceReads++; return route.fulfill({ json: { rows: [{ ...row, lastRate: priceReads === 1 ? 420 : 432 }], offset: 0, hasMore: false } }); }
+    return route.fulfill({ json: url.searchParams.has('policies') ? { policies: [] } : { contracts: [] } });
+  });
+  await page.goto('/?view=workspace');
+  await page.getByLabel('Select customer').fill('Test');
+  await page.getByRole('button', { name: 'Test Laboratory', exact: true }).click();
+  await expect(page.getByRole('cell', { name: '₹420.00', exact: true })).toBeVisible();
+  await page.getByRole('button', { name: 'Refresh', exact: true }).click();
+  await expect(page.getByRole('cell', { name: '₹432.00', exact: true })).toBeVisible();
+  await expect(page.getByLabel('Select customer')).toHaveValue('Test Laboratory');
+  expect(priceReads).toBe(2);
+  expect(masterReads).toBe(2);
+  expect(posts).toEqual([]);
+});
+
+test('failed price-book load retries the same selection without saving a price', async ({ page }) => {
+  let reads = 0;
+  await page.route('**/api/orders?customers=1', route => route.fulfill({ json: { customers: [{ id: customerId, name: 'Test Laboratory' }] } }));
+  await page.route('**/api/pricing**', route => {
+    expect(route.request().method()).toBe('GET');
+    reads++;
+    return route.fulfill(reads === 1 ? { status: 502, json: { error: 'Pricing unavailable' } } : { json: { rows: [row], offset: 0, hasMore: false } });
+  });
+  await page.goto('/');
+  await page.getByLabel('Select customer').fill('Test');
+  await page.getByRole('button', { name: 'Test Laboratory', exact: true }).click();
+  await expect(page.getByRole('alert')).toContainText('Pricing unavailable');
+  await page.getByRole('button', { name: 'Retry prices', exact: true }).click();
+  await expect(page.getByRole('cell', { name: '₹420.00', exact: true })).toBeVisible();
+  await expect(page.getByRole('alert')).toHaveCount(0);
+  expect(reads).toBe(2);
+});
+
 for (const status of [401, 403]) {
   test(`authorization loss ${status} clears loaded workspace pricing`, async ({ page }) => {
     let denied = false;
