@@ -15,7 +15,7 @@ Owner reports missing United Diagnostics prices and inability to approve pricing
 
 1. `components/pricing-workspace.tsx`: manual Refresh invalidates the in-memory master request cache and triggers a selected-book refresh while preserving customer selection.
 2. `components/customer-price-book.tsx`: selection/search guidance, explicit no-match/loading states, retry customer/product list, and retry prices without reopening Pricing.
-3. `components/pricing-options.tsx`: when no proposed/continuity/recommended rate exists, show the agreed-rate input immediately and explain the required next action. No price is guessed or automatically approved.
+3. `components/pricing-options.tsx`: when no proposed/continuity/recommended rate exists, show a compact form containing purchase cost, agreed selling rate and reason. Omit unavailable recommendation fields and disabled recommendation choices. No price is guessed or automatically approved.
 4. `tests/pricing-browser/price-book.spec.ts` and `tests/ui/main.tsx`: regressions for these flows and the no-history fixture; existing authorization-loss, uncertain-save/idempotency and approval tests remain.
 
 ## Order review correction — takeover authorized
@@ -34,6 +34,7 @@ The four isolated proposal checks passed, along with four existing cross-session
 - All 56 combined pricing/order browser checks pass (desktop and mobile), including the direct pricing action, access revocation, existing lost-response receipts, cross-session updates and unsaved order drafts.
 - 26 affected unit checks pass. Full project lint and staff-production build passed for the initial five-file patch. Final combined components pass focused lint and isolated typecheck; exact-source release CI/build remains required.
 - An initial browser run found four ambiguous test locators after a nested alert markup change; restoring a single alert paragraph resolved them. Final full 48-case run passes. Lint's semantic-status finding was corrected using `output`.
+- Additional keyboard/recovery suite: 24 PASS (four overlap combined checks). Final compact no-history form and draft/reload cases: six PASS. Phone rendering inspected from the isolated test screenshot `work/pricing-recovery-20261016/exact/test-results/pricing-review-mobile.png`.
 - No deployment, migration, financial approval, pricing import, Tally write or role change has been performed for this correction. All unrelated dirty work is retained. Screenshots of the live app were unavailable through the current browser connection; DOM and database evidence were available.
 
 ## Next step

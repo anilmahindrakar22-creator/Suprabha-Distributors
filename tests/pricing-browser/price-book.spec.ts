@@ -5,7 +5,8 @@ test('missing customer pricing exposes the agreed-rate input without guessing a 
   await expect(page.getByText(/No usable selling price is available for this customer and item/)).toBeVisible();
   await expect(page.getByLabel('Custom selling rate')).toBeVisible();
   await expect(page.getByLabel('Custom selling rate')).toHaveValue('');
-  await expect(page.getByRole('button', { name: 'Recommended Unavailable', exact: true })).toBeDisabled();
+  await expect(page.getByRole('button', { name: 'Recommended Unavailable', exact: true })).toHaveCount(0);
+  await expect(page.getByText('Current purchase cost:')).toContainText('₹310.00');
   await page.getByLabel('Custom selling rate').fill('440');
   await page.getByLabel('Decision reason').fill('Agreed with customer');
   await expect(page.getByText('Selected rate: ₹440.00')).toBeVisible();
