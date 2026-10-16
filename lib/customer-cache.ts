@@ -1,4 +1,5 @@
 import type { CustomerDirectoryEntry } from './order-types';
+import { pinProtectedOfflineDevice } from './offline-order-drafts';
 
 type CustomerStorage = Pick<Storage, 'getItem' | 'setItem' | 'removeItem'>;
 
@@ -17,6 +18,7 @@ function key(actorEmail: string) {
 
 export function readCustomerCache(storage: CustomerStorage, actorEmail: string, customerVersion: string) {
   try {
+    if (pinProtectedOfflineDevice(storage)) return null;
     const cacheKey = key(actorEmail);
     const cached = JSON.parse(storage.getItem(cacheKey) || 'null') as Partial<CachedCustomers> | null;
     if (!cached || cached.schemaVersion !== 1 || cached.actorEmail?.trim().toLocaleLowerCase('en-IN') !== actorEmail.trim().toLocaleLowerCase('en-IN') || cached.customerVersion !== customerVersion || !Array.isArray(cached.customers)) {
@@ -32,6 +34,7 @@ export function readCustomerCache(storage: CustomerStorage, actorEmail: string, 
 
 export function writeCustomerCache(storage: CustomerStorage, actorEmail: string, customerVersion: string, customers: CustomerDirectoryEntry[]) {
   try {
+    if (pinProtectedOfflineDevice(storage)) return false;
     const cached: CachedCustomers = { schemaVersion: 1, actorEmail: actorEmail.trim().toLocaleLowerCase('en-IN'), customerVersion, customers };
     storage.setItem(key(actorEmail), JSON.stringify(cached));
     return true;

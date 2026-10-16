@@ -43,3 +43,7 @@ next-env.d.ts
 /work/
 /supabase/.temp/
 /.local-tools/
+/public/generated-offline/
+# Local agent tooling and private setup scripts (never commit)
+/.codex/
+/Price

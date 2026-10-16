@@ -78,12 +78,11 @@ export function createSyncHandler({ env, fetchFn }: Dependencies) {
       const fetchedAt = payload.fetchedAtIso ?? payload.fetchedAt;
       if (typeof fetchedAt !== 'string' || !fetchedAt.trim()) return reply({ error: 'Invalid snapshot' }, 400);
       // Existing single-row atomic upsert and import triggers remain the write boundary.
-      target.searchParams.set('on_conflict', 'id');
-      const response = await databaseFetch(target.toString(), {
+      const response = await databaseFetch(`${url}/rest/v1/rpc/stockflow_sync_snapshot`, {
         method: 'POST',
-        signal: AbortSignal.timeout(10_000),
-        headers: { apikey: secret, 'content-type': 'application/json', prefer: 'resolution=merge-duplicates,return=minimal' },
-        body: JSON.stringify({ id: 'suprabha', company: payload.company, fetched_at: fetchedAt, payload, updated_at: new Date().toISOString() }),
+        signal: AbortSignal.timeout(25_000),
+        headers: { apikey: secret, 'content-type': 'application/json' },
+        body: JSON.stringify({ p_payload: payload }),
       });
       return response.ok ? measuredReply({ ok: true }) : measuredReply({ error: 'Unable to save snapshot' }, 500);
     } catch {

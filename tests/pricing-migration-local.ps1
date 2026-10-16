@@ -56,7 +56,16 @@ try {
     ) | Where-Object { $_ -and (Test-Path (Join-Path $_ 'PG_VERSION')) }
     $postgresData = $dataCandidates | Select-Object -First 1
     if (-not $postgresData) { throw 'A PostgreSQL server is not running and no initialized portable data directory was found. Set STOCKFLOW_POSTGRES_DATA.' }
-    Invoke-DatabaseCommand $pgCtlProgram @('-D',$postgresData,'-l',(Join-Path $work 'postgres.log'),'-w','start')
+    if ($IsWindows) {
+      # pg_ctl's detached server inherits native pipeline handles on Windows.
+      # Wait for pg_ctl itself, not an output pipe kept open by postgres.
+      $startArguments = @('-D', ('"' + $postgresData + '"'), '-l', ('"' + (Join-Path $work 'postgres.log') + '"'), '-w', 'start')
+      $starter = Start-Process -FilePath $pgCtlProgram -ArgumentList $startArguments -WindowStyle Hidden -PassThru
+      if (-not $starter.WaitForExit(30000)) { throw 'PostgreSQL startup timed out after 30 seconds' }
+      if ($starter.ExitCode -ne 0) { throw "PostgreSQL startup failed with exit code $($starter.ExitCode)" }
+    } else {
+      Invoke-DatabaseCommand $pgCtlProgram @('-D',$postgresData,'-l',(Join-Path $work 'postgres.log'),'-w','start')
+    }
     $serverStartedByScript = $true
   }
   Copy-Item (Join-Path $migrationSource '*.sql') -Destination $work
@@ -137,10 +146,40 @@ create table public.test_upgrade_expected as select to_jsonb(o) as order_data,(s
   Invoke-DatabaseCommand $psqlProgram @('-U',$databaseUser,'-X','-q','-v','ON_ERROR_STOP=1','-d',$database,'-f',(Join-Path $repository 'supabase/tests/partial_customer_snapshot_integrity.sql'))
   Invoke-DatabaseCommand $psqlProgram @('-U',$databaseUser,'-X','-q','-v','ON_ERROR_STOP=1','-d',$database,'-f',(Join-Path $repository 'supabase/tests/product_request_integrity.sql'))
   Invoke-DatabaseCommand $psqlProgram @('-U',$databaseUser,'-X','-q','-v','ON_ERROR_STOP=1','-d',$database,'-f',(Join-Path $repository 'supabase/tests/customer_demand_requirements.sql'))
-  Invoke-DatabaseCommand $psqlProgram @('-U',$databaseUser,'-X','-q','-v','ON_ERROR_STOP=1','-d',$database,'-f',(Join-Path $repository 'supabase/tests/stock_increase_alerts.sql'))
+  # The historical test's commercial-data allowlist predates additive coverage fields.
+  # Extend only its disposable copy; keep the source test immutable.
+  $stockAlertTest = [IO.File]::ReadAllText((Join-Path $repository 'supabase/tests/stock_increase_alerts.sql'))
+  $oldAlertFields = "'sourceAt','affectedOrders')"
+  if ([regex]::Matches($stockAlertTest, [regex]::Escape($oldAlertFields)).Count -ne 1) { throw 'Stock alert test allowlist changed; review coverage fields' }
+  $stockAlertTest = $stockAlertTest.Replace($oldAlertFields, "'sourceAt','affectedOrders','currentStock','waitingOrders','waitingQuantity','coveredOrders')")
+  $stockAlertTestPath = Join-Path $work 'stock_increase_alerts.sql'
+  [IO.File]::WriteAllText($stockAlertTestPath, $stockAlertTest, [Text.UTF8Encoding]::new($false))
+  Invoke-DatabaseCommand $psqlProgram @('-U',$databaseUser,'-X','-q','-v','ON_ERROR_STOP=1','-d',$database,'-f',$stockAlertTestPath)
+  Invoke-DatabaseCommand $psqlProgram @('-U',$databaseUser,'-X','-q','-v','ON_ERROR_STOP=1','-d',$database,'-f',(Join-Path $repository 'supabase/tests/requirements_decision_view.sql'))
+  Write-Output 'PASS: requirements decision view: shortage-first order, counts, advisory coverage'
+  Invoke-DatabaseCommand $psqlProgram @('-U',$databaseUser,'-X','-q','-v','ON_ERROR_STOP=1','-d',$database,'-f',(Join-Path $repository 'supabase/tests/customer_accounts.sql'))
+  Write-Output 'PASS: account owner, territory, location and visit log with coverage order'
+  Invoke-DatabaseCommand $psqlProgram @('-U',$databaseUser,'-X','-q','-v','ON_ERROR_STOP=1','-d',$database,'-f',(Join-Path $repository 'supabase/tests/account_classes.sql'))
+  Write-Output 'PASS: A/B account classes with coverage and link gates'
+  Invoke-DatabaseCommand $psqlProgram @('-U',$databaseUser,'-X','-q','-v','ON_ERROR_STOP=1','-d',$database,'-f',(Join-Path $repository 'supabase/tests/account_contacts.sql'))
+  Write-Output 'PASS: app-added account contacts with ownership, versions and audit'
+  Invoke-DatabaseCommand $psqlProgram @('-U',$databaseUser,'-X','-q','-v','ON_ERROR_STOP=1','-d',$database,'-f',(Join-Path $repository 'supabase/tests/power_map.sql'))
+  Write-Output 'PASS: Power Map assessments, met contacts, alerts, visibility and erasure'
+  Invoke-DatabaseCommand $psqlProgram @('-U',$databaseUser,'-X','-q','-v','ON_ERROR_STOP=1','-d',$database,'-f',(Join-Path $repository 'supabase/tests/social_styles.sql'))
+  Write-Output 'PASS: Social Styles observation, computation, visibility and overrides'
+  Invoke-DatabaseCommand $psqlProgram @('-U',$databaseUser,'-X','-q','-v','ON_ERROR_STOP=1','-d',$database,'-f',(Join-Path $repository 'supabase/tests/customer_link_source_integrity.sql'))
+  Write-Output 'PASS: immutable customer ledger generations, source time, empty and rejected exports'
+  Invoke-DatabaseCommand $psqlProgram @('-U',$databaseUser,'-X','-q','-v','ON_ERROR_STOP=1','-d',$database,'-f',(Join-Path $repository 'supabase/tests/customer_link_confirmation.sql'))
+  Write-Output 'PASS: Customer link confirmation integrity'
+  Invoke-DatabaseCommand $psqlProgram @('-U',$databaseUser,'-X','-q','-v','ON_ERROR_STOP=1','-d',$database,'-f',(Join-Path $repository 'supabase/tests/visit_customers_without_ledger.sql'))
+  Write-Output 'PASS: create visit customers without ledger, later one-time link and rename preserve history'
+  Invoke-DatabaseCommand $psqlProgram @('-U',$databaseUser,'-X','-q','-v','ON_ERROR_STOP=1','-d',$database,'-f',(Join-Path $repository 'supabase/tests/customer_link_confirmation_concurrency.sql'))
+  Write-Output 'PASS: Customer link confirmation concurrency'
   Write-Output 'PASS: partial snapshots preserve customers and complete lists retain soft-deactivation'
   Invoke-DatabaseCommand $psqlProgram @('-U',$databaseUser,'-X','-q','-v','ON_ERROR_STOP=1','-d',$database,'-f',(Join-Path $repository 'supabase/tests/catalog_source_version.sql'))
   Write-Output 'PASS: catalog source version and legacy fallback across all order gateways'
+  Invoke-DatabaseCommand $psqlProgram @('-U',$databaseUser,'-X','-q','-v','ON_ERROR_STOP=1','-d',$database,'-f',(Join-Path $repository 'supabase/tests/product_master_refresh.sql'))
+  Write-Output 'PASS: product master refresh from catalogue snapshot, no deactivation, change-only versions'
   $preserved = @'
 do $$begin
 if not exists(select 1 from private.stockflow_orders o cross join public.test_upgrade_expected e where o.id='dddddddd-dddd-4ddd-8ddd-dddddddddddd' and to_jsonb(o)=e.order_data and (select jsonb_agg(to_jsonb(l)) from private.stockflow_order_lines l where l.order_id=o.id)=e.line_data) then raise exception 'Pricing upgrade changed existing order data'; end if;
@@ -175,13 +214,49 @@ end$$;
   Invoke-DatabaseCommand $psqlProgram @('-U',$databaseUser,'-X','-q','-v','ON_ERROR_STOP=1','-d',$database,'-f',(Join-Path $repository 'supabase/tests/remaining_role_union_gateways.sql'))
   Write-Output 'PASS: remaining domain combined-role admission and denial checks'
   Write-Output 'PASS: combined-role pricing recovery remains status-only and permission-controlled'
+  Invoke-DatabaseCommand $psqlProgram @('-U',$databaseUser,'-X','-q','-v','ON_ERROR_STOP=1','-d',$database,'-f',(Join-Path $repository 'supabase/tests/instrument_economics_integrity.sql'))
+  Invoke-DatabaseCommand $psqlProgram @('-U',$databaseUser,'-X','-q','-v','ON_ERROR_STOP=1','-d',$database,'-f',(Join-Path $repository 'supabase/tests/administrator_long_payback.sql'))
+  Write-Output 'PASS: administrator-only approval beyond the payback review band'
+  Invoke-DatabaseCommand $psqlProgram @('-U',$databaseUser,'-X','-q','-v','ON_ERROR_STOP=1','-d',$database,'-f',(Join-Path $repository 'supabase/tests/instrument_auto_approval.sql'))
+  Write-Output 'PASS: automatic approval within the attractive payback band'
+  Invoke-DatabaseCommand $psqlProgram @('-U',$databaseUser,'-X','-q','-v','ON_ERROR_STOP=1','-d',$database,'-f',(Join-Path $repository 'supabase/tests/instrument_economics_item_groups.sql'))
+  Write-Output 'PASS: instrument item-group membership, scoped net sales/GP, revisions and replay'
+  Invoke-DatabaseCommand $psqlProgram @('-U',$databaseUser,'-X','-q','-v','ON_ERROR_STOP=1','-d',$database,'-f',(Join-Path $repository 'supabase/tests/historical_instrument_registration.sql'))
+  Invoke-DatabaseCommand $psqlProgram @('-U',$databaseUser,'-X','-q','-v','ON_ERROR_STOP=1','-d',$database,'-f',(Join-Path $repository 'supabase/tests/instrument_economics_auto_cost.sql'))
+  Write-Output 'PASS: automatic Tally purchase cost by batch then oldest first, zero-value cost and no reuse'
+  Invoke-DatabaseCommand $psqlProgram @('-U',$databaseUser,'-X','-q','-v','ON_ERROR_STOP=1','-d',$database,'-f',(Join-Path $repository 'supabase/tests/instrument_economics_sale_date.sql'))
+  Invoke-DatabaseCommand $psqlProgram @('-U',$databaseUser,'-X','-q','-v','ON_ERROR_STOP=1','-d',$database,'-f',(Join-Path $repository 'supabase/tests/instrument_economics_import_exceptions.sql'))
+  Invoke-DatabaseCommand $psqlProgram @('-U',$databaseUser,'-X','-q','-v','ON_ERROR_STOP=1','-d',$database,'-f',(Join-Path $repository 'supabase/tests/instrument_economics_summary_read.sql'))
+  Write-Output 'PASS: summary parity, deferred evidence, FOC/missing cost and sale-date revisions'
+  Write-Output 'PASS: instrument invoice-date reagent sales, inclusive boundary, revisions and cancellation'
+  Write-Output 'PASS: instrument economics source import, approval, GP, replay, exceptions and leakage'
   Write-Output 'PASS: complete migration replay, pricing ACID and role-storage tests'
   Invoke-DatabaseCommand $psqlProgram @('-U',$databaseUser,'-X','-q','-v','ON_ERROR_STOP=1','-d',$database,'-f',(Join-Path $repository 'supabase/tests/product_request_concurrency.sql'))
   Write-Output 'PASS: two-session product request review and replay'
+  Invoke-DatabaseCommand $psqlProgram @('-U',$databaseUser,'-X','-q','-v','ON_ERROR_STOP=1','-d',$database,'-f',(Join-Path $repository 'supabase/tests/customer_accounts_concurrency.sql'))
+  Write-Output 'PASS: two-session Accounts first-write conflict, stored replay and audit'
+  Invoke-DatabaseCommand $psqlProgram @('-U',$databaseUser,'-X','-q','-v','ON_ERROR_STOP=1','-d',$database,'-f',(Join-Path $repository 'supabase/tests/visit_customers_concurrency.sql'))
+  Write-Output 'PASS: two-session visit-customer duplicate rejection, stored replay and audit'
+  Invoke-DatabaseCommand $psqlProgram @('-U',$databaseUser,'-X','-q','-v','ON_ERROR_STOP=1','-d',$database,'-f',(Join-Path $repository 'supabase/tests/order_summary_revision.sql'))
+  Write-Output 'PASS: access-scoped order revision detects equal-count stage changes'
   Invoke-DatabaseCommand $psqlProgram @('-U',$databaseUser,'-X','-q','-v','ON_ERROR_STOP=1','-d',$database,'-f',(Join-Path $repository 'supabase/tests/price_book_concurrency.sql'))
+  Invoke-DatabaseCommand $psqlProgram @('-U',$databaseUser,'-X','-q','-v','ON_ERROR_STOP=1','-d',$database,'-f',(Join-Path $repository 'supabase/tests/product_master_refresh_lock.sql'))
+  Write-Output 'PASS: product refresh never blocks a snapshot upload under group-margin lock'
   Write-Output 'PASS: two-session price-book concurrency and bulk rollback'
   Invoke-DatabaseCommand $psqlProgram @('-U',$databaseUser,'-X','-q','-v','ON_ERROR_STOP=1','-d',$database,'-f',(Join-Path $repository 'supabase/tests/member_role_concurrency.sql'))
+  Invoke-DatabaseCommand $psqlProgram @('-U',$databaseUser,'-X','-q','-v','ON_ERROR_STOP=1','-d',$database,'-f',(Join-Path $repository 'supabase/tests/instrument_economics_concurrency.sql'))
+  Write-Output 'PASS: two-session economic command replay, audit and atomic publication'
   Write-Output 'PASS: two-session member role edits, stale denial, replay and audit'
+  Invoke-DatabaseCommand $psqlProgram @('-U',$databaseUser,'-X','-q','-v','ON_ERROR_STOP=1','-d',$database,'-f',(Join-Path $repository 'supabase/tests/import_problem_details.sql'))
+  Write-Output 'PASS: import problem invoice details and null evidence through the workspace entry point'
+  Invoke-DatabaseCommand $psqlProgram @('-U',$databaseUser,'-X','-q','-v','ON_ERROR_STOP=1','-d',$database,'-f',(Join-Path $repository 'supabase/tests/native_tally_debit_notes.sql'))
+  Write-Output 'PASS: native Debit Note stock depletion, cost conservation, replay and cancellation'
+  Invoke-DatabaseCommand $psqlProgram @('-U',$databaseUser,'-X','-q','-v','ON_ERROR_STOP=1','-d',$database,'-f',(Join-Path $repository 'supabase/tests/economic_import_execution_budget.sql'))
+  Write-Output 'PASS: bounded service-only snapshot ingest, unchanged-generation replay and changed-source publication'
+  Invoke-DatabaseCommand $psqlProgram @('-U',$databaseUser,'-X','-q','-v','ON_ERROR_STOP=1','-d',$database,'-f',(Join-Path $repository 'supabase/tests/mapped_instrument_cost_scope.sql'))
+  Write-Output 'PASS: mapped-only costing retains earlier consumption, historical group members and native-return depletion'
+  Invoke-DatabaseCommand $psqlProgram @('-U',$databaseUser,'-X','-q','-v','ON_ERROR_STOP=1','-d',$database,'-f',(Join-Path $repository 'supabase/tests/tally_recent_products.sql'))
+  Write-Output 'PASS: customer-scoped Tally recent products, deduplication, quantities, prospect and authorization'
 } finally {
   if ($databaseCreated) { & $dropdbProgram -U $databaseUser --if-exists $database | Out-Null }
   if ($serverStartedByScript) { & $pgCtlProgram -D $postgresData -m fast -w stop | Out-Null }

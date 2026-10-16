@@ -2,7 +2,7 @@ import type { OrderSummary } from './order-types';
 
 export type InstalledAsset = {
   installationId: string;
-  orderId: string;
+  orderId: string | null;
   orderNumber: string;
   customerName: string;
   customerPhone: string | null;

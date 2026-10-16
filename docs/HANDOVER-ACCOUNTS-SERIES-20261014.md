@@ -1,0 +1,63 @@
+# Accounts series integration — 14 October 2026
+
+Integrator: Codex. Owner directive: merge only `claude/accounts-release` at `7643746c345272a5210612de540593646ba0a506`, which contains current RC `7f67fca`. Supersedes separate Accounts branches; Tally contacts excluded. Acceptance-only release; register held until Economics cutover.
+
+## Scope and primary review
+
+Classes and advisory district pin check, app-only contacts, management-only Power Map and Who decides, Social Styles and administrator contact erasure. Four migrations in order: `20261014120000_account_classes.sql`, `20261014160000_account_contacts.sql`, `20261014180000_power_map.sql`, `20261014190000_social_styles.sql`. Exactly-once gateway anchors fail closed; gateway stays service-only, private tables have RLS and no client grants. Existing admission/authentication controls preserved; eight new actions route to Accounts. Parent/customer lock before contact lock; contact edit/remove expected-version checks and stored idempotent receipts retained. Style remains a business communication aid and is available only to Management/Administrator or the current account owner; Power Map omitted for other roles. An ordinary non-owner Sales session sees neither. Completeness seam stays false, so no class is published from partial Tally data.
+
+Primary review corrected two approved-design gaps before any deployment: rating on another person's visit was accepted, and free-text style override reasons survived erasure. Regression SQL reproduced the visitor defect. The Social Styles migration now verifies the visitor, active same-account met contact and 30-day range; the UI only offers rating on that visitor's recent meeting. Erasure clears style reasons to a fixed placeholder while retaining immutable IDs/actor/time/style metadata; arbitrary history changes and deletes remain denied. Regression covers both; Edge execution tests cover all thirteen Accounts actions with existing key/body/admission checks.
+
+No fifth migration, connector change, automatic customer link, full-sales activation, production mutation or register integration. New local migration hashes are recorded as pending production in `supabase/migration-history-map.json`; acceptance applied versions will be recorded separately.
+
+## Checks and release evidence
+
+Evidence candidate `work/accounts-series-release-20261014/` (ignored). Fresh UTC disposable replay in deployment order passes after the correction, including all four new suites and existing financial/role/summary/concurrency suites. Initial failing regression log retained. Unit/static/browser/build/exact-head CI and hosted promotion evidence pending at initial creation.
+
+Initial combined browsers: 185 pass, five intended device-only skips, including Accounts, Orders clarity/layout/keyboard/offline recovery, Requirements and cross-session refresh. Initial full unit run: 1,367 pass / one fixture failure (direct AccountDetails rendering lacked the newly required visitor identity); fixture now supplies identity and asserts other visitors have no rating action. Typecheck passed. Four real lint diagnostics fixed with semantic live output and escaped text; no rule disabled. Final full units/static/build and focused browsers are running on the exact corrected candidate. Initial failed logs retained, including a wrong CLI path corrected from the installed package manifest; no code workaround.
+
+Six requested phone checks: Sales adds a test contact and logs a met visit; optional ratings prompt and one-of-three state for Management; Management sets decision role; non-owner Sales sees no Power Map/style/Who decides; Administrator erases only a disposable test contact; incomplete sales shows the note and no class. Automated phone fixtures and real SQL roles will be verified, with real hosted role availability explicitly recorded. No role impersonation, hosted business fixture creation or permanent contact erasure without concrete authorization/confirmation. Screenshots will show the final hosted read-only surface. Existing Accounts/Sales/Operations role sessions are still not available from prior acceptance, so code checks cannot be described as their live acceptance.
+
+## Following directive items
+
+After Accounts release: read-only monthly production sales/returns/credit counts, then reply to full-sales rebuild-cap proposal; decide on person-confirmed batch customer–Tally links; retain instrument register hold; reconcile and merge two docs-only branches. Record every outcome in both shared logs. Preserve all existing uncommitted work.
+
+## Release readback — 15 October (Asia/Kolkata)
+
+PR [#50](https://github.com/anilmahindrakar22-creator/Suprabha-Distributors/pull/50) merged normally at `47ec4c8b523d8cab4f4662005723e4f3e61a2feb`. Exact reviewed source `955da0a6dbc64529a330090af92fb3786de4682d` passed [CI 38612190450](https://github.com/anilmahindrakar22-creator/Suprabha-Distributors/actions/runs/38612190450): 35 SQL replay checks, 1,368 units / 135 files, static/build/connector checks, 36 general / 485 staff (+ seven intended device skips) / 20 offline browsers, dependency audit and 21 contracts. Build stored. Final local 38 UI units and 14 focused browsers pass after the erasure-confirmation change. Source and artifact manifests: 544 / 162 files. All 72 dirty file contents preserved byte-for-byte through RC fast-forward; source directories clean.
+
+Acceptance migration history 62 → 66. Exact stored hashes match all four local files:
+
+| Local migration | Acceptance version | Normalized SHA-256 |
+| --- | --- | --- |
+| `20261014120000_account_classes.sql` | `20261014181916` | `386f7bcd9c001d7b54b928d62d020bcc806b57d3b391b8b152fb41568d31740e` |
+| `20261014160000_account_contacts.sql` | `20261014181918` | `46c7f7ef43721ab405455f1230c79ddc7b6494425ff89bb52c1cb013f8df3c30` |
+| `20261014180000_power_map.sql` | `20261014181922` | `903e8e513f92aa6f216b2bca34f60e71b72771ab15944246c9bf861e75008034` |
+| `20261014190000_social_styles.sql` | `20261014181925` | `e3627b1902ff944c047afa19a0d72c285ca53bb03ae52d0a99937477871ad41c` |
+
+Orders Edge v13 downloaded `index.ts` and `request-gate.ts` match reviewed source exactly; compiled hash `f84fb512f7aeb4b8102be833f43df13efc232d8de248942944908df6565ab781`. Previous v12 files/settings saved. Sync v4 unchanged. Seven new private tables have RLS and no anonymous/authenticated grants. Before staff testing, all existing financial/order/customer/member/receipt/snapshot fingerprints unchanged; one seeded class policy is expected. Security advisor's private deny-all/no-policy notices are intentional. Three new private class helpers report unset search_path: helpers are revoked from clients/service_role, object references are qualified and the service-only invoking gateway fixes its search_path; retained as an assessed follow-up, not claimed as a clean zero-warning scan. Existing leaked-password-protection advisory unchanged; no paid setting or access protection modified.
+
+Initial Worker `1f013adf-b681-4ddb-9db6-5593b684ade4`; final Worker after the explicitly approved invitation and restoration of email delivery gate: `472307e5-1938-4f7a-94bf-2ce7a317d57d`, independently at 100%. Same frozen artifact/source. Rollback prior release `9ee38923-9294-4991-ada1-f3a8c14686a9`. Thirteen hosted shell/private-API/asset checks and Edge denial pass on both releases; final public binding values and secret binding shapes match the original baseline.
+
+Owner named `nikitesh.am@gmail.com` and approved Sales first, then Management, plus one acceptance invitation. Existing allowlisted Administrator membership changed to Sales through the audited Users screen; independent DB read confirmed. Initially no Auth account; one invitation accepted by the service, account created and subsequent email confirmation/sign-in verified. Delivery flag temporarily enabled only for that request (`cfe32945`), then restored false. No secret value or password read/set; no blind invitation retry. The owner confirmed completion, but independent read found the fictitious Release test contact saved with zero linked met visits/ratings, so Sales visit/rating checks remain pending clarification; do not switch to Management prematurely. This authorized role/identity/test-contact activity is a separate expected change from the untouched financial/order release baseline.
+
+Phone check (f) passes in real Administrator session at 375 × 812: Jul–Sep incomplete-sales note visible, no class chip; document width/scroll width both 375. Screenshot `acceptance-accounts-class-note-mobile.png`. Fixture/SQL coverage exists for (a)–(e); real Sales/Management, one-of-three state, decision-role and disposable-contact erasure remain to be finished. Permanent erasure requires concrete action-time confirmation of the test contact. Do not describe fixture checks as real hosted staff acceptance.
+
+Directive items 2–4: [full-sales reply](FULL-SALES-IMPORT-INTEGRATION-REPLY-20261015.md), [customer-link decision](CUSTOMER-TALLY-LINK-CONFIRMATION-DECISION-20261015.md); instrument register remains held. Production read-only only; no import, class activation or production deployment. Both shared logs updated; docs branch reconciliation is the next recorded step. Final documentation follows the validated source head and does not alter its deployed code.
+
+## Final six phone checks
+
+The later owner responses and independent reads supersede the earlier pending staff-check record above. Owner performed the Sales/Management phone actions; Codex verified the real saved records and the Administrator phone UI. No staff-role impersonation or password handling.
+
+| Check | Outcome and evidence |
+| --- | --- |
+| (a) Sales contact + ticked visit | PASS. Owner's phone completion; contact `3fb7c438-4546-4c7d-8538-71c241982d51` added by Nikitesh at Acceptance Laboratory; two real met links verified |
+| (b) Optional rating + 1 of 3 | PASS. One real rating by Nikitesh, one distinct date; Management phone confirmation, DB `not_enough`/one date; Administrator phone independently displays `1 of 3 meetings` |
+| (c) Management role + Decides | PASS. Owner phone save; latest `decision_maker` assessment actor Nikitesh verified; Administrator phone displays `Decides: Release test contact · Neutral · met 15 Oct` |
+| (d) Sales hidden fields | PASS by owner phone confirmation in the earlier Sales role; non-owner Sales context. Backend role/field-omission SQL and automated UI checks additionally passed. D-22's current-account-owner style exception is preserved |
+| (e) Administrator erasure | PASS. Owner's action-time confirmation named the exact fictitious record; Codex submitted once through the real Administrator phone UI. Visible `Erased contact.`; independent DB placeholder, null role/phone/email, version 2, one erased event, zero retained contact value blobs/assessment/style reasons, two met links and one rating retained |
+| (f) Class unavailable | PASS. Real Administrator phone shows Jul–Sep incomplete-sales note and no class chip; 375 client/scroll widths. Completeness seam remains false |
+
+Screenshots include `acceptance-contact-before-erasure-mobile.png`, `acceptance-test-erasure-review-mobile.png`, `acceptance-test-contact-erased-mobile.png`, `acceptance-accounts-class-note-mobile.png` and audited Sales/Management/invitation proof, under the ignored evidence candidate. Temporary viewport reset and agent-created tab closed. Nikitesh's final acceptance role is Management as approved; no further role change inferred. The name is no longer returned on the active account or visit display. Structured erasure does not claim automatic redaction of arbitrary free text in unrelated business records.
+
+Docs branches reconciled on `codex/handover-integration-directive-docs`: decisions `3a711bd` at merge `31c0ecd`, installed-base-design `a8f9760` at `3479042` (empty file diff because the design was already copied into W1). [PR #51](https://github.com/anilmahindrakar22-creator/Suprabha-Distributors/pull/51) publishes these designs, corrected app-only source decision, full-sales reply/customer-link approval and final release readback. Application/SQL/Edge/connector source remains byte-equivalent to PR #50; no docs deployment required. Every directive outcome is recorded in the two shared logs. Native full-sales totals, financial reconciliation/coverage, production cutover and register gate remain open.

@@ -9,9 +9,17 @@ const bootstrap = {
   operations: {},
 };
 
-afterEach(clearOrderBootstrapCache);
+afterEach(() => { clearOrderBootstrapCache(); vi.useRealTimers(); });
 
 describe('order bootstrap cache', () => {
+  it('expires resolved data so reopening Orders cannot reuse an obsolete stage indefinitely', async () => {
+    vi.useFakeTimers();
+    const fetchFn = vi.fn(async () => Response.json(bootstrap));
+    await loadOrderBootstrap('ops@example.com', false, fetchFn as typeof fetch);
+    vi.advanceTimersByTime(15_001);
+    await loadOrderBootstrap('ops@example.com', false, fetchFn as typeof fetch);
+    expect(fetchFn).toHaveBeenCalledTimes(2);
+  });
   it('shares one in-flight and resolved request for the same signed-in account', async () => {
     const fetchFn = vi.fn(async () => Response.json(bootstrap));
     const first = loadOrderBootstrap('OPS@example.com', false, fetchFn as typeof fetch);

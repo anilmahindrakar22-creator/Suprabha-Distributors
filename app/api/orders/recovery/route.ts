@@ -8,6 +8,8 @@ export async function POST(request: Request) {
   try {
     const user = await getChatGPTUser();
     if (!user) return Response.json({ error: 'Sign in required' }, { status: 401, headers });
+    const expectedActor = request.headers.get('x-stockflow-actor');
+    if (expectedActor !== null && expectedActor !== user.email) return Response.json({ error: 'Sign in with the account that saved this order.' }, { status: 403, headers });
     const body = await readBoundedJsonRequest(request) as { idempotencyKey?: unknown };
     if (typeof body.idempotencyKey !== 'string' || body.idempotencyKey.length < 16 || body.idempotencyKey.length > 200) return Response.json({ error: 'Valid submission key is required' }, { status: 400, headers });
     return Response.json(await callOrderGateway(user.email, 'recover_order_submission', { idempotencyKey: body.idempotencyKey }), { headers });

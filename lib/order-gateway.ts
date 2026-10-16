@@ -1,6 +1,26 @@
 import type { OrderCommand } from './order-types';
+import type { EconomicAction } from './instrument-economics-types';
 
 export type GatewayAction =
+  | 'create_customer'
+  | 'record_style_observation'
+  | 'set_style_override'
+  | 'set_assessment'
+  | 'erase_contact'
+  | 'add_contact'
+  | 'update_contact'
+  | 'remove_contact'
+  | 'get_accounts'
+  | 'create_territory'
+  | 'assign_account'
+  | 'set_location'
+  | 'log_visit'
+  | 'set_class_policy'
+  | 'get_instrument_economics'
+  | 'get_link_suggestions'
+  | 'confirm_customer_links'
+  | 'recover_economic_command'
+  | EconomicAction
   | 'session'
   | 'get_requirements'
   | 'get_requirement_orders'
@@ -8,6 +28,7 @@ export type GatewayAction =
   | 'bootstrap'
   | 'get_catalog'
   | 'get_customers'
+  | 'get_tally_recent_products'
   | 'get_order_summary'
   | 'list_orders'
   | 'get_order_events'

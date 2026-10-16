@@ -11,9 +11,9 @@ const source = new Map(readdirSync(fileURLToPath(directory)).filter((name) => na
 describe('read-only pricing release preflight', () => {
   it('validates the saved production evidence after deployment', () => {
     const result = pricingReleasePreflight(original, source);
-    expect(result.pending).toHaveLength(0);
-    expect(result.deployed.at(-1)?.localFile).toBe('20261005055748_activate_governed_role_union.sql');
-    expect(result.deployed).toHaveLength(103);
+    expect(result.pending).toEqual(['20261016130829_tally_recent_products.sql']);
+    expect(result.deployed.at(-1)?.localFile).toBe('20261016061635_mapped_instrument_cost_scope.sql');
+    expect(result.deployed).toHaveLength(134);
     const names = result.deployed.map((entry: { localFile: string }) => entry.localFile);
     expect(names.slice(0, 2)).toEqual([
       '20260829054025_create_stockflow_private_snapshots.sql',
@@ -26,7 +26,7 @@ describe('read-only pricing release preflight', () => {
   });
   it('accepts documented CRLF normalization without modifying source', () => {
     const crlf = new Map([...source].map(([name, sql]) => [name, sql.replace(/\r/g, '').replace(/\n/g, '\r\n')]));
-    expect(pricingReleasePreflight(original, crlf).pending).toHaveLength(0);
+    expect(pricingReleasePreflight(original, crlf).pending).toHaveLength(1);
   });
   it('rejects changed SQL including changes inside literals', () => {
     const files = new Map(source);
@@ -70,11 +70,7 @@ describe('read-only pricing release preflight', () => {
     const evidence = structuredClone(original);
     for (const entry of evidence.migrations) {
       if (entry.status !== 'not_deployed') continue;
-      Object.assign(entry, {
-        status: 'exact_normalized_match',
-        remoteVersion: entry.localFile.slice(0, 14),
-        remoteSha256: entry.localSha256,
-      });
+      Object.assign(entry, { status: 'exact_normalized_match', remoteVersion: entry.localFile.slice(0, 14), remoteSha256: entry.localSha256 });
     }
     const result = pricingReleasePreflight(evidence, source);
     expect(result.pending).toEqual([]);

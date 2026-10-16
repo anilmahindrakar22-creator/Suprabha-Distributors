@@ -1,7 +1,7 @@
 import { getChatGPTUser } from '@/app/chatgpt-auth';
 import { callOrderGateway } from '@/lib/order-gateway';
 import { readBoundedJsonRequest } from '@/lib/bounded-json-request';
-import { sameStaffOrigin, staffAuthClient, staffAuthEnabled, staffCookie, staffOrigin, verifiedStaff } from '@/lib/staff-auth';
+import { sameStaffOrigin, staffAuthClient, staffAuthEnabled, staffCookie, staffRefreshCookie, staffOrigin, verifiedStaff } from '@/lib/staff-auth';
 
 const headers = { 'cache-control': 'private, no-store' };
 const fail = (status: number, error: string) => Response.json({ error }, { status, headers });
@@ -48,6 +48,9 @@ export async function PUT(request: Request) {
       headers: { apikey: process.env.STOCKFLOW_AUTH_PUBLISHABLE_KEY!, authorization: `Bearer ${body.token}` },
     });
     if (!logout.ok) return fail(503, 'Password changed, but session revocation is unconfirmed. Contact your administrator');
-    return Response.json({ ok: true }, { headers: { ...headers, 'set-cookie': staffCookie('', 0) } });
+    const completed = Response.json({ ok: true }, { headers });
+    completed.headers.append('set-cookie', staffCookie('', 0));
+    completed.headers.append('set-cookie', staffRefreshCookie(''));
+    return completed;
   } catch { return fail(503, 'Recovery outcome is unconfirmed. Contact your administrator before retrying'); }
 }
