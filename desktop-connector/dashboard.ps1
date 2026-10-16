@@ -96,7 +96,7 @@ function Publish-CloudSnapshot([string]$Json) {
     $watch = [Diagnostics.Stopwatch]::StartNew()
     $payloadBytes = [Text.Encoding]::UTF8.GetByteCount($Json)
     try {
-        Invoke-WebRequest -Uri $cloudSyncUrl -Method Post -ContentType 'application/json' -Headers @{ 'x-upload-key' = $cloudUploadKey } -Body $Json -UseBasicParsing -TimeoutSec 15 | Out-Null
+        Invoke-WebRequest -Uri $cloudSyncUrl -Method Post -ContentType 'application/json' -Headers @{ 'x-upload-key' = $cloudUploadKey } -Body $Json -UseBasicParsing -TimeoutSec 35 | Out-Null
         $watch.Stop()
     } catch {
         $watch.Stop()

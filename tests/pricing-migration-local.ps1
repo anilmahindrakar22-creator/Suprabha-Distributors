@@ -251,6 +251,8 @@ end$$;
   Write-Output 'PASS: import problem invoice details and null evidence through the workspace entry point'
   Invoke-DatabaseCommand $psqlProgram @('-U',$databaseUser,'-X','-q','-v','ON_ERROR_STOP=1','-d',$database,'-f',(Join-Path $repository 'supabase/tests/native_tally_debit_notes.sql'))
   Write-Output 'PASS: native Debit Note stock depletion, cost conservation, replay and cancellation'
+  Invoke-DatabaseCommand $psqlProgram @('-U',$databaseUser,'-X','-q','-v','ON_ERROR_STOP=1','-d',$database,'-f',(Join-Path $repository 'supabase/tests/economic_import_execution_budget.sql'))
+  Write-Output 'PASS: bounded service-only snapshot ingest, unchanged-generation replay and changed-source publication'
 } finally {
   if ($databaseCreated) { & $dropdbProgram -U $databaseUser --if-exists $database | Out-Null }
   if ($serverStartedByScript) { & $pgCtlProgram -D $postgresData -m fast -w stop | Out-Null }
