@@ -613,7 +613,7 @@ export function OrderWorkspace({ actorEmail, initialStatus = 'open', initialQuer
   const actorRoles = data?.actor.roles ?? data?.actor.role;
   const approvalCount = status === 'open' && hasAnyStockFlowRole(actorRoles, ['administrator', 'management']) ? loadedOrders.filter((order) => order.pricingState === 'approval_required').length : 0;
   // After the last waiting price is approved the chip disappears; fall back to the Active list.
-  useEffect(() => { if (pricesToApprove && data && approvalCount === 0) setPricesToApprove(false); }, [pricesToApprove, data, approvalCount]);
+  if (pricesToApprove && data && approvalCount === 0) setPricesToApprove(false);
   const stageFilters: StageFilter[] = [
     { status: 'open', label: 'Active' },
     ...(approvalCount > 0 ? [{ status: 'prices_to_approve', label: 'Prices to approve', count: approvalCount, tone: 'warning' as const }] : []),

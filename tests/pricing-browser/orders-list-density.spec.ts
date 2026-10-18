@@ -110,12 +110,20 @@ test('administrator filters active orders waiting for price approval', async ({ 
   await approvalChip.click();
   await expect(approvalChip).toHaveAttribute('aria-pressed', 'true');
   await expect(page.getByRole('heading', { name: 'Prices to approve' })).toBeVisible();
-  await expect(page.getByRole('button', { name: /^SF-LIST-201/ })).toBeVisible();
-  await expect(page.getByRole('button', { name: /^SF-LIST-203/ })).toBeVisible();
-  await expect(page.getByRole('button', { name: /^SF-LIST-202/ })).toHaveCount(0);
+  await expect(page.getByRole('button', { name: /^(?:SF-LIST-201, )?Laboratory 201(?:,| )/ })).toBeVisible();
+  await expect(page.getByRole('button', { name: /^(?:SF-LIST-203, )?Laboratory 203(?:,| )/ })).toBeVisible();
+  await expect(page.getByRole('button', { name: /^(?:SF-LIST-202, )?Laboratory 202(?:,| )/ })).toHaveCount(0);
   await page.getByRole('button', { name: /^Active(?:\s|$)/ }).click();
   await expect(approvalChip).toHaveAttribute('aria-pressed', 'false');
-  await expect(page.getByRole('button', { name: /^SF-LIST-20[123]/ })).toHaveCount(3);
+  await expect(page.getByRole('button', { name: /^(?:SF-LIST-20[123], )?Laboratory 20[123](?:,| )/ })).toHaveCount(3);
+  await approvalChip.click();
+  activeOrders[0] = order(201, { pricingState: 'approved' });
+  activeOrders[2] = order(203, { pricingState: 'approved' });
+  await page.getByRole('button', { name: 'Filters', exact: true }).click();
+  await page.getByRole('button', { name: 'Refresh', exact: true }).click();
+  await expect(approvalChip).toHaveCount(0);
+  await expect(page.getByRole('button', { name: /^Active(?:\s|$)/ })).toHaveAttribute('aria-pressed', 'true');
+  await expect(page.getByRole('button', { name: /^(?:SF-LIST-20[123], )?Laboratory 20[123](?:,| )/ })).toHaveCount(3);
 });
 
 test('sales does not see the price approval chip', async ({ page }) => {
