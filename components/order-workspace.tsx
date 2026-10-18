@@ -32,6 +32,7 @@ import { ProductRequest } from './product-request';
 import { BackIcon, ChevronDownIcon, CompactOrderRow, OrderFlagBadge, OrderProgress, OrderStageChips, orderStageStyle, snapshotTimeLabel, type StageFilter } from './order-list';
 import { deliveredTodayOrders, groupOrdersForList } from '@/lib/order-list-groups';
 import { readJsonBody } from '@/lib/http-json';
+import { orderDateLabel, orderDateTime } from '@/lib/order-date';
 import { hasAnyStockFlowRole, type StockFlowRole } from '@/lib/user-types';
 import type { TallyRecentProducts } from '@/lib/tally-recent-products';
 
@@ -95,15 +96,6 @@ function formatQuantity(value: number) {
 
 function statusLabel(status: string) {
   return statusNames[status] || status.replaceAll('_', ' ');
-}
-
-function compactOrderAge(createdAt: string, now = Date.now()) {
-  const elapsedMinutes = Math.max(0, Math.floor((now - new Date(createdAt).getTime()) / 60_000));
-  if (elapsedMinutes < 1) return 'now';
-  if (elapsedMinutes < 60) return `${elapsedMinutes}m`;
-  const elapsedHours = Math.floor(elapsedMinutes / 60);
-  if (elapsedHours < 24) return `${elapsedHours}h`;
-  return `${Math.floor(elapsedHours / 24)}d`;
 }
 
 const queueNames: Record<string, string> = {
@@ -796,7 +788,7 @@ export function OrderWorkspace({ actorEmail, initialStatus = 'open', initialQuer
                   const stage = orderStageStyle(order.status);
                   return <button id={`desktop-order-${order.id}`} key={order.id} type="button" aria-current={selected ? 'true' : undefined} title={`${order.assignedToEmail ? `Owner: ${order.assignedToEmail}` : 'Unassigned'} · Next: ${nextAction}`} onClick={() => setSelectedOrderId(order.id)} onKeyDown={(event) => { if (['ArrowUp', 'ArrowDown', 'Home', 'End'].includes(event.key)) { event.preventDefault(); navigateDesktopQueue(event.key); } }} className={`relative block w-full border-b border-sf-soft-2 flex min-h-11 items-center py-1.5 pl-5 pr-3 text-left outline-none hover:bg-white focus-visible:bg-white focus-visible:ring-2 focus-visible:ring-inset focus-visible:ring-sf-accent-bright aria-current:bg-white aria-current:shadow-[inset_3px_0_0_#092f36] ${['delivered', 'cancelled'].includes(order.status) ? 'opacity-70' : ''}`}>
                     <span aria-hidden="true" className={`absolute inset-y-2 left-2 w-1 rounded-full ${stage.bar}`} />
-                    <span className="flex min-w-0 flex-1 items-center gap-2"><strong className="min-w-[6.5rem] flex-1 truncate text-sm text-sf-ink">{order.customerName}</strong>{newOrderIds?.has(order.id) ? <span className="shrink-0 rounded-full bg-sf-ink px-1.5 py-0.5 text-[9px] font-black uppercase text-white">New</span> : null}<span className={`shrink-0 rounded-full px-2 py-0.5 text-[10px] font-extrabold ${stage.chip}`}>{stage.label}</span><OrderFlagBadge order={order} /><span className="hidden shrink-0 text-[11px] tabular-nums text-sf-subtle 2xl:inline">{order.orderNumber}</span><span className="w-8 shrink-0 text-right text-[11px] font-semibold tabular-nums text-sf-subtle" title="Time since order capture">{compactOrderAge(order.createdAt)}</span>{nextAction === 'View order' ? null : <span className="w-[7.5rem] shrink-0 truncate text-right text-[11px] font-bold text-sf-accent">{nextAction}</span>}</span>
+                    <span className="flex min-w-0 flex-1 items-center gap-2"><strong className="min-w-[6.5rem] flex-1 truncate text-sm text-sf-ink">{order.customerName}</strong>{newOrderIds?.has(order.id) ? <span className="shrink-0 rounded-full bg-sf-ink px-1.5 py-0.5 text-[9px] font-black uppercase text-white">New</span> : null}<span className={`shrink-0 rounded-full px-2 py-0.5 text-[10px] font-extrabold ${stage.chip}`}>{stage.label}</span><OrderFlagBadge order={order} /><span className="hidden shrink-0 text-[11px] tabular-nums text-sf-subtle 2xl:inline">{order.orderNumber}</span><time dateTime={order.createdAt} title={`Ordered ${orderDateTime(order.createdAt)}`} className="w-16 shrink-0 text-right text-[11px] font-semibold tabular-nums text-sf-subtle">{orderDateLabel(order.createdAt)}</time>{nextAction === 'View order' ? null : <span className="w-[7.5rem] shrink-0 truncate text-right text-[11px] font-bold text-sf-accent">{nextAction}</span>}</span>
                   </button>;
                   })}
                 </section>)}
@@ -834,7 +826,7 @@ export function OrderWorkspace({ actorEmail, initialStatus = 'open', initialQuer
               <button type="button" autoFocus aria-label="Back to orders" onClick={() => setOpenOrderId('')} className="grid min-h-11 min-w-11 place-items-center rounded-xl text-sf-ink hover:bg-sf-soft"><BackIcon /></button>
               <div className="min-w-0 flex-1">
                 <p className="truncate text-base font-black text-sf-ink">{openOrder.customerName}</p>
-                <p className="flex items-center gap-1.5 text-xs text-sf-subtle"><span className={`rounded-full px-2 py-0.5 text-[10px] font-extrabold ${orderStageStyle(openOrder.status).chip}`}>{orderStageStyle(openOrder.status).label}</span><OrderFlagBadge order={openOrder} /><span className="truncate">{openOrder.orderNumber} · {compactOrderAge(openOrder.createdAt)} old</span></p>
+                <p className="flex items-center gap-1.5 text-xs text-sf-subtle"><span className={`rounded-full px-2 py-0.5 text-[10px] font-extrabold ${orderStageStyle(openOrder.status).chip}`}>{orderStageStyle(openOrder.status).label}</span><OrderFlagBadge order={openOrder} /><span className="truncate">{openOrder.orderNumber} · <time dateTime={openOrder.createdAt}>{orderDateTime(openOrder.createdAt)}</time></span></p>
               </div>
             </div>
             <div className="mt-1.5 px-2"><OrderProgress status={openOrder.status} /></div>
@@ -982,7 +974,8 @@ function OrderRow({
       <div>
         <div className="flex flex-wrap items-center gap-2">
           {inOrderPage ? null : <><strong className="text-sf-ink">{order.orderNumber}</strong>
-          <span className="rounded-full bg-sf-soft px-2.5 py-1 text-[11px] font-extrabold text-sf-label">{orderStage(order.status)}</span></>}
+          <span className="rounded-full bg-sf-soft px-2.5 py-1 text-[11px] font-extrabold text-sf-label">{orderStage(order.status)}</span>
+          <time dateTime={order.createdAt} className="text-xs font-semibold text-sf-subtle">Ordered {orderDateTime(order.createdAt)}</time></>}
           {order.priority && order.priority !== 'normal' ? <span className={`inline-flex items-center gap-1 rounded-full px-2.5 py-1 text-[11px] font-extrabold ${order.priority === 'urgent' ? 'bg-sf-danger-soft text-sf-danger' : 'bg-sf-warning-soft text-sf-warning'}`}>{order.priority === 'urgent' ? <Flame aria-hidden="true" className="shrink-0" size={12} /> : <ArrowUp aria-hidden="true" className="shrink-0" size={12} />}{order.priority === 'urgent' ? 'Urgent' : 'High priority'}</span> : null}
           {order.assignedToEmail ? <span title={`Assigned to ${order.assignedToEmail}`} className="inline-flex items-center gap-1 max-w-44 truncate rounded-full bg-sf-info-soft px-2.5 py-1 text-[11px] font-extrabold text-sf-info sm:max-w-none"><UserCheck aria-hidden="true" className="shrink-0" size={12} /><span className="truncate">Assigned: {order.assignedToEmail}</span></span> : null}
           {deliveryReminder ? <span className={`inline-flex items-center gap-1 rounded-full px-2.5 py-1 text-[11px] font-extrabold ${deliveryReminder === 'overdue' ? 'bg-sf-danger-soft text-sf-danger' : deliveryReminder === 'today' ? 'bg-sf-warning-soft text-sf-warning' : 'bg-sf-info-soft text-sf-info'}`}><Truck aria-hidden="true" className="shrink-0" size={12} />{deliveryReminder === 'overdue' ? 'Delivery overdue' : deliveryReminder === 'today' ? 'Delivery due today' : 'Delivery due soon'}</span> : null}
@@ -1029,7 +1022,7 @@ function OrderRow({
           </div>
           <dl className="grid min-w-0 grid-cols-[auto_minmax(0,1fr)] content-start gap-x-3 gap-y-2 text-xs">
             <dt className="font-bold text-sf-subtle">Internal status</dt><dd>{statusLabel(order.status)}</dd>
-            <dt className="font-bold text-sf-subtle">Order date</dt><dd>{new Date(order.createdAt).toLocaleString('en-IN')}</dd>
+            <dt className="font-bold text-sf-subtle">Order date</dt><dd>{orderDateTime(order.createdAt)}</dd>
             <dt className="font-bold text-sf-subtle">Last updated</dt><dd>{new Date(order.updatedAt).toLocaleString('en-IN')}</dd>
             <dt className="font-bold text-sf-subtle">Source</dt><dd className="capitalize">{order.source.replaceAll('_', ' ')}</dd>
             <dt className="font-bold text-sf-subtle">Tally invoice</dt><dd>{order.tallyInvoiceNumber || 'Not billed yet'}{invoiceState === 'verified' ? <span title="Invoice number, financial year, and customer ledger matched" className="ml-2 rounded-full bg-sf-accent-soft px-2 py-0.5 font-bold text-sf-success">Invoice matched</span> : invoiceState === 'unmatched' ? <span className="ml-2 rounded-full bg-sf-warning-soft px-2 py-0.5 font-bold text-sf-warning">Invoice not found</span> : invoiceState === 'customer_mismatch' ? <span title="The invoice exists under a different Tally customer ledger" className="ml-2 rounded-full bg-sf-danger-soft px-2 py-0.5 font-bold text-sf-danger">Customer ledger differs</span> : invoiceState === 'ambiguous' ? <span title="More than one Tally voucher has this invoice identity" className="ml-2 rounded-full bg-sf-danger-soft px-2 py-0.5 font-bold text-sf-danger">Duplicate invoice match</span> : invoiceState === 'verification_stale' ? <span title="The latest Tally data is over 20 minutes old" className="ml-2 rounded-full bg-sf-warning-soft px-2 py-0.5 font-bold text-sf-warning">Match needs fresh sync</span> : invoiceState === 'awaiting_sync' ? <span className="ml-2 text-sf-subtle">Awaiting connector update</span> : null}</dd>

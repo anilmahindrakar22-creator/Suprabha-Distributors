@@ -155,6 +155,10 @@ test('phone list fits about ten orders on one screen and opens one order full sc
   const visible = await rows.evaluateAll((elements, viewport) => elements.filter((element) => element.getBoundingClientRect().bottom <= viewport).length, height);
   expect(visible).toBeGreaterThanOrEqual(8);
   for (const row of await rows.all()) expect((await row.boundingBox())?.height ?? 0).toBeLessThan(76);
+  const firstDate = rows.first().locator('time');
+  await expect(firstDate).toHaveAttribute('datetime', pending[0].createdAt);
+  await expect(firstDate).toHaveAttribute('title', /^Ordered \d{1,2} [A-Z][a-z]{2} \d{4}, /);
+  await expect(firstDate).not.toHaveText('');
 
   await page.getByRole('button', { name: /^SF-LIST-001/ }).click();
   const detail = page.getByRole('dialog', { name: 'Order SF-LIST-001' });

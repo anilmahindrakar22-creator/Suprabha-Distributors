@@ -73,7 +73,7 @@ describe('order-list density (list-first redesign)', () => {
     expect(workspace).toContain('removedFromQueue && remainingOrders.length === 0');
     expect(workspace).toContain("['ArrowUp', 'ArrowDown', 'Home', 'End']");
     expect(workspace).toContain('↑ ↓ to navigate');
-    expect(workspace).toContain('compactOrderAge(order.createdAt)');
+    expect(workspace).toContain('orderDateLabel(order.createdAt)');
     expect(workspace).toContain("order.assignedToEmail ? `Owner: ${order.assignedToEmail}` : 'Unassigned'");
     expect(workspace).toContain('<OrderProgress status={selectedOrder.status} />');
     expect(workspace).toContain('aria-label="Order product preview"');

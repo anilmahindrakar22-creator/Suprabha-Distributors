@@ -4,6 +4,7 @@ import type { KeyboardEvent } from 'react';
 import { ArrowUp, Flame, Hourglass, PackageCheck, PackageX, ShieldAlert, TriangleAlert, Truck, Wrench, type LucideIcon } from 'lucide-react';
 import type { OrderSummary } from '@/lib/order-types';
 import { orderStage } from '@/lib/order-types';
+import { orderDateLabel, orderDateTime } from '@/lib/order-date';
 import { orderListFlag, orderProgressIndex, orderProgressSteps, orderStageKey, type StageKey } from '@/lib/order-list-groups';
 
 // One colour per stage, used everywhere on the Orders screens. Red is reserved for problems.
@@ -55,15 +56,7 @@ const flagIcons: Record<string, LucideIcon> = {
   'Price approval': ShieldAlert,
 };
 
-function compactAge(createdAt: string, now = Date.now()) {
-  const minutes = Math.max(0, Math.floor((now - new Date(createdAt).getTime()) / 60_000));
-  if (minutes < 1) return 'now';
-  if (minutes < 60) return `${minutes}m`;
-  const hours = Math.floor(minutes / 60);
-  return hours < 24 ? `${hours}h` : `${Math.floor(hours / 24)}d`;
-}
-
-/** Two-line order row (about 60 px): customer and age, then stage, one flag, order number and quantity. */
+/** Two-line order row (about 60 px): customer and order date, then stage, one flag, order number and quantity. */
 export function CompactOrderRow({ order, onOpen, selected = false, isNew = false, id, onKeyDown }: { order: OrderSummary; onOpen: (order: OrderSummary) => void; selected?: boolean; isNew?: boolean; id?: string; onKeyDown?: (event: KeyboardEvent<HTMLButtonElement>) => void }) {
   const style = orderStageStyle(order.status);
   const finished = ['delivered', 'cancelled'].includes(order.status);
@@ -81,13 +74,13 @@ export function CompactOrderRow({ order, onOpen, selected = false, isNew = false
       <span className="min-w-0 flex-1">
         <span className="flex items-baseline justify-between gap-2">
           <strong className="truncate text-[15px] font-bold text-sf-ink">{order.customerName}</strong>
-          <span className="shrink-0 text-xs font-semibold tabular-nums text-sf-subtle" title="Time since order capture">{compactAge(order.createdAt)}</span>
+          <time dateTime={order.createdAt} title={`Ordered ${orderDateTime(order.createdAt)}`} className="shrink-0 text-xs font-semibold tabular-nums text-sf-subtle">{orderDateLabel(order.createdAt)}</time>
         </span>
         <span className="mt-1 flex min-w-0 items-center gap-1.5 text-xs text-sf-subtle">
           {isNew ? <span className="shrink-0 rounded-full bg-sf-ink px-1.5 py-0.5 text-[10px] font-black uppercase tracking-wide text-white">New</span> : null}
           <span className={`shrink-0 rounded-full px-2 py-0.5 text-[10px] font-extrabold ${style.chip}`}>{style.label}</span>
           <OrderFlagBadge order={order} />
-          <span className="truncate">{order.orderNumber} ·{Math.round(Number(order.totalQuantity || 0)).toLocaleString('en-IN')} qty</span>
+          <span className="truncate">{order.orderNumber} · {Math.round(Number(order.totalQuantity || 0)).toLocaleString('en-IN')} qty</span>
         </span>
       </span>
     </button>
