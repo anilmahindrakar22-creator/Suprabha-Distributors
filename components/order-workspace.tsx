@@ -12,7 +12,7 @@ import type {
   OrderEvent,
   OrderSummary,
 } from '@/lib/order-types';
-import { billingHandoffText, canRoleTransitionOrder, customerBalanceFreshness, customerDeliveryAddresses, customerPhoneHref, filterOrders, orderAttentionReasons, orderBackOrderedQuantity, orderDeliveryReminder, orderEventDescription, orderFollowUpReminder, orderMatchesCaptureDateRange, orderNextOwnerLabel, orderOperationsText, orderStage, repeatOrderTemplate, searchCatalog, searchCustomers, tallyInvoiceLineReconciliation, tallyInvoiceReconciliationDetail } from '@/lib/order-types';
+import { billingHandoffText, customerBalanceFreshness, customerDeliveryAddresses, customerPhoneHref, filterOrders, orderAttentionReasons, orderBackOrderedQuantity, orderDeliveryReminder, orderEventDescription, orderFollowUpReminder, orderMatchesCaptureDateRange, orderNextOwnerLabel, orderOperationsText, orderStage, repeatOrderTemplate, searchCatalog, searchCustomers, tallyInvoiceLineReconciliation, tallyInvoiceReconciliationDetail } from '@/lib/order-types';
 import { nextStatus, nextStepFor } from '@/lib/order-next-step';
 import { orderListUrl } from '@/lib/order-list-query';
 import { offlineDraftRecoveryError, pinProtectedOfflineDevice, readOfflineDraftConsent, readOfflineOrderDraft, removeOfflineOrderDraft, restoreOfflineDraftLines, updateOfflineDraftState, writeOfflineDraftConsent, writeOfflineOrderDraft, type OfflineDraftState } from '@/lib/offline-order-drafts';
@@ -1051,33 +1051,42 @@ function BillingReviewPanel({ order, actorRole, actorRoles, onSave }: { order: O
 const currency = new Intl.NumberFormat('en-IN', { style: 'currency', currency: 'INR', maximumFractionDigits: 2 });
 
 function useOrderPricing(order: OrderSummary) {
-  const [workspace, setWorkspace] = useState<OrderPricingWorkspace | null>(null);
-  const [state, setState] = useState<'idle' | 'loading' | 'error'>('idle');
-  const [message, setMessage] = useState('');
+  const readKey = `${order.id}:${order.pricingState}:${order.status}`;
+  const autoLoad = order.pricingState !== 'approved' && !['delivered', 'cancelled'].includes(order.status);
+  const [result, setResult] = useState<{ key: string; workspace: OrderPricingWorkspace | null; state: 'idle' | 'loading' | 'error'; message: string }>(() => ({ key: readKey, workspace: null, state: autoLoad ? 'loading' : 'idle', message: '' }));
   const request = useRef<AbortController | null>(null);
+  const read = useCallback((controller: AbortController) => {
+    return fetch(`/api/pricing?orderId=${encodeURIComponent(order.id)}`, { cache: 'no-store', signal: controller.signal }).then(readResponse<OrderPricingWorkspace>).then(workspace => {
+      if (controller.signal.aborted) return;
+      setResult({ key: readKey, workspace, state: 'idle', message: '' });
+    }).catch(cause => {
+      if (controller.signal.aborted) return;
+      setResult(current => ({ ...current, key: readKey, state: 'error', message: cause instanceof Error ? cause.message : 'Pricing could not load' }));
+    });
+  }, [order.id, readKey]);
   const reload = useCallback(async () => {
     request.current?.abort();
     const controller = new AbortController();
     request.current = controller;
-    setState('loading'); setMessage('');
-    try {
-      const result = await readResponse<OrderPricingWorkspace>(await fetch(`/api/pricing?orderId=${encodeURIComponent(order.id)}`, { cache: 'no-store', signal: controller.signal }));
-      if (controller.signal.aborted) return;
-      setWorkspace(result); setState('idle');
-    } catch (cause) {
-      if (controller.signal.aborted) return;
-      setMessage(cause instanceof Error ? cause.message : 'Pricing could not load'); setState('error');
+    setResult(current => ({ ...current, key: readKey, state: 'loading', message: '' }));
+    await read(controller);
+  }, [read, readKey]);
+  useEffect(() => {
+    if (order.pricingState === 'approved') return () => request.current?.abort();
+    if (autoLoad) {
+      request.current?.abort();
+      const controller = new AbortController();
+      request.current = controller;
+      void read(controller);
     }
-  }, [order.id]);
-  useEffect(() => {
-    setWorkspace(null);
     return () => request.current?.abort();
-  }, [order.id]);
-  useEffect(() => {
-    if (order.pricingState === 'approved') return;
-    if (!['delivered', 'cancelled'].includes(order.status)) void reload();
-  }, [order.id, order.pricingState, order.status, reload]);
-  return { workspace: workspace?.orderId === order.id ? workspace : null, reload, state, message };
+  }, [autoLoad, order.pricingState, read]);
+  return {
+    workspace: result.workspace?.orderId === order.id ? result.workspace : null,
+    reload,
+    state: result.key === readKey ? result.state : autoLoad ? 'loading' as const : 'idle' as const,
+    message: result.key === readKey ? result.message : '',
+  };
 }
 
 type DeliveryCommand = Extract<OrderCommand, { action: 'save_dispatch' | 'confirm_delivery' }>;
@@ -1153,18 +1162,22 @@ function OrderNextStepBar({ order, roles, pricing, inOrderPage, onAdvance, onDel
 
 function PricingPanel({ order, actorRole, actorRoles, onChanged, pricing, sheet = false, onSavingChange }: { order: OrderSummary; actorRole: string; actorRoles?: readonly StockFlowRole[]; onChanged: () => Promise<void>; pricing: ReturnType<typeof useOrderPricing>; sheet?: boolean; onSavingChange?: (saving: boolean) => void }) {
   const { workspace, reload: loadPricing } = pricing;
-  const [entries, setEntries] = useState<Record<string, { rate: string; reason: string }>>({});
+  const [draftWorkspace, setDraftWorkspace] = useState(workspace);
+  const [entries, setEntries] = useState<Record<string, { rate: string; reason: string }>>(() => Object.fromEntries((workspace?.lines || []).map(line => [line.lineId, { rate: line.proposedRate == null ? '' : String(line.proposedRate), reason: '' }])));
   const [localState, setState] = useState<'idle' | 'loading' | 'saving' | 'error'>('idle');
   const state = pricing.state === 'loading' ? 'loading' : localState === 'idle' ? pricing.state : localState;
   const [message, setMessage] = useState('');
   const [manualReview, setManualReview] = useState(false);
   const governedRequest = useRef<{ orderId: string; version: number; idempotencyKey: string } | null>(null);
   const pricingIsStale = Boolean(workspace && workspace.orderVersion < order.version);
+  if (workspace && workspace !== draftWorkspace) {
+    setDraftWorkspace(workspace);
+    setEntries(Object.fromEntries(workspace.lines.map(line => [line.lineId, { rate: line.proposedRate == null ? '' : String(line.proposedRate), reason: '' }])));
+    setManualReview(false);
+  }
   useEffect(() => {
     if (!workspace) return;
     governedRequest.current = null;
-    setEntries(Object.fromEntries(workspace.lines.map(line => [line.lineId, { rate: line.proposedRate == null ? '' : String(line.proposedRate), reason: '' }])));
-    setManualReview(false);
   }, [workspace]);
   async function submit() {
     if (!workspace || pricingIsStale || state === 'loading' || state === 'saving') return;
@@ -1415,7 +1428,7 @@ function DispatchForm({ order, actorRole, actorRoles, onSave }: FulfilmentFormPr
   return <div className="min-w-0">{error ? <p role="alert" className="text-sm text-sf-danger">{error}</p> : null}<div className="mt-3 grid gap-3 rounded-xl bg-white p-4 sm:grid-cols-2"><OrderDraftNotice changed={order.version !== baseVersion} busy={busy} onLoadLatest={resetDrafts} /><label className="text-sm font-bold">Courier / transporter<input maxLength={160} value={courierName} onChange={(event) => setCourierName(event.target.value)} className="mt-1 min-h-11 min-w-0 w-full rounded-lg border border-sf-line px-3 font-normal" /></label><label className="text-sm font-bold">Tracking / docket number<input maxLength={160} value={trackingNumber} onChange={(event) => setTrackingNumber(event.target.value)} className="mt-1 min-h-11 min-w-0 w-full rounded-lg border border-sf-line px-3 font-normal" /></label><label className="text-sm font-bold">Dispatch date<input type="date" value={dispatchDate} onChange={(event) => setDispatchDate(event.target.value)} className="mt-1 min-h-11 min-w-0 w-full rounded-lg border border-sf-line px-3 font-normal" /></label><label className="text-sm font-bold">Vehicle number <span className="font-normal text-sf-subtle">(optional)</span><input value={vehicleNumber} onChange={(event) => setVehicleNumber(event.target.value)} maxLength={40} className="mt-1 min-h-11 min-w-0 w-full rounded-lg border border-sf-line px-3 font-normal" /></label><div className="sm:col-span-2 flex justify-end"><button type="button" disabled={!canUpdate || busy || courierName.trim().length < 2 || trackingNumber.trim().length < 2 || !dispatchDate} onClick={async () => { setBusy(true); try { await save(order, { action: 'save_dispatch', payload: { orderId: order.id, expectedVersion: baseVersion, courierName: courierName.trim(), trackingNumber: trackingNumber.trim(), dispatchDate, vehicleNumber: vehicleNumber.trim() } }); } finally { setBusy(false); } }} className="min-h-11 rounded-xl bg-sf-ink px-5 font-bold text-white disabled:opacity-50">{busy ? 'Saving…' : 'Save and mark dispatched'}</button></div></div></div>;
 }
 function DeliveryForm({ order, actorRole, actorRoles, onSave }: FulfilmentFormProps) {
-  const { busy, setBusy, courierName, setCourierName, trackingNumber, setTrackingNumber, dispatchDate, setDispatchDate, vehicleNumber, setVehicleNumber, deliveredAt, setDeliveredAt, receivedBy, setReceivedBy, podReference, setPodReference, baseVersion, resetDrafts } = useFulfilmentDraft(order);
+  const { busy, setBusy, deliveredAt, setDeliveredAt, receivedBy, setReceivedBy, podReference, setPodReference, baseVersion, resetDrafts } = useFulfilmentDraft(order);
   const [error, setError] = useState('');
   const canUpdate = hasAnyStockFlowRole(actorRoles ?? [actorRole as StockFlowRole], ['administrator', 'operations']);
   const save = async (current: OrderSummary, command: DeliveryCommand) => {
