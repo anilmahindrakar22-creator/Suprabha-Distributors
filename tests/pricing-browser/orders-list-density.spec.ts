@@ -87,6 +87,54 @@ test('administrator opens Active orders and searches across the Pack stage', asy
   await expect(page.getByRole('button', { name: /^Active(?:\s|$)/ })).toHaveAttribute('aria-pressed', 'true');
 });
 
+test('administrator filters active orders waiting for price approval', async ({ page }) => {
+  const activeOrders = [
+    order(201, { pricingState: 'approval_required' }),
+    order(202, { pricingState: 'approved' }),
+    order(203, { pricingState: 'approval_required' }),
+  ];
+  await page.route('**/api/orders**', (route) => {
+    const url = new URL(route.request().url());
+    if (url.searchParams.has('detailsFor')) return route.fulfill({ json: { exceptions: [], installations: [] } });
+    const orders = url.searchParams.get('status') === 'history' ? [] : activeOrders;
+    return route.fulfill({ json: {
+      actor: { email: 'admin@example.test', role: 'administrator', roles: ['administrator'] },
+      snapshot: { company: 'TEST', fetchedAt: new Date().toISOString(), catalog: [] }, customers: [], orders,
+      operations: {}, pagination: { total: orders.length, page: 1, pageCount: 1, pageSize: 20 },
+    } });
+  });
+  await page.goto('/?view=orders-workspace');
+  const approvalChip = page.getByRole('button', { name: 'Prices to approve, 2 orders' });
+  await expect(approvalChip).toBeVisible();
+  await expect(approvalChip.locator('svg[aria-hidden="true"]')).toHaveCount(1);
+  await approvalChip.click();
+  await expect(approvalChip).toHaveAttribute('aria-pressed', 'true');
+  await expect(page.getByRole('heading', { name: 'Prices to approve' })).toBeVisible();
+  await expect(page.getByRole('button', { name: /^SF-LIST-201/ })).toBeVisible();
+  await expect(page.getByRole('button', { name: /^SF-LIST-203/ })).toBeVisible();
+  await expect(page.getByRole('button', { name: /^SF-LIST-202/ })).toHaveCount(0);
+  await page.getByRole('button', { name: /^Active(?:\s|$)/ }).click();
+  await expect(approvalChip).toHaveAttribute('aria-pressed', 'false');
+  await expect(page.getByRole('button', { name: /^SF-LIST-20[123]/ })).toHaveCount(3);
+});
+
+test('sales does not see the price approval chip', async ({ page }) => {
+  await page.route('**/api/orders**', (route) => {
+    const url = new URL(route.request().url());
+    if (url.searchParams.has('detailsFor')) return route.fulfill({ json: { exceptions: [], installations: [] } });
+    const orders = url.searchParams.get('status') === 'history' ? [] : [
+      order(211, { pricingState: 'approval_required' }), order(212, { pricingState: 'approved' }), order(213, { pricingState: 'approval_required' }),
+    ];
+    return route.fulfill({ json: {
+      actor: { email: 'sales@example.test', role: 'sales', roles: ['sales'] },
+      snapshot: { company: 'TEST', fetchedAt: new Date().toISOString(), catalog: [] }, customers: [], orders,
+      operations: {}, pagination: { total: orders.length, page: 1, pageCount: 1, pageSize: 20 },
+    } });
+  });
+  await page.goto('/?view=orders-workspace');
+  await expect(page.getByRole('button', { name: /Prices to approve/ })).toHaveCount(0);
+});
+
 test('phone list fits about ten orders on one screen and opens one order full screen', async ({ page, isMobile }) => {
   test.skip(!isMobile, 'phone layout');
   await mockOrders(page);

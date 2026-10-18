@@ -143,6 +143,7 @@ export function OrderWorkspace({ actorEmail, initialStatus = 'open', initialQuer
   const [captureDate, setCaptureDate] = useState('');
   const [captureDateTo, setCaptureDateTo] = useState('');
   const [status, setStatus] = useState(focusOrder ? 'all' : initialStatus);
+  const [pricesToApprove, setPricesToApprove] = useState(false);
   const [creating, setCreating] = useState(false);
   const [repeatOrder, setRepeatOrder] = useState<OrderSummary | null>(null);
   const [catalogLoading, setCatalogLoading] = useState(false);
@@ -328,7 +329,8 @@ export function OrderWorkspace({ actorEmail, initialStatus = 'open', initialQuer
     return () => controller.abort();
   }, [showsDeliveredToday, deliveredRefresh]);
 
-  const visibleOrders = useMemo(() => data?.orders || [], [data]);
+  const loadedOrders = useMemo(() => data?.orders || [], [data]);
+  const visibleOrders = useMemo(() => pricesToApprove && status === 'open' ? loadedOrders.filter((order) => order.pricingState === 'approval_required') : loadedOrders, [loadedOrders, pricesToApprove, status]);
   const orderGroups = useMemo(() => groupOrdersForList(visibleOrders, showsDeliveredToday ? deliveredToday : []), [visibleOrders, showsDeliveredToday, deliveredToday]);
   const displayedOrders = useMemo(() => orderGroups.flatMap((group) => group.orders), [orderGroups]);
   const openOrder = openOrderId ? displayedOrders.find((order) => order.id === openOrderId) || (retainedOpenOrder?.id === openOrderId ? retainedOpenOrder : undefined) : undefined;
@@ -609,8 +611,12 @@ export function OrderWorkspace({ actorEmail, initialStatus = 'open', initialQuer
   const operations = data?.operations || {};
   const staleText = data?.snapshot.fetchedAt || 'No Tally snapshot';
   const actorRoles = data?.actor.roles ?? data?.actor.role;
+  const approvalCount = status === 'open' && hasAnyStockFlowRole(actorRoles, ['administrator', 'management']) ? loadedOrders.filter((order) => order.pricingState === 'approval_required').length : 0;
+  // After the last waiting price is approved the chip disappears; fall back to the Active list.
+  useEffect(() => { if (pricesToApprove && data && approvalCount === 0) setPricesToApprove(false); }, [pricesToApprove, data, approvalCount]);
   const stageFilters: StageFilter[] = [
     { status: 'open', label: 'Active' },
+    ...(approvalCount > 0 ? [{ status: 'prices_to_approve', label: 'Prices to approve', count: approvalCount, tone: 'warning' as const }] : []),
     { status: 'awaiting_confirmation', label: 'Confirm', count: operations.awaitingConfirmation, tone: 'confirm' },
     { status: 'picking', label: 'Pack', tone: 'pack' },
     { status: 'billing', label: 'Bill', count: operations.awaitingTallyBilling, tone: 'bill' },
@@ -620,6 +626,13 @@ export function OrderWorkspace({ actorEmail, initialStatus = 'open', initialQuer
   const yourQueue = hasAnyStockFlowRole(actorRoles, ['administrator', 'management']) ? 'awaiting_confirmation' : hasAnyStockFlowRole(actorRoles, ['accounts']) ? 'billing' : hasAnyStockFlowRole(actorRoles, ['warehouse']) ? 'picking' : '';
   function showQueue(queue: string) {
     setFocusNotice('');
+    if (queue === 'prices_to_approve') {
+      if (pricesToApprove) { setPricesToApprove(false); setStatus('open'); }
+      else { setPricesToApprove(true); setStatus('open'); }
+      setQuery(''); setCaptureDate(''); setCaptureDateTo(''); setPage(1);
+      return;
+    }
+    setPricesToApprove(false);
     setStatus(queue); setQuery(''); setCaptureDate(''); setCaptureDateTo(''); setPage(1);
   }
   function openOrderDetail(order: OrderSummary) {
@@ -696,7 +709,7 @@ export function OrderWorkspace({ actorEmail, initialStatus = 'open', initialQuer
           <button type="button" aria-expanded={mobileFiltersOpen} aria-controls="mobile-order-filters" onClick={() => setMobileFiltersOpen((open) => !open)} className={`flex min-h-10 shrink-0 items-center gap-1 rounded-xl border px-3 text-sm font-bold ${mobileFiltersOpen || !stageFilters.some((filter) => filter.status === status) || captureDate ? 'border-sf-ink bg-sf-ink text-white' : 'border-sf-line bg-white text-sf-body'}`}>Filters <span className={`transition ${mobileFiltersOpen ? 'rotate-180' : ''}`}><ChevronDownIcon /></span></button>
         </div>
         <div className="mt-2 lg:order-3 lg:mt-0 lg:min-w-0 lg:flex-1">
-          <OrderStageChips filters={stageFilters} active={status} onSelect={showQueue} />
+          <OrderStageChips filters={stageFilters} active={pricesToApprove && status === 'open' ? 'prices_to_approve' : status} onSelect={showQueue} />
         </div>
         <div id="mobile-order-filters" className={`${mobileFiltersOpen ? 'grid' : 'hidden'} mt-2 gap-3 rounded-2xl border border-sf-line-soft bg-white p-3 shadow-sm sm:grid-cols-[minmax(0,1fr)_auto] sm:items-end lg:order-6 lg:basis-full`}>
           <label className="block text-xs font-bold text-sf-muted" htmlFor="order-status">Show orders
@@ -756,7 +769,7 @@ export function OrderWorkspace({ actorEmail, initialStatus = 'open', initialQuer
         <section className="mt-3 overflow-hidden rounded-2xl border border-sf-line-soft bg-white shadow-[0_1px_3px_rgba(9,47,54,0.06)]">
           <div className="flex items-center justify-between gap-3 border-b border-sf-line-soft px-4 py-2">
             <div className="min-w-0">
-              <h2 className="truncate text-sm font-extrabold text-sf-strong">{queueNames[status] || statusLabel(status)}</h2>
+              <h2 className="truncate text-sm font-extrabold text-sf-strong">{pricesToApprove && status === 'open' ? 'Prices to approve' : <>{queueNames[status] || statusLabel(status)}</>}</h2>
               <p className="hidden text-[11px] text-sf-subtle lg:block" title={staleText}>Tally stock {snapshotTimeLabel(data?.snapshot.fetchedAt).toLocaleLowerCase('en-IN')}</p>
             </div>
             <span className="flex shrink-0 items-center gap-2">

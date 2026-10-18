@@ -1,7 +1,7 @@
 'use client';
 
 import type { KeyboardEvent } from 'react';
-import { ArrowUp, Flame, Hourglass, PackageCheck, PackageX, TriangleAlert, Truck, Wrench, type LucideIcon } from 'lucide-react';
+import { ArrowUp, Flame, Hourglass, PackageCheck, PackageX, ShieldAlert, TriangleAlert, Truck, Wrench, type LucideIcon } from 'lucide-react';
 import type { OrderSummary } from '@/lib/order-types';
 import { orderStage } from '@/lib/order-types';
 import { orderListFlag, orderProgressIndex, orderProgressSteps, orderStageKey, type StageKey } from '@/lib/order-list-groups';
@@ -52,6 +52,7 @@ export function OrderFlagBadge({ order }: { order: OrderSummary }) {
 const flagIcons: Record<string, LucideIcon> = {
   Urgent: Flame, Overdue: Truck, 'Delivery issue': TriangleAlert, Stalled: Hourglass, 'Installation due': Wrench,
   'Back-order': PackageX, 'Dispatch details': Truck, 'Confirm delivery': PackageCheck, 'Check order': TriangleAlert, 'High priority': ArrowUp,
+  'Price approval': ShieldAlert,
 };
 
 function compactAge(createdAt: string, now = Date.now()) {
@@ -109,7 +110,7 @@ export function OrderProgress({ status }: { status: string }) {
   );
 }
 
-export type StageFilter = { status: string; label: string; count?: number; tone?: StageKey | 'alert' };
+export type StageFilter = { status: string; label: string; count?: number; tone?: StageKey | 'alert' | 'warning' };
 
 /** Horizontal stage chips that replace the queue strip and the common status choices. */
 export function OrderStageChips({ filters, active, onSelect }: { filters: readonly StageFilter[]; active: string; onSelect: (status: string) => void }) {
@@ -117,12 +118,14 @@ export function OrderStageChips({ filters, active, onSelect }: { filters: readon
     <nav aria-label="Order stages" className="-mx-1 flex gap-1.5 overflow-x-auto px-1 pb-0.5 [scrollbar-width:none]">
       {filters.map((filter) => {
         const selected = filter.status === active;
-        const dot = filter.tone === 'alert' ? 'bg-sf-danger' : filter.tone ? stageStyles[filter.tone].bar : 'bg-sf-ink';
+        const dot = filter.tone === 'alert' ? 'bg-sf-danger' : filter.tone === 'warning' ? 'bg-sf-warning' : filter.tone ? stageStyles[filter.tone].bar : 'bg-sf-ink';
+        const Icon = filter.tone === 'warning' ? ShieldAlert : null;
+        const className = selected ? 'border-sf-ink bg-sf-ink text-white' : filter.tone === 'warning' ? 'border-sf-warning-line bg-sf-warning-soft text-sf-warning hover:border-sf-warning' : 'border-sf-line bg-white text-sf-body hover:border-sf-line-strong';
         return (
-          <button key={filter.status} type="button" aria-pressed={selected} onClick={() => onSelect(filter.status)} className={`flex min-h-9 shrink-0 items-center gap-1.5 rounded-full border px-3 text-[13px] font-bold transition ${selected ? 'border-sf-ink bg-sf-ink text-white' : 'border-sf-line bg-white text-sf-body hover:border-sf-line-strong'}`}>
-            <span aria-hidden="true" className={`size-2 rounded-full ${selected ? 'bg-white' : dot}`} />
+          <button key={filter.status} type="button" aria-label={filter.tone === 'warning' ? `${filter.label}, ${filter.count} orders` : undefined} aria-pressed={selected} onClick={() => onSelect(filter.status)} className={`flex min-h-9 shrink-0 items-center gap-1.5 rounded-full border px-3 text-[13px] font-bold transition ${className}`}>
+            {Icon ? <Icon aria-hidden="true" size={16} /> : <span aria-hidden="true" className={`size-2 rounded-full ${selected ? 'bg-white' : dot}`} />}
             {filter.label}
-            {filter.count ? <span className={`rounded-full px-1.5 text-[11px] font-black tabular-nums ${selected ? 'bg-white/20 text-white' : filter.tone === 'alert' ? 'bg-sf-danger-soft text-sf-danger' : 'bg-sf-soft-2 text-sf-body'}`}>{filter.count.toLocaleString('en-IN')}</span> : null}
+            {filter.count ? <span className={`rounded-full px-1.5 text-[11px] font-black tabular-nums ${selected ? 'bg-white/20 text-white' : filter.tone === 'alert' ? 'bg-sf-danger-soft text-sf-danger' : filter.tone === 'warning' ? 'bg-sf-warning-soft text-sf-warning' : 'bg-sf-soft-2 text-sf-body'}`}>{filter.count.toLocaleString('en-IN')}</span> : null}
           </button>
         );
       })}
