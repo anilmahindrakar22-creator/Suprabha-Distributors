@@ -7,7 +7,7 @@ import { BellIcon } from './order-list';
 import { startWorkNotifications, type WorkItem, type WorkNotificationState } from '@/lib/work-notifications';
 import { currentPushState, disablePush, enablePush, loadPushConfig, readOpenOrderLink, readOpenOrderMessage, type PushConfig, type PushState } from '@/lib/push-subscription';
 import Image from 'next/image';
-import { defaultOrderFilterForRole, readOrderDashboardMessage } from '@/lib/stockflow-navigation';
+import { readOrderDashboardMessage } from '@/lib/stockflow-navigation';
 import { prepareDeviceForAccount } from '@/lib/device-account-privacy';
 import { hasAnyStockFlowRole, type StockFlowRole } from '@/lib/user-types';
 import { revokeOfflineVault } from '@/lib/offline-vault-storage';
@@ -212,7 +212,7 @@ export function StockFlowFrame({ actorEmail, actorRole, actorRoles, staffAuth = 
   function openSurface(item: Surface) {
     setMoreOpen(false);
     if (item === 'orders' && surface !== 'orders') {
-      setOrderFilter(defaultOrderFilterForRole(actorRole));
+      setOrderFilter('open');
       setOrderView((current) => ({ query: '', nonce: current.nonce + 1 }));
     }
     setSurface(item);

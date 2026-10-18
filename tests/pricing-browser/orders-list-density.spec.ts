@@ -59,6 +59,34 @@ test('Old orders stays reachable from Filters', async ({ page }) => {
   await expect(page.getByText('Cancelled Lab').first()).toBeVisible();
 });
 
+test('administrator opens Active orders and searches across the Pack stage', async ({ page }) => {
+  const packOrder = order(2, { status: 'packed', customerName: 'Pack Search Laboratory' });
+  const listQueries: Array<{ status: string | null; query: string | null }> = [];
+  await page.route('**/api/orders**', route => {
+    const url = new URL(route.request().url());
+    if (url.searchParams.has('detailsFor')) return route.fulfill({ json: { exceptions: [], installations: [] } });
+    if (url.searchParams.has('summary')) return route.fulfill({ json: { operations: {} } });
+    const status = url.searchParams.get('status');
+    const query = url.searchParams.get('query');
+    listQueries.push({ status, query });
+    const orders = status === 'open' || !status ? [packOrder] : [];
+    return route.fulfill({ json: {
+      actor: { email: 'administrator@example.test', role: 'administrator', roles: ['administrator'] },
+      snapshot: { company: 'TEST', fetchedAt: new Date().toISOString(), catalog: [] }, customers: [], orders,
+      operations: {}, pagination: { total: orders.length, page: 1, pageCount: 1, pageSize: 20 },
+    } });
+  });
+  await page.goto('/?view=frame&role=administrator');
+  await page.getByRole('button', { name: /^orders/i }).click();
+  await expect(page.getByRole('heading', { name: /Active orders/ })).toBeVisible();
+  await expect(page.getByRole('button', { name: /^Active(?:\s|$)/ })).toHaveAttribute('aria-pressed', 'true');
+  await page.getByLabel('Find existing order').fill('Pack Search');
+  await expect.poll(() => listQueries.some(item => item.query === 'Pack Search' && item.status === 'open')).toBe(true);
+  await expect(page.getByText('Pack Search Laboratory', { exact: true }).first()).toBeVisible();
+  await expect(page.getByRole('heading', { name: /Active orders/ })).toBeVisible();
+  await expect(page.getByRole('button', { name: /^Active(?:\s|$)/ })).toHaveAttribute('aria-pressed', 'true');
+});
+
 test('phone list fits about ten orders on one screen and opens one order full screen', async ({ page, isMobile }) => {
   test.skip(!isMobile, 'phone layout');
   await mockOrders(page);

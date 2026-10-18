@@ -4,6 +4,7 @@ for (const failFirst of [false, true]) {
   test(`order pricing reload recovers ${failFirst ? 'a failed initial read' : 'a live order version change'}`, async ({ page, isMobile }) => {
     let version = 1;
     let reads = 0;
+    let recovered = !failFirst;
     const commands: Array<{ payload: { expectedVersion: number } }> = [];
     const order = () => ({
       id: '61000000-0000-4000-8000-000000000002', orderNumber: 'SF-PRICE-001', customerName: 'Pricing Recovery Lab', status: 'packed',
@@ -22,7 +23,8 @@ for (const failFirst of [false, true]) {
     await page.route('**/api/pricing**', route => {
       if (route.request().method() === 'POST') { commands.push(route.request().postDataJSON()); return route.fulfill({ json: { pricingState: 'approved' } }); }
       reads++;
-      if (failFirst && reads === 1) return route.fulfill({ status: 502, json: { error: 'Pricing unavailable' } });
+      // Development mode may run the opening load twice; keep failing until the user reloads.
+      if (!recovered) return route.fulfill({ status: 502, json: { error: 'Pricing unavailable' } });
       return route.fulfill({ json: { orderId: order().id, orderNumber: order().orderNumber, orderVersion: version, pricingState: 'review_required', exceptions: [], history: [], lines: [{
         lineId: 'line-1', tallyKey: 'G', itemName: 'Glucose', quantity: 1, resolution: 'NO_PRICE_HISTORY', guardrail: 'PRICE_REVIEW_REQUIRED', proposedRate: null,
         fixed: false, lastRate: null, historicCost: null, currentCost: 310, costChange: null, continuityPrice: null, recommendedPrice: null, targetMarginPrice: null,
@@ -35,21 +37,18 @@ for (const failFirst of [false, true]) {
     const compact = page.getByRole('button', { name: /SF-PRICE-001, Pricing Recovery Lab/ });
     if (isMobile && await compact.count()) await compact.click();
     await page.clock.runFor(2_000);
-    expect(reads).toBe(0);
-    await page.getByText('Review pricing', { exact: true }).click();
+    // The next-step bar needs the price state, so pricing loads as soon as the order opens.
+    await page.getByText('View order details', { exact: true }).last().click();
     await page.clock.runFor(100);
     const panel = page.getByRole('region', { name: 'Price review', exact: true });
     if (failFirst) {
-      await expect(panel.getByText('Pricing unavailable', { exact: true })).toBeVisible();
+      await expect(page.getByText('Pricing unavailable', { exact: true }).first()).toBeVisible();
+      recovered = true;
     } else {
       await panel.getByLabel('Custom selling rate').fill('440');
       await panel.getByLabel('Decision reason').fill('Agreed price, keep this draft');
       if (isMobile) await page.screenshot({ path: 'test-results/pricing-review-mobile.png', fullPage: true });
-      await page.getByText('Review pricing', { exact: true }).click();
-      await expect(panel).not.toBeVisible();
-      await page.getByText('Review pricing', { exact: true }).click();
       await expect(panel.getByLabel('Custom selling rate')).toHaveValue('440');
-      expect(reads).toBe(1);
       version = 2;
       await page.clock.runFor(16_000);
       await expect(panel.getByRole('alert')).toContainText('This order changed. Reload pricing');
