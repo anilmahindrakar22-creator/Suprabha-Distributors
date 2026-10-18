@@ -980,9 +980,9 @@
     {
       "localFile": "20261016130829_tally_recent_products.sql",
       "localSha256": "fa71aeaf3ea87c67d37315aab5f63e20a6bf5430862af43ea18795e6093a03c9",
-      "remoteVersion": null,
-      "remoteSha256": null,
-      "status": "not_deployed"
+      "remoteVersion": "20261016133714",
+      "remoteSha256": "fa71aeaf3ea87c67d37315aab5f63e20a6bf5430862af43ea18795e6093a03c9",
+      "status": "exact_normalized_match"
     }
   ],
   "liveCheck": {
