@@ -37,6 +37,7 @@ export type PricingLineResolution = {
   suggestion: null | { amount: number; unroundedAmount: number; targetMarginPercent: number; policyVersion: string; roundingRuleVersion: string; costSourceVersion: string };
   warnings: string[];
   governed?: boolean;
+  policy?: { version: string; minimumMarginPercent: number; targetMarginPercent: number | null } | null;
 };
 
 export type OrderPricingWorkspace = {

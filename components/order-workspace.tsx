@@ -33,6 +33,7 @@ import { BackIcon, ChevronDownIcon, CompactOrderRow, OrderFlagBadge, OrderProgre
 import { deliveredTodayOrders, groupOrdersForList } from '@/lib/order-list-groups';
 import { readJsonBody } from '@/lib/http-json';
 import { orderDateLabel, orderDateTime } from '@/lib/order-date';
+import { priceApprovalSummaries } from '@/lib/price-approval-summary';
 import { hasAnyStockFlowRole, type StockFlowRole } from '@/lib/user-types';
 import type { TallyRecentProducts } from '@/lib/tally-recent-products';
 
@@ -762,11 +763,11 @@ export function OrderWorkspace({ actorEmail, initialStatus = 'open', initialQuer
           <div className="flex items-center justify-between gap-3 border-b border-sf-line-soft px-4 py-2">
             <div className="min-w-0">
               <h2 className="truncate text-sm font-extrabold text-sf-strong">{pricesToApprove && status === 'open' ? 'Prices to approve' : <>{queueNames[status] || statusLabel(status)}</>}</h2>
-              <p className="hidden text-[11px] text-sf-subtle lg:block" title={staleText}>Tally stock {snapshotTimeLabel(data?.snapshot.fetchedAt).toLocaleLowerCase('en-IN')}</p>
+              {data ? <p className="hidden text-[11px] text-sf-subtle lg:block" title={staleText}>Tally stock {snapshotTimeLabel(data.snapshot.fetchedAt).toLocaleLowerCase('en-IN')}</p> : null}
             </div>
             <span className="flex shrink-0 items-center gap-2">
               {yourQueue && yourQueue !== status ? <button type="button" onClick={() => showQueue(yourQueue)} className="min-h-8 rounded-full px-2.5 text-xs font-bold text-sf-accent hover:bg-sf-accent-soft">Your queue</button> : null}
-              <span className="rounded-full bg-sf-soft-2 px-2.5 py-1 text-xs font-extrabold tabular-nums text-sf-body">{totalOrders} {status === 'open' ? 'pending' : totalOrders === 1 ? 'order' : 'orders'}{showsDeliveredToday && deliveredToday.length ? <span className="hidden sm:inline"> · {deliveredToday.length} delivered today</span> : null}</span>
+              {!data ? null : pricesToApprove && status === 'open' ? <span className="rounded-full bg-sf-warning-soft px-2.5 py-1 text-xs font-extrabold tabular-nums text-sf-warning">{visibleOrders.length} to approve</span> : <span className="rounded-full bg-sf-soft-2 px-2.5 py-1 text-xs font-extrabold tabular-nums text-sf-body">{totalOrders} {status === 'open' ? 'pending' : totalOrders === 1 ? 'order' : 'orders'}{showsDeliveredToday && deliveredToday.length ? <span className="hidden sm:inline"> · {deliveredToday.length} delivered today</span> : null}</span>}
             </span>
           </div>
 
@@ -786,9 +787,12 @@ export function OrderWorkspace({ actorEmail, initialStatus = 'open', initialQuer
                   const selected = order.id === selectedOrder?.id;
                   const nextAction = nextStatus[order.status]?.label || orderNextOwnerLabel(order.status) || 'View order';
                   const stage = orderStageStyle(order.status);
-                  return <button id={`desktop-order-${order.id}`} key={order.id} type="button" aria-current={selected ? 'true' : undefined} title={`${order.assignedToEmail ? `Owner: ${order.assignedToEmail}` : 'Unassigned'} · Next: ${nextAction}`} onClick={() => setSelectedOrderId(order.id)} onKeyDown={(event) => { if (['ArrowUp', 'ArrowDown', 'Home', 'End'].includes(event.key)) { event.preventDefault(); navigateDesktopQueue(event.key); } }} className={`relative block w-full border-b border-sf-soft-2 flex min-h-11 items-center py-1.5 pl-5 pr-3 text-left outline-none hover:bg-white focus-visible:bg-white focus-visible:ring-2 focus-visible:ring-inset focus-visible:ring-sf-accent-bright aria-current:bg-white aria-current:shadow-[inset_3px_0_0_#092f36] ${['delivered', 'cancelled'].includes(order.status) ? 'opacity-70' : ''}`}>
+                  return <button id={`desktop-order-${order.id}`} key={order.id} type="button" aria-label={`${order.orderNumber}, ${order.customerName}, ${orderStage(order.status)}`} aria-current={selected ? 'true' : undefined} title={`${order.assignedToEmail ? `Owner: ${order.assignedToEmail}` : 'Unassigned'} · Next: ${nextAction}`} onClick={() => setSelectedOrderId(order.id)} onKeyDown={(event) => { if (['ArrowUp', 'ArrowDown', 'Home', 'End'].includes(event.key)) { event.preventDefault(); navigateDesktopQueue(event.key); } }} className={`relative block w-full border-b border-sf-soft-2 flex min-h-11 items-center py-1.5 pl-5 pr-3 text-left outline-none hover:bg-white focus-visible:bg-white focus-visible:ring-2 focus-visible:ring-inset focus-visible:ring-sf-accent-bright aria-current:bg-white aria-current:shadow-[inset_3px_0_0_#092f36] ${['delivered', 'cancelled'].includes(order.status) ? 'opacity-70' : ''}`}>
                     <span aria-hidden="true" className={`absolute inset-y-2 left-2 w-1 rounded-full ${stage.bar}`} />
-                    <span className="flex min-w-0 flex-1 items-center gap-2"><strong className="min-w-[6.5rem] flex-1 truncate text-sm text-sf-ink">{order.customerName}</strong>{newOrderIds?.has(order.id) ? <span className="shrink-0 rounded-full bg-sf-ink px-1.5 py-0.5 text-[9px] font-black uppercase text-white">New</span> : null}<span className={`shrink-0 rounded-full px-2 py-0.5 text-[10px] font-extrabold ${stage.chip}`}>{stage.label}</span><OrderFlagBadge order={order} /><span className="hidden shrink-0 text-[11px] tabular-nums text-sf-subtle 2xl:inline">{order.orderNumber}</span><time dateTime={order.createdAt} title={`Ordered ${orderDateTime(order.createdAt)}`} className="w-16 shrink-0 text-right text-[11px] font-semibold tabular-nums text-sf-subtle">{orderDateLabel(order.createdAt)}</time>{nextAction === 'View order' ? null : <span className="w-[7.5rem] shrink-0 truncate text-right text-[11px] font-bold text-sf-accent">{nextAction}</span>}</span>
+                    <span className="flex min-w-0 flex-1 flex-col gap-0.5">
+                      <span className="flex min-w-0 items-baseline gap-2"><strong className="min-w-0 flex-1 truncate text-sm text-sf-ink">{order.customerName}</strong>{newOrderIds?.has(order.id) ? <span className="shrink-0 rounded-full bg-sf-ink px-1.5 py-0.5 text-[9px] font-black uppercase text-white">New</span> : null}<time dateTime={order.createdAt} title={`Ordered ${orderDateTime(order.createdAt)}`} className="shrink-0 text-[11px] font-semibold tabular-nums text-sf-subtle">{orderDateLabel(order.createdAt)}</time></span>
+                      <span className="flex min-w-0 items-center gap-1.5"><span className={`shrink-0 rounded-full px-2 py-0.5 text-[10px] font-extrabold ${stage.chip}`}>{stage.label}</span><OrderFlagBadge order={order} /><span className="min-w-0 truncate text-[11px] tabular-nums text-sf-subtle">{order.orderNumber}</span>{nextAction === 'View order' ? null : <span className="ml-auto shrink-0 pl-1 text-right text-[11px] font-bold text-sf-accent">{nextAction}</span>}</span>
+                    </span>
                   </button>;
                   })}
                 </section>)}
@@ -826,7 +830,7 @@ export function OrderWorkspace({ actorEmail, initialStatus = 'open', initialQuer
               <button type="button" autoFocus aria-label="Back to orders" onClick={() => setOpenOrderId('')} className="grid min-h-11 min-w-11 place-items-center rounded-xl text-sf-ink hover:bg-sf-soft"><BackIcon /></button>
               <div className="min-w-0 flex-1">
                 <p className="truncate text-base font-black text-sf-ink">{openOrder.customerName}</p>
-                <p className="flex items-center gap-1.5 text-xs text-sf-subtle"><span className={`rounded-full px-2 py-0.5 text-[10px] font-extrabold ${orderStageStyle(openOrder.status).chip}`}>{orderStageStyle(openOrder.status).label}</span><OrderFlagBadge order={openOrder} /><span className="truncate">{openOrder.orderNumber} · <time dateTime={openOrder.createdAt}>{orderDateTime(openOrder.createdAt)}</time></span></p>
+                <p className="flex flex-wrap items-center gap-x-1.5 gap-y-0.5 text-xs text-sf-subtle"><span className={`rounded-full px-2 py-0.5 text-[10px] font-extrabold ${orderStageStyle(openOrder.status).chip}`}>{orderStageStyle(openOrder.status).label}</span><OrderFlagBadge order={openOrder} /><span>{openOrder.orderNumber}</span><time dateTime={openOrder.createdAt} className="basis-full sm:basis-auto">Ordered {orderDateTime(openOrder.createdAt)}</time></p>
               </div>
             </div>
             <div className="mt-1.5 px-2"><OrderProgress status={openOrder.status} /></div>
@@ -970,7 +974,7 @@ function OrderRow({
   return (
     // content-visibility adds paint containment, which would trap the pinned next-step bar; the order page skips it.
     <article className={inOrderPage ? 'min-w-0 p-3 pb-36 [overflow-wrap:anywhere]' : 'min-w-0 [overflow-wrap:anywhere] [content-visibility:auto] [contain-intrinsic-size:auto_260px] p-3 sm:p-5'}>
-      <div className="grid gap-4 lg:grid-cols-[minmax(0,1.5fr)_minmax(0,1fr)_auto] lg:items-center">
+      <div className="grid grid-cols-[minmax(0,1fr)] gap-4 lg:grid-cols-[minmax(0,1.5fr)_minmax(0,1fr)_auto] lg:items-center">
       <div>
         <div className="flex flex-wrap items-center gap-2">
           {inOrderPage ? null : <><strong className="text-sf-ink">{order.orderNumber}</strong>
@@ -988,7 +992,7 @@ function OrderRow({
         {order.expectedDeliveryDate ? <p className="mt-1 text-xs font-bold text-sf-label">Promised delivery: {new Date(`${order.expectedDeliveryDate}T00:00:00+05:30`).toLocaleDateString('en-IN', { timeZone: 'Asia/Kolkata', day: '2-digit', month: 'short', year: 'numeric' })}</p> : null}
         {backOrderedQuantity > 0 ? <p className="mt-1 inline-flex items-center gap-1 text-xs font-extrabold text-sf-warning"><PackageX aria-hidden="true" className="shrink-0" size={14} />Short by {formatQuantity(backOrderedQuantity)}</p> : null}
         {attention.length ? <p className="mt-2 inline-flex items-center gap-1 text-xs font-bold text-sf-warning"><TriangleAlert aria-hidden="true" className="shrink-0" size={14} />Needs attention: {attention.join(' · ')}</p> : null}
-        <ul aria-label="Order product preview" className="mt-3 hidden flex-wrap gap-1.5 lg:flex">{order.lines.slice(0, 4).map((line) => <li key={line.tallyKey} className="max-w-56 truncate rounded-lg bg-sf-soft px-2 py-1 text-[11px] font-bold text-sf-label" title={`${line.itemName} · ${formatQuantity(line.quantity)} ${line.baseUnit || ''}`}>{line.itemName} · {formatQuantity(line.quantity)} {line.baseUnit || ''}</li>)}{order.lines.length > 4 ? <li className="rounded-lg bg-sf-soft px-2 py-1 text-[11px] font-bold text-sf-muted">+{order.lines.length - 4} more</li> : null}</ul>
+        <ul aria-label="Order product preview" className="mt-3 flex flex-wrap gap-1.5">{order.lines.slice(0, 4).map((line) => <li key={line.tallyKey} className="max-w-full truncate rounded-lg bg-sf-soft sm:max-w-72 px-2 py-1 text-[11px] font-bold text-sf-label" title={`${line.itemName} · ${formatQuantity(line.quantity)} ${line.baseUnit || ''}`}>{line.itemName} · {formatQuantity(line.quantity)} {line.baseUnit || ''}</li>)}{order.lines.length > 4 ? <li className="rounded-lg bg-sf-soft px-2 py-1 text-[11px] font-bold text-sf-muted">+{order.lines.length - 4} more</li> : null}</ul>
       </div>
       <div className="hidden sm:block">
         <p className="text-xs font-bold text-sf-subtle">Ordered quantity</p>
@@ -996,6 +1000,7 @@ function OrderRow({
       </div>
       <OrderNextStepBar order={order} roles={roles} pricing={pricing} inOrderPage={inOrderPage} onAdvance={onAdvance} onDelivery={onDelivery} onPricingChanged={onPricingChanged} />
       </div>
+      {pricing.workspace?.pricingState === 'approval_required' ? <PriceApprovalCard workspace={pricing.workspace} /> : null}
       <details className="mt-3 rounded-xl border border-sf-line-soft bg-sf-soft-0 text-sm">
         <summary className="flex min-h-10 cursor-pointer list-none items-center justify-between gap-3 px-3 font-bold text-sf-label marker:hidden [&::-webkit-details-marker]:hidden">
           <span>More order controls</span>
@@ -1093,6 +1098,33 @@ function useOrderPricing(order: OrderSummary) {
     state: result.key === readKey ? result.state : autoLoad ? 'loading' as const : 'idle' as const,
     message: result.key === readKey ? result.message : '',
   };
+}
+
+const rupees = new Intl.NumberFormat('en-IN', { style: 'currency', currency: 'INR', minimumFractionDigits: 0, maximumFractionDigits: 2 });
+const shortDate = (value: string) => value ? new Date(`${value.slice(0, 10)}T00:00:00+05:30`).toLocaleDateString('en-IN', { timeZone: 'Asia/Kolkata', day: 'numeric', month: 'short' }) : '';
+/** The facts an approver needs before tapping Approve: price, recent bills to this customer, cost and margin. */
+function PriceApprovalCard({ workspace }: { workspace: OrderPricingWorkspace }) {
+  const summaries = priceApprovalSummaries(workspace);
+  if (!summaries.length) return null;
+  return <section aria-label="Price waiting for approval" className="mt-3 space-y-3">
+    {summaries.map((item) => {
+      const marginClass = item.marginTone === 'loss' ? 'text-sf-danger' : item.marginTone === 'below_minimum' ? 'text-sf-warning' : item.marginTone === 'ok' ? 'text-sf-success' : 'text-sf-muted';
+      return <article key={item.exceptionId} className="rounded-xl border border-sf-warning-line bg-white p-4">
+        <p className="flex items-center gap-1.5 text-xs font-extrabold uppercase tracking-wide text-sf-warning"><ShieldAlert aria-hidden="true" size={14} />Price waiting for approval</p>
+        <h3 className="mt-2 font-bold text-sf-ink">{item.itemName}</h3>
+        <p className="mt-1 text-sm text-sf-muted"><strong className="text-xl font-extrabold text-sf-ink">{rupees.format(item.rate)}</strong> per unit · {formatQuantity(item.quantity)} qty{item.quantity > 1 ? ` · ${rupees.format(item.lineTotal)} total` : ''}</p>
+        <dl className="mt-3 grid gap-x-6 gap-y-3 text-sm sm:grid-cols-2">
+          <div><dt className="text-xs font-bold text-sf-subtle">Recent bills to this customer</dt><dd className="mt-1">{item.recentBills.length ? <ul className="space-y-0.5">{item.recentBills.map((bill) => <li key={`${bill.reference}-${bill.rate}`} className="tabular-nums text-sf-strong"><strong>{rupees.format(bill.rate)}</strong> <span className="text-sf-subtle">· {shortDate(bill.date)} · {bill.reference}</span></li>)}</ul> : <span className="text-sf-muted">No earlier bills for this item</span>}
+            {item.belowLatestBill ? <p className="mt-1 text-xs font-bold text-sf-warning">{rupees.format(item.belowLatestBill)} below the latest bill</p> : item.mixedHistory ? <p className="mt-1 text-xs font-bold text-sf-label">Billed at different rates recently</p> : null}</dd></div>
+          <div><dt className="text-xs font-bold text-sf-subtle">Margin at this price</dt><dd className="mt-1">{item.marginPercent == null ? <span className="text-sf-muted">No purchase cost on record</span> : <><strong className={`tabular-nums ${marginClass}`}>{item.marginPercent.toFixed(1)}%</strong> <span className="text-sf-subtle">· {rupees.format(item.marginAmount ?? 0)} per unit</span>
+            {item.marginTone === 'below_minimum' ? <p className="text-xs font-bold text-sf-warning">Below the {item.minimumMarginPercent}% minimum</p> : item.marginTone === 'loss' ? <p className="text-xs font-bold text-sf-danger">Below purchase cost</p> : null}
+            {item.cost ? <p className="text-xs text-sf-subtle">Cost {rupees.format(item.cost.amount)}{item.cost.reference ? ` · bill ${item.cost.reference}` : ''}{item.cost.date ? ` · ${shortDate(item.cost.date)}` : ''}</p> : null}</>}</dd></div>
+        </dl>
+        <p className="mt-3 border-t border-sf-line-soft pt-3 text-sm text-sf-body"><span className="font-bold">Reason:</span> {item.reason}</p>
+        <p className="mt-1 text-xs text-sf-subtle">Requested by {item.requestedBy} · {orderDateTime(item.requestedAt)}</p>
+      </article>;
+    })}
+  </section>;
 }
 
 type DeliveryCommand = Extract<OrderCommand, { action: 'save_dispatch' | 'confirm_delivery' }>;
