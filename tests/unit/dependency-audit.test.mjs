@@ -2,7 +2,7 @@ import { describe, expect, it } from 'vitest';
 import { verifyDependencyAudit } from '../../lib/dependency-audit.mjs';
 
 const hash = '2882843b9208645c81fd1ab72aacc28cebb92e2651b795bece8a4d1e8a03958f';
-const now = Date.parse('2026-10-03T00:00:00Z');
+const now = Date.parse('2026-10-18T00:00:00Z');
 const evidence = {
   patchHash: hash,
   workspace: 'patchedDependencies:\n  braces@3.0.3: patches/braces@3.0.3.patch\n',
@@ -30,7 +30,10 @@ describe('hash-bound dependency mitigation gate', () => {
     });
   }
   it('expires the review', () => {
-    expect(() => verifyDependencyAudit(report(), 1, evidence, Date.parse('2026-10-17T00:00:00Z'))).toThrow('expired');
+    expect(() => verifyDependencyAudit(report(), 1, evidence, Date.parse('2026-10-25T00:00:00Z'))).toThrow('expired');
+  });
+  it('keeps the assessed mitigation valid only before the renewed cutoff', () => {
+    expect(verifyDependencyAudit(report(), 1, evidence, Date.parse('2026-10-24T23:59:59.999Z'))).toEqual({ mitigated: true });
   });
   for (const [field, value] of [['github_advisory_id', 'OTHER'], ['module_name', 'other'], ['severity', 'critical']]) {
     it(`rejects another ${field}`, () => {
