@@ -30,6 +30,7 @@ export function orderListFlag(order: OrderSummary, now = new Date()): OrderFlag 
   if (['delivered', 'cancelled'].includes(order.status)) return null;
   if (order.priority === 'urgent') return { label: 'Urgent', tone: 'alert' };
   if (orderDeliveryReminder(order, now) === 'overdue') return { label: 'Overdue', tone: 'alert' };
+  if (order.pricingState === 'approval_required') return { label: 'Price approval', tone: 'watch' };
   const reasons = orderAttentionReasons(order, now);
   if (reasons.includes('Open delivery exception')) return { label: 'Delivery issue', tone: 'alert' };
   if (reasons.some((reason) => reason.startsWith('No progress'))) return { label: 'Stalled', tone: 'watch' };

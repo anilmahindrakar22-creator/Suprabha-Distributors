@@ -59,6 +59,90 @@ test('Old orders stays reachable from Filters', async ({ page }) => {
   await expect(page.getByText('Cancelled Lab').first()).toBeVisible();
 });
 
+test('administrator opens Active orders and searches across the Pack stage', async ({ page }) => {
+  const packOrder = order(2, { status: 'packed', customerName: 'Pack Search Laboratory' });
+  const listQueries: Array<{ status: string | null; query: string | null }> = [];
+  await page.route('**/api/orders**', route => {
+    const url = new URL(route.request().url());
+    if (url.searchParams.has('detailsFor')) return route.fulfill({ json: { exceptions: [], installations: [] } });
+    if (url.searchParams.has('summary')) return route.fulfill({ json: { operations: {} } });
+    const status = url.searchParams.get('status');
+    const query = url.searchParams.get('query');
+    listQueries.push({ status, query });
+    const orders = status === 'open' || !status ? [packOrder] : [];
+    return route.fulfill({ json: {
+      actor: { email: 'administrator@example.test', role: 'administrator', roles: ['administrator'] },
+      snapshot: { company: 'TEST', fetchedAt: new Date().toISOString(), catalog: [] }, customers: [], orders,
+      operations: {}, pagination: { total: orders.length, page: 1, pageCount: 1, pageSize: 20 },
+    } });
+  });
+  await page.goto('/?view=frame&role=administrator');
+  await page.getByRole('button', { name: /^orders/i }).click();
+  await expect(page.getByRole('heading', { name: /Active orders/ })).toBeVisible();
+  await expect(page.getByRole('button', { name: /^Active(?:\s|$)/ })).toHaveAttribute('aria-pressed', 'true');
+  await page.getByLabel('Find existing order').fill('Pack Search');
+  await expect.poll(() => listQueries.some(item => item.query === 'Pack Search' && item.status === 'open')).toBe(true);
+  await expect(page.getByText('Pack Search Laboratory', { exact: true }).first()).toBeVisible();
+  await expect(page.getByRole('heading', { name: /Active orders/ })).toBeVisible();
+  await expect(page.getByRole('button', { name: /^Active(?:\s|$)/ })).toHaveAttribute('aria-pressed', 'true');
+});
+
+test('administrator filters active orders waiting for price approval', async ({ page }) => {
+  const activeOrders = [
+    order(201, { pricingState: 'approval_required' }),
+    order(202, { pricingState: 'approved' }),
+    order(203, { pricingState: 'approval_required' }),
+  ];
+  await page.route('**/api/orders**', (route) => {
+    const url = new URL(route.request().url());
+    if (url.searchParams.has('detailsFor')) return route.fulfill({ json: { exceptions: [], installations: [] } });
+    const orders = url.searchParams.get('status') === 'history' ? [] : activeOrders;
+    return route.fulfill({ json: {
+      actor: { email: 'admin@example.test', role: 'administrator', roles: ['administrator'] },
+      snapshot: { company: 'TEST', fetchedAt: new Date().toISOString(), catalog: [] }, customers: [], orders,
+      operations: {}, pagination: { total: orders.length, page: 1, pageCount: 1, pageSize: 20 },
+    } });
+  });
+  await page.goto('/?view=orders-workspace');
+  const approvalChip = page.getByRole('button', { name: 'Prices to approve, 2 orders' });
+  await expect(approvalChip).toBeVisible();
+  await expect(approvalChip.locator('svg[aria-hidden="true"]')).toHaveCount(1);
+  await approvalChip.click();
+  await expect(approvalChip).toHaveAttribute('aria-pressed', 'true');
+  await expect(page.getByRole('heading', { name: 'Prices to approve' })).toBeVisible();
+  await expect(page.getByRole('button', { name: /^(?:SF-LIST-201, )?Laboratory 201(?:,| )/ })).toBeVisible();
+  await expect(page.getByRole('button', { name: /^(?:SF-LIST-203, )?Laboratory 203(?:,| )/ })).toBeVisible();
+  await expect(page.getByRole('button', { name: /^(?:SF-LIST-202, )?Laboratory 202(?:,| )/ })).toHaveCount(0);
+  await page.getByRole('button', { name: /^Active(?:\s|$)/ }).click();
+  await expect(approvalChip).toHaveAttribute('aria-pressed', 'false');
+  await expect(page.getByRole('button', { name: /^(?:SF-LIST-20[123], )?Laboratory 20[123](?:,| )/ })).toHaveCount(3);
+  await approvalChip.click();
+  activeOrders[0] = order(201, { pricingState: 'approved' });
+  activeOrders[2] = order(203, { pricingState: 'approved' });
+  await page.getByRole('button', { name: 'Filters', exact: true }).click();
+  await page.getByRole('button', { name: 'Refresh', exact: true }).click();
+  await expect(approvalChip).toHaveCount(0);
+  await expect(page.getByRole('button', { name: /^Active(?:\s|$)/ })).toHaveAttribute('aria-pressed', 'true');
+  await expect(page.getByRole('button', { name: /^(?:SF-LIST-20[123], )?Laboratory 20[123](?:,| )/ })).toHaveCount(3);
+});
+
+test('sales does not see the price approval chip', async ({ page }) => {
+  await page.route('**/api/orders**', (route) => {
+    const url = new URL(route.request().url());
+    if (url.searchParams.has('detailsFor')) return route.fulfill({ json: { exceptions: [], installations: [] } });
+    const orders = url.searchParams.get('status') === 'history' ? [] : [
+      order(211, { pricingState: 'approval_required' }), order(212, { pricingState: 'approved' }), order(213, { pricingState: 'approval_required' }),
+    ];
+    return route.fulfill({ json: {
+      actor: { email: 'sales@example.test', role: 'sales', roles: ['sales'] },
+      snapshot: { company: 'TEST', fetchedAt: new Date().toISOString(), catalog: [] }, customers: [], orders,
+      operations: {}, pagination: { total: orders.length, page: 1, pageCount: 1, pageSize: 20 },
+    } });
+  });
+  await page.goto('/?view=orders-workspace');
+  await expect(page.getByRole('button', { name: /Prices to approve/ })).toHaveCount(0);
+});
+
 test('phone list fits about ten orders on one screen and opens one order full screen', async ({ page, isMobile }) => {
   test.skip(!isMobile, 'phone layout');
   await mockOrders(page);
@@ -71,6 +155,10 @@ test('phone list fits about ten orders on one screen and opens one order full sc
   const visible = await rows.evaluateAll((elements, viewport) => elements.filter((element) => element.getBoundingClientRect().bottom <= viewport).length, height);
   expect(visible).toBeGreaterThanOrEqual(8);
   for (const row of await rows.all()) expect((await row.boundingBox())?.height ?? 0).toBeLessThan(76);
+  const firstDate = rows.first().locator('time');
+  await expect(firstDate).toHaveAttribute('datetime', pending[0].createdAt);
+  await expect(firstDate).toHaveAttribute('title', /^Ordered \d{1,2} [A-Z][a-z]{2} \d{4}, /);
+  await expect(firstDate).not.toHaveText('');
 
   await page.getByRole('button', { name: /^SF-LIST-001/ }).click();
   const detail = page.getByRole('dialog', { name: 'Order SF-LIST-001' });

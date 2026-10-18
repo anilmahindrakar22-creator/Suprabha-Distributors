@@ -10,7 +10,7 @@ const frame = read('../../components/stockflow-frame.tsx');
 describe('order-list density (list-first redesign)', () => {
   it('pins one compact header with search, stage chips and a Filters panel', () => {
     expect(workspace).toContain('sticky top-0 z-20');
-    expect(workspace).toContain('<OrderStageChips filters={stageFilters} active={status} onSelect={showQueue} />');
+    expect(workspace).toContain("<OrderStageChips filters={stageFilters} active={pricesToApprove && status === 'open' ? 'prices_to_approve' : status} onSelect={showQueue} />");
     for (const chip of ["label: 'Active'", "label: 'Confirm'", "label: 'Pack'", "label: 'Bill'", "label: 'Dispatch'", "label: 'Issues'"]) expect(workspace).toContain(chip);
     expect(workspace).toContain('aria-expanded={mobileFiltersOpen}');
     expect(workspace).toContain('aria-controls="mobile-order-filters"');
@@ -73,7 +73,7 @@ describe('order-list density (list-first redesign)', () => {
     expect(workspace).toContain('removedFromQueue && remainingOrders.length === 0');
     expect(workspace).toContain("['ArrowUp', 'ArrowDown', 'Home', 'End']");
     expect(workspace).toContain('↑ ↓ to navigate');
-    expect(workspace).toContain('compactOrderAge(order.createdAt)');
+    expect(workspace).toContain('orderDateLabel(order.createdAt)');
     expect(workspace).toContain("order.assignedToEmail ? `Owner: ${order.assignedToEmail}` : 'Unassigned'");
     expect(workspace).toContain('<OrderProgress status={selectedOrder.status} />');
     expect(workspace).toContain('aria-label="Order product preview"');

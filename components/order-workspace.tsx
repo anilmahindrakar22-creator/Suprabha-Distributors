@@ -1,7 +1,7 @@
 'use client';
 
 import { useCallback, useEffect, useEffectEvent, useMemo, useRef, useState, useSyncExternalStore } from 'react';
-import { ArrowUp, CircleCheck, Flame, PackageX, PhoneCall, ReceiptText, ShieldAlert, ShieldCheck, ShieldQuestionMark, TriangleAlert, Truck, UserCheck } from 'lucide-react';
+import { ArrowUp, CircleCheck, Clock, Flame, Info, PackageX, PhoneCall, ReceiptText, ShieldAlert, ShieldCheck, ShieldQuestionMark, TriangleAlert, Truck, UserCheck } from 'lucide-react';
 import type {
   CatalogItem,
   CustomerDirectoryEntry,
@@ -12,7 +12,8 @@ import type {
   OrderEvent,
   OrderSummary,
 } from '@/lib/order-types';
-import { billingHandoffText, canRoleTransitionOrder, customerBalanceFreshness, customerDeliveryAddresses, customerPhoneHref, filterOrders, orderAttentionReasons, orderBackOrderedQuantity, orderDeliveryReminder, orderEventDescription, orderFollowUpReminder, orderMatchesCaptureDateRange, orderNextOwnerLabel, orderOperationsText, orderStage, repeatOrderTemplate, searchCatalog, searchCustomers, tallyInvoiceLineReconciliation, tallyInvoiceReconciliationDetail } from '@/lib/order-types';
+import { billingHandoffText, customerBalanceFreshness, customerDeliveryAddresses, customerPhoneHref, filterOrders, orderAttentionReasons, orderBackOrderedQuantity, orderDeliveryReminder, orderEventDescription, orderFollowUpReminder, orderMatchesCaptureDateRange, orderNextOwnerLabel, orderOperationsText, orderStage, repeatOrderTemplate, searchCatalog, searchCustomers, tallyInvoiceLineReconciliation, tallyInvoiceReconciliationDetail } from '@/lib/order-types';
+import { nextStatus, nextStepFor } from '@/lib/order-next-step';
 import { orderListUrl } from '@/lib/order-list-query';
 import { offlineDraftRecoveryError, pinProtectedOfflineDevice, readOfflineDraftConsent, readOfflineOrderDraft, removeOfflineOrderDraft, restoreOfflineDraftLines, updateOfflineDraftState, writeOfflineDraftConsent, writeOfflineOrderDraft, type OfflineDraftState } from '@/lib/offline-order-drafts';
 import { readCatalogCache, removeCatalogCache, writeCatalogCache } from '@/lib/catalog-cache';
@@ -31,6 +32,7 @@ import { ProductRequest } from './product-request';
 import { BackIcon, ChevronDownIcon, CompactOrderRow, OrderFlagBadge, OrderProgress, OrderStageChips, orderStageStyle, snapshotTimeLabel, type StageFilter } from './order-list';
 import { deliveredTodayOrders, groupOrdersForList } from '@/lib/order-list-groups';
 import { readJsonBody } from '@/lib/http-json';
+import { orderDateLabel, orderDateTime } from '@/lib/order-date';
 import { hasAnyStockFlowRole, type StockFlowRole } from '@/lib/user-types';
 import type { TallyRecentProducts } from '@/lib/tally-recent-products';
 
@@ -87,19 +89,6 @@ const statusNames: Record<string, string> = {
   cancelled: 'Cancelled',
 };
 
-const nextStatus: Record<string, { label: string; status: string }> = {
-  phone_order_received: { label: 'Send for confirmation', status: 'awaiting_confirmation' },
-  awaiting_confirmation: { label: 'Confirm order', status: 'confirmed' },
-  awaiting_approval: { label: 'Approve order', status: 'confirmed' },
-  confirmed: { label: 'Pick & pack complete', status: 'packed' },
-  partially_reserved: { label: 'Pick & pack complete', status: 'packed' },
-  fully_reserved: { label: 'Pick & pack complete', status: 'packed' },
-  ready_for_picking: { label: 'Pick & pack complete', status: 'packed' },
-  picked: { label: 'Pick & pack complete', status: 'packed' },
-  packed: { label: 'Send to Tally billing', status: 'awaiting_tally_billing' },
-  awaiting_tally_billing: { label: 'Mark billed', status: 'billed_in_tally' },
-  billed_in_tally: { label: 'Ready for dispatch', status: 'ready_for_dispatch' },
-};
 
 function formatQuantity(value: number) {
   return Math.round(Number(value || 0)).toLocaleString('en-IN', { maximumFractionDigits: 0 });
@@ -107,15 +96,6 @@ function formatQuantity(value: number) {
 
 function statusLabel(status: string) {
   return statusNames[status] || status.replaceAll('_', ' ');
-}
-
-function compactOrderAge(createdAt: string, now = Date.now()) {
-  const elapsedMinutes = Math.max(0, Math.floor((now - new Date(createdAt).getTime()) / 60_000));
-  if (elapsedMinutes < 1) return 'now';
-  if (elapsedMinutes < 60) return `${elapsedMinutes}m`;
-  const elapsedHours = Math.floor(elapsedMinutes / 60);
-  if (elapsedHours < 24) return `${elapsedHours}h`;
-  return `${Math.floor(elapsedHours / 24)}d`;
 }
 
 const queueNames: Record<string, string> = {
@@ -155,6 +135,7 @@ export function OrderWorkspace({ actorEmail, initialStatus = 'open', initialQuer
   const [captureDate, setCaptureDate] = useState('');
   const [captureDateTo, setCaptureDateTo] = useState('');
   const [status, setStatus] = useState(focusOrder ? 'all' : initialStatus);
+  const [pricesToApprove, setPricesToApprove] = useState(false);
   const [creating, setCreating] = useState(false);
   const [repeatOrder, setRepeatOrder] = useState<OrderSummary | null>(null);
   const [catalogLoading, setCatalogLoading] = useState(false);
@@ -163,6 +144,7 @@ export function OrderWorkspace({ actorEmail, initialStatus = 'open', initialQuer
   const [page, setPage] = useState(1);
   const [selectedOrderId, setSelectedOrderId] = useState('');
   const [openOrderId, setOpenOrderId] = useState('');
+  const [retainedOpenOrder, setRetainedOpenOrder] = useState<OrderSummary | null>(null);
   const [deliveredToday, setDeliveredToday] = useState<OrderSummary[]>([]);
   const [deliveredRefresh, setDeliveredRefresh] = useState(0);
   const desktopControlCenter = useSyncExternalStore(subscribeDesktopControlCenter, desktopControlCenterSnapshot, () => false);
@@ -339,10 +321,11 @@ export function OrderWorkspace({ actorEmail, initialStatus = 'open', initialQuer
     return () => controller.abort();
   }, [showsDeliveredToday, deliveredRefresh]);
 
-  const visibleOrders = useMemo(() => data?.orders || [], [data]);
+  const loadedOrders = useMemo(() => data?.orders || [], [data]);
+  const visibleOrders = useMemo(() => pricesToApprove && status === 'open' ? loadedOrders.filter((order) => order.pricingState === 'approval_required') : loadedOrders, [loadedOrders, pricesToApprove, status]);
   const orderGroups = useMemo(() => groupOrdersForList(visibleOrders, showsDeliveredToday ? deliveredToday : []), [visibleOrders, showsDeliveredToday, deliveredToday]);
   const displayedOrders = useMemo(() => orderGroups.flatMap((group) => group.orders), [orderGroups]);
-  const openOrder = openOrderId ? displayedOrders.find((order) => order.id === openOrderId) : undefined;
+  const openOrder = openOrderId ? displayedOrders.find((order) => order.id === openOrderId) || (retainedOpenOrder?.id === openOrderId ? retainedOpenOrder : undefined) : undefined;
   const orderPageId = !desktopControlCenter ? openOrder?.id : undefined;
 
   useEffect(() => {
@@ -509,8 +492,14 @@ export function OrderWorkspace({ actorEmail, initialStatus = 'open', initialQuer
       if (acknowledgedOrderId) onOrderActed?.(acknowledgedOrderId);
       const acknowledgedOrder = dataRef.current?.orders.find((order) => order.id === acknowledgedOrderId);
       setNoticeOrderNumber(acknowledgedOrder?.orderNumber || '');
+       if (openOrder && dataRef.current) {
+         const retained = applyOrderAcknowledgement({ ...dataRef.current, orders: [openOrder] }, prepared.command, result)?.orders[0];
+         if (retained) setRetainedOpenOrder(retained);
+       }
        const patched = dataRef.current ? applyOrderAcknowledgement(dataRef.current, prepared.command, result) : null;
        if (patched) {
+         const updatedOpenOrder = patched.orders.find((order) => order.id === openOrderId);
+         if (updatedOpenOrder) setRetainedOpenOrder(updatedOpenOrder);
          const remainingOrders = filterOrders(patched.orders, query, status).filter((order) => orderMatchesCaptureDateRange(order, captureDate, captureDateTo));
          const removedFromQueue = patched.orders.length - remainingOrders.length;
          const reconciled = removedFromQueue && patched.pagination ? {
@@ -555,6 +544,7 @@ export function OrderWorkspace({ actorEmail, initialStatus = 'open', initialQuer
       },
       `${order.orderNumber} moved to ${statusLabel(action.status)}.`,
     );
+    if (!completed) throw new Error('Order could not be moved. Please try again.');
     if (completed) moveDesktopSelectionAfter(order.id);
   }
 
@@ -583,7 +573,8 @@ export function OrderWorkspace({ actorEmail, initialStatus = 'open', initialQuer
   }
 
   async function updateDelivery(order: OrderSummary, command: Extract<OrderCommand, { action: 'save_dispatch' | 'confirm_delivery' }>) {
-    await runCommand(command, command.action === 'save_dispatch' ? `${order.orderNumber} marked dispatched.` : `${order.orderNumber} delivery confirmed.`);
+    const completed = await runCommand(command, command.action === 'save_dispatch' ? `${order.orderNumber} marked dispatched.` : `${order.orderNumber} delivery confirmed.`);
+    if (!completed) throw new Error('Delivery details could not be saved. Please try again.');
   }
   async function updateException(order: OrderSummary, command: Extract<OrderCommand, { action: 'create_exception' | 'resolve_exception' }>) {
     await runCommand(command, `${order.orderNumber} delivery exception updated.`);
@@ -612,8 +603,12 @@ export function OrderWorkspace({ actorEmail, initialStatus = 'open', initialQuer
   const operations = data?.operations || {};
   const staleText = data?.snapshot.fetchedAt || 'No Tally snapshot';
   const actorRoles = data?.actor.roles ?? data?.actor.role;
+  const approvalCount = status === 'open' && hasAnyStockFlowRole(actorRoles, ['administrator', 'management']) ? loadedOrders.filter((order) => order.pricingState === 'approval_required').length : 0;
+  // After the last waiting price is approved the chip disappears; fall back to the Active list.
+  if (pricesToApprove && data && approvalCount === 0) setPricesToApprove(false);
   const stageFilters: StageFilter[] = [
     { status: 'open', label: 'Active' },
+    ...(approvalCount > 0 ? [{ status: 'prices_to_approve', label: 'Prices to approve', count: approvalCount, tone: 'warning' as const }] : []),
     { status: 'awaiting_confirmation', label: 'Confirm', count: operations.awaitingConfirmation, tone: 'confirm' },
     { status: 'picking', label: 'Pack', tone: 'pack' },
     { status: 'billing', label: 'Bill', count: operations.awaitingTallyBilling, tone: 'bill' },
@@ -623,6 +618,13 @@ export function OrderWorkspace({ actorEmail, initialStatus = 'open', initialQuer
   const yourQueue = hasAnyStockFlowRole(actorRoles, ['administrator', 'management']) ? 'awaiting_confirmation' : hasAnyStockFlowRole(actorRoles, ['accounts']) ? 'billing' : hasAnyStockFlowRole(actorRoles, ['warehouse']) ? 'picking' : '';
   function showQueue(queue: string) {
     setFocusNotice('');
+    if (queue === 'prices_to_approve') {
+      if (pricesToApprove) { setPricesToApprove(false); setStatus('open'); }
+      else { setPricesToApprove(true); setStatus('open'); }
+      setQuery(''); setCaptureDate(''); setCaptureDateTo(''); setPage(1);
+      return;
+    }
+    setPricesToApprove(false);
     setStatus(queue); setQuery(''); setCaptureDate(''); setCaptureDateTo(''); setPage(1);
   }
   function openOrderDetail(order: OrderSummary) {
@@ -699,7 +701,7 @@ export function OrderWorkspace({ actorEmail, initialStatus = 'open', initialQuer
           <button type="button" aria-expanded={mobileFiltersOpen} aria-controls="mobile-order-filters" onClick={() => setMobileFiltersOpen((open) => !open)} className={`flex min-h-10 shrink-0 items-center gap-1 rounded-xl border px-3 text-sm font-bold ${mobileFiltersOpen || !stageFilters.some((filter) => filter.status === status) || captureDate ? 'border-sf-ink bg-sf-ink text-white' : 'border-sf-line bg-white text-sf-body'}`}>Filters <span className={`transition ${mobileFiltersOpen ? 'rotate-180' : ''}`}><ChevronDownIcon /></span></button>
         </div>
         <div className="mt-2 lg:order-3 lg:mt-0 lg:min-w-0 lg:flex-1">
-          <OrderStageChips filters={stageFilters} active={status} onSelect={showQueue} />
+          <OrderStageChips filters={stageFilters} active={pricesToApprove && status === 'open' ? 'prices_to_approve' : status} onSelect={showQueue} />
         </div>
         <div id="mobile-order-filters" className={`${mobileFiltersOpen ? 'grid' : 'hidden'} mt-2 gap-3 rounded-2xl border border-sf-line-soft bg-white p-3 shadow-sm sm:grid-cols-[minmax(0,1fr)_auto] sm:items-end lg:order-6 lg:basis-full`}>
           <label className="block text-xs font-bold text-sf-muted" htmlFor="order-status">Show orders
@@ -759,7 +761,7 @@ export function OrderWorkspace({ actorEmail, initialStatus = 'open', initialQuer
         <section className="mt-3 overflow-hidden rounded-2xl border border-sf-line-soft bg-white shadow-[0_1px_3px_rgba(9,47,54,0.06)]">
           <div className="flex items-center justify-between gap-3 border-b border-sf-line-soft px-4 py-2">
             <div className="min-w-0">
-              <h2 className="truncate text-sm font-extrabold text-sf-strong">{queueNames[status] || statusLabel(status)}</h2>
+              <h2 className="truncate text-sm font-extrabold text-sf-strong">{pricesToApprove && status === 'open' ? 'Prices to approve' : <>{queueNames[status] || statusLabel(status)}</>}</h2>
               <p className="hidden text-[11px] text-sf-subtle lg:block" title={staleText}>Tally stock {snapshotTimeLabel(data?.snapshot.fetchedAt).toLocaleLowerCase('en-IN')}</p>
             </div>
             <span className="flex shrink-0 items-center gap-2">
@@ -786,7 +788,7 @@ export function OrderWorkspace({ actorEmail, initialStatus = 'open', initialQuer
                   const stage = orderStageStyle(order.status);
                   return <button id={`desktop-order-${order.id}`} key={order.id} type="button" aria-current={selected ? 'true' : undefined} title={`${order.assignedToEmail ? `Owner: ${order.assignedToEmail}` : 'Unassigned'} · Next: ${nextAction}`} onClick={() => setSelectedOrderId(order.id)} onKeyDown={(event) => { if (['ArrowUp', 'ArrowDown', 'Home', 'End'].includes(event.key)) { event.preventDefault(); navigateDesktopQueue(event.key); } }} className={`relative block w-full border-b border-sf-soft-2 flex min-h-11 items-center py-1.5 pl-5 pr-3 text-left outline-none hover:bg-white focus-visible:bg-white focus-visible:ring-2 focus-visible:ring-inset focus-visible:ring-sf-accent-bright aria-current:bg-white aria-current:shadow-[inset_3px_0_0_#092f36] ${['delivered', 'cancelled'].includes(order.status) ? 'opacity-70' : ''}`}>
                     <span aria-hidden="true" className={`absolute inset-y-2 left-2 w-1 rounded-full ${stage.bar}`} />
-                    <span className="flex min-w-0 flex-1 items-center gap-2"><strong className="min-w-[6.5rem] flex-1 truncate text-sm text-sf-ink">{order.customerName}</strong>{newOrderIds?.has(order.id) ? <span className="shrink-0 rounded-full bg-sf-ink px-1.5 py-0.5 text-[9px] font-black uppercase text-white">New</span> : null}<span className={`shrink-0 rounded-full px-2 py-0.5 text-[10px] font-extrabold ${stage.chip}`}>{stage.label}</span><OrderFlagBadge order={order} /><span className="hidden shrink-0 text-[11px] tabular-nums text-sf-subtle 2xl:inline">{order.orderNumber}</span><span className="w-8 shrink-0 text-right text-[11px] font-semibold tabular-nums text-sf-subtle" title="Time since order capture">{compactOrderAge(order.createdAt)}</span>{nextAction === 'View order' ? null : <span className="w-[7.5rem] shrink-0 truncate text-right text-[11px] font-bold text-sf-accent">{nextAction}</span>}</span>
+                    <span className="flex min-w-0 flex-1 items-center gap-2"><strong className="min-w-[6.5rem] flex-1 truncate text-sm text-sf-ink">{order.customerName}</strong>{newOrderIds?.has(order.id) ? <span className="shrink-0 rounded-full bg-sf-ink px-1.5 py-0.5 text-[9px] font-black uppercase text-white">New</span> : null}<span className={`shrink-0 rounded-full px-2 py-0.5 text-[10px] font-extrabold ${stage.chip}`}>{stage.label}</span><OrderFlagBadge order={order} /><span className="hidden shrink-0 text-[11px] tabular-nums text-sf-subtle 2xl:inline">{order.orderNumber}</span><time dateTime={order.createdAt} title={`Ordered ${orderDateTime(order.createdAt)}`} className="w-16 shrink-0 text-right text-[11px] font-semibold tabular-nums text-sf-subtle">{orderDateLabel(order.createdAt)}</time>{nextAction === 'View order' ? null : <span className="w-[7.5rem] shrink-0 truncate text-right text-[11px] font-bold text-sf-accent">{nextAction}</span>}</span>
                   </button>;
                   })}
                 </section>)}
@@ -824,7 +826,7 @@ export function OrderWorkspace({ actorEmail, initialStatus = 'open', initialQuer
               <button type="button" autoFocus aria-label="Back to orders" onClick={() => setOpenOrderId('')} className="grid min-h-11 min-w-11 place-items-center rounded-xl text-sf-ink hover:bg-sf-soft"><BackIcon /></button>
               <div className="min-w-0 flex-1">
                 <p className="truncate text-base font-black text-sf-ink">{openOrder.customerName}</p>
-                <p className="flex items-center gap-1.5 text-xs text-sf-subtle"><span className={`rounded-full px-2 py-0.5 text-[10px] font-extrabold ${orderStageStyle(openOrder.status).chip}`}>{orderStageStyle(openOrder.status).label}</span><OrderFlagBadge order={openOrder} /><span className="truncate">{openOrder.orderNumber} · {compactOrderAge(openOrder.createdAt)} old</span></p>
+                <p className="flex items-center gap-1.5 text-xs text-sf-subtle"><span className={`rounded-full px-2 py-0.5 text-[10px] font-extrabold ${orderStageStyle(openOrder.status).chip}`}>{orderStageStyle(openOrder.status).label}</span><OrderFlagBadge order={openOrder} /><span className="truncate">{openOrder.orderNumber} · <time dateTime={openOrder.createdAt}>{orderDateTime(openOrder.createdAt)}</time></span></p>
               </div>
             </div>
             <div className="mt-1.5 px-2"><OrderProgress status={openOrder.status} /></div>
@@ -930,20 +932,14 @@ function OrderRow({
 }) {
   const roles = actorRoles ?? [actorRole as StockFlowRole];
   const [busy, setBusy] = useState(false);
-  const [invoiceNumber, setInvoiceNumber] = useState(order.tallyInvoiceNumber || '');
   const [cancelling, setCancelling] = useState(false);
   const [cancelReason, setCancelReason] = useState('');
   const [detailsLoaded, setDetailsLoaded] = useState(false);
-  const [pricingLoaded, setPricingLoaded] = useState(false);
+  const pricing = useOrderPricing(order);
   const [detailHistory, setDetailHistory] = useState<{ exceptions: DeliveryException[]; installations: EquipmentInstallation[] } | null>(null);
   const [detailState, setDetailState] = useState<'idle' | 'loading' | 'error'>('idle');
-  const action = nextStatus[order.status];
   const canReviewPricing = hasAnyStockFlowRole(roles, ['administrator', 'accounts', 'management']) && !['billed_in_tally','ready_for_dispatch','dispatched','delivered','cancelled'].includes(order.status);
-  const canAdvance = Boolean(action && canRoleTransitionOrder(roles, order.status, action.status)
-    && (action.status !== 'awaiting_tally_billing' || order.pricingState === 'approved'));
-  const nextOwner = orderNextOwnerLabel(order.status) ?? (['ready_for_dispatch', 'dispatched'].includes(order.status) ? 'Operations' : null);
   const total = Number(order.totalQuantity || 0);
-  const requiresInvoice = order.status === 'awaiting_tally_billing';
   const canCancel = hasAnyStockFlowRole(roles, ['administrator']) && !['cancelled', 'delivered'].includes(order.status);
   const canRepeat = hasAnyStockFlowRole(roles, ['administrator', 'sales', 'operations', 'management']);
   const attention = orderAttentionReasons(order);
@@ -978,7 +974,8 @@ function OrderRow({
       <div>
         <div className="flex flex-wrap items-center gap-2">
           {inOrderPage ? null : <><strong className="text-sf-ink">{order.orderNumber}</strong>
-          <span className="rounded-full bg-sf-soft px-2.5 py-1 text-[11px] font-extrabold text-sf-label">{orderStage(order.status)}</span></>}
+          <span className="rounded-full bg-sf-soft px-2.5 py-1 text-[11px] font-extrabold text-sf-label">{orderStage(order.status)}</span>
+          <time dateTime={order.createdAt} className="text-xs font-semibold text-sf-subtle">Ordered {orderDateTime(order.createdAt)}</time></>}
           {order.priority && order.priority !== 'normal' ? <span className={`inline-flex items-center gap-1 rounded-full px-2.5 py-1 text-[11px] font-extrabold ${order.priority === 'urgent' ? 'bg-sf-danger-soft text-sf-danger' : 'bg-sf-warning-soft text-sf-warning'}`}>{order.priority === 'urgent' ? <Flame aria-hidden="true" className="shrink-0" size={12} /> : <ArrowUp aria-hidden="true" className="shrink-0" size={12} />}{order.priority === 'urgent' ? 'Urgent' : 'High priority'}</span> : null}
           {order.assignedToEmail ? <span title={`Assigned to ${order.assignedToEmail}`} className="inline-flex items-center gap-1 max-w-44 truncate rounded-full bg-sf-info-soft px-2.5 py-1 text-[11px] font-extrabold text-sf-info sm:max-w-none"><UserCheck aria-hidden="true" className="shrink-0" size={12} /><span className="truncate">Assigned: {order.assignedToEmail}</span></span> : null}
           {deliveryReminder ? <span className={`inline-flex items-center gap-1 rounded-full px-2.5 py-1 text-[11px] font-extrabold ${deliveryReminder === 'overdue' ? 'bg-sf-danger-soft text-sf-danger' : deliveryReminder === 'today' ? 'bg-sf-warning-soft text-sf-warning' : 'bg-sf-info-soft text-sf-info'}`}><Truck aria-hidden="true" className="shrink-0" size={12} />{deliveryReminder === 'overdue' ? 'Delivery overdue' : deliveryReminder === 'today' ? 'Delivery due today' : 'Delivery due soon'}</span> : null}
@@ -997,25 +994,8 @@ function OrderRow({
         <p className="text-xs font-bold text-sf-subtle">Ordered quantity</p>
         <p className="mt-1 font-extrabold text-sf-strong">{formatQuantity(total)}</p>
       </div>
-      {action && canAdvance ? (
-        // On the phone order page the next step is pinned to the bottom of the screen, always within thumb reach.
-        <div className={inOrderPage ? 'fixed inset-x-0 bottom-0 z-50 flex flex-col gap-2 border-t border-sf-line-soft bg-white/95 px-3 pt-3 shadow-[0_-8px_24px_rgba(9,47,54,0.08)] backdrop-blur' : 'flex w-full flex-col gap-2 lg:min-w-48'} style={inOrderPage ? { paddingBottom: 'max(0.75rem, env(safe-area-inset-bottom))' } : undefined}>
-          {requiresInvoice ? <label className="text-xs font-bold text-sf-muted">Tally invoice number(s)<input maxLength={160} value={invoiceNumber} onChange={(event) => setInvoiceNumber(event.target.value)} placeholder="Use commas for split invoices" className="mt-1 min-h-10 w-full rounded-lg border border-sf-line px-3 font-normal text-sf-strong outline-none focus:border-sf-mint" /></label> : null}
-          <button
-          type="button"
-          disabled={busy || (requiresInvoice && !invoiceNumber.trim())}
-          onClick={async () => { setBusy(true); try { await onAdvance(order, invoiceNumber); } finally { setBusy(false); } }}
-          className={inOrderPage ? 'min-h-12 rounded-xl bg-sf-ink px-4 text-base font-bold text-white hover:bg-sf-ink-hover disabled:opacity-50' : 'min-h-11 rounded-xl border border-sf-accent-line bg-sf-accent-soft px-4 text-sm font-extrabold text-sf-success hover:bg-sf-accent-soft disabled:opacity-50'}
-        >
-          {busy ? 'Updating…' : action.label}
-        </button>
-        </div>
-      ) : <span className="text-xs font-bold text-sf-subtle">{action?.status === 'awaiting_tally_billing' && order.pricingState !== 'approved' ? 'Pricing approval required' : nextOwner ? `Waiting for ${nextOwner}` : 'No action due'}</span>}
+      <OrderNextStepBar order={order} roles={roles} pricing={pricing} inOrderPage={inOrderPage} onAdvance={onAdvance} onDelivery={onDelivery} onPricingChanged={onPricingChanged} />
       </div>
-      {canReviewPricing ? <details onToggle={event => { if (event.currentTarget.open) setPricingLoaded(true); }} className="mt-3 rounded-xl border border-sf-accent-line bg-white p-3 text-sm">
-        <summary className="min-h-10 cursor-pointer font-bold text-sf-strong">{order.pricingState === 'approved' ? 'View pricing' : 'Review pricing'}</summary>
-        {pricingLoaded ? <PricingPanel order={order} actorRole={actorRole} actorRoles={roles} onChanged={onPricingChanged} /> : null}
-      </details> : null}
       <details className="mt-3 rounded-xl border border-sf-line-soft bg-sf-soft-0 text-sm">
         <summary className="flex min-h-10 cursor-pointer list-none items-center justify-between gap-3 px-3 font-bold text-sf-label marker:hidden [&::-webkit-details-marker]:hidden">
           <span>More order controls</span>
@@ -1034,6 +1014,7 @@ function OrderRow({
       <details onToggle={(event) => { if (event.currentTarget.open) { setDetailsLoaded(true); void loadDetails(); } }} className="mt-4 rounded-xl bg-sf-soft px-4 py-3 text-sm">
         <summary className="cursor-pointer font-bold text-sf-label">View order details</summary>
         {detailsLoaded ? <>
+        {canReviewPricing ? <PricingPanel order={order} actorRole={actorRole} actorRoles={roles} pricing={pricing} onChanged={onPricingChanged} /> : null}
         <div className="mt-3 grid gap-4 border-t border-sf-line-soft pt-3 sm:grid-cols-2">
           <div>
             <p className="text-xs font-bold uppercase tracking-wide text-sf-subtle">Products</p>
@@ -1041,7 +1022,7 @@ function OrderRow({
           </div>
           <dl className="grid min-w-0 grid-cols-[auto_minmax(0,1fr)] content-start gap-x-3 gap-y-2 text-xs">
             <dt className="font-bold text-sf-subtle">Internal status</dt><dd>{statusLabel(order.status)}</dd>
-            <dt className="font-bold text-sf-subtle">Order date</dt><dd>{new Date(order.createdAt).toLocaleString('en-IN')}</dd>
+            <dt className="font-bold text-sf-subtle">Order date</dt><dd>{orderDateTime(order.createdAt)}</dd>
             <dt className="font-bold text-sf-subtle">Last updated</dt><dd>{new Date(order.updatedAt).toLocaleString('en-IN')}</dd>
             <dt className="font-bold text-sf-subtle">Source</dt><dd className="capitalize">{order.source.replaceAll('_', ' ')}</dd>
             <dt className="font-bold text-sf-subtle">Tally invoice</dt><dd>{order.tallyInvoiceNumber || 'Not billed yet'}{invoiceState === 'verified' ? <span title="Invoice number, financial year, and customer ledger matched" className="ml-2 rounded-full bg-sf-accent-soft px-2 py-0.5 font-bold text-sf-success">Invoice matched</span> : invoiceState === 'unmatched' ? <span className="ml-2 rounded-full bg-sf-warning-soft px-2 py-0.5 font-bold text-sf-warning">Invoice not found</span> : invoiceState === 'customer_mismatch' ? <span title="The invoice exists under a different Tally customer ledger" className="ml-2 rounded-full bg-sf-danger-soft px-2 py-0.5 font-bold text-sf-danger">Customer ledger differs</span> : invoiceState === 'ambiguous' ? <span title="More than one Tally voucher has this invoice identity" className="ml-2 rounded-full bg-sf-danger-soft px-2 py-0.5 font-bold text-sf-danger">Duplicate invoice match</span> : invoiceState === 'verification_stale' ? <span title="The latest Tally data is over 20 minutes old" className="ml-2 rounded-full bg-sf-warning-soft px-2 py-0.5 font-bold text-sf-warning">Match needs fresh sync</span> : invoiceState === 'awaiting_sync' ? <span className="ml-2 text-sf-subtle">Awaiting connector update</span> : null}</dd>
@@ -1075,28 +1056,138 @@ function BillingReviewPanel({ order, actorRole, actorRoles, onSave }: { order: O
 
 const currency = new Intl.NumberFormat('en-IN', { style: 'currency', currency: 'INR', maximumFractionDigits: 2 });
 
-function PricingPanel({ order, actorRole, actorRoles, onChanged }: { order: OrderSummary; actorRole: string; actorRoles?: readonly StockFlowRole[]; onChanged: () => Promise<void> }) {
-  const [workspace, setWorkspace] = useState<OrderPricingWorkspace | null>(null);
-  const [entries, setEntries] = useState<Record<string, { rate: string; reason: string }>>({});
-  const [state, setState] = useState<'idle' | 'loading' | 'saving' | 'error'>('idle');
+function useOrderPricing(order: OrderSummary) {
+  const readKey = `${order.id}:${order.pricingState}:${order.status}`;
+  const autoLoad = order.pricingState !== 'approved' && !['delivered', 'cancelled'].includes(order.status);
+  const [result, setResult] = useState<{ key: string; workspace: OrderPricingWorkspace | null; state: 'idle' | 'loading' | 'error'; message: string }>(() => ({ key: readKey, workspace: null, state: autoLoad ? 'loading' : 'idle', message: '' }));
+  const request = useRef<AbortController | null>(null);
+  const read = useCallback((controller: AbortController) => {
+    return fetch(`/api/pricing?orderId=${encodeURIComponent(order.id)}`, { cache: 'no-store', signal: controller.signal }).then(readResponse<OrderPricingWorkspace>).then(workspace => {
+      if (controller.signal.aborted) return;
+      setResult({ key: readKey, workspace, state: 'idle', message: '' });
+    }).catch(cause => {
+      if (controller.signal.aborted) return;
+      setResult(current => ({ ...current, key: readKey, state: 'error', message: cause instanceof Error ? cause.message : 'Pricing could not load' }));
+    });
+  }, [order.id, readKey]);
+  const reload = useCallback(async () => {
+    request.current?.abort();
+    const controller = new AbortController();
+    request.current = controller;
+    setResult(current => ({ ...current, key: readKey, state: 'loading', message: '' }));
+    await read(controller);
+  }, [read, readKey]);
+  useEffect(() => {
+    if (order.pricingState === 'approved') return () => request.current?.abort();
+    if (autoLoad) {
+      request.current?.abort();
+      const controller = new AbortController();
+      request.current = controller;
+      void read(controller);
+    }
+    return () => request.current?.abort();
+  }, [autoLoad, order.pricingState, read]);
+  return {
+    workspace: result.workspace?.orderId === order.id ? result.workspace : null,
+    reload,
+    state: result.key === readKey ? result.state : autoLoad ? 'loading' as const : 'idle' as const,
+    message: result.key === readKey ? result.message : '',
+  };
+}
+
+type DeliveryCommand = Extract<OrderCommand, { action: 'save_dispatch' | 'confirm_delivery' }>;
+function OrderNextStepBar({ order, roles, pricing, inOrderPage, onAdvance, onDelivery, onPricingChanged }: {
+  order: OrderSummary; roles: readonly StockFlowRole[]; pricing: ReturnType<typeof useOrderPricing>; inOrderPage: boolean;
+  onAdvance: (order: OrderSummary, invoice?: string) => Promise<void>;
+  onDelivery: (order: OrderSummary, command: DeliveryCommand) => Promise<void>;
+  onPricingChanged: () => Promise<void>;
+}) {
+  const step = nextStepFor(order, roles, pricing.workspace);
+  const [sheet, setSheet] = useState('');
+  const [busy, setBusy] = useState(false);
+  const [error, setError] = useState('');
+  const [success, setSuccess] = useState('');
+  const [reason, setReason] = useState('');
+  const [invoice, setInvoice] = useState(order.tallyInvoiceNumber || '');
+  const governedRequest = useRef<{ version: number; idempotencyKey: string } | null>(null);
+  useEffect(() => {
+    if (!success) return;
+    const timer = window.setTimeout(() => setSuccess(''), 4000);
+    return () => window.clearTimeout(timer);
+  }, [success]);
+  const stale = Boolean(pricing.workspace && pricing.workspace.orderVersion < order.version);
+  async function run(work: () => Promise<void>, message: string) {
+    if (busy) return;
+    setBusy(true); setError('');
+    try { await work(); setSheet(''); setSuccess(message); }
+    catch (cause) { setError(cause instanceof Error ? cause.message : 'Unable to complete the step'); }
+    finally { setBusy(false); }
+  }
+  async function pricingCommand(action: 'apply_governed_order_pricing' | 'approve_price_exception' | 'reject_price_exception') {
+    if (!pricing.workspace || stale || pricing.state === 'loading') return;
+    let payload;
+    if (action === 'apply_governed_order_pricing') {
+      if (governedRequest.current?.version !== pricing.workspace.orderVersion) governedRequest.current = { version: pricing.workspace.orderVersion, idempotencyKey: crypto.randomUUID() };
+      payload = { orderId: order.id, expectedVersion: pricing.workspace.orderVersion, idempotencyKey: governedRequest.current.idempotencyKey };
+    } else {
+      if (!step.exception) return;
+      payload = { exceptionId: step.exception.id, expectedVersion: step.exception.version, reason: action === 'approve_price_exception' ? 'Price reviewed and approved' : reason.trim(), idempotencyKey: crypto.randomUUID() };
+    }
+    await readResponse(await fetch('/api/pricing', { method: 'POST', headers: { 'content-type': 'application/json' }, body: JSON.stringify({ action, payload }) }));
+    governedRequest.current = null;
+    await onPricingChanged(); await pricing.reload();
+  }
+  const primary = 'min-h-12 w-full rounded-xl bg-sf-ink px-4 text-base font-bold text-white hover:bg-sf-ink-hover disabled:opacity-50';
+  const informational = ['loading', 'waiting', 'pricing_waiting', 'done', 'none'].includes(step.kind);
+  if (step.kind === 'none') return null;
+  return <section aria-label="Order next step" className={inOrderPage ? 'fixed inset-x-0 bottom-0 z-50 flex max-h-[70vh] min-w-0 flex-col gap-2 overflow-y-auto border-t border-sf-line-soft bg-white/95 px-3 pt-3 backdrop-blur' : 'flex max-h-[70vh] min-w-0 w-full flex-col gap-2 overflow-y-auto lg:min-w-48'} style={inOrderPage ? { paddingBottom: 'max(0.75rem, env(safe-area-inset-bottom))' } : undefined}>
+    {success ? <output className={`flex items-center gap-2 text-sm font-bold ${/rejected/i.test(success) ? 'text-sf-label' : 'text-sf-success'}`}>{/rejected/i.test(success) ? <Info aria-hidden="true" size={16} /> : <CircleCheck aria-hidden="true" size={16} />}{success}</output> : null}
+    {error || pricing.message ? <p role="alert" className="text-sm text-sf-danger">{error || pricing.message}</p> : null}
+    {stale || pricing.state === 'error' ? <button type="button" disabled={busy || pricing.state === 'loading'} onClick={() => void pricing.reload()} className="min-h-11 rounded-xl border border-sf-line px-3 text-sm font-bold text-sf-body">Reload pricing</button> : null}
+    {stale ? <p className="text-sm text-sf-warning">This order changed. Reload pricing before submitting.</p> : null}
+    {sheet ? <div className="min-w-0 space-y-3">
+      <button type="button" disabled={busy} onClick={() => { setSheet(''); setReason(''); }} className="min-h-11 rounded-lg border border-sf-line px-4 font-bold text-sf-body">Cancel</button>
+      {sheet === 'price' ? <PricingPanel order={order} actorRole={roles[0]} actorRoles={roles} pricing={pricing} sheet onSavingChange={setBusy} onChanged={async () => { await onPricingChanged(); setSheet(''); }} /> : null}
+      {sheet === 'reject' ? <><label className="block text-sm font-bold text-sf-body">Rejection reason<input required minLength={3} maxLength={1000} value={reason} onChange={event => setReason(event.target.value)} className="mt-1 min-h-11 w-full min-w-0 rounded-lg border border-sf-line px-3" /></label><button type="button" disabled={busy || stale || reason.trim().length < 3} onClick={() => void run(() => pricingCommand('reject_price_exception'), 'Price rejected')} className={primary}>Reject price</button></> : null}
+      {sheet === 'dispatch' ? <DispatchForm order={order} actorRoles={roles} onSave={(current, command) => run(() => onDelivery(current, command), 'Moved to Dispatched')} /> : null}
+      {sheet === 'deliver' ? <DeliveryForm order={order} actorRoles={roles} onSave={(current, command) => run(() => onDelivery(current, command), 'Moved to Delivered')} /> : null}
+    </div> : <>
+      {informational ? <p className={`flex items-center gap-2 py-2 text-sm font-bold ${step.kind === 'done' ? 'text-sf-success' : 'text-sf-muted'}`}>{step.kind === 'done' ? <CircleCheck aria-hidden="true" size={16} /> : <Clock aria-hidden="true" size={16} />}{step.label}</p> : <>
+        {step.kind === 'advance' && order.status === 'awaiting_tally_billing' ? <label className="text-xs font-bold text-sf-muted">Tally invoice number(s)<input maxLength={160} value={invoice} onChange={event => setInvoice(event.target.value)} placeholder="Use commas for split invoices" className="mt-1 min-h-10 w-full rounded-lg border border-sf-line px-3 font-normal text-sf-strong" /></label> : null}
+        <button type="button" className={primary} disabled={busy || (step.kind.startsWith('pricing_') && (stale || pricing.state === 'loading')) || (step.kind === 'advance' && order.status === 'awaiting_tally_billing' && !invoice.trim())} onClick={() => {
+          if (step.kind === 'advance') void run(() => onAdvance(order, invoice), `Moved to ${statusLabel(nextStatus[order.status].status)}`);
+          else if (step.kind === 'pricing_apply') void run(() => pricingCommand('apply_governed_order_pricing'), 'Price approved');
+          else if (step.kind === 'pricing_approve') void run(() => pricingCommand('approve_price_exception'), 'Price approved');
+          else setSheet(step.kind === 'pricing_enter' ? 'price' : step.kind);
+        }}>{busy ? 'Updating…' : step.label}</button>
+        {step.kind === 'pricing_approve' ? <button type="button" disabled={busy || stale} onClick={() => setSheet('reject')} className="min-h-11 rounded-xl border border-sf-danger-line px-4 font-bold text-sf-danger">Reject</button> : null}
+      </>}
+    </>}
+  </section>;
+}
+
+function PricingPanel({ order, actorRole, actorRoles, onChanged, pricing, sheet = false, onSavingChange }: { order: OrderSummary; actorRole: string; actorRoles?: readonly StockFlowRole[]; onChanged: () => Promise<void>; pricing: ReturnType<typeof useOrderPricing>; sheet?: boolean; onSavingChange?: (saving: boolean) => void }) {
+  const { workspace, reload: loadPricing } = pricing;
+  const [draftWorkspace, setDraftWorkspace] = useState(workspace);
+  const [entries, setEntries] = useState<Record<string, { rate: string; reason: string }>>(() => Object.fromEntries((workspace?.lines || []).map(line => [line.lineId, { rate: line.proposedRate == null ? '' : String(line.proposedRate), reason: '' }])));
+  const [localState, setState] = useState<'idle' | 'loading' | 'saving' | 'error'>('idle');
+  const state = pricing.state === 'loading' ? 'loading' : localState === 'idle' ? pricing.state : localState;
   const [message, setMessage] = useState('');
   const [manualReview, setManualReview] = useState(false);
   const governedRequest = useRef<{ orderId: string; version: number; idempotencyKey: string } | null>(null);
   const pricingIsStale = Boolean(workspace && workspace.orderVersion < order.version);
-  async function loadPricing(force = false) {
-    if ((!force && workspace) || state === 'loading') return;
-    setState('loading'); setMessage('');
-    try {
-      const result = await readResponse<OrderPricingWorkspace>(await fetch(`/api/pricing?orderId=${encodeURIComponent(order.id)}`, { cache: 'no-store' }));
-      setWorkspace(result);
-      governedRequest.current = null;
-      setEntries(Object.fromEntries(result.lines.map((line) => [line.lineId, { rate: line.proposedRate == null ? '' : String(line.proposedRate), reason: '' }])));
-      setManualReview(false);
-      setState('idle');
-    } catch (error) { setState('error'); setMessage(error instanceof Error ? error.message : 'Pricing could not load'); }
+  if (workspace && workspace !== draftWorkspace) {
+    setDraftWorkspace(workspace);
+    setEntries(Object.fromEntries(workspace.lines.map(line => [line.lineId, { rate: line.proposedRate == null ? '' : String(line.proposedRate), reason: '' }])));
+    setManualReview(false);
   }
+  useEffect(() => {
+    if (!workspace) return;
+    governedRequest.current = null;
+  }, [workspace]);
   async function submit() {
     if (!workspace || pricingIsStale || state === 'loading' || state === 'saving') return;
+    onSavingChange?.(true);
     setState('saving'); setMessage('');
     try {
       const response = await readResponse<{ pricingState?: string }>(await fetch('/api/pricing', {
@@ -1108,9 +1199,9 @@ function PricingPanel({ order, actorRole, actorRoles, onChanged }: { order: Orde
         }),
       }));
       setMessage(response.pricingState === 'approved' ? 'Pricing approved and billing snapshot created.' : 'Pricing exception sent for approval.');
-      setWorkspace(null); await onChanged(); await loadPricing(true);
+      await onChanged(); await loadPricing();
     } catch (error) { setMessage(error instanceof Error ? error.message : 'Pricing could not be saved'); }
-    finally { setState('idle'); }
+    finally { setState('idle'); onSavingChange?.(false); }
   }
   async function applyGoverned() {
     if (!workspace || pricingIsStale || state === 'loading' || state === 'saving') return;
@@ -1127,29 +1218,31 @@ function PricingPanel({ order, actorRole, actorRoles, onChanged }: { order: Orde
       }));
       governedRequest.current = null;
       setMessage('Governed customer prices applied and billing snapshot created.');
-      setWorkspace(null); await onChanged(); setState('idle');
+      await onChanged(); await loadPricing(); setState('idle');
     } catch (error) { setMessage(error instanceof Error ? error.message : 'Governed pricing could not be applied'); setState('error'); }
   }
-  const loadPricingOnOpen = useEffectEvent(loadPricing);
-  useEffect(() => {
-    if (order.pricingState === 'approved') return;
-    const timeout = window.setTimeout(() => void loadPricingOnOpen(), 0);
-    return () => window.clearTimeout(timeout);
-  }, [order.id, order.pricingState]);
   const governedReady = Boolean(workspace?.lines.length) && workspace!.lines.every((line) => line.governed && line.guardrail !== 'PRICE_REVIEW_REQUIRED' && Number(line.proposedRate) > 0);
+  if (sheet) return <section aria-label="Enter price" className="min-w-0 space-y-3">
+    <h4 className="font-bold text-sf-body">Enter price</h4>
+    {message ? <p role="alert" className="text-sm text-sf-danger">{message}</p> : null}
+    <fieldset disabled={pricingIsStale || state === 'loading' || state === 'saving'} className="min-w-0 space-y-3">
+      {workspace?.lines.map(line => <PricingLineCard key={line.lineId} line={line} compact={Boolean(line.governed && line.guardrail !== 'PRICE_REVIEW_REQUIRED' && Number(line.proposedRate) > 0)} entry={entries[line.lineId] || { rate: '', reason: '' }} onChange={entry => setEntries(current => ({ ...current, [line.lineId]: entry }))} />)}
+      <button type="button" disabled={!workspace?.lines.length || workspace.lines.some(line => !Number(entries[line.lineId]?.rate) || ((!line.governed || line.guardrail === 'PRICE_REVIEW_REQUIRED') && (entries[line.lineId]?.reason.trim().length || 0) < 3))} onClick={() => void submit()} className="min-h-12 w-full rounded-xl bg-sf-ink px-4 font-bold text-white hover:bg-sf-ink-hover disabled:opacity-50">{state === 'saving' ? 'Saving pricing…' : 'Submit for approval'}</button>
+    </fieldset>
+  </section>;
   return <section className="mt-5 border-t border-sf-line-soft pt-4" aria-label="Price review">
     <div className="flex flex-wrap items-center justify-between gap-2"><h4 className="text-xs font-extrabold uppercase tracking-wide text-sf-body">Price review</h4><span className={`rounded-full px-2 py-1 text-[11px] font-extrabold ${order.pricingState === 'approved' ? 'bg-sf-accent-soft text-sf-success' : order.pricingState === 'approval_required' ? 'bg-sf-warning-soft text-sf-warning' : 'bg-sf-soft text-sf-muted'}`}>{order.pricingState === 'approved' ? 'Verified' : order.pricingState === 'approval_required' ? 'Approval required' : 'Review required'}</span></div>
     {order.pricingState === 'approved' && !workspace ? <button type="button" onClick={() => void loadPricing()} className="mt-2 text-xs font-bold text-sf-body">View pricing details</button> : null}
-    <button type="button" disabled={state === 'loading' || state === 'saving'} onClick={() => void loadPricing(true)} className="mt-2 min-h-10 rounded-lg border border-sf-line px-3 text-xs font-bold disabled:opacity-50">Reload pricing</button>
-    {pricingIsStale ? <p role="alert" className="mt-2 rounded-lg bg-amber-50 p-3 text-sm text-amber-900">This order changed. Reload pricing before submitting. Reloading replaces unsaved rates and reasons.</p> : null}
+    <button type="button" disabled={state === 'loading' || state === 'saving'} onClick={() => void loadPricing()} className="mt-2 min-h-10 rounded-lg border border-sf-line px-3 text-xs font-bold disabled:opacity-50">Reload pricing</button>
+    {pricingIsStale ? <p role="alert" className="mt-2 rounded-lg bg-sf-warning-soft p-3 text-sm text-sf-warning">This order changed. Reload pricing before submitting. Reloading replaces unsaved rates and reasons.</p> : null}
     {state === 'loading' ? <p className="mt-3 text-xs text-sf-subtle">Loading governed pricing evidence…</p> : null}
     {message ? <output className={`mt-3 block rounded-lg px-3 py-2 text-xs font-bold ${state === 'error' ? 'bg-sf-danger-soft text-sf-danger' : 'bg-sf-accent-soft text-sf-body'}`}>{message}</output> : null}
     {workspace ? <fieldset disabled={pricingIsStale || state === 'loading' || state === 'saving'} className="mt-3 space-y-3">
-      {workspace.exceptions.map((exception) => <PriceExceptionDecision key={exception.id} exception={exception} actorRole={actorRole} actorRoles={actorRoles} onChanged={async () => { setWorkspace(null); await onChanged(); await loadPricing(true); }} />)}
+      {workspace.exceptions.map((exception) => <PriceExceptionDecision key={exception.id} exception={exception} actorRole={actorRole} actorRoles={actorRoles} onChanged={async () => { await onChanged(); await loadPricing(); }} />)}
       {workspace.lines.map((line) => <PricingLineCard key={line.lineId} line={line} compact={governedReady && !manualReview} entry={entries[line.lineId] || { rate: '', reason: '' }} onChange={(entry) => setEntries((current) => ({ ...current, [line.lineId]: entry }))} />)}
       {workspace.exceptions.length === 0 && workspace.pricingState !== 'approved' && governedReady && !manualReview ? <div className="flex flex-wrap items-center gap-3">{order.status === 'awaiting_confirmation' || order.status === 'phone_order_received' ? <p className="text-xs font-bold text-sf-success">Governed prices will apply when this order is confirmed.</p> : <button type="button" disabled={state === 'saving'} onClick={() => void applyGoverned()} className="min-h-10 rounded-xl bg-sf-ink-hover px-4 text-sm font-bold text-white disabled:opacity-50">{state === 'saving' ? 'Applying prices…' : 'Apply governed prices'}</button>}<button type="button" disabled={state === 'saving'} onClick={() => setManualReview(true)} className="min-h-10 rounded-xl border border-sf-accent-line px-4 text-sm font-bold text-sf-body">Review price exception</button></div> : null}
-      {workspace.exceptions.length === 0 && workspace.pricingState !== 'approved' && (!governedReady || manualReview) ? <button type="button" disabled={state === 'saving' || workspace.lines.some((line) => !Number(entries[line.lineId]?.rate))} onClick={() => void submit()} className="min-h-10 rounded-xl bg-sf-ink-hover px-4 text-sm font-bold text-white disabled:opacity-50">{state === 'saving' ? 'Saving pricing…' : governedReady ? 'Submit price override' : 'Submit price exception'}</button> : null}
-      <PricingDecisionHistory history={workspace.history || []} />
+      {workspace.exceptions.length === 0 && workspace.pricingState !== 'approved' && (!governedReady || manualReview) ? <button type="button" disabled={state === 'saving' || workspace.lines.some((line) => !Number(entries[line.lineId]?.rate) || (sheet && (entries[line.lineId]?.reason.trim().length || 0) < 3))} onClick={() => void submit()} className="min-h-10 rounded-xl bg-sf-ink-hover px-4 text-sm font-bold text-white disabled:opacity-50">{state === 'saving' ? 'Saving pricing…' : sheet ? 'Submit for approval' : governedReady ? 'Submit price override' : 'Submit price exception'}</button> : null}
+      {sheet ? null : <PricingDecisionHistory history={workspace.history || []} />}
     </fieldset> : null}
   </section>;
 }
@@ -1306,7 +1399,8 @@ function localDateTimeValue(date = new Date()) {
   return new Date(date.getTime() - offset).toISOString().slice(0, 16);
 }
 
-function DispatchPanel({ order, actorRole, actorRoles, onSave }: { order: OrderSummary; actorRole: string; actorRoles?: readonly StockFlowRole[]; onSave: (order: OrderSummary, command: Extract<OrderCommand, { action: 'save_dispatch' | 'confirm_delivery' }>) => Promise<void> }) {
+type FulfilmentFormProps = { order: OrderSummary; actorRole?: string; actorRoles?: readonly StockFlowRole[]; onSave: (order: OrderSummary, command: DeliveryCommand) => Promise<void> };
+function useFulfilmentDraft(order: OrderSummary) {
   const [busy, setBusy] = useState(false);
   const [courierName, setCourierName] = useState(order.courierName || '');
   const [trackingNumber, setTrackingNumber] = useState(order.trackingNumber || '');
@@ -1326,9 +1420,34 @@ function DispatchPanel({ order, actorRole, actorRoles, onSave }: { order: OrderS
     setPodReference(order.podReference || '');
     setBaseVersion(order.version);
   }
+  return { busy, setBusy, courierName, setCourierName, trackingNumber, setTrackingNumber, dispatchDate, setDispatchDate, vehicleNumber, setVehicleNumber, deliveredAt, setDeliveredAt, receivedBy, setReceivedBy, podReference, setPodReference, baseVersion, resetDrafts };
+}
+function DispatchForm({ order, actorRole, actorRoles, onSave }: FulfilmentFormProps) {
+  const { busy, setBusy, courierName, setCourierName, trackingNumber, setTrackingNumber, dispatchDate, setDispatchDate, vehicleNumber, setVehicleNumber, baseVersion, resetDrafts } = useFulfilmentDraft(order);
+  const [error, setError] = useState('');
   const canUpdate = hasAnyStockFlowRole(actorRoles ?? [actorRole as StockFlowRole], ['administrator', 'operations']);
+  const save = async (current: OrderSummary, command: DeliveryCommand) => {
+    setError('');
+    try { await onSave(current, command); }
+    catch (cause) { setError(cause instanceof Error ? cause.message : 'Delivery details could not be saved'); }
+  };
+  return <div className="min-w-0">{error ? <p role="alert" className="text-sm text-sf-danger">{error}</p> : null}<div className="mt-3 grid gap-3 rounded-xl bg-white p-4 sm:grid-cols-2"><OrderDraftNotice changed={order.version !== baseVersion} busy={busy} onLoadLatest={resetDrafts} /><label className="text-sm font-bold">Courier / transporter<input maxLength={160} value={courierName} onChange={(event) => setCourierName(event.target.value)} className="mt-1 min-h-11 min-w-0 w-full rounded-lg border border-sf-line px-3 font-normal" /></label><label className="text-sm font-bold">Tracking / docket number<input maxLength={160} value={trackingNumber} onChange={(event) => setTrackingNumber(event.target.value)} className="mt-1 min-h-11 min-w-0 w-full rounded-lg border border-sf-line px-3 font-normal" /></label><label className="text-sm font-bold">Dispatch date<input type="date" value={dispatchDate} onChange={(event) => setDispatchDate(event.target.value)} className="mt-1 min-h-11 min-w-0 w-full rounded-lg border border-sf-line px-3 font-normal" /></label><label className="text-sm font-bold">Vehicle number <span className="font-normal text-sf-subtle">(optional)</span><input value={vehicleNumber} onChange={(event) => setVehicleNumber(event.target.value)} maxLength={40} className="mt-1 min-h-11 min-w-0 w-full rounded-lg border border-sf-line px-3 font-normal" /></label><div className="sm:col-span-2 flex justify-end"><button type="button" disabled={!canUpdate || busy || courierName.trim().length < 2 || trackingNumber.trim().length < 2 || !dispatchDate} onClick={async () => { setBusy(true); try { await save(order, { action: 'save_dispatch', payload: { orderId: order.id, expectedVersion: baseVersion, courierName: courierName.trim(), trackingNumber: trackingNumber.trim(), dispatchDate, vehicleNumber: vehicleNumber.trim() } }); } finally { setBusy(false); } }} className="min-h-11 rounded-xl bg-sf-ink px-5 font-bold text-white disabled:opacity-50">{busy ? 'Saving…' : 'Save and mark dispatched'}</button></div></div></div>;
+}
+function DeliveryForm({ order, actorRole, actorRoles, onSave }: FulfilmentFormProps) {
+  const { busy, setBusy, deliveredAt, setDeliveredAt, receivedBy, setReceivedBy, podReference, setPodReference, baseVersion, resetDrafts } = useFulfilmentDraft(order);
+  const [error, setError] = useState('');
+  const canUpdate = hasAnyStockFlowRole(actorRoles ?? [actorRole as StockFlowRole], ['administrator', 'operations']);
+  const save = async (current: OrderSummary, command: DeliveryCommand) => {
+    setError('');
+    try { await onSave(current, command); }
+    catch (cause) { setError(cause instanceof Error ? cause.message : 'Delivery details could not be saved'); }
+  };
+  return <div className="min-w-0">{error ? <p role="alert" className="text-sm text-sf-danger">{error}</p> : null}<div className="mt-3 grid gap-3 rounded-xl bg-white p-4 sm:grid-cols-2"><OrderDraftNotice changed={order.version !== baseVersion} busy={busy} onLoadLatest={resetDrafts} /><p className="sm:col-span-2 text-sm text-sf-muted">{order.courierName} · {order.trackingNumber}{order.vehicleNumber ? ` · ${order.vehicleNumber}` : ''}</p><label className="text-sm font-bold">Delivered at<input type="datetime-local" value={deliveredAt} onChange={(event) => setDeliveredAt(event.target.value)} className="mt-1 min-h-11 min-w-0 w-full rounded-lg border border-sf-line px-3 font-normal" /></label><label className="text-sm font-bold">Received by<input required value={receivedBy} onChange={(event) => setReceivedBy(event.target.value)} maxLength={160} className="mt-1 min-h-11 min-w-0 w-full rounded-lg border border-sf-line px-3 font-normal" /></label><label className="text-sm font-bold sm:col-span-2">Proof of delivery reference <span className="font-normal text-sf-subtle">(optional)</span><input value={podReference} onChange={(event) => setPodReference(event.target.value)} maxLength={160} className="mt-1 min-h-11 min-w-0 w-full rounded-lg border border-sf-line px-3 font-normal" /></label><div className="sm:col-span-2 flex justify-end"><button type="button" disabled={!canUpdate || busy || receivedBy.trim().length < 2 || !deliveredAt} onClick={async () => { setBusy(true); try { await save(order, { action: 'confirm_delivery', payload: { orderId: order.id, expectedVersion: baseVersion, deliveredAt: new Date(deliveredAt).toISOString(), receivedBy: receivedBy.trim(), podReference: podReference.trim() } }); } finally { setBusy(false); } }} className="min-h-11 rounded-xl bg-sf-ink px-5 font-bold text-white disabled:opacity-50">{busy ? 'Saving…' : 'Confirm delivery'}</button></div></div></div>;
+}
+function DispatchPanel(props: FulfilmentFormProps) {
+  const { order } = props;
   if (order.status === 'delivered') return <div className="mt-5 border-t border-sf-line-soft pt-4"><p className="font-bold text-sf-body">Delivery confirmation</p><p className="mt-2 text-sm text-sf-muted">Received by {order.receivedBy} on {order.deliveredAt ? new Date(order.deliveredAt).toLocaleString('en-IN') : '—'}{order.podReference ? ` · POD ${order.podReference}` : ''}</p></div>;
-  return <div className="mt-5 border-t border-sf-line-soft pt-4"><p className="font-bold text-sf-body">{order.status === 'ready_for_dispatch' ? 'Dispatch details' : 'Delivery confirmation'}</p>{order.status === 'ready_for_dispatch' ? <div className="mt-3 grid gap-3 rounded-xl bg-white p-4 sm:grid-cols-2"><OrderDraftNotice changed={order.version !== baseVersion} busy={busy} onLoadLatest={resetDrafts} /><label className="text-sm font-bold">Courier / transporter<input maxLength={160} value={courierName} onChange={(event) => setCourierName(event.target.value)} className="mt-1 min-h-11 w-full rounded-lg border px-3 font-normal" /></label><label className="text-sm font-bold">Tracking / docket number<input maxLength={160} value={trackingNumber} onChange={(event) => setTrackingNumber(event.target.value)} className="mt-1 min-h-11 w-full rounded-lg border px-3 font-normal" /></label><label className="text-sm font-bold">Dispatch date<input type="date" value={dispatchDate} onChange={(event) => setDispatchDate(event.target.value)} className="mt-1 min-h-11 w-full rounded-lg border px-3 font-normal" /></label><label className="text-sm font-bold">Vehicle number <span className="font-normal text-sf-subtle">(optional)</span><input value={vehicleNumber} onChange={(event) => setVehicleNumber(event.target.value)} maxLength={40} className="mt-1 min-h-11 w-full rounded-lg border px-3 font-normal" /></label><div className="sm:col-span-2 flex justify-end"><button type="button" disabled={!canUpdate || busy || courierName.trim().length < 2 || trackingNumber.trim().length < 2 || !dispatchDate} onClick={async () => { setBusy(true); try { await onSave(order, { action: 'save_dispatch', payload: { orderId: order.id, expectedVersion: baseVersion, courierName: courierName.trim(), trackingNumber: trackingNumber.trim(), dispatchDate, vehicleNumber: vehicleNumber.trim() } }); } finally { setBusy(false); } }} className="min-h-11 rounded-xl bg-sf-ink px-5 font-bold text-white disabled:opacity-50">{busy ? 'Saving…' : 'Mark dispatched'}</button></div></div> : <div className="mt-3 grid gap-3 rounded-xl bg-white p-4 sm:grid-cols-2"><OrderDraftNotice changed={order.version !== baseVersion} busy={busy} onLoadLatest={resetDrafts} /><p className="sm:col-span-2 text-sm text-sf-muted">{order.courierName} · {order.trackingNumber}{order.vehicleNumber ? ` · ${order.vehicleNumber}` : ''}</p><label className="text-sm font-bold">Delivered at<input type="datetime-local" value={deliveredAt} onChange={(event) => setDeliveredAt(event.target.value)} className="mt-1 min-h-11 w-full rounded-lg border px-3 font-normal" /></label><label className="text-sm font-bold">Received by<input value={receivedBy} onChange={(event) => setReceivedBy(event.target.value)} maxLength={160} className="mt-1 min-h-11 w-full rounded-lg border px-3 font-normal" /></label><label className="text-sm font-bold sm:col-span-2">Proof of delivery reference <span className="font-normal text-sf-subtle">(optional)</span><input value={podReference} onChange={(event) => setPodReference(event.target.value)} maxLength={160} className="mt-1 min-h-11 w-full rounded-lg border px-3 font-normal" /></label><div className="sm:col-span-2 flex justify-end"><button type="button" disabled={!canUpdate || busy || receivedBy.trim().length < 2 || !deliveredAt} onClick={async () => { setBusy(true); try { await onSave(order, { action: 'confirm_delivery', payload: { orderId: order.id, expectedVersion: baseVersion, deliveredAt: new Date(deliveredAt).toISOString(), receivedBy: receivedBy.trim(), podReference: podReference.trim() } }); } finally { setBusy(false); } }} className="min-h-11 rounded-xl bg-sf-ink px-5 font-bold text-white disabled:opacity-50">{busy ? 'Saving…' : 'Confirm delivery'}</button></div></div>}</div>;
+  return <div className="mt-5 border-t border-sf-line-soft pt-4"><p className="font-bold text-sf-body">{order.status === 'ready_for_dispatch' ? 'Dispatch details' : 'Delivery confirmation'}</p>{order.status === 'ready_for_dispatch' ? <DispatchForm {...props} /> : <DeliveryForm {...props} />}</div>;
 }
 
 function NewOrderPanel({ data, templateOrder, onClose, onCreated, onViewCustomer }: { data: OrderBootstrap; templateOrder: OrderSummary | null; onClose: () => void; onCreated: (number: string, command?: CreatedOrderCommand, result?: CreatedOrderResult) => void; onViewCustomer: (customerName: string) => void }) {

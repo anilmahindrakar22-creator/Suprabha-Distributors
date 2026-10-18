@@ -1,9 +1,10 @@
 'use client';
 
 import type { KeyboardEvent } from 'react';
-import { ArrowUp, Flame, Hourglass, PackageCheck, PackageX, TriangleAlert, Truck, Wrench, type LucideIcon } from 'lucide-react';
+import { ArrowUp, Flame, Hourglass, PackageCheck, PackageX, ShieldAlert, TriangleAlert, Truck, Wrench, type LucideIcon } from 'lucide-react';
 import type { OrderSummary } from '@/lib/order-types';
 import { orderStage } from '@/lib/order-types';
+import { orderDateLabel, orderDateTime } from '@/lib/order-date';
 import { orderListFlag, orderProgressIndex, orderProgressSteps, orderStageKey, type StageKey } from '@/lib/order-list-groups';
 
 // One colour per stage, used everywhere on the Orders screens. Red is reserved for problems.
@@ -52,17 +53,10 @@ export function OrderFlagBadge({ order }: { order: OrderSummary }) {
 const flagIcons: Record<string, LucideIcon> = {
   Urgent: Flame, Overdue: Truck, 'Delivery issue': TriangleAlert, Stalled: Hourglass, 'Installation due': Wrench,
   'Back-order': PackageX, 'Dispatch details': Truck, 'Confirm delivery': PackageCheck, 'Check order': TriangleAlert, 'High priority': ArrowUp,
+  'Price approval': ShieldAlert,
 };
 
-function compactAge(createdAt: string, now = Date.now()) {
-  const minutes = Math.max(0, Math.floor((now - new Date(createdAt).getTime()) / 60_000));
-  if (minutes < 1) return 'now';
-  if (minutes < 60) return `${minutes}m`;
-  const hours = Math.floor(minutes / 60);
-  return hours < 24 ? `${hours}h` : `${Math.floor(hours / 24)}d`;
-}
-
-/** Two-line order row (about 60 px): customer and age, then stage, one flag, order number and quantity. */
+/** Two-line order row (about 60 px): customer and order date, then stage, one flag, order number and quantity. */
 export function CompactOrderRow({ order, onOpen, selected = false, isNew = false, id, onKeyDown }: { order: OrderSummary; onOpen: (order: OrderSummary) => void; selected?: boolean; isNew?: boolean; id?: string; onKeyDown?: (event: KeyboardEvent<HTMLButtonElement>) => void }) {
   const style = orderStageStyle(order.status);
   const finished = ['delivered', 'cancelled'].includes(order.status);
@@ -80,13 +74,13 @@ export function CompactOrderRow({ order, onOpen, selected = false, isNew = false
       <span className="min-w-0 flex-1">
         <span className="flex items-baseline justify-between gap-2">
           <strong className="truncate text-[15px] font-bold text-sf-ink">{order.customerName}</strong>
-          <span className="shrink-0 text-xs font-semibold tabular-nums text-sf-subtle" title="Time since order capture">{compactAge(order.createdAt)}</span>
+          <time dateTime={order.createdAt} title={`Ordered ${orderDateTime(order.createdAt)}`} className="shrink-0 text-xs font-semibold tabular-nums text-sf-subtle">{orderDateLabel(order.createdAt)}</time>
         </span>
         <span className="mt-1 flex min-w-0 items-center gap-1.5 text-xs text-sf-subtle">
           {isNew ? <span className="shrink-0 rounded-full bg-sf-ink px-1.5 py-0.5 text-[10px] font-black uppercase tracking-wide text-white">New</span> : null}
           <span className={`shrink-0 rounded-full px-2 py-0.5 text-[10px] font-extrabold ${style.chip}`}>{style.label}</span>
           <OrderFlagBadge order={order} />
-          <span className="truncate">{order.orderNumber} ·{Math.round(Number(order.totalQuantity || 0)).toLocaleString('en-IN')} qty</span>
+          <span className="truncate">{order.orderNumber} · {Math.round(Number(order.totalQuantity || 0)).toLocaleString('en-IN')} qty</span>
         </span>
       </span>
     </button>
@@ -109,7 +103,7 @@ export function OrderProgress({ status }: { status: string }) {
   );
 }
 
-export type StageFilter = { status: string; label: string; count?: number; tone?: StageKey | 'alert' };
+export type StageFilter = { status: string; label: string; count?: number; tone?: StageKey | 'alert' | 'warning' };
 
 /** Horizontal stage chips that replace the queue strip and the common status choices. */
 export function OrderStageChips({ filters, active, onSelect }: { filters: readonly StageFilter[]; active: string; onSelect: (status: string) => void }) {
@@ -117,12 +111,14 @@ export function OrderStageChips({ filters, active, onSelect }: { filters: readon
     <nav aria-label="Order stages" className="-mx-1 flex gap-1.5 overflow-x-auto px-1 pb-0.5 [scrollbar-width:none]">
       {filters.map((filter) => {
         const selected = filter.status === active;
-        const dot = filter.tone === 'alert' ? 'bg-sf-danger' : filter.tone ? stageStyles[filter.tone].bar : 'bg-sf-ink';
+        const dot = filter.tone === 'alert' ? 'bg-sf-danger' : filter.tone === 'warning' ? 'bg-sf-warning' : filter.tone ? stageStyles[filter.tone].bar : 'bg-sf-ink';
+        const Icon = filter.tone === 'warning' ? ShieldAlert : null;
+        const className = selected ? 'border-sf-ink bg-sf-ink text-white' : filter.tone === 'warning' ? 'border-sf-warning-line bg-sf-warning-soft text-sf-warning hover:border-sf-warning' : 'border-sf-line bg-white text-sf-body hover:border-sf-line-strong';
         return (
-          <button key={filter.status} type="button" aria-pressed={selected} onClick={() => onSelect(filter.status)} className={`flex min-h-9 shrink-0 items-center gap-1.5 rounded-full border px-3 text-[13px] font-bold transition ${selected ? 'border-sf-ink bg-sf-ink text-white' : 'border-sf-line bg-white text-sf-body hover:border-sf-line-strong'}`}>
-            <span aria-hidden="true" className={`size-2 rounded-full ${selected ? 'bg-white' : dot}`} />
+          <button key={filter.status} type="button" aria-label={filter.tone === 'warning' ? `${filter.label}, ${filter.count} orders` : undefined} aria-pressed={selected} onClick={() => onSelect(filter.status)} className={`flex min-h-9 shrink-0 items-center gap-1.5 rounded-full border px-3 text-[13px] font-bold transition ${className}`}>
+            {Icon ? <Icon aria-hidden="true" size={16} /> : <span aria-hidden="true" className={`size-2 rounded-full ${selected ? 'bg-white' : dot}`} />}
             {filter.label}
-            {filter.count ? <span className={`rounded-full px-1.5 text-[11px] font-black tabular-nums ${selected ? 'bg-white/20 text-white' : filter.tone === 'alert' ? 'bg-sf-danger-soft text-sf-danger' : 'bg-sf-soft-2 text-sf-body'}`}>{filter.count.toLocaleString('en-IN')}</span> : null}
+            {filter.count ? <span className={`rounded-full px-1.5 text-[11px] font-black tabular-nums ${selected ? 'bg-white/20 text-white' : filter.tone === 'alert' ? 'bg-sf-danger-soft text-sf-danger' : filter.tone === 'warning' ? 'bg-sf-warning-soft text-sf-warning' : 'bg-sf-soft-2 text-sf-body'}`}>{filter.count.toLocaleString('en-IN')}</span> : null}
           </button>
         );
       })}

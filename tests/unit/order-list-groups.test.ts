@@ -52,6 +52,8 @@ describe('Orders list grouping', () => {
 
   it('shows at most one flag, most serious first', () => {
     expect(orderListFlag(order('a', { priority: 'urgent', expectedDeliveryDate: '2026-10-01' }), now)?.label).toBe('Urgent');
+    expect(orderListFlag(order('approval', { pricingState: 'approval_required' }), now)).toEqual({ label: 'Price approval', tone: 'watch' });
+    expect(orderListFlag(order('urgent-approval', { pricingState: 'approval_required', priority: 'urgent' }), now)?.label).toBe('Urgent');
     expect(orderListFlag(order('b', { expectedDeliveryDate: '2026-10-01' }), now)?.label).toBe('Overdue');
     expect(orderListFlag(order('c', { priority: 'high' }), now)?.label).toBe('High priority');
     expect(orderListFlag(order('d'), now)).toBeNull();
