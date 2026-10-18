@@ -1,6 +1,6 @@
 {
   "projectId": "aormuidjbdqruglmyseh",
-  "checkedAt": "2026-10-16T07:00:32.676Z",
+  "checkedAt": "2026-10-18T19:22:12.846Z",
   "purpose": "Read-only release evidence; NOT an executable migration plan or authority to repair history.",
   "normalization": "Remove CR characters and trim surrounding whitespace only; SHA-256 over UTF-8.",
   "localGitHead": "01b5e2a71a3d163c7238f1be176b66388c3617a9",
@@ -983,16 +983,21 @@
       "remoteVersion": "20261016133714",
       "remoteSha256": "fa71aeaf3ea87c67d37315aab5f63e20a6bf5430862af43ea18795e6093a03c9",
       "status": "exact_normalized_match"
+    },
+    {
+      "localFile": "20261019090000_financial_year_order_numbers.sql",
+      "localSha256": "dfb27878bc2e684bf10cf900c40b6489515799c8548b2b4e97c84979001e0523",
+      "remoteVersion": null,
+      "remoteSha256": null,
+      "status": "not_deployed"
     }
   ],
   "liveCheck": {
-    "method": "Read-only version comparison and SQL normalized SHA-256 comparison; remove CR and trim ASCII whitespace; 103/103 matched before candidate deployment",
-    "remoteMigrationCount": 103,
-    "matchedMigrationHashes": 103,
-    "latestRemoteVersion": "20261005061401",
-    "pendingEconomicsMigrationsAbsent": 4,
-    "serverVersion": "17.6",
-    "economicsObjectsAbsent": true,
-    "checkedAt": "2026-10-10T06:52:00.814Z"
+    "method": "Read-only complete migration version set and normalized SQL SHA-256 comparison; remove CR and trim ASCII whitespace",
+    "remoteMigrationCount": 135,
+    "matchedMigrationHashes": 135,
+    "latestRemoteVersion": "20261016133714",
+    "newOrderNumberingMigrationAbsent": true,
+    "checkedAt": "2026-10-18T19:22:12.846Z"
   }
 }
