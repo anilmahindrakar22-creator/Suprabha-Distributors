@@ -1,4 +1,5 @@
 import type { OrderCommand } from './order-types';
+import { SUPABASE_FUNCTION_REGION } from './supabase-region';
 import type { EconomicAction } from './instrument-economics-types';
 
 export type GatewayAction =
@@ -105,6 +106,7 @@ export async function callOrderGateway<T>(
     headers: {
       'content-type': 'application/json',
       'x-order-gateway-key': gatewayKey,
+      'x-region': SUPABASE_FUNCTION_REGION,
     },
     body: JSON.stringify({
       actorEmail,
