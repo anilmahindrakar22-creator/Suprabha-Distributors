@@ -1,9 +1,9 @@
 'use client';
 
-import { useState } from 'react';
+import { useEffect, useState } from 'react';
 import { readPendingProductRequest, writePendingProductRequest, removePendingProductRequest, type ProductRequestPayload } from '@/lib/offline-order-drafts';
 import { readJsonBody } from '@/lib/http-json';
-import { Ban, CircleAlert, CircleCheck, Inbox, PackagePlus, RefreshCw, RotateCcw, Send, TriangleAlert } from 'lucide-react';
+import { Ban, ChevronDown, CircleAlert, CircleCheck, Inbox, PackagePlus, RefreshCw, RotateCcw, Send, TriangleAlert } from 'lucide-react';
 
 export function ProductRequest({ productName, customerId, visible, actorEmail }: { productName: string; customerId?: string; visible: boolean; actorEmail: string }) {
   const [recovered] = useState(() => {
@@ -76,6 +76,16 @@ export function ProductRequestInbox() {
   const [message, setMessage] = useState('');
   const [tone, setTone] = useState<'success' | 'error'>('success');
   const [busy, setBusy] = useState(false);
+  const [loaded, setLoaded] = useState(false);
+  // Count waiting requests once when the Requests page opens, so the closed row shows it.
+  useEffect(() => {
+    let live = true;
+    fetch('/api/product-requests', { cache: 'no-store' })
+      .then((response) => response.ok ? readJsonBody<{ requests?: OpenRequest[] }>(response) : null)
+      .then((result) => { if (live && Array.isArray(result?.requests)) { setRequests(result.requests); setLoaded(true); } })
+      .catch(() => undefined);
+    return () => { live = false; };
+  }, []);
   async function load() {
     setBusy(true);
     setMessage('');
@@ -85,11 +95,12 @@ export function ProductRequestInbox() {
       const result = await readJsonBody<{ requests?: OpenRequest[]; error?: string }>(response);
       if (!response.ok || !Array.isArray(result.requests)) throw new Error(result.error || 'Requests unavailable');
       setRequests(result.requests);
+      setLoaded(true);
     } catch (error) { setMessage(error instanceof Error ? error.message : 'Requests unavailable'); setTone('error'); }
     finally { setBusy(false); }
   }
   return <section className="mt-3 rounded-xl border border-sf-line-soft bg-white p-3" aria-label="Product request review">
-    <button type="button" aria-expanded={open} onClick={() => { setOpen(!open); if (!open) void load(); }} className="inline-flex items-center gap-2 min-h-10 text-sm font-bold text-sf-body"><Inbox aria-hidden="true" className="shrink-0" size={16} />Product requests</button>
+    <button type="button" aria-expanded={open} onClick={() => { setOpen(!open); if (!open) void load(); }} className="flex min-h-10 w-full items-center gap-2 text-left text-sm font-bold text-sf-body"><Inbox aria-hidden="true" className="shrink-0" size={16} /><span className="flex-1">Product requests</span>{loaded && requests.length ? <span className="rounded-full bg-sf-warning-soft px-2 py-0.5 text-xs font-extrabold tabular-nums text-sf-warning">{requests.length} open</span> : loaded ? <span className="text-xs font-semibold text-sf-subtle">None open</span> : null}<ChevronDown aria-hidden="true" className={`shrink-0 transition ${open ? 'rotate-180' : ''}`} size={16} /></button>
     {open ? <>
       <p className="text-xs text-sf-subtle">Review missing catalog items. Maintain products in Tally, then sync; resolving a request creates no product.</p>
       <button type="button" disabled={busy} onClick={() => void load()} className="inline-flex min-h-10 items-center gap-2 rounded-lg border border-sf-line bg-white px-3 text-sm font-bold text-sf-body"><RefreshCw aria-hidden="true" className="shrink-0" size={16} />{busy ? 'Loading…' : 'Refresh requests'}</button>

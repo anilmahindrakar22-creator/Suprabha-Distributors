@@ -451,7 +451,8 @@ export function AccountDetails({ row, mode, today, renderActions, ratingContactI
   </>;
 }
 
-export function AccountsWorkspace() {
+/** Managers start on All accounts; field staff start on the accounts assigned to them. */
+export function AccountsWorkspace({ defaultMode = 'mine' }: { defaultMode?: Mode } = {}) {
   const [view, setView] = useState<'accounts' | 'links'>('accounts');
   const [addingCustomer, setAddingCustomer] = useState(false);
   const addCustomerButton = useRef<HTMLButtonElement>(null);
@@ -463,7 +464,7 @@ export function AccountsWorkspace() {
     }
   }, [addingCustomer]);
   const [data, setData] = useState<AccountsResponse | null>(null);
-  const [mode, setMode] = useState<Mode>('mine');
+  const [mode, setMode] = useState<Mode>(defaultMode);
   const [query, setQuery] = useState('');
   const [search, setSearch] = useState('');
   const [owner, setOwner] = useState('');

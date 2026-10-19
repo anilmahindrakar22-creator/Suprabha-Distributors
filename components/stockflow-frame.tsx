@@ -1,7 +1,7 @@
 'use client';
 
 import { lazy, Suspense, useEffect, useMemo, useRef, useState } from 'react';
-import { Boxes, Building2, Ellipsis, Inbox, ShoppingCart, Tags, TrendingUp, TriangleAlert, Users, Wrench } from 'lucide-react';
+import { Boxes, Building2, CloudDownload, Ellipsis, Inbox, ShoppingCart, Tags, TrendingUp, TriangleAlert, Users, Wrench } from 'lucide-react';
 import { NotificationBell } from './notification-bell';
 import { BellIcon } from './order-list';
 import { startWorkNotifications, type WorkItem, type WorkNotificationState } from '@/lib/work-notifications';
@@ -285,12 +285,12 @@ export function StockFlowFrame({ actorEmail, actorRole, actorRoles, staffAuth = 
       <header className="flex shrink-0 flex-wrap items-center justify-between gap-2 border-b border-sf-line-soft bg-white px-4 py-2 sm:h-16 sm:flex-nowrap sm:px-6 sm:py-0">
         <div className="flex min-w-0 items-center gap-3">
           <Image src="/suprabha-logo.png" alt="" width={36} height={36} priority className="size-9 shrink-0 object-contain" />
-          <div className="min-w-0">
+          <div className="min-w-0 sm:hidden xl:block">
             <p className="truncate text-sm font-extrabold text-sf-ink">StockFlow</p>
             <p className="hidden text-xs text-sf-subtle sm:block">Suprabha Distributors</p>
           </div>
         </div>
-        <nav aria-label="Application sections" className="hidden min-w-0 overflow-x-auto rounded-xl bg-sf-soft p-1 sm:flex">
+        <nav aria-label="Application sections" className="hidden min-w-0 overflow-x-auto rounded-xl bg-sf-soft p-1 [scrollbar-width:none] sm:flex">
           {surfaces.map((item) => (
             <button
               key={item}
@@ -301,7 +301,7 @@ export function StockFlowFrame({ actorEmail, actorRole, actorRoles, staffAuth = 
               onPointerDown={item === 'orders' ? warmOrders : undefined}
               aria-pressed={surface === item}
               aria-describedby={item === 'orders' && waitingCount ? 'orders-new-work' : undefined}
-              className={`inline-flex min-h-11 shrink-0 items-center gap-1.5 rounded-lg px-3 text-sm font-bold capitalize transition sm:px-4 ${
+              className={`inline-flex min-h-11 shrink-0 items-center gap-1.5 rounded-lg px-3 text-sm font-bold capitalize transition 2xl:px-4 ${
                 surface === item
                   ? 'bg-white text-sf-brand shadow-sm'
                   : 'text-sf-muted hover:text-sf-ink'
@@ -312,7 +312,7 @@ export function StockFlowFrame({ actorEmail, actorRole, actorRoles, staffAuth = 
           ))}
           {/* Full navigation re-verifies the staff session before local preparation. */}
           {/* oxlint-disable-next-line next/no-html-link-for-pages */}
-          {offlineLink ? <a href="/offline-preparation" className="min-h-10 shrink-0 rounded-lg px-3 py-2 text-sm font-bold text-sf-muted">Offline</a> : null}
+          {offlineLink ? <a href="/offline-preparation" className="inline-flex min-h-11 shrink-0 items-center gap-1.5 rounded-lg px-3 text-sm font-bold text-sf-muted hover:text-sf-ink 2xl:px-4"><CloudDownload aria-hidden="true" size={18} />Offline</a> : null}
         </nav>
         <div className="flex shrink-0 items-center gap-2">
         {notifiable ? <NotificationBell state={work} ordersFilterFor={(queue) => workService.current?.ordersFilterFor(queue) ?? queue.statuses[0]} phone={pushState === 'hidden' ? undefined : { state: pushState, onEnable: () => void changePush(true), onDisable: () => void changePush(false) }} onSeen={markWorkSeen} onOpenOrder={openOrder} onOpenQueue={openQueue} onRetry={() => workService.current?.retry()} /> : null}
@@ -336,7 +336,7 @@ export function StockFlowFrame({ actorEmail, actorRole, actorRoles, staffAuth = 
         ) : surface === 'requests' ? (
           <Suspense fallback={<SectionLoading />}><RequestsWorkspace roles={roles} onOpenOrder={(orderId, orderNumber) => openOrder({ orderId, orderNumber })} /></Suspense>
         ) : surface === 'accounts' && hasAnyStockFlowRole(roles, ['administrator', 'management', 'sales', 'operations']) ? (
-          <Suspense fallback={<SectionLoading />}><AccountsWorkspace /></Suspense>
+          <Suspense fallback={<SectionLoading />}><AccountsWorkspace defaultMode={hasAnyStockFlowRole(roles, ['administrator', 'management']) ? 'all' : 'mine'} /></Suspense>
         ) : surface === 'pricing' ? (
           <Suspense fallback={<SectionLoading />}><PricingWorkspace actorEmail={actorEmail} actorRole={actorRole} actorRoles={roles} /></Suspense>
         ) : surface === 'economics' ? (

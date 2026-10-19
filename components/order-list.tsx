@@ -108,7 +108,7 @@ export type StageFilter = { status: string; label: string; count?: number; tone?
 /** Horizontal stage chips that replace the queue strip and the common status choices. */
 export function OrderStageChips({ filters, active, onSelect }: { filters: readonly StageFilter[]; active: string; onSelect: (status: string) => void }) {
   return (
-    <nav aria-label="Order stages" className="-mx-1 flex gap-1.5 overflow-x-auto px-1 pb-0.5 [scrollbar-width:none]">
+    <nav aria-label="Order stages" className="-mx-1 flex gap-1.5 overflow-x-auto px-1 pb-0.5 pr-6 [scrollbar-width:none] [mask-image:linear-gradient(to_right,black_calc(100%-1.5rem),transparent)]">
       {filters.map((filter) => {
         const selected = filter.status === active;
         const dot = filter.tone === 'alert' ? 'bg-sf-danger' : filter.tone === 'warning' ? 'bg-sf-warning' : filter.tone ? stageStyles[filter.tone].bar : 'bg-sf-ink';
