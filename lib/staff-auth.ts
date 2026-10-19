@@ -91,6 +91,68 @@ export async function verifiedStaff(token: string | undefined) {
   return { userId: user.id, email, displayName: email.split('@')[0] };
 }
 
+type VerifiedStaff = NonNullable<Awaited<ReturnType<typeof verifiedStaff>>>;
+/**
+ * Short per-isolate memory of successful sign-in checks, so ordinary page requests
+ * skip a Supabase Auth round trip (owner approved, 19 Oct 2026). Rules:
+ * - only page/API identity (getChatGPTUser) uses it; password login and recovery verify fresh;
+ * - only a verified user is stored; rejections and provider failures never are;
+ * - an entry lives at most 60 s and never past the token's own expiry;
+ * - keys are SHA-256 hashes of the token, never the token itself; at most 256 entries.
+ * Membership, roles and suspension are still checked by the database gateway on every
+ * request. Forgetting entries is best effort (this isolate only); the TTL is the bound.
+ */
+const VERIFIED_STAFF_TTL_MS = 60_000;
+const VERIFIED_STAFF_MAX = 256;
+const verifiedStaffCache = new Map<string, { user: VerifiedStaff; expiresAt: number }>();
+
+async function tokenKey(token: string) {
+  const digest = await crypto.subtle.digest('SHA-256', new TextEncoder().encode(token));
+  return Array.from(new Uint8Array(digest), (byte) => byte.toString(16).padStart(2, '0')).join('');
+}
+
+/** The token's own expiry, used only to shorten a cache entry; never trusted for identity. */
+function tokenExpiryMs(token: string) {
+  try {
+    const payload = token.split('.')[1];
+    if (!payload) return null;
+    const json = JSON.parse(atob(payload.replace(/-/g, '+').replace(/_/g, '/').padEnd(Math.ceil(payload.length / 4) * 4, '=')));
+    return typeof json.exp === 'number' && Number.isFinite(json.exp) ? json.exp * 1000 : null;
+  } catch { return null; }
+}
+
+export async function cachedVerifiedStaff(token: string | undefined, now = Date.now()): Promise<{ user: VerifiedStaff | null; cached: boolean }> {
+  if (!token || token.length > 8192) return { user: null, cached: false };
+  const key = await tokenKey(token);
+  const entry = verifiedStaffCache.get(key);
+  if (entry && entry.expiresAt > now) return { user: entry.user, cached: true };
+  if (entry) verifiedStaffCache.delete(key);
+  const user = await verifiedStaff(token);
+  if (user) {
+    const expiresAt = Math.min(now + VERIFIED_STAFF_TTL_MS, tokenExpiryMs(token) ?? Infinity);
+    if (expiresAt > now) {
+      while (verifiedStaffCache.size >= VERIFIED_STAFF_MAX) verifiedStaffCache.delete(verifiedStaffCache.keys().next().value!);
+      verifiedStaffCache.set(key, { user, expiresAt });
+    }
+  }
+  return { user, cached: false };
+}
+
+/** Drop a token's cached check (sign-out). Best effort: this isolate only. */
+export async function forgetVerifiedStaffToken(token: string | undefined) {
+  if (token && token.length <= 8192) verifiedStaffCache.delete(await tokenKey(token));
+}
+
+/** Drop every cached check for an account (password reset signs out all sessions). */
+export function forgetVerifiedStaffEmail(email: string) {
+  const normalized = email.trim().toLowerCase();
+  for (const [key, entry] of verifiedStaffCache) if (entry.user.email === normalized) verifiedStaffCache.delete(key);
+}
+
+export function resetVerifiedStaffCacheForTests() {
+  verifiedStaffCache.clear();
+}
+
 export async function staffPasswordLogin(email: string, password: string) {
   const { data, error } = await staffAuthClient().auth.signInWithPassword({ email: email.trim().toLowerCase(), password });
   if (error || !data.session || !data.session.refresh_token || data.session.refresh_token.length > 4096) return null;
