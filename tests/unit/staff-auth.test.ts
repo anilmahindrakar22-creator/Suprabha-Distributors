@@ -230,7 +230,7 @@ describe('isolated staff authentication', () => {
     });
 
     it('signs out by forgetting the cookie token, and plain verification never uses the cache', async () => {
-      mocks.token = jwt(now / 1000 + 3600, 'cookie');
+      mocks.token = jwt(Math.floor(Date.now() / 1000) + 3600, 'cookie');
       expect(await getChatGPTUser()).toMatchObject({ email: 'staff@example.test' });
       expect(await getChatGPTUser()).toMatchObject({ email: 'staff@example.test' });
       expect(mocks.getUser).toHaveBeenCalledTimes(1);
