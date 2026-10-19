@@ -1,4 +1,6 @@
 'use client';
+import { withStaffSessionLock } from '@/lib/staff-session-client';
+import { readJsonBody } from '@/lib/http-json';
 import { useEffect, useRef, useState } from 'react';
 
 export function StaffPasswordReset() {
@@ -37,8 +39,8 @@ export function StaffPasswordReset() {
     if (password !== confirmation) { setMessage('Passwords must match.'); return; }
     inFlight.current = true; setBusy(true); setMessage('');
     try {
-      const response = await fetch('/api/staff-password-reset', { method: 'PUT', cache: 'no-store', signal: AbortSignal.timeout(15000), headers: { 'content-type': 'application/json' }, body: JSON.stringify({ token, password }) });
-      const result = await response.json() as { error?: string };
+      const response = await withStaffSessionLock(() => fetch('/api/staff-password-reset', { method: 'PUT', cache: 'no-store', signal: AbortSignal.timeout(15000), headers: { 'content-type': 'application/json' }, body: JSON.stringify({ token, password }) }));
+      const result = await readJsonBody<{ error?: string }>(response);
       if (!response.ok) {
         // An upstream failure may occur after the password was already changed.
         // Consume this in-memory recovery attempt instead of silently repeating it.
@@ -52,5 +54,5 @@ export function StaffPasswordReset() {
     }
     finally { inFlight.current = false; setPassword(''); setConfirmation(''); setBusy(false); }
   }
-  return <main className="grid min-h-dvh place-items-center bg-[#f7f6f1] p-5"><form onSubmit={submit} className="grid w-full max-w-md gap-4 rounded-2xl border bg-white p-6"><h1 className="text-2xl font-bold">Set your staff password</h1><label>New password<input required minLength={12} maxLength={1024} type="password" autoComplete="new-password" value={password} onChange={e => setPassword(e.target.value)} className="mt-2 min-h-11 w-full rounded-xl border px-3" /></label><label>Confirm password<input required minLength={12} maxLength={1024} type="password" autoComplete="new-password" value={confirmation} onChange={e => setConfirmation(e.target.value)} className="mt-2 min-h-11 w-full rounded-xl border px-3" /></label><button disabled={busy || !token} className="min-h-11 rounded-xl bg-[#092f36] font-bold text-white disabled:opacity-50">{busy ? 'Updating…' : 'Set password'}</button>{message && <p role="alert">{message}</p>}</form></main>;
+  return <main className="grid min-h-dvh place-items-center bg-sf-page p-5"><form onSubmit={submit} className="grid w-full max-w-md gap-4 rounded-2xl border bg-white p-6"><h1 className="text-2xl font-bold">Set your staff password</h1><label>New password<input required minLength={12} maxLength={1024} type="password" autoComplete="new-password" value={password} onChange={e => setPassword(e.target.value)} className="mt-2 min-h-11 w-full rounded-xl border px-3" /></label><label>Confirm password<input required minLength={12} maxLength={1024} type="password" autoComplete="new-password" value={confirmation} onChange={e => setConfirmation(e.target.value)} className="mt-2 min-h-11 w-full rounded-xl border px-3" /></label><button disabled={busy || !token} className="min-h-11 rounded-xl bg-sf-ink font-bold text-white disabled:opacity-50">{busy ? 'Updating…' : 'Set password'}</button>{message && <p role="alert">{message}</p>}</form></main>;
 }

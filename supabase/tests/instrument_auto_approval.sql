@@ -1,0 +1,197 @@
+begin;
+-- Own fixtures; every scenario and the test-only preview capture roll back.
+update private.stockflow_gateway_config set secret_sha256=encode(extensions.digest('d15-test-key','sha256'),'hex') where name='orders';
+insert into public.stockflow_members(email,role,status) values('d15-management@test.local','management','active');
+insert into public.stockflow_snapshots(id,company,fetched_at,payload) values('suprabha','SUPRABHA DISTRIBUTORS',now()::text,'{"catalog":[]}'::jsonb) on conflict(id) do nothing;
+insert into private.stockflow_customers(id,name,tally_key,created_by_email) values('d1500000-0000-4000-8000-000000000001','D15 customer','d15-customer','test');
+insert into private.stockflow_orders(id,order_number,customer_id,customer_name,source,status,created_by_email,updated_by_email,idempotency_key)
+ values('d1500000-0000-4000-8000-000000000002','D15-ORDER','d1500000-0000-4000-8000-000000000001','D15 customer','phone','delivered','test','test','d15-order-fixture');
+insert into private.stockflow_equipment_installations(id,order_id,tally_key,item_name,status,scheduled_date,serial_number,created_by_email,completed_at)
+ values('d1500000-0000-4000-8000-000000000003','d1500000-0000-4000-8000-000000000002','d15-equipment','D15 instrument','completed',private.stockflow_economic_business_date()-60,'D15-SERIAL','test',now());
+insert into private.stockflow_economic_policy_versions(attractive_months,review_months,exception_months,actor,reason,automatic_approval) values(24,36,48,'test','D15 explicit policy fixture',true);
+
+-- Observe the real preview immediately before the approval update, after the
+-- triggering mutation. This checks frozen IDs as well as monetary values without
+-- substituting a preview computed after approval (which is not_applicable).
+create temporary table d15_approval_previews(target_id uuid,preview jsonb);
+create function pg_temp.d15_capture_approval_preview() returns trigger language plpgsql as $$
+begin
+ if old.approval='proposed' and new.approval='approved' then
+  insert into pg_temp.d15_approval_previews values(old.id,private.stockflow_economic_approval_preview(old.id));
+ end if;
+ return new;
+end$$;
+create trigger d15_capture_approval_preview before update on private.stockflow_economic_targets for each row execute function pg_temp.d15_capture_approval_preview();
+
+do $test$
+declare
+ v_scenario integer;v_months numeric;v_target uuid;v_group uuid;v_version integer;v_preview jsonb;v_audit jsonb;v_payload jsonb;v_response jsonb;v_replay jsonb;v_audit_count integer;
+ v_day date:=private.stockflow_economic_business_date()-30;
+begin
+ -- 1 capital then baseline (inclusive 24); 2 baseline then capital;
+ -- 3 Management band; 4 Administrator band; 5 zero investment;
+ -- 6 rebuild only; 9 existing eligible proposal until touched;
+ -- 10 just above 24, to ensure the comparison never rounds down.
+ -- 12 eligible group remains proposed while automatic approval is on.
+ -- 11 otherwise eligible, with automatic approval switched off (last case).
+ foreach v_scenario in array array[1,2,3,4,5,6,9,10,12,11] loop
+  begin
+   if v_scenario=11 then
+    insert into private.stockflow_economic_policy_versions(actor,reason,automatic_approval) values('test','D15 switch off',false);
+   end if;
+   v_months:=case v_scenario when 3 then 30 when 4 then 40 when 10 then 24.000001 else 24 end;
+   v_response:=public.stockflow_economics_gateway('d15-test-key','d15-management@test.local','create_target',jsonb_build_object(
+    'kind','placement','name','D15 placement','companyId','d15-company','customerId','d1500000-0000-4000-8000-000000000001','customerSourceId','d15-customer-guid','siteId','d15-site','modelId','d15-model','installationId','d1500000-0000-4000-8000-000000000003','effectiveFrom',v_day,
+    'capitalPaise',case when v_scenario in (2,5,12) then '0' else (v_months*1000000)::bigint::text end,'capitalEvidence','D15 verified capital fixture','idempotencyKey','d15-create-fixture'));
+   v_target:=(v_response->>'entityId')::uuid;
+   select version into v_version from private.stockflow_economic_targets where id=v_target;
+   if (select approval from private.stockflow_economic_targets where id=v_target)<>'proposed' or v_response?'autoApproved' then raise exception 'D15 create_target unexpectedly approved';end if;
+
+   if v_scenario=12 then
+    -- Group investment is inherited from its member; no member expectation is set.
+    perform public.stockflow_economics_gateway('d15-test-key','d15-management@test.local','record_capital',jsonb_build_object('targetId',v_target,'kind','capital','amountPaise','24000000','effectiveDate',v_day,'reason','D15 group member capital','idempotencyKey','d15-group-member-capital'));
+    v_response:=public.stockflow_economics_gateway('d15-test-key','d15-management@test.local','create_target',jsonb_build_object(
+     'kind','group','name','D15 eligible group','companyId','d15-company','customerId','d1500000-0000-4000-8000-000000000001','customerSourceId','d15-customer-guid','siteId','d15-site','modelId','d15-model','effectiveFrom',v_day,'capitalPaise','0','idempotencyKey','d15-group-create-fixture'));
+    v_group:=(v_response->>'entityId')::uuid;
+    perform public.stockflow_economics_gateway('d15-test-key','d15-management@test.local','set_group_members',jsonb_build_object('targetId',v_group,'members',jsonb_build_array(jsonb_build_object('placementId',v_target,'effectiveFrom',v_day)),'idempotencyKey','d15-group-members-fixture'));
+    select version into v_version from private.stockflow_economic_targets where id=v_group;
+    v_response:=public.stockflow_economics_gateway('d15-test-key','d15-management@test.local','set_expectation',jsonb_build_object('targetId',v_group,'effectiveFrom',v_day,'monthlyRevenuePaise','2000000','monthlyGpPaise','1000000','reason','D15 eligible group baseline','idempotencyKey','d15-group-expectation-fixture'));
+    v_preview:=private.stockflow_economic_approval_preview(v_group);
+    if v_preview->>'status' is distinct from 'within_limit' or (v_preview->>'netInvestmentPaise')::numeric is distinct from 24000000 or (v_preview->>'expectedPaybackMonths')::numeric is distinct from 24 then raise exception 'D15 group is not otherwise eligible: %',v_preview;end if;
+    if (select approval from private.stockflow_economic_targets where id=v_group) is distinct from 'proposed' or (select version from private.stockflow_economic_targets where id=v_group) is distinct from v_version or v_response?'autoApproved' or exists(select 1 from private.stockflow_economic_audit where action='approve_target' and entity_id=v_group) then raise exception 'D15 eligible group was automatically approved';end if;
+    raise exception using errcode='ZD015',message='Rollback D15 scenario';
+   end if;
+
+   if v_scenario in (6,9) then
+    -- Seed an already eligible proposal without any of the four commands.
+    insert into private.stockflow_economic_expectations(target_id,effective_from,monthly_revenue_paise,monthly_gp_paise,reason,created_by)
+     values(v_target,v_day,2000000,1000000,'D15 pre-existing placement-start baseline','test');
+    v_preview:=private.stockflow_economic_approval_preview(v_target);
+    if v_preview->>'status'<>'within_limit' or (v_preview->>'expectedPaybackMonths')::numeric<>24 then raise exception 'D15 existing proposal is not eligible';end if;
+    v_response:=public.stockflow_economics_gateway('d15-test-key','d15-management@test.local','rebuild','{"idempotencyKey":"d15-rebuild-fixture"}'::jsonb);
+    if (select approval from private.stockflow_economic_targets where id=v_target)<>'proposed' or (select version from private.stockflow_economic_targets where id=v_target)<>v_version or v_response?'autoApproved' or exists(select 1 from private.stockflow_economic_audit where action='approve_target' and entity_id=v_target) then raise exception 'D15 rebuild changed an existing proposed target';end if;
+    if v_scenario=6 then
+     raise exception using errcode='ZD015',message='Rollback D15 scenario';
+    end if;
+    v_payload:=jsonb_build_object('targetId',v_target,'kind','capital','amountPaise','0','effectiveDate',v_day,'reason','D15 touch existing proposal','idempotencyKey','d15-capital-fixture');
+   else
+    v_payload:=jsonb_build_object('targetId',v_target,'effectiveFrom',v_day,'monthlyRevenuePaise','2000000','monthlyGpPaise','1000000','reason','D15 placement-start baseline','idempotencyKey','d15-expectation-fixture');
+    if v_scenario=2 then
+     v_response:=public.stockflow_economics_gateway('d15-test-key','d15-management@test.local','set_expectation',v_payload);
+     if (select approval from private.stockflow_economic_targets where id=v_target)<>'proposed' or v_response?'autoApproved' then raise exception 'D15 baseline with no investment was approved';end if;
+     v_payload:=jsonb_build_object('targetId',v_target,'kind','capital','amountPaise','24000000','effectiveDate',v_day,'reason','D15 capital after baseline','idempotencyKey','d15-capital-fixture');
+    end if;
+   end if;
+   v_response:=public.stockflow_economics_gateway('d15-test-key','d15-management@test.local',case when v_scenario in (2,9) then 'record_capital' else 'set_expectation' end,v_payload);
+
+   if v_scenario in (1,2,9) then
+    select preview into v_preview from pg_temp.d15_approval_previews where target_id=v_target;
+    select payload into v_audit from private.stockflow_economic_audit where action='approve_target' and entity_id=v_target;
+    if (select approval from private.stockflow_economic_targets where id=v_target)<>'approved' or (select version from private.stockflow_economic_targets where id=v_target)<>v_version+1 then raise exception 'D15 approval/version incorrect for scenario %',v_scenario;end if;
+    if (select count(*) from private.stockflow_economic_audit where action='approve_target' and entity_id=v_target)<>1
+     or v_audit->>'automatic' is distinct from 'true'
+     or v_audit->>'triggeredBy' is distinct from (case when v_scenario in (2,9) then 'record_capital' else 'set_expectation' end)
+     or v_audit->>'decision' is distinct from 'approved'
+     or v_audit->>'targetId' is distinct from v_target::text
+     or v_audit->>'reason' is distinct from 'Automatic: payback 24.0 months within the 24-month limit'
+     or v_preview is null or v_audit->'approvalPreview' is distinct from v_preview
+     or v_audit->'approvalExpectationId' is distinct from v_preview->'expectationId'
+     or v_audit->'approvalPolicyId' is distinct from v_preview->'policyId'
+     or v_audit->'approvedNetInvestmentPaise' is distinct from v_preview->'netInvestmentPaise'
+     or v_audit->'expectedPaybackMonths' is distinct from v_preview->'expectedPaybackMonths'
+     or private.stockflow_economic_approved_expectation(v_target) is distinct from (v_preview->>'expectationId')::uuid
+     then raise exception 'D15 frozen automatic approval audit incorrect for scenario %',v_scenario;end if;
+    if v_response->'autoApproved' is distinct from jsonb_build_object('targetId',v_target,'paybackMonths',v_preview->'expectedPaybackMonths','policyId',v_preview->'policyId','attractiveMonths',24) then raise exception 'D15 automatic approval receipt incorrect';end if;
+    if not exists(select 1 from private.stockflow_economic_audit a where a.action=case when v_scenario in (2,9) then 'record_capital' else 'set_expectation' end and a.payload->>'idempotencyKey'=v_payload->>'idempotencyKey') then raise exception 'D15 triggering command audit missing';end if;
+    if v_scenario=1 then
+     -- 7: replay includes the original automatic approval result, with no writes.
+     select count(*) into v_audit_count from private.stockflow_economic_audit;
+     v_replay:=public.stockflow_economics_gateway('d15-test-key','d15-management@test.local','set_expectation',v_payload);
+     if v_replay is distinct from v_response or (select count(*) from private.stockflow_economic_audit)<>v_audit_count then raise exception 'D15 idempotent replay changed result or audit';end if;
+     -- 8: the stale manual decision conflicts after automatic version increment.
+     begin
+      perform public.stockflow_economics_gateway('d15-test-key','d15-management@test.local','approve_target',jsonb_build_object('targetId',v_target,'expectedVersion',v_version,'expectedGeneration',v_response->>'generation','decision','approved','reason','D15 stale manual approval','idempotencyKey','d15-stale-manual-fixture'));
+      raise exception 'D15 stale manual approval accepted';
+     exception when sqlstate 'PT409' then null;end;
+     if (select count(*) from private.stockflow_economic_audit)<>v_audit_count then raise exception 'D15 stale manual approval added audit';end if;
+    end if;
+   else
+    if (select approval from private.stockflow_economic_targets where id=v_target)<>'proposed' or (select version from private.stockflow_economic_targets where id=v_target)<>v_version or v_response?'autoApproved' or exists(select 1 from private.stockflow_economic_audit where action='approve_target' and entity_id=v_target) then raise exception 'D15 ineligible scenario % was automatically approved',v_scenario;end if;
+    if v_scenario=11 then
+     v_preview:=private.stockflow_economic_approval_preview(v_target);
+     if v_preview->>'status' is distinct from 'within_limit' or (v_preview->>'netInvestmentPaise')::numeric is distinct from 24000000 or (v_preview->>'expectedPaybackMonths')::numeric is distinct from 24 then raise exception 'D15 switch-off target is not otherwise eligible';end if;
+    end if;
+    if v_scenario=3 then
+     v_response:=public.stockflow_economics_gateway('d15-test-key','d15-management@test.local','approve_target',jsonb_build_object('targetId',v_target,'expectedVersion',v_version,'expectedGeneration',v_response->>'generation','decision','approved','reason','D15 Management manual approval','idempotencyKey','d15-manual-approval-fixture'));
+     if (select approval from private.stockflow_economic_targets where id=v_target)<>'approved' or v_response?'autoApproved' then raise exception 'D15 manual Management approval changed';end if;
+    end if;
+   end if;
+   raise exception using errcode='ZD015',message='Rollback D15 scenario';
+  exception when sqlstate 'ZD015' then null;end;
+ end loop;
+end$test$;
+
+-- Integration review: the other two public triggering commands also preserve
+-- one approval, its frozen baseline, and the exact idempotent receipt.
+do $source_triggers$
+declare
+ command text; day date:=private.stockflow_economic_business_date()-30;
+ document jsonb; command_payload jsonb; response jsonb; replay jsonb;
+ target_id uuid; purchase_id uuid; sale_id uuid; target_version integer;
+ approval_audit jsonb; audit_count integer;
+begin
+ foreach command in array array['link_instrument_billing','review_acquisition'] loop
+  begin
+   document:=jsonb_build_object('schemaVersion',1,'companyId','d15-trigger-company','sourceVersion','d15-trigger-1',
+    'completeWindow',true,'windowFrom',day-1,'windowTo',day+interval '1 month','vouchers',jsonb_build_array(
+     jsonb_build_object('sourceId','d15-trigger-purchase','revision',1,'date',day,'kind','purchase','amountStatus','verified',
+      'lines',jsonb_build_array(jsonb_build_object('lineKey','1','productId','d15-trigger-instrument','quantity','1','unit','nos','netSalesPaise','40000000'))),
+     jsonb_build_object('sourceId','d15-trigger-sale','revision',1,'date',day,'kind','sale','customerSourceId','d15-customer-guid','amountStatus','verified',
+      'lines',jsonb_build_array(jsonb_build_object('lineKey','1','productId','d15-trigger-instrument','quantity','1','unit','nos','netSalesPaise','16000000')))));
+   update public.stockflow_snapshots set payload=payload||jsonb_build_object('economicEvidence',document) where id='suprabha';
+   select l.id into purchase_id from private.stockflow_economic_source_lines l join private.stockflow_economic_source_vouchers v on v.id=l.voucher_id
+    where v.company_id='d15-trigger-company' and v.source_id='d15-trigger-purchase' and v.source_revision=1;
+   select l.id into sale_id from private.stockflow_economic_source_lines l join private.stockflow_economic_source_vouchers v on v.id=l.voucher_id
+    where v.company_id='d15-trigger-company' and v.source_id='d15-trigger-sale' and v.source_revision=1;
+   if purchase_id is null or sale_id is null then raise exception 'D15 source trigger fixture not admitted';end if;
+   response:=public.stockflow_economics_gateway('d15-test-key','d15-management@test.local','create_target',jsonb_build_object(
+    'kind','placement','name','D15 source-trigger placement','companyId','d15-trigger-company','customerId','d1500000-0000-4000-8000-000000000001',
+    'customerSourceId','d15-customer-guid','siteId','d15-site','modelId','d15-model','installationId','d1500000-0000-4000-8000-000000000003',
+    'effectiveFrom',day,'capitalPaise','0','acquisitionPurchaseLineId',purchase_id,'capitalEvidence','D15-SERIAL verified purchase','idempotencyKey','d15-source-create-fixture'));
+   target_id:=(response->>'entityId')::uuid;
+   perform public.stockflow_economics_gateway('d15-test-key','d15-management@test.local','set_expectation',jsonb_build_object(
+    'targetId',target_id,'effectiveFrom',day,'monthlyRevenuePaise','2000000','monthlyGpPaise','1000000',
+    'reason','D15 source-trigger baseline','idempotencyKey','d15-source-expectation-fixture'));
+   select version into target_version from private.stockflow_economic_targets where id=target_id;
+   if (select approval from private.stockflow_economic_targets where id=target_id)<>'proposed' then raise exception '40-month proposal approved before source command';end if;
+   if command='link_instrument_billing' then
+    command_payload:=jsonb_build_object('targetId',target_id,'sourceLineId',sale_id,'expectedVersion',target_version,
+     'reason','D15-SERIAL verified selling invoice','idempotencyKey','d15-source-billing-fixture');
+   else
+    document:=jsonb_set(document,'{vouchers}',document->'vouchers'||jsonb_build_array(
+     jsonb_build_object('sourceId','d15-trigger-purchase','revision',2,'date',day,'kind','purchase','amountStatus','verified',
+      'lines',jsonb_build_array(jsonb_build_object('lineKey','1','productId','d15-trigger-instrument','quantity','1','unit','nos','netSalesPaise','24000000')))));
+    update public.stockflow_snapshots set payload=payload||jsonb_build_object('economicEvidence',document||'{"sourceVersion":"d15-trigger-2"}') where id='suprabha';
+    if (select approval from private.stockflow_economic_targets where id=target_id)<>'proposed'
+     or exists(select 1 from private.stockflow_economic_audit where action='approve_target' and entity_id=target_id) then raise exception 'Source upload automatically approved proposal';end if;
+    command_payload:=jsonb_build_object('targetId',target_id,'expectedVersion',target_version,'expectedSourceRevision','2',
+     'reason','D15-SERIAL verified acquisition revision','idempotencyKey','d15-source-review-fixture');
+   end if;
+   response:=public.stockflow_economics_gateway('d15-test-key','d15-management@test.local',command,command_payload);
+   select payload into approval_audit from private.stockflow_economic_audit where action='approve_target' and entity_id=target_id;
+   if (select approval from private.stockflow_economic_targets where id=target_id)<>'approved'
+    or (select version from private.stockflow_economic_targets where id=target_id)<>target_version+2
+    or (response->'autoApproved'->>'paybackMonths')::numeric is distinct from 24::numeric
+    or approval_audit->>'automatic' is distinct from 'true' or approval_audit->>'triggeredBy' is distinct from command
+    or approval_audit->>'approvedNetInvestmentPaise' is distinct from '24000000'
+    or private.stockflow_economic_approved_expectation(target_id) is distinct from (approval_audit->>'approvalExpectationId')::uuid
+    or (select count(*) from private.stockflow_economic_audit where action='approve_target' and entity_id=target_id)<>1
+    then raise exception 'D15 % did not atomically approve and freeze the 24-month baseline',command;end if;
+   select count(*) into audit_count from private.stockflow_economic_audit;
+   replay:=public.stockflow_economics_gateway('d15-test-key','d15-management@test.local',command,command_payload);
+   if replay is distinct from response or (select count(*) from private.stockflow_economic_audit)<>audit_count then raise exception 'D15 % replay changed audit/receipt',command;end if;
+   raise exception using errcode='ZD015',message='Rollback D15 source command scenario';
+  exception when sqlstate 'ZD015' then null;end;
+ end loop;
+end$source_triggers$;
+rollback;

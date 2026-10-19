@@ -1,0 +1,24 @@
+{
+  "state": "proposed_requires_accounts_approval",
+  "companyName": "SUPRABHA DISTRIBUTORS",
+  "preparedAt": "2026-10-08",
+  "ledgerRoles": {
+    "c0071957-a387-4298-89e4-70aaa8dc6989-0000015b": "rounding",
+    "c0071957-a387-4298-89e4-70aaa8dc6989-00000641": "charge",
+    "c0071957-a387-4298-89e4-70aaa8dc6989-00000458": "charge",
+    "c0071957-a387-4298-89e4-70aaa8dc6989-00000403": "charge",
+    "c0071957-a387-4298-89e4-70aaa8dc6989-00000229": "charge"
+  },
+  "voucherRoles": {
+    "Delivery Challan": "non_economic",
+    "Sales-Quotation": "non_economic"
+  },
+  "decisionsForAccounts": [
+    "R/o: apportion invoice rounding into net economic value in exact paise, excluding zero-value FOC lines from the allocation basis.",
+    "Frieght: retain as an excluded charge; do not assign freight to reagent revenue or purchase cost without an approved landed-cost policy.",
+    "Packing (Packing Charges 0%, Packing & Forwarding 18, Packing Forwarding 5): owner decision 11 Oct 2026 - exclude like freight for now; revisit before counting packing in reagent cost.",
+    "Delivery Challan and Sales-Quotation: retain source identity and classification evidence; exclude from revenue, GP and invoiced supply to avoid counting both a preliminary document and its actual invoice.",
+    "A proposal, delivery record or invoice is not evidence of cash collection."
+  ],
+  "activation": "This file is a read-only preflight proposal. It does not change connector state files or import data. Accounts review and the pending migrations are required before live configuration."
+}

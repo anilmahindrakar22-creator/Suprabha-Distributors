@@ -1,4 +1,7 @@
 begin;
+-- Approval timestamps are interpreted on the India business date. Keep fixture
+-- dates on that same calendar even when CI's PostgreSQL session uses UTC.
+set local timezone='Asia/Kolkata';
 update private.stockflow_gateway_config
 set secret_sha256=encode(extensions.digest('group-margin-test-key','sha256'),'hex')
 where name='orders';

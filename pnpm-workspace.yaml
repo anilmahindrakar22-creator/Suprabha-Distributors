@@ -3,6 +3,7 @@ allowBuilds:
   sharp: true
   workerd: true
 overrides:
+  '@modelcontextprotocol/sdk@>=1.12.0 <1.31.0': 1.31.0
   esbuild: 0.28.1
   qs: 6.16.0
   'fast-uri@>=3.0.0 <3.1.8': 3.1.8

@@ -1,5 +1,51 @@
 # StockFlow production acceptance and pilot
 
+## Renewal-cookie lifecycle integration — 9 October 2026
+
+- Password login now requires a valid provider refresh credential and emits distinct HttpOnly/Secure/SameSite access and renewal cookies, never token JSON. Local sign-out clears both cookies. Completed password recovery clears both only after the existing global provider revocation succeeds; uncertain reset remains visibly incomplete.
+- Fresh validation: 50 affected auth/reset tests passed; typecheck, lint and whitespace checks passed. No production deployment, database or Tally change.
+- Persistent sign-in is not complete: browser app-reopen/foreground renewal, cross-tab serialization and refresh-versus-sign-out race protection remain pending. Local sign-out currently removes browser cookies, but provider-session revocation for ordinary sign-out is still pending; do not describe it as global revocation. Keep this candidate unpublished until those controls and recovery/device checks pass.
+
+## Persistent-session server boundary — 9 October 2026
+
+- Owner approved persistent staff sign-in with secure renewal; suspension, explicit sign-out and password/security resets must still end access. Added same-origin POST renewal using a server-only HttpOnly/Secure/SameSite refresh cookie, provider token rotation/verification and current gateway membership before emitting either renewed cookie. No tokens returned in JSON; rejection/outage does not overwrite stored cookies. Cookie retention uses browser-compatible sliding retention, not a new application session timeout.
+- Fresh targeted validation: 38 auth tests passed, including suspended membership, cross-origin denial, rotation, credential separation and provider failure; typecheck, lint and whitespace validation passed. Supabase session docs/changelog reviewed; no relevant Auth breaking change found in the current index.
+- This is an unpublished server-boundary slice, not completed persistent login. Existing password login does not yet issue the renewal cookie. Remaining integration: initial issuance, serialized app-reopen/foreground renewal, sign-out/reset clearing and provider revocation, concurrent-tab/logout races, interrupted rotation recovery and installed Android acceptance. No production or Tally change.
+
+## Staff testing release published — 9 October 2026
+
+- Owner explicitly requested publication. Source equivalent to `b342c18` deployed to production Worker `suprabha-staff`, version `4f384b9b-3c77-48bf-885c-3a819526b78c`. All hosted checks for that source passed: full release validation, database/ACID replay and CodeQL. Fresh production-mode build passed; target/project/email-reset guards verified before deployment. Existing variables/secrets preserved.
+- Rollback reference: `fec65d96-544a-4db5-af81-61ae1701be29`. Post-deployment unauthenticated smoke: staff sign-in 200/no-store, session confirmation and offline catalogue 401/private/no-store, public offline shell 200. No database migration, Tally modification or main merge performed.
+- Release includes PIN-protected offline draft preparation/editor and the verified session-handoff/outage fixes. Actual installed Android acceptance, signed-in critical office workflow and backup/restore remain incomplete. Publication is not V1 Pilot Candidate certification; real business use remains blocked by the pilot gates. Session still expires within one hour without renewal.
+
+## Verification-outage false sign-out fix — 9 October 2026
+
+- Confirmed code defect: provider verification errors were all converted to a null identity, so network/throttling/provider outages rendered a password form like expired login. Verification now distinguishes authoritative 400/401/403 rejection from unavailable verification, fails closed for protected data, and presents a manual connection retry on both workspace entry and staff sign-in. Cookie contents, security attributes and one-hour lifetime unchanged; no automatic retry or refresh-token storage added.
+- 40 targeted auth/page tests, lint, typecheck and acceptance build passed. Invalid-token rejection and cross-origin protections remain covered. Installed Android immediate-login root cause remains unverified; hourly expiry without renewal remains a separate limitation.
+- Deployed only acceptance version `c6d24870-674c-489c-a398-c9b766ed7701`, retaining prior version `01b0d1ff-ef56-4ebc-84ed-292cda7e3fb2` for rollback. Production and Tally untouched. Await private signed-in acceptance and actual-device test before claiming repair of the reported device behavior.
+
+## Hosted offline acceptance candidate — 8 October 2026
+
+- GitHub checks for source `15a94a1` all passed: release validation (full CI), migration/ACID replay, and CodeQL. Acceptance-mode build passed independently.
+- Deployed only `suprabha-staff-acceptance`, version `01b0d1ff-ef56-4ebc-84ed-292cda7e3fb2`, preserving existing variables and secrets. Artifact explicitly verified the acceptance project guard `ayrvhemxzizpkfcycvip`. Prior acceptance version `60386c39-c91a-431b-a372-d60c9cc4fb43` remains the rollback reference. Production, database schema and Tally unchanged; PR #41 remains unmerged.
+- Hosted sign-in page loaded visibly. Unauthenticated session confirmation and catalogue requests returned 401 with private/no-store; public offline shell and bundled editor returned 200. Two first-attempt network probes timed out; each passed on one bounded repeat. This is not authenticated or device acceptance.
+- Awaiting private acceptance sign-in with Anil's account to distinguish failed cookie/session handoff from successful workspace navigation. Actual installed Android and critical office-workflow gates remain open. No pilot-ready claim.
+
+## Sign-in handoff checkpoint — 8 October 2026
+
+- Added a single no-store, provider-verified session confirmation after password login, before navigation. Missing/rejected cookies now leave a visible session-handoff error on the populated email form instead of silently navigating back to empty login. No tokens or identities are returned by confirmation; cookie security and lifetime are unchanged. This prevents silent failure, not a claim that the actual Android cause is fixed.
+- Fresh validation: 35 auth/page unit tests and 10 desktop/mobile-emulated sign-in browser checks passed; lint, typecheck and staff production build passed. Actual installed Android verification remains required. A live unauthenticated probe failed at the local TLS connection boundary, so no live-session conclusion was drawn.
+- The new confirmation performs one bounded request per successful password submission, with no polling or automatic retries. No database, Tally or production deployment changes.
+
+## Offline candidate checkpoint — 7 October 2026
+
+- PR #41 remains a draft; no merge or production deployment in this checkpoint.
+- Owner reports installed Android email/password sign-in immediately reloads an empty login form without an error. Chrome stays signed in. This is an unresolved actual-device blocker, not proven expiry; no cookie security or session lifetime was weakened.
+- Updated the transitive MCP SDK from 1.30.0 to patched 1.31.0 for GHSA-6qxp-vccf-f47h. The security gate passes with the existing exact, tested braces mitigation (review expiry 17 October); the audit is not advisory-free.
+- Fresh isolated candidate checks: lint and typecheck passed; 45 affected auth/audit tests passed; all 16 desktop/mobile-emulated offline browser checks passed; staff production build passed. Emulation does not certify actual installed Android behavior.
+- Earlier clean 4192ad4 consolidation passed 746 unit tests, 36 general and 148 pricing/workflow browser checks, plus deployment-order database replay. Its audit failed on the newly discovered SDK advisory, fixed above. These earlier results are not a fresh full-suite run of the dependency update.
+- Remaining gates: demonstrate and repair installed Android sign-in, actual-device offline/reconnect acceptance, final combined CI, hosted critical office workflow and backup/restore requirements before real business use. Tally remains untouched.
+
 ## Current status — 3 October 2026
 
 **Published; operational pilot remains HOLD.** PR #36 merged to main at `aebdcbefeba523b4a1ec7a7e0d3e6f2f6146f5ce`. Public version 55 deployed successfully as `appgdep_6ac0bfb979008191b87fbc13605b6a11`, runtime revision 4, on 3 October. All six pending production migrations were previously applied and reconciled. The earlier version-52 signed-in Orders/Pricing checks remain historical evidence, not version-55 acceptance. These results supersede historical publication blockers below, not the remaining acceptance gates. The dependency mitigation review expires on 17 October. Full evidence is in `PRICE-BOOK-IMPLEMENTATION-STATUS.md`.
