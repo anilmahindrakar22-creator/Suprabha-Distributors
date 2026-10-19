@@ -34,6 +34,7 @@ import { deliveredTodayOrders, groupOrdersForList } from '@/lib/order-list-group
 import { readJsonBody } from '@/lib/http-json';
 import { orderDateLabel, orderDateTime } from '@/lib/order-date';
 import { PriceApprovalCard } from './price-approval-card';
+import { courierChoices, isLocalDelivery, istToday, LOCAL_DELIVERY, type DispatchMode } from '@/lib/dispatch-options';
 import { hasAnyStockFlowRole, type StockFlowRole } from '@/lib/user-types';
 import type { TallyRecentProducts } from '@/lib/tally-recent-products';
 
@@ -1144,27 +1145,33 @@ function OrderNextStepBar({ order, roles, pricing, inOrderPage, onAdvance, onDel
   }
   const primary = 'min-h-12 w-full rounded-xl bg-sf-ink px-4 text-base font-bold text-white hover:bg-sf-ink-hover disabled:opacity-50';
   const informational = ['loading', 'waiting', 'pricing_waiting', 'done', 'none'].includes(step.kind);
+  // Pricing staleness only matters while deciding a price, not when dispatching or delivering.
+  const pricingStep = step.kind.startsWith('pricing_') || step.kind === 'loading' || sheet === 'price' || sheet === 'reject';
+  const dispatchLocally = () => run(() => onDelivery(order, { action: 'save_dispatch', payload: { orderId: order.id, expectedVersion: order.version, ...LOCAL_DELIVERY, dispatchDate: istToday(), vehicleNumber: '' } }), 'Dispatched · local delivery');
   if (step.kind === 'none') return null;
   return <section aria-label="Order next step" className={inOrderPage ? 'fixed inset-x-0 bottom-0 z-50 flex max-h-[70vh] min-w-0 flex-col gap-2 overflow-y-auto border-t border-sf-line-soft bg-white/95 px-3 pt-3 backdrop-blur' : 'flex max-h-[70vh] min-w-0 w-full flex-col gap-2 overflow-y-auto lg:min-w-48'} style={inOrderPage ? { paddingBottom: 'max(0.75rem, env(safe-area-inset-bottom))' } : undefined}>
     {success ? <output className={`flex items-center gap-2 text-sm font-bold ${/rejected/i.test(success) ? 'text-sf-label' : 'text-sf-success'}`}>{/rejected/i.test(success) ? <Info aria-hidden="true" size={16} /> : <CircleCheck aria-hidden="true" size={16} />}{success}</output> : null}
-    {error || pricing.message ? <p role="alert" className="text-sm text-sf-danger">{error || pricing.message}</p> : null}
-    {stale || pricing.state === 'error' ? <button type="button" disabled={busy || pricing.state === 'loading'} onClick={() => void pricing.reload()} className="min-h-11 rounded-xl border border-sf-line px-3 text-sm font-bold text-sf-body">Reload pricing</button> : null}
-    {stale ? <p className="text-sm text-sf-warning">This order changed. Reload pricing before submitting.</p> : null}
+    {error || (pricingStep && pricing.message) ? <p role="alert" className="text-sm text-sf-danger">{error || pricing.message}</p> : null}
+    {pricingStep && (stale || pricing.state === 'error') ? <button type="button" disabled={busy || pricing.state === 'loading'} onClick={() => void pricing.reload()} className="min-h-11 rounded-xl border border-sf-line px-3 text-sm font-bold text-sf-body">Reload pricing</button> : null}
+    {pricingStep && stale ? <p className="text-sm text-sf-warning">This order changed. Reload pricing before submitting.</p> : null}
     {sheet ? <div className="min-w-0 space-y-3">
       <button type="button" disabled={busy} onClick={() => { setSheet(''); setReason(''); }} className="min-h-11 rounded-lg border border-sf-line px-4 font-bold text-sf-body">Cancel</button>
       {sheet === 'price' ? <PricingPanel order={order} actorRole={roles[0]} actorRoles={roles} pricing={pricing} sheet onSavingChange={setBusy} onChanged={async () => { await onPricingChanged(); setSheet(''); }} /> : null}
       {sheet === 'reject' ? <><label className="block text-sm font-bold text-sf-body">Rejection reason<input required minLength={3} maxLength={1000} value={reason} onChange={event => setReason(event.target.value)} className="mt-1 min-h-11 w-full min-w-0 rounded-lg border border-sf-line px-3" /></label><button type="button" disabled={busy || stale || reason.trim().length < 3} onClick={() => void run(() => pricingCommand('reject_price_exception'), 'Price rejected')} className={primary}>Reject price</button></> : null}
-      {sheet === 'dispatch' ? <DispatchForm order={order} actorRoles={roles} onSave={(current, command) => run(() => onDelivery(current, command), 'Moved to Dispatched')} /> : null}
+      {sheet === 'dispatch' ? <DispatchForm order={order} actorRoles={roles} initialMode="outstation" onSave={(current, command) => run(() => onDelivery(current, command), 'Moved to Dispatched')} /> : null}
       {sheet === 'deliver' ? <DeliveryForm order={order} actorRoles={roles} onSave={(current, command) => run(() => onDelivery(current, command), 'Moved to Delivered')} /> : null}
     </div> : <>
       {informational ? <p className={`flex items-center gap-2 py-2 text-sm font-bold ${step.kind === 'done' ? 'text-sf-success' : 'text-sf-muted'}`}>{step.kind === 'done' ? <CircleCheck aria-hidden="true" size={16} /> : <Clock aria-hidden="true" size={16} />}{step.label}</p> : <>
         {step.kind === 'advance' && order.status === 'awaiting_tally_billing' ? <label className="text-xs font-bold text-sf-muted">Tally invoice number(s)<input maxLength={160} value={invoice} onChange={event => setInvoice(event.target.value)} placeholder="Use commas for split invoices" className="mt-1 min-h-10 w-full rounded-lg border border-sf-line px-3 font-normal text-sf-strong" /></label> : null}
-        <button type="button" className={primary} disabled={busy || (step.kind.startsWith('pricing_') && (stale || pricing.state === 'loading')) || (step.kind === 'advance' && order.status === 'awaiting_tally_billing' && !invoice.trim())} onClick={() => {
+        {step.kind === 'dispatch' ? <>
+          <button type="button" className={primary} disabled={busy} onClick={() => void dispatchLocally()}>{busy ? 'Dispatching…' : 'Dispatch · Local delivery'}</button>
+          <button type="button" disabled={busy} onClick={() => setSheet('dispatch')} className="min-h-11 rounded-xl border border-sf-line px-4 font-bold text-sf-body">Outstation courier…</button>
+        </> : <button type="button" className={primary} disabled={busy || (step.kind.startsWith('pricing_') && (stale || pricing.state === 'loading')) || (step.kind === 'advance' && order.status === 'awaiting_tally_billing' && !invoice.trim())} onClick={() => {
           if (step.kind === 'advance') void run(() => onAdvance(order, invoice), `Moved to ${statusLabel(nextStatus[order.status].status)}`);
           else if (step.kind === 'pricing_apply') void run(() => pricingCommand('apply_governed_order_pricing'), 'Price approved');
           else if (step.kind === 'pricing_approve') void run(() => pricingCommand('approve_price_exception'), 'Price approved');
           else setSheet(step.kind === 'pricing_enter' ? 'price' : step.kind);
-        }}>{busy ? 'Updating…' : step.label}</button>
+        }}>{busy ? 'Updating…' : step.label}</button>}
         {step.kind === 'pricing_approve' ? <button type="button" disabled={busy || stale} onClick={() => setSheet('reject')} className="min-h-11 rounded-xl border border-sf-danger-line px-4 font-bold text-sf-danger">Reject</button> : null}
       </>}
     </>}
@@ -1409,7 +1416,7 @@ function useFulfilmentDraft(order: OrderSummary) {
   const [busy, setBusy] = useState(false);
   const [courierName, setCourierName] = useState(order.courierName || '');
   const [trackingNumber, setTrackingNumber] = useState(order.trackingNumber || '');
-  const [dispatchDate, setDispatchDate] = useState(order.dispatchDate || new Date().toISOString().slice(0, 10));
+  const [dispatchDate, setDispatchDate] = useState(order.dispatchDate || istToday());
   const [vehicleNumber, setVehicleNumber] = useState(order.vehicleNumber || '');
   const [deliveredAt, setDeliveredAt] = useState(order.deliveredAt ? localDateTimeValue(new Date(order.deliveredAt)) : localDateTimeValue());
   const [receivedBy, setReceivedBy] = useState(order.receivedBy || '');
@@ -1418,7 +1425,7 @@ function useFulfilmentDraft(order: OrderSummary) {
   function resetDrafts() {
     setCourierName(order.courierName || '');
     setTrackingNumber(order.trackingNumber || '');
-    setDispatchDate(order.dispatchDate || new Date().toISOString().slice(0, 10));
+    setDispatchDate(order.dispatchDate || istToday());
     setVehicleNumber(order.vehicleNumber || '');
     setDeliveredAt(order.deliveredAt ? localDateTimeValue(new Date(order.deliveredAt)) : localDateTimeValue());
     setReceivedBy(order.receivedBy || '');
@@ -1427,7 +1434,7 @@ function useFulfilmentDraft(order: OrderSummary) {
   }
   return { busy, setBusy, courierName, setCourierName, trackingNumber, setTrackingNumber, dispatchDate, setDispatchDate, vehicleNumber, setVehicleNumber, deliveredAt, setDeliveredAt, receivedBy, setReceivedBy, podReference, setPodReference, baseVersion, resetDrafts };
 }
-function DispatchForm({ order, actorRole, actorRoles, onSave }: FulfilmentFormProps) {
+function DispatchForm({ order, actorRole, actorRoles, onSave, initialMode }: FulfilmentFormProps & { initialMode?: DispatchMode }) {
   const { busy, setBusy, courierName, setCourierName, trackingNumber, setTrackingNumber, dispatchDate, setDispatchDate, vehicleNumber, setVehicleNumber, baseVersion, resetDrafts } = useFulfilmentDraft(order);
   const [error, setError] = useState('');
   const canUpdate = hasAnyStockFlowRole(actorRoles ?? [actorRole as StockFlowRole], ['administrator', 'operations']);
@@ -1436,7 +1443,19 @@ function DispatchForm({ order, actorRole, actorRoles, onSave }: FulfilmentFormPr
     try { await onSave(current, command); }
     catch (cause) { setError(cause instanceof Error ? cause.message : 'Delivery details could not be saved'); }
   };
-  return <div className="min-w-0">{error ? <p role="alert" className="text-sm text-sf-danger">{error}</p> : null}<div className="mt-3 grid gap-3 rounded-xl bg-white p-4 sm:grid-cols-2"><OrderDraftNotice changed={order.version !== baseVersion} busy={busy} onLoadLatest={resetDrafts} /><label className="text-sm font-bold">Courier / transporter<input maxLength={160} value={courierName} onChange={(event) => setCourierName(event.target.value)} className="mt-1 min-h-11 min-w-0 w-full rounded-lg border border-sf-line px-3 font-normal" /></label><label className="text-sm font-bold">Tracking / docket number<input maxLength={160} value={trackingNumber} onChange={(event) => setTrackingNumber(event.target.value)} className="mt-1 min-h-11 min-w-0 w-full rounded-lg border border-sf-line px-3 font-normal" /></label><label className="text-sm font-bold">Dispatch date<input type="date" value={dispatchDate} onChange={(event) => setDispatchDate(event.target.value)} className="mt-1 min-h-11 min-w-0 w-full rounded-lg border border-sf-line px-3 font-normal" /></label><label className="text-sm font-bold">Vehicle number <span className="font-normal text-sf-subtle">(optional)</span><input value={vehicleNumber} onChange={(event) => setVehicleNumber(event.target.value)} maxLength={40} className="mt-1 min-h-11 min-w-0 w-full rounded-lg border border-sf-line px-3 font-normal" /></label><div className="sm:col-span-2 flex justify-end"><button type="button" disabled={!canUpdate || busy || courierName.trim().length < 2 || trackingNumber.trim().length < 2 || !dispatchDate} onClick={async () => { setBusy(true); try { await save(order, { action: 'save_dispatch', payload: { orderId: order.id, expectedVersion: baseVersion, courierName: courierName.trim(), trackingNumber: trackingNumber.trim(), dispatchDate, vehicleNumber: vehicleNumber.trim() } }); } finally { setBusy(false); } }} className="min-h-11 rounded-xl bg-sf-ink px-5 font-bold text-white disabled:opacity-50">{busy ? 'Saving…' : 'Save and mark dispatched'}</button></div></div></div>;
+  const [mode, setMode] = useState<DispatchMode>(() => initialMode ?? (!order.courierName || isLocalDelivery(order) ? 'local' : 'outstation'));
+  const choices = courierChoices(order.courierName);
+  const [typingOther, setTypingOther] = useState(() => Boolean(order.courierName) && !isLocalDelivery(order) && !choices.includes(order.courierName!));
+  const local = mode === 'local';
+  const courier = local ? LOCAL_DELIVERY.courierName : courierName.trim();
+  const docket = local ? LOCAL_DELIVERY.trackingNumber : trackingNumber.trim();
+  const field = 'mt-1 min-h-11 min-w-0 w-full rounded-lg border border-sf-line bg-white px-3 font-normal';
+  return <div className="min-w-0">{error ? <p role="alert" className="text-sm text-sf-danger">{error}</p> : null}<div className="mt-3 grid gap-3 rounded-xl bg-white p-4 sm:grid-cols-2"><OrderDraftNotice changed={order.version !== baseVersion} busy={busy} onLoadLatest={resetDrafts} />
+    <label className="text-sm font-bold sm:col-span-2">Delivery type<select aria-label="Delivery type" value={mode} onChange={(event) => setMode(event.target.value as DispatchMode)} className={field}><option value="local">Local delivery (our staff)</option><option value="outstation">Outstation courier</option></select></label>
+    {local ? null : <><label className="text-sm font-bold">Courier<select aria-label="Courier" value={typingOther ? '__other' : choices.includes(courierName) ? courierName : ''} onChange={(event) => { if (event.target.value === '__other') { setTypingOther(true); setCourierName(''); } else { setTypingOther(false); setCourierName(event.target.value); } }} className={field}><option value="" disabled>Choose courier…</option>{choices.map((name) => <option key={name} value={name}>{name}</option>)}<option value="__other">Other…</option></select></label>
+      {typingOther ? <label className="text-sm font-bold">Courier name<input maxLength={160} value={courierName} onChange={(event) => setCourierName(event.target.value)} className={field} /></label> : null}
+      <label className="text-sm font-bold">Docket number<input maxLength={160} inputMode="text" value={trackingNumber} onChange={(event) => setTrackingNumber(event.target.value)} className={field} /></label></>}
+    <label className="text-sm font-bold">Dispatch date<input type="date" value={dispatchDate} onChange={(event) => setDispatchDate(event.target.value)} className={field} /></label><label className="text-sm font-bold">{local ? 'Delivered by / vehicle' : 'Vehicle number'} <span className="font-normal text-sf-subtle">(optional)</span><input value={vehicleNumber} onChange={(event) => setVehicleNumber(event.target.value)} maxLength={40} className={field} /></label><div className="sm:col-span-2 flex justify-end"><button type="button" disabled={!canUpdate || busy || courier.length < 2 || docket.length < 2 || !dispatchDate} onClick={async () => { setBusy(true); try { await save(order, { action: 'save_dispatch', payload: { orderId: order.id, expectedVersion: baseVersion, courierName: courier, trackingNumber: docket, dispatchDate, vehicleNumber: vehicleNumber.trim() } }); } finally { setBusy(false); } }} className="min-h-11 w-full rounded-xl bg-sf-ink px-5 font-bold text-white disabled:opacity-50 sm:w-auto">{busy ? 'Saving…' : local ? 'Dispatch · local delivery' : 'Dispatch by courier'}</button></div></div></div>;
 }
 function DeliveryForm({ order, actorRole, actorRoles, onSave }: FulfilmentFormProps) {
   const { busy, setBusy, deliveredAt, setDeliveredAt, receivedBy, setReceivedBy, podReference, setPodReference, baseVersion, resetDrafts } = useFulfilmentDraft(order);
