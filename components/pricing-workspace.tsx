@@ -3,6 +3,7 @@
 import { PageHeader, pageActionClass, SummaryStrip } from './page-header';
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { CustomerPriceBook, savePricingReference } from './customer-price-book';
+import { OrderPriceInbox } from './order-price-inbox';
 import { clearOrderCaptureMasterCache, loadOrderCatalog, loadOrderCustomers } from '@/lib/order-capture-masters';
 import type { CatalogItem, CustomerDirectoryEntry } from '@/lib/order-types';
 import type { CustomerPriceContract, PricingCommand, PricingPolicy } from '@/lib/pricing-types';
@@ -30,6 +31,7 @@ export function PricingWorkspace({ actorEmail, actorRole, actorRoles }: { actorE
   const [recoveryBlocked, setRecoveryBlocked] = useState(true);
   const pendingCommands = useRef(new Map<string, PricingCommand>());
   const [accessDenied, setAccessDenied] = useState(false);
+  const [orderPriceCount, setOrderPriceCount] = useState(0);
   const accessRevoked = useRef(false);
   const denyAccess = useCallback(() => {
     accessRevoked.current = true;
@@ -73,17 +75,18 @@ export function PricingWorkspace({ actorEmail, actorRole, actorRoles }: { actorE
   if (accessDenied) return <div role="alert" className="p-6 text-sm font-bold">Pricing access is restricted. Reopen the app after your access is restored.</div>;
 
   return <div className="h-full overflow-y-auto">
-    <div className="mx-auto max-w-7xl space-y-5 p-4 pb-24 sm:p-6 lg:p-8">
+    <div className="mx-auto flex max-w-7xl flex-col gap-5 p-4 pb-24 sm:p-6 lg:p-8">
       <PageHeader eyebrow="Restricted commercial workspace" title="Pricing" description="Govern customer rates and margins. Tally remains read-only and untouched." actions={<button type="button" disabled={loading} onClick={() => { clearOrderCaptureMasterCache(); setRefreshVersion(value => value + 1); void refresh(); }} className={pageActionClass}>{loading ? 'Loading…' : 'Refresh'}</button>} />
       {message ? <p role="alert" className="rounded-xl border border-sf-danger-line bg-sf-danger-soft p-3 text-sm font-bold text-sf-danger">{message}</p> : null}
       <SummaryStrip label="Pricing overview" items={[
-        { label: 'Awaiting approval', value: pending.length, note: 'Customer price proposals', tone: pending.length > 0 ? 'attention' : 'normal' },
+        { label: 'Awaiting approval', value: pending.length + orderPriceCount, note: 'Customer and order prices', tone: pending.length + orderPriceCount > 0 ? 'attention' : 'normal' },
         { label: 'Expiring in 30 days', value: expiring, note: 'Renew before the end date', tone: expiring > 0 ? 'attention' : 'normal' },
         { label: 'Minimum gross margin', value: current ? `${current.minimumMarginPercent}%` : 'Not set', note: current ? `Policy ${current.policyVersion}` : 'Management policy required', tone: current ? 'normal' : 'attention' },
       ]} />
-      <CustomerPriceBook actorEmail={actorEmail} actorRole={actorRole} actorRoles={roles} refreshVersion={refreshVersion} onRecoveryBlocked={setRecoveryBlocked} onAccessDenied={denyAccess} />
+      {/* While prices wait for a decision the approval inbox comes first; CSS order keeps the price book mounted. */}
+      <div className={pending.length + orderPriceCount > 0 ? 'order-1' : undefined}><CustomerPriceBook actorEmail={actorEmail} actorRole={actorRole} actorRoles={roles} refreshVersion={refreshVersion} onRecoveryBlocked={setRecoveryBlocked} onAccessDenied={denyAccess} /></div>
       <fieldset disabled={recoveryBlocked} className="space-y-5">
-      <ApprovalInbox items={pending} actorRole={actorRole} actorRoles={roles} onChanged={refresh} send={send} />
+      <ApprovalInbox items={pending} orderPriceCount={orderPriceCount} onOrderPriceCount={setOrderPriceCount} actorRole={actorRole} actorRoles={roles} onChanged={refresh} send={send} />
       <details className="rounded-2xl border border-sf-line-soft bg-sf-soft-0 p-4"><summary className="cursor-pointer list-none"><span className="block text-lg font-extrabold text-sf-strong">Pricing administration</span><span className="mt-1 block text-xs font-normal text-sf-subtle">Customer agreements, proposals and commercial policy</span></summary><div className="mt-4 space-y-5">
         <ContractWorkbench items={contracts} actorEmail={actorEmail} actorRole={actorRole} actorRoles={roles} onChanged={refresh} send={send} />
         <PolicyWorkbench policies={policies} actorRole={actorRole} actorRoles={roles} onChanged={refresh} send={send} />
@@ -93,7 +96,7 @@ export function PricingWorkspace({ actorEmail, actorRole, actorRoles }: { actorE
   </div>;
 }
 
-function ApprovalInbox({ items, actorRole, actorRoles, onChanged, send }: { items: CustomerPriceContract[]; actorRole: string; actorRoles?: readonly StockFlowRole[]; onChanged: () => Promise<void>; send: typeof sendRequest }) {
+function ApprovalInbox({ items, orderPriceCount, onOrderPriceCount, actorRole, actorRoles, onChanged, send }: { items: CustomerPriceContract[]; orderPriceCount: number; onOrderPriceCount: (count: number) => void; actorRole: string; actorRoles?: readonly StockFlowRole[]; onChanged: () => Promise<void>; send: typeof sendRequest }) {
   const [reasons, setReasons] = useState<Record<string, string>>({}); const [busy, setBusy] = useState(''); const [message, setMessage] = useState('');
   const canApprove = hasAnyStockFlowRole(actorRoles ?? [actorRole as StockFlowRole], ['administrator', 'management']);
   async function decide(item: CustomerPriceContract, action: 'approve_price_contract' | 'reject_price_contract') {
@@ -105,7 +108,9 @@ function ApprovalInbox({ items, actorRole, actorRoles, onChanged, send }: { item
     catch (error) { setMessage(error instanceof Error ? error.message : 'Decision could not be saved'); }
     finally { setBusy(''); }
   }
-  return <section className="rounded-2xl border border-sf-line-soft bg-white"><div className="flex items-center justify-between border-b border-sf-line-soft p-4"><div><h2 className="text-lg font-extrabold text-sf-strong">Approval inbox</h2><p className="text-xs text-sf-subtle">Customer-specific price decisions</p></div><span className="rounded-full bg-sf-warning-soft px-3 py-1 text-xs font-extrabold text-sf-warning">{items.length}</span></div>
+  return <section className="rounded-2xl border border-sf-line-soft bg-white"><div className="flex items-center justify-between border-b border-sf-line-soft p-4"><div><h2 className="text-lg font-extrabold text-sf-strong">Approval inbox</h2><p className="text-xs text-sf-subtle">Order prices and customer price proposals</p></div><span className="rounded-full bg-sf-warning-soft px-3 py-1 text-xs font-extrabold text-sf-warning">{items.length + orderPriceCount}</span></div>
+    <OrderPriceInbox canApprove={canApprove} onCount={onOrderPriceCount} />
+    <h3 className="px-4 pt-4 text-sm font-extrabold text-sf-strong">Customer price proposals</h3>
     {message ? <p role="alert" className="m-4 rounded-lg bg-sf-danger-soft p-3 text-xs font-bold text-sf-danger">{message}</p> : null}
     {!items.length ? <p className="p-5 text-sm text-sf-muted">No customer prices are waiting for approval.</p> : <div className="divide-y divide-sf-line-soft">{items.map((item) => <article key={item.id} className="grid gap-3 p-4 lg:grid-cols-[minmax(0,1fr)_auto]"><div className="min-w-0 [overflow-wrap:anywhere]"><strong className="text-sm text-sf-strong">{item.customerName}</strong><p className="mt-1 text-sm text-sf-label">{item.tallyKey} · <b>{money.format(item.price)}</b></p><p className="mt-1 text-xs text-sf-subtle">From {item.validFrom}{item.validTo ? ` to ${item.validTo}` : ' onward'} · {item.source.replaceAll('_', ' ')} · requested by {item.createdBy}</p><p className="mt-1 text-xs text-sf-danger">Reason: {item.reason}</p></div>{canApprove ? <div className="flex flex-col gap-2 sm:min-w-72"><input aria-label={`Decision note for ${item.customerName} — ${item.tallyKey}`} value={reasons[item.id] || ''} onChange={(event) => setReasons((value) => ({ ...value, [item.id]: event.target.value }))} maxLength={1000} placeholder="Optional approval note · required to reject" className="min-h-11 rounded-lg border border-sf-line px-3 text-xs"/><div className="flex gap-2"><button type="button" disabled={busy === item.id} onClick={() => void decide(item, 'approve_price_contract')} className="min-h-11 flex-1 rounded-lg bg-sf-success px-3 text-xs font-bold text-white disabled:opacity-50">Approve</button><button type="button" disabled={busy === item.id || (reasons[item.id] || '').trim().length < 3} onClick={() => void decide(item, 'reject_price_contract')} className="min-h-9 flex-1 rounded-lg border border-sf-danger-line px-3 text-xs font-bold text-sf-danger disabled:opacity-50">Reject</button></div></div> : <p className="text-xs font-bold text-sf-warning">Management decision required</p>}</article>)}</div>}
   </section>;
