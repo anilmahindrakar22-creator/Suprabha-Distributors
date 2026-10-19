@@ -46,3 +46,12 @@ test('Pricing inbox lists order prices with the facts and approves them', async 
   expect(posts).toHaveLength(1);
   expect(posts[0]).toMatchObject({ action: 'approve_price_exception', payload: { exceptionId: 'ex1', expectedVersion: 4, reason: 'Price reviewed and approved' } });
 });
+
+test('an empty capped inbox explains that later orders have not been checked', async ({ page }) => {
+  await page.route('**/api/orders**', route => route.fulfill({ json: new URL(route.request().url()).searchParams.has('list') ? { orders: [], pagination: { pageCount: 11 } } : { customers: [] } }));
+  await page.route('**/api/pricing**', route => route.fulfill({ json: new URL(route.request().url()).searchParams.has('policies') ? { policies: [] } : { contracts: [] } }));
+  await page.goto('/?view=workspace');
+  const inbox = page.getByRole('region', { name: 'Order prices waiting for approval' });
+  await expect(inbox).toContainText('first 200 active orders');
+  await expect(inbox).toContainText('No order prices are waiting for approval in the loaded orders.');
+});

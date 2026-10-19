@@ -47,7 +47,7 @@ export function OrderPriceInbox({ canApprove, onCount }: { canApprove: boolean; 
     {error ? <p role="alert" className="mx-4 mt-2 text-sm text-sf-danger">{error}</p> : null}
     {state.status === 'loading' && !state.items.length ? <p className="px-4 py-4 text-sm text-sf-muted">Loading order prices…</p>
       : state.status === 'error' ? <p role="alert" className="px-4 py-4 text-sm text-sf-danger">{state.message}</p>
-      : !state.items.length ? <p className="px-4 py-4 text-sm text-sf-muted">No order prices are waiting for approval.</p>
+      : !state.items.length ? <p className="px-4 py-4 text-sm text-sf-muted">{state.truncated ? 'No order prices are waiting for approval in the loaded orders.' : 'No order prices are waiting for approval.'}</p>
       : <div className="space-y-4 p-4">{state.items.map((item) => <article key={item.orderId} aria-label={`${item.orderNumber}, ${item.customerName}`} className="min-w-0">
         <p className="text-sm font-bold text-sf-strong">{item.customerName} <span className="font-semibold text-sf-subtle">· {item.orderNumber}</span></p>
         <PriceApprovalCard workspace={item.workspace} />
@@ -57,7 +57,7 @@ export function OrderPriceInbox({ canApprove, onCount }: { canApprove: boolean; 
           <button type="button" disabled={Boolean(busy) || (reasons[exception.id] || '').trim().length < 3} onClick={() => void decide(item, exception.id, exception.version, 'reject_price_exception')} className="min-h-11 rounded-xl border border-sf-danger-line px-4 text-sm font-bold text-sf-danger disabled:opacity-50">Reject</button>
         </div> : <p key={exception.id} className="mt-2 text-xs font-bold text-sf-warning">Waiting for management to approve.</p>)}
       </article>)}
-        {state.truncated ? <p className="text-xs text-sf-subtle">Showing order prices from the first 200 active orders. Use Orders → Prices to approve for the rest.</p> : null}
       </div>}
+    {state.status === 'ready' && state.truncated ? <p className="px-4 pb-4 text-xs text-sf-subtle">Showing order prices from the first 200 active orders. Use Orders → Prices to approve for the rest.</p> : null}
   </section>;
 }
