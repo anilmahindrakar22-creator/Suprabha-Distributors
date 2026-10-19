@@ -141,9 +141,9 @@ test('operations dispatches and confirms delivery through reachable sheets', asy
   await dispatch.click();
   await expect.poll(() => commands.length).toBe(1);
   expect(commands[0]).toMatchObject({ action: 'save_dispatch', payload: { orderId, expectedVersion: 1, courierName: 'Test Courier', trackingNumber: 'TRACK-001', dispatchDate: '2026-10-18', vehicleNumber: 'KA01AB1234' } });
-  await bar.getByRole('button', { name: 'Confirm delivery', exact: true }).click();
+  await bar.getByRole('button', { name: 'Add receiver / POD…', exact: true }).click();
   const deliver = bar.getByRole('button', { name: 'Confirm delivery', exact: true });
-  await expect(deliver).toBeDisabled();
+  await expect(bar.getByLabel('Received by')).toHaveValue('Next Step Laboratory');
   await expect(bar.getByLabel('Delivered at')).not.toHaveValue('');
   await bar.getByLabel('Received by').fill('Dr Rao');
   await bar.getByLabel('Proof of delivery reference').fill('POD-001');
@@ -164,7 +164,19 @@ test('operations dispatches a local delivery in one tap with the India date', as
   await expect.poll(() => commands.length).toBe(1);
   const today = new Date().toLocaleDateString('en-CA', { timeZone: 'Asia/Kolkata' });
   expect(commands[0]).toMatchObject({ action: 'save_dispatch', payload: { orderId, expectedVersion: 1, courierName: 'Local delivery', trackingNumber: 'Hand delivery', dispatchDate: today, vehicleNumber: '' } });
-  await expect(bar.getByRole('button', { name: 'Confirm delivery', exact: true })).toBeVisible();
+  await expect(bar.getByRole('button', { name: 'Confirm delivered', exact: true })).toBeVisible();
+});
+
+test('operations confirms a delivery in one tap, received by the customer', async ({ page }) => {
+  const commands = await mockJourney(page, 'operations', 'dispatched');
+  const bar = await openOrder(page);
+  const before = Date.now();
+  await bar.getByRole('button', { name: 'Confirm delivered', exact: true }).click();
+  await expect.poll(() => commands.length).toBe(1);
+  expect(commands[0]).toMatchObject({ action: 'confirm_delivery', payload: { orderId, expectedVersion: 1, receivedBy: 'Next Step Laboratory', podReference: '' } });
+  const deliveredAt = Date.parse(String((commands[0] as { payload: { deliveredAt: string } }).payload.deliveredAt));
+  expect(deliveredAt).toBeGreaterThanOrEqual(before - 1000);
+  await expect(bar).toContainText('Delivered · received by');
 });
 
 test('sales sees that dispatch is waiting for Operations', async ({ page }) => {

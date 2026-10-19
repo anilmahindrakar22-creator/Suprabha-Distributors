@@ -34,7 +34,7 @@ import { deliveredTodayOrders, groupOrdersForList } from '@/lib/order-list-group
 import { readJsonBody } from '@/lib/http-json';
 import { orderDateLabel, orderDateTime } from '@/lib/order-date';
 import { PriceApprovalCard } from './price-approval-card';
-import { courierChoices, isLocalDelivery, istToday, LOCAL_DELIVERY, type DispatchMode } from '@/lib/dispatch-options';
+import { courierChoices, defaultReceiver, isLocalDelivery, istToday, LOCAL_DELIVERY, type DispatchMode } from '@/lib/dispatch-options';
 import { hasAnyStockFlowRole, type StockFlowRole } from '@/lib/user-types';
 import type { TallyRecentProducts } from '@/lib/tally-recent-products';
 
@@ -1147,6 +1147,8 @@ function OrderNextStepBar({ order, roles, pricing, inOrderPage, onAdvance, onDel
   const informational = ['loading', 'waiting', 'pricing_waiting', 'done', 'none'].includes(step.kind);
   // Pricing staleness only matters while deciding a price, not when dispatching or delivering.
   const pricingStep = step.kind.startsWith('pricing_') || step.kind === 'loading' || sheet === 'price' || sheet === 'reject';
+  // One tap: delivered now, received by the customer. "Add receiver / POD…" records a named person or POD.
+  const deliverNow = () => run(() => onDelivery(order, { action: 'confirm_delivery', payload: { orderId: order.id, expectedVersion: order.version, deliveredAt: new Date().toISOString(), receivedBy: defaultReceiver(order), podReference: '' } }), 'Moved to Delivered');
   const dispatchLocally = () => run(() => onDelivery(order, { action: 'save_dispatch', payload: { orderId: order.id, expectedVersion: order.version, ...LOCAL_DELIVERY, dispatchDate: istToday(), vehicleNumber: '' } }), 'Dispatched · local delivery');
   if (step.kind === 'none') return null;
   return <section aria-label="Order next step" className={inOrderPage ? 'fixed inset-x-0 bottom-0 z-50 flex max-h-[70vh] min-w-0 flex-col gap-2 overflow-y-auto border-t border-sf-line-soft bg-white/95 px-3 pt-3 backdrop-blur' : 'flex max-h-[70vh] min-w-0 w-full flex-col gap-2 overflow-y-auto lg:min-w-48'} style={inOrderPage ? { paddingBottom: 'max(0.75rem, env(safe-area-inset-bottom))' } : undefined}>
@@ -1166,6 +1168,9 @@ function OrderNextStepBar({ order, roles, pricing, inOrderPage, onAdvance, onDel
         {step.kind === 'dispatch' ? <>
           <button type="button" className={primary} disabled={busy} onClick={() => void dispatchLocally()}>{busy ? 'Dispatching…' : 'Dispatch · Local delivery'}</button>
           <button type="button" disabled={busy} onClick={() => setSheet('dispatch')} className="min-h-11 rounded-xl border border-sf-line px-4 font-bold text-sf-body">Outstation courier…</button>
+        </> : step.kind === 'deliver' ? <>
+          <button type="button" className={primary} disabled={busy} onClick={() => void deliverNow()}>{busy ? 'Confirming…' : 'Confirm delivered'}</button>
+          <button type="button" disabled={busy} onClick={() => setSheet('deliver')} className="min-h-11 rounded-xl border border-sf-line px-4 font-bold text-sf-body">Add receiver / POD…</button>
         </> : <button type="button" className={primary} disabled={busy || (step.kind.startsWith('pricing_') && (stale || pricing.state === 'loading')) || (step.kind === 'advance' && order.status === 'awaiting_tally_billing' && !invoice.trim())} onClick={() => {
           if (step.kind === 'advance') void run(() => onAdvance(order, invoice), `Moved to ${statusLabel(nextStatus[order.status].status)}`);
           else if (step.kind === 'pricing_apply') void run(() => pricingCommand('apply_governed_order_pricing'), 'Price approved');
@@ -1419,7 +1424,7 @@ function useFulfilmentDraft(order: OrderSummary) {
   const [dispatchDate, setDispatchDate] = useState(order.dispatchDate || istToday());
   const [vehicleNumber, setVehicleNumber] = useState(order.vehicleNumber || '');
   const [deliveredAt, setDeliveredAt] = useState(order.deliveredAt ? localDateTimeValue(new Date(order.deliveredAt)) : localDateTimeValue());
-  const [receivedBy, setReceivedBy] = useState(order.receivedBy || '');
+  const [receivedBy, setReceivedBy] = useState(order.receivedBy || defaultReceiver(order));
   const [podReference, setPodReference] = useState(order.podReference || '');
   const [baseVersion, setBaseVersion] = useState(order.version);
   function resetDrafts() {
@@ -1428,7 +1433,7 @@ function useFulfilmentDraft(order: OrderSummary) {
     setDispatchDate(order.dispatchDate || istToday());
     setVehicleNumber(order.vehicleNumber || '');
     setDeliveredAt(order.deliveredAt ? localDateTimeValue(new Date(order.deliveredAt)) : localDateTimeValue());
-    setReceivedBy(order.receivedBy || '');
+    setReceivedBy(order.receivedBy || defaultReceiver(order));
     setPodReference(order.podReference || '');
     setBaseVersion(order.version);
   }
