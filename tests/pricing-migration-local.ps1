@@ -227,6 +227,8 @@ end$$;
   Invoke-DatabaseCommand $psqlProgram @('-U',$databaseUser,'-X','-q','-v','ON_ERROR_STOP=1','-d',$database,'-f',(Join-Path $repository 'supabase/tests/instrument_economics_sale_date.sql'))
   Invoke-DatabaseCommand $psqlProgram @('-U',$databaseUser,'-X','-q','-v','ON_ERROR_STOP=1','-d',$database,'-f',(Join-Path $repository 'supabase/tests/instrument_economics_import_exceptions.sql'))
   Invoke-DatabaseCommand $psqlProgram @('-U',$databaseUser,'-X','-q','-v','ON_ERROR_STOP=1','-d',$database,'-f',(Join-Path $repository 'supabase/tests/instrument_economics_summary_read.sql'))
+  Invoke-DatabaseCommand $psqlProgram @('-U',$databaseUser,'-X','-q','-v','ON_ERROR_STOP=1','-d',$database,'-f',(Join-Path $repository 'supabase/tests/instrument_economics_detail_read.sql'))
+  Write-Output 'PASS: economics detail read equals full read except instrument-customer source lines'
   Write-Output 'PASS: summary parity, deferred evidence, FOC/missing cost and sale-date revisions'
   Write-Output 'PASS: instrument invoice-date reagent sales, inclusive boundary, revisions and cancellation'
   Write-Output 'PASS: instrument economics source import, approval, GP, replay, exceptions and leakage'

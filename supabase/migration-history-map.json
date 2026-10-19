@@ -1004,6 +1004,13 @@
       "remoteVersion": "20261019105613",
       "remoteSha256": "3ce4e58d0ae6158c3130ab00eb481e87b6eeedf52b72fdbd783f67ad87f386e0",
       "status": "exact_normalized_match"
+    },
+    {
+      "localFile": "20261019180000_economics_detail_read.sql",
+      "localSha256": "4552cb4375272c7834b4eed6d562498ba20833ab2fe221cd0bae28764b5c5ef0",
+      "remoteVersion": null,
+      "remoteSha256": null,
+      "status": "not_deployed"
     }
   ],
   "liveCheck": {
