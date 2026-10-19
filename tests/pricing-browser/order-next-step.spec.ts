@@ -128,12 +128,15 @@ test('rejecting a price requires a reason and keeps the sheet action reachable',
 test('operations dispatches and confirms delivery through reachable sheets', async ({ page }) => {
   const commands = await mockJourney(page, 'operations', 'ready_for_dispatch');
   const bar = await openOrder(page);
-  await bar.getByRole('button', { name: 'Dispatch order', exact: true }).click();
-  await bar.getByLabel('Courier / transporter').fill('Test Courier');
-  await bar.getByLabel('Tracking / docket number').fill('TRACK-001');
+  await bar.getByRole('button', { name: 'Outstation courier…', exact: true }).click();
+  await expect(bar.getByLabel('Delivery type')).toHaveValue('outstation');
+  await expect(bar.getByText('This order changed. Reload pricing before submitting.')).toHaveCount(0);
+  await bar.getByLabel('Courier', { exact: true }).selectOption('__other');
+  await bar.getByLabel('Courier name').fill('Test Courier');
+  await bar.getByLabel('Docket number').fill('TRACK-001');
   await bar.getByLabel('Dispatch date').fill('2026-10-18');
   await bar.getByLabel('Vehicle number').fill('KA01AB1234');
-  const dispatch = bar.getByRole('button', { name: 'Save and mark dispatched', exact: true });
+  const dispatch = bar.getByRole('button', { name: 'Dispatch by courier', exact: true });
   await expectSheetFits(page, bar, dispatch);
   await dispatch.click();
   await expect.poll(() => commands.length).toBe(1);
@@ -151,6 +154,17 @@ test('operations dispatches and confirms delivery through reachable sheets', asy
   // The acknowledgement contains no full order and subsequent list reads omit the delivered order.
   await expect(page.getByRole('dialog', { name: 'Order SF-NEXT-001', exact: true })).toBeVisible();
   await expect(bar).toContainText('Delivered · received by Dr Rao');
+});
+
+test('operations dispatches a local delivery in one tap with the India date', async ({ page }) => {
+  const commands = await mockJourney(page, 'operations', 'ready_for_dispatch');
+  const bar = await openOrder(page);
+  await expect(bar.getByRole('button', { name: 'Reload pricing' })).toHaveCount(0);
+  await bar.getByRole('button', { name: 'Dispatch · Local delivery', exact: true }).click();
+  await expect.poll(() => commands.length).toBe(1);
+  const today = new Date().toLocaleDateString('en-CA', { timeZone: 'Asia/Kolkata' });
+  expect(commands[0]).toMatchObject({ action: 'save_dispatch', payload: { orderId, expectedVersion: 1, courierName: 'Local delivery', trackingNumber: 'Hand delivery', dispatchDate: today, vehicleNumber: '' } });
+  await expect(bar.getByRole('button', { name: 'Confirm delivery', exact: true })).toBeVisible();
 });
 
 test('sales sees that dispatch is waiting for Operations', async ({ page }) => {
