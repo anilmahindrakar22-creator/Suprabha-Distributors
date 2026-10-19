@@ -7,6 +7,7 @@ import { resolve } from 'node:path';
 const pricingReleaseFiles = new Set([
   '20261016130829_tally_recent_products.sql',
   '20261019090000_financial_year_order_numbers.sql',
+  '20261019120000_economics_owned_result_prefilter.sql',
   '20261016061635_mapped_instrument_cost_scope.sql',
   '20261016053720_economic_import_execution_budget.sql',
   '20261007180000_instrument_economics_foundation.sql',
