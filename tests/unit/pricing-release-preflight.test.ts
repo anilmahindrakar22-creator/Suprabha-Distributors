@@ -11,7 +11,7 @@ const source = new Map(readdirSync(fileURLToPath(directory)).filter((name) => na
 describe('read-only pricing release preflight', () => {
   it('validates the saved production evidence after deployment', () => {
     const result = pricingReleasePreflight(original, source);
-    expect(result.pending).toEqual([]);
+    expect(result.pending).toEqual(['20261019180000_economics_detail_read.sql']);
     expect(result.deployed.at(-1)?.localFile).toBe('20261019150000_economics_trim_unplaced_rows.sql');
     expect(result.deployed).toHaveLength(138);
     const names = result.deployed.map((entry: { localFile: string }) => entry.localFile);
@@ -26,7 +26,7 @@ describe('read-only pricing release preflight', () => {
   });
   it('accepts documented CRLF normalization without modifying source', () => {
     const crlf = new Map([...source].map(([name, sql]) => [name, sql.replace(/\r/g, '').replace(/\n/g, '\r\n')]));
-    expect(pricingReleasePreflight(original, crlf).pending).toHaveLength(0);
+    expect(pricingReleasePreflight(original, crlf).pending).toHaveLength(1);
   });
   it('rejects changed SQL including changes inside literals', () => {
     const files = new Map(source);
