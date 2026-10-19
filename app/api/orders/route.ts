@@ -42,6 +42,8 @@ export async function GET(request: Request) {
   const startedAt = performance.now();
   try {
     const user = await authorizedUser();
+    // Sign-in check time: about 1 ms when the verified-session cache hits.
+    const authMs = performance.now() - startedAt;
     const parameters = new URL(request.url).searchParams;
     const recentProductsFor = parameters.get('recentProductsFor');
     if (recentProductsFor !== null) {
@@ -112,7 +114,7 @@ export async function GET(request: Request) {
           pageSize, query: listQuery.query, status: listQuery.status,
           date: listQuery.captureDate, dateTo: listQuery.captureDateTo || '',
         });
-        if (!exporting) return measuredJsonResponse(first, startedAt);
+        if (!exporting) return measuredJsonResponse(first, startedAt, performance.now(), { auth: authMs });
         const orders = [...first.orders];
         const pageCount = first.pagination?.pageCount || 1;
         for (let page = 2; page <= pageCount; page += 1) {

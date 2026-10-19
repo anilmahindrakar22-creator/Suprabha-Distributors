@@ -3,7 +3,7 @@ const mocks = vi.hoisted(() => ({ getUser: vi.fn(), refreshSession: vi.fn(), sig
 vi.mock('@supabase/supabase-js', () => ({ createClient: () => ({ auth: { getUser: mocks.getUser, refreshSession: mocks.refreshSession, signInWithPassword: mocks.signInWithPassword } }) }));
 vi.mock('@/lib/order-gateway', () => ({ callOrderGateway: mocks.gateway, OrderGatewayError: class extends Error { constructor(message: string, public status: number) { super(message); } } }));
 vi.mock('next/headers', () => ({ headers: async () => mocks.headers, cookies: async () => ({ get: () => mocks.token ? { value: mocks.token } : undefined }) }));
-import { staffAuthClient, staffAuthEnabled, sameStaffOrigin, staffCookie, staffInvitationClient, staffPasswordLogin, verifiedStaff, staffRenewalDelay } from '@/lib/staff-auth';
+import { cachedVerifiedStaff, forgetVerifiedStaffEmail, forgetVerifiedStaffToken, resetVerifiedStaffCacheForTests, staffAuthClient, staffAuthEnabled, sameStaffOrigin, staffCookie, staffInvitationClient, staffPasswordLogin, verifiedStaff, staffRenewalDelay } from '@/lib/staff-auth';
 import { getChatGPTUser } from '@/app/chatgpt-auth';
 import { GET, POST, DELETE } from '@/app/api/staff-auth/route';
 import { POST as REFRESH } from '@/app/api/staff-auth/refresh/route';
@@ -13,7 +13,7 @@ beforeEach(() => {
   vi.stubEnv('STOCKFLOW_AUTH_MODE', 'supabase'); vi.stubEnv('STOCKFLOW_STAFF_ORIGIN', 'https://staff.example.test');
   vi.stubEnv('SUPABASE_URL', 'https://db.example.test'); vi.stubEnv('STOCKFLOW_AUTH_PUBLISHABLE_KEY', 'sb_publishable_012345678901234567890');
   vi.stubEnv('STOCKFLOW_AUTH_EXPECTED_PROJECT', '');
-  vi.clearAllMocks(); mocks.token = undefined; mocks.headers = new Headers();
+  vi.clearAllMocks(); resetVerifiedStaffCacheForTests(); mocks.token = undefined; mocks.headers = new Headers();
   mocks.getUser.mockResolvedValue({ data: { user: { id: 'u1', email: 'staff@example.test', email_confirmed_at: '2026-01-01', is_anonymous: false } }, error: null });
   mocks.signInWithPassword.mockResolvedValue({ data: { session: { access_token: 'verified-token', refresh_token: 'refresh-fixture', expires_in: 3600 } }, error: null });
   mocks.gateway.mockResolvedValue({ email: 'staff@example.test', role: 'sales' });
@@ -169,5 +169,76 @@ describe('isolated staff authentication', () => {
     expect(response.status).toBe(200);
     expect(response.headers.getSetCookie()).toEqual([staffCookie('', 0), '__Host-stockflow-refresh=; Path=/; HttpOnly; Secure; SameSite=Strict; Max-Age=0']);
     expect((await DELETE(request({}, 'https://evil.example.test'))).status).toBe(403);
+  });
+
+  describe('verified sign-in cache', () => {
+    const jwt = (exp?: number, id = 'a') => `h.${btoa(JSON.stringify(exp === undefined ? { sub: id } : { exp, sub: id })).replace(/=+$/, '')}.s`;
+    const now = Date.UTC(2026, 9, 19, 6, 0, 0);
+
+    it('reuses a verified user for up to 60 seconds, then verifies again', async () => {
+      const token = jwt(now / 1000 + 3600);
+      expect((await cachedVerifiedStaff(token, now)).cached).toBe(false);
+      const hit = await cachedVerifiedStaff(token, now + 59_000);
+      expect(hit).toMatchObject({ cached: true, user: { email: 'staff@example.test' } });
+      expect(mocks.getUser).toHaveBeenCalledTimes(1);
+      expect((await cachedVerifiedStaff(token, now + 60_001)).cached).toBe(false);
+      expect(mocks.getUser).toHaveBeenCalledTimes(2);
+    });
+
+    it('never keeps an entry past the token expiry, and does not cache an expired token', async () => {
+      const token = jwt(now / 1000 + 10);
+      await cachedVerifiedStaff(token, now);
+      expect((await cachedVerifiedStaff(token, now + 9_000)).cached).toBe(true);
+      expect((await cachedVerifiedStaff(token, now + 11_000)).cached).toBe(false);
+      const expired = jwt(now / 1000 - 5, 'b');
+      await cachedVerifiedStaff(expired, now);
+      await cachedVerifiedStaff(expired, now + 1);
+      expect(mocks.getUser).toHaveBeenCalledTimes(4);
+    });
+
+    it('falls back to 60 seconds when the token has no readable expiry', async () => {
+      await cachedVerifiedStaff('opaque-token', now);
+      expect((await cachedVerifiedStaff('opaque-token', now + 59_000)).cached).toBe(true);
+      expect((await cachedVerifiedStaff('opaque-token', now + 61_000)).cached).toBe(false);
+    });
+
+    it('never caches a rejection or a provider failure', async () => {
+      mocks.getUser.mockResolvedValue({ data: { user: null }, error: { status: 401, message: 'expired' } });
+      expect((await cachedVerifiedStaff('rejected', now)).user).toBeNull();
+      await cachedVerifiedStaff('rejected', now + 1);
+      expect(mocks.getUser).toHaveBeenCalledTimes(2);
+      mocks.getUser.mockRejectedValue(new Error('provider down'));
+      await expect(cachedVerifiedStaff('down', now)).rejects.toThrow();
+      await expect(cachedVerifiedStaff('down', now + 1)).rejects.toThrow();
+      expect(mocks.getUser).toHaveBeenCalledTimes(4);
+    });
+
+    it('keeps separate entries per token and evicts the oldest past 256', async () => {
+      for (let index = 0; index < 257; index += 1) await cachedVerifiedStaff(`token-${index}`, now);
+      expect(mocks.getUser).toHaveBeenCalledTimes(257);
+      expect((await cachedVerifiedStaff('token-256', now + 1)).cached).toBe(true);
+      expect((await cachedVerifiedStaff('token-1', now + 1)).cached).toBe(true);
+      expect((await cachedVerifiedStaff('token-0', now + 1)).cached).toBe(false);
+    });
+
+    it('forgets a signed-out token and every token of a reset account', async () => {
+      await cachedVerifiedStaff('one', now); await cachedVerifiedStaff('two', now);
+      await forgetVerifiedStaffToken('one');
+      expect((await cachedVerifiedStaff('one', now + 1)).cached).toBe(false);
+      forgetVerifiedStaffEmail(' Staff@Example.test ');
+      expect((await cachedVerifiedStaff('two', now + 2)).cached).toBe(false);
+    });
+
+    it('signs out by forgetting the cookie token, and plain verification never uses the cache', async () => {
+      mocks.token = jwt(now / 1000 + 3600, 'cookie');
+      expect(await getChatGPTUser()).toMatchObject({ email: 'staff@example.test' });
+      expect(await getChatGPTUser()).toMatchObject({ email: 'staff@example.test' });
+      expect(mocks.getUser).toHaveBeenCalledTimes(1);
+      await verifiedStaff(mocks.token);
+      expect(mocks.getUser).toHaveBeenCalledTimes(2);
+      expect((await DELETE(request({}))).status).toBe(200);
+      await getChatGPTUser();
+      expect(mocks.getUser).toHaveBeenCalledTimes(3);
+    });
   });
 });

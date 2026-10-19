@@ -1,7 +1,7 @@
 import { getChatGPTUser } from '@/app/chatgpt-auth';
 import { callOrderGateway } from '@/lib/order-gateway';
 import { readBoundedJsonRequest } from '@/lib/bounded-json-request';
-import { sameStaffOrigin, staffAuthClient, staffAuthEnabled, staffCookie, staffRefreshCookie, staffOrigin, verifiedStaff } from '@/lib/staff-auth';
+import { forgetVerifiedStaffEmail, sameStaffOrigin, staffAuthClient, staffAuthEnabled, staffCookie, staffRefreshCookie, staffOrigin, verifiedStaff } from '@/lib/staff-auth';
 
 const headers = { 'cache-control': 'private, no-store' };
 const fail = (status: number, error: string) => Response.json({ error }, { status, headers });
@@ -41,6 +41,8 @@ export async function PUT(request: Request) {
       body: JSON.stringify({ password: body.password }),
     });
     if (!response.ok) return fail(400, 'Password could not be changed. Request a new recovery link');
+    // The password changed: stop trusting this account's cached sign-in checks here at once.
+    forgetVerifiedStaffEmail(user.email);
     // Password update and revocation are provider operations, not one DB transaction.
     // Do not report a complete reset if global refresh-session revocation fails.
     const logout = await fetch(`${process.env.SUPABASE_URL}/auth/v1/logout?scope=global`, {

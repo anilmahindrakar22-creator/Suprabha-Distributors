@@ -1,7 +1,7 @@
 import { BoundedJsonRequestError, readBoundedJsonRequest } from '@/lib/bounded-json-request';
 import { getChatGPTUser } from '@/app/chatgpt-auth';
 import { cookies } from 'next/headers';
-import { STAFF_COOKIE, staffRenewalDelay } from '@/lib/staff-auth';
+import { forgetVerifiedStaffToken, STAFF_COOKIE, staffRenewalDelay } from '@/lib/staff-auth';
 import { callOrderGateway, OrderGatewayError } from '@/lib/order-gateway';
 import { sameStaffOrigin, staffAuthEnabled, staffCookie, staffPasswordLogin, staffRefreshCookie } from '@/lib/staff-auth';
 
@@ -50,6 +50,7 @@ export async function DELETE(request: Request) {
   try {
     if (!staffAuthEnabled()) return fail(404, 'Staff sign-in is not enabled');
     if (!sameStaffOrigin(request.headers.get('origin'))) return fail(403, 'Request denied');
+    await forgetVerifiedStaffToken((await cookies()).get(STAFF_COOKIE)?.value);
     const response = Response.json({ ok: true }, { headers });
     response.headers.append('set-cookie', staffCookie('', 0));
     response.headers.append('set-cookie', staffRefreshCookie(''));
