@@ -33,6 +33,8 @@ describe('order gateway client', () => {
       action: 'bootstrap',
     });
     expect(request?.signal).toBeInstanceOf(AbortSignal);
+    // Runs the Edge Function next to the Tokyo database, not near the Worker.
+    expect((request?.headers as Record<string, string>)['x-region']).toBe('ap-northeast-1');
   });
 
   it('supports the lightweight session action used for dynamic membership', async () => {

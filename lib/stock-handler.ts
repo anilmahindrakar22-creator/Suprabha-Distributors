@@ -1,3 +1,4 @@
+import { SUPABASE_FUNCTION_REGION } from './supabase-region';
 type StockHandlerDependencies<User> = {
   endpoint: string | (() => string | undefined);
   fetchFn: typeof fetch;
@@ -80,7 +81,7 @@ export function createStockHandler<User>({
         const result = (async () => {
           const response = await fetchFn(upstream.toString(), {
             cache: 'no-store',
-            headers: { 'x-dashboard-key': key },
+            headers: { 'x-dashboard-key': key, 'x-region': SUPABASE_FUNCTION_REGION },
             signal: AbortSignal.timeout(15_000),
           });
           if (!response.ok) {
