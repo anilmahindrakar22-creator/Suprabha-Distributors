@@ -119,7 +119,7 @@ describe('stock API handler', () => {
     expect(response.headers.get('cache-control')).toBe('private, no-store');
     expect(fetchFn).toHaveBeenCalledWith('https://stock.example/snapshot', {
       cache: 'no-store',
-      headers: { 'x-dashboard-key': 'server-only-key' },
+      headers: { 'x-dashboard-key': 'server-only-key', 'x-region': 'ap-northeast-1' },
       signal: expect.any(AbortSignal),
     });
   });
@@ -180,7 +180,7 @@ describe('stock API handler', () => {
     expect(response.headers.get('cache-control')).toBe('private, no-store');
     expect(fetchFn).toHaveBeenCalledWith('https://stock.example/snapshot?view=dashboard', {
       cache: 'no-store',
-      headers: { 'x-dashboard-key': 'server-only-key' },
+      headers: { 'x-dashboard-key': 'server-only-key', 'x-region': 'ap-northeast-1' },
       signal: expect.any(AbortSignal),
     });
   });
@@ -244,7 +244,7 @@ describe('stock API handler', () => {
     expect(await (await handler()).json()).toEqual({ rows: ['new'] });
     release(Response.json({ rows: ['old'] }));
     expect(await (await oldRequest).json()).toEqual({ rows: ['old'] });
-    expect(fetchFn.mock.calls[1][1]?.headers).toEqual({ 'x-dashboard-key': 'new-key' });
+    expect(fetchFn.mock.calls[1][1]?.headers).toEqual({ 'x-dashboard-key': 'new-key', 'x-region': 'ap-northeast-1' });
   });
 
   it('bounds a stalled upstream read and allows the next refresh after abort', async () => {
