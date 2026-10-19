@@ -10,7 +10,7 @@ test('one instrument starts as a summary; evidence loads only on demand and can 
   const views: string[] = [];
   await page.route('**/api/instrument-economics', route => {
     const view = route.request().headers()['x-stockflow-economics-view']; views.push(view);
-    return route.fulfill({ json: view === 'summary' ? summary : full });
+    return route.fulfill({ json: view === 'summary' ? summary : { ...full, readView: view } });
   });
   await page.goto('/?view=instrument-economics');
   await expect(page.getByRole('button', { name: 'Sales & items', exact: true })).toHaveAttribute('aria-expanded', 'false');
@@ -21,12 +21,33 @@ test('one instrument starts as a summary; evidence loads only on demand and can 
   await page.getByRole('button', { name: 'Sales & items', exact: true }).click();
   await expect(page.getByRole('region', { name: 'Instrument items' })).toBeVisible();
   await expect(page.getByText('4 invoice lines', { exact: true })).toBeVisible();
-  expect(views).toEqual(['summary', 'full']);
+  expect(views).toEqual(['summary', 'detail']);
   await page.getByRole('button', { name: 'Hide sales & items', exact: true }).click();
   await expect(page.getByRole('region', { name: 'Instrument items' })).toHaveCount(0);
   await page.getByRole('button', { name: 'Sales & items', exact: true }).click();
   await expect(page.getByRole('region', { name: 'Instrument items' })).toBeVisible();
-  expect(views).toEqual(['summary', 'full']);
+  expect(views).toEqual(['summary', 'detail']);
+});
+
+test('tabs load the lighter detail view; only invoice-searching forms load every source line', async ({ page }) => {
+  const views: string[] = [];
+  await page.route('**/api/instrument-economics', route => {
+    const view = route.request().headers()['x-stockflow-economics-view']; views.push(view);
+    return route.fulfill({ json: view === 'summary' ? summary : { ...full, readView: view } });
+  });
+  await page.goto('/?view=instrument-economics');
+  await page.getByRole('button', { name: 'To do (2)', exact: true }).click();
+  await expect(page.getByRole('button', { name: /^To do/ })).toHaveAttribute('aria-current', 'page');
+  expect(views).toEqual(['summary', 'detail']);
+  await page.getByRole('button', { name: 'Advanced', exact: true }).click();
+  await expect(page.getByRole('button', { name: 'Advanced', exact: true })).toHaveAttribute('aria-current', 'page');
+  expect(views).toEqual(['summary', 'detail']);
+  await page.getByRole('button', { name: 'All actions', exact: true }).click();
+  await expect(page.getByRole('button', { name: 'All actions', exact: true })).toHaveAttribute('aria-current', 'page');
+  expect(views).toEqual(['summary', 'detail', 'full']);
+  await page.getByRole('button', { name: 'Set up', exact: true }).click();
+  await expect(page.getByRole('button', { name: 'Set up', exact: true })).toHaveAttribute('aria-current', 'page');
+  expect(views).toEqual(['summary', 'detail', 'full']);
 });
 
 test('failed evidence read retains summary and never opens empty setup; revocation clears finance', async ({ page }) => {

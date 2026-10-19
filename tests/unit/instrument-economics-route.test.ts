@@ -117,6 +117,17 @@ describe('instrument economics API', () => {
     expect(await response.json()).toMatchObject({ error: expect.stringContaining('summary is not available') });
   });
 
+  it('reads the detail view through the gateway and refuses a mismatched read model', async () => {
+    mocks.gateway.mockResolvedValue({ readView: 'detail', targets: [] });
+    const response = await GET(new Request('https://test.local/api/instrument-economics', { headers: { 'x-stockflow-economics-view': 'detail' } }));
+    expect(response.status).toBe(200);
+    expect(mocks.gateway).toHaveBeenLastCalledWith(expect.any(String), 'get_instrument_economics', { view: 'detail' });
+    mocks.gateway.mockResolvedValue({ readView: 'full', targets: [] });
+    const stale = await GET(new Request('https://test.local/api/instrument-economics', { headers: { 'x-stockflow-economics-view': 'detail' } }));
+    expect(stale.status).toBe(503);
+    expect(await stale.json()).toMatchObject({ error: expect.stringContaining('detail is not available') });
+  });
+
   it('rejects unknown read views without executing the financial RPC', async () => {
     const response = await GET(new Request('https://test.local/api/instrument-economics', { headers: { 'x-stockflow-economics-view': 'other' } }));
     expect(response.status).toBe(400); expect(mocks.gateway).not.toHaveBeenCalled();

@@ -28,12 +28,12 @@ export async function GET(request?: Request) {
     const timings = { auth: 0, member: 0 };
     const session = await actor(timings);
     const view = request?.headers.get('x-stockflow-economics-view') ?? 'full';
-    if (view !== 'full' && view !== 'summary') return Response.json({ error: 'Invalid economics view' }, { status: 400, headers });
+    if (view !== 'full' && view !== 'summary' && view !== 'detail') return Response.json({ error: 'Invalid economics view' }, { status: 400, headers });
     const rpcStartedAt = performance.now();
-    const workspace = view === 'summary'
-      ? await callOrderGateway<EconomicsWorkspaceData>(session.email, 'get_instrument_economics', { view: 'summary' })
-      : await callOrderGateway<EconomicsWorkspaceData>(session.email, 'get_instrument_economics');
-    if (view === 'summary' && workspace.readView !== 'summary') throw new OrderGatewayError('The Economics summary is not available yet. Refresh after the read-model update.', 503);
+    const workspace = view === 'full'
+      ? await callOrderGateway<EconomicsWorkspaceData>(session.email, 'get_instrument_economics')
+      : await callOrderGateway<EconomicsWorkspaceData>(session.email, 'get_instrument_economics', { view });
+    if (view !== 'full' && workspace.readView !== view) throw new OrderGatewayError(`The Economics ${view} is not available yet. Refresh after the read-model update.`, 503);
     const rpc = performance.now() - rpcStartedAt;
     const { auth, member } = timings;
     return measuredJsonResponse({ ...workspace, actorEmail: session.email, canAdministrator: hasAnyStockFlowRole(session.roles, ['administrator']) }, startedAt, performance.now(), { auth, member, rpc });
