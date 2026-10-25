@@ -2,6 +2,8 @@
 export type BillingSheet = {
   view: 'billing'; orderId: string; orderNumber: string; customerName: string; status: string;
   ready: boolean; reason?: string; total?: number;
+  /** packed: amounts on packed quantities; ordered: packing quantities were never recorded. */
+  quantitySource?: 'packed' | 'ordered';
   lines?: Array<{ lineId: string; itemName: string; unit: string | null; orderedQuantity: number; packedQuantity: number | null; billQuantity: number; approvedRate: number; amount: number }>;
 };
 

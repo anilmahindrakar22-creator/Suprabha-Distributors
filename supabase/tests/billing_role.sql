@@ -34,13 +34,18 @@ begin
   update private.stockflow_orders set status='awaiting_tally_billing', version=version+1 where id=o;
   sheet := public.stockflow_pricing_gateway('billing-role-key','billing-only@test.local','get_order_pricing',jsonb_build_object('orderId',o,'view','billing'));
   select array_agg(k order by k) into keys from jsonb_object_keys(sheet) k;
-  if keys <> array['customerName','lines','orderId','orderNumber','ready','status','total','view'] then raise exception 'Unexpected billing keys %', keys; end if;
+  if keys <> array['customerName','lines','orderId','orderNumber','quantitySource','ready','status','total','view'] then raise exception 'Unexpected billing keys %', keys; end if;
   select array_agg(k order by k) into line_keys from jsonb_object_keys(sheet->'lines'->0) k;
   if line_keys <> array['amount','approvedRate','billQuantity','itemName','lineId','orderedQuantity','packedQuantity','unit'] then raise exception 'Unexpected billing line keys %', line_keys; end if;
-  if sheet::text ~* '(cost|margin|gross|profit|source)' then raise exception 'Billing sheet leaks commercial detail: %', sheet; end if;
-  if (sheet->'lines'->0->>'approvedRate')::numeric <> 450 or (sheet->'lines'->0->>'billQuantity')::numeric <> 2 or (sheet->>'total')::numeric <> 900 then
+  if (sheet - 'quantitySource')::text ~* '(cost|margin|gross|profit|source)' then raise exception 'Billing sheet leaks commercial detail: %', sheet; end if;
+  if (sheet->'lines'->0->>'approvedRate')::numeric <> 450 or (sheet->'lines'->0->>'billQuantity')::numeric <> 2 or (sheet->>'total')::numeric <> 900 or sheet->>'quantitySource' <> 'packed' then
     raise exception 'Billing amounts wrong: %', sheet;
   end if;
+  -- Packed quantities never recorded (every line 0): bill the ordered quantity and say so.
+  update private.stockflow_order_lines set fulfilled_quantity=0 where id=line;
+  sheet := public.stockflow_pricing_gateway('billing-role-key','billing-only@test.local','get_order_pricing',jsonb_build_object('orderId',o,'view','billing'));
+  if sheet->>'quantitySource' <> 'ordered' or (sheet->>'total')::numeric <> 1350 then raise exception 'Unrecorded packing not billed on ordered quantity: %', sheet; end if;
+  update private.stockflow_order_lines set fulfilled_quantity=2 where id=line;
 
   -- An invalidated snapshot gives no rates.
   update private.stockflow_billing_snapshots set invalidated_at=now(), invalidation_reason='test' where id=snapshot;

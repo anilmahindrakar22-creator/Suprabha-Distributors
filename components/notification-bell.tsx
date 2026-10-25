@@ -1,6 +1,7 @@
 'use client';
 
 import { useEffect, useRef, useState, type ReactNode } from 'react';
+import type { DesktopPopupState } from '@/lib/desktop-popups';
 import type { WorkItem, WorkNotificationState, WorkQueueState } from '@/lib/work-notifications';
 import type { PushState } from '@/lib/push-subscription';
 import { BellIcon, orderStageStyle } from './order-list';
@@ -36,6 +37,27 @@ function PhoneAlerts({ phone }: { phone: PhoneAlertControl }) {
   );
 }
 
+export type DesktopPopupControl = { state: DesktopPopupState; onEnable: () => void; onDisable: () => void };
+const desktopText: Record<DesktopPopupState, string> = {
+  unsupported: '',
+  off: 'Show a pop-up on this computer when work is handed to you while StockFlow is open in the background.',
+  on: 'Pop-ups are on for this computer while StockFlow is open.',
+  blocked: 'Pop-ups are blocked. Allow notifications for StockFlow in your browser settings, then try again.',
+};
+
+function DesktopPopups({ desktop }: { desktop: DesktopPopupControl }) {
+  if (desktop.state === 'unsupported') return null;
+  return (
+    <div className="mt-3 rounded-xl border border-sf-line-soft p-3">
+      <div className="flex items-center justify-between gap-3">
+        <strong className="text-sm text-sf-ink">Desktop pop-ups</strong>
+        {desktop.state !== 'blocked' ? <button type="button" role="switch" aria-checked={desktop.state === 'on'} aria-label="Show desktop pop-ups" onClick={desktop.state === 'on' ? desktop.onDisable : desktop.onEnable} className={`relative h-7 w-12 shrink-0 rounded-full transition ${desktop.state === 'on' ? 'bg-sf-accent' : 'bg-sf-line'}`}><span aria-hidden="true" className={`absolute top-1 size-5 rounded-full bg-white shadow transition-all ${desktop.state === 'on' ? 'left-6' : 'left-1'}`} /></button> : null}
+      </div>
+      <p className={`mt-1 text-xs ${desktop.state === 'blocked' ? 'text-sf-danger' : 'text-sf-muted'}`}>{desktopText[desktop.state]}</p>
+    </div>
+  );
+}
+
 function waitingLabel(since: string, now = Date.now()) {
   const minutes = Math.max(0, Math.floor((now - new Date(since).getTime()) / 60_000));
   if (!Number.isFinite(minutes) || minutes < 1) return 'just now';
@@ -64,12 +86,14 @@ function WorkRow({ item, onOpen }: { item: WorkItem; onOpen: (item: WorkItem) =>
  * The one notification bell, in the app header: your current work (new first, then longest waiting). Seeing work
  * never completes it; it leaves when its stage is done. `updates` renders extra feed content only when supplied.
  */
-export function NotificationBell({ state, onSeen, onOpenOrder, onOpenQueue, onRetry, updates, phone, ordersFilterFor }: {
+export function NotificationBell({ state, onSeen, onOpenOrder, onOpenQueue, onRetry, updates, phone, desktop, ordersFilterFor }: {
   state: WorkNotificationState;
   /** The Orders filter that shows a queue. */
   ordersFilterFor: (queue: WorkQueueState) => string;
   /** Phone push control; omitted until the server reports push is enabled. */
   phone?: PhoneAlertControl;
+  /** Desktop browser pop-ups while StockFlow is open (no push server needed). */
+  desktop?: DesktopPopupControl;
   onSeen: () => void;
   onOpenOrder: (item: WorkItem) => void;
   onOpenQueue: (status: string, query?: string) => void;
@@ -165,6 +189,7 @@ export function NotificationBell({ state, onSeen, onOpenOrder, onOpenQueue, onRe
           {updates}
 
           {phone ? <PhoneAlerts phone={phone} /> : null}
+          {desktop ? <DesktopPopups desktop={desktop} /> : null}
 
           <p className="mt-3 px-1 text-[11px] text-sf-subtle">{state.checkedAt ? `Checked ${checkedLabel(state.checkedAt)} · ` : ''}New work shows within about 15 seconds while StockFlow is open.</p>
         </dialog>

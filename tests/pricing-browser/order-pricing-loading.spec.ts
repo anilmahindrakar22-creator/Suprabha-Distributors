@@ -43,7 +43,7 @@ test('stage changes show pricing loading until the current read settles without 
   await page.goto('/?view=orders-workspace&actor=administrator@example.test');
   if (isMobile) await page.getByRole('button', { name: /^SF-LOAD-001,/ }).click();
   const bar = page.getByRole('region', { name: 'Order next step', exact: true });
-  await expect(bar.getByRole('button', { name: 'Pick & pack complete', exact: true })).toBeVisible();
+  await expect(bar.getByRole('button', { name: 'Packed · all items', exact: true })).toBeVisible();
   expect(pricingReads).toBe(0);
   await page.clock.runFor(2_000);
   version = 2;
