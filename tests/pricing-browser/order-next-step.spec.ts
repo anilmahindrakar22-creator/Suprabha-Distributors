@@ -174,7 +174,7 @@ test('operations confirms a delivery in one tap, received by the customer', asyn
   await bar.getByRole('button', { name: 'Confirm delivered', exact: true }).click();
   await expect.poll(() => commands.length).toBe(1);
   expect(commands[0]).toMatchObject({ action: 'confirm_delivery', payload: { orderId, expectedVersion: 1, receivedBy: 'Next Step Laboratory', podReference: '' } });
-  const deliveredAt = Date.parse(String((commands[0] as { payload: { deliveredAt: string } }).payload.deliveredAt));
+  const deliveredAt = Date.parse(String(commands[0].payload.deliveredAt));
   expect(deliveredAt).toBeGreaterThanOrEqual(before - 1000);
   await expect(bar).toContainText('Delivered · received by');
 });
