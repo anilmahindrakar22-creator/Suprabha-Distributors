@@ -28,8 +28,11 @@ describe('nextStepFor', () => {
   it('offers administrators the pending exception with its version', () => {
     expect(nextStepFor(order('packed'), ['administrator'], pending())).toMatchObject({ kind: 'pricing_approve', label: 'Approve ₹404.66', exception: { version: 7 } });
   });
-  it('shows sales who must approve the pending rate', () => {
-    expect(nextStepFor(order('packed'), ['sales'], pending())).toMatchObject({ kind: 'pricing_waiting', label: 'Waiting for management to approve ₹404.66' });
+  it('tells sales and billing who the price waits for, without showing any amount', () => {
+    for (const roles of [['sales'], ['billing'], ['warehouse']]) {
+      expect(nextStepFor({ ...order('packed'), pricingState: 'approval_required' }, roles, pending())).toEqual({ kind: 'pricing_waiting', label: 'Waiting for management to approve the price' });
+      expect(nextStepFor({ ...order('packed'), pricingState: 'review_required' }, roles, null)).toEqual({ kind: 'pricing_waiting', label: 'Waiting for a price to be entered' });
+    }
   });
   it('offers dispatch to operations', () => {
     expect(nextStepFor(order('ready_for_dispatch'), ['operations'], null).kind).toBe('dispatch');

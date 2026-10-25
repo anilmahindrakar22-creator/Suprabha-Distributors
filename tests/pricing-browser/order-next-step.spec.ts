@@ -25,6 +25,7 @@ async function mockJourney(page: Page, role: string, initialStatus = 'packed', p
     if (route.request().method() === 'POST') {
       const command = route.request().postDataJSON() as Command;
       commands.push(command);
+      if (command.action === 'transition_order') status = String(command.payload.toStatus);
       if (command.action === 'save_dispatch') status = 'dispatched';
       if (command.action === 'confirm_delivery') { status = 'delivered'; receivedBy = String(command.payload.receivedBy); }
       version++;
@@ -101,7 +102,8 @@ test('administrator enters and approves a price directly from the next-step bar'
 test('sales sees the pending price and waits for management', async ({ page }) => {
   await mockJourney(page, 'sales', 'packed', true);
   const bar = await openOrder(page);
-  await expect(bar).toContainText('Waiting for management to approve ₹404.66');
+  await expect(bar).toContainText('Waiting for management to approve the price');
+  await expect(bar).not.toContainText('₹');
   await expect(bar.getByRole('button')).toHaveCount(0);
 });
 
@@ -141,9 +143,9 @@ test('operations dispatches and confirms delivery through reachable sheets', asy
   await dispatch.click();
   await expect.poll(() => commands.length).toBe(1);
   expect(commands[0]).toMatchObject({ action: 'save_dispatch', payload: { orderId, expectedVersion: 1, courierName: 'Test Courier', trackingNumber: 'TRACK-001', dispatchDate: '2026-10-18', vehicleNumber: 'KA01AB1234' } });
-  await bar.getByRole('button', { name: 'Confirm delivery', exact: true }).click();
+  await bar.getByRole('button', { name: 'Add receiver / POD…', exact: true }).click();
   const deliver = bar.getByRole('button', { name: 'Confirm delivery', exact: true });
-  await expect(deliver).toBeDisabled();
+  await expect(bar.getByLabel('Received by')).toHaveValue('Next Step Laboratory');
   await expect(bar.getByLabel('Delivered at')).not.toHaveValue('');
   await bar.getByLabel('Received by').fill('Dr Rao');
   await bar.getByLabel('Proof of delivery reference').fill('POD-001');
@@ -164,7 +166,42 @@ test('operations dispatches a local delivery in one tap with the India date', as
   await expect.poll(() => commands.length).toBe(1);
   const today = new Date().toLocaleDateString('en-CA', { timeZone: 'Asia/Kolkata' });
   expect(commands[0]).toMatchObject({ action: 'save_dispatch', payload: { orderId, expectedVersion: 1, courierName: 'Local delivery', trackingNumber: 'Hand delivery', dispatchDate: today, vehicleNumber: '' } });
-  await expect(bar.getByRole('button', { name: 'Confirm delivery', exact: true })).toBeVisible();
+  await expect(bar.getByRole('button', { name: 'Confirm delivered', exact: true })).toBeVisible();
+});
+
+test('operations confirms a delivery in one tap, received by the customer', async ({ page }) => {
+  const commands = await mockJourney(page, 'operations', 'dispatched');
+  const bar = await openOrder(page);
+  const before = Date.now();
+  await bar.getByRole('button', { name: 'Confirm delivered', exact: true }).click();
+  await expect.poll(() => commands.length).toBe(1);
+  expect(commands[0]).toMatchObject({ action: 'confirm_delivery', payload: { orderId, expectedVersion: 1, receivedBy: 'Next Step Laboratory', podReference: '' } });
+  const deliveredAt = Date.parse(String(commands[0].payload.deliveredAt));
+  expect(deliveredAt).toBeGreaterThanOrEqual(before - 1000);
+  await expect(bar).toContainText('Delivered · received by');
+});
+
+test('warehouse packs all items in one tap, recording the packed quantities first', async ({ page }) => {
+  const commands = await mockJourney(page, 'warehouse', 'confirmed');
+  const bar = await openOrder(page);
+  await bar.getByRole('button', { name: 'Packed · all items', exact: true }).click();
+  await expect.poll(() => commands.length).toBe(2);
+  expect(commands[0]).toMatchObject({ action: 'save_fulfilment', payload: { orderId, expectedVersion: 1, lines: [{ fulfilledQuantity: 1 }] } });
+  expect(commands[1]).toMatchObject({ action: 'transition_order', payload: { orderId, expectedVersion: 2, toStatus: 'packed' } });
+});
+
+test('warehouse records a shortage before marking packed', async ({ page }) => {
+  const commands = await mockJourney(page, 'warehouse', 'confirmed');
+  const bar = await openOrder(page);
+  await bar.getByRole('button', { name: 'Packed with shortage…', exact: true }).click();
+  const quantity = bar.getByLabel(/^Packed quantity for /);
+  await expect(quantity).toHaveValue('1');
+  await quantity.fill('0');
+  await expect(bar).toContainText('Short by 1');
+  await bar.getByRole('button', { name: 'Save and mark packed', exact: true }).click();
+  await expect.poll(() => commands.length).toBe(2);
+  expect(commands[0]).toMatchObject({ action: 'save_fulfilment', payload: { lines: [{ fulfilledQuantity: 0 }] } });
+  expect(commands[1]).toMatchObject({ action: 'transition_order', payload: { toStatus: 'packed' } });
 });
 
 test('sales sees that dispatch is waiting for Operations', async ({ page }) => {

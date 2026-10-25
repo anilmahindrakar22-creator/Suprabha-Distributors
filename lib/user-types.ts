@@ -1,4 +1,4 @@
-export const stockFlowRoles = ['administrator', 'sales', 'operations', 'warehouse', 'accounts', 'management', 'viewer'] as const;
+export const stockFlowRoles = ['administrator', 'sales', 'operations', 'warehouse', 'accounts', 'billing', 'management', 'viewer'] as const;
 export const stockFlowUserStatuses = ['active', 'suspended'] as const;
 export type StockFlowRole = typeof stockFlowRoles[number];
 

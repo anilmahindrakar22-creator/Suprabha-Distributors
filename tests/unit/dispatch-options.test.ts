@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { courierChoices, isLocalDelivery, istToday, LOCAL_DELIVERY, OUTSTATION_COURIERS } from '@/lib/dispatch-options';
+import { courierChoices, defaultReceiver, isLocalDelivery, istToday, LOCAL_DELIVERY, OUTSTATION_COURIERS } from '@/lib/dispatch-options';
 import { validateOrderCommand } from '@/lib/order-types';
 
 describe('dispatch options', () => {
@@ -16,6 +16,13 @@ describe('dispatch options', () => {
   });
   it('produces a local dispatch command the server validation accepts', () => {
     const command = { action: 'save_dispatch', payload: { orderId: '7c9e6679-7425-40de-944b-e07fc1f90ae7', expectedVersion: 3, ...LOCAL_DELIVERY, dispatchDate: '2026-10-19', vehicleNumber: '', idempotencyKey: 'test-idempotency-key-0001' } }; // runCommand adds the key
+    expect(validateOrderCommand(command)).not.toBeNull();
+  });
+  it('records the customer as receiver for a one-tap delivery the server accepts', () => {
+    expect(defaultReceiver({ customerName: '  Vaatsalya Life Hospital ' })).toBe('Vaatsalya Life Hospital');
+    expect(defaultReceiver({ customerName: 'X' })).toBe('Customer');
+    expect(defaultReceiver({ customerName: 'L'.repeat(200) })).toHaveLength(160);
+    const command = { action: 'confirm_delivery', payload: { orderId: '7c9e6679-7425-40de-944b-e07fc1f90ae7', expectedVersion: 4, deliveredAt: '2026-10-19T09:30:00.000Z', receivedBy: defaultReceiver({ customerName: 'Vaatsalya Life Hospital' }), podReference: '', idempotencyKey: 'test-idempotency-key-0002' } };
     expect(validateOrderCommand(command)).not.toBeNull();
   });
 });

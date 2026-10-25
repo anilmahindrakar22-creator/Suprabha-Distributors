@@ -164,7 +164,7 @@ test('phone list fits about ten orders on one screen and opens one order full sc
   const detail = page.getByRole('dialog', { name: 'Order SF-LIST-001' });
   await expect(detail).toBeVisible();
   await expect(detail.getByRole('list', { name: 'Order progress' })).toBeVisible();
-  await expect(detail.getByRole('button', { name: 'Pick & pack complete' })).toBeInViewport();
+  await expect(detail.getByRole('button', { name: 'Packed · all items' })).toBeInViewport();
   await detail.getByRole('button', { name: 'Back to orders' }).click();
   await expect(detail).toBeHidden();
 });
