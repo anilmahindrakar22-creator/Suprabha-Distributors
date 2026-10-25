@@ -1025,6 +1025,13 @@
       "remoteVersion": null,
       "remoteSha256": null,
       "status": "not_deployed"
+    },
+    {
+      "localFile": "20261026100000_approver_price_change.sql",
+      "localSha256": "fc13bfb537158a26fe33d8143ba3ba89f88f803fe24e47aa8f54af8c80b91b56",
+      "remoteVersion": null,
+      "remoteSha256": null,
+      "status": "not_deployed"
     }
   ],
   "liveCheck": {

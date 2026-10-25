@@ -110,7 +110,7 @@ function ApprovalInbox({ items, orderPriceCount, onOrderPriceCount, actorRole, a
     finally { setBusy(''); }
   }
   return <section className="rounded-2xl border border-sf-line-soft bg-white"><div className="flex items-center justify-between border-b border-sf-line-soft p-4"><div><h2 className="text-lg font-extrabold text-sf-strong">Approval inbox</h2><p className="text-xs text-sf-subtle">Order prices and customer price proposals</p></div><span className="rounded-full bg-sf-warning-soft px-3 py-1 text-xs font-extrabold text-sf-warning">{items.length + orderPriceCount}</span></div>
-    <OrderPriceInbox canApprove={canApprove} onCount={onOrderPriceCount} />
+    <OrderPriceInbox canApprove={canApprove} canChange={canApprove} onCount={onOrderPriceCount} />
     {canApprove ? <BillingRateExceptions /> : null}
     <h3 className="px-4 pt-4 text-sm font-extrabold text-sf-strong">Customer price proposals</h3>
     {message ? <p role="alert" className="m-4 rounded-lg bg-sf-danger-soft p-3 text-xs font-bold text-sf-danger">{message}</p> : null}

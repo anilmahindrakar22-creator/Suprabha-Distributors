@@ -1,19 +1,23 @@
 'use client';
 
-import { useEffect, useState } from 'react';
+import { useEffect, useRef, useState } from 'react';
 import { CircleCheck, RefreshCw } from 'lucide-react';
 import { readJsonResponse } from '@/lib/http-json';
 import { loadOrderPriceApprovals, type OrderPriceApproval } from '@/lib/order-price-approvals';
 import { PriceApprovalCard } from './price-approval-card';
 
 type InboxState = { status: 'loading' | 'ready' | 'error'; items: OrderPriceApproval[]; truncated: boolean; message: string };
+const rupees = new Intl.NumberFormat('en-IN', { style: 'currency', currency: 'INR', minimumFractionDigits: 0, maximumFractionDigits: 2 });
+const validRate = (rate: number) => Number.isFinite(rate) && rate > 0 && rate <= 100_000_000 && Math.abs(Math.round(rate * 100) - rate * 100) < 1e-6;
 
 /** Order prices waiting for a decision, listed in the Pricing inbox beside customer price-book proposals. */
-export function OrderPriceInbox({ canApprove, onCount }: { canApprove: boolean; onCount?: (count: number) => void }) {
+export function OrderPriceInbox({ canApprove, canChange = false, onCount }: { canApprove: boolean; canChange?: boolean; onCount?: (count: number) => void }) {
   const [state, setState] = useState<InboxState>({ status: 'loading', items: [], truncated: false, message: '' });
   const [version, setVersion] = useState(0);
   const [busy, setBusy] = useState('');
   const [reasons, setReasons] = useState<Record<string, string>>({});
+  const [changedRates, setChangedRates] = useState<Record<string, string>>({});
+  const priceChangeRequests = useRef(new Map<string, { fingerprint: string; idempotencyKey: string }>());
   const [notice, setNotice] = useState('');
   const [error, setError] = useState('');
 
@@ -25,13 +29,28 @@ export function OrderPriceInbox({ canApprove, onCount }: { canApprove: boolean; 
     return () => { live = false; };
   }, [version, onCount]);
 
-  async function decide(item: OrderPriceApproval, exceptionId: string, expectedVersion: number, action: 'approve_price_exception' | 'reject_price_exception') {
+  async function decide(item: OrderPriceApproval, exceptionId: string, expectedVersion: number, action: 'approve_price_exception' | 'reject_price_exception', changedRate?: number) {
     if (busy) return;
-    const reason = action === 'approve_price_exception' ? 'Price reviewed and approved' : (reasons[exceptionId] || '').trim();
+    const reason = action === 'approve_price_exception' && changedRate === undefined ? 'Price reviewed and approved' : (reasons[exceptionId] || '').trim();
+    if (changedRate !== undefined && (!canApprove || !canChange || action !== 'approve_price_exception' || !validRate(changedRate) || reason.length < 3 || reason.length > 1000)) return;
     setBusy(exceptionId); setError(''); setNotice('');
     try {
-      await readJsonResponse(await fetch('/api/pricing', { method: 'POST', headers: { 'content-type': 'application/json' }, body: JSON.stringify({ action, payload: { exceptionId, expectedVersion, reason, idempotencyKey: crypto.randomUUID() } }) }), 'The price decision could not be saved');
-      setNotice(`${item.orderNumber}: price ${action === 'approve_price_exception' ? 'approved' : 'rejected'}.`);
+      let idempotencyKey;
+      if (changedRate !== undefined) {
+        const fingerprint = JSON.stringify([expectedVersion, changedRate, reason]);
+        let request = priceChangeRequests.current.get(exceptionId);
+        if (request?.fingerprint !== fingerprint) {
+          request = { fingerprint, idempotencyKey: crypto.randomUUID() };
+          priceChangeRequests.current.set(exceptionId, request);
+        }
+        idempotencyKey = request.idempotencyKey;
+      } else idempotencyKey = crypto.randomUUID();
+      const response = await fetch('/api/pricing', { method: 'POST', headers: { 'content-type': 'application/json' }, body: JSON.stringify({ action, payload: { exceptionId, expectedVersion, reason, idempotencyKey, ...(changedRate !== undefined ? { changedRate } : {}) } }) });
+      if (response.status >= 400 && response.status < 500 && response.status !== 408 && response.status !== 429) priceChangeRequests.current.delete(exceptionId);
+      await readJsonResponse(response, 'The price decision could not be saved');
+      priceChangeRequests.current.delete(exceptionId);
+      setChangedRates((rates) => { const next = { ...rates }; delete next[exceptionId]; return next; });
+      setNotice(changedRate !== undefined ? `${item.orderNumber}: price changed to ${rupees.format(changedRate)} and approved.` : `${item.orderNumber}: price ${action === 'approve_price_exception' ? 'approved' : 'rejected'}.`);
       setVersion((value) => value + 1);
     } catch (cause) {
       setError(cause instanceof Error ? cause.message : 'The price decision could not be saved');
@@ -51,10 +70,19 @@ export function OrderPriceInbox({ canApprove, onCount }: { canApprove: boolean; 
       : <div className="space-y-4 p-4">{state.items.map((item) => <article key={item.orderId} aria-label={`${item.orderNumber}, ${item.customerName}`} className="min-w-0">
         <p className="text-sm font-bold text-sf-strong">{item.customerName} <span className="font-semibold text-sf-subtle">· {item.orderNumber}</span></p>
         <PriceApprovalCard workspace={item.workspace} />
-        {item.workspace.exceptions.map((exception) => canApprove ? <div key={exception.id} className="mt-2 grid gap-2 sm:grid-cols-[auto_minmax(0,1fr)_auto] sm:items-center">
-          <button type="button" disabled={Boolean(busy)} onClick={() => void decide(item, exception.id, exception.version, 'approve_price_exception')} className="min-h-11 rounded-xl bg-sf-ink px-5 text-sm font-bold text-white hover:bg-sf-ink-hover disabled:opacity-50">{busy === exception.id ? 'Saving…' : `Approve ${new Intl.NumberFormat('en-IN', { style: 'currency', currency: 'INR', minimumFractionDigits: 0, maximumFractionDigits: 2 }).format(exception.enteredRate)}`}</button>
-          <input aria-label={`Rejection reason for ${item.orderNumber}`} value={reasons[exception.id] || ''} onChange={(event) => setReasons((value) => ({ ...value, [exception.id]: event.target.value }))} maxLength={1000} placeholder="Reason, required to reject" className="min-h-11 min-w-0 rounded-lg border border-sf-line px-3 text-sm" />
+        {item.workspace.exceptions.map((exception) => canApprove ? <div key={exception.id} className={`mt-2 grid gap-2 sm:items-center ${canChange ? 'sm:grid-cols-[auto_auto_minmax(0,1fr)_auto]' : 'sm:grid-cols-[auto_minmax(0,1fr)_auto]'}`}>
+          <button type="button" disabled={Boolean(busy)} onClick={() => void decide(item, exception.id, exception.version, 'approve_price_exception')} className="min-h-11 rounded-xl bg-sf-ink px-5 text-sm font-bold text-white hover:bg-sf-ink-hover disabled:opacity-50">{busy === exception.id ? 'Saving…' : `Approve ${rupees.format(exception.enteredRate)}`}</button>
+          {canChange ? <button type="button" aria-expanded={exception.id in changedRates} disabled={Boolean(busy)} onClick={() => {
+            priceChangeRequests.current.delete(exception.id);
+            setChangedRates((rates) => { const next = { ...rates }; if (exception.id in next) delete next[exception.id]; else next[exception.id] = String(exception.enteredRate); return next; });
+          }} className="min-h-11 rounded-xl border border-sf-line px-4 text-sm font-bold text-sf-body disabled:opacity-50">Change price…</button> : null}
+          <input aria-label={`Rejection reason for ${item.orderNumber}`} value={reasons[exception.id] || ''} onChange={(event) => setReasons((value) => ({ ...value, [exception.id]: event.target.value }))} required={canChange && exception.id in changedRates} minLength={3} maxLength={1000} disabled={Boolean(busy)} placeholder={canChange ? 'Reason, required to reject or change price' : 'Reason, required to reject'} className="min-h-11 min-w-0 rounded-lg border border-sf-line px-3 text-sm" />
           <button type="button" disabled={Boolean(busy) || (reasons[exception.id] || '').trim().length < 3} onClick={() => void decide(item, exception.id, exception.version, 'reject_price_exception')} className="min-h-11 rounded-xl border border-sf-danger-line px-4 text-sm font-bold text-sf-danger disabled:opacity-50">Reject</button>
+          {canChange && exception.id in changedRates ? <div className="grid min-w-0 gap-2 sm:col-span-full sm:grid-cols-[minmax(0,1fr)_auto]">
+            <input aria-label={`New price for ${item.orderNumber}`} type="number" inputMode="decimal" min="0.01" max="100000000" step="0.01" required disabled={Boolean(busy)} value={changedRates[exception.id]} onChange={(event) => setChangedRates((rates) => ({ ...rates, [exception.id]: event.target.value }))} className="min-h-11 min-w-0 rounded-lg border border-sf-line px-3 text-sm" />
+            <button type="button" disabled={Boolean(busy) || !validRate(Number(changedRates[exception.id])) || (reasons[exception.id] || '').trim().length < 3} onClick={() => void decide(item, exception.id, exception.version, 'approve_price_exception', Number(changedRates[exception.id]))} className="min-h-11 rounded-xl bg-sf-ink px-5 text-sm font-bold text-white hover:bg-sf-ink-hover disabled:opacity-50">{busy === exception.id ? 'Saving…' : `Approve ${rupees.format(Number(changedRates[exception.id]))}`}</button>
+            {(reasons[exception.id] || '').trim().length < 3 ? <p className="text-xs font-bold text-sf-warning sm:col-span-full">Reason required to change the price</p> : null}
+          </div> : null}
         </div> : <p key={exception.id} className="mt-2 text-xs font-bold text-sf-warning">Waiting for management to approve.</p>)}
       </article>)}
       </div>}
