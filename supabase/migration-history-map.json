@@ -1018,6 +1018,13 @@
       "remoteVersion": null,
       "remoteSha256": null,
       "status": "not_deployed"
+    },
+    {
+      "localFile": "20261026090000_billing_rate_check.sql",
+      "localSha256": "49e0581a7a08e8036e2ea14f44a41e2a328fad84cc19e5199ca47458cd81dcbd",
+      "remoteVersion": null,
+      "remoteSha256": null,
+      "status": "not_deployed"
     }
   ],
   "liveCheck": {
