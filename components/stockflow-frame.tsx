@@ -1,6 +1,7 @@
 'use client';
 
 import { lazy, Suspense, useEffect, useMemo, useRef, useState } from 'react';
+import { desktopPopupState, disableDesktopPopups, enableDesktopPopups, showWorkPopup, type DesktopPopupState } from '@/lib/desktop-popups';
 import { Boxes, Building2, CloudDownload, Ellipsis, Inbox, ShoppingCart, Tags, TrendingUp, TriangleAlert, Users, Wrench } from 'lucide-react';
 import { NotificationBell } from './notification-bell';
 import { BellIcon } from './order-list';
@@ -150,6 +151,9 @@ export function StockFlowFrame({ actorEmail, actorRole, actorRoles, staffAuth = 
   // with the first Stock request on a phone.
   const [work, setWork] = useState<WorkNotificationState>(initialWork);
   const [arrivals, setArrivals] = useState<WorkItem[]>([]);
+  const [desktopPopups, setDesktopPopups] = useState<DesktopPopupState>(() => desktopPopupState());
+  // Latest order opener for pop-up clicks (the work service callback is created once).
+  const openFromPopup = useRef<(item: { orderId: string; orderNumber: string }) => void>(() => undefined);
   const workService = useRef<ReturnType<typeof startWorkNotifications> | null>(null);
   const [orderView, setOrderView] = useState<{ query: string; focus?: { orderId: string; orderNumber: string }; nonce: number }>({ query: '', nonce: 0 });
   const [moreOpen, setMoreOpen] = useState(false);
@@ -168,7 +172,7 @@ export function StockFlowFrame({ actorEmail, actorRole, actorRoles, staffAuth = 
         active: () => document.visibilityState !== 'hidden',
         online: () => navigator.onLine,
         onState: setWork,
-        onFresh: (items) => setArrivals(items),
+        onFresh: (items) => { setArrivals(items); showWorkPopup(items, (item) => openFromPopup.current(item)); },
       });
       workService.current = service;
     }, 4_000);
@@ -199,6 +203,7 @@ export function StockFlowFrame({ actorEmail, actorRole, actorRoles, staffAuth = 
     workService.current?.markSeen();
     setArrivals([]);
   }
+  openFromPopup.current = (item) => { setSurface('orders'); openOrder(item); };
   function openOrder(item: { orderId: string; orderNumber: string }) {
     markWorkSeen();
     setOrderFilter('all');
@@ -317,7 +322,7 @@ export function StockFlowFrame({ actorEmail, actorRole, actorRoles, staffAuth = 
           {offlineLink ? <a href="/offline-preparation" className="inline-flex min-h-11 shrink-0 items-center gap-1.5 rounded-lg px-3 text-sm font-bold text-sf-muted hover:text-sf-ink 2xl:px-4"><CloudDownload aria-hidden="true" size={18} />Offline</a> : null}
         </nav>
         <div className="flex shrink-0 items-center gap-2">
-        {notifiable ? <NotificationBell state={work} ordersFilterFor={(queue) => workService.current?.ordersFilterFor(queue) ?? queue.statuses[0]} phone={pushState === 'hidden' ? undefined : { state: pushState, onEnable: () => void changePush(true), onDisable: () => void changePush(false) }} onSeen={markWorkSeen} onOpenOrder={openOrder} onOpenQueue={openQueue} onRetry={() => workService.current?.retry()} /> : null}
+        {notifiable ? <NotificationBell state={work} desktop={{ state: desktopPopups, onEnable: () => void enableDesktopPopups().then(setDesktopPopups), onDisable: () => setDesktopPopups(disableDesktopPopups()) }} ordersFilterFor={(queue) => workService.current?.ordersFilterFor(queue) ?? queue.statuses[0]} phone={pushState === 'hidden' ? undefined : { state: pushState, onEnable: () => void changePush(true), onDisable: () => void changePush(false) }} onSeen={markWorkSeen} onOpenOrder={openOrder} onOpenQueue={openQueue} onRetry={() => workService.current?.retry()} /> : null}
         {/* Sites owns the session cookie: use a full navigation, not a client router link. */}
         {/* oxlint-disable-next-line next/no-html-link-for-pages */}
         {staffAuth ? <button type="button" disabled={signingOut} onClick={() => void staffSignOut()} aria-label={`Sign out ${actorEmail}`} className="min-h-11 rounded-lg border px-3 text-sm font-bold disabled:opacity-50">{signingOut ? 'Signing out…' : 'Sign out'}</button> : <a href="/signout-with-chatgpt?return_to=/" target="_top" aria-label={`Sign out ${actorEmail}`} title={`Signed in as ${actorEmail}`} className="inline-flex min-h-11 shrink-0 items-center rounded-lg border border-sf-line-soft px-2 text-xs font-bold text-sf-strong hover:bg-sf-soft sm:px-3 sm:text-sm">Sign out</a>}

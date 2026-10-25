@@ -25,6 +25,7 @@ async function mockJourney(page: Page, role: string, initialStatus = 'packed', p
     if (route.request().method() === 'POST') {
       const command = route.request().postDataJSON() as Command;
       commands.push(command);
+      if (command.action === 'transition_order') status = String(command.payload.toStatus);
       if (command.action === 'save_dispatch') status = 'dispatched';
       if (command.action === 'confirm_delivery') { status = 'delivered'; receivedBy = String(command.payload.receivedBy); }
       version++;
@@ -178,6 +179,29 @@ test('operations confirms a delivery in one tap, received by the customer', asyn
   const deliveredAt = Date.parse(String(commands[0].payload.deliveredAt));
   expect(deliveredAt).toBeGreaterThanOrEqual(before - 1000);
   await expect(bar).toContainText('Delivered · received by');
+});
+
+test('warehouse packs all items in one tap, recording the packed quantities first', async ({ page }) => {
+  const commands = await mockJourney(page, 'warehouse', 'confirmed');
+  const bar = await openOrder(page);
+  await bar.getByRole('button', { name: 'Packed · all items', exact: true }).click();
+  await expect.poll(() => commands.length).toBe(2);
+  expect(commands[0]).toMatchObject({ action: 'save_fulfilment', payload: { orderId, expectedVersion: 1, lines: [{ fulfilledQuantity: 1 }] } });
+  expect(commands[1]).toMatchObject({ action: 'transition_order', payload: { orderId, expectedVersion: 2, toStatus: 'packed' } });
+});
+
+test('warehouse records a shortage before marking packed', async ({ page }) => {
+  const commands = await mockJourney(page, 'warehouse', 'confirmed');
+  const bar = await openOrder(page);
+  await bar.getByRole('button', { name: 'Packed with shortage…', exact: true }).click();
+  const quantity = bar.getByLabel(/^Packed quantity for /);
+  await expect(quantity).toHaveValue('1');
+  await quantity.fill('0');
+  await expect(bar).toContainText('Short by 1');
+  await bar.getByRole('button', { name: 'Save and mark packed', exact: true }).click();
+  await expect.poll(() => commands.length).toBe(2);
+  expect(commands[0]).toMatchObject({ action: 'save_fulfilment', payload: { lines: [{ fulfilledQuantity: 0 }] } });
+  expect(commands[1]).toMatchObject({ action: 'transition_order', payload: { toStatus: 'packed' } });
 });
 
 test('sales sees that dispatch is waiting for Operations', async ({ page }) => {

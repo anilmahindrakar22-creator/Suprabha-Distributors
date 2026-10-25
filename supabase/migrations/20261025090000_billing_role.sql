@@ -68,6 +68,8 @@ end $migration$;
 -- 4. Billing sheet: customer, items, quantities and the approved rate from the order's current
 -- immutable billing snapshot. An explicit key allowlist: no cost, margin, source or history.
 -- Amounts use the packed quantity (what leaves the warehouse); the ordered quantity is shown too.
+-- Orders packed before packed quantities were recorded have every line at 0: those bill the
+-- ordered quantity and say so (quantitySource='ordered').
 create or replace function private.stockflow_order_billing_sheet(p_order_id uuid)
 returns jsonb
 language plpgsql
@@ -83,6 +85,7 @@ declare
   rate numeric;
   bill_quantity numeric;
   base jsonb;
+  use_ordered boolean;
 begin
   select * into o from private.stockflow_orders where id = p_order_id and archived_at is null;
   if not found then raise exception 'Order was not found' using errcode = '22023'; end if;
@@ -96,6 +99,7 @@ begin
   if snap is null or jsonb_typeof(snap) <> 'array' then
     return base || jsonb_build_object('ready', false, 'reason', 'Approved price snapshot is not current');
   end if;
+  select not exists(select 1 from private.stockflow_order_lines where order_id = o.id and fulfilled_quantity > 0) into use_ordered;
   for l in select id, item_name, base_unit, quantity, fulfilled_quantity from private.stockflow_order_lines
     where order_id = o.id order by created_at, id loop
     select (e->>'approved_rate')::numeric into rate from jsonb_array_elements(snap) e
@@ -104,14 +108,14 @@ begin
     if rate is null then
       return base || jsonb_build_object('ready', false, 'reason', 'An item has no approved price');
     end if;
-    bill_quantity := coalesce(l.fulfilled_quantity, l.quantity);
+    bill_quantity := case when use_ordered then l.quantity else l.fulfilled_quantity end;
     lines := lines || jsonb_build_array(jsonb_build_object(
       'lineId', l.id, 'itemName', l.item_name, 'unit', l.base_unit,
       'orderedQuantity', l.quantity, 'packedQuantity', l.fulfilled_quantity, 'billQuantity', bill_quantity,
       'approvedRate', rate, 'amount', round(rate * bill_quantity, 2)));
     total := total + round(rate * bill_quantity, 2);
   end loop;
-  return base || jsonb_build_object('ready', true, 'lines', lines, 'total', total);
+  return base || jsonb_build_object('ready', true, 'quantitySource', case when use_ordered then 'ordered' else 'packed' end, 'lines', lines, 'total', total);
 end $function$;
 revoke all on function private.stockflow_order_billing_sheet(uuid) from public, anon, authenticated;
 

@@ -569,6 +569,13 @@ export function OrderWorkspace({ actorEmail, initialStatus = 'open', initialQuer
     if (completed) moveDesktopSelectionAfter(order.id);
   }
 
+  /** Record what was packed (keeping the delivery address and date), then mark the order packed. */
+  async function packOrder(order: OrderSummary, lines: Array<{ tallyKey: string; fulfilledQuantity: number }>) {
+    const saved = await runCommand({ action: 'save_fulfilment', payload: { orderId: order.id, expectedVersion: order.version, deliveryAddress: order.deliveryAddress ?? '', expectedDeliveryDate: order.expectedDeliveryDate || undefined, lines } }, `${order.orderNumber} packed quantities saved.`);
+    if (!saved) throw new Error('Packed quantities could not be saved. Refresh and try again.');
+    // The fulfilment save advances the order version by exactly one.
+    await advance({ ...order, version: order.version + 1 });
+  }
   async function saveFulfilment(order: OrderSummary, payload: Extract<OrderCommand, { action: 'save_fulfilment' }>['payload']) {
     await runCommand({ action: 'save_fulfilment', payload }, `${order.orderNumber} fulfilment details saved.`);
   }
@@ -644,6 +651,7 @@ export function OrderWorkspace({ actorEmail, initialStatus = 'open', initialQuer
     onAdvance: advance,
     onCancel: cancelOrder,
     onSaveFulfilment: saveFulfilment,
+    onPack: packOrder,
     onDelivery: updateDelivery,
     onEdit: editOrder,
     onException: updateException,
@@ -899,6 +907,7 @@ function OrderRow({
   onAdvance,
   onCancel,
   onSaveFulfilment,
+  onPack,
   onDelivery,
   onEdit,
   onException,
@@ -922,6 +931,7 @@ function OrderRow({
   onAdvance: (order: OrderSummary, tallyInvoiceNumber?: string) => Promise<void>;
   onCancel: (order: OrderSummary, reason: string) => Promise<void>;
   onSaveFulfilment: (order: OrderSummary, payload: Extract<OrderCommand, { action: 'save_fulfilment' }>['payload']) => Promise<void>;
+  onPack: (order: OrderSummary, lines: Array<{ tallyKey: string; fulfilledQuantity: number }>) => Promise<void>;
   onDelivery: (order: OrderSummary, command: Extract<OrderCommand, { action: 'save_dispatch' | 'confirm_delivery' }>) => Promise<void>;
   onEdit: (order: OrderSummary, payload: Extract<OrderCommand, { action: 'edit_order' }>['payload']) => Promise<void>;
   onException: (order: OrderSummary, command: Extract<OrderCommand, { action: 'create_exception' | 'resolve_exception' }>) => Promise<void>;
@@ -1001,7 +1011,7 @@ function OrderRow({
         <p className="text-xs font-bold text-sf-subtle">Ordered quantity</p>
         <p className="mt-1 font-extrabold text-sf-strong">{formatQuantity(total)}</p>
       </div>
-      <OrderNextStepBar order={order} roles={roles} pricing={pricing} inOrderPage={inOrderPage} onAdvance={onAdvance} onDelivery={onDelivery} onPricingChanged={onPricingChanged} />
+      <OrderNextStepBar order={order} roles={roles} pricing={pricing} inOrderPage={inOrderPage} onAdvance={onAdvance} onDelivery={onDelivery} onPricingChanged={onPricingChanged} onPack={onPack} />
       </div>
       {pricing.workspace?.pricingState === 'approval_required' ? <PriceApprovalCard workspace={pricing.workspace} /> : null}
       {(BILLING_STATUSES as readonly string[]).includes(order.status) && hasAnyStockFlowRole(roles, [...BILLING_ROLES]) ? <BillingSheetPanel order={order} /> : null}
@@ -1107,11 +1117,12 @@ function useOrderPricing(order: OrderSummary, enabled = true) {
 }
 
 type DeliveryCommand = Extract<OrderCommand, { action: 'save_dispatch' | 'confirm_delivery' }>;
-function OrderNextStepBar({ order, roles, pricing, inOrderPage, onAdvance, onDelivery, onPricingChanged }: {
+function OrderNextStepBar({ order, roles, pricing, inOrderPage, onAdvance, onDelivery, onPricingChanged, onPack }: {
   order: OrderSummary; roles: readonly StockFlowRole[]; pricing: ReturnType<typeof useOrderPricing>; inOrderPage: boolean;
   onAdvance: (order: OrderSummary, invoice?: string) => Promise<void>;
   onDelivery: (order: OrderSummary, command: DeliveryCommand) => Promise<void>;
   onPricingChanged: () => Promise<void>;
+  onPack: (order: OrderSummary, lines: Array<{ tallyKey: string; fulfilledQuantity: number }>) => Promise<void>;
 }) {
   const step = nextStepFor(order, roles, pricing.workspace);
   const [sheet, setSheet] = useState('');
@@ -1165,12 +1176,16 @@ function OrderNextStepBar({ order, roles, pricing, inOrderPage, onAdvance, onDel
       <button type="button" disabled={busy} onClick={() => { setSheet(''); setReason(''); }} className="min-h-11 rounded-lg border border-sf-line px-4 font-bold text-sf-body">Cancel</button>
       {sheet === 'price' ? <PricingPanel order={order} actorRole={roles[0]} actorRoles={roles} pricing={pricing} sheet onSavingChange={setBusy} onChanged={async () => { await onPricingChanged(); setSheet(''); }} /> : null}
       {sheet === 'reject' ? <><label className="block text-sm font-bold text-sf-body">Rejection reason<input required minLength={3} maxLength={1000} value={reason} onChange={event => setReason(event.target.value)} className="mt-1 min-h-11 w-full min-w-0 rounded-lg border border-sf-line px-3" /></label><button type="button" disabled={busy || stale || reason.trim().length < 3} onClick={() => void run(() => pricingCommand('reject_price_exception'), 'Price rejected')} className={primary}>Reject price</button></> : null}
+      {sheet === 'pack' ? <PackQuantitiesForm order={order} busy={busy} onSave={(lines) => run(() => onPack(order, lines), 'Moved to Packed')} /> : null}
       {sheet === 'dispatch' ? <DispatchForm order={order} actorRoles={roles} initialMode="outstation" onSave={(current, command) => run(() => onDelivery(current, command), 'Moved to Dispatched')} /> : null}
       {sheet === 'deliver' ? <DeliveryForm order={order} actorRoles={roles} onSave={(current, command) => run(() => onDelivery(current, command), 'Moved to Delivered')} /> : null}
     </div> : <>
       {informational ? <p className={`flex items-center gap-2 py-2 text-sm font-bold ${step.kind === 'done' ? 'text-sf-success' : 'text-sf-muted'}`}>{step.kind === 'done' ? <CircleCheck aria-hidden="true" size={16} /> : <Clock aria-hidden="true" size={16} />}{step.label}</p> : <>
         {step.kind === 'advance' && order.status === 'awaiting_tally_billing' ? <label className="text-xs font-bold text-sf-muted">Tally invoice number(s)<input maxLength={160} value={invoice} onChange={event => setInvoice(event.target.value)} placeholder="Use commas for split invoices" className="mt-1 min-h-10 w-full rounded-lg border border-sf-line px-3 font-normal text-sf-strong" /></label> : null}
-        {step.kind === 'dispatch' ? <>
+        {step.kind === 'advance' && nextStatus[order.status]?.status === 'packed' ? <>
+          <button type="button" className={primary} disabled={busy} onClick={() => void run(() => onPack(order, order.lines.map((line) => ({ tallyKey: line.tallyKey, fulfilledQuantity: Number(line.quantity) }))), 'Moved to Packed')}>{busy ? 'Saving…' : 'Packed · all items'}</button>
+          <button type="button" disabled={busy} onClick={() => setSheet('pack')} className="min-h-11 rounded-xl border border-sf-line px-4 font-bold text-sf-body">Packed with shortage…</button>
+        </> : step.kind === 'dispatch' ? <>
           <button type="button" className={primary} disabled={busy} onClick={() => void dispatchLocally()}>{busy ? 'Dispatching…' : 'Dispatch · Local delivery'}</button>
           <button type="button" disabled={busy} onClick={() => setSheet('dispatch')} className="min-h-11 rounded-xl border border-sf-line px-4 font-bold text-sf-body">Outstation courier…</button>
         </> : step.kind === 'deliver' ? <>
@@ -1444,6 +1459,24 @@ function useFulfilmentDraft(order: OrderSummary) {
   }
   return { busy, setBusy, courierName, setCourierName, trackingNumber, setTrackingNumber, dispatchDate, setDispatchDate, vehicleNumber, setVehicleNumber, deliveredAt, setDeliveredAt, receivedBy, setReceivedBy, podReference, setPodReference, baseVersion, resetDrafts };
 }
+/** What was actually packed, per item: starts at the ordered quantity; lower it for a shortage. */
+function PackQuantitiesForm({ order, busy, onSave }: { order: OrderSummary; busy: boolean; onSave: (lines: Array<{ tallyKey: string; fulfilledQuantity: number }>) => void }) {
+  const [packed, setPacked] = useState<Record<string, string>>(() => Object.fromEntries(order.lines.map((line) => [line.tallyKey, String(Number(line.fulfilledQuantity) > 0 ? Number(line.fulfilledQuantity) : Number(line.quantity))])));
+  const values = order.lines.map((line) => ({ line, value: Number(packed[line.tallyKey]) }));
+  const valid = values.every(({ line, value }) => Number.isInteger(value) && value >= 0 && value <= Number(line.quantity));
+  const short = values.reduce((sum, { line, value }) => sum + (Number.isFinite(value) ? Math.max(0, Number(line.quantity) - value) : 0), 0);
+  return <div className="space-y-3 rounded-xl bg-white p-4">
+    <p className="text-sm font-bold text-sf-body">Enter what was packed for each item.</p>
+    <ul className="space-y-2">{values.map(({ line, value }) => <li key={line.tallyKey} className="grid grid-cols-[minmax(0,1fr)_7rem] items-center gap-3 border-t border-sf-line-soft pt-2">
+      <span className="min-w-0"><strong className="block truncate text-sm text-sf-strong">{line.itemName}</strong><span className="text-xs text-sf-subtle">Ordered {formatQuantity(Number(line.quantity))} {line.baseUnit || ''}</span></span>
+      <label className="text-xs font-bold text-sf-muted">Packed<input type="number" inputMode="numeric" min={0} max={Number(line.quantity)} step={1} aria-label={`Packed quantity for ${line.itemName}`} value={packed[line.tallyKey] ?? ''} onChange={(event) => setPacked((current) => ({ ...current, [line.tallyKey]: event.target.value }))} className={`mt-1 min-h-11 w-full rounded-lg border px-3 text-right font-normal tabular-nums ${Number.isInteger(value) && value >= 0 && value <= Number(line.quantity) ? 'border-sf-line' : 'border-sf-danger'}`} /></label>
+    </li>)}</ul>
+    {short > 0 && valid ? <p className="text-xs font-bold text-sf-warning">Short by {formatQuantity(short)}. The rest stays as a back-order.</p> : null}
+    {!valid ? <p className="text-xs font-bold text-sf-danger">Packed quantity must be a whole number between 0 and the ordered quantity.</p> : null}
+    <button type="button" disabled={busy || !valid} onClick={() => onSave(values.map(({ line, value }) => ({ tallyKey: line.tallyKey, fulfilledQuantity: value })))} className="min-h-12 w-full rounded-xl bg-sf-ink px-4 text-base font-bold text-white hover:bg-sf-ink-hover disabled:opacity-50">{busy ? 'Saving…' : 'Save and mark packed'}</button>
+  </div>;
+}
+
 function DispatchForm({ order, actorRole, actorRoles, onSave, initialMode }: FulfilmentFormProps & { initialMode?: DispatchMode }) {
   const { busy, setBusy, courierName, setCourierName, trackingNumber, setTrackingNumber, dispatchDate, setDispatchDate, vehicleNumber, setVehicleNumber, baseVersion, resetDrafts } = useFulfilmentDraft(order);
   const [error, setError] = useState('');

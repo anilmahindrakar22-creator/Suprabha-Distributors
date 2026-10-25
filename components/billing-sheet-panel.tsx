@@ -44,14 +44,14 @@ export function BillingSheetPanel({ order }: { order: OrderSummary }) {
             <thead className="text-xs text-sf-subtle"><tr><th className="py-2 pr-3 font-bold">Item</th><th className="py-2 pr-3 text-right font-bold">Quantity</th><th className="py-2 pr-3 text-right font-bold">Rate</th><th className="py-2 text-right font-bold">Amount</th></tr></thead>
             <tbody>{sheet.lines?.map((line) => <tr key={line.lineId} className="border-t border-sf-line-soft">
               <td className="py-2 pr-3 font-bold text-sf-strong">{line.itemName}</td>
-              <td className="py-2 pr-3 text-right tabular-nums">{formatBillingQuantity(line.billQuantity)}{line.unit ? ` ${line.unit}` : ''}{line.packedQuantity != null && Number(line.packedQuantity) !== Number(line.orderedQuantity) ? <span className="block text-xs text-sf-warning">ordered {formatBillingQuantity(line.orderedQuantity)}</span> : null}</td>
+              <td className="py-2 pr-3 text-right tabular-nums">{formatBillingQuantity(line.billQuantity)}{line.unit ? ` ${line.unit}` : ''}{sheet.quantitySource === 'packed' && line.packedQuantity != null && Number(line.packedQuantity) !== Number(line.orderedQuantity) ? <span className="block text-xs text-sf-warning">ordered {formatBillingQuantity(line.orderedQuantity)}</span> : null}</td>
               <td className="py-2 pr-3 text-right tabular-nums">{formatRupees(line.approvedRate)}</td>
               <td className="py-2 text-right font-bold tabular-nums">{formatRupees(line.amount)}</td>
             </tr>)}</tbody>
             <tfoot><tr className="border-t-2 border-sf-line"><td colSpan={3} className="py-2 pr-3 text-right font-bold text-sf-label">Total before GST</td><td className="py-2 text-right text-base font-extrabold tabular-nums text-sf-ink">{formatRupees(sheet.total ?? 0)}</td></tr></tfoot>
           </table>
         </div>
-        <p className="mt-2 text-xs text-sf-subtle">Quantities are what was packed. Enter the Tally invoice number below once the bill is punched.</p>
+        {sheet.quantitySource === 'ordered' ? <p className="mt-2 text-xs font-bold text-sf-warning">Packed quantities were not recorded for this order, so the ordered quantities are shown. Check with packing before billing.</p> : <p className="mt-2 text-xs text-sf-subtle">Quantities are what was packed. Enter the Tally invoice number below once the bill is punched.</p>}
       </>}
   </section>;
 }

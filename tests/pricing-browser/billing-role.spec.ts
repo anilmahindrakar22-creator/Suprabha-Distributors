@@ -6,7 +6,7 @@ const order = {
   lines: [{ tallyKey: 'STROMATOLYSER', itemName: 'Stromatolyser WH 500 Ml', itemGroup: 'Sysmex', quantity: 3, baseUnit: 'Nos', fulfilledQuantity: 2 }],
   events: [], exceptions: [], installations: [],
 };
-const sheet = { view: 'billing', orderId: order.id, orderNumber: order.orderNumber, customerName: order.customerName, status: order.status, ready: true, total: 8900,
+const sheet = { view: 'billing', orderId: order.id, orderNumber: order.orderNumber, customerName: order.customerName, status: order.status, ready: true, quantitySource: 'packed', total: 8900,
   lines: [{ lineId: 'l1', itemName: 'Stromatolyser WH 500 Ml', unit: 'Nos', orderedQuantity: 3, packedQuantity: 2, billQuantity: 2, approvedRate: 4450, amount: 8900 }] };
 
 test('billing sees one billing sheet with approved prices, never the full pricing data', async ({ page, isMobile }, info) => {
