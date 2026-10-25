@@ -71,6 +71,19 @@ begin
     raise exception 'Billing gained a non-billing transition';
   exception when insufficient_privilege then null; end;
 
+  -- End to end through the real order gateway: billing punches the bill.
+  sheet := public.stockflow_order_gateway('billing-role-key','billing-only@test.local','transition_order',
+    jsonb_build_object('orderId',o,'expectedVersion',(select version from private.stockflow_orders where id=o),'toStatus','billed_in_tally',
+      'tallyInvoiceNumber','SD/26-27/0099','idempotencyKey','billing-role-mark-billed-0001'));
+  if sheet->>'status' <> 'billed_in_tally' or (select tally_invoice_number from private.stockflow_orders where id=o) <> 'SD/26-27/0099' then
+    raise exception 'Billing could not mark the order billed: %', sheet;
+  end if;
+  begin
+    perform public.stockflow_order_gateway('billing-role-key','billing-only@test.local','transition_order',
+      jsonb_build_object('orderId',o,'expectedVersion',(select version from private.stockflow_orders where id=o),'toStatus','ready_for_dispatch','idempotencyKey','billing-role-dispatch-0001'));
+    raise exception 'Billing moved a billed order to dispatch';
+  exception when insufficient_privilege then null; end;
+
   if has_function_privilege('authenticated','private.stockflow_order_billing_sheet(uuid)','execute')
      or has_function_privilege('authenticated','public.stockflow_pricing_gateway(text,text,text,jsonb)','execute') then
     raise exception 'Billing functions exposed to clients';
