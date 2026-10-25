@@ -76,7 +76,8 @@ export function customerBalanceFreshness(
 
 export type TallyLineReconciliation = {
   state: 'not_billed' | 'identity_unverified' | 'awaiting_detail' | 'matched' | 'mismatch';
-  differences: Array<{ itemName: string; orderedQuantity: number; invoicedQuantity: number }>;
+  quantitySource?: 'packed' | 'ordered';
+  differences: Array<{ itemName: string; orderedQuantity: number; expectedQuantity: number; invoicedQuantity: number }>;
 };
 
 export type EquipmentInstallation = {
@@ -223,13 +224,16 @@ export function tallyInvoiceLineReconciliation(order: OrderSummary, invoices?: T
   const matchedInvoices = invoices.filter((item) => matchedNumbers.has(item.voucherNumber.trim()));
   if (matchedInvoices.length !== matchedNumbers.size || matchedInvoices.some((invoice) => !invoice.lineItems)) return { state: 'awaiting_detail', differences: [] };
 
-  const ordered = new Map<string, { itemName: string; quantity: number }>();
+  // Match the billing sheet's order-wide fallback when packing has not been recorded.
+  const quantitySource = order.lines.some((line) => Number(line.fulfilledQuantity) > 0) ? 'packed' : 'ordered';
+  const ordered = new Map<string, { itemName: string; quantity: number; expectedQuantity: number }>();
   for (const line of order.lines) {
     // Invoice exports currently carry the exact Tally stock-item name. Keep
     // matching conservative until a stable item GUID is exported on both sides.
     const key = normalizedTallyItem(line.itemName);
     const current = ordered.get(key);
-    ordered.set(key, { itemName: line.itemName, quantity: (current?.quantity || 0) + Number(line.quantity) });
+    const expectedQuantity = quantitySource === 'packed' ? Number(line.fulfilledQuantity ?? 0) : Number(line.quantity);
+    ordered.set(key, { itemName: line.itemName, quantity: (current?.quantity || 0) + Number(line.quantity), expectedQuantity: (current?.expectedQuantity || 0) + expectedQuantity });
   }
   const invoiced = new Map<string, { itemName: string; quantity: number }>();
   for (const line of matchedInvoices.flatMap((invoice) => invoice.lineItems || [])) {
@@ -241,9 +245,10 @@ export function tallyInvoiceLineReconciliation(order: OrderSummary, invoices?: T
   const differences = [...new Set([...ordered.keys(), ...invoiced.keys()])].flatMap((key) => {
     const orderLine = ordered.get(key); const invoiceLine = invoiced.get(key);
     const orderedQuantity = orderLine?.quantity || 0; const invoicedQuantity = invoiceLine?.quantity || 0;
-    return orderedQuantity === invoicedQuantity ? [] : [{ itemName: orderLine?.itemName || invoiceLine?.itemName || key, orderedQuantity, invoicedQuantity }];
+    const expectedQuantity = orderLine?.expectedQuantity || 0;
+    return expectedQuantity === invoicedQuantity ? [] : [{ itemName: orderLine?.itemName || invoiceLine?.itemName || key, orderedQuantity, expectedQuantity, invoicedQuantity }];
   });
-  return { state: differences.length ? 'mismatch' : 'matched', differences };
+  return { state: differences.length ? 'mismatch' : 'matched', quantitySource, differences };
 }
 
 export function orderNeedsBillingAttention(order: OrderSummary, invoices?: TallyInvoice[], now = new Date(), snapshotFetchedAt?: string) {

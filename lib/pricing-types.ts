@@ -85,11 +85,12 @@ export type CustomerPurchasedItem = { tallyKey: string; itemName: string; lastRa
 export type CustomerGroupMarginRow = { tallyKey: string; itemName: string; lastRate: number | null; currentCost: number | null; proposedRate: number | null; grossMarginPercent: number | null; eligible: boolean; exclusionReason: string | null; costChange: number | null };
 export type CustomerGroupMarginPreview = { customerId: string; itemGroup: 'Diasys Diagnostic India Pvt Ltd' | 'Sysmex'; grossMarginPercent: number; previewHash: string; eligibleCount: number; excludedCount: number; rows: CustomerGroupMarginRow[] };
 export const CUSTOMER_GROUP_MARGIN_GROUPS = ['Diasys Diagnostic India Pvt Ltd', 'Sysmex'] as const;
+export const PRICE_CHANGE_ROLES = ['administrator', 'management'] as const;
 
 export type PricingCommand =
   | { action: 'submit_order_pricing'; payload: { orderId: string; expectedVersion: number; pricingDate?: string; idempotencyKey: string; lines: Array<{ lineId: string; enteredRate: number; reason?: string; evidenceHash: string }> } }
   | { action: 'apply_governed_order_pricing'; payload: { orderId: string; expectedVersion: number; pricingDate?: string; idempotencyKey: string } }
-  | { action: 'approve_price_exception' | 'reject_price_exception'; payload: { exceptionId: string; expectedVersion: number; reason: string; idempotencyKey: string } }
+  | { action: 'approve_price_exception' | 'reject_price_exception'; payload: { exceptionId: string; expectedVersion: number; reason: string; idempotencyKey: string; changedRate?: number } }
   | { action: 'create_price_contract'; payload: { customerId: string; tallyKey: string; price: number; validFrom: string; validTo?: string; source: 'customer_contract' | 'quotation' | 'scheme' | 'tender' | 'manual_governed'; sourceReference?: string; reason: string; supersedesPriceId?: string; idempotencyKey: string } }
   | { action: 'approve_price_contract' | 'reject_price_contract'; payload: { contractId: string; expectedVersion: number; reason: string; idempotencyKey: string } }
   | { action: 'create_pricing_policy'; payload: { policyVersion: string; minimumMarginPercent: number; targetMarginPercent?: number; overrideApprovalPercent: number; roundingIncrement: number; roundingRuleVersion: string; effectiveFrom: string; reason: string; idempotencyKey: string } }
@@ -141,6 +142,7 @@ export function validatePricingCommand(value: unknown): PricingCommand | null {
   }
   if (command.action === 'approve_price_exception' || command.action === 'reject_price_exception') {
     if (!isUuid(payload.exceptionId) || !Number.isInteger(payload.expectedVersion) || Number(payload.expectedVersion) < 1 || typeof payload.reason !== 'string' || payload.reason.trim().length < 3 || payload.reason.length > 1000) return null;
+    if ('changedRate' in payload && (command.action !== 'approve_price_exception' || typeof payload.changedRate !== 'number' || !Number.isFinite(payload.changedRate) || payload.changedRate <= 0 || payload.changedRate > 100_000_000 || Math.abs(Math.round(payload.changedRate * 100) - payload.changedRate * 100) >= 1e-6)) return null;
     return command as unknown as PricingCommand;
   }
   if (command.action === 'create_price_contract') {

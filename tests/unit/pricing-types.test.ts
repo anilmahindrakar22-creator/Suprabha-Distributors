@@ -4,6 +4,28 @@ import { validPricingLookup, validatePricingCommand } from '../../lib/pricing-ty
 const id = '11111111-1111-4111-8111-111111111111';
 
 describe('pricing API contracts', () => {
+  const approval = { action: 'approve_price_exception', payload: { exceptionId: id, expectedVersion: 1, reason: 'Customer rate reviewed', idempotencyKey: 'abcdef1234567890' } };
+
+  it('accepts an approval with a changed rate and preserves ordinary approvals', () => {
+    expect(validatePricingCommand({ ...approval, payload: { ...approval.payload, changedRate: 4510 } })).toEqual({ ...approval, payload: { ...approval.payload, changedRate: 4510 } });
+    expect(validatePricingCommand(approval)).toEqual(approval);
+  });
+
+  it.each([0, -1, NaN, Infinity, 'abc', 1.234, 100000001, undefined, null])('rejects an invalid changed rate: %s', (changedRate) => {
+    expect(validatePricingCommand({ ...approval, payload: { ...approval.payload, changedRate } })).toBeNull();
+  });
+
+  it.each([0.01, 1.1, 0.29, 4510.25, 100_000_000])('accepts a changed rate within the bounds and decimal tolerance: %s', (changedRate) => {
+    expect(validatePricingCommand({ ...approval, payload: { ...approval.payload, changedRate } })).not.toBeNull();
+  });
+
+  it('rejects changed rates on rejections and requires the approver reason', () => {
+    expect(validatePricingCommand({ action: 'reject_price_exception', payload: { ...approval.payload, changedRate: 4510 } })).toBeNull();
+    for (const reason of ['', 'No', '   ', 'a'.repeat(1001)]) {
+      expect(validatePricingCommand({ ...approval, payload: { ...approval.payload, changedRate: 4510, reason } })).toBeNull();
+    }
+  });
+
   it('accepts bounded whole pricing decisions and exception actions', () => {
     expect(validatePricingCommand({ action: 'submit_order_pricing', payload: { orderId: id, expectedVersion: 2, idempotencyKey: '1234567890abcdef', lines: [{ lineId: id, evidenceHash: 'a'.repeat(64), enteredRate: 720, reason: 'Current agreed rate' }] } })?.action).toBe('submit_order_pricing');
     expect(validatePricingCommand({ action: 'approve_price_exception', payload: { exceptionId: id, expectedVersion: 1, reason: 'Approved tender rate', idempotencyKey: 'abcdef1234567890' } })?.action).toBe('approve_price_exception');

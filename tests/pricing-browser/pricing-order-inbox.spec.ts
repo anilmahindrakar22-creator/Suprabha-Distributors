@@ -47,6 +47,31 @@ test('Pricing inbox lists order prices with the facts and approves them', async 
   expect(posts[0]).toMatchObject({ action: 'approve_price_exception', payload: { exceptionId: 'ex1', expectedVersion: 4, reason: 'Price reviewed and approved' } });
 });
 
+test('management changes and approves an inbox price with a required reason', async ({ page }) => {
+  const posts: Array<Record<string, unknown>> = [];
+  await mock(page, posts);
+  // The workspace fixture supplies the management actor, as in the existing inbox test.
+  await page.goto('/?view=workspace');
+  const inbox = page.getByRole('region', { name: 'Order prices waiting for approval' });
+  const order = inbox.getByRole('article', { name: 'SO/26-27/0050, Inbox Test Hospital' });
+  await order.getByRole('button', { name: 'Change price…', exact: true }).click();
+  const rate = order.getByRole('spinbutton', { name: 'New price for SO/26-27/0050', exact: true });
+  await expect(rate).toHaveValue('4450');
+  await rate.fill('4510');
+  const reason = order.getByRole('textbox', { name: 'Reason for SO/26-27/0050', exact: true });
+  const approve = order.getByRole('button', { name: 'Approve ₹4,510', exact: true });
+  await expect(reason).toHaveValue('');
+  await expect(approve).toBeDisabled();
+  await expect(order.getByText('Reason required to change the price', { exact: true })).toBeVisible();
+  expect(posts).toHaveLength(0);
+  await reason.fill('Use the latest agreed customer rate');
+  await expect(approve).toBeEnabled();
+  await approve.click();
+  await expect.poll(() => posts.length).toBe(1);
+  expect(posts[0]).toMatchObject({ action: 'approve_price_exception', payload: { exceptionId: 'ex1', expectedVersion: 4, changedRate: 4510, reason: 'Use the latest agreed customer rate' } });
+  await expect(inbox.getByText('SO/26-27/0050: price changed to ₹4,510 and approved.', { exact: true })).toBeVisible();
+});
+
 test('an empty capped inbox explains that later orders have not been checked', async ({ page }) => {
   await page.route('**/api/orders**', route => route.fulfill({ json: new URL(route.request().url()).searchParams.has('list') ? { orders: [], pagination: { pageCount: 11 } } : { customers: [] } }));
   await page.route('**/api/pricing**', route => route.fulfill({ json: new URL(route.request().url()).searchParams.has('policies') ? { policies: [] } : { contracts: [] } }));

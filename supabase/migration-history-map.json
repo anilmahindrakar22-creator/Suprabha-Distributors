@@ -1,6 +1,6 @@
 {
   "projectId": "aormuidjbdqruglmyseh",
-  "checkedAt": "2026-10-25T18:11:35.811863+00:00",
+  "checkedAt": "2026-10-25T23:41:35.811863+05:30",
   "purpose": "Read-only release evidence; NOT an executable migration plan or authority to repair history.",
   "normalization": "Remove CR characters and trim surrounding whitespace only; SHA-256 over UTF-8.",
   "localGitHead": "a68e5572639f63a9c3638f936228ccac118a1360",
@@ -1018,6 +1018,20 @@
       "remoteVersion": "20261025181125",
       "remoteSha256": "69a3ffd1631cd2c70d32984b7add4440359d619939670b0a25b762dd8e282c42",
       "status": "exact_normalized_match"
+    },
+    {
+      "localFile": "20261026090000_billing_rate_check.sql",
+      "localSha256": "49e0581a7a08e8036e2ea14f44a41e2a328fad84cc19e5199ca47458cd81dcbd",
+      "remoteVersion": null,
+      "remoteSha256": null,
+      "status": "not_deployed"
+    },
+    {
+      "localFile": "20261026100000_approver_price_change.sql",
+      "localSha256": "fc13bfb537158a26fe33d8143ba3ba89f88f803fe24e47aa8f54af8c80b91b56",
+      "remoteVersion": null,
+      "remoteSha256": null,
+      "status": "not_deployed"
     }
   ],
   "liveCheck": {
@@ -1025,6 +1039,6 @@
     "remoteMigrationCount": 140,
     "matchedMigrationHashes": 140,
     "latestRemoteVersion": "20261025181125",
-    "checkedAt": "2026-10-25T18:11:35.811863+00:00"
+    "checkedAt": "2026-10-25T23:41:35.811863+05:30"
   }
 }
