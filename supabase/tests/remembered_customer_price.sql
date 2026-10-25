@@ -402,6 +402,11 @@ begin
       raise exception 'Patch must occur exactly once: % %',patch.signature,patch.needle;
     end if;
   end loop;
+  definition := regexp_replace(pg_get_functiondef('private.stockflow_customer_price_before_customer_first(uuid,text,date)'::regprocedure),'[[:space:]]+',' ','g');
+  needle := 'select distinct on (source_id) * from private.stockflow_tally_sales_prices where customer_id=p_customer and tally_item_key=p_item order by source_id, imported_at desc, id desc';
+  if (length(definition)-length(replace(definition,needle,'')))/length(needle)<>3 then
+    raise exception 'Expected exactly three customer/item filters inside latest-version subqueries';
+  end if;
   if (select count(*) from pg_proc p join pg_namespace n on n.oid=p.pronamespace
       where n.nspname in ('private','public') and position('''recentRates''' in p.prosrc)>0)<>1
     or exists(select 1 from pg_proc p join pg_namespace n on n.oid=p.pronamespace

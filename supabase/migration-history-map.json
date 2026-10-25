@@ -1035,7 +1035,7 @@
     },
     {
       "localFile": "20261026110000_remembered_customer_price.sql",
-      "localSha256": "cf60773ccfe8eb0c9ab89d78ca28d8326404a8cae5a26043f19482076a215e6a",
+      "localSha256": "dd3c4944524e5d70568343e4e34e72e8d47ef23e0af6ef840aea7a17af74ddeb",
       "remoteVersion": null,
       "remoteSha256": null,
       "status": "not_deployed"

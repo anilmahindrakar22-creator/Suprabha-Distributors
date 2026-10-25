@@ -196,6 +196,7 @@ begin
   anchor := $old$select * into sale from private.stockflow_tally_sales_prices where customer_id=p_customer and tally_item_key=p_item and invoice_date<=p_date and not exceptional and exception_type is null and invoice_rate>0 order by invoice_date desc,imported_at desc,id limit 1;$old$;
   replacement := $new$select * into sale from (
     select distinct on (source_id) * from private.stockflow_tally_sales_prices
+    where customer_id=p_customer and tally_item_key=p_item
     order by source_id, imported_at desc, id desc
   ) latest_sale_pick where customer_id=p_customer and tally_item_key=p_item and invoice_date<=p_date and not exceptional and exception_type is null and invoice_rate>0 order by invoice_date desc,imported_at desc,id limit 1;$new$;
   if (length(definition)-length(replace(definition,anchor,'')))/length(anchor)<>1 then
@@ -205,6 +206,7 @@ begin
   anchor := $old$select count(distinct invoice_rate)>1 into ambiguous from private.stockflow_tally_sales_prices where customer_id=p_customer and tally_item_key=p_item and invoice_date=sale.invoice_date and not exceptional and exception_type is null and invoice_rate>0;$old$;
   replacement := $new$select count(distinct invoice_rate)>1 into ambiguous from (
       select distinct on (source_id) * from private.stockflow_tally_sales_prices
+      where customer_id=p_customer and tally_item_key=p_item
       order by source_id, imported_at desc, id desc
     ) latest_sale_ambiguity where customer_id=p_customer and tally_item_key=p_item and invoice_date=sale.invoice_date and not exceptional and exception_type is null and invoice_rate>0;$new$;
   if (length(definition)-length(replace(definition,anchor,'')))/length(anchor)<>1 then
@@ -214,6 +216,7 @@ begin
   anchor := $old$'recentRates',coalesce((select jsonb_agg(to_jsonb(r)) from (select invoice_rate as rate,invoice_date as "invoiceDate",invoice_reference as "invoiceReference",source_version as "sourceVersion" from private.stockflow_tally_sales_prices where customer_id=p_customer and tally_item_key=p_item and invoice_date<=p_date and not exceptional and exception_type is null and invoice_rate>0 order by invoice_date desc,imported_at desc,id limit 5) r),'[]'),$old$;
   replacement := $new$'recentRates',coalesce((select jsonb_agg(to_jsonb(r)) from (select invoice_rate as rate,invoice_date as "invoiceDate",invoice_reference as "invoiceReference",source_version as "sourceVersion" from (
       select distinct on (source_id) * from private.stockflow_tally_sales_prices
+      where customer_id=p_customer and tally_item_key=p_item
       order by source_id, imported_at desc, id desc
     ) latest_recent_rates where customer_id=p_customer and tally_item_key=p_item and invoice_date<=p_date and not exceptional and exception_type is null and invoice_rate>0 order by invoice_date desc,imported_at desc,id limit 5) r),'[]'),$new$;
   if (length(definition)-length(replace(definition,anchor,'')))/length(anchor)<>1 then
@@ -225,6 +228,7 @@ begin
   anchor := $old$from private.stockflow_tally_sales_prices sp left join private.stockflow_products product on product.tally_item_key=sp.tally_item_key$old$;
   replacement := $new$from (
         select distinct on (source_id) * from private.stockflow_tally_sales_prices
+        where customer_id=(p_payload->>'customerId')::uuid
         order by source_id, imported_at desc, id desc
       ) sp left join private.stockflow_products product on product.tally_item_key=sp.tally_item_key$new$;
   if (length(definition)-length(replace(definition,anchor,'')))/length(anchor)<>1 then
