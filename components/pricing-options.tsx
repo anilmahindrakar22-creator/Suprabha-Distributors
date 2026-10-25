@@ -15,10 +15,10 @@ export function PricingOptions({ line, entry, onChange }: { line: PricingLineRes
     onChange({ rate: String(amount), reason });
   };
   const earlierPrices: Array<{ rate: number; reference: string | null; date: string | null; approved: boolean }> = [];
-  if (line.lastRate != null && ['LAST_TALLY_INVOICE', 'APPROVED_CONTRACT'].includes(line.source.type)) {
-    earlierPrices.push({ rate: line.lastRate, reference: line.source.reference, date: line.source.date, approved: line.source.type === 'APPROVED_CONTRACT' });
+  if (line.lastRate != null && ['LAST_TALLY_INVOICE', 'APPROVED_CONTRACT'].includes(line.source?.type)) {
+    earlierPrices.push({ rate: line.lastRate, reference: line.source?.reference ?? null, date: line.source?.date ?? null, approved: line.source?.type === 'APPROVED_CONTRACT' });
   }
-  for (const recent of [...line.recentRates].sort((a, b) => b.invoiceDate.localeCompare(a.invoiceDate))) {
+  for (const recent of [...(line.recentRates ?? [])].sort((a, b) => (b.invoiceDate ?? '').localeCompare(a.invoiceDate ?? ''))) {
     if (!earlierPrices.some(price => price.rate === recent.rate)) earlierPrices.push({ rate: recent.rate, reference: recent.invoiceReference, date: recent.invoiceDate, approved: false });
   }
   const earlierPriceChips = earlierPrices.length ? <div className="min-w-0 space-y-2">
