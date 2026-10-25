@@ -47,6 +47,8 @@ export async function GET(request: Request) {
       return Response.json(await callOrderGateway(email, 'list_price_contracts', { ...(customerId ? { customerId } : {}), ...(tallyKey ? { tallyKey } : {}) }), { headers: privateHeaders });
     }
     if (!validPricingLookup(orderId, pricingDate)) return failure('Valid pricing lookup is required', 400);
+    // view=billing returns the approved-price billing sheet only (billing, accounts, management, administrators).
+    if (parameters.get('view') === 'billing') return Response.json(await callOrderGateway(email, 'get_order_pricing', { orderId, view: 'billing' }), { headers: privateHeaders });
     return Response.json(await callOrderGateway<OrderPricingWorkspace>(email, 'get_order_pricing', {
       orderId,
       ...(pricingDate ? { pricingDate } : {}),

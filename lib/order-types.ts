@@ -318,7 +318,7 @@ const visibleTransitionRoles: Record<string, readonly string[]> = {
   'ready_for_picking->packed': ['administrator', 'operations', 'warehouse'],
   'picked->packed': ['administrator', 'operations', 'warehouse'],
   'packed->awaiting_tally_billing': ['administrator', 'operations', 'accounts'],
-  'awaiting_tally_billing->billed_in_tally': ['administrator', 'operations', 'accounts'],
+  'awaiting_tally_billing->billed_in_tally': ['administrator', 'operations', 'accounts', 'billing'],
   'billed_in_tally->ready_for_dispatch': ['administrator', 'operations'],
 };
 
@@ -331,7 +331,8 @@ export function orderNextOwnerLabel(status: string) {
   if (status === 'phone_order_received') return 'Sales or operations';
   if (['awaiting_confirmation', 'awaiting_approval'].includes(status)) return 'Operations or management';
   if (['confirmed', 'partially_reserved', 'fully_reserved', 'ready_for_picking', 'picked'].includes(status)) return 'Warehouse or operations';
-  if (['packed', 'awaiting_tally_billing'].includes(status)) return 'Accounts';
+  if (status === 'packed') return 'Accounts';
+  if (status === 'awaiting_tally_billing') return 'Billing';
   if (status === 'billed_in_tally') return 'Operations';
   return null;
 }

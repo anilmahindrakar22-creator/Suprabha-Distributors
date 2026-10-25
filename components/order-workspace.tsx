@@ -34,6 +34,8 @@ import { deliveredTodayOrders, groupOrdersForList } from '@/lib/order-list-group
 import { readJsonBody } from '@/lib/http-json';
 import { orderDateLabel, orderDateTime } from '@/lib/order-date';
 import { PriceApprovalCard } from './price-approval-card';
+import { BillingSheetPanel } from './billing-sheet-panel';
+import { BILLING_ROLES, BILLING_STATUSES } from '@/lib/billing-sheet';
 import { courierChoices, defaultReceiver, isLocalDelivery, istToday, LOCAL_DELIVERY, type DispatchMode } from '@/lib/dispatch-options';
 import { hasAnyStockFlowRole, type StockFlowRole } from '@/lib/user-types';
 import type { TallyRecentProducts } from '@/lib/tally-recent-products';
@@ -940,7 +942,7 @@ function OrderRow({
   const [cancelling, setCancelling] = useState(false);
   const [cancelReason, setCancelReason] = useState('');
   const [detailsLoaded, setDetailsLoaded] = useState(false);
-  const pricing = useOrderPricing(order);
+  const pricing = useOrderPricing(order, hasAnyStockFlowRole(roles, ['administrator', 'management', 'accounts']));
   const [detailHistory, setDetailHistory] = useState<{ exceptions: DeliveryException[]; installations: EquipmentInstallation[] } | null>(null);
   const [detailState, setDetailState] = useState<'idle' | 'loading' | 'error'>('idle');
   const canReviewPricing = hasAnyStockFlowRole(roles, ['administrator', 'accounts', 'management']) && !['billed_in_tally','ready_for_dispatch','dispatched','delivered','cancelled'].includes(order.status);
@@ -1002,6 +1004,7 @@ function OrderRow({
       <OrderNextStepBar order={order} roles={roles} pricing={pricing} inOrderPage={inOrderPage} onAdvance={onAdvance} onDelivery={onDelivery} onPricingChanged={onPricingChanged} />
       </div>
       {pricing.workspace?.pricingState === 'approval_required' ? <PriceApprovalCard workspace={pricing.workspace} /> : null}
+      {(BILLING_STATUSES as readonly string[]).includes(order.status) && hasAnyStockFlowRole(roles, [...BILLING_ROLES]) ? <BillingSheetPanel order={order} /> : null}
       <details className="mt-3 rounded-xl border border-sf-line-soft bg-sf-soft-0 text-sm">
         <summary className="flex min-h-10 cursor-pointer list-none items-center justify-between gap-3 px-3 font-bold text-sf-label marker:hidden [&::-webkit-details-marker]:hidden">
           <span>More order controls</span>
@@ -1062,9 +1065,10 @@ function BillingReviewPanel({ order, actorRole, actorRoles, onSave }: { order: O
 
 const currency = new Intl.NumberFormat('en-IN', { style: 'currency', currency: 'INR', maximumFractionDigits: 2 });
 
-function useOrderPricing(order: OrderSummary) {
+/** Full pricing (cost, margin, history) for pricing roles only; billing and other roles never request it. */
+function useOrderPricing(order: OrderSummary, enabled = true) {
   const readKey = `${order.id}:${order.pricingState}:${order.status}`;
-  const autoLoad = order.pricingState !== 'approved' && !['delivered', 'cancelled'].includes(order.status);
+  const autoLoad = enabled && order.pricingState !== 'approved' && !['delivered', 'cancelled'].includes(order.status);
   const [result, setResult] = useState<{ key: string; workspace: OrderPricingWorkspace | null; state: 'idle' | 'loading' | 'error'; message: string }>(() => ({ key: readKey, workspace: null, state: autoLoad ? 'loading' : 'idle', message: '' }));
   const request = useRef<AbortController | null>(null);
   const read = useCallback((controller: AbortController) => {
@@ -1077,12 +1081,13 @@ function useOrderPricing(order: OrderSummary) {
     });
   }, [order.id, readKey]);
   const reload = useCallback(async () => {
+    if (!enabled) return;
     request.current?.abort();
     const controller = new AbortController();
     request.current = controller;
     setResult(current => ({ ...current, key: readKey, state: 'loading', message: '' }));
     await read(controller);
-  }, [read, readKey]);
+  }, [enabled, read, readKey]);
   useEffect(() => {
     if (order.pricingState === 'approved') return () => request.current?.abort();
     if (autoLoad) {

@@ -1011,6 +1011,13 @@
       "remoteVersion": "20261019115837",
       "remoteSha256": "4552cb4375272c7834b4eed6d562498ba20833ab2fe221cd0bae28764b5c5ef0",
       "status": "exact_normalized_match"
+    },
+    {
+      "localFile": "20261025090000_billing_role.sql",
+      "localSha256": "dc7216c34b3310f5c330c26f0a4bbdefdf8954036235ad2ee9d345902a406741",
+      "remoteVersion": null,
+      "remoteSha256": null,
+      "status": "not_deployed"
     }
   ],
   "liveCheck": {

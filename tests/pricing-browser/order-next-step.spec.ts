@@ -101,7 +101,8 @@ test('administrator enters and approves a price directly from the next-step bar'
 test('sales sees the pending price and waits for management', async ({ page }) => {
   await mockJourney(page, 'sales', 'packed', true);
   const bar = await openOrder(page);
-  await expect(bar).toContainText('Waiting for management to approve ₹404.66');
+  await expect(bar).toContainText('Waiting for management to approve the price');
+  await expect(bar).not.toContainText('₹');
   await expect(bar.getByRole('button')).toHaveCount(0);
 });
 

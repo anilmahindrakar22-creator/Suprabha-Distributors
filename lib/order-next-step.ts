@@ -30,6 +30,10 @@ export function nextStepFor(order: OrderSummary, roles: readonly string[], prici
   const action = nextStatus[order.status];
   if (!action) return { kind: 'none', label: '' };
   if (action.status === 'awaiting_tally_billing' && order.pricingState !== 'approved') {
+    // Sales, warehouse and billing never read prices: they only see who the order is waiting for.
+    if (!hasAnyStockFlowRole(roles, ['administrator', 'accounts', 'management'])) {
+      return { kind: 'pricing_waiting', label: order.pricingState === 'approval_required' ? 'Waiting for management to approve the price' : 'Waiting for a price to be entered' };
+    }
     if (!pricing) return { kind: 'loading', label: 'Checking price…' };
     const exception = pricing.exceptions[0];
     if (exception) {
