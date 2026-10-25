@@ -11,6 +11,23 @@ describe('pricing API contracts', () => {
     expect(validatePricingCommand(approval)).toEqual(approval);
   });
 
+  it.each([true, false])('accepts saveAsCustomerPrice=%s with or without a changed rate', (saveAsCustomerPrice) => {
+    for (const rate of [{}, { changedRate: 4510 }]) {
+      const command = { ...approval, payload: { ...approval.payload, ...rate, saveAsCustomerPrice } };
+      expect(validatePricingCommand(command)).toEqual(command);
+    }
+  });
+
+  it.each([undefined, null, 0, 1, 'true', 'false', [], {}])('rejects a non-boolean saveAsCustomerPrice: %s', (saveAsCustomerPrice) => {
+    expect(validatePricingCommand({ ...approval, payload: { ...approval.payload, saveAsCustomerPrice } })).toBeNull();
+  });
+
+  it.each([true, false])('rejects saveAsCustomerPrice=%s on other actions', (saveAsCustomerPrice) => {
+    expect(validatePricingCommand({ action: 'reject_price_exception', payload: { ...approval.payload, saveAsCustomerPrice } })).toBeNull();
+    expect(validatePricingCommand({ action: 'apply_governed_order_pricing', payload: { orderId: id, expectedVersion: 2, idempotencyKey: 'abcdef1234567890', saveAsCustomerPrice } })).toBeNull();
+    expect(validatePricingCommand({ action: 'approve_price_contract', payload: { contractId: id, expectedVersion: 1, reason: 'Agreement verified', idempotencyKey: 'abcdef1234567890', saveAsCustomerPrice } })).toBeNull();
+  });
+
   it.each([0, -1, NaN, Infinity, 'abc', 1.234, 100000001, undefined, null])('rejects an invalid changed rate: %s', (changedRate) => {
     expect(validatePricingCommand({ ...approval, payload: { ...approval.payload, changedRate } })).toBeNull();
   });

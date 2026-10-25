@@ -13,6 +13,8 @@ const pricingReleaseFiles = new Set([
   '20261025090000_billing_role.sql',
   '20261026090000_billing_rate_check.sql',
   '20261026100000_approver_price_change.sql',
+  '20261026110000_remembered_customer_price.sql',
+  '20261026120000_ist_dispatch_date.sql',
   '20261016061635_mapped_instrument_cost_scope.sql',
   '20261016053720_economic_import_execution_budget.sql',
   '20261007180000_instrument_economics_foundation.sql',

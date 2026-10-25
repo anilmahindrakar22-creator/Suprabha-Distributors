@@ -5,8 +5,8 @@ const stockPayload = (sourceFetchedAtIso?: Record<string, unknown>) => ({
   fetchedAtIso: new Date().toISOString(),
   fetchedAt: '29 Sep 2026, 3:30 pm',
   fetchedAtShort: '29 Sep 2026, 3:30 pm',
-  rows: [],
-  groups: [],
+  rows: [] as Array<{ group: string; item: string; closing: number; reorderLevel: number; minimumOrder: number; shortfall: number; orderToBePlaced: number }>,
+  groups: [] as string[],
   ...(sourceFetchedAtIso ? { sourceFetchedAtIso } : {}),
 });
 
@@ -16,6 +16,32 @@ async function openStockDashboard(page: import('@playwright/test').Page, payload
   await page.goto('/stockflow.html');
   await expect(page.locator('details dl')).toContainText('Stock');
 }
+
+test('phone stock overview shows the first reorder row without scrolling or page overflow', async ({ page }) => {
+  await page.setViewportSize({ width: 375, height: 812 });
+  const payload = stockPayload();
+  payload.fetchedAtIso = new Date(Date.now() - 30 * 60 * 1000).toISOString();
+  payload.groups = ['Test group'];
+  payload.rows = [{ group: 'Test group', item: 'First reorder item', closing: 0, reorderLevel: 10, minimumOrder: 1, shortfall: 10, orderToBePlaced: 10 }];
+  await openStockDashboard(page, payload);
+
+  const firstRow = page.locator('#rows tr').first();
+  await expect(firstRow).toBeVisible();
+  await expect(page.locator('#syncNotice')).toBeVisible();
+  await expect(page.getByRole('button', { name: 'Clear focus', exact: true })).toBeHidden();
+  const bounds = await firstRow.boundingBox();
+  expect(bounds).not.toBeNull();
+  expect(bounds!.y).toBeGreaterThanOrEqual(0);
+  expect(bounds!.y).toBeLessThan(600);
+  expect(await page.evaluate(() => window.scrollY)).toBe(0);
+  expect(await page.evaluate(() => document.documentElement.scrollWidth <= innerWidth)).toBe(true);
+  await expect(page.getByText('Total order qty', { exact: true })).toHaveCount(0);
+
+  await page.locator('.metric-chips [data-action="items"]').click();
+  await expect(page.getByRole('button', { name: 'Clear focus', exact: true })).toBeVisible();
+  await page.getByRole('button', { name: 'Clear focus', exact: true }).click();
+  await expect(page.getByRole('button', { name: 'Clear focus', exact: true })).toBeHidden();
+});
 
 test('source update times stay collapsed and safely display per-source timestamps', async ({ page }) => {
   await openStockDashboard(page, stockPayload({

@@ -1032,6 +1032,20 @@
       "remoteVersion": null,
       "remoteSha256": null,
       "status": "not_deployed"
+    },
+    {
+      "localFile": "20261026110000_remembered_customer_price.sql",
+      "localSha256": "cf60773ccfe8eb0c9ab89d78ca28d8326404a8cae5a26043f19482076a215e6a",
+      "remoteVersion": null,
+      "remoteSha256": null,
+      "status": "not_deployed"
+    },
+    {
+      "localFile": "20261026120000_ist_dispatch_date.sql",
+      "localSha256": "1874b5ed4a743834d541f077f4b18d271935719c6badea9f67a317fb40124dec",
+      "remoteVersion": null,
+      "remoteSha256": null,
+      "status": "not_deployed"
     }
   ],
   "liveCheck": {

@@ -39,18 +39,29 @@ export function BillingSheetPanel({ order }: { order: OrderSummary }) {
       : <>
         <p className="mt-2 text-lg font-extrabold text-sf-ink">{sheet.customerName}</p>
         <p className="text-xs text-sf-subtle">{sheet.orderNumber}</p>
-        <div className="mt-3 overflow-x-auto">
-          <table className="w-full min-w-[30rem] text-left text-sm">
-            <thead className="text-xs text-sf-subtle"><tr><th className="py-2 pr-3 font-bold">Item</th><th className="py-2 pr-3 text-right font-bold">Quantity</th><th className="py-2 pr-3 text-right font-bold">Rate</th><th className="py-2 text-right font-bold">Amount</th></tr></thead>
-            <tbody>{sheet.lines?.map((line) => <tr key={line.lineId} className="border-t border-sf-line-soft">
-              <td className="py-2 pr-3 font-bold text-sf-strong">{line.itemName}</td>
-              <td className="py-2 pr-3 text-right tabular-nums">{formatBillingQuantity(line.billQuantity)}{line.unit ? ` ${line.unit}` : ''}{sheet.quantitySource === 'packed' && line.packedQuantity != null && Number(line.packedQuantity) !== Number(line.orderedQuantity) ? <span className="block text-xs text-sf-warning">ordered {formatBillingQuantity(line.orderedQuantity)}</span> : null}</td>
-              <td className="py-2 pr-3 text-right tabular-nums">{formatRupees(line.approvedRate)}</td>
-              <td className="py-2 text-right font-bold tabular-nums">{formatRupees(line.amount)}</td>
-            </tr>)}</tbody>
-            <tfoot><tr className="border-t-2 border-sf-line"><td colSpan={3} className="py-2 pr-3 text-right font-bold text-sf-label">Total before GST</td><td className="py-2 text-right text-base font-extrabold tabular-nums text-sf-ink">{formatRupees(sheet.total ?? 0)}</td></tr></tfoot>
-          </table>
+        <ul className="mt-3 divide-y divide-sf-line-soft text-sm sm:hidden">
+          {sheet.lines?.map((line) => <li key={line.lineId} className="py-2">
+            <p className="break-words font-bold text-sf-strong">{line.itemName}</p>
+            <div className="mt-1 flex items-start justify-between gap-3 tabular-nums">
+              <div className="min-w-0">{formatBillingQuantity(line.billQuantity)}{line.unit ? ` ${line.unit}` : ''} × {formatRupees(line.approvedRate)}{sheet.quantitySource === 'packed' && line.packedQuantity != null && Number(line.packedQuantity) !== Number(line.orderedQuantity) ? <span className="block text-xs text-sf-warning">ordered {formatBillingQuantity(line.orderedQuantity)}</span> : null}</div>
+              <p className="shrink-0 text-right font-bold">{formatRupees(line.amount)}</p>
+            </div>
+          </li>)}
+        </ul>
+        <div className="flex items-start justify-between gap-3 border-t-2 border-sf-line py-2 font-bold sm:hidden">
+          <p className="text-sm text-sf-label">Total before GST</p>
+          <p className="shrink-0 text-right text-base font-extrabold tabular-nums text-sf-ink">{formatRupees(sheet.total ?? 0)}</p>
         </div>
+        <table className="mt-3 hidden w-full text-left text-sm sm:table">
+          <thead className="text-xs text-sf-subtle"><tr><th className="py-2 pr-3 font-bold">Item</th><th className="py-2 pr-3 text-right font-bold">Quantity</th><th className="py-2 pr-3 text-right font-bold">Rate</th><th className="py-2 text-right font-bold">Amount</th></tr></thead>
+          <tbody>{sheet.lines?.map((line) => <tr key={line.lineId} className="border-t border-sf-line-soft">
+            <td className="break-words py-2 pr-3 font-bold text-sf-strong">{line.itemName}</td>
+            <td className="py-2 pr-3 text-right tabular-nums">{formatBillingQuantity(line.billQuantity)}{line.unit ? ` ${line.unit}` : ''}{sheet.quantitySource === 'packed' && line.packedQuantity != null && Number(line.packedQuantity) !== Number(line.orderedQuantity) ? <span className="block text-xs text-sf-warning">ordered {formatBillingQuantity(line.orderedQuantity)}</span> : null}</td>
+            <td className="py-2 pr-3 text-right tabular-nums">{formatRupees(line.approvedRate)}</td>
+            <td className="py-2 text-right font-bold tabular-nums">{formatRupees(line.amount)}</td>
+          </tr>)}</tbody>
+          <tfoot><tr className="border-t-2 border-sf-line"><td colSpan={3} className="py-2 pr-3 text-right font-bold text-sf-label">Total before GST</td><td className="py-2 text-right text-base font-extrabold tabular-nums text-sf-ink">{formatRupees(sheet.total ?? 0)}</td></tr></tfoot>
+        </table>
         {sheet.quantitySource === 'ordered' ? <p className="mt-2 text-xs font-bold text-sf-warning">Packed quantities were not recorded for this order, so the ordered quantities are shown. Check with packing before billing.</p> : <p className="mt-2 text-xs text-sf-subtle">Quantities are what was packed. Enter the Tally invoice number below once the bill is punched.</p>}
       </>}
   </section>;

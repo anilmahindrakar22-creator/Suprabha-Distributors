@@ -86,7 +86,7 @@ test('management changes and immediately approves the rate from the next-step ba
   await page.screenshot({ path: `work/tmp/price-change-${info.project.name}.png`, fullPage: true });
   await approve.click();
   await expect.poll(() => commands.length).toBe(1);
-  expect(commands[0]).toMatchObject({ action: 'approve_price_exception', payload: { exceptionId, expectedVersion: 7, changedRate: 4510, reason: 'Use the agreed customer rate', idempotencyKey: expect.any(String) } });
+  expect(commands[0]).toMatchObject({ action: 'approve_price_exception', payload: { exceptionId, expectedVersion: 7, changedRate: 4510, reason: 'Use the agreed customer rate', idempotencyKey: expect.any(String), saveAsCustomerPrice: true } });
   await expect(bar).toContainText('Price changed and approved');
   expect(await page.evaluate(() => document.documentElement.scrollWidth <= innerWidth)).toBe(true);
 });
