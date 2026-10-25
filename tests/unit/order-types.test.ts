@@ -249,7 +249,7 @@ describe('order workflow and history', () => {
   it('identifies the team responsible for the next visible workflow step', () => {
     expect(orderNextOwnerLabel('phone_order_received')).toBe('Sales or operations');
     expect(orderNextOwnerLabel('confirmed')).toBe('Warehouse or operations');
-    expect(orderNextOwnerLabel('awaiting_tally_billing')).toBe('Accounts');
+    expect(orderNextOwnerLabel('awaiting_tally_billing')).toBe('Billing');
     expect(orderNextOwnerLabel('billed_in_tally')).toBe('Operations');
     expect(orderNextOwnerLabel('delivered')).toBeNull();
   });

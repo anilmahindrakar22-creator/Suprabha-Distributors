@@ -20,7 +20,7 @@ export type OrderNextStep = { kind: 'advance' | 'pricing_apply' | 'pricing_enter
 
 export function nextStepFor(order: OrderSummary, roles: readonly string[], pricing: OrderPricingWorkspace | null): OrderNextStep {
   if (order.status === 'cancelled') return { kind: 'none', label: '' };
-  if (order.status === 'delivered') return { kind: 'done', label: `Delivered · received by ${order.receivedBy || 'customer'} on ${order.deliveredAt ? new Date(order.deliveredAt).toLocaleDateString('en-IN') : '—'}` };
+  if (order.status === 'delivered') return { kind: 'done', label: `Delivered · received by ${order.receivedBy || 'customer'} on ${order.deliveredAt ? new Date(order.deliveredAt).toLocaleDateString('en-IN', { timeZone: 'Asia/Kolkata', day: 'numeric', month: 'short', year: 'numeric' }) : '—'}` };
   if (['ready_for_dispatch', 'dispatched'].includes(order.status)) {
     const label = order.status === 'ready_for_dispatch' ? 'Dispatch order' : 'Confirm delivery';
     return hasAnyStockFlowRole(roles, ['administrator', 'operations'])
@@ -30,6 +30,10 @@ export function nextStepFor(order: OrderSummary, roles: readonly string[], prici
   const action = nextStatus[order.status];
   if (!action) return { kind: 'none', label: '' };
   if (action.status === 'awaiting_tally_billing' && order.pricingState !== 'approved') {
+    // Sales, warehouse and billing never read prices: they only see who the order is waiting for.
+    if (!hasAnyStockFlowRole(roles, ['administrator', 'accounts', 'management'])) {
+      return { kind: 'pricing_waiting', label: order.pricingState === 'approval_required' ? 'Waiting for management to approve the price' : 'Waiting for a price to be entered' };
+    }
     if (!pricing) return { kind: 'loading', label: 'Checking price…' };
     const exception = pricing.exceptions[0];
     if (exception) {

@@ -40,6 +40,8 @@ const queues = {
   pack: { id: 'pack', label: 'Pick & pack', statuses: ['picking'], message: 'Ready to pick & pack' },
   // A packed order already belongs to Accounts (its next step is "Send to Tally billing").
   bill: { id: 'bill', label: 'Tally billing', statuses: ['packed', 'awaiting_tally_billing'], message: 'Packed · ready for Tally billing' },
+  // Billing staff hear only about orders that are packed AND priced (awaiting_tally_billing).
+  billReady: { id: 'bill-ready', label: 'Ready to bill', statuses: ['awaiting_tally_billing'], message: 'Packed and priced · ready to bill' },
   // A billed order already belongs to Operations.
   dispatch: { id: 'dispatch', label: 'Dispatch', statuses: ['dispatch_ready'], message: 'Billed · ready for dispatch' },
 } satisfies Record<string, WorkQueue>;
@@ -50,6 +52,7 @@ export function workQueuesForRoles(roles: unknown): WorkQueue[] {
   if (hasAnyStockFlowRole(roles, ['administrator', 'management', 'sales', 'operations'])) result.push(queues.confirm);
   if (hasAnyStockFlowRole(roles, ['warehouse', 'operations'])) result.push(queues.pack);
   if (hasAnyStockFlowRole(roles, ['accounts'])) result.push(queues.bill);
+  else if (hasAnyStockFlowRole(roles, ['billing'])) result.push(queues.billReady);
   if (hasAnyStockFlowRole(roles, ['operations'])) result.push(queues.dispatch);
   return result;
 }
@@ -57,6 +60,7 @@ export function workQueuesForRoles(roles: unknown): WorkQueue[] {
 /** The Orders list filter that shows a queue (the largest part when a queue spans two filters). */
 export function queueOrdersFilter(queue: WorkQueueState | WorkQueue, totals: Record<string, number> = {}) {
   if (queue.id === 'confirm') return 'awaiting_confirmation';
+  if (queue.id === 'bill-ready') return 'billing';
   if (queue.id === 'bill') return (totals.packed ?? 0) > (totals.awaiting_tally_billing ?? 0) ? 'packed' : 'billing';
   return queue.statuses[0];
 }

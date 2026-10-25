@@ -34,7 +34,9 @@ import { deliveredTodayOrders, groupOrdersForList } from '@/lib/order-list-group
 import { readJsonBody } from '@/lib/http-json';
 import { orderDateLabel, orderDateTime } from '@/lib/order-date';
 import { PriceApprovalCard } from './price-approval-card';
-import { courierChoices, isLocalDelivery, istToday, LOCAL_DELIVERY, type DispatchMode } from '@/lib/dispatch-options';
+import { BillingSheetPanel } from './billing-sheet-panel';
+import { BILLING_ROLES, BILLING_STATUSES } from '@/lib/billing-sheet';
+import { courierChoices, defaultReceiver, isLocalDelivery, istToday, LOCAL_DELIVERY, type DispatchMode } from '@/lib/dispatch-options';
 import { hasAnyStockFlowRole, type StockFlowRole } from '@/lib/user-types';
 import type { TallyRecentProducts } from '@/lib/tally-recent-products';
 
@@ -940,7 +942,7 @@ function OrderRow({
   const [cancelling, setCancelling] = useState(false);
   const [cancelReason, setCancelReason] = useState('');
   const [detailsLoaded, setDetailsLoaded] = useState(false);
-  const pricing = useOrderPricing(order);
+  const pricing = useOrderPricing(order, hasAnyStockFlowRole(roles, ['administrator', 'management', 'accounts']));
   const [detailHistory, setDetailHistory] = useState<{ exceptions: DeliveryException[]; installations: EquipmentInstallation[] } | null>(null);
   const [detailState, setDetailState] = useState<'idle' | 'loading' | 'error'>('idle');
   const canReviewPricing = hasAnyStockFlowRole(roles, ['administrator', 'accounts', 'management']) && !['billed_in_tally','ready_for_dispatch','dispatched','delivered','cancelled'].includes(order.status);
@@ -1002,6 +1004,7 @@ function OrderRow({
       <OrderNextStepBar order={order} roles={roles} pricing={pricing} inOrderPage={inOrderPage} onAdvance={onAdvance} onDelivery={onDelivery} onPricingChanged={onPricingChanged} />
       </div>
       {pricing.workspace?.pricingState === 'approval_required' ? <PriceApprovalCard workspace={pricing.workspace} /> : null}
+      {(BILLING_STATUSES as readonly string[]).includes(order.status) && hasAnyStockFlowRole(roles, [...BILLING_ROLES]) ? <BillingSheetPanel order={order} /> : null}
       <details className="mt-3 rounded-xl border border-sf-line-soft bg-sf-soft-0 text-sm">
         <summary className="flex min-h-10 cursor-pointer list-none items-center justify-between gap-3 px-3 font-bold text-sf-label marker:hidden [&::-webkit-details-marker]:hidden">
           <span>More order controls</span>
@@ -1062,9 +1065,10 @@ function BillingReviewPanel({ order, actorRole, actorRoles, onSave }: { order: O
 
 const currency = new Intl.NumberFormat('en-IN', { style: 'currency', currency: 'INR', maximumFractionDigits: 2 });
 
-function useOrderPricing(order: OrderSummary) {
+/** Full pricing (cost, margin, history) for pricing roles only; billing and other roles never request it. */
+function useOrderPricing(order: OrderSummary, enabled = true) {
   const readKey = `${order.id}:${order.pricingState}:${order.status}`;
-  const autoLoad = order.pricingState !== 'approved' && !['delivered', 'cancelled'].includes(order.status);
+  const autoLoad = enabled && order.pricingState !== 'approved' && !['delivered', 'cancelled'].includes(order.status);
   const [result, setResult] = useState<{ key: string; workspace: OrderPricingWorkspace | null; state: 'idle' | 'loading' | 'error'; message: string }>(() => ({ key: readKey, workspace: null, state: autoLoad ? 'loading' : 'idle', message: '' }));
   const request = useRef<AbortController | null>(null);
   const read = useCallback((controller: AbortController) => {
@@ -1077,12 +1081,13 @@ function useOrderPricing(order: OrderSummary) {
     });
   }, [order.id, readKey]);
   const reload = useCallback(async () => {
+    if (!enabled) return;
     request.current?.abort();
     const controller = new AbortController();
     request.current = controller;
     setResult(current => ({ ...current, key: readKey, state: 'loading', message: '' }));
     await read(controller);
-  }, [read, readKey]);
+  }, [enabled, read, readKey]);
   useEffect(() => {
     if (order.pricingState === 'approved') return () => request.current?.abort();
     if (autoLoad) {
@@ -1147,6 +1152,8 @@ function OrderNextStepBar({ order, roles, pricing, inOrderPage, onAdvance, onDel
   const informational = ['loading', 'waiting', 'pricing_waiting', 'done', 'none'].includes(step.kind);
   // Pricing staleness only matters while deciding a price, not when dispatching or delivering.
   const pricingStep = step.kind.startsWith('pricing_') || step.kind === 'loading' || sheet === 'price' || sheet === 'reject';
+  // One tap: delivered now, received by the customer. "Add receiver / POD…" records a named person or POD.
+  const deliverNow = () => run(() => onDelivery(order, { action: 'confirm_delivery', payload: { orderId: order.id, expectedVersion: order.version, deliveredAt: new Date().toISOString(), receivedBy: defaultReceiver(order), podReference: '' } }), 'Moved to Delivered');
   const dispatchLocally = () => run(() => onDelivery(order, { action: 'save_dispatch', payload: { orderId: order.id, expectedVersion: order.version, ...LOCAL_DELIVERY, dispatchDate: istToday(), vehicleNumber: '' } }), 'Dispatched · local delivery');
   if (step.kind === 'none') return null;
   return <section aria-label="Order next step" className={inOrderPage ? 'fixed inset-x-0 bottom-0 z-50 flex max-h-[70vh] min-w-0 flex-col gap-2 overflow-y-auto border-t border-sf-line-soft bg-white/95 px-3 pt-3 backdrop-blur' : 'flex max-h-[70vh] min-w-0 w-full flex-col gap-2 overflow-y-auto lg:min-w-48'} style={inOrderPage ? { paddingBottom: 'max(0.75rem, env(safe-area-inset-bottom))' } : undefined}>
@@ -1166,6 +1173,9 @@ function OrderNextStepBar({ order, roles, pricing, inOrderPage, onAdvance, onDel
         {step.kind === 'dispatch' ? <>
           <button type="button" className={primary} disabled={busy} onClick={() => void dispatchLocally()}>{busy ? 'Dispatching…' : 'Dispatch · Local delivery'}</button>
           <button type="button" disabled={busy} onClick={() => setSheet('dispatch')} className="min-h-11 rounded-xl border border-sf-line px-4 font-bold text-sf-body">Outstation courier…</button>
+        </> : step.kind === 'deliver' ? <>
+          <button type="button" className={primary} disabled={busy} onClick={() => void deliverNow()}>{busy ? 'Confirming…' : 'Confirm delivered'}</button>
+          <button type="button" disabled={busy} onClick={() => setSheet('deliver')} className="min-h-11 rounded-xl border border-sf-line px-4 font-bold text-sf-body">Add receiver / POD…</button>
         </> : <button type="button" className={primary} disabled={busy || (step.kind.startsWith('pricing_') && (stale || pricing.state === 'loading')) || (step.kind === 'advance' && order.status === 'awaiting_tally_billing' && !invoice.trim())} onClick={() => {
           if (step.kind === 'advance') void run(() => onAdvance(order, invoice), `Moved to ${statusLabel(nextStatus[order.status].status)}`);
           else if (step.kind === 'pricing_apply') void run(() => pricingCommand('apply_governed_order_pricing'), 'Price approved');
@@ -1419,7 +1429,7 @@ function useFulfilmentDraft(order: OrderSummary) {
   const [dispatchDate, setDispatchDate] = useState(order.dispatchDate || istToday());
   const [vehicleNumber, setVehicleNumber] = useState(order.vehicleNumber || '');
   const [deliveredAt, setDeliveredAt] = useState(order.deliveredAt ? localDateTimeValue(new Date(order.deliveredAt)) : localDateTimeValue());
-  const [receivedBy, setReceivedBy] = useState(order.receivedBy || '');
+  const [receivedBy, setReceivedBy] = useState(order.receivedBy || defaultReceiver(order));
   const [podReference, setPodReference] = useState(order.podReference || '');
   const [baseVersion, setBaseVersion] = useState(order.version);
   function resetDrafts() {
@@ -1428,7 +1438,7 @@ function useFulfilmentDraft(order: OrderSummary) {
     setDispatchDate(order.dispatchDate || istToday());
     setVehicleNumber(order.vehicleNumber || '');
     setDeliveredAt(order.deliveredAt ? localDateTimeValue(new Date(order.deliveredAt)) : localDateTimeValue());
-    setReceivedBy(order.receivedBy || '');
+    setReceivedBy(order.receivedBy || defaultReceiver(order));
     setPodReference(order.podReference || '');
     setBaseVersion(order.version);
   }

@@ -20,3 +20,9 @@ export function courierChoices(current?: string | null) {
   const name = current?.trim();
   return name && name !== LOCAL_DELIVERY.courierName && !OUTSTATION_COURIERS.includes(name as never) ? [...OUTSTATION_COURIERS, name] : [...OUTSTATION_COURIERS];
 }
+
+/** Who received a one-tap delivery: the customer, as recorded on the order (2–160 characters). */
+export function defaultReceiver(order: { customerName?: string | null }) {
+  const name = (order.customerName ?? '').trim().slice(0, 160);
+  return name.length >= 2 ? name : 'Customer';
+}

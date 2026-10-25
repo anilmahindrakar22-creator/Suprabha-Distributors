@@ -42,7 +42,9 @@ function SectionLoading() {
 export function StockFlowFrame({ actorEmail, actorRole, actorRoles, staffAuth = false, staffEmailActionsEnabled = false }: { actorEmail: string; actorRole: string; actorRoles?: StockFlowRole[]; staffAuth?: boolean; staffEmailActionsEnabled?: boolean }) {
   const roles = actorRoles ?? [actorRole as StockFlowRole];
   const [surface, setSurface] = useState<Surface>('stock');
-  const [orderFilter, setOrderFilter] = useState('open');
+  // Billing-only staff open Orders on the Bill queue; everyone else on Active.
+  const homeOrderFilter = hasAnyStockFlowRole(roles, ['billing']) && !hasAnyStockFlowRole(roles, ['administrator', 'management', 'operations', 'sales', 'warehouse', 'accounts']) ? 'billing' : 'open';
+  const [orderFilter, setOrderFilter] = useState(homeOrderFilter);
   const [deviceNotice, setDeviceNotice] = useState('');
   const [readyEmail, setReadyEmail] = useState('');
   const signOutInFlight = useRef(false);
@@ -212,7 +214,7 @@ export function StockFlowFrame({ actorEmail, actorRole, actorRoles, staffAuth = 
   function openSurface(item: Surface) {
     setMoreOpen(false);
     if (item === 'orders' && surface !== 'orders') {
-      setOrderFilter('open');
+      setOrderFilter(homeOrderFilter);
       setOrderView((current) => ({ query: '', nonce: current.nonce + 1 }));
     }
     setSurface(item);
