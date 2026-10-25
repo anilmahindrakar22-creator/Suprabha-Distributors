@@ -46,9 +46,12 @@ export async function GET(request: Request) {
       if (!validPriceContractLookup(customerId, tallyKey)) return failure('Invalid customer price filters', 400);
       return Response.json(await callOrderGateway(email, 'list_price_contracts', { ...(customerId ? { customerId } : {}), ...(tallyKey ? { tallyKey } : {}) }), { headers: privateHeaders });
     }
+    if (parameters.get('rateExceptions') === '1') return Response.json(await callOrderGateway(email, 'get_order_pricing', { view: 'rate_exceptions' }), { headers: privateHeaders });
     if (!validPricingLookup(orderId, pricingDate)) return failure('Valid pricing lookup is required', 400);
     // view=billing returns the approved-price billing sheet only (billing, accounts, management, administrators).
     if (parameters.get('view') === 'billing') return Response.json(await callOrderGateway(email, 'get_order_pricing', { orderId, view: 'billing' }), { headers: privateHeaders });
+    // view=rate_check returns Tally rates against approved prices only (accounts, management, administrators).
+    if (parameters.get('view') === 'rate_check') return Response.json(await callOrderGateway(email, 'get_order_pricing', { orderId, view: 'rate_check' }), { headers: privateHeaders });
     return Response.json(await callOrderGateway<OrderPricingWorkspace>(email, 'get_order_pricing', {
       orderId,
       ...(pricingDate ? { pricingDate } : {}),

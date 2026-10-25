@@ -66,4 +66,18 @@ describe('bounded order list query', () => {
     expect(result.orders).toHaveLength(2);
     expect(result.pagination).toEqual({ page: 2, pageCount: 2, pageSize: 20, total: 22 });
   });
+
+  it('excludes invoices matching packed quantities and retains invoices exceeding them', () => {
+    const billed = [1, 2].map((index) => order(index, {
+      status: 'billed_in_tally', tallyInvoiceNumber: `INV-${index}`, totalQuantity: 3,
+      lines: [{ ...order(index).lines[0], quantity: 3, fulfilledQuantity: 2 }],
+    }));
+    const invoices = billed.map((item, index) => ({
+      voucherNumber: item.tallyInvoiceNumber!, reference: null, party: item.customerName,
+      date: '20260907', masterId: item.id, lineItems: [{ itemName: item.lines[0].itemName, quantity: index === 0 ? 2 : 3 }],
+    }));
+    const result = queryBillingAttentionList(billed, invoices, '2026-09-07T11:55:00+05:30', 1, new Date('2026-09-07T12:00:00+05:30'));
+    expect(result.orders).toEqual([billed[1]]);
+    expect(result.pagination).toEqual({ page: 1, pageCount: 1, pageSize: 20, total: 1 });
+  });
 });
