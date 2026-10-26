@@ -122,9 +122,32 @@ begin
     or not exists(select 1 from private.stockflow_order_pricing_decisions where order_line_id=v_line and state='approved' and approved_by_email='concurrent-a@test.local')
     or not exists(select 1 from private.stockflow_orders where id=v_order and pricing_state='approved' and pricing_snapshot_id is not null)
   then raise exception 'Winning exception approval did not persist its complete state'; end if;
-  if (select count(*) from private.stockflow_pricing_events)<>v_events+1
+  if (select count(*) from private.stockflow_pricing_events)<>v_events+2
+    or (select count(*) from private.stockflow_pricing_events
+      where entity_type='price_exception' and entity_id=v_exception and event_type='price_exception_approved'
+        and actor_email='concurrent-a@test.local' and request_id='concurrent-exception-first')<>1
+    or (select count(*) from private.stockflow_pricing_events e
+      join private.stockflow_customer_product_prices p on p.id=e.entity_id
+      where e.entity_type='customer_price' and e.event_type='customer_price_remembered'
+        and p.origin_exception_id=v_exception and e.actor_email='concurrent-a@test.local'
+        and e.request_id=v_exception::text)<>1
+    or (select count(*) from private.stockflow_customer_product_prices where origin_exception_id=v_exception)<>1
+    or not exists(select 1 from private.stockflow_customer_product_prices
+      where origin_exception_id=v_exception and created_by_email='concurrent-a@test.local'
+        and approved_by_email='concurrent-a@test.local')
+    or exists(select 1 from private.stockflow_customer_product_prices
+      where origin_exception_id=v_exception
+        and (created_by_email='concurrent-b@test.local' or approved_by_email='concurrent-b@test.local'))
+    or exists(select 1 from private.stockflow_pricing_events
+      where request_id='concurrent-exception-second'
+        or (actor_email='concurrent-b@test.local'
+          and (entity_id=v_exception or metadata->>'orderId'=v_order::text
+            or entity_id in (select id from private.stockflow_customer_product_prices where origin_exception_id=v_exception))))
     or (select count(*) from private.stockflow_outbox)<>v_outbox+1
     or (select count(*) from private.stockflow_billing_snapshots)<>v_snapshots+1
+    or (select count(*) from private.stockflow_command_results
+      where actor_email='concurrent-a@test.local' and action='approve_price_exception'
+        and idempotency_key='concurrent-exception-first' and result=v_first_result)<>1
     or exists(select 1 from private.stockflow_command_results where idempotency_key='concurrent-exception-second')
   then raise exception 'Concurrent exception approval left duplicate or partial state'; end if;
 end $exception_approval_race$;

@@ -26,7 +26,7 @@ import { retryPendingOfflineOrder } from '@/lib/offline-order-retry';
 import { acknowledgeOrderCommand, prepareOrderCommandRetry } from '@/lib/order-command-idempotency';
 import { loadOrderCatalog, loadOrderCustomers } from '@/lib/order-capture-masters';
 import { recordOrderClientTiming } from '@/lib/order-client-timing';
-import type { OrderPricingWorkspace, PricingLineResolution } from '@/lib/pricing-types';
+import { PRICE_CHANGE_ROLES, type OrderPricingWorkspace, type PricingLineResolution } from '@/lib/pricing-types';
 import { PricingOptions } from './pricing-options';
 import { ProductRequest } from './product-request';
 import { BackIcon, ChevronDownIcon, CompactOrderRow, OrderFlagBadge, OrderProgress, OrderStageChips, orderStageStyle, snapshotTimeLabel, type StageFilter } from './order-list';
@@ -35,6 +35,8 @@ import { readJsonBody } from '@/lib/http-json';
 import { orderDateLabel, orderDateTime } from '@/lib/order-date';
 import { PriceApprovalCard } from './price-approval-card';
 import { BillingSheetPanel } from './billing-sheet-panel';
+import { RateCheckPanel } from './rate-check-panel';
+import { RATE_CHECK_ROLES, RATE_CHECK_STATUSES } from '@/lib/rate-check';
 import { BILLING_ROLES, BILLING_STATUSES } from '@/lib/billing-sheet';
 import { courierChoices, defaultReceiver, isLocalDelivery, istToday, LOCAL_DELIVERY, type DispatchMode } from '@/lib/dispatch-options';
 import { hasAnyStockFlowRole, type StockFlowRole } from '@/lib/user-types';
@@ -1050,7 +1052,8 @@ function OrderRow({
             <dt className="font-bold text-sf-subtle">Notes</dt><dd>{order.notes || 'No notes'}</dd>
           </dl>
         </div>
-          {lineMatch.state === 'mismatch' ? <div className="mt-3 rounded-xl border border-sf-danger-line bg-sf-danger-soft p-3"><p className="text-xs font-extrabold uppercase tracking-wide text-sf-danger">Tally invoice differences</p><ul className="mt-2 space-y-1 text-sm text-sf-danger">{lineMatch.differences.map((difference) => <li key={difference.itemName}>{difference.itemName}: ordered {formatQuantity(difference.orderedQuantity)}, invoiced {formatQuantity(difference.invoicedQuantity)}</li>)}</ul><BillingReviewPanel order={order} actorRole={actorRole} actorRoles={roles} onSave={onBillingReview} /></div> : null}
+          {lineMatch.state === 'mismatch' ? <div className="mt-3 rounded-xl border border-sf-danger-line bg-sf-danger-soft p-3"><p className="text-xs font-extrabold uppercase tracking-wide text-sf-danger">Tally invoice differences</p><ul className="mt-2 space-y-1 text-sm text-sf-danger">{lineMatch.differences.map((difference) => <li key={difference.itemName}>{difference.itemName}: {lineMatch.quantitySource === 'packed' ? 'packed' : 'ordered'} {formatQuantity(difference.expectedQuantity)}, invoiced {formatQuantity(difference.invoicedQuantity)}</li>)}</ul><BillingReviewPanel order={order} actorRole={actorRole} actorRoles={roles} onSave={onBillingReview} /></div> : null}
+        {order.tallyInvoiceNumber && (RATE_CHECK_STATUSES as readonly string[]).includes(order.status) && hasAnyStockFlowRole(roles, [...RATE_CHECK_ROLES]) ? <RateCheckPanel orderId={order.id} /> : null}
         {!['cancelled', 'delivered'].includes(order.status) ? <FulfilmentEditor order={order} onSave={onSaveFulfilment} /> : null}
         {['ready_for_dispatch', 'dispatched', 'delivered'].includes(order.status) ? <DispatchPanel key={order.status} order={order} actorRole={actorRole} actorRoles={roles} onSave={onDelivery} /> : null}
         {['phone_order_received','awaiting_confirmation','awaiting_approval','confirmed','partially_reserved','fully_reserved','ready_for_picking','picked','packed'].includes(order.status) ? <OrderEditPanel order={order} onSave={onEdit} /> : null}
@@ -1130,14 +1133,23 @@ function OrderNextStepBar({ order, roles, pricing, inOrderPage, onAdvance, onDel
   const [error, setError] = useState('');
   const [success, setSuccess] = useState('');
   const [reason, setReason] = useState('');
+  const [changedRate, setChangedRate] = useState('');
+  const saveKey = `${order.id}:${step.exception?.id ?? ''}:${step.exception?.version ?? ''}`;
+  const [saveChoice, setSaveChoice] = useState<{ key: string; value: boolean } | null>(null);
+  const saveAsCustomerPrice = saveChoice?.key === saveKey ? saveChoice.value : true;
   const [invoice, setInvoice] = useState(order.tallyInvoiceNumber || '');
   const governedRequest = useRef<{ version: number; idempotencyKey: string } | null>(null);
+  const priceChangeRequest = useRef<{ fingerprint: string; idempotencyKey: string } | null>(null);
+  useEffect(() => { if (sheet !== 'change') priceChangeRequest.current = null; }, [sheet]);
   useEffect(() => {
     if (!success) return;
     const timer = window.setTimeout(() => setSuccess(''), 4000);
     return () => window.clearTimeout(timer);
   }, [success]);
   const stale = Boolean(pricing.workspace && pricing.workspace.orderVersion < order.version);
+  const newRate = Number(changedRate);
+  const validChangedRate = Number.isFinite(newRate) && newRate > 0 && newRate <= 100_000_000 && Math.abs(Math.round(newRate * 100) - newRate * 100) < 1e-6;
+  const canChangePrice = hasAnyStockFlowRole(roles, [...PRICE_CHANGE_ROLES]);
   async function run(work: () => Promise<void>, message: string) {
     if (busy) return;
     setBusy(true); setError('');
@@ -1145,7 +1157,7 @@ function OrderNextStepBar({ order, roles, pricing, inOrderPage, onAdvance, onDel
     catch (cause) { setError(cause instanceof Error ? cause.message : 'Unable to complete the step'); }
     finally { setBusy(false); }
   }
-  async function pricingCommand(action: 'apply_governed_order_pricing' | 'approve_price_exception' | 'reject_price_exception') {
+  async function pricingCommand(action: 'apply_governed_order_pricing' | 'approve_price_exception' | 'reject_price_exception', changedRate?: number) {
     if (!pricing.workspace || stale || pricing.state === 'loading') return;
     let payload;
     if (action === 'apply_governed_order_pricing') {
@@ -1153,16 +1165,34 @@ function OrderNextStepBar({ order, roles, pricing, inOrderPage, onAdvance, onDel
       payload = { orderId: order.id, expectedVersion: pricing.workspace.orderVersion, idempotencyKey: governedRequest.current.idempotencyKey };
     } else {
       if (!step.exception) return;
-      payload = { exceptionId: step.exception.id, expectedVersion: step.exception.version, reason: action === 'approve_price_exception' ? 'Price reviewed and approved' : reason.trim(), idempotencyKey: crypto.randomUUID() };
+      if (changedRate !== undefined) {
+        if (action !== 'approve_price_exception' || !canChangePrice || !validChangedRate || reason.trim().length < 3 || reason.length > 1000) return;
+        const fingerprint = JSON.stringify([step.exception.id, step.exception.version, changedRate, reason.trim(), saveAsCustomerPrice]);
+        if (priceChangeRequest.current?.fingerprint !== fingerprint) priceChangeRequest.current = { fingerprint, idempotencyKey: crypto.randomUUID() };
+        payload = { exceptionId: step.exception.id, expectedVersion: step.exception.version, changedRate, reason: reason.trim(), saveAsCustomerPrice, idempotencyKey: priceChangeRequest.current.idempotencyKey };
+      } else {
+        payload = { exceptionId: step.exception.id, expectedVersion: step.exception.version, reason: action === 'approve_price_exception' ? 'Price reviewed and approved' : reason.trim(), idempotencyKey: crypto.randomUUID(), ...(action === 'approve_price_exception' ? { saveAsCustomerPrice } : {}) };
+      }
     }
-    await readResponse(await fetch('/api/pricing', { method: 'POST', headers: { 'content-type': 'application/json' }, body: JSON.stringify({ action, payload }) }));
+    const response = await fetch('/api/pricing', { method: 'POST', headers: { 'content-type': 'application/json' }, body: JSON.stringify({ action, payload }) });
+    if (changedRate !== undefined && response.status >= 400 && response.status < 500 && response.status !== 408 && response.status !== 429) priceChangeRequest.current = null;
+    await readResponse(response);
+    if (changedRate !== undefined) priceChangeRequest.current = null;
     governedRequest.current = null;
     await onPricingChanged(); await pricing.reload();
   }
   const primary = 'min-h-12 w-full rounded-xl bg-sf-ink px-4 text-base font-bold text-white hover:bg-sf-ink-hover disabled:opacity-50';
+  const exceptionLine = pricing.workspace?.lines.find(line => line.lineId === step.exception?.lineId);
+  const savePriceCheckbox = <div>
+    <label className="flex min-h-11 items-center gap-3 text-sm font-bold text-sf-body">
+      <input type="checkbox" checked={saveAsCustomerPrice} disabled={busy || stale || pricing.state === 'loading'} onChange={event => setSaveChoice({ key: saveKey, value: event.target.checked })} className="size-4 shrink-0 accent-sf-accent" />
+      {pricing.workspace?.exceptions.length === 1 ? `Save as ${pricing.workspace.customerName}'s price for ${exceptionLine?.itemName ?? 'this item'}` : "Save as this customer's price for these items"}
+    </label>
+    <p className="text-xs text-sf-muted">Next orders use this price without approval until purchase cost rises over 2%.</p>
+  </div>;
   const informational = ['loading', 'waiting', 'pricing_waiting', 'done', 'none'].includes(step.kind);
   // Pricing staleness only matters while deciding a price, not when dispatching or delivering.
-  const pricingStep = step.kind.startsWith('pricing_') || step.kind === 'loading' || sheet === 'price' || sheet === 'reject';
+  const pricingStep = step.kind.startsWith('pricing_') || step.kind === 'loading' || ['price', 'reject', 'change'].includes(sheet);
   // One tap: delivered now, received by the customer. "Add receiver / POD…" records a named person or POD.
   const deliverNow = () => run(() => onDelivery(order, { action: 'confirm_delivery', payload: { orderId: order.id, expectedVersion: order.version, deliveredAt: new Date().toISOString(), receivedBy: defaultReceiver(order), podReference: '' } }), 'Moved to Delivered');
   const dispatchLocally = () => run(() => onDelivery(order, { action: 'save_dispatch', payload: { orderId: order.id, expectedVersion: order.version, ...LOCAL_DELIVERY, dispatchDate: istToday(), vehicleNumber: '' } }), 'Dispatched · local delivery');
@@ -1173,15 +1203,22 @@ function OrderNextStepBar({ order, roles, pricing, inOrderPage, onAdvance, onDel
     {pricingStep && (stale || pricing.state === 'error') ? <button type="button" disabled={busy || pricing.state === 'loading'} onClick={() => void pricing.reload()} className="min-h-11 rounded-xl border border-sf-line px-3 text-sm font-bold text-sf-body">Reload pricing</button> : null}
     {pricingStep && stale ? <p className="text-sm text-sf-warning">This order changed. Reload pricing before submitting.</p> : null}
     {sheet ? <div className="min-w-0 space-y-3">
-      <button type="button" disabled={busy} onClick={() => { setSheet(''); setReason(''); }} className="min-h-11 rounded-lg border border-sf-line px-4 font-bold text-sf-body">Cancel</button>
+      <button type="button" disabled={busy} onClick={() => { setSheet(''); setReason(''); setChangedRate(''); priceChangeRequest.current = null; }} className="min-h-11 rounded-lg border border-sf-line px-4 font-bold text-sf-body">Cancel</button>
       {sheet === 'price' ? <PricingPanel order={order} actorRole={roles[0]} actorRoles={roles} pricing={pricing} sheet onSavingChange={setBusy} onChanged={async () => { await onPricingChanged(); setSheet(''); }} /> : null}
       {sheet === 'reject' ? <><label className="block text-sm font-bold text-sf-body">Rejection reason<input required minLength={3} maxLength={1000} value={reason} onChange={event => setReason(event.target.value)} className="mt-1 min-h-11 w-full min-w-0 rounded-lg border border-sf-line px-3" /></label><button type="button" disabled={busy || stale || reason.trim().length < 3} onClick={() => void run(() => pricingCommand('reject_price_exception'), 'Price rejected')} className={primary}>Reject price</button></> : null}
+      {sheet === 'change' ? <>
+        <label className="block text-sm font-bold text-sf-body">New price per unit (₹)<input aria-label={`New price per unit (₹) for ${order.orderNumber}`} type="number" inputMode="decimal" min="0.01" max="100000000" step="0.01" required disabled={busy} value={changedRate} onChange={event => setChangedRate(event.target.value)} className="mt-1 min-h-11 w-full min-w-0 rounded-lg border border-sf-line px-3" /></label>
+        <label className="block text-sm font-bold text-sf-body">Reason for the change<input aria-label={`Reason for the change for ${order.orderNumber}`} required minLength={3} maxLength={1000} disabled={busy} value={reason} onChange={event => setReason(event.target.value)} className="mt-1 min-h-11 w-full min-w-0 rounded-lg border border-sf-line px-3" /></label>
+        {savePriceCheckbox}
+        <button type="button" disabled={busy || stale || pricing.state === 'loading' || step.kind !== 'pricing_approve' || !canChangePrice || !validChangedRate || reason.trim().length < 3} onClick={() => void run(() => pricingCommand('approve_price_exception', newRate), 'Price changed and approved')} className={primary}>{busy ? 'Saving…' : `Approve ₹${(Number.isFinite(newRate) ? newRate : 0).toLocaleString('en-IN', { maximumFractionDigits: 2 })}`}</button>
+      </> : null}
       {sheet === 'pack' ? <PackQuantitiesForm order={order} busy={busy} onSave={(lines) => run(() => onPack(order, lines), 'Moved to Packed')} /> : null}
       {sheet === 'dispatch' ? <DispatchForm order={order} actorRoles={roles} initialMode="outstation" onSave={(current, command) => run(() => onDelivery(current, command), 'Moved to Dispatched')} /> : null}
       {sheet === 'deliver' ? <DeliveryForm order={order} actorRoles={roles} onSave={(current, command) => run(() => onDelivery(current, command), 'Moved to Delivered')} /> : null}
     </div> : <>
       {informational ? <p className={`flex items-center gap-2 py-2 text-sm font-bold ${step.kind === 'done' ? 'text-sf-success' : 'text-sf-muted'}`}>{step.kind === 'done' ? <CircleCheck aria-hidden="true" size={16} /> : <Clock aria-hidden="true" size={16} />}{step.label}</p> : <>
         {step.kind === 'advance' && order.status === 'awaiting_tally_billing' ? <label className="text-xs font-bold text-sf-muted">Tally invoice number(s)<input maxLength={160} value={invoice} onChange={event => setInvoice(event.target.value)} placeholder="Use commas for split invoices" className="mt-1 min-h-10 w-full rounded-lg border border-sf-line px-3 font-normal text-sf-strong" /></label> : null}
+        {step.kind === 'pricing_approve' ? savePriceCheckbox : null}
         {step.kind === 'advance' && nextStatus[order.status]?.status === 'packed' ? <>
           <button type="button" className={primary} disabled={busy} onClick={() => void run(() => onPack(order, order.lines.map((line) => ({ tallyKey: line.tallyKey, fulfilledQuantity: Number(line.quantity) }))), 'Moved to Packed')}>{busy ? 'Saving…' : 'Packed · all items'}</button>
           <button type="button" disabled={busy} onClick={() => setSheet('pack')} className="min-h-11 rounded-xl border border-sf-line px-4 font-bold text-sf-body">Packed with shortage…</button>
@@ -1197,6 +1234,7 @@ function OrderNextStepBar({ order, roles, pricing, inOrderPage, onAdvance, onDel
           else if (step.kind === 'pricing_approve') void run(() => pricingCommand('approve_price_exception'), 'Price approved');
           else setSheet(step.kind === 'pricing_enter' ? 'price' : step.kind);
         }}>{busy ? 'Updating…' : step.label}</button>}
+        {step.kind === 'pricing_approve' && canChangePrice ? <button type="button" disabled={busy || stale} onClick={() => { setChangedRate(String(step.exception!.enteredRate)); setReason(''); setError(''); setSheet('change'); }} className="min-h-11 rounded-xl border border-sf-line px-4 font-bold text-sf-body">Change price…</button> : null}
         {step.kind === 'pricing_approve' ? <button type="button" disabled={busy || stale} onClick={() => setSheet('reject')} className="min-h-11 rounded-xl border border-sf-danger-line px-4 font-bold text-sf-danger">Reject</button> : null}
       </>}
     </>}
