@@ -11,7 +11,7 @@ const source = new Map(readdirSync(fileURLToPath(directory)).filter((name) => na
 describe('read-only pricing release preflight', () => {
   it('validates the saved production evidence after deployment', () => {
     const result = pricingReleasePreflight(original, source);
-    expect(result.pending).toEqual(['20261025090000_billing_role.sql', '20261026090000_billing_rate_check.sql', '20261026100000_approver_price_change.sql', '20261026110000_remembered_customer_price.sql', '20261026120000_ist_dispatch_date.sql']);
+    expect(result.pending).toEqual(['20261025090000_billing_role.sql', '20261026090000_billing_rate_check.sql', '20261026100000_approver_price_change.sql', '20261026110000_remembered_customer_price.sql', '20261026120000_ist_dispatch_date.sql', '20261026130000_billing_snapshot_shapes.sql']);
     expect(result.deployed.at(-1)?.localFile).toBe('20261019180000_economics_detail_read.sql');
     expect(result.deployed).toHaveLength(139);
     const names = result.deployed.map((entry: { localFile: string }) => entry.localFile);
@@ -26,7 +26,7 @@ describe('read-only pricing release preflight', () => {
   });
   it('accepts documented CRLF normalization without modifying source', () => {
     const crlf = new Map([...source].map(([name, sql]) => [name, sql.replace(/\r/g, '').replace(/\n/g, '\r\n')]));
-    expect(pricingReleasePreflight(original, crlf).pending).toHaveLength(5);
+    expect(pricingReleasePreflight(original, crlf).pending).toHaveLength(6);
   });
   it('rejects changed SQL including changes inside literals', () => {
     const files = new Map(source);
