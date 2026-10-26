@@ -24,7 +24,7 @@ async function mockOrders(page: Page) {
 test('phone alerts stay hidden until the server enables push', async ({ page }) => {
   await notificationPermission(page, 'default');
   await mockOrders(page);
-  await page.route('**/api/push-subscription', (route) => route.fulfill({ status: 404, json: { error: 'Not found' } }));
+  await page.route('**/api/push-subscription', (route) => route.fulfill({ json: { enabled: false, publicKey: null } }));
   await page.goto('/?view=frame&role=accounts');
   await page.getByRole('button', { name: /^Notifications/ }).click();
   await expect(page.getByRole('dialog', { name: 'Notifications' })).toBeVisible();

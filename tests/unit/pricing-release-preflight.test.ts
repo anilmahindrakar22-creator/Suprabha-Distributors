@@ -9,9 +9,60 @@ const original = JSON.parse(readFileSync(new URL('../../supabase/migration-histo
 const source = new Map(readdirSync(fileURLToPath(directory)).filter((name) => name.endsWith('.sql')).map((name) => [name, readFileSync(new URL(name, directory), 'utf8')]));
 
 describe('read-only pricing release preflight', () => {
+  it('keeps push fixtures on real order gateways and valid member/state literals', () => {
+    const fixture = readFileSync(new URL('../../supabase/tests/push_alerts.sql', import.meta.url), 'utf8');
+    expect(fixture).not.toMatch(/insert\s+into\s+private\.stockflow_(?:orders|order_events|order_lines|billing_snapshots)\b/i);
+    expect(fixture).not.toMatch(/update\s+private\.stockflow_(?:orders|order_events|order_lines)\b/i);
+    expect(fixture).not.toContain("'draft'");
+    expect(fixture).not.toMatch(/is\s+distinct\s+from\s+case\b/i);
+    expect(fixture).not.toMatch(/[\u00c2\u00c3\ufffd]/);
+    expect(fixture.trimEnd()).toMatch(/rollback;$/);
+    for (const action of ['create_order', 'transition_order', 'save_fulfilment', 'set_order_assignee']) {
+      expect(fixture).toContain(`'${action}'`);
+    }
+    const literals = (sql: string) => [...sql.matchAll(/'([^']+)'/g)].map((match) => match[1]);
+    const statesSql = source.get('20260902091533_centralize_order_policy.sql')!
+      .split('insert into private.stockflow_order_states(status, terminal) values')[1].split(';')[0];
+    const states = new Set(literals(statesSql));
+    const transitions = [...fixture.matchAll(/push_test_transition\(o,'([^']+)'/g)].map((match) => match[1]);
+    expect(transitions.length).toBeGreaterThan(0);
+    for (const status of ['awaiting_confirmation', ...transitions]) expect(states.has(status), status).toBe(true);
+    const transitionRules = source.get('20260902091533_centralize_order_policy.sql')!;
+    let previous = 'awaiting_confirmation';
+    for (const status of transitions) {
+      expect(transitionRules).toContain(`('${previous}','${status}',array[`);
+      previous = status;
+    }
+    const memberSql = source.get('20260830071657_create_stockflow_member_allowlist.sql')!;
+    const memberStatuses = new Set(literals(memberSql.match(/check \(status in \(([^)]+)\)\)/)![1]));
+    const rolesSql = source.get('20261025090000_billing_role.sql')!.match(/check \(role = any \(array\[([^\]]+)\]/)![1];
+    const roles = new Set(literals(rolesSql));
+    const memberInserts = [...fixture.matchAll(/insert into public\.stockflow_members[^;]+;/g)];
+    expect(memberInserts).toHaveLength(2);
+    for (const [statement] of memberInserts) {
+      for (const value of literals(statement.split('values')[1])) {
+        if (!value.includes('@')) expect(roles.has(value) || memberStatuses.has(value), value).toBe(true);
+      }
+    }
+    for (const match of fixture.matchAll(/update public\.stockflow_members set status\s*=\s*'([^']+)'/g)) {
+      expect(memberStatuses.has(match[1]), match[1]).toBe(true);
+    }
+    const roleSets = [...fixture.matchAll(/set roles\s*=\s*array\[([^\]]+)\]/g)];
+    for (const match of roleSets) {
+      const values = literals(match[1]);
+      expect(new Set(values).size).toBe(values.length);
+      for (const role of values) expect(roles.has(role), role).toBe(true);
+    }
+    const pushSql = source.get('20261026140000_push_alerts.sql')!;
+    const outcomes = new Set(literals(pushSql.match(/status text not null check \(status in \(([^)]+)\)/)![1]));
+    for (const match of fixture.matchAll(/'outcome',\s*'([^']+)'/g)) expect(outcomes.has(match[1]), match[1]).toBe(true);
+    const scopesSql = source.get('20260902145535_enforce_order_scope_and_state_constraints.sql')!;
+    const scopes = new Set(literals(scopesSql.match(/check \(scope in \(([^)]+)\)\)/)![1]));
+    for (const match of fixture.matchAll(/set scope\s*=\s*'([^']+)'/g)) expect(scopes.has(match[1]), match[1]).toBe(true);
+  });
   it('validates the saved production evidence after deployment', () => {
     const result = pricingReleasePreflight(original, source);
-    expect(result.pending).toEqual([]);
+    expect(result.pending).toEqual(['20261026140000_push_alerts.sql']);
     expect(result.deployed.at(-1)?.localFile).toBe('20261026130000_billing_snapshot_shapes.sql');
     expect(result.deployed).toHaveLength(145);
     const names = result.deployed.map((entry: { localFile: string }) => entry.localFile);
@@ -26,7 +77,7 @@ describe('read-only pricing release preflight', () => {
   });
   it('accepts documented CRLF normalization without modifying source', () => {
     const crlf = new Map([...source].map(([name, sql]) => [name, sql.replace(/\r/g, '').replace(/\n/g, '\r\n')]));
-    expect(pricingReleasePreflight(original, crlf).pending).toHaveLength(0);
+    expect(pricingReleasePreflight(original, crlf).pending).toHaveLength(1);
   });
   it('rejects changed SQL including changes inside literals', () => {
     const files = new Map(source);

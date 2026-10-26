@@ -6,7 +6,7 @@ import { Boxes, Building2, CloudDownload, Ellipsis, Inbox, ShoppingCart, Tags, T
 import { NotificationBell } from './notification-bell';
 import { BellIcon } from './order-list';
 import { startWorkNotifications, type WorkItem, type WorkNotificationState } from '@/lib/work-notifications';
-import { currentPushState, disablePush, enablePush, loadPushConfig, readOpenOrderLink, readOpenOrderMessage, type PushConfig, type PushState } from '@/lib/push-subscription';
+import { currentPushState, disablePush, disablePushBeforeSignOut, enablePush, loadPushConfig, readOpenOrderLink, readOpenOrderMessage, retryPendingPushRemoval, type PushConfig, type PushState } from '@/lib/push-subscription';
 import Image from 'next/image';
 import { readOrderDashboardMessage } from '@/lib/stockflow-navigation';
 import { prepareDeviceForAccount } from '@/lib/device-account-privacy';
@@ -87,14 +87,21 @@ export function StockFlowFrame({ actorEmail, actorRole, actorRoles, staffAuth = 
     signOutInFlight.current = true;
     setSigningOut(true);
     try {
-      // Stop phone alerts for this person (shared phones). Never waited on: it must not delay locking offline data.
-      void disablePush().catch(() => undefined);
+      await disablePushBeforeSignOut(actorEmail);
       await revokeOfflineVault(localStorage);
       const response = await withStaffSessionLock(() => fetch('/api/staff-auth', { method: 'DELETE', cache: 'no-store', signal: AbortSignal.timeout(15000) }));
       if (response.ok) window.location.assign('/staff-signin');
       else setDeviceNotice('Sign-out failed. Please retry before sharing this device.');
     } catch { setDeviceNotice('Sign-out failed. Please retry before sharing this device.'); }
     finally { signOutInFlight.current = false; setSigningOut(false); }
+  }
+
+  async function chatGPTSignOut() {
+    if (signOutInFlight.current) return;
+    signOutInFlight.current = true;
+    setSigningOut(true);
+    await disablePushBeforeSignOut(actorEmail);
+    window.top!.location.href = '/signout-with-chatgpt?return_to=/';
   }
 
   useEffect(() => {
@@ -104,13 +111,19 @@ export function StockFlowFrame({ actorEmail, actorRole, actorRoles, staffAuth = 
   }, []);
 
   useEffect(() => {
+    let previousEmail = '';
+    try { previousEmail = localStorage.getItem('stockflow:active-account:v1') || ''; } catch { /* Storage may be disabled. */ }
     const account = prepareDeviceForAccount(localStorage, sessionStorage, actorEmail);
-    const readyTimer = window.setTimeout(() => setReadyEmail(actorEmail), 0);
+    let active = true;
+    const readyTimer = window.setTimeout(() => {
+      void (async () => {
+        if (account.switched) await disablePushBeforeSignOut(previousEmail);
+        await retryPendingPushRemoval();
+        if (active) setReadyEmail(actorEmail);
+      })();
+    }, 0);
     let noticeTimer: number | undefined;
     if (account.switched) {
-      // A different person on this phone: drop the previous person's push subscription (the push service then
-      // reports it gone and the server deletes the row).
-      void disablePush().catch(() => undefined);
       void revokeOfflineVault(localStorage).catch(() => setDeviceNotice('Offline device lock failed. Do not share this device; retry sign-out.'));
       void Promise.all([
         import('@/lib/order-bootstrap-cache').then((module) => module.clearOrderBootstrapCache()),
@@ -128,6 +141,7 @@ export function StockFlowFrame({ actorEmail, actorRole, actorRoles, staffAuth = 
       ? window.setTimeout(warmOrderWorkspace, 1_500)
       : undefined;
     return () => {
+      active = false;
       window.clearTimeout(readyTimer);
       if (noticeTimer !== undefined) window.clearTimeout(noticeTimer);
       if (idleId !== undefined) window.cancelIdleCallback(idleId);
@@ -244,7 +258,7 @@ export function StockFlowFrame({ actorEmail, actorRole, actorRoles, staffAuth = 
   async function changePush(enable: boolean) {
     setPushState('working');
     try {
-      setPushState(enable ? await enablePush(pushConfig) : await disablePush());
+      setPushState(enable ? await enablePush(pushConfig, fetch, actorEmail) : await disablePush(fetch, actorEmail) ? 'off' : 'error');
     } catch {
       setPushState('error');
     }
@@ -265,7 +279,10 @@ export function StockFlowFrame({ actorEmail, actorRole, actorRoles, staffAuth = 
     if (!('serviceWorker' in navigator)) return;
     const receive = (event: MessageEvent) => {
       const order = readOpenOrderMessage(event.data);
-      if (order) openOrderRef.current(order);
+      if (order) {
+        openOrderRef.current(order);
+        event.ports[0]?.postMessage('ack');
+      }
     };
     navigator.serviceWorker.addEventListener('message', receive);
     return () => navigator.serviceWorker.removeEventListener('message', receive);
@@ -325,7 +342,7 @@ export function StockFlowFrame({ actorEmail, actorRole, actorRoles, staffAuth = 
         {notifiable ? <NotificationBell state={work} desktop={{ state: desktopPopups, onEnable: () => void enableDesktopPopups().then(setDesktopPopups), onDisable: () => setDesktopPopups(disableDesktopPopups()) }} ordersFilterFor={(queue) => workService.current?.ordersFilterFor(queue) ?? queue.statuses[0]} phone={pushState === 'hidden' ? undefined : { state: pushState, onEnable: () => void changePush(true), onDisable: () => void changePush(false) }} onSeen={markWorkSeen} onOpenOrder={openOrder} onOpenQueue={openQueue} onRetry={() => workService.current?.retry()} /> : null}
         {/* Sites owns the session cookie: use a full navigation, not a client router link. */}
         {/* oxlint-disable-next-line next/no-html-link-for-pages */}
-        {staffAuth ? <button type="button" disabled={signingOut} onClick={() => void staffSignOut()} aria-label={`Sign out ${actorEmail}`} className="min-h-11 rounded-lg border px-3 text-sm font-bold disabled:opacity-50">{signingOut ? 'Signing out…' : 'Sign out'}</button> : <a href="/signout-with-chatgpt?return_to=/" target="_top" aria-label={`Sign out ${actorEmail}`} title={`Signed in as ${actorEmail}`} className="inline-flex min-h-11 shrink-0 items-center rounded-lg border border-sf-line-soft px-2 text-xs font-bold text-sf-strong hover:bg-sf-soft sm:px-3 sm:text-sm">Sign out</a>}
+          {staffAuth ? <button type="button" disabled={signingOut} onClick={() => void staffSignOut()} aria-label={`Sign out ${actorEmail}`} className="min-h-11 rounded-lg border px-3 text-sm font-bold disabled:opacity-50">{signingOut ? 'Signing out…' : 'Sign out'}</button> : <a href="/signout-with-chatgpt?return_to=/" target="_top" onClick={(event) => { event.preventDefault(); void chatGPTSignOut(); }} aria-disabled={signingOut} aria-label={`Sign out ${actorEmail}`} title={`Signed in as ${actorEmail}`} className="inline-flex min-h-11 shrink-0 items-center rounded-lg border border-sf-line-soft px-2 text-xs font-bold text-sf-strong hover:bg-sf-soft sm:px-3 sm:text-sm">{signingOut ? 'Signing out…' : 'Sign out'}</a>}
         </div>
       </header>
       {deviceNotice ? <output className="flex shrink-0 items-center justify-between gap-3 border-b border-sf-warning-line bg-sf-warning-soft px-4 py-2 text-xs font-semibold text-sf-warning sm:px-6"><span className="inline-flex items-center gap-1"><TriangleAlert size={16} aria-hidden="true" className="shrink-0" />{deviceNotice}</span><button type="button" onClick={() => setDeviceNotice('')} className="min-h-8 shrink-0 rounded-lg px-3 font-bold hover:bg-sf-warning-line">Dismiss</button></output> : null}
