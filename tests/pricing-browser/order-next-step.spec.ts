@@ -1,22 +1,23 @@
 import { expect, test, type Locator, type Page } from '@playwright/test';
+import { orderSummary, orderLine, orderBootstrap, pricingWorkspace, pricingLine } from '../fixtures/api-builders';
 
 const orderId = '61000000-0000-4000-8000-000000000002';
 const lineId = '61000000-0000-4000-8000-000000000003';
 const exceptionId = '61000000-0000-4000-8000-000000000004';
 type Command = { action: string; payload: Record<string, unknown> };
 
-async function mockJourney(page: Page, role: string, initialStatus = 'packed', pending = false) {
+async function mockJourney(page: Page, role: 'management' | 'accounts' | 'administrator' | 'sales' | 'operations' | 'warehouse', initialStatus = 'packed', pending = false) {
   let status = initialStatus;
-  let pricingState = status === 'packed' ? pending ? 'approval_required' : 'review_required' : 'approved';
+  let pricingState: ReturnType<typeof pricingWorkspace>['pricingState'] = status === 'packed' ? pending ? 'approval_required' : 'review_required' : 'approved';
   let version = 1;
   let receivedBy = '';
   const commands: Command[] = [];
-  const order = () => ({
+  const order = () => orderSummary({
     id: orderId, orderNumber: 'SF-NEXT-001', customerName: 'Next Step Laboratory', customerPhone: null,
     status, pricingState, version, source: 'phone', notes: null,
     createdAt: new Date().toISOString(), updatedAt: new Date().toISOString(),
     lineCount: 1, totalQuantity: 1, reservedQuantity: 0, tallyInvoiceNumber: null,
-    lines: [{ id: lineId, tallyKey: 'GLUCOSE', itemName: 'Glucose', itemGroup: 'Diasys', quantity: 1, baseUnit: 'Nos', fulfilledQuantity: 1 }],
+    lines: [orderLine({ tallyKey: 'GLUCOSE', itemName: 'Glucose', itemGroup: 'Diasys', quantity: 1, baseUnit: 'Nos', fulfilledQuantity: 1 })],
     events: [], exceptions: [], installations: [], receivedBy,
     deliveredAt: status === 'delivered' ? new Date().toISOString() : null,
   });
@@ -32,12 +33,12 @@ async function mockJourney(page: Page, role: string, initialStatus = 'packed', p
       return route.fulfill({ json: { orderId, status, version } });
     }
     if (url.searchParams.has('detailsFor')) return route.fulfill({ json: { exceptions: [], installations: [] } });
-    return route.fulfill({ json: {
+    return route.fulfill({ json: orderBootstrap({
       actor: { email: `${role}@example.test`, role, roles: [role] },
       snapshot: { company: 'TEST', fetchedAt: new Date().toISOString(), catalog: [] },
       customers: [], orders: status === 'delivered' ? [] : [order()], operations: {},
       pagination: { total: status === 'delivered' ? 0 : 1, page: 1, pageCount: 1, pageSize: 20 },
-    } });
+    }) });
   });
   await page.route('**/api/pricing**', async route => {
     if (route.request().method() === 'POST') {
@@ -47,11 +48,11 @@ async function mockJourney(page: Page, role: string, initialStatus = 'packed', p
       version++;
       return route.fulfill({ json: { pricingState } });
     }
-    return route.fulfill({ json: {
+    return route.fulfill({ json: pricingWorkspace({
       orderId, orderNumber: order().orderNumber, customerId: null, customerName: order().customerName,
       orderVersion: version, pricingState, currentSnapshotId: null, history: [],
       exceptions: pricingState === 'approval_required' ? [{ id: exceptionId, lineId, enteredRate: 404.66, referenceRate: null, differenceAmount: null, differencePercent: null, reason: 'Customer agreed price', state: 'pending', requestedBy: 'sales@example.test', requestedAt: new Date().toISOString(), version: 7 }] : [],
-      lines: [{
+      lines: [pricingLine({
         lineId, tallyKey: 'GLUCOSE', itemName: 'Glucose', quantity: 1, fixed: false,
         resolution: 'NO_PRICE_HISTORY', guardrail: 'PRICE_REVIEW_REQUIRED', proposedRate: null,
         lastRate: null, historicCost: null, currentCost: 310, costChange: null, continuityPrice: null,
@@ -60,8 +61,8 @@ async function mockJourney(page: Page, role: string, initialStatus = 'packed', p
         differenceToCustomer: null, additionalGP: null, evidenceHash: 'a'.repeat(64), warnings: [],
         source: { type: 'NONE', reference: null, date: null, version: null }, recentRates: [], cost: null,
         margin: { grossProfitAmount: null, grossMarginPercent: null, previousGrossMarginPercent: null, erosionPercentagePoints: null }, suggestion: null,
-      }],
-    } });
+      })],
+    }) });
   });
   return commands;
 }

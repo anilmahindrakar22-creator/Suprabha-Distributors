@@ -214,6 +214,8 @@ end$$;
   Invoke-DatabaseCommand $psqlProgram @('-U',$databaseUser,'-X','-q','-v','ON_ERROR_STOP=1','-d',$database,'-f',(Join-Path $repository 'supabase/tests/ist_attention_dates.sql'))
   Write-Output 'PASS: India-date overdue, due-today and delivery attention lists and summary counts'
   Invoke-DatabaseCommand $psqlProgram @('-U',$databaseUser,'-X','-q','-v','ON_ERROR_STOP=1','-d',$database,'-f',(Join-Path $repository 'supabase/tests/billing_snapshot_shapes.sql'))
+  Invoke-DatabaseCommand $psqlProgram @('-U',$databaseUser,'-X','-q','-v','ON_ERROR_STOP=1','-d',$database,'-f',(Join-Path $repository 'supabase/tests/push_alerts.sql'))
+  Write-Output 'PASS: private push subscriptions, role handoffs, access checks, atomic claim races and idempotent delivery retries'
   Write-Output 'PASS: governed and exception snapshots, remembered repeat billing, rate checks and approved-decision safety'
   Write-Output 'PASS: billing role sees approved prices only, from billing stage, and may only mark billed'
   Write-Output 'PASS: combined-role commercial reads, proposals and approval separation'
@@ -272,6 +274,8 @@ end$$;
   Write-Output 'PASS: mapped-only costing retains earlier consumption, historical group members and native-return depletion'
   Invoke-DatabaseCommand $psqlProgram @('-U',$databaseUser,'-X','-q','-v','ON_ERROR_STOP=1','-d',$database,'-f',(Join-Path $repository 'supabase/tests/tally_recent_products.sql'))
   Write-Output 'PASS: customer-scoped Tally recent products, deduplication, quantities, prospect and authorization'
+  Invoke-DatabaseCommand $psqlProgram @('-U',$databaseUser,'-X','-q','-v','ON_ERROR_STOP=1','-d',$database,'-f',(Join-Path $repository 'supabase/tests/real_path_readers.sql'))
+  Write-Output 'PASS: real-path rate exceptions, billing review, order revisions, edit invalidation and packed shortage totals'
 } finally {
   if ($databaseCreated) { & $dropdbProgram -U $databaseUser --if-exists $database | Out-Null }
   if ($serverStartedByScript) { & $pgCtlProgram -D $postgresData -m fast -w stop | Out-Null }

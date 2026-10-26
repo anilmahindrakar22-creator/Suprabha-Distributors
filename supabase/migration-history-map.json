@@ -1053,6 +1053,13 @@
       "remoteVersion": null,
       "remoteSha256": null,
       "status": "not_deployed"
+    },
+    {
+      "localFile": "20261026140000_push_alerts.sql",
+      "localSha256": "cef8c72201ce4ac98f5cf0543ecc946e2fbf8f7c014c3f037d312ba5f624ad02",
+      "remoteVersion": null,
+      "remoteSha256": null,
+      "status": "not_deployed"
     }
   ],
   "liveCheck": {

@@ -1,18 +1,19 @@
 import { expect, test } from '@playwright/test';
+import { orderSummary, orderLine, rateCheck, orderBootstrap } from '../fixtures/api-builders';
 
-const order = {
+const order = orderSummary({
   id: '7c9e6679-7425-40de-944b-e07fc1f90ae7', orderNumber: 'SO/26-27/0060', customerName: 'Vaatsalya Test Hospital', customerPhone: null, status: 'billed_in_tally', source: 'phone', notes: null, version: 5,
   createdAt: '2026-10-24T05:00:00Z', updatedAt: '2026-10-25T05:00:00Z', lineCount: 1, totalQuantity: 3, reservedQuantity: 0, tallyInvoiceNumber: 'SD/26-27/9001', pricingState: 'approved',
-  lines: [{ tallyKey: 'STROMATOLYSER', itemName: 'Stromatolyser WH 500 Ml', itemGroup: 'Sysmex', quantity: 3, baseUnit: 'Nos', fulfilledQuantity: 2 }],
+  lines: [orderLine({ tallyKey: 'STROMATOLYSER', itemName: 'Stromatolyser WH 500 Ml', itemGroup: 'Sysmex', quantity: 3, baseUnit: 'Nos', fulfilledQuantity: 2 })],
   events: [], exceptions: [], installations: [],
-};
-const check = {
+});
+const check = rateCheck({
   view: 'rate_check', orderId: order.id, orderNumber: order.orderNumber, customerName: order.customerName, status: order.status, tolerance: 1, state: 'different', differentCount: 1,
   lines: [
     { lineId: 'l1', tallyKey: 'STROMATOLYSER', itemName: 'Stromatolyser WH 500 Ml', approvedRate: 4450, invoiceRates: [4448.5], difference: -1.5, state: 'different' },
     { lineId: 'l2', tallyKey: 'MATCHING', itemName: 'Matching item', approvedRate: 100, invoiceRates: [100], difference: 0, state: 'matches' },
   ],
-};
+});
 
 test('management sees Tally rate differences against the approved price', async ({ page, isMobile }, info) => {
   await page.route('**/api/pricing**', (route) => {
@@ -23,7 +24,7 @@ test('management sees Tally rate differences against the approved price', async 
     const url = new URL(route.request().url());
     if (url.searchParams.has('detailsFor')) return route.fulfill({ json: { exceptions: [], installations: [] } });
     const orders = url.searchParams.get('status') === 'history' ? [] : [order];
-    return route.fulfill({ json: { actor: { email: 'management@example.test', role: 'management', roles: ['management'] }, snapshot: { company: 'TEST', fetchedAt: new Date().toISOString(), catalog: [] }, customers: [], orders, operations: {}, pagination: { total: orders.length, page: 1, pageCount: 1, pageSize: 20 } } });
+    return route.fulfill({ json: orderBootstrap({ actor: { email: 'management@example.test', role: 'management', roles: ['management'] }, snapshot: { company: 'TEST', fetchedAt: new Date().toISOString(), catalog: [] }, customers: [], orders, operations: {}, pagination: { total: orders.length, page: 1, pageCount: 1, pageSize: 20 } }) });
   });
   await page.goto('/?view=orders-workspace');
   if (isMobile) await page.getByRole('button', { name: /^SO\/26-27\/0060/ }).click();
@@ -49,7 +50,7 @@ test('billing-only actor never requests a rate check', async ({ page, isMobile }
     const url = new URL(route.request().url());
     if (url.searchParams.has('detailsFor')) return route.fulfill({ json: { exceptions: [], installations: [] } });
     const orders = url.searchParams.get('status') === 'history' ? [] : [order];
-    return route.fulfill({ json: { actor: { email: 'billing@example.test', role: 'billing', roles: ['billing'] }, snapshot: { company: 'TEST', fetchedAt: new Date().toISOString(), catalog: [] }, customers: [], orders, operations: {}, pagination: { total: orders.length, page: 1, pageCount: 1, pageSize: 20 } } });
+    return route.fulfill({ json: orderBootstrap({ actor: { email: 'billing@example.test', role: 'billing', roles: ['billing'] }, snapshot: { company: 'TEST', fetchedAt: new Date().toISOString(), catalog: [] }, customers: [], orders, operations: {}, pagination: { total: orders.length, page: 1, pageCount: 1, pageSize: 20 } }) });
   });
   await page.goto('/?view=orders-workspace');
   if (isMobile) await page.getByRole('button', { name: /^SO\/26-27\/0060/ }).click();

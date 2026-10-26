@@ -1,8 +1,9 @@
 import { expect, test, type Page } from '@playwright/test';
+import { pricingWorkspace, pricingLine, orderBootstrap, orderSummary } from '../fixtures/api-builders';
 
-const pendingWorkspace = (approved: boolean) => ({
+const pendingWorkspace = (approved: boolean) => pricingWorkspace({
   orderId: 'o-wait', orderNumber: 'SO/26-27/0050', customerId: 'c1', customerName: 'Inbox Test Hospital', orderVersion: 2, pricingState: approved ? 'approved' : 'approval_required', currentSnapshotId: null,
-  lines: [{ lineId: 'l1', tallyKey: 'STROMATOLYSER', itemName: 'Stromatolyser WH 500 Ml', quantity: 1, recentRates: [{ rate: 4510, invoiceDate: '2026-10-15', invoiceReference: 'SD/26-27/0715', sourceVersion: 'a' }], cost: { id: 'k', amount: 3465, kind: 'purchase_price', effectiveAt: '2026-09-26', sourceReference: '222/26-27', sourceVersion: 'v', previousAmount: 3465, changeAmount: 0, changePercent: 0 }, warnings: [], policy: { version: 'p', minimumMarginPercent: 25, targetMarginPercent: null } }],
+  lines: [pricingLine({ lineId: 'l1', tallyKey: 'STROMATOLYSER', itemName: 'Stromatolyser WH 500 Ml', quantity: 1, recentRates: [{ rate: 4510, invoiceDate: '2026-10-15', invoiceReference: 'SD/26-27/0715', sourceVersion: 'a' }], cost: { id: 'k', amount: 3465, kind: 'purchase_price', effectiveAt: '2026-09-26', sourceReference: '222/26-27', sourceVersion: 'v', previousAmount: 3465, changeAmount: 0, changePercent: 0 }, warnings: [], policy: { version: 'p', minimumMarginPercent: 25, targetMarginPercent: null } })],
   exceptions: approved ? [] : [{ id: 'ex1', lineId: 'l1', referenceRate: 4450, enteredRate: 4450, differenceAmount: 0, differencePercent: 0, reason: 'Keep the last rate.', state: 'pending', requestedBy: 'sales@example.test', requestedAt: '2026-10-18T06:00:00Z', version: 4 }],
   history: [],
 });
@@ -11,10 +12,10 @@ async function mock(page: Page, posts: Array<Record<string, unknown>>) {
   let approved = false;
   await page.route('**/api/orders**', (route) => {
     const url = new URL(route.request().url());
-    if (url.searchParams.get('list') === '1') return route.fulfill({ json: { orders: [
-      { id: 'o-ok', orderNumber: 'SO/26-27/0049', customerName: 'Priced Lab', createdAt: '2026-10-17T06:00:00Z', pricingState: 'approved' },
-      { id: 'o-wait', orderNumber: 'SO/26-27/0050', customerName: 'Inbox Test Hospital', createdAt: '2026-10-18T06:00:00Z', pricingState: approved ? 'approved' : 'approval_required' },
-    ], pagination: { page: 1, pageCount: 1, pageSize: 20, total: 2 } } });
+    if (url.searchParams.get('list') === '1') return route.fulfill({ json: orderBootstrap({ orders: [
+      orderSummary({ id: 'o-ok', orderNumber: 'SO/26-27/0049', customerName: 'Priced Lab', createdAt: '2026-10-17T06:00:00Z', pricingState: 'approved' }),
+      orderSummary({ id: 'o-wait', orderNumber: 'SO/26-27/0050', customerName: 'Inbox Test Hospital', createdAt: '2026-10-18T06:00:00Z', pricingState: approved ? 'approved' : 'approval_required' }),
+    ], pagination: { page: 1, pageCount: 1, pageSize: 20, total: 2 } }) });
     return route.fulfill({ json: { customers: [] } });
   });
   await page.route('**/api/pricing**', (route) => {
@@ -73,7 +74,7 @@ test('management changes and approves an inbox price with a required reason', as
 });
 
 test('an empty capped inbox explains that later orders have not been checked', async ({ page }) => {
-  await page.route('**/api/orders**', route => route.fulfill({ json: new URL(route.request().url()).searchParams.has('list') ? { orders: [], pagination: { pageCount: 11 } } : { customers: [] } }));
+  await page.route('**/api/orders**', route => route.fulfill({ json: new URL(route.request().url()).searchParams.has('list') ? orderBootstrap({ orders: [], pagination: { page: 1, pageCount: 11, pageSize: 20, total: 220 } }) : { customers: [] } }));
   await page.route('**/api/pricing**', route => route.fulfill({ json: new URL(route.request().url()).searchParams.has('policies') ? { policies: [] } : { contracts: [] } }));
   await page.goto('/?view=workspace');
   const inbox = page.getByRole('region', { name: 'Order prices waiting for approval' });
