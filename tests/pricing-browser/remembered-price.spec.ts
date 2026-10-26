@@ -1,4 +1,5 @@
 import { expect, test, type Locator, type Page } from '@playwright/test';
+import { orderSummary, orderLine, orderBootstrap, pricingWorkspace, pricingLine } from '../fixtures/api-builders';
 
 const orderId = '61000000-0000-4000-8000-000000000002';
 const lineId = '61000000-0000-4000-8000-000000000003';
@@ -7,27 +8,27 @@ type Command = { action: string; payload: Record<string, unknown> };
 
 // The same pending-approval journey as order-next-step.spec.ts, with actor roles
 // supplied by the orders response and refreshed pricing after the decision.
-async function mockPendingApproval(page: Page, role: string) {
-  let pricingState = 'approval_required';
+async function mockPendingApproval(page: Page, role: 'management' | 'accounts' | 'administrator' | 'sales' | 'operations' | 'warehouse') {
+  let pricingState: ReturnType<typeof pricingWorkspace>['pricingState'] = 'approval_required';
   let version = 1;
   const commands: Command[] = [];
-  const order = () => ({
+  const order = () => orderSummary({
     id: orderId, orderNumber: 'SF-NEXT-001', customerName: 'Next Step Laboratory', customerPhone: null,
     status: 'packed', pricingState, version, source: 'phone', notes: null,
     createdAt: new Date().toISOString(), updatedAt: new Date().toISOString(),
     lineCount: 1, totalQuantity: 1, reservedQuantity: 0, tallyInvoiceNumber: null,
-    lines: [{ id: lineId, tallyKey: 'GLUCOSE', itemName: 'Glucose', itemGroup: 'Diasys', quantity: 1, baseUnit: 'Nos', fulfilledQuantity: 1 }],
+    lines: [orderLine({ tallyKey: 'GLUCOSE', itemName: 'Glucose', itemGroup: 'Diasys', quantity: 1, baseUnit: 'Nos', fulfilledQuantity: 1 })],
     events: [], exceptions: [], installations: [], receivedBy: '', deliveredAt: null,
   });
   await page.route('**/api/orders**', route => {
     const url = new URL(route.request().url());
     if (url.searchParams.has('detailsFor')) return route.fulfill({ json: { exceptions: [], installations: [] } });
-    return route.fulfill({ json: {
+    return route.fulfill({ json: orderBootstrap({
       actor: { email: `${role}@example.test`, role, roles: [role] },
       snapshot: { company: 'TEST', fetchedAt: new Date().toISOString(), catalog: [] },
       customers: [], orders: [order()], operations: {},
       pagination: { total: 1, page: 1, pageCount: 1, pageSize: 20 },
-    } });
+    }) });
   });
   await page.route('**/api/pricing**', route => {
     if (route.request().method() === 'POST') {
@@ -36,11 +37,11 @@ async function mockPendingApproval(page: Page, role: string) {
       version++;
       return route.fulfill({ json: { pricingState } });
     }
-    return route.fulfill({ json: {
+    return route.fulfill({ json: pricingWorkspace({
       orderId, orderNumber: order().orderNumber, customerId: null, customerName: order().customerName,
       orderVersion: version, pricingState, currentSnapshotId: null, history: [],
       exceptions: pricingState === 'approval_required' ? [{ id: exceptionId, lineId, enteredRate: 4450, referenceRate: 4510, differenceAmount: -60, differencePercent: null, reason: 'Keep the earlier customer rate', state: 'pending', requestedBy: 'sales@example.test', requestedAt: new Date().toISOString(), version: 7 }] : [],
-      lines: [{
+      lines: [pricingLine({
         lineId, tallyKey: 'GLUCOSE', itemName: 'Glucose', quantity: 1, fixed: false,
         resolution: 'NO_PRICE_HISTORY', guardrail: 'PRICE_REVIEW_REQUIRED', proposedRate: null,
         lastRate: null, historicCost: null, currentCost: 310, costChange: null, continuityPrice: null,
@@ -49,8 +50,8 @@ async function mockPendingApproval(page: Page, role: string) {
         differenceToCustomer: null, additionalGP: null, evidenceHash: 'a'.repeat(64), warnings: [],
         source: { type: 'NONE', reference: null, date: null, version: null }, recentRates: [], cost: null,
         margin: { grossProfitAmount: null, grossMarginPercent: null, previousGrossMarginPercent: null, erosionPercentagePoints: null }, suggestion: null,
-      }],
-    } });
+      })],
+    }) });
   });
   return commands;
 }
@@ -69,27 +70,27 @@ async function expectSheetFits(page: Page, bar: Locator, primary: Locator) {
   await expect(bar.getByRole('button', { name: 'Cancel', exact: true })).toBeVisible();
 }
 
-async function mockEnterPrice(page: Page, overrides: Record<string, unknown> = {}) {
+async function mockEnterPrice(page: Page, overrides: Parameters<typeof pricingLine>[0] = {}) {
   await page.route('**/api/orders**', route => {
     if (new URL(route.request().url()).searchParams.has('detailsFor')) return route.fulfill({ json: { exceptions: [], installations: [] } });
-    return route.fulfill({ json: {
+    return route.fulfill({ json: orderBootstrap({
       actor: { email: 'management@example.test', role: 'management', roles: ['management'] },
       snapshot: { company: 'TEST', fetchedAt: new Date().toISOString(), catalog: [] },
       customers: [], operations: {}, pagination: { total: 1, page: 1, pageCount: 1, pageSize: 20 },
-      orders: [{
+      orders: [orderSummary({
         id: orderId, orderNumber: 'SF-NEXT-001', customerName: 'Next Step Laboratory', customerPhone: null,
         status: 'packed', pricingState: 'review_required', version: 1, source: 'phone', notes: null,
         createdAt: new Date().toISOString(), updatedAt: new Date().toISOString(),
         lineCount: 1, totalQuantity: 1, reservedQuantity: 0, tallyInvoiceNumber: null,
-        lines: [{ id: lineId, tallyKey: 'GLUCOSE', itemName: 'Glucose', itemGroup: 'Diasys', quantity: 1, baseUnit: 'Nos', fulfilledQuantity: 1 }],
+        lines: [orderLine({ tallyKey: 'GLUCOSE', itemName: 'Glucose', itemGroup: 'Diasys', quantity: 1, baseUnit: 'Nos', fulfilledQuantity: 1 })],
         events: [], exceptions: [], installations: [], receivedBy: '', deliveredAt: null,
-      }],
-    } });
+      })],
+    }) });
   });
-  await page.route('**/api/pricing**', route => route.fulfill({ json: {
+  await page.route('**/api/pricing**', route => route.fulfill({ json: pricingWorkspace({
     orderId, orderNumber: 'SF-NEXT-001', customerId: null, customerName: 'Next Step Laboratory',
     orderVersion: 1, pricingState: 'review_required', currentSnapshotId: null, history: [], exceptions: [],
-    lines: [{
+    lines: [pricingLine({
       lineId, tallyKey: 'GLUCOSE', itemName: 'Glucose', quantity: 1, fixed: false,
       resolution: 'NO_PRICE_HISTORY', guardrail: 'PRICE_REVIEW_REQUIRED', proposedRate: null,
       lastRate: null, historicCost: null, currentCost: 3465, costChange: null, continuityPrice: null,
@@ -104,8 +105,8 @@ async function mockEnterPrice(page: Page, overrides: Record<string, unknown> = {
       ],
       margin: { grossProfitAmount: null, grossMarginPercent: null, previousGrossMarginPercent: null, erosionPercentagePoints: null }, suggestion: null,
       ...overrides,
-    }],
-  } }));
+    })],
+  }) }));
 }
 
 test.beforeEach(async ({ isMobile }) => { test.skip(!isMobile, 'phone next-step bar'); });
@@ -190,7 +191,7 @@ test('earlier bill chips fill an ambiguous Enter price without preselecting a ra
   await expect(submit).toBeEnabled();
 });
 
-for (const source of ['LAST_TALLY_INVOICE', 'APPROVED_CONTRACT']) {
+for (const source of ['LAST_TALLY_INVOICE', 'APPROVED_CONTRACT'] as const) {
   test(`earlier ${source} price opens the editable custom field in the normal branch`, async ({ page }) => {
     await mockEnterPrice(page, {
       proposedRate: 4510, continuityPrice: 4510, recommendedPrice: 4600, lastRate: 4450,

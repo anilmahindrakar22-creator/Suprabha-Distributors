@@ -1,10 +1,17 @@
 const CACHE_PREFIX = 'suprabha-stockflow-static-';
-const CACHE = `${CACHE_PREFIX}v11`;
+const CACHE = `${CACHE_PREFIX}v14`;
 const OWNED_CACHE_PREFIXES = [CACHE_PREFIX, 'suprabha-stockflow-v'];
 const PUBLIC_ASSETS = ['/stockflow.html', '/manifest.webmanifest', '/suprabha-logo.png', '/app-icon.svg', '/favicon.svg', '/offline.html', '/offline.css', '/generated-offline/offline-app.js'];
 
 async function cachePublicAsset(cache, path) {
-  const response = await fetch(new Request(path, { cache: 'reload', credentials: 'omit' }));
+  // Use the .html file when it is served directly (the offline preview). On
+  // Vinext, it redirects to an extensionless URL; follow only that known
+  // same-origin canonical path, then apply the strict no-redirect cache rule.
+  const fetchPath = path === '/stockflow.html' ? '/stockflow' : path === '/offline.html' ? '/offline' : path;
+  let response = await fetch(new Request(path, { cache: 'reload', credentials: 'omit', redirect: 'manual' }));
+  if (fetchPath !== path && response.type === 'opaqueredirect') {
+    response = await fetch(new Request(fetchPath, { cache: 'reload', credentials: 'omit' }));
+  }
   if (!response.ok || response.redirected || response.type !== 'basic') throw new Error(`Unsafe public asset response: ${path}`);
   await cache.put(path, response);
 }
@@ -65,17 +72,43 @@ self.addEventListener('push', (event) => {
   }));
 });
 
+function acknowledgeOrder(client, message) {
+  return new Promise((resolve) => {
+    const channel = new MessageChannel();
+    const finish = (acknowledged) => {
+      clearTimeout(timer);
+      channel.port1.close();
+      channel.port2.close();
+      resolve(acknowledged);
+    };
+    const timer = setTimeout(() => finish(false), 1_000);
+    channel.port1.onmessage = (event) => { if (event.data === 'ack') finish(true); };
+    try { client.postMessage(message, [channel.port2]); } catch { finish(false); }
+  });
+}
+
 self.addEventListener('notificationclick', (event) => {
   event.notification.close();
   const { orderId = '', orderNumber = '' } = event.notification.data || {};
   const exact = ORDER_ID_PATTERN.test(orderId) && ORDER_NUMBER_PATTERN.test(orderNumber);
   const target = exact ? `/?openOrder=${encodeURIComponent(orderId)}&n=${encodeURIComponent(orderNumber)}` : '/';
-  event.waitUntil(self.clients.matchAll({ type: 'window', includeUncontrolled: true }).then((windows) => {
+  event.waitUntil(self.clients.matchAll({ type: 'window', includeUncontrolled: true }).then(async (windows) => {
     // Only the top-level StockFlow window: the Stock screen is a same-origin iframe that must not receive the tap.
-    const open = windows.find((client) => client.frameType === 'top-level' && new URL(client.url).origin === self.location.origin);
-    if (open) {
-      if (exact) open.postMessage({ type: 'stockflow-open-order', orderId, orderNumber });
-      return open.focus();
+    const candidates = windows.filter((client) => client.frameType === 'top-level' && new URL(client.url).origin === self.location.origin);
+    if (!exact && candidates.length) return candidates[0].focus();
+    // Try every eligible window concurrently; a standalone page must not consume the tap.
+    const acknowledged = await new Promise((resolve) => {
+      if (!candidates.length) return resolve(null);
+      let remaining = candidates.length;
+      for (const client of candidates) {
+        acknowledgeOrder(client, { type: 'stockflow-open-order', orderId, orderNumber }).then((ack) => {
+          if (ack) resolve(client);
+          if (--remaining === 0) resolve(null);
+        });
+      }
+    });
+    if (acknowledged) {
+      try { return await acknowledged.focus(); } catch { /* Open the deep link if focus fails. */ }
     }
     return self.clients.openWindow(target);
   }));
