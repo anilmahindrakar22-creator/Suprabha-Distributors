@@ -1,13 +1,17 @@
 const CACHE_PREFIX = 'suprabha-stockflow-static-';
-const CACHE = `${CACHE_PREFIX}v13`;
+const CACHE = `${CACHE_PREFIX}v14`;
 const OWNED_CACHE_PREFIXES = [CACHE_PREFIX, 'suprabha-stockflow-v'];
 const PUBLIC_ASSETS = ['/stockflow.html', '/manifest.webmanifest', '/suprabha-logo.png', '/app-icon.svg', '/favicon.svg', '/offline.html', '/offline.css', '/generated-offline/offline-app.js'];
 
 async function cachePublicAsset(cache, path) {
-  // Vinext serves the two HTML files at extensionless canonical URLs. Fetch
-  // those URLs directly so the strict no-redirect cache rule can still hold.
+  // Use the .html file when it is served directly (the offline preview). On
+  // Vinext, it redirects to an extensionless URL; follow only that known
+  // same-origin canonical path, then apply the strict no-redirect cache rule.
   const fetchPath = path === '/stockflow.html' ? '/stockflow' : path === '/offline.html' ? '/offline' : path;
-  const response = await fetch(new Request(fetchPath, { cache: 'reload', credentials: 'omit' }));
+  let response = await fetch(new Request(path, { cache: 'reload', credentials: 'omit', redirect: 'manual' }));
+  if (fetchPath !== path && response.type === 'opaqueredirect') {
+    response = await fetch(new Request(fetchPath, { cache: 'reload', credentials: 'omit' }));
+  }
   if (!response.ok || response.redirected || response.type !== 'basic') throw new Error(`Unsafe public asset response: ${path}`);
   await cache.put(path, response);
 }
