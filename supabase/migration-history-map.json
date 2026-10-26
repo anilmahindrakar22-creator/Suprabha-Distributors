@@ -1046,6 +1046,13 @@
       "remoteVersion": null,
       "remoteSha256": null,
       "status": "not_deployed"
+    },
+    {
+      "localFile": "20261026130000_billing_snapshot_shapes.sql",
+      "localSha256": "ea4b3fefac03d29621fdd22b48fcc4aeeadec5ea546210a03e213c0dcde71926",
+      "remoteVersion": null,
+      "remoteSha256": null,
+      "status": "not_deployed"
     }
   ],
   "liveCheck": {

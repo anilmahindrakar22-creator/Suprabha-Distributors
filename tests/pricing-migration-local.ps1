@@ -213,6 +213,8 @@ end$$;
   Write-Output 'PASS: India-date local dispatch and separate date, transporter and tracking validation'
   Invoke-DatabaseCommand $psqlProgram @('-U',$databaseUser,'-X','-q','-v','ON_ERROR_STOP=1','-d',$database,'-f',(Join-Path $repository 'supabase/tests/ist_attention_dates.sql'))
   Write-Output 'PASS: India-date overdue, due-today and delivery attention lists and summary counts'
+  Invoke-DatabaseCommand $psqlProgram @('-U',$databaseUser,'-X','-q','-v','ON_ERROR_STOP=1','-d',$database,'-f',(Join-Path $repository 'supabase/tests/billing_snapshot_shapes.sql'))
+  Write-Output 'PASS: governed and exception snapshots, remembered repeat billing, rate checks and approved-decision safety'
   Write-Output 'PASS: billing role sees approved prices only, from billing stage, and may only mark billed'
   Write-Output 'PASS: combined-role commercial reads, proposals and approval separation'
   Invoke-DatabaseCommand $psqlProgram @('-U',$databaseUser,'-X','-q','-v','ON_ERROR_STOP=1','-d',$database,'-f',(Join-Path $repository 'supabase/tests/combined_role_recovery.sql'))
