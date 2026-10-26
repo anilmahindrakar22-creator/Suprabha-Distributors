@@ -1,37 +1,142 @@
 begin;
+-- Distinct creation times inside one rollback transaction exercise oldest-first
+-- ordering without rewriting saved orders. Restore the production default below.
+alter table private.stockflow_orders alter column created_at set default clock_timestamp();
+update private.stockflow_pricing_policies set active=false where active;
+insert into private.stockflow_pricing_policies(policy_version,minimum_margin_percent,target_margin_percent,
+  override_approval_percent,rounding_increment,rounding_rule_version,effective_from,created_by_email)
+values('decision-test',25,30,5,1,'decision-rounding',(now() at time zone 'Asia/Kolkata')::date-90,'test');
+
+create function pg_temp.decision_reset_requests()
+returns void language plpgsql as $$
+begin
+  -- test isolation: one transaction shares now(), so the per-minute limit would count every fixture command
+  delete from private.stockflow_request_log
+    where actor_email in ('decision@test.local','decision-admin@test.local','decision-billing@test.local');
+end $$;
+
+create function pg_temp.decision_transition(p_order uuid,p_status text,p_invoice text default null)
+returns void language plpgsql as $$
+declare result jsonb;
+begin
+  result:=public.stockflow_order_gateway('decision-key',
+    case when p_status='billed_in_tally' then 'decision-billing@test.local' else 'decision-admin@test.local' end,
+    'transition_order',
+    jsonb_build_object('orderId',p_order,'expectedVersion',(select version from private.stockflow_orders where id=p_order),
+      'toStatus',p_status,'tallyInvoiceNumber',p_invoice,'reason','Decision fixture isolation',
+      'idempotencyKey','decision-transition-'||p_order||'-'||p_status));
+  if result->>'status' is distinct from p_status
+    or (select status from private.stockflow_orders where id=p_order) is distinct from p_status then
+    raise exception 'Decision transition failed: %',result;
+  end if;
+end $$;
+
+create function pg_temp.decision_create(p_customer uuid,p_name text,p_lines jsonb,p_priority text default 'normal')
+returns uuid language plpgsql as $$
+declare result jsonb; o uuid;
+begin
+  perform pg_temp.decision_reset_requests();
+  result:=public.stockflow_order_gateway('decision-key','decision-admin@test.local','create_order',
+    jsonb_build_object('customerId',p_customer,'customerName',p_name,'source','phone',
+      'idempotencyKey','decision-create-'||p_name,'lines',p_lines));
+  o:=(result->>'orderId')::uuid;
+  if o is null or result->>'status' is distinct from 'awaiting_confirmation'
+    or (select count(*) from private.stockflow_order_lines where order_id=o)<>jsonb_array_length(p_lines) then
+    raise exception 'Decision create failed: %',result;
+  end if;
+  if p_priority<>'normal' then
+    result:=public.stockflow_priority_gateway('decision-key','decision-admin@test.local','set_order_priority',
+      jsonb_build_object('orderId',o,'expectedVersion',(select version from private.stockflow_orders where id=o),
+        'priority',p_priority,'idempotencyKey','decision-priority-'||o));
+    if result->>'priority' is distinct from p_priority then raise exception 'Decision priority failed: %',result; end if;
+  end if;
+  return o;
+end $$;
+
 do $test$
 declare
   result jsonb; first_page jsonb; second_page jsonb; alert jsonb; catalog jsonb;
   row_data jsonb; previous_rank integer := -1; state_rank integer;
   events_before bigint; outbox_before bigint; lines_before bigint;
-  urgent_id uuid := '31000000-0000-4000-8000-000000000001';
-  oldest_id uuid := '31000000-0000-4000-8000-000000000002';
-  normal_id uuid := '31000000-0000-4000-8000-000000000003';
+  urgent_id uuid; oldest_id uuid; normal_id uuid; excluded_id uuid; customer uuid;
+  seed_item text; fixture_lines jsonb;
+  today date := (now() at time zone 'Asia/Kolkata')::date;
 begin
-  -- Isolate demand from any harness seed; every fixture change rolls back.
+  -- Setup isolation only: there is no archive gateway. Rolls back with the test.
   update private.stockflow_orders set archived_at=now() where archived_at is null;
-  insert into public.stockflow_members(email,role,status) values('decision@test.local','warehouse','active');
+  insert into public.stockflow_members(email,role,roles,status) values
+    ('decision@test.local','warehouse',array['warehouse'],'active'),
+    ('decision-admin@test.local','administrator',array['administrator'],'active'),
+    ('decision-billing@test.local','billing',array['billing'],'active');
   update private.stockflow_gateway_config set secret_sha256=encode(extensions.digest('decision-key','sha256'),'hex') where name='orders';
-  insert into private.stockflow_orders(id,customer_name,status,priority,created_at,created_by_email,updated_by_email,idempotency_key)
-  values
-    (urgent_id,'Decision urgent','confirmed','urgent',now(),'test','test','decision-urgent'),
-    (oldest_id,'Decision oldest','confirmed','normal',now()-interval '3 days','test','test','decision-oldest'),
-    (normal_id,'Decision normal','confirmed','normal',now()-interval '1 day','test','test','decision-normal');
-  insert into private.stockflow_order_lines(order_id,tally_item_key,item_name,quantity,fulfilled_quantity)
-  values (urgent_id,'DECISION-X','Coverage X',4,1),
-    (oldest_id,'DECISION-X','Coverage X',3,0),
-    (normal_id,'DECISION-X','Coverage X',5,1),
-    (normal_id,'DECISION-FULFILLED','Fulfilled X',9,9);
+  insert into private.stockflow_customers(name,tally_key,created_by_email)
+    values('Decision customer','decision-customer','test') returning id into customer;
+  for seed_item in select 'DECISION-'||lpad(n::text,2,'0') from generate_series(1,32) n
+    union all select 'DECISION-X' union all select 'DECISION-FULFILLED' loop
+    insert into private.stockflow_products(tally_item_key,name,base_unit) values(seed_item,seed_item,'Nos');
+    insert into private.stockflow_tally_purchase_costs(tally_item_key,cost_amount,cost_kind,effective_at,source_reference,source_id,source_version)
+      values(seed_item,3465,'purchase_price',today-20,seed_item||'-cost',seed_item||'-cost','1');
+    insert into private.stockflow_tally_sales_prices(customer_id,tally_item_key,invoice_rate,invoice_date,invoice_reference,source_id,source_version)
+      values(customer,seed_item,6000,today-10,seed_item||'-sale',seed_item||'-sale','1');
+  end loop;
+  insert into public.stockflow_snapshots(id,company,fetched_at,payload)
+    values('suprabha','DECISION TEST',now()::text,jsonb_build_object('catalog',(
+      select jsonb_agg(jsonb_build_object('tallyKey',tally_item_key,'item',name,'baseUnit',base_unit,
+        'group','Decision tests','closing',0,'active',true)) from private.stockflow_products where tally_item_key like 'DECISION-%')))
+    on conflict(id) do update set payload=excluded.payload;
+
+  select jsonb_agg(jsonb_build_object('tallyKey','DECISION-'||lpad(n::text,2,'0'),'quantity',5))
+    into fixture_lines from generate_series(1,29) n;
+  oldest_id:=pg_temp.decision_create(customer,'Decision oldest',
+    fixture_lines||jsonb_build_array(jsonb_build_object('tallyKey','DECISION-X','quantity',3)));
+  perform pg_temp.decision_transition(oldest_id,'confirmed');
+  normal_id:=pg_temp.decision_create(customer,'Decision normal',
+    '[{"tallyKey":"DECISION-X","quantity":5},{"tallyKey":"DECISION-FULFILLED","quantity":9}]');
+  perform pg_temp.decision_transition(normal_id,'confirmed');
   -- Covered items have urgent priority, to prove state takes precedence.
-  insert into private.stockflow_order_lines(order_id,tally_item_key,item_name,quantity)
-    select case when n>=30 then urgent_id else oldest_id end,'DECISION-'||lpad(n::text,2,'0'),'Decision item '||n,5
-    from generate_series(1,32) n;
-  insert into private.stockflow_orders(id,customer_name,status,priority,created_by_email,updated_by_email,idempotency_key)
-  values ('31000000-0000-4000-8000-000000000004','Excluded awaiting','awaiting_confirmation','urgent','test','test','decision-draft'),
-    ('31000000-0000-4000-8000-000000000005','Excluded delivered','delivered','urgent','test','test','decision-delivered');
-  insert into private.stockflow_order_lines(order_id,tally_item_key,item_name,quantity)
-    select id,'DECISION-X','Excluded X',100 from private.stockflow_orders
-    where id in ('31000000-0000-4000-8000-000000000004','31000000-0000-4000-8000-000000000005');
+  select jsonb_agg(jsonb_build_object('tallyKey','DECISION-'||lpad(n::text,2,'0'),'quantity',5))
+    into fixture_lines from generate_series(30,32) n;
+  urgent_id:=pg_temp.decision_create(customer,'Decision urgent',
+    fixture_lines||jsonb_build_array(jsonb_build_object('tallyKey','DECISION-X','quantity',4)),'urgent');
+  perform pg_temp.decision_transition(urgent_id,'confirmed');
+  if not ((select created_at from private.stockflow_orders where id=oldest_id)
+    < (select created_at from private.stockflow_orders where id=normal_id)) then raise exception 'Oldest-first fixture has tied clocks'; end if;
+  result:=public.stockflow_fulfilment_gateway('decision-key','decision-admin@test.local','save_fulfilment',
+    jsonb_build_object('orderId',normal_id,'expectedVersion',(select version from private.stockflow_orders where id=normal_id),
+      'idempotencyKey','decision-fulfil-normal','deliveryAddress','Decision test address',
+      'lines','[{"tallyKey":"DECISION-X","fulfilledQuantity":1},{"tallyKey":"DECISION-FULFILLED","fulfilledQuantity":9}]'::jsonb));
+  if result->>'ok' is distinct from 'true' then raise exception 'Decision fulfilment failed: %',result; end if;
+  result:=public.stockflow_fulfilment_gateway('decision-key','decision-admin@test.local','save_fulfilment',
+    jsonb_build_object('orderId',urgent_id,'expectedVersion',(select version from private.stockflow_orders where id=urgent_id),
+      'idempotencyKey','decision-fulfil-urgent','deliveryAddress','Decision test address',
+      'lines','[{"tallyKey":"DECISION-X","fulfilledQuantity":1}]'::jsonb));
+  if result->>'ok' is distinct from 'true' then raise exception 'Decision fulfilment failed: %',result; end if;
+  excluded_id:=pg_temp.decision_create(customer,'Excluded awaiting','[{"tallyKey":"DECISION-X","quantity":100}]','urgent');
+  -- Both closed statuses must be excluded despite positive remaining demand.
+  excluded_id:=pg_temp.decision_create(customer,'Excluded cancelled','[{"tallyKey":"DECISION-X","quantity":100}]','urgent');
+  perform pg_temp.decision_transition(excluded_id,'cancelled');
+  excluded_id:=pg_temp.decision_create(customer,'Excluded delivered','[{"tallyKey":"DECISION-X","quantity":100}]','urgent');
+  perform pg_temp.decision_transition(excluded_id,'confirmed');
+  perform pg_temp.decision_transition(excluded_id,'packed');
+  perform pg_temp.decision_transition(excluded_id,'awaiting_tally_billing');
+  perform pg_temp.decision_transition(excluded_id,'billed_in_tally','SD/DECISION/DELIVERED');
+  perform pg_temp.decision_transition(excluded_id,'ready_for_dispatch');
+  result:=public.stockflow_delivery_gateway('decision-key','decision-admin@test.local','save_dispatch',
+    jsonb_build_object('orderId',excluded_id,'expectedVersion',(select version from private.stockflow_orders where id=excluded_id),
+      'idempotencyKey','decision-dispatch-delivered','dispatchDate',today-1,
+      'courierName','Local delivery','trackingNumber','Hand delivery'));
+  if result->>'ok' is distinct from 'true' or result->>'status' is distinct from 'dispatched'
+    or (select status from private.stockflow_orders where id=excluded_id) is distinct from 'dispatched' then
+    raise exception 'Decision dispatch failed: %',result;
+  end if;
+  result:=public.stockflow_delivery_gateway('decision-key','decision-admin@test.local','confirm_delivery',
+    jsonb_build_object('orderId',excluded_id,'expectedVersion',(select version from private.stockflow_orders where id=excluded_id),
+      'idempotencyKey','decision-confirm-delivered','deliveredAt',now(),'receivedBy','Decision receiver'));
+  if result->>'ok' is distinct from 'true' or result->>'status' is distinct from 'delivered'
+    or (select status from private.stockflow_orders where id=excluded_id) is distinct from 'delivered' then
+    raise exception 'Decision delivery failed: %',result;
+  end if;
+  alter table private.stockflow_orders alter column created_at set default now();
 
   select jsonb_agg(jsonb_build_object('tallyKey','DECISION-'||lpad(n::text,2,'0'),'closing',
     case when n>=30 then '5' when n in (28,29) then 'bad' else '0' end)) into catalog from generate_series(1,32) n;

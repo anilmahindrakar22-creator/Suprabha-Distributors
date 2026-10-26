@@ -1,14 +1,15 @@
 import { expect, test } from '@playwright/test';
 import type { OrderCommand } from '../../lib/order-types';
+import { orderBootstrap, orderLine, orderSummary } from '../fixtures/api-builders';
 
 test('order editor preserves its base version during live refresh and can load the latest drafts', async ({ page, isMobile }) => {
-  const current = {
+  const current = orderSummary({
     id: '61000000-0000-4000-8000-000000000002', orderNumber: 'SF-EDIT-001', customerName: 'Edit Conflict Lab', status: 'phone_order_received',
     version: 1, customerPhone: null, source: 'phone', notes: 'Original note', pricingState: 'approved', createdAt: new Date().toISOString(), updatedAt: new Date().toISOString(),
     lineCount: 1, totalQuantity: 2, reservedQuantity: 0, tallyInvoiceNumber: null,
-    lines: [{ tallyKey: 'G', itemName: 'Glucose', itemGroup: 'Diasys', quantity: 2, baseUnit: 'Nos', fulfilledQuantity: 0 }], events: [], exceptions: [], installations: [],
-  };
-  let latest = { ...current, lines: current.lines.map((line) => ({ ...line })) };
+    lines: [orderLine({ tallyKey: 'G', itemName: 'Glucose', itemGroup: 'Diasys', quantity: 2, baseUnit: 'Nos', fulfilledQuantity: 0 })], events: [], exceptions: [], installations: [],
+  });
+  let latest = orderSummary({ ...current, lines: current.lines.map((line) => orderLine({ ...line })) });
   let editCommand: Extract<OrderCommand, { action: 'edit_order' }> | undefined;
 
   await page.setViewportSize({ width: isMobile ? 375 : 1280, height: 800 });
@@ -23,11 +24,11 @@ test('order editor preserves its base version during live refresh and can load t
       return route.fulfill({ json: { operations: {}, orderRevision: latest.version.toString(16).padStart(32, '0') } });
     }
     if (url.searchParams.has('detailsFor')) return route.fulfill({ json: { exceptions: [], installations: [] } });
-    return route.fulfill({ json: {
+    return route.fulfill({ json: orderBootstrap({
       actor: { email: 'sales@example.test', role: 'sales', roles: ['sales'] },
       snapshot: { company: 'TEST', fetchedAt: new Date().toISOString(), catalog: [] }, customers: [], operations: {}, orders: [latest],
       pagination: { total: 1, page: 1, pageCount: 1, pageSize: 20 },
-    } });
+    }) });
   });
 
   await page.goto('/?view=orders-workspace&actor=sales@example.test');
@@ -44,7 +45,7 @@ test('order editor preserves its base version during live refresh and can load t
   await quantity.fill('3');
 
   // Match the cross-session test's live summary polling trigger after another session commits version 2.
-  latest = { ...latest, version: 2, notes: 'Updated in another session', updatedAt: new Date().toISOString() };
+  latest = orderSummary({ ...latest, version: 2, notes: 'Updated in another session', updatedAt: new Date().toISOString() });
   await page.clock.runFor(16_000);
   await expect(orderTile.getByText('This order changed since you started editing.', { exact: true })).toBeVisible();
 

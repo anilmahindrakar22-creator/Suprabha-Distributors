@@ -1,16 +1,18 @@
 import { expect, test, type Page } from '@playwright/test';
+import { orderBootstrap, orderLine, orderSummary } from '../fixtures/api-builders';
+import type { OrderSummary } from '../../lib/order-types';
 
 const hoursAgo = (hours: number) => new Date(Date.now() - hours * 3_600_000).toISOString();
 const statuses = ['awaiting_confirmation', 'confirmed', 'packed', 'awaiting_tally_billing', 'billed_in_tally', 'ready_for_dispatch'];
 
-function order(index: number, overrides: Record<string, unknown> = {}) {
-  return {
+function order(index: number, overrides: Partial<OrderSummary> = {}) {
+  return orderSummary({
     id: `order-${index}`, orderNumber: `SF-LIST-${String(index).padStart(3, '0')}`, customerName: `Laboratory ${index}`, customerPhone: null,
     status: statuses[index % statuses.length], source: 'phone', notes: null, version: 1, createdAt: hoursAgo(index * 0.2), updatedAt: hoursAgo(0.1),
     lineCount: 1, totalQuantity: 2, reservedQuantity: 0, tallyInvoiceNumber: null, pricingState: 'approved',
-    lines: [{ tallyKey: 'GLUCOSE', itemName: 'Glucose', itemGroup: 'Diasys', quantity: 2, baseUnit: 'Nos', fulfilledQuantity: 2 }],
-    events: [], exceptions: [], installations: [], ...overrides,
-  };
+    lines: [orderLine({ tallyKey: 'GLUCOSE', itemName: 'Glucose', itemGroup: 'Diasys', quantity: 2, baseUnit: 'Nos', fulfilledQuantity: 2 })],
+    ...overrides,
+  });
 }
 
 const pending = Array.from({ length: 12 }, (_, index) => order(index + 1, index === 0 ? { priority: 'urgent' } : {}));
@@ -27,12 +29,12 @@ async function mockOrders(page: Page) {
     if (url.searchParams.has('detailsFor')) return route.fulfill({ json: { exceptions: [], installations: [] } });
     const isHistory = url.searchParams.get('status') === 'history';
     const orders = isHistory ? history() : pending;
-    return route.fulfill({ json: {
+    return route.fulfill({ json: orderBootstrap({
       actor: { email: 'staff@example.test', role: 'administrator', roles: ['administrator'] },
       snapshot: { company: 'TEST', fetchedAt: new Date().toISOString(), catalogVersion: 'test', catalog: [] },
       customers: [], orders, operations: { awaitingConfirmation: 2, awaitingTallyBilling: 2, billedNotDispatched: 2, needsAttention: 1 },
       pagination: { total: orders.length, page: 1, pageCount: 1, pageSize: 20 },
-    } });
+    }) });
   });
 }
 
@@ -70,11 +72,11 @@ test('administrator opens Active orders and searches across the Pack stage', asy
     const query = url.searchParams.get('query');
     listQueries.push({ status, query });
     const orders = status === 'open' || !status ? [packOrder] : [];
-    return route.fulfill({ json: {
+    return route.fulfill({ json: orderBootstrap({
       actor: { email: 'administrator@example.test', role: 'administrator', roles: ['administrator'] },
       snapshot: { company: 'TEST', fetchedAt: new Date().toISOString(), catalog: [] }, customers: [], orders,
       operations: {}, pagination: { total: orders.length, page: 1, pageCount: 1, pageSize: 20 },
-    } });
+    }) });
   });
   await page.goto('/?view=frame&role=administrator');
   await page.getByRole('button', { name: /^orders/i }).click();
@@ -97,11 +99,11 @@ test('administrator filters active orders waiting for price approval', async ({ 
     const url = new URL(route.request().url());
     if (url.searchParams.has('detailsFor')) return route.fulfill({ json: { exceptions: [], installations: [] } });
     const orders = url.searchParams.get('status') === 'history' ? [] : activeOrders;
-    return route.fulfill({ json: {
+    return route.fulfill({ json: orderBootstrap({
       actor: { email: 'admin@example.test', role: 'administrator', roles: ['administrator'] },
       snapshot: { company: 'TEST', fetchedAt: new Date().toISOString(), catalog: [] }, customers: [], orders,
       operations: {}, pagination: { total: orders.length, page: 1, pageCount: 1, pageSize: 20 },
-    } });
+    }) });
   });
   await page.goto('/?view=orders-workspace');
   const approvalChip = page.getByRole('button', { name: 'Prices to approve, 2 orders' });
@@ -133,11 +135,11 @@ test('sales does not see the price approval chip', async ({ page }) => {
     const orders = url.searchParams.get('status') === 'history' ? [] : [
       order(211, { pricingState: 'approval_required' }), order(212, { pricingState: 'approved' }), order(213, { pricingState: 'approval_required' }),
     ];
-    return route.fulfill({ json: {
+    return route.fulfill({ json: orderBootstrap({
       actor: { email: 'sales@example.test', role: 'sales', roles: ['sales'] },
       snapshot: { company: 'TEST', fetchedAt: new Date().toISOString(), catalog: [] }, customers: [], orders,
       operations: {}, pagination: { total: orders.length, page: 1, pageCount: 1, pageSize: 20 },
-    } });
+    }) });
   });
   await page.goto('/?view=orders-workspace');
   await expect(page.getByRole('button', { name: /Prices to approve/ })).toHaveCount(0);

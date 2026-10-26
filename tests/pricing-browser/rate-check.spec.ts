@@ -8,16 +8,19 @@ const order = orderSummary({
   events: [], exceptions: [], installations: [],
 });
 const check = rateCheck({
-  view: 'rate_check', orderId: order.id, orderNumber: order.orderNumber, customerName: order.customerName, status: order.status, tolerance: 1, state: 'different', differentCount: 1,
+  view: 'rate_check', orderId: order.id, orderNumber: order.orderNumber, customerName: order.customerName, status: order.status, tolerance: 1, state: 'different', differentCount: 2,
   lines: [
     { lineId: 'l1', tallyKey: 'STROMATOLYSER', itemName: 'Stromatolyser WH 500 Ml', approvedRate: 4450, invoiceRates: [4448.5], difference: -1.5, state: 'different' },
     { lineId: 'l2', tallyKey: 'MATCHING', itemName: 'Matching item', approvedRate: 100, invoiceRates: [100], difference: 0, state: 'matches' },
+    { lineId: 'l3', tallyKey: 'UNIT-DIFFERENCE', itemName: 'Different unit item', approvedRate: 100, invoiceRates: [1000], invoiceUnits: ['Box'], orderUnit: 'Nos', difference: null, state: 'unit_differs' },
   ],
 });
 
 test('management sees Tally rate differences against the approved price', async ({ page, isMobile }, info) => {
+  let rateCheckReads = 0;
   await page.route('**/api/pricing**', (route) => {
     const url = new URL(route.request().url());
+    if (url.searchParams.get('view') === 'rate_check') rateCheckReads += 1;
     return url.searchParams.get('view') === 'rate_check' ? route.fulfill({ json: check }) : route.fulfill({ status: 403, json: { error: 'Pricing access is restricted' } });
   });
   await page.route('**/api/orders**', (route) => {
@@ -31,11 +34,16 @@ test('management sees Tally rate differences against the approved price', async 
   const orderTile = isMobile
     ? page.getByRole('dialog', { name: `Order ${order.orderNumber}` })
     : page.locator('article').filter({ hasText: order.orderNumber });
+  await expect(orderTile.getByText('Rate differs', { exact: true })).toBeVisible();
+  await expect(orderTile.locator('details').filter({ has: page.getByText('View order details', { exact: true }) })).not.toHaveAttribute('open');
+  await expect(page.getByRole('region', { name: 'Rate check', exact: true })).toHaveCount(0);
   await orderTile.getByText('View order details', { exact: true }).click();
   const rateCheck = page.getByRole('region', { name: 'Rate check', exact: true });
-  await expect(rateCheck).toContainText('1 item differs from the approved price');
+  await expect(rateCheck).toContainText('2 items differ from the approved price');
   await expect(rateCheck).toContainText('Billed ₹1.5 lower per unit');
   await expect(rateCheck).toContainText('All other items match');
+  await expect(rateCheck).toContainText('Billed per Box, order is per Nos: check the unit');
+  expect(rateCheckReads).toBe(1);
   expect(await page.evaluate(() => document.documentElement.scrollWidth <= innerWidth)).toBe(true);
   await page.screenshot({ path: `work/tmp/rate-check-${info.project.name}.png` });
 });
