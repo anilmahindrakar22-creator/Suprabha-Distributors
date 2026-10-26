@@ -5,7 +5,7 @@ for (const role of ['warehouse', 'accounts', 'billing', 'viewer', 'sales'] as co
   test(`${role} sees only permitted order controls`, async ({ page, isMobile }) => {
     const order = orderSummary({
       id: '7c9e6679-7425-40de-944b-e07fc1f90ae7',
-      orderNumber: 'SO/26-27/0060', status: 'confirmed',
+      orderNumber: 'SO/26-27/0060', status: role === 'billing' || role === 'viewer' ? 'awaiting_tally_billing' : 'confirmed',
       createdAt: new Date().toISOString(), updatedAt: new Date().toISOString(),
       lines: [orderLine({ fulfilledQuantity: 0 })],
     });
@@ -31,6 +31,15 @@ for (const role of ['warehouse', 'accounts', 'billing', 'viewer', 'sales'] as co
     if (isMobile) await row.click();
     await page.getByText('View order details', { exact: true }).click();
     await expect(page.getByText('Internal status', { exact: true })).toBeVisible();
+    const addNote = page.getByRole('button', { name: '+ Add activity note', exact: true });
+    const noteInput = page.getByPlaceholder('Call update or internal handoff note', { exact: true });
+    if (role === 'billing') {
+      await addNote.click();
+      await expect(noteInput).toBeVisible();
+    } else if (role === 'viewer') {
+      await expect(addNote).toHaveCount(0);
+      await expect(noteInput).toHaveCount(0);
+    }
     const edit = page.getByRole('button', { name: '+ Edit order', exact: true });
     if (role === 'sales') {
       await expect(edit).toBeVisible();

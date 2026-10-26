@@ -40,7 +40,7 @@ import { rateCheckBadge, RATE_CHECK_ROLES, RATE_CHECK_STATUSES } from '@/lib/rat
 import { BILLING_ROLES, BILLING_STATUSES } from '@/lib/billing-sheet';
 import { courierChoices, defaultReceiver, isLocalDelivery, istToday, LOCAL_DELIVERY, type DispatchMode } from '@/lib/dispatch-options';
 import { hasAnyStockFlowRole, type StockFlowRole } from '@/lib/user-types';
-import { canCreateOrders, canEditOrders, canRecordFulfilment } from '@/lib/order-permissions';
+import { canAddOrderNotes, canCreateOrders, canEditOrders, canRecordFulfilment } from '@/lib/order-permissions';
 import type { TallyRecentProducts } from '@/lib/tally-recent-products';
 
 type DraftLine = { tallyKey: string; item: CatalogItem | null; quantity: number };
@@ -1066,7 +1066,7 @@ function OrderRow({
         <DeliveryExceptionPanel order={detailedOrder} onSave={onException} />
         <InstallationPanel order={detailedOrder} onSave={onInstallation} />
         {order.status === 'awaiting_tally_billing' ? <BillingHandoff order={order} /> : null}
-        {hasAnyStockFlowRole(roles, ['administrator', 'sales', 'operations', 'warehouse', 'accounts', 'management']) ? <OrderNotePanel order={order} onSave={onAddNote} /> : null}
+        {canAddOrderNotes(roles) ? <OrderNotePanel order={order} onSave={onAddNote} /> : null}
         <OrderActivityLog key={`${order.id}-${order.version}`} orderId={order.id} initialEvents={order.events || []} />
         </> : null}
       </details>

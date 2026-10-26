@@ -1,7 +1,22 @@
 import { describe, expect, it } from 'vitest';
-import { canCreateOrders, canEditOrders, canRecordFulfilment } from '../../lib/order-permissions';
+import { canAddOrderNotes, canCreateOrders, canEditOrders, canRecordFulfilment } from '../../lib/order-permissions';
 
 describe('order permissions mirror server role rules', () => {
+  it.each([
+    ['administrator', true],
+    ['sales', true],
+    ['operations', true],
+    ['warehouse', true],
+    ['accounts', true],
+    ['billing', true],
+    ['management', true],
+    ['viewer', false],
+  ] as const)('%s: add notes=%s', (role, allowed) => {
+    for (const roles of [role, [role]]) {
+      expect(canAddOrderNotes(roles)).toBe(allowed);
+    }
+  });
+
   it.each([
     ['administrator', true, true, true],
     ['sales', true, true, true],
@@ -30,6 +45,7 @@ describe('order permissions mirror server role rules', () => {
   });
 
   it.each([undefined, null, [], ['sales', 'unknown'], ['sales', 'sales']])('fails closed for invalid roles %j', (roles) => {
+    expect(canAddOrderNotes(roles)).toBe(false);
     expect(canCreateOrders(roles)).toBe(false);
     expect(canEditOrders(roles)).toBe(false);
     expect(canRecordFulfilment(roles)).toBe(false);

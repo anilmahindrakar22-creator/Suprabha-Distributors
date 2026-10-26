@@ -11,6 +11,13 @@ export const ORDER_EDIT_ROLES = ['administrator', 'sales', 'operations', 'manage
 // combined-role matching: supabase/migrations/20261004073444_combined_role_operational_gateways.sql:24-25.
 export const ORDER_FULFIL_ROLES = ['administrator', 'sales', 'operations', 'warehouse', 'accounts', 'management'] as const;
 
+// Mirrors supabase/migrations/20261025090000_billing_role.sql:64 (order-note gateway role patch).
+export const ORDER_NOTE_ROLES = ['administrator', 'sales', 'operations', 'warehouse', 'accounts', 'management', 'billing'] as const;
+
+export function canAddOrderNotes(roles: unknown): boolean {
+  return hasAnyStockFlowRole(roles, ORDER_NOTE_ROLES);
+}
+
 export function canCreateOrders(roles: unknown): boolean {
   return hasAnyStockFlowRole(roles, ORDER_CREATE_ROLES);
 }
