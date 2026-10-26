@@ -5,6 +5,14 @@ const order = (id: string, status: string, updatedAt = '2026-10-11T09:00:00Z') =
 const json = (body: unknown, status = 200) => new Response(JSON.stringify(body), { status, headers: { 'content-type': 'application/json' } });
 
 describe('who owns each stage', () => {
+  it('gives billing-only staff exactly the ready-to-bill queue and viewers none', () => {
+    expect(workQueuesForRoles(['billing'])).toEqual([{
+      id: 'bill-ready', label: 'Ready to bill', statuses: ['awaiting_tally_billing'],
+      message: 'Packed and priced · ready to bill',
+    }]);
+    expect(workQueuesForRoles(['viewer'])).toEqual([]);
+  });
+
   it('routes each stage to the next role; packed belongs to Accounts, billed to Operations', () => {
     expect(workQueuesForRoles(['accounts']).map((queue) => [queue.id, queue.statuses])).toEqual([['bill', ['packed', 'awaiting_tally_billing']]]);
     expect(workQueuesForRoles(['operations']).map((queue) => queue.id)).toEqual(['confirm', 'pack', 'dispatch']);

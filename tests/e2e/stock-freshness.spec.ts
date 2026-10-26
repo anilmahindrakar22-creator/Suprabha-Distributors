@@ -5,7 +5,7 @@ const stockPayload = (sourceFetchedAtIso?: Record<string, unknown>) => ({
   fetchedAtIso: new Date().toISOString(),
   fetchedAt: '29 Sep 2026, 3:30 pm',
   fetchedAtShort: '29 Sep 2026, 3:30 pm',
-  rows: [] as Array<{ group: string; item: string; closing: number; reorderLevel: number; minimumOrder: number; shortfall: number; orderToBePlaced: number }>,
+  rows: [] as Array<{ group: string; item: string; closing: number; reorderLevel: number; minimumOrder: number; shortfall: number; orderToBePlaced: number; lastSuppliedParty?: string; lastSuppliedQty?: number | null; lastSuppliedDate?: string }>,
   groups: [] as string[],
   ...(sourceFetchedAtIso ? { sourceFetchedAtIso } : {}),
 });
@@ -41,6 +41,61 @@ test('phone stock overview shows the first reorder row without scrolling or page
   await expect(page.getByRole('button', { name: 'Clear focus', exact: true })).toBeVisible();
   await page.getByRole('button', { name: 'Clear focus', exact: true }).click();
   await expect(page.getByRole('button', { name: 'Clear focus', exact: true })).toBeHidden();
+});
+
+test('phone reorder rows show the last sale without a dropdown', async ({ page }) => {
+  await page.setViewportSize({ width: 375, height: 812 });
+  const payload = stockPayload();
+  payload.groups = ['Test group'];
+  payload.rows = [{ group: 'Test group', item: 'Reorder item', closing: 0, reorderLevel: 10, minimumOrder: 1, shortfall: 10, orderToBePlaced: 10, lastSuppliedParty: 'Sysmex India Pvt Ltd', lastSuppliedQty: 4, lastSuppliedDate: '12 Oct 2026' }];
+  await openStockDashboard(page, payload);
+
+  const line = page.locator('#rows .supply-line');
+  await expect(line).toBeVisible();
+  await expect(line).toHaveText('Last sold: 12 Oct 2026 · 4 · Sysmex India Pvt Ltd');
+  await expect(line.locator('strong')).toHaveText('Sysmex India Pvt Ltd');
+  await expect(line).toHaveAttribute('title', 'Last sold: Sysmex India Pvt Ltd · 4 · 12 Oct 2026');
+  await expect(line).toHaveAttribute('aria-label', 'Last sold to Sysmex India Pvt Ltd, quantity 4, on 12 Oct 2026');
+  await expect(page.locator('details.supply-drop')).toHaveCount(0);
+});
+
+test('phone reorder rows without sale data show the history window', async ({ page }) => {
+  await page.setViewportSize({ width: 375, height: 812 });
+  const payload = stockPayload();
+  payload.rows = [{ group: 'Test group', item: 'No sale item', closing: 0, reorderLevel: 10, minimumOrder: 1, shortfall: 10, orderToBePlaced: 10 }];
+  await openStockDashboard(page, payload);
+
+  await expect(page.locator('#rows .supply-line.muted')).toBeVisible();
+  await expect(page.locator('#rows .supply-line.muted')).toContainText('No sale in');
+});
+
+test('a long last-sale party stays on one line without phone page overflow', async ({ page }) => {
+  await page.setViewportSize({ width: 375, height: 812 });
+  const payload = stockPayload();
+  const party = 'S'.repeat(120);
+  payload.rows = [{ group: 'Test group', item: 'Long party item', closing: 0, reorderLevel: 10, minimumOrder: 1, shortfall: 10, orderToBePlaced: 10, lastSuppliedParty: party, lastSuppliedQty: 4, lastSuppliedDate: '12 Oct 2026' }];
+  await openStockDashboard(page, payload);
+
+  const line = page.locator('#rows .supply-line');
+  await expect(line).toBeVisible();
+  await expect(line.locator('strong')).toHaveText(party);
+  await expect(line).toHaveAttribute('title', `Last sold: ${party} · 4 · 12 Oct 2026`);
+  await expect(line).toHaveText(`Last sold: 12 Oct 2026 · 4 · ${party}`);
+  await expect(line.locator('.supply-date')).toBeVisible();
+  await expect(line.locator('.supply-date')).toHaveText('12 Oct 2026');
+  await expect(line.locator('.supply-qty')).toBeVisible();
+  await expect(line.locator('.supply-qty')).toHaveText('4');
+  expect(await line.evaluate((element) => {
+    const bounds = element.getBoundingClientRect();
+    return ['.supply-date', '.supply-qty'].every((selector) => {
+      const value = element.querySelector(selector)!;
+      const rect = value.getBoundingClientRect();
+      return rect.left >= bounds.left && rect.right <= bounds.right && value.scrollWidth <= value.clientWidth;
+    });
+  })).toBe(true);
+  await expect(line).toHaveCSS('white-space', 'nowrap');
+  await expect(line.locator('.supply-party')).toHaveCSS('text-overflow', 'ellipsis');
+  expect(await page.evaluate(() => document.documentElement.scrollWidth <= innerWidth)).toBe(true);
 });
 
 test('source update times stay collapsed and safely display per-source timestamps', async ({ page }) => {

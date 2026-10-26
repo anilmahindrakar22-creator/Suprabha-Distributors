@@ -14,7 +14,7 @@ function workerRuntime(cached?: Response, fetchFn = vi.fn()) {
   const cache = { match: vi.fn(async () => cached), put: vi.fn(async () => undefined) };
   const caches = {
     open: vi.fn(async () => cache),
-    keys: vi.fn(async () => ['suprabha-stockflow-v2', 'suprabha-stockflow-static-v1', 'suprabha-stockflow-static-v6', 'suprabha-stockflow-static-v7', 'suprabha-stockflow-static-v8', 'suprabha-stockflow-static-v9', 'suprabha-stockflow-static-v10', 'suprabha-stockflow-static-v11', 'suprabha-stockflow-static-v12', 'unrelated-cache']),
+    keys: vi.fn(async () => ['suprabha-stockflow-v2', 'suprabha-stockflow-static-v1', 'suprabha-stockflow-static-v6', 'suprabha-stockflow-static-v7', 'suprabha-stockflow-static-v8', 'suprabha-stockflow-static-v9', 'suprabha-stockflow-static-v10', 'suprabha-stockflow-static-v11', 'suprabha-stockflow-static-v12', 'suprabha-stockflow-static-v13', 'unrelated-cache']),
     delete: vi.fn(async (key: string) => { deleted.push(key); return true; }),
   };
   const self = {

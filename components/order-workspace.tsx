@@ -40,6 +40,7 @@ import { rateCheckBadge, RATE_CHECK_ROLES, RATE_CHECK_STATUSES } from '@/lib/rat
 import { BILLING_ROLES, BILLING_STATUSES } from '@/lib/billing-sheet';
 import { courierChoices, defaultReceiver, isLocalDelivery, istToday, LOCAL_DELIVERY, type DispatchMode } from '@/lib/dispatch-options';
 import { hasAnyStockFlowRole, type StockFlowRole } from '@/lib/user-types';
+import { canCreateOrders, canEditOrders, canRecordFulfilment } from '@/lib/order-permissions';
 import type { TallyRecentProducts } from '@/lib/tally-recent-products';
 
 type DraftLine = { tallyKey: string; item: CatalogItem | null; quantity: number };
@@ -683,7 +684,7 @@ export function OrderWorkspace({ actorEmail, initialStatus = 'open', initialQuer
           </div>
           <div className="relative flex shrink-0 items-center gap-2 lg:order-4 lg:ml-auto">
 
-            <button
+            {canCreateOrders(actorRoles) ? <button
               type="button"
               onClick={() => void openNewOrder()}
               onFocus={warmOrderCapture}
@@ -692,7 +693,7 @@ export function OrderWorkspace({ actorEmail, initialStatus = 'open', initialQuer
               className="min-h-11 rounded-xl bg-sf-ink px-4 font-bold text-white shadow-sm transition hover:bg-sf-ink-hover disabled:opacity-50"
             >
               {catalogLoading ? 'Loading products…' : deviceDraftState ? 'Continue order' : '+ Order'}
-            </button>
+            </button> : null}
 
           </div>
         </header>
@@ -1058,9 +1059,9 @@ function OrderRow({
         </div>
           {lineMatch.state === 'mismatch' ? <div className="mt-3 rounded-xl border border-sf-danger-line bg-sf-danger-soft p-3"><p className="text-xs font-extrabold uppercase tracking-wide text-sf-danger">Tally invoice differences</p><ul className="mt-2 space-y-1 text-sm text-sf-danger">{lineMatch.differences.map((difference) => <li key={difference.itemName}>{difference.itemName}: {lineMatch.quantitySource === 'packed' ? 'packed' : 'ordered'} {formatQuantity(difference.expectedQuantity)}, invoiced {formatQuantity(difference.invoicedQuantity)}</li>)}</ul><BillingReviewPanel order={order} actorRole={actorRole} actorRoles={roles} onSave={onBillingReview} /></div> : null}
         {rateCheckEnabled ? <RateCheckPanel orderId={order.id} state={rateCheck} /> : null}
-        {!['cancelled', 'delivered'].includes(order.status) ? <FulfilmentEditor order={order} onSave={onSaveFulfilment} /> : null}
+        {!['cancelled', 'delivered'].includes(order.status) && canRecordFulfilment(roles) ? <FulfilmentEditor order={order} onSave={onSaveFulfilment} /> : null}
         {['ready_for_dispatch', 'dispatched', 'delivered'].includes(order.status) ? <DispatchPanel key={order.status} order={order} actorRole={actorRole} actorRoles={roles} onSave={onDelivery} /> : null}
-        {['phone_order_received','awaiting_confirmation','awaiting_approval','confirmed','partially_reserved','fully_reserved','ready_for_picking','picked','packed'].includes(order.status) ? <OrderEditPanel order={order} onSave={onEdit} /> : null}
+        {['phone_order_received','awaiting_confirmation','awaiting_approval','confirmed','partially_reserved','fully_reserved','ready_for_picking','picked','packed'].includes(order.status) && canEditOrders(roles) ? <OrderEditPanel order={order} onSave={onEdit} /> : null}
         {detailState === 'loading' ? <p className="mt-4 text-xs text-sf-subtle">Loading operational history…</p> : detailState === 'error' ? <button type="button" onClick={() => void loadDetails()} className="mt-4 text-xs font-bold text-sf-danger">Operational history could not load · Retry</button> : null}
         <DeliveryExceptionPanel order={detailedOrder} onSave={onException} />
         <InstallationPanel order={detailedOrder} onSave={onInstallation} />
