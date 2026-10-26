@@ -5,7 +5,7 @@ import { desktopPopupState, disableDesktopPopups, enableDesktopPopups, showWorkP
 import { Boxes, Building2, CloudDownload, Ellipsis, Inbox, ShoppingCart, Tags, TrendingUp, TriangleAlert, Users, Wrench } from 'lucide-react';
 import { NotificationBell } from './notification-bell';
 import { BellIcon } from './order-list';
-import { startWorkNotifications, type WorkItem, type WorkNotificationState } from '@/lib/work-notifications';
+import { startWorkNotifications, workQueuesForRoles, type WorkItem, type WorkNotificationState } from '@/lib/work-notifications';
 import { currentPushState, disablePush, disablePushBeforeSignOut, enablePush, loadPushConfig, readOpenOrderLink, readOpenOrderMessage, retryPendingPushRemoval, type PushConfig, type PushState } from '@/lib/push-subscription';
 import Image from 'next/image';
 import { readOrderDashboardMessage } from '@/lib/stockflow-navigation';
@@ -173,7 +173,7 @@ export function StockFlowFrame({ actorEmail, actorRole, actorRoles, staffAuth = 
   const [moreOpen, setMoreOpen] = useState(false);
   const rolesKey = roles.join(',');
   // Viewers have no hand-offs; they get no checker and no bell.
-  const notifiable = hasAnyStockFlowRole(roles, ['administrator', 'management', 'sales', 'operations', 'warehouse', 'accounts']);
+  const notifiable = workQueuesForRoles(roles).length > 0;
   useEffect(() => {
     if (readyEmail !== actorEmail || !notifiable) return;
     let service: ReturnType<typeof startWorkNotifications> | null = null;
