@@ -90,7 +90,7 @@ export const PRICE_CHANGE_ROLES = ['administrator', 'management'] as const;
 export type PricingCommand =
   | { action: 'submit_order_pricing'; payload: { orderId: string; expectedVersion: number; pricingDate?: string; idempotencyKey: string; lines: Array<{ lineId: string; enteredRate: number; reason?: string; evidenceHash: string }> } }
   | { action: 'apply_governed_order_pricing'; payload: { orderId: string; expectedVersion: number; pricingDate?: string; idempotencyKey: string } }
-  | { action: 'approve_price_exception' | 'reject_price_exception'; payload: { exceptionId: string; expectedVersion: number; reason: string; idempotencyKey: string; changedRate?: number } }
+  | { action: 'approve_price_exception' | 'reject_price_exception'; payload: { exceptionId: string; expectedVersion: number; reason: string; idempotencyKey: string; changedRate?: number; saveAsCustomerPrice?: boolean } }
   | { action: 'create_price_contract'; payload: { customerId: string; tallyKey: string; price: number; validFrom: string; validTo?: string; source: 'customer_contract' | 'quotation' | 'scheme' | 'tender' | 'manual_governed'; sourceReference?: string; reason: string; supersedesPriceId?: string; idempotencyKey: string } }
   | { action: 'approve_price_contract' | 'reject_price_contract'; payload: { contractId: string; expectedVersion: number; reason: string; idempotencyKey: string } }
   | { action: 'create_pricing_policy'; payload: { policyVersion: string; minimumMarginPercent: number; targetMarginPercent?: number; overrideApprovalPercent: number; roundingIncrement: number; roundingRuleVersion: string; effectiveFrom: string; reason: string; idempotencyKey: string } }
@@ -115,6 +115,7 @@ export function validatePricingCommand(value: unknown): PricingCommand | null {
   const command = exactObject(value);
   const payload = exactObject(command?.payload);
   if (!command || !payload || !validKey(payload.idempotencyKey)) return null;
+  if ('saveAsCustomerPrice' in payload && (command.action !== 'approve_price_exception' || typeof payload.saveAsCustomerPrice !== 'boolean')) return null;
   if (command.action === 'approve_customer_price_book') {
     if (!isUuid(payload.customerId) || typeof payload.approvalPreviewHash !== 'string' || !/^[a-f0-9]{64}$/.test(payload.approvalPreviewHash)) return null;
     return command as unknown as PricingCommand;

@@ -36,5 +36,18 @@ test('billing sees one billing sheet with approved prices, never the full pricin
   expect(pricingReads.length).toBeGreaterThan(0);
   expect(pricingReads.every((search) => search.includes('view=billing'))).toBe(true);
   expect(await page.evaluate(() => document.documentElement.scrollWidth <= innerWidth)).toBe(true);
+  const approvedRate = billing.getByText('₹4,450', { exact: false }).filter({ visible: true });
+  await approvedRate.scrollIntoViewIfNeeded();
+  await expect(approvedRate).toBeInViewport();
+  const amounts = billing.getByText('₹8,900', { exact: true }).filter({ visible: true });
+  await expect(amounts).toHaveCount(2);
+  for (const amount of await amounts.all()) {
+    await amount.scrollIntoViewIfNeeded();
+    await expect(amount).toBeInViewport();
+  }
+  const totalAmount = amounts.last();
+  const totalBox = await totalAmount.boundingBox();
+  expect(totalBox).not.toBeNull();
+  expect(totalBox!.x + totalBox!.width).toBeLessThanOrEqual(await page.evaluate(() => innerWidth));
   await page.screenshot({ path: `work/tmp/billing-${info.project.name}.png` });
 });

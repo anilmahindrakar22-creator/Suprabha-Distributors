@@ -1134,6 +1134,9 @@ function OrderNextStepBar({ order, roles, pricing, inOrderPage, onAdvance, onDel
   const [success, setSuccess] = useState('');
   const [reason, setReason] = useState('');
   const [changedRate, setChangedRate] = useState('');
+  const saveKey = `${order.id}:${step.exception?.id ?? ''}:${step.exception?.version ?? ''}`;
+  const [saveChoice, setSaveChoice] = useState<{ key: string; value: boolean } | null>(null);
+  const saveAsCustomerPrice = saveChoice?.key === saveKey ? saveChoice.value : true;
   const [invoice, setInvoice] = useState(order.tallyInvoiceNumber || '');
   const governedRequest = useRef<{ version: number; idempotencyKey: string } | null>(null);
   const priceChangeRequest = useRef<{ fingerprint: string; idempotencyKey: string } | null>(null);
@@ -1164,11 +1167,11 @@ function OrderNextStepBar({ order, roles, pricing, inOrderPage, onAdvance, onDel
       if (!step.exception) return;
       if (changedRate !== undefined) {
         if (action !== 'approve_price_exception' || !canChangePrice || !validChangedRate || reason.trim().length < 3 || reason.length > 1000) return;
-        const fingerprint = JSON.stringify([step.exception.id, step.exception.version, changedRate, reason.trim()]);
+        const fingerprint = JSON.stringify([step.exception.id, step.exception.version, changedRate, reason.trim(), saveAsCustomerPrice]);
         if (priceChangeRequest.current?.fingerprint !== fingerprint) priceChangeRequest.current = { fingerprint, idempotencyKey: crypto.randomUUID() };
-        payload = { exceptionId: step.exception.id, expectedVersion: step.exception.version, changedRate, reason: reason.trim(), idempotencyKey: priceChangeRequest.current.idempotencyKey };
+        payload = { exceptionId: step.exception.id, expectedVersion: step.exception.version, changedRate, reason: reason.trim(), saveAsCustomerPrice, idempotencyKey: priceChangeRequest.current.idempotencyKey };
       } else {
-        payload = { exceptionId: step.exception.id, expectedVersion: step.exception.version, reason: action === 'approve_price_exception' ? 'Price reviewed and approved' : reason.trim(), idempotencyKey: crypto.randomUUID() };
+        payload = { exceptionId: step.exception.id, expectedVersion: step.exception.version, reason: action === 'approve_price_exception' ? 'Price reviewed and approved' : reason.trim(), idempotencyKey: crypto.randomUUID(), ...(action === 'approve_price_exception' ? { saveAsCustomerPrice } : {}) };
       }
     }
     const response = await fetch('/api/pricing', { method: 'POST', headers: { 'content-type': 'application/json' }, body: JSON.stringify({ action, payload }) });
@@ -1179,6 +1182,14 @@ function OrderNextStepBar({ order, roles, pricing, inOrderPage, onAdvance, onDel
     await onPricingChanged(); await pricing.reload();
   }
   const primary = 'min-h-12 w-full rounded-xl bg-sf-ink px-4 text-base font-bold text-white hover:bg-sf-ink-hover disabled:opacity-50';
+  const exceptionLine = pricing.workspace?.lines.find(line => line.lineId === step.exception?.lineId);
+  const savePriceCheckbox = <div>
+    <label className="flex min-h-11 items-center gap-3 text-sm font-bold text-sf-body">
+      <input type="checkbox" checked={saveAsCustomerPrice} disabled={busy || stale || pricing.state === 'loading'} onChange={event => setSaveChoice({ key: saveKey, value: event.target.checked })} className="size-4 shrink-0 accent-sf-accent" />
+      {pricing.workspace?.exceptions.length === 1 ? `Save as ${pricing.workspace.customerName}'s price for ${exceptionLine?.itemName ?? 'this item'}` : "Save as this customer's price for these items"}
+    </label>
+    <p className="text-xs text-sf-muted">Next orders use this price without approval until purchase cost rises over 2%.</p>
+  </div>;
   const informational = ['loading', 'waiting', 'pricing_waiting', 'done', 'none'].includes(step.kind);
   // Pricing staleness only matters while deciding a price, not when dispatching or delivering.
   const pricingStep = step.kind.startsWith('pricing_') || step.kind === 'loading' || ['price', 'reject', 'change'].includes(sheet);
@@ -1198,6 +1209,7 @@ function OrderNextStepBar({ order, roles, pricing, inOrderPage, onAdvance, onDel
       {sheet === 'change' ? <>
         <label className="block text-sm font-bold text-sf-body">New price per unit (₹)<input aria-label={`New price per unit (₹) for ${order.orderNumber}`} type="number" inputMode="decimal" min="0.01" max="100000000" step="0.01" required disabled={busy} value={changedRate} onChange={event => setChangedRate(event.target.value)} className="mt-1 min-h-11 w-full min-w-0 rounded-lg border border-sf-line px-3" /></label>
         <label className="block text-sm font-bold text-sf-body">Reason for the change<input aria-label={`Reason for the change for ${order.orderNumber}`} required minLength={3} maxLength={1000} disabled={busy} value={reason} onChange={event => setReason(event.target.value)} className="mt-1 min-h-11 w-full min-w-0 rounded-lg border border-sf-line px-3" /></label>
+        {savePriceCheckbox}
         <button type="button" disabled={busy || stale || pricing.state === 'loading' || step.kind !== 'pricing_approve' || !canChangePrice || !validChangedRate || reason.trim().length < 3} onClick={() => void run(() => pricingCommand('approve_price_exception', newRate), 'Price changed and approved')} className={primary}>{busy ? 'Saving…' : `Approve ₹${(Number.isFinite(newRate) ? newRate : 0).toLocaleString('en-IN', { maximumFractionDigits: 2 })}`}</button>
       </> : null}
       {sheet === 'pack' ? <PackQuantitiesForm order={order} busy={busy} onSave={(lines) => run(() => onPack(order, lines), 'Moved to Packed')} /> : null}
@@ -1206,6 +1218,7 @@ function OrderNextStepBar({ order, roles, pricing, inOrderPage, onAdvance, onDel
     </div> : <>
       {informational ? <p className={`flex items-center gap-2 py-2 text-sm font-bold ${step.kind === 'done' ? 'text-sf-success' : 'text-sf-muted'}`}>{step.kind === 'done' ? <CircleCheck aria-hidden="true" size={16} /> : <Clock aria-hidden="true" size={16} />}{step.label}</p> : <>
         {step.kind === 'advance' && order.status === 'awaiting_tally_billing' ? <label className="text-xs font-bold text-sf-muted">Tally invoice number(s)<input maxLength={160} value={invoice} onChange={event => setInvoice(event.target.value)} placeholder="Use commas for split invoices" className="mt-1 min-h-10 w-full rounded-lg border border-sf-line px-3 font-normal text-sf-strong" /></label> : null}
+        {step.kind === 'pricing_approve' ? savePriceCheckbox : null}
         {step.kind === 'advance' && nextStatus[order.status]?.status === 'packed' ? <>
           <button type="button" className={primary} disabled={busy} onClick={() => void run(() => onPack(order, order.lines.map((line) => ({ tallyKey: line.tallyKey, fulfilledQuantity: Number(line.quantity) }))), 'Moved to Packed')}>{busy ? 'Saving…' : 'Packed · all items'}</button>
           <button type="button" disabled={busy} onClick={() => setSheet('pack')} className="min-h-11 rounded-xl border border-sf-line px-4 font-bold text-sf-body">Packed with shortage…</button>

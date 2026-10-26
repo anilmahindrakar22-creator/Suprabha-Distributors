@@ -17,6 +17,7 @@ export function OrderPriceInbox({ canApprove, canChange = false, onCount }: { ca
   const [busy, setBusy] = useState('');
   const [reasons, setReasons] = useState<Record<string, string>>({});
   const [changedRates, setChangedRates] = useState<Record<string, string>>({});
+  const [savedPrices, setSavedPrices] = useState<Record<string, { version: number; checked: boolean }>>({});
   const priceChangeRequests = useRef(new Map<string, { fingerprint: string; idempotencyKey: string }>());
   const [notice, setNotice] = useState('');
   const [error, setError] = useState('');
@@ -24,7 +25,11 @@ export function OrderPriceInbox({ canApprove, canChange = false, onCount }: { ca
   useEffect(() => {
     let live = true;
     loadOrderPriceApprovals(fetch)
-      .then((result) => { if (!live) return; setState({ status: 'ready', ...result, message: '' }); onCount?.(result.items.length); })
+      .then((result) => {
+        if (!live) return;
+        setSavedPrices(current => Object.fromEntries(result.items.flatMap(item => item.workspace.exceptions.flatMap(exception => current[exception.id]?.version === exception.version ? [[exception.id, current[exception.id]]] : []))));
+        setState({ status: 'ready', ...result, message: '' }); onCount?.(result.items.length);
+      })
       .catch((cause: unknown) => { if (live) setState((current) => ({ ...current, status: 'error', message: cause instanceof Error ? cause.message : 'Order prices could not be loaded' })); });
     return () => { live = false; };
   }, [version, onCount]);
@@ -32,12 +37,13 @@ export function OrderPriceInbox({ canApprove, canChange = false, onCount }: { ca
   async function decide(item: OrderPriceApproval, exceptionId: string, expectedVersion: number, action: 'approve_price_exception' | 'reject_price_exception', changedRate?: number) {
     if (busy) return;
     const reason = action === 'approve_price_exception' && changedRate === undefined ? 'Price reviewed and approved' : (reasons[exceptionId] || '').trim();
+    const saveAsCustomerPrice = savedPrices[exceptionId]?.version === expectedVersion ? savedPrices[exceptionId].checked : true;
     if (changedRate !== undefined && (!canApprove || !canChange || action !== 'approve_price_exception' || !validRate(changedRate) || reason.length < 3 || reason.length > 1000)) return;
     setBusy(exceptionId); setError(''); setNotice('');
     try {
       let idempotencyKey;
       if (changedRate !== undefined) {
-        const fingerprint = JSON.stringify([expectedVersion, changedRate, reason]);
+        const fingerprint = JSON.stringify([expectedVersion, changedRate, reason, saveAsCustomerPrice]);
         let request = priceChangeRequests.current.get(exceptionId);
         if (request?.fingerprint !== fingerprint) {
           request = { fingerprint, idempotencyKey: crypto.randomUUID() };
@@ -45,7 +51,7 @@ export function OrderPriceInbox({ canApprove, canChange = false, onCount }: { ca
         }
         idempotencyKey = request.idempotencyKey;
       } else idempotencyKey = crypto.randomUUID();
-      const response = await fetch('/api/pricing', { method: 'POST', headers: { 'content-type': 'application/json' }, body: JSON.stringify({ action, payload: { exceptionId, expectedVersion, reason, idempotencyKey, ...(changedRate !== undefined ? { changedRate } : {}) } }) });
+      const response = await fetch('/api/pricing', { method: 'POST', headers: { 'content-type': 'application/json' }, body: JSON.stringify({ action, payload: { exceptionId, expectedVersion, reason, idempotencyKey, ...(action === 'approve_price_exception' ? { saveAsCustomerPrice } : {}), ...(changedRate !== undefined ? { changedRate } : {}) } }) });
       if (response.status >= 400 && response.status < 500 && response.status !== 408 && response.status !== 429) priceChangeRequests.current.delete(exceptionId);
       await readJsonResponse(response, 'The price decision could not be saved');
       priceChangeRequests.current.delete(exceptionId);
@@ -70,7 +76,16 @@ export function OrderPriceInbox({ canApprove, canChange = false, onCount }: { ca
       : <div className="space-y-4 p-4">{state.items.map((item) => <article key={item.orderId} aria-label={`${item.orderNumber}, ${item.customerName}`} className="min-w-0">
         <p className="text-sm font-bold text-sf-strong">{item.customerName} <span className="font-semibold text-sf-subtle">· {item.orderNumber}</span></p>
         <PriceApprovalCard workspace={item.workspace} />
-        {item.workspace.exceptions.map((exception) => canApprove ? <div key={exception.id} className={`mt-2 grid gap-2 sm:items-center ${canChange ? 'sm:grid-cols-[auto_auto_minmax(0,1fr)_auto]' : 'sm:grid-cols-[auto_minmax(0,1fr)_auto]'}`}>
+        {item.workspace.exceptions.map((exception, index) => {
+          const saveLabel = item.workspace.exceptions.length === 1 ? `Save as ${item.customerName}'s price for ${item.workspace.lines.find(line => line.lineId === exception.lineId)?.itemName ?? 'this item'}` : "Save as this customer's price for these items";
+          return canApprove ? <div key={exception.id} className={`mt-2 grid gap-2 sm:items-center ${canChange ? 'sm:grid-cols-[auto_auto_minmax(0,1fr)_auto]' : 'sm:grid-cols-[auto_minmax(0,1fr)_auto]'}`}>
+          <div className="min-w-0 sm:col-span-full">
+            <label className="flex min-h-11 items-center gap-3 text-sm font-bold text-sf-body">
+              <input type="checkbox" aria-label={`${saveLabel} · ${item.orderNumber} · item ${index + 1}`} checked={savedPrices[exception.id]?.version === exception.version ? savedPrices[exception.id].checked : true} disabled={Boolean(busy)} onChange={event => setSavedPrices(current => ({ ...current, [exception.id]: { version: exception.version, checked: event.target.checked } }))} className="size-4 shrink-0 accent-sf-accent" />
+              {saveLabel}
+            </label>
+            <p className="text-xs text-sf-muted">Next orders use this price without approval until purchase cost rises over 2%.</p>
+          </div>
           <button type="button" disabled={Boolean(busy)} onClick={() => void decide(item, exception.id, exception.version, 'approve_price_exception')} className="min-h-11 rounded-xl bg-sf-ink px-5 text-sm font-bold text-white hover:bg-sf-ink-hover disabled:opacity-50">{busy === exception.id ? 'Saving…' : `Approve ${rupees.format(exception.enteredRate)}`}</button>
           {canChange ? <button type="button" aria-expanded={exception.id in changedRates} disabled={Boolean(busy)} onClick={() => {
             priceChangeRequests.current.delete(exception.id);
@@ -83,7 +98,8 @@ export function OrderPriceInbox({ canApprove, canChange = false, onCount }: { ca
             <button type="button" disabled={Boolean(busy) || !validRate(Number(changedRates[exception.id])) || (reasons[exception.id] || '').trim().length < 3} onClick={() => void decide(item, exception.id, exception.version, 'approve_price_exception', Number(changedRates[exception.id]))} className="min-h-11 rounded-xl bg-sf-ink px-5 text-sm font-bold text-white hover:bg-sf-ink-hover disabled:opacity-50">{busy === exception.id ? 'Saving…' : `Approve ${rupees.format(Number(changedRates[exception.id]))}`}</button>
             {(reasons[exception.id] || '').trim().length < 3 ? <p className="text-xs font-bold text-sf-warning sm:col-span-full">Reason required to change the price</p> : null}
           </div> : null}
-        </div> : <p key={exception.id} className="mt-2 text-xs font-bold text-sf-warning">Waiting for management to approve.</p>)}
+        </div> : <p key={exception.id} className="mt-2 text-xs font-bold text-sf-warning">Waiting for management to approve.</p>;
+        })}
       </article>)}
       </div>}
     {state.status === 'ready' && state.truncated ? <p className="px-4 pb-4 text-xs text-sf-subtle">Showing order prices from the first 200 active orders. Use Orders → Prices to approve for the rest.</p> : null}

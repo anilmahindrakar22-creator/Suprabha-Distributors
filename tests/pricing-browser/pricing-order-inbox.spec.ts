@@ -44,7 +44,7 @@ test('Pricing inbox lists order prices with the facts and approves them', async 
   await expect(inbox.getByText('SO/26-27/0050: price approved.')).toBeVisible();
   await expect(inbox.getByText('No order prices are waiting for approval.')).toBeVisible();
   expect(posts).toHaveLength(1);
-  expect(posts[0]).toMatchObject({ action: 'approve_price_exception', payload: { exceptionId: 'ex1', expectedVersion: 4, reason: 'Price reviewed and approved' } });
+  expect(posts[0]).toMatchObject({ action: 'approve_price_exception', payload: { exceptionId: 'ex1', expectedVersion: 4, reason: 'Price reviewed and approved', saveAsCustomerPrice: true } });
 });
 
 test('management changes and approves an inbox price with a required reason', async ({ page }) => {
@@ -68,7 +68,7 @@ test('management changes and approves an inbox price with a required reason', as
   await expect(approve).toBeEnabled();
   await approve.click();
   await expect.poll(() => posts.length).toBe(1);
-  expect(posts[0]).toMatchObject({ action: 'approve_price_exception', payload: { exceptionId: 'ex1', expectedVersion: 4, changedRate: 4510, reason: 'Use the latest agreed customer rate' } });
+  expect(posts[0]).toMatchObject({ action: 'approve_price_exception', payload: { exceptionId: 'ex1', expectedVersion: 4, changedRate: 4510, reason: 'Use the latest agreed customer rate', saveAsCustomerPrice: true } });
   await expect(inbox.getByText('SO/26-27/0050: price changed to ₹4,510 and approved.', { exact: true })).toBeVisible();
 });
 
