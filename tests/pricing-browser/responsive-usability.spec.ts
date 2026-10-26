@@ -1,4 +1,5 @@
 import { expect, test } from '@playwright/test';
+import { priceContract } from '../fixtures/api-builders';
 
 const longName = 'Laboratory' + 'Customer'.repeat(18);
 const longEmail = 'staff'.repeat(24) + '@example.test';
@@ -23,7 +24,7 @@ for (const width of [320, 375, 768, 1280]) {
   test(`pricing evidence wraps and decisions have touch targets at ${width}px`, async ({ page }) => {
     await page.setViewportSize({ width, height: 532 });
     await page.route('**/api/orders?customers=1', route => route.fulfill({ json: { customers: [] } }));
-    await page.route('**/api/pricing**', route => route.fulfill({ json: route.request().url().includes('policies=1') ? { policies: [] } : { contracts: [{ id: 'test', customerId: 'test', customerName: longName, tallyKey: 'REAGENT'.repeat(24), price: 445, validFrom: '2026-01-01', status: 'pending_approval', source: 'customer_contract', reason: 'Review', createdBy: longEmail, version: 1 }] } }));
+    await page.route('**/api/pricing**', route => route.fulfill({ json: route.request().url().includes('policies=1') ? { policies: [] } : { contracts: [priceContract({ id: 'test', customerId: 'test', customerName: longName, tallyKey: 'REAGENT'.repeat(24), price: 445, validFrom: '2026-01-01', status: 'pending_approval', source: 'customer_contract', reason: 'Review', createdBy: longEmail, version: 1 })] } }));
     await page.goto('/?view=workspace');
     const approve = page.getByRole('button', { name: 'Approve', exact: true });
     await approve.scrollIntoViewIfNeeded();

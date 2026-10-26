@@ -1,4 +1,5 @@
 import { expect, test } from '@playwright/test';
+import { orderBootstrap } from '../fixtures/api-builders';
 
 for (const surface of ['service', 'instrument-economics', 'embedded-economics']) {
   test(`${surface} lets users scroll to the lower evidence without scrolling the workspace header`, async ({ page }, testInfo) => {
@@ -17,7 +18,7 @@ for (const surface of ['service', 'instrument-economics', 'embedded-economics'])
       sourceImportedAt: '2026-10-10T07:00:00Z', sourceLineCount: 0, unattributedPaise: '0', reportingFrom: '2026-09-01', reportingTo: '2026-10-01',
       policy: { attractiveMonths: 24, reviewMonths: 36, exceptionMonths: 48, forecastWindowMonths: 3, watchRevenuePercent: 80, criticalRevenuePercent: 50 },
     } }));
-    await page.route('**/api/orders**', route => route.fulfill({ json: { actor: { email: 'staff@example.test' }, orders: [], customers: [], operations: {} } }));
+    await page.route('**/api/orders**', route => route.fulfill({ json: orderBootstrap({ actor: { email: 'staff@example.test', role: 'staff' }, orders: [], customers: [], operations: {} }) }));
     if (surface === 'embedded-economics') {
       await page.goto('/?view=frame&role=management');
       // Phones keep Economics under More in the bottom navigation.

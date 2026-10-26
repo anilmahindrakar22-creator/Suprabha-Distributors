@@ -64,7 +64,8 @@ export function billingSheet(o: Partial<BillingSheet> = {}): BillingSheet {
 export function rateCheck(o: Partial<RateCheck> = {}): RateCheck {
   return {
     view: 'rate_check', orderId: 'order-1', orderNumber: 'SF-TEST-001', customerName: 'Test laboratory',
-    status: 'packed', tolerance: 1, state: 'not_billed', lines: [], ...o,
+    status: 'packed', tolerance: 1, state: 'not_billed', ...o,
+    lines: (o.lines ?? []).map((line) => ({ invoiceUnits: [], orderUnit: 'Nos', ...line })),
   } satisfies RateCheck;
 }
 

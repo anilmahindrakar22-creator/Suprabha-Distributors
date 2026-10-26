@@ -1,4 +1,6 @@
 import { expect, test } from '@playwright/test';
+import { orderSummary, orderBootstrap } from '../fixtures/api-builders';
+import type { OrderSummary } from '../../lib/order-types';
 
 const actor = 'order-desk@example.test';
 const key = `stockflow:order-draft:v1:${actor}`;
@@ -10,7 +12,7 @@ test('real submission deadline retains the original command for successful retry
   await page.route('**/api/orders', async route => {
     writes.push(route.request().postDataJSON());
     // Leave the first HTTP request unanswered: the application deadline must abort it.
-    if (writes.length > 1) await route.fulfill({ json: { orderNumber: 'SF-TIMEOUT-RECOVERED' } });
+    if (writes.length > 1) await route.fulfill({ json: orderSummary({ orderNumber: 'SF-TIMEOUT-RECOVERED' }) });
   });
   await page.addInitScript(({ key, actor, command }) => {
     localStorage.setItem(key, JSON.stringify({ schemaVersion: 1, actorEmail: actor, state: 'pending', updatedAt: new Date().toISOString(), command }));
@@ -30,7 +32,7 @@ test('saved draft restores customer and quantities without submitting on reload'
   let writes = 0;
   await page.route('**/api/orders**', async route => {
     if (route.request().method() === 'POST') writes += 1;
-    await route.fulfill({ json: { orders: [] } });
+    await route.fulfill({ json: orderBootstrap({ orders: [] }) });
   });
   await page.addInitScript(({ key, actor, command }) => {
     localStorage.setItem(key, JSON.stringify({ schemaVersion: 1, actorEmail: actor, state: 'draft', updatedAt: new Date().toISOString(), command }));
@@ -46,7 +48,7 @@ test('saved draft restores customer and quantities without submitting on reload'
 
 test('another account cannot restore or submit the previous account pending draft', async ({ page }) => {
   let writes = 0;
-  await page.route('**/api/orders**', async route => { if (route.request().method() === 'POST') writes += 1; await route.fulfill({ json: { orders: [] } }); });
+  await page.route('**/api/orders**', async route => { if (route.request().method() === 'POST') writes += 1; await route.fulfill({ json: orderBootstrap({ orders: [] }) }); });
   await page.addInitScript(({ key, actor, command }) => {
     localStorage.setItem(key, JSON.stringify({ schemaVersion: 1, actorEmail: actor, state: 'pending', updatedAt: new Date().toISOString(), command }));
   }, { key, actor, command });
@@ -62,7 +64,7 @@ test('repeated reconnect events send one unchanged pending command and clear it 
   const writes: unknown[] = [];
   let acknowledge!: () => void;
   const held = new Promise<void>(resolve => { acknowledge = resolve; });
-  await page.route('**/api/orders', async route => { writes.push(route.request().postDataJSON()); await held; await route.fulfill({ json: { orderNumber: 'SF-RECOVERED' } }); });
+  await page.route('**/api/orders', async route => { writes.push(route.request().postDataJSON()); await held; await route.fulfill({ json: orderSummary({ orderNumber: 'SF-RECOVERED' }) }); });
   await page.addInitScript(({ key, actor, command }) => {
     (window as unknown as { connected: boolean }).connected = false;
     Object.defineProperty(navigator, 'onLine', { get: () => (window as unknown as { connected: boolean }).connected });
@@ -80,7 +82,7 @@ test('repeated reconnect events send one unchanged pending command and clear it 
 
 test('manual retry keeps a pending submission immutable until its outcome is known', async ({ page }) => {
   const writes: unknown[] = [];
-  await page.route('**/api/orders', async route => { writes.push(route.request().postDataJSON()); await route.fulfill({ json: { orderNumber: 'SF-MANUAL-RECOVERED' } }); });
+  await page.route('**/api/orders', async route => { writes.push(route.request().postDataJSON()); await route.fulfill({ json: orderSummary({ orderNumber: 'SF-MANUAL-RECOVERED' }) }); });
   await page.addInitScript(({ key, actor, command }) => {
     Object.defineProperty(navigator, 'onLine', { get: () => false });
     localStorage.setItem(key, JSON.stringify({ schemaVersion: 1, actorEmail: actor, state: 'pending', updatedAt: new Date().toISOString(), command }));
@@ -97,7 +99,8 @@ test('incomplete acknowledgement retains the draft and manual retry sends the ex
   const writes: unknown[] = [];
   await page.route('**/api/orders', async route => {
     writes.push(route.request().postDataJSON());
-    await route.fulfill({ json: writes.length === 1 ? {} : { orderNumber: 'SF-ACKNOWLEDGED' } });
+    // Deliberately omit the order number to test an incomplete acknowledgement.
+    await route.fulfill({ json: writes.length === 1 ? {} as unknown as OrderSummary : orderSummary({ orderNumber: 'SF-ACKNOWLEDGED' }) });
   });
   await page.addInitScript(({ key, actor, command }) => {
     localStorage.setItem(key, JSON.stringify({ schemaVersion: 1, actorEmail: actor, state: 'pending', updatedAt: new Date().toISOString(), command }));
@@ -129,7 +132,7 @@ test('revoked order access stops reconnect retries and keeps a draft needing att
 
 test('missing saved Tally product blocks saving until an explicit catalogue replacement', async ({ page }) => {
   let writes = 0;
-  await page.route('**/api/orders**', async route => { if (route.request().method() === 'POST') writes += 1; await route.fulfill({ json: { orders: [] } }); });
+  await page.route('**/api/orders**', async route => { if (route.request().method() === 'POST') writes += 1; await route.fulfill({ json: orderBootstrap({ orders: [] }) }); });
   await page.addInitScript(({ key, actor, command }) => {
     localStorage.setItem(key, JSON.stringify({ schemaVersion: 1, actorEmail: actor, state: 'draft', updatedAt: new Date().toISOString(), command: { ...command, payload: { ...command.payload, lines: [{ tallyKey: 'RETIRED-REAGENT', quantity: 3 }] } } }));
   }, { key, actor, command });
@@ -147,7 +150,7 @@ test('parent rerender cannot lose a pending retry acknowledgement', async ({ pag
   let writes = 0;
   let acknowledge!: () => void;
   const held = new Promise<void>(resolve => { acknowledge = resolve; });
-  await page.route('**/api/orders', async route => { writes += 1; await held; await route.fulfill({ json: { orderNumber: 'SF-RERENDER-RECOVERED' } }); });
+  await page.route('**/api/orders', async route => { writes += 1; await held; await route.fulfill({ json: orderSummary({ orderNumber: 'SF-RERENDER-RECOVERED' }) }); });
   await page.addInitScript(({ key, actor, command }) => {
     localStorage.setItem(key, JSON.stringify({ schemaVersion: 1, actorEmail: actor, state: 'pending', updatedAt: new Date().toISOString(), command }));
   }, { key, actor, command });

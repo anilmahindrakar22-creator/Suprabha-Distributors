@@ -1,4 +1,5 @@
 import { readFileSync } from 'node:fs';
+import { spawnSync } from 'node:child_process';
 import { fileURLToPath } from 'node:url';
 import { describe, expect, it } from 'vitest';
 
@@ -6,6 +7,36 @@ const connector = readFileSync(fileURLToPath(new URL('../../desktop-connector/da
 const recovery = readFileSync(fileURLToPath(new URL('../../desktop-connector/recovery.ps1', import.meta.url)), 'utf8');
 
 describe('Tally invoice reconciliation connector', () => {
+  it.skipIf(process.platform !== 'win32')('extracts Nos from RATE, Box from quantity, and null without either', () => {
+    const path = fileURLToPath(new URL('../../desktop-connector/recovery.ps1', import.meta.url)).replace(/'/g, "''");
+    const script = `
+      . '${path}'
+      $results = @(foreach ($case in @(@('4450.00/Nos','2 Box'), @('4450.00','2 Box'), @('4450.00','2'))) {
+        $xml = '<ENVELOPE><VOUCHER><MASTERID>1</MASTERID><DATE>20261026</DATE><VOUCHERNUMBER>TEST</VOUCHERNUMBER><VOUCHERTYPENAME>Sales</VOUCHERTYPENAME><PARTYLEDGERNAME>Customer</PARTYLEDGERNAME><ALLINVENTORYENTRIES.LIST><STOCKITEMNAME>Item</STOCKITEMNAME><RATE>' + $case[0] + '</RATE><BILLEDQTY>' + $case[1] + '</BILLEDQTY></ALLINVENTORYENTRIES.LIST></VOUCHER></ENVELOPE>'
+        $records = @(Convert-LegacySalesRecords $xml)
+        $evidence = @(Get-PricingSalesEvidence $records @(@{name='Customer';tallyKey='Customer'}))
+        @{unit=$records[0].lineItems[0].unit; evidenceUnit=$evidence[0].unit; version=$evidence[0].sourceVersion}
+      })
+      ConvertTo-Json -InputObject $results -Compress
+    `;
+    const result = spawnSync('powershell.exe', ['-NoProfile', '-NonInteractive', '-Command', script], { encoding: 'utf8' });
+    expect(result.status, result.stderr).toBe(0);
+    const rows = JSON.parse(result.stdout);
+    expect(rows.map((row: { unit: string | null }) => row.unit)).toEqual(['Nos', 'Box', null]);
+    expect(rows.map((row: { evidenceUnit: string | null }) => row.evidenceUnit)).toEqual(['Nos', 'Box', null]);
+    expect(new Set(rows.map((row: { version: string }) => row.version)).size).toBe(1);
+  });
+  it('preserves invoice units without changing evidence identity', () => {
+    expect(recovery).toContain("$unit = $null");
+    expect(recovery).toContain("$rateNode.InnerText.Contains('/')");
+    expect(recovery).toContain("$unit = ($rateNode.InnerText -split '/', 2)[1].Trim()");
+    expect(recovery).toContain("$quantityNode.InnerText -match '\\s+([^\\s\\d]+)\\s*$'");
+    expect(recovery).toContain('$unit = $matches[1].Trim()');
+    expect(recovery).toContain('if (-not $unit) { $unit = $null }');
+    expect(recovery).toContain('rate = $rate; unit = $unit');
+    expect(recovery).toContain('unit = $line.unit');
+    expect(recovery).toContain('$sourceVersion = Get-StableEvidenceVersion "$sourceId|$date|$rate|$([string]$voucher.voucherNumber)"');
+  });
   it('exports read-only sales voucher identity and excludes cancelled vouchers', () => {
     expect(connector).toContain('Date,VoucherNumber,VoucherTypeName,Reference,MasterID');
     expect(connector).toContain("sourceScope = 'sales_vouchers_v1'");

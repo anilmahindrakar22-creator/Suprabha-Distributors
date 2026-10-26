@@ -1,4 +1,5 @@
 import { expect, test, type Page } from '@playwright/test';
+import { orderSummary } from '../fixtures/api-builders';
 
 async function prepare(page: Page) {
   await page.route('**/api/offline-catalog?kind=*', (route) => route.fulfill({ json: {
@@ -55,7 +56,7 @@ test('refuses other-account submission without posting an order', async ({ page 
   await prepare(page); await draft(page);
   await page.route('**/api/offline-session', (route) => route.fulfill({ json: { actorEmail: 'other@example.test' } }));
   let posts = 0;
-  await page.route('**/api/orders', (route) => { posts += 1; return route.fulfill({ json: { orderNumber: 'BAD' } }); });
+  await page.route('**/api/orders', (route) => { posts += 1; return route.fulfill({ json: orderSummary({ orderNumber: 'BAD' }) }); });
   await page.getByRole('button', { name: 'Verify account and submit' }).click();
   await expect(page.getByRole('status')).toContainText('Sign in with the account');
   expect(posts).toBe(0);
@@ -71,7 +72,7 @@ test('renews expired access before checking the saved draft account again', asyn
   });
   await page.route('**/api/staff-auth/refresh', route => { renewals++; return route.fulfill({ json: { ok: true } }); });
   await page.route('**/api/staff-auth', route => route.fulfill({ json: { ok: true } }));
-  await page.route('**/api/orders', route => { posts++; return route.fulfill({ json: { orderNumber: 'SF-OFFLINE-2' } }); });
+  await page.route('**/api/orders', route => { posts++; return route.fulfill({ json: orderSummary({ orderNumber: 'SF-OFFLINE-2' }) }); });
   await page.getByRole('button', { name: 'Verify account and submit' }).click();
   await expect(page.getByRole('status')).toContainText('SF-OFFLINE-2');
   expect(checks).toBe(2); expect(renewals).toBe(1); expect(posts).toBe(1);
@@ -86,7 +87,7 @@ test('renewal cannot submit a draft under another account', async ({ page }) => 
   });
   await page.route('**/api/staff-auth/refresh', route => route.fulfill({ json: { ok: true } }));
   await page.route('**/api/staff-auth', route => route.fulfill({ json: { ok: true } }));
-  await page.route('**/api/orders', route => { posts++; return route.fulfill({ json: { orderNumber: 'BAD' } }); });
+  await page.route('**/api/orders', route => { posts++; return route.fulfill({ json: orderSummary({ orderNumber: 'BAD' }) }); });
   await page.getByRole('button', { name: 'Verify account and submit' }).click();
   await expect(page.getByRole('status')).toContainText('Sign in with the account');
   expect(posts).toBe(0);
@@ -99,7 +100,7 @@ test('retains uncertain submission and retries the exact original command', asyn
   await page.route('**/api/orders', (route) => {
     expect(route.request().headers()['x-stockflow-actor']).toBe('staff@example.test');
     commands.push(route.request().postData()!);
-    return route.fulfill({ status: commands.length === 1 ? 503 : 200, json: commands.length === 1 ? { error: 'unavailable' } : { orderNumber: 'SF-OFFLINE-1' } });
+    return route.fulfill({ status: commands.length === 1 ? 503 : 200, json: commands.length === 1 ? { error: 'unavailable' } : orderSummary({ orderNumber: 'SF-OFFLINE-1' }) });
   });
   await page.getByRole('button', { name: 'Verify account and submit' }).click();
   await expect(page.getByRole('status')).toContainText('Submission is unresolved');
@@ -154,7 +155,7 @@ test('changing a draft customer does not reuse the previous customer contact or 
   await expect(page.getByRole('status')).toContainText('Encrypted draft saved');
   await page.route('**/api/offline-session', (route) => route.fulfill({ json: { actorEmail: 'staff@example.test' } }));
   let submitted: { payload: Record<string, unknown> } | undefined;
-  await page.route('**/api/orders', (route) => { submitted = route.request().postDataJSON(); return route.fulfill({ json: { orderNumber: 'SF-CHANGED-CUSTOMER' } }); });
+  await page.route('**/api/orders', (route) => { submitted = route.request().postDataJSON(); return route.fulfill({ json: orderSummary({ orderNumber: 'SF-CHANGED-CUSTOMER' }) }); });
   await page.getByRole('button', { name: 'Verify account and submit' }).click();
   await expect(page.getByRole('status')).toContainText('SF-CHANGED-CUSTOMER');
   expect(submitted?.payload.customerName).toBe('Other Laboratory');

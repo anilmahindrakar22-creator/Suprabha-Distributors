@@ -1055,6 +1055,13 @@
       "status": "not_deployed"
     },
     {
+      "localFile": "20261026150000_rate_check_units.sql",
+      "localSha256": "998361c4eb704a295545e08b3311eac08f4ba1e5fd26b9d7b0e40ea3adfae0e3",
+      "remoteVersion": null,
+      "remoteSha256": null,
+      "status": "not_deployed"
+    },
+    {
       "localFile": "20261026140000_push_alerts.sql",
       "localSha256": "cef8c72201ce4ac98f5cf0543ecc946e2fbf8f7c014c3f037d312ba5f624ad02",
       "remoteVersion": null,

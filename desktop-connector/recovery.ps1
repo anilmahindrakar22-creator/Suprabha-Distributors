@@ -65,7 +65,14 @@ function Convert-LegacySalesRecords([string]$Document, [string]$SourceDomain = '
             $rateNode = $_.SelectSingleNode('./RATE')
             $amountNode = $_.SelectSingleNode('./AMOUNT')
             $rate = Get-TallyRate $(if ($rateNode) { $rateNode.InnerText } else { '' }) $(if ($amountNode) { $amountNode.InnerText } else { '' }) $quantity
-            [ordered]@{ lineNumber = $lineNumber; itemName = $itemNode.InnerText.Trim(); quantity = $quantity; rate = $rate }
+            $unit = $null
+            if ($rateNode -and $rateNode.InnerText.Contains('/')) {
+                $unit = ($rateNode.InnerText -split '/', 2)[1].Trim()
+            } elseif ($quantityNode -and $quantityNode.InnerText -match '\s+([^\s\d]+)\s*$') {
+                $unit = $matches[1].Trim()
+            }
+            if (-not $unit) { $unit = $null }
+            [ordered]@{ lineNumber = $lineNumber; itemName = $itemNode.InnerText.Trim(); quantity = $quantity; rate = $rate; unit = $unit }
         })
         [ordered]@{
             masterId = $id; date = if ($dateNode) { $dateNode.InnerText.Trim() } else { '' }; voucherNumber = if ($voucherNumberNode) { $voucherNumberNode.InnerText.Trim() } else { '' }
@@ -107,7 +114,7 @@ function Get-PricingSalesEvidence($Records, $Customers, [int]$LimitPerCustomerIt
             $sourceId = "$([string]$voucher.masterId)|$([int]$line.lineNumber)|$item"
             $sourceVersion = Get-StableEvidenceVersion "$sourceId|$date|$rate|$([string]$voucher.voucherNumber)"
             $evidence.Add([ordered]@{
-                customerTallyKey = $customerKey; tallyItemKey = $item; rate = $rate; invoiceDate = $invoiceDate
+                customerTallyKey = $customerKey; tallyItemKey = $item; rate = $rate; invoiceDate = $invoiceDate; unit = $line.unit
                 invoiceReference = [string]$voucher.voucherNumber; sourceId = $sourceId; sourceVersion = $sourceVersion
                 exceptional = $null -ne $exceptionType; exceptionType = $exceptionType
             })

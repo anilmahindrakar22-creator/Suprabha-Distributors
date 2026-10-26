@@ -1,4 +1,5 @@
 import { test, expect } from '@playwright/test';
+import { orderBootstrap, orderLine, orderSummary } from '../fixtures/api-builders';
 
 test('office request review loads on demand and retries the same versioned decision', async ({ page }) => {
   const decisions: unknown[] = [];
@@ -30,7 +31,7 @@ test('missing-product request retries one command without creating an order', as
   let orders = 0;
   await page.route('**/api/orders**', async (route) => {
     if (route.request().method() === 'POST') orders += 1;
-    await route.fulfill({ json: { orders: [], pagination: { total: 0 } } });
+    await route.fulfill({ json: orderBootstrap({ orders: [], pagination: { page: 1, pageCount: 1, pageSize: 20, total: 0 } }) });
   });
   await page.route('**/api/product-requests', async (route) => {
     requests.push(route.request().postDataJSON());
@@ -57,7 +58,7 @@ test('five-product keyboard capture saves exact quantities once and records loca
     if (route.request().method() === 'POST') {
       commands.push(route.request().postDataJSON());
       await route.fulfill({ json: { orderNumber: 'SF-TEST-FIVE' } });
-    } else await route.fulfill({ json: { orders: [], pagination: { total: 0 } } });
+    } else await route.fulfill({ json: orderBootstrap({ orders: [], pagination: { page: 1, pageCount: 1, pageSize: 20, total: 0 } }) });
   });
   await page.goto('/?view=order-entry');
   const customer = page.getByRole('combobox', { name: 'Name' });
@@ -87,7 +88,7 @@ test('order desk can select customer and products, enter quantities, and keep th
   let submissions = 0;
   await page.route('**/api/orders**', async (route) => {
     if (route.request().method() === 'POST') submissions += 1;
-    await route.fulfill({ json: { orders: [], pagination: { total: 0 } } });
+    await route.fulfill({ json: orderBootstrap({ orders: [], pagination: { page: 1, pageCount: 1, pageSize: 20, total: 0 } }) });
   });
   await page.goto('/?view=order-entry');
   const customer = page.getByRole('combobox', { name: 'Name' });
@@ -164,19 +165,19 @@ test('recent customer products come from Tally bills, independently of StockFlow
   } }));
   await page.route('**/api/orders?list=1*', async (route) => {
     historyRequests += 1;
-    await route.fulfill({ json: { orders: [{
+    await route.fulfill({ json: orderBootstrap({ orders: [orderSummary({
       id: '33333333-3333-4333-8333-333333333333', orderNumber: 'SF-TEST-1', customerName: 'Test Beta Laboratory',
       customerPhone: null, status: 'delivered', source: 'phone', notes: null, version: 1,
       createdAt: '2026-09-20T10:00:00Z', updatedAt: '2026-09-20T10:00:00Z', lineCount: 3,
       totalQuantity: 3, reservedQuantity: 0, tallyInvoiceNumber: null,
       lines: [
-        { tallyKey: 'CLEANER', itemName: 'Cleaner', quantity: 99 },
+        orderLine({ tallyKey: 'CLEANER', itemName: 'Cleaner', quantity: 99 }),
       ], events: [], exceptions: [], installations: [],
-    }], pagination: { total: 1 } } });
+    })], pagination: { total: 1, page: 1, pageCount: 1, pageSize: 20 } }) });
   });
   await page.route('**/api/orders', async (route) => {
     if (route.request().method() === 'POST') submissions += 1;
-    await route.fulfill({ json: {} });
+    await route.fulfill({ json: orderBootstrap({ orders: [] }) });
   });
   await page.goto('/?view=order-entry');
   const customer = page.getByRole('combobox', { name: 'Name' });
@@ -214,13 +215,14 @@ test('recent products rank by frequency and default to last quantity', async ({ 
       { id: 'rank-middle', createdAt: '2026-09-22T10:00:00Z', status: 'delivered', lines: [{ tallyKey: 'GLUCOSE-A', itemName: 'Glucose A', quantity: 4 }] },
       { id: 'rank-oldest', createdAt: '2026-09-21T10:00:00Z', status: 'delivered', lines: [{ tallyKey: 'GLUCOSE-A', itemName: 'Glucose A', quantity: 1 }] },
       { id: 'rank-cancelled', createdAt: '2026-09-24T10:00:00Z', status: 'cancelled', lines: [{ tallyKey: 'CLEANER', itemName: 'Cleaner', quantity: 9 }] },
-    ].map((order) => ({
+    ].map((order) => orderSummary({
       orderNumber: order.id, customerName: 'Test Beta Laboratory', customerPhone: null,
       source: 'phone', notes: null, version: 1, updatedAt: order.createdAt,
       lineCount: order.lines.length, totalQuantity: order.lines.reduce((sum, line) => sum + line.quantity, 0),
       reservedQuantity: 0, tallyInvoiceNumber: null, events: [], exceptions: [], installations: [], ...order,
+      lines: order.lines.map((line) => orderLine(line)),
     }));
-    await route.fulfill({ json: { orders, pagination: { total: 4 } } });
+    await route.fulfill({ json: orderBootstrap({ orders, pagination: { total: 4, page: 1, pageCount: 1, pageSize: 20 } }) });
   });
   await page.goto('/?view=order-entry');
   const customer = page.getByRole('combobox', { name: 'Name' });
@@ -248,15 +250,15 @@ test('switching back to a customer reuses only that customer’s history', async
     const query = new URL(route.request().url()).searchParams.get('query') || '';
     historyQueries.push(query);
     const alpha = query.includes('Alpha');
-    await route.fulfill({ json: { orders: [{
+    await route.fulfill({ json: orderBootstrap({ orders: [orderSummary({
       id: alpha ? 'aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa' : 'bbbbbbbb-bbbb-4bbb-8bbb-bbbbbbbbbbbb',
       orderNumber: alpha ? 'SF-ALPHA' : 'SF-BETA', customerName: alpha ? 'Test Alpha Laboratory' : 'Test Beta Laboratory',
       customerPhone: null, status: 'delivered', source: 'phone', notes: null, version: 1,
       createdAt: '2026-09-20T10:00:00Z', updatedAt: '2026-09-20T10:00:00Z', lineCount: 1,
       totalQuantity: 1, reservedQuantity: 0, tallyInvoiceNumber: null,
-      lines: [{ tallyKey: alpha ? 'GLUCOSE-A' : 'CRP', itemName: alpha ? 'Glucose A' : 'CRP', quantity: 1 }],
+      lines: [orderLine({ tallyKey: alpha ? 'GLUCOSE-A' : 'CRP', itemName: alpha ? 'Glucose A' : 'CRP', quantity: 1 })],
       events: [], exceptions: [], installations: [],
-    }], pagination: { total: 1 } } });
+    })], pagination: { total: 1, page: 1, pageCount: 1, pageSize: 20 } }) });
   });
   await page.goto('/?view=order-entry');
   const customer = page.getByRole('combobox', { name: 'Name' });
@@ -284,7 +286,7 @@ test('switching back to a customer reuses only that customer’s history', async
 
 test('failed Tally history is explicit and retry does not create an order', async ({ page }) => {
   let reads = 0;
-  await page.route('**/api/orders?list=1*', route => route.fulfill({ json: { orders: [], pagination: { total: 0 } } }));
+  await page.route('**/api/orders?list=1*', route => route.fulfill({ json: orderBootstrap({ orders: [], pagination: { total: 0, page: 1, pageCount: 1, pageSize: 20 } }) }));
   await page.route('**/api/orders?recentProductsFor=*', route => {
     reads += 1;
     return reads === 1 ? route.fulfill({ status: 502, json: { error: 'Unavailable' } }) : route.fulfill({ json: { customerId: '22222222-2222-4222-8222-222222222222', linked: false, billCount: 0, products: [] } });
@@ -303,7 +305,7 @@ test('a late Tally response cannot replace the newly selected customer', async (
   let betaStarted!: () => void;
   const started = new Promise<void>(resolve => { betaStarted = resolve; });
   const gate = new Promise<void>(resolve => { releaseBeta = resolve; });
-  await page.route('**/api/orders?list=1*', route => route.fulfill({ json: { orders: [], pagination: { total: 0 } } }));
+  await page.route('**/api/orders?list=1*', route => route.fulfill({ json: orderBootstrap({ orders: [], pagination: { total: 0, page: 1, pageCount: 1, pageSize: 20 } }) }));
   await page.route('**/api/orders?recentProductsFor=*', async route => {
     const customerId = new URL(route.request().url()).searchParams.get('recentProductsFor')!;
     const beta = customerId.startsWith('2222');
