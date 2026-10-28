@@ -15,7 +15,7 @@ export function RequestsWorkspace({ roles, onOpenOrder }: { roles: readonly Stoc
   const [requirementsRefresh, setRequirementsRefresh] = useState(0);
   return (
     <div className="h-full overflow-y-auto bg-sf-page">
-      <div className="mx-auto max-w-5xl p-3 sm:p-6">
+      <div className={`mx-auto max-w-5xl p-3 sm:p-6 ${canManagePurchaseOrders(roles) ? 'pb-28 sm:pb-28' : ''}`}>
         <PageHeader eyebrow="Work requests" title="Requests" description="Product requests from staff and customer demand from open orders." />
         <ProcurementRequirements roles={roles} refreshKey={requirementsRefresh} onOpenOrder={onOpenOrder} onPurchaseOrdersCreated={() => setPoRefresh((value) => value + 1)} />
         {canManagePurchaseOrders(roles) ? <PurchaseOrdersPanel refreshKey={poRefresh} onChanged={() => setRequirementsRefresh((value) => value + 1)} /> : null}

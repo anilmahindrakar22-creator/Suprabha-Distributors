@@ -1,6 +1,6 @@
 'use client';
 
-import { useCallback, useEffect, useEffectEvent, useMemo, useRef, useState, useSyncExternalStore } from 'react';
+import { useCallback, useEffect, useEffectEvent, useLayoutEffect, useMemo, useRef, useState, useSyncExternalStore } from 'react';
 import { ArrowUp, CircleCheck, Clock, Flame, Info, PackageX, PhoneCall, ReceiptText, ShieldAlert, ShieldCheck, ShieldQuestionMark, TriangleAlert, Truck, UserCheck } from 'lucide-react';
 import type {
   CatalogItem,
@@ -1157,6 +1157,8 @@ const currency = new Intl.NumberFormat('en-IN', { style: 'currency', currency: '
 /** Full pricing (cost, margin, history) for pricing roles only; billing and other roles never request it. */
 function useOrderPricing(order: OrderSummary, enabled = true) {
   const readKey = `${order.id}:${order.pricingState}:${order.status}`;
+  const readKeyRef = useRef(readKey);
+  useLayoutEffect(() => { readKeyRef.current = readKey; }, [readKey]);
   const autoLoad = enabled && order.pricingState !== 'approved' && !['delivered', 'cancelled'].includes(order.status);
   const [result, setResult] = useState<{ key: string; workspace: OrderPricingWorkspace | null; state: 'idle' | 'loading' | 'error'; message: string }>(() => ({ key: readKey, workspace: null, state: autoLoad ? 'loading' : 'idle', message: '' }));
   const request = useRef<AbortController | null>(null);
@@ -1165,22 +1167,22 @@ function useOrderPricing(order: OrderSummary, enabled = true) {
   const read = useCallback((controller: AbortController) => {
     return fetch(`/api/pricing?orderId=${encodeURIComponent(order.id)}`, { cache: 'no-store', signal: controller.signal }).then(readResponse<OrderPricingWorkspace>).then(workspace => {
       if (controller.signal.aborted) return;
-      setResult({ key: readKey, workspace, state: 'idle', message: '' });
+      setResult({ key: readKeyRef.current, workspace, state: 'idle', message: '' });
     }).catch(cause => {
       if (controller.signal.aborted) return;
-      setResult(current => ({ ...current, key: readKey, state: 'error', message: cause instanceof Error ? cause.message : 'Pricing could not load' }));
+      setResult(current => ({ ...current, key: readKeyRef.current, state: 'error', message: cause instanceof Error ? cause.message : 'Pricing could not load' }));
     }).finally(() => {
       if (request.current === controller) request.current = null;
     });
-  }, [order.id, readKey]);
+  }, [order.id]);
   const reload = useCallback(async () => {
     if (!enabled) return;
     request.current?.abort();
     const controller = new AbortController();
     request.current = controller;
-    setResult(current => ({ ...current, key: readKey, state: 'loading', message: '' }));
+    setResult(current => ({ ...current, key: readKeyRef.current, state: 'loading', message: '' }));
     await read(controller);
-  }, [enabled, read, readKey]);
+  }, [enabled, read]);
   useEffect(() => {
     return () => {
       if (request.current) {

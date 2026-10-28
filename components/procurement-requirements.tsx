@@ -286,7 +286,7 @@ export function ProcurementRequirements({ onOpenOrder, roles = [], refreshKey = 
     {error ? <p role="alert" className="mt-2 text-sm text-sf-danger">{error}</p> : null}
     {success ? <output className="mt-2 block text-sm text-sf-success">{success}</output> : null}
     {loading && !result ? <p className="mt-3 text-sm text-sf-subtle">Loading to order…</p> : null}
-    <div className={`mt-3 space-y-2 ${selected.length ? 'pb-28' : ''}`}>
+    <div className="mt-3 space-y-2">
       {items.map((item) => <article key={item.itemKey} aria-label={item.itemName} className={`min-w-0 rounded-lg border border-sf-line-soft px-3 py-2 ${item.state === 'stock_unknown' ? 'bg-sf-soft-2 text-sf-muted' : 'bg-sf-soft-0 text-sf-body'}`}>
         <div className="flex items-start justify-between gap-3">
           {permitted && item.state === 'order' ? <label className="flex min-h-11 shrink-0 items-center">
