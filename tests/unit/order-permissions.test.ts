@@ -1,7 +1,22 @@
 import { describe, expect, it } from 'vitest';
-import { canAddOrderNotes, canCreateOrders, canEditOrders, canRecordFulfilment } from '../../lib/order-permissions';
+import { canAddOrderNotes, canCreateOrders, canEditOrders, canManageDeliveryExceptions, canManageInstallations, canRecordFulfilment } from '../../lib/order-permissions';
 
 describe('order permissions mirror server role rules', () => {
+  it.each([
+    ['administrator', true], ['operations', true], ['sales', true],
+    ['warehouse', true], ['management', true], ['viewer', false],
+    ['accounts', false], ['billing', false],
+  ] as const)('%s: manage delivery exceptions and installations=%s', (role, allowed) => {
+    for (const roles of [role, [role]]) {
+      expect(canManageDeliveryExceptions(roles)).toBe(allowed);
+      expect(canManageInstallations(roles)).toBe(allowed);
+    }
+  });
+
+  it('allows a permitted combined role to manage operational records', () => {
+    expect(canManageDeliveryExceptions(['viewer', 'warehouse'])).toBe(true);
+    expect(canManageInstallations(['viewer', 'warehouse'])).toBe(true);
+  });
   it.each([
     ['administrator', true],
     ['sales', true],
@@ -46,6 +61,8 @@ describe('order permissions mirror server role rules', () => {
 
   it.each([undefined, null, [], ['sales', 'unknown'], ['sales', 'sales']])('fails closed for invalid roles %j', (roles) => {
     expect(canAddOrderNotes(roles)).toBe(false);
+    expect(canManageDeliveryExceptions(roles)).toBe(false);
+    expect(canManageInstallations(roles)).toBe(false);
     expect(canCreateOrders(roles)).toBe(false);
     expect(canEditOrders(roles)).toBe(false);
     expect(canRecordFulfilment(roles)).toBe(false);

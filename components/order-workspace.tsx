@@ -40,7 +40,7 @@ import { rateCheckBadge, RATE_CHECK_ROLES, RATE_CHECK_STATUSES } from '@/lib/rat
 import { BILLING_ROLES, BILLING_STATUSES } from '@/lib/billing-sheet';
 import { courierChoices, defaultReceiver, isLocalDelivery, istToday, LOCAL_DELIVERY, type DispatchMode } from '@/lib/dispatch-options';
 import { hasAnyStockFlowRole, type StockFlowRole } from '@/lib/user-types';
-import { canAddOrderNotes, canCreateOrders, canEditOrders, canRecordFulfilment } from '@/lib/order-permissions';
+import { canAddOrderNotes, canCreateOrders, canEditOrders, canManageDeliveryExceptions, canManageInstallations, canRecordFulfilment } from '@/lib/order-permissions';
 import type { TallyRecentProducts } from '@/lib/tally-recent-products';
 
 type DraftLine = { tallyKey: string; item: CatalogItem | null; quantity: number };
@@ -1020,7 +1020,7 @@ function OrderRow({
       </div>
       <OrderNextStepBar order={order} roles={roles} pricing={pricing} inOrderPage={inOrderPage} onAdvance={onAdvance} onDelivery={onDelivery} onPricingChanged={onPricingChanged} onPack={onPack} />
       </div>
-      {pricing.workspace?.pricingState === 'approval_required' ? <PriceApprovalCard workspace={pricing.workspace} /> : null}
+      {order.pricingState === 'approval_required' && pricing.workspace?.pricingState === 'approval_required' && pricing.workspace.orderVersion === order.version ? <PriceApprovalCard workspace={pricing.workspace} /> : null}
       {(BILLING_STATUSES as readonly string[]).includes(order.status) && hasAnyStockFlowRole(roles, [...BILLING_ROLES]) ? <BillingSheetPanel order={order} /> : null}
       <details className="mt-3 rounded-xl border border-sf-line-soft bg-sf-soft-0 text-sm">
         <summary className="flex min-h-10 cursor-pointer list-none items-center justify-between gap-3 px-3 font-bold text-sf-label marker:hidden [&::-webkit-details-marker]:hidden">
@@ -1063,8 +1063,8 @@ function OrderRow({
         {['ready_for_dispatch', 'dispatched', 'delivered'].includes(order.status) ? <DispatchPanel key={order.status} order={order} actorRole={actorRole} actorRoles={roles} onSave={onDelivery} /> : null}
         {['phone_order_received','awaiting_confirmation','awaiting_approval','confirmed','partially_reserved','fully_reserved','ready_for_picking','picked','packed'].includes(order.status) && canEditOrders(roles) ? <OrderEditPanel order={order} onSave={onEdit} /> : null}
         {detailState === 'loading' ? <p className="mt-4 text-xs text-sf-subtle">Loading operational history…</p> : detailState === 'error' ? <button type="button" onClick={() => void loadDetails()} className="mt-4 text-xs font-bold text-sf-danger">Operational history could not load · Retry</button> : null}
-        <DeliveryExceptionPanel order={detailedOrder} onSave={onException} />
-        <InstallationPanel order={detailedOrder} onSave={onInstallation} />
+        <DeliveryExceptionPanel order={detailedOrder} canManage={canManageDeliveryExceptions(roles)} onSave={onException} />
+        <InstallationPanel order={detailedOrder} canManage={canManageInstallations(roles)} onSave={onInstallation} />
         {order.status === 'awaiting_tally_billing' ? <BillingHandoff order={order} /> : null}
         {canAddOrderNotes(roles) ? <OrderNotePanel order={order} onSave={onAddNote} /> : null}
         <OrderActivityLog key={`${order.id}-${order.version}`} orderId={order.id} initialEvents={order.events || []} />
@@ -1085,10 +1085,12 @@ const currency = new Intl.NumberFormat('en-IN', { style: 'currency', currency: '
 
 /** Full pricing (cost, margin, history) for pricing roles only; billing and other roles never request it. */
 function useOrderPricing(order: OrderSummary, enabled = true) {
-  const readKey = `${order.id}:${order.pricingState}:${order.status}`;
+  const readKey = `${order.id}:${order.pricingState}:${order.status}:${order.version}`;
   const autoLoad = enabled && order.pricingState !== 'approved' && !['delivered', 'cancelled'].includes(order.status);
   const [result, setResult] = useState<{ key: string; workspace: OrderPricingWorkspace | null; state: 'idle' | 'loading' | 'error'; message: string }>(() => ({ key: readKey, workspace: null, state: autoLoad ? 'loading' : 'idle', message: '' }));
   const request = useRef<AbortController | null>(null);
+  const automaticVersion = useRef<string | null>(null);
+  const automaticReadKey = useRef<string | null>(null);
   const read = useCallback((controller: AbortController) => {
     return fetch(`/api/pricing?orderId=${encodeURIComponent(order.id)}`, { cache: 'no-store', signal: controller.signal }).then(readResponse<OrderPricingWorkspace>).then(workspace => {
       if (controller.signal.aborted) return;
@@ -1096,6 +1098,8 @@ function useOrderPricing(order: OrderSummary, enabled = true) {
     }).catch(cause => {
       if (controller.signal.aborted) return;
       setResult(current => ({ ...current, key: readKey, state: 'error', message: cause instanceof Error ? cause.message : 'Pricing could not load' }));
+    }).finally(() => {
+      if (request.current === controller) request.current = null;
     });
   }, [order.id, readKey]);
   const reload = useCallback(async () => {
@@ -1107,15 +1111,26 @@ function useOrderPricing(order: OrderSummary, enabled = true) {
     await read(controller);
   }, [enabled, read, readKey]);
   useEffect(() => {
-    if (order.pricingState === 'approved') return () => request.current?.abort();
-    if (autoLoad) {
-      request.current?.abort();
-      const controller = new AbortController();
-      request.current = controller;
-      void read(controller);
-    }
-    return () => request.current?.abort();
-  }, [autoLoad, order.pricingState, read]);
+    return () => {
+      if (request.current) {
+        request.current.abort();
+        request.current = null;
+        automaticVersion.current = null;
+        automaticReadKey.current = null;
+      }
+    };
+  }, [enabled, read]);
+  useEffect(() => {
+    if (!enabled || ['delivered', 'cancelled'].includes(order.status)) return;
+    const stale = result.workspace?.orderId === order.id && result.workspace.orderVersion !== order.version;
+    const versionKey = `${order.id}:${order.version}`;
+    if (stale) {
+      if (automaticVersion.current === versionKey) return;
+      automaticVersion.current = versionKey;
+    } else if (!autoLoad || automaticReadKey.current === readKey) return;
+    automaticReadKey.current = readKey;
+    void reload();
+  }, [autoLoad, enabled, order.id, order.status, order.version, readKey, reload, result.workspace]);
   return {
     workspace: result.workspace?.orderId === order.id ? result.workspace : null,
     reload,
@@ -1404,16 +1419,29 @@ async function readOrderSubmission(response: Response) {
   return { ...body, orderNumber };
 }
 
-function InstallationPanel({ order, onSave }: { order: OrderSummary; onSave: (order: OrderSummary, command: Extract<OrderCommand, { action: 'schedule_installation' | 'complete_installation' }>) => Promise<void> }) {
+function InstallationPanel({ order, canManage, onSave }: { order: OrderSummary; canManage: boolean; onSave: (order: OrderSummary, command: Extract<OrderCommand, { action: 'schedule_installation' | 'complete_installation' }>) => Promise<void> }) {
   const [open, setOpen] = useState(false); const [busy, setBusy] = useState(false);
   const [tallyKey, setTallyKey] = useState(order.lines[0]?.tallyKey || ''); const [scheduledDate, setScheduledDate] = useState('');
   const [siteContact, setSiteContact] = useState(''); const [engineerEmail, setEngineerEmail] = useState('');
   const [completion, setCompletion] = useState<Record<string, { serial: string; notes: string }>>({});
   const installations = order.installations || []; const scheduled = installations.filter((item) => item.status === 'scheduled').length;
+  if (!canManage && !installations.length) return null;
+  if (!canManage) return (
+    <div className="mt-5 border-t border-sf-line-soft pt-4">
+      <button type="button" onClick={() => setOpen(value => !value)} className="font-bold text-sf-body">{open ? '−' : '+'} Equipment installation{scheduled ? ` (${scheduled} scheduled)` : ''}</button>
+      {open ? <div className="mt-3 space-y-3 rounded-xl bg-white p-4">{installations.map(item => (
+        <div key={item.id} className="rounded-lg border border-sf-line-soft p-3">
+          <div className="flex flex-wrap justify-between gap-2"><strong className="text-sf-strong">{item.itemName}</strong><span className="text-xs font-bold capitalize text-sf-muted">{item.status}</span></div>
+          <p className="mt-1 text-xs text-sf-subtle">Scheduled {new Date(`${item.scheduledDate}T00:00:00`).toLocaleDateString('en-IN')}{item.engineerEmail ? ` · ${item.engineerEmail}` : ''}</p>
+          {item.status === 'completed' ? <p className="mt-2 text-xs text-sf-success">Serial {item.serialNumber} · {item.commissioningNotes}</p> : null}
+        </div>
+      ))}</div> : null}
+    </div>
+  );
   return <div className="mt-5 border-t border-sf-line-soft pt-4"><button type="button" onClick={() => setOpen((value) => !value)} className="font-bold text-sf-body">{open ? '−' : '+'} Equipment installation{scheduled ? ` (${scheduled} scheduled)` : ''}</button>{open ? <div className="mt-3 space-y-3 rounded-xl bg-white p-4">{installations.map((item) => { const current = completion[item.id] || { serial: '', notes: '' }; return <div key={item.id} className="rounded-lg border border-sf-line-soft p-3"><div className="flex flex-wrap justify-between gap-2"><strong className="text-sf-strong">{item.itemName}</strong><span className="text-xs font-bold capitalize text-sf-muted">{item.status}</span></div><p className="mt-1 text-xs text-sf-subtle">Scheduled {new Date(`${item.scheduledDate}T00:00:00`).toLocaleDateString('en-IN')}{item.engineerEmail ? ` · ${item.engineerEmail}` : ''}</p>{item.status === 'completed' ? <p className="mt-2 text-xs text-sf-success">Serial {item.serialNumber} · {item.commissioningNotes}</p> : <div className="mt-3 grid gap-2 sm:grid-cols-[160px_1fr_auto]"><input value={current.serial} onChange={(event) => setCompletion((value) => ({ ...value, [item.id]: { ...current, serial: event.target.value } }))} placeholder="Serial number" maxLength={100} className="min-h-10 rounded-lg border px-3 text-xs" /><input value={current.notes} onChange={(event) => setCompletion((value) => ({ ...value, [item.id]: { ...current, notes: event.target.value } }))} placeholder="Commissioning checks / notes" maxLength={1000} className="min-h-10 rounded-lg border px-3 text-xs" /><button type="button" disabled={busy || current.serial.trim().length < 2 || current.notes.trim().length < 3} onClick={async () => { setBusy(true); try { await onSave(order, { action: 'complete_installation', payload: { orderId: order.id, expectedVersion: order.version, installationId: item.id, serialNumber: current.serial.trim(), commissioningNotes: current.notes.trim() } }); } finally { setBusy(false); } }} className="min-h-10 rounded-lg border border-sf-accent-line px-3 text-xs font-bold text-sf-success disabled:opacity-50">Complete</button></div>}</div>; })}<div className="grid gap-2 border-t border-sf-line-soft pt-3 sm:grid-cols-2"><select value={tallyKey} onChange={(event) => setTallyKey(event.target.value)} className="min-h-10 rounded-lg border px-2 text-xs">{order.lines.map((line) => <option key={line.tallyKey} value={line.tallyKey}>{line.itemName}</option>)}</select><input type="date" value={scheduledDate} onChange={(event) => setScheduledDate(event.target.value)} className="min-h-10 rounded-lg border px-3 text-xs" /><input value={siteContact} onChange={(event) => setSiteContact(event.target.value)} placeholder="Site contact (optional)" maxLength={200} className="min-h-10 rounded-lg border px-3 text-xs" /><input type="email" maxLength={254} value={engineerEmail} onChange={(event) => setEngineerEmail(event.target.value)} placeholder="Engineer email (optional)" className="min-h-10 rounded-lg border px-3 text-xs" /></div><div className="flex justify-end"><button type="button" disabled={busy || !tallyKey || !scheduledDate || order.status === 'cancelled'} onClick={async () => { setBusy(true); try { await onSave(order, { action: 'schedule_installation', payload: { orderId: order.id, expectedVersion: order.version, tallyKey, scheduledDate, siteContact: siteContact.trim(), engineerEmail: engineerEmail.trim() } }); } finally { setBusy(false); } }} className="min-h-10 rounded-lg bg-sf-ink px-4 text-xs font-bold text-white disabled:opacity-50">Schedule installation</button></div><p className="text-xs text-sf-subtle">Use this only for equipment lines. Reagents need no installation record.</p></div> : null}</div>;
 }
 
-function DeliveryExceptionPanel({ order, onSave }: { order: OrderSummary; onSave: (order: OrderSummary, command: Extract<OrderCommand, { action: 'create_exception' | 'resolve_exception' }>) => Promise<void> }) {
+function DeliveryExceptionPanel({ order, canManage, onSave }: { order: OrderSummary; canManage: boolean; onSave: (order: OrderSummary, command: Extract<OrderCommand, { action: 'create_exception' | 'resolve_exception' }>) => Promise<void> }) {
   const [open, setOpen] = useState(false);
   const [busy, setBusy] = useState(false);
   const [category, setCategory] = useState<'delayed' | 'failed_delivery' | 'damaged' | 'wrong_item' | 'other'>('delayed');
@@ -1421,6 +1449,19 @@ function DeliveryExceptionPanel({ order, onSave }: { order: OrderSummary; onSave
   const [resolutions, setResolutions] = useState<Record<string, string>>({});
   const exceptions = order.exceptions || [];
   const openCount = exceptions.filter((item) => item.status === 'open').length;
+  if (!canManage && !exceptions.length) return null;
+  if (!canManage) return (
+    <div className="mt-5 border-t border-sf-line-soft pt-4">
+      <button type="button" onClick={() => setOpen(value => !value)} className="font-bold text-sf-body">{open ? '−' : '+'} Delivery exceptions{openCount ? ` (${openCount} open)` : ''}</button>
+      {open ? <div className="mt-3 space-y-3 rounded-xl bg-white p-4">{exceptions.map(item => (
+        <div key={item.id} className="rounded-lg border border-sf-line-soft p-3">
+          <div className="flex flex-wrap justify-between gap-2"><strong className="capitalize text-sf-strong">{item.category.replaceAll('_', ' ')}</strong><span className="text-xs font-bold text-sf-muted">{item.status}</span></div>
+          <p className="mt-1 text-xs text-sf-muted">{item.summary}</p>
+          {item.status === 'resolved' ? <p className="mt-2 text-xs text-sf-success">Resolution: {item.resolution}</p> : null}
+        </div>
+      ))}</div> : null}
+    </div>
+  );
   return <div className="mt-5 border-t border-sf-line-soft pt-4"><button type="button" onClick={() => setOpen((value) => !value)} className="font-bold text-sf-body">{open ? '−' : '+'} Delivery exceptions{openCount ? ` (${openCount} open)` : ''}</button>{open ? <div className="mt-3 space-y-3 rounded-xl bg-white p-4">{exceptions.map((item) => <div key={item.id} className="rounded-lg border border-sf-line-soft p-3"><div className="flex flex-wrap justify-between gap-2"><strong className="capitalize text-sf-strong">{item.category.replaceAll('_', ' ')}</strong><span className={`rounded-full px-2 py-1 text-[11px] font-bold ${item.status === 'open' ? 'bg-sf-warning-soft text-sf-warning' : 'bg-sf-accent-soft text-sf-success'}`}>{item.status}</span></div><p className="mt-1 text-xs text-sf-muted">{item.summary}</p>{item.status === 'resolved' ? <p className="mt-2 text-xs text-sf-success">Resolution: {item.resolution}</p> : <div className="mt-3 flex flex-col gap-2 sm:flex-row"><input value={resolutions[item.id] || ''} onChange={(event) => setResolutions((current) => ({ ...current, [item.id]: event.target.value }))} placeholder="How was it resolved?" maxLength={500} className="min-h-10 flex-1 rounded-lg border px-3 text-xs" /><button type="button" disabled={busy || (resolutions[item.id] || '').trim().length < 3} onClick={async () => { setBusy(true); try { await onSave(order, { action: 'resolve_exception', payload: { orderId: order.id, expectedVersion: order.version, exceptionId: item.id, resolution: resolutions[item.id].trim() } }); } finally { setBusy(false); } }} className="min-h-10 rounded-lg border border-sf-accent-line px-3 text-xs font-bold text-sf-success disabled:opacity-50">Resolve</button></div>}</div>)}<div className="grid gap-2 border-t border-sf-line-soft pt-3 sm:grid-cols-[170px_1fr_auto]"><select value={category} onChange={(event) => setCategory(event.target.value as typeof category)} className="min-h-10 rounded-lg border px-2 text-xs"><option value="delayed">Delayed</option><option value="failed_delivery">Failed delivery</option><option value="damaged">Damaged</option><option value="wrong_item">Wrong item</option><option value="other">Other</option></select><input value={summary} onChange={(event) => setSummary(event.target.value)} maxLength={500} placeholder="What happened?" className="min-h-10 rounded-lg border px-3 text-xs" /><button type="button" disabled={busy || summary.trim().length < 3 || ['cancelled', 'delivered'].includes(order.status)} onClick={async () => { setBusy(true); try { await onSave(order, { action: 'create_exception', payload: { orderId: order.id, expectedVersion: order.version, category, summary: summary.trim() } }); setSummary(''); } finally { setBusy(false); } }} className="min-h-10 rounded-lg bg-sf-ink px-3 text-xs font-bold text-white disabled:opacity-50">Add exception</button></div>{['cancelled', 'delivered'].includes(order.status) ? <p className="text-xs text-sf-subtle">Closed orders cannot receive new exceptions.</p> : null}</div> : null}</div>;
 }
 

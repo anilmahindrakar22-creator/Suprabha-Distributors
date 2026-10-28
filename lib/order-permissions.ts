@@ -14,6 +14,22 @@ export const ORDER_FULFIL_ROLES = ['administrator', 'sales', 'operations', 'ware
 // Mirrors supabase/migrations/20261025090000_billing_role.sql:64 (order-note gateway role patch).
 export const ORDER_NOTE_ROLES = ['administrator', 'sales', 'operations', 'warehouse', 'accounts', 'management', 'billing'] as const;
 
+// Mirrors supabase/migrations/20260902110000_delivery_exceptions.sql:18;
+// combined-role matching: supabase/migrations/20261004073444_combined_role_operational_gateways.sql:24-25.
+export const DELIVERY_EXCEPTION_ROLES = ['administrator', 'operations', 'sales', 'warehouse', 'management'] as const;
+
+// Mirrors supabase/migrations/20260902113000_equipment_installations.sql:39;
+// combined-role matching: supabase/migrations/20261004073444_combined_role_operational_gateways.sql:24-25.
+export const INSTALLATION_ROLES = ['administrator', 'operations', 'sales', 'warehouse', 'management'] as const;
+
+export function canManageDeliveryExceptions(roles: unknown): boolean {
+  return hasAnyStockFlowRole(roles, DELIVERY_EXCEPTION_ROLES);
+}
+
+export function canManageInstallations(roles: unknown): boolean {
+  return hasAnyStockFlowRole(roles, INSTALLATION_ROLES);
+}
+
 export function canAddOrderNotes(roles: unknown): boolean {
   return hasAnyStockFlowRole(roles, ORDER_NOTE_ROLES);
 }
