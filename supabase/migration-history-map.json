@@ -1,9 +1,9 @@
 {
   "projectId": "aormuidjbdqruglmyseh",
-  "checkedAt": "2026-10-26T12:11:40+00:00",
+  "checkedAt": "2026-10-28T06:13:36.863635+00:00",
   "purpose": "Read-only release evidence; NOT an executable migration plan or authority to repair history.",
   "normalization": "Remove CR characters and trim surrounding whitespace only; SHA-256 over UTF-8.",
-  "localGitHead": "85d723eb28a75c89e1647fe58f64bcff2ed528c7",
+  "localGitHead": "8c44bb5ac264742682315424cdedb82f049fc7fa",
   "remoteOnly": [
     {
       "localFile": "20260829054025_create_stockflow_private_snapshots.sql",
@@ -1064,16 +1064,16 @@
     {
       "localFile": "20261026150000_rate_check_units.sql",
       "localSha256": "998361c4eb704a295545e08b3311eac08f4ba1e5fd26b9d7b0e40ea3adfae0e3",
-      "remoteVersion": null,
-      "remoteSha256": null,
-      "status": "not_deployed"
+      "remoteVersion": "20261028054756",
+      "remoteSha256": "998361c4eb704a295545e08b3311eac08f4ba1e5fd26b9d7b0e40ea3adfae0e3",
+      "status": "exact_normalized_match"
     }
   ],
   "liveCheck": {
     "method": "Read-only full migration version/hash comparison after deployment; normalized SQL removes CR and trims ASCII whitespace",
-    "remoteMigrationCount": 146,
-    "matchedMigrationHashes": 146,
-    "latestRemoteVersion": "20261026120511",
-    "checkedAt": "2026-10-26T12:11:40+00:00"
+    "remoteMigrationCount": 147,
+    "matchedMigrationHashes": 147,
+    "latestRemoteVersion": "20261028054756",
+    "checkedAt": "2026-10-28T06:13:36.863635+00:00"
   }
 }
