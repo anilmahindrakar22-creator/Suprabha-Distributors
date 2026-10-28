@@ -43,7 +43,7 @@ function LoadedSalesCoverageCard() {
       <h2 className="font-extrabold">Sales coverage</h2>
       <button type="button" aria-label="Refresh sales coverage" disabled={state.loading} onClick={refresh} className="min-h-9 rounded-lg border border-sf-line px-3 text-xs font-bold text-sf-body disabled:opacity-50">Refresh</button>
     </div>
-    {state.loading ? <output className="mt-2 block text-sf-muted">Loading sales coverage…</output> : state.error ? <div role="alert" className="mt-2 text-sf-muted">Sales coverage unavailable <button type="button" onClick={refresh} className="min-h-9 rounded-lg border border-sf-line px-3 font-bold">Retry</button></div> : state.coverage ? <SalesCoverageContents coverage={state.coverage} /> : null}
+    {state.loading ? <output className="mt-2 block text-sf-muted">Loading sales coverage…</output> : state.error ? <div className="mt-2 text-sf-muted">Sales coverage unavailable <button type="button" onClick={refresh} className="min-h-9 rounded-lg border border-sf-line px-3 font-bold">Retry</button></div> : state.coverage ? <SalesCoverageContents coverage={state.coverage} /> : null}
   </section>;
 }
 

@@ -41,7 +41,7 @@ for (const width of [320, 375, 768, 1280]) {
     const quantity = page.getByRole('spinbutton', { name: /^Quantity for Glucose A in / });
     await quantity.scrollIntoViewIfNeeded();
     await expect(quantity).toBeInViewport();
-    const card = quantity.locator('../..');
+    const card = dialog.locator('div.rounded-xl').filter({ has: page.getByRole('button', { name: 'Remove Glucose A', exact: true }) }).last();
     const name = card.locator('strong');
     await expect(name).toHaveText('Glucose A');
     expect(await name.evaluate(element => getComputedStyle(element).textOverflow)).not.toBe('ellipsis');

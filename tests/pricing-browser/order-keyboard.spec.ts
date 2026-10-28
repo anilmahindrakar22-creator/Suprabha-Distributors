@@ -188,7 +188,7 @@ test('recent customer products come from Tally bills, independently of StockFlow
   await expect(recent.getByRole('button', { name: 'Add CRP' })).toBeVisible();
   await expect(recent.getByRole('button', { name: 'Add Old item' })).toHaveCount(0);
   await expect(recent.getByRole('button', { name: 'Add Cleaner' })).toHaveCount(0);
-  await expect(recent).toContainText(/of last d+ bills/);
+  await expect(recent).toContainText(/of last \d+ bills/);
   await recent.scrollIntoViewIfNeeded();
   await page.screenshot({ path: testInfo.outputPath('tally-recent-products.png') });
   const quickQuantity = recent.getByRole('spinbutton', { name: 'Recent quantity for Glucose B' });
