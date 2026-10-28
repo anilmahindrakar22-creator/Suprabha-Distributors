@@ -31,7 +31,7 @@ it('validates receive, shared, and cancellation command requirements', () => {
   expect(validatePurchaseOrderCommand({ action: 'cancel_purchase_order', payload: { id, idempotencyKey: id, expectedVersion: 1, reason: 'x' } })).toBeNull();
 });
 it('formats plain text share content without exposing rates', () => {
-  const po: PurchaseOrder = { id, poNumber: 'PO/26-27/0001', supplierName: 'Supplier', status: 'open', sharedAt: null, version: 1, createdAt: '', createdByEmail: '', lines: [{ itemKey: 'x', itemName: 'Reagent', quantity: 2, unit: 'kit', receivedQuantity: 0, rate: 456.78 }], total: 913.56 };
+  const po: PurchaseOrder = { id, poNumber: 'PO/26-27/0001', supplierName: 'Supplier', status: 'open', sharedAt: null, version: 1, createdAt: '', createdByEmail: '', lines: [{ itemKey: 'x', itemName: 'Reagent', quantity: 2, unit: 'kit', receivedQuantity: 0, rate: 456.78 }], totalValue: 913.56 };
   const message = purchaseOrderShareText(po);
   expect(message).toBe('Purchase order PO/26-27/0001\nSupplier: Supplier\nReagent — 2 kit\nSuprabha Distributors');
   expect(message).not.toMatch(/₹|\d+\.\d+|rate/i);

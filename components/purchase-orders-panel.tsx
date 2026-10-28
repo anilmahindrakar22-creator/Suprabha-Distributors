@@ -122,7 +122,7 @@ function PurchaseOrderCard({ po, onRefresh, onConflict }: { po: PurchaseOrder; o
     <div className="flex flex-wrap items-center gap-2 text-xs text-sf-muted"><span className="rounded-full bg-sf-soft-2 px-2 py-1">{po.status[0].toUpperCase() + po.status.slice(1)}</span><span>Created {date(po.createdAt)}</span><span>{po.lines.length} {po.lines.length === 1 ? 'item' : 'items'}</span></div>
     {po.sharedAt ? <p className="text-xs text-sf-muted">Shared {date(po.sharedAt)}</p> : null}
     {expanded ? <ul className="space-y-2 text-sm">{po.lines.map((line) => <li key={line.itemKey} className="break-words">{line.itemName} — {line.quantity} {line.unit}{line.receivedQuantity > 0 ? ` · received ${line.receivedQuantity}` : ''}{Object.hasOwn(line, 'rate') ? ` · ₹${line.rate ?? '—'}` : ''}</li>)}</ul> : null}
-    {Object.hasOwn(po, 'total') ? <p className="text-sm font-semibold">Total ₹{po.total ?? '—'}</p> : null}
+    {Object.hasOwn(po, 'totalValue') ? <p className="text-sm font-semibold">Total ₹{po.totalValue ?? '—'}</p> : null}
     {po.status === 'open' ? <div className="flex flex-wrap gap-2">
       <button className={button} aria-label={`Share ${po.poNumber}`} disabled={sharing.busy || command.locked} onClick={async () => {
         try {

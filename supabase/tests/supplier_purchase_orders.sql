@@ -7,6 +7,9 @@ begin;
 -- suppliers: Alpha,Beta,Old,Wrong,Legacy (1..220); units Nos,' nos ',Box,null (<=40).
 -- rates: 1,2,10,12,15,20 (positive numeric(14,4)); dates today,today-1,today-366 (finite dates).
 -- references: P-1 (1..160); source IDs item|supplier|unit (1..240).
+-- correction fixtures: Invalid,Debit (1..220); nos (1..40); P-2 (1..160).
+-- rates 90,92,95,96 fit positive numeric(14,4); -1 deliberately violates rate>0.
+-- non-array supplierPrices {} is ignored; duplicate dates today-1/today are finite.
 -- snapshot: id suprabha,company PO TEST,fetched_at now()::text; catalog active true.
 -- reorder: closing 0,reorderLevel 10,minimumOrder 5,purchaseOrder 0,orderToBePlaced 10.
 -- commands: UUIDs gen_random_uuid(); quantities 6,10,3,2,1 (>0 <=1000000), received 0,2,6.
@@ -30,8 +33,8 @@ begin
   -- structural error, then also traverse in lax mode so it cannot hide a later key.
   perform pg_temp.po_assert(not coalesce(jsonb_path_exists(r,'strict $.**.rate','{}',true),false)
     and not jsonb_path_exists(r,'$.**.rate'),'Operations leaked rate');
-  perform pg_temp.po_assert(not coalesce(jsonb_path_exists(r,'strict $.**.total','{}',true),false)
-    and not jsonb_path_exists(r,'$.**.total'),'Operations leaked total');
+  perform pg_temp.po_assert(not coalesce(jsonb_path_exists(r,'strict $.**.totalValue','{}',true),false)
+    and not jsonb_path_exists(r,'$.**.totalValue'),'Operations leaked totalValue');
 end $$;
 create function pg_temp.po_error(a text,p jsonb,code text,r text default 'administrator')
 returns void language plpgsql as $$
@@ -67,8 +70,30 @@ begin
     (select jsonb_agg(jsonb_build_object('tallyKey',v,'item',v,'baseUnit','Nos','closing',0,'active',true))
       from unnest(array['PO-A','PO-B','PO-C','PO-NONE']) v),
     'rows',(select jsonb_agg(jsonb_build_object('item',v,'closing',0,'reorderLevel',10,'minimumOrder',5,'purchaseOrder',0,'orderToBePlaced',10))
-      from unnest(array['PO-A','PO-B']) v)))
+      from unnest(array['PO-A','PO-B']) v),
+    'pricingHistory',jsonb_build_object('supplierPrices',jsonb_build_array(
+      pg_temp.po_evidence('PO-A','Invalid',-1,today),pg_temp.po_evidence('PO-A','Alpha',10,today)))))
   on conflict(id) do update set payload=excluded.payload;
+  perform pg_temp.po_assert((select count(*)=1 and min(supplier_name)='Alpha' and min(rate)=10
+    from private.stockflow_supplier_prices),'Mixed valid/invalid snapshot did not succeed');
+  perform pg_temp.po_assert((select rejection_summary @> '{"supplierReceived":2,"supplierAccepted":1,"supplierRejected":1,"supplierDuplicates":0}'::jsonb
+    from private.stockflow_pricing_import_runs where (rejection_summary->>'supplierReceived')::integer>0 order by id desc limit 1),'Supplier rejection summary incorrect');
+  perform pg_temp.po_import('{}');
+  perform pg_temp.po_assert((select count(*)=1 and min(supplier_name)='Alpha' and min(rate)=10
+    from private.stockflow_supplier_prices),'Non-array supplierPrices changed prices');
+  perform pg_temp.po_import(jsonb_build_array(
+    pg_temp.po_evidence('PO-A','Alpha',90,today-1,'Nos'),
+    pg_temp.po_evidence('PO-A','Alpha',95,today,'nos'),
+    pg_temp.po_evidence('PO-A','Alpha',96,today,'nos')||'{"sourceReference":"P-2"}'::jsonb,
+    pg_temp.po_evidence('PO-A','Alpha',90,today-1,'Nos'),
+    pg_temp.po_evidence('PO-A','Beta',92,today)));
+  perform pg_temp.po_assert((select count(*)=2 from private.stockflow_supplier_prices),'Unit spelling split supplier prices');
+  perform pg_temp.po_assert((select rate=96 and unit='nos' and source_reference='P-2'
+    from private.stockflow_supplier_prices where supplier_name='Alpha'),'Latest date/reference did not win duplicate');
+  perform pg_temp.po_assert((select supplier_name='Beta' and rate=92 from private.stockflow_lowest_supplier('PO-A')),
+    'Lowest of latest supplier rates did not win');
+  perform pg_temp.po_assert((select rejection_summary @> '{"supplierReceived":5,"supplierAccepted":2,"supplierRejected":0,"supplierDuplicates":3}'::jsonb
+    from private.stockflow_pricing_import_runs where (rejection_summary->>'supplierReceived')::integer>0 order by id desc limit 1),'Supplier duplicate summary incorrect');
   evidence:=jsonb_build_array(
     pg_temp.po_evidence('PO-A','Alpha',10,today),pg_temp.po_evidence('PO-A','Beta',12,today),
     pg_temp.po_evidence('PO-A','Old',1,today-366),pg_temp.po_evidence('PO-A','Wrong',1,today,'Box'),
@@ -84,15 +109,12 @@ begin
   perform pg_temp.po_import('[]');
   perform pg_temp.po_assert((select count(*)=0 from private.stockflow_supplier_prices),'Empty replacement failed');
   perform pg_temp.po_import(evidence);
-  begin
-    perform pg_temp.po_import(evidence||jsonb_build_array(pg_temp.po_evidence('PO-A','Debit',1,today)||'{"voucherType":"Debit Note"}'::jsonb));
-    raise exception 'Debit Note evidence accepted';
-  exception when sqlstate '22023' then null; end;
-  perform pg_temp.po_assert((select count(*)=8 from private.stockflow_supplier_prices),'Rejected batch changed current state');
-  begin perform pg_temp.po_import(evidence||jsonb_build_array(pg_temp.po_evidence('PO-A','Invalid',0,today)));
-    raise exception 'Invalid rate accepted'; exception when sqlstate '22023' then null; end;
-  begin perform pg_temp.po_import(evidence||jsonb_build_array(evidence->0));
-    raise exception 'Duplicate evidence accepted'; exception when sqlstate '22023' then null; end;
+  perform pg_temp.po_import(evidence||jsonb_build_array(pg_temp.po_evidence('PO-A','Debit',1,today)||'{"voucherType":"Debit Note"}'::jsonb));
+  perform pg_temp.po_assert((select count(*)=8 and bool_and(supplier_name<>'Debit') from private.stockflow_supplier_prices),'Invalid voucher was not skipped');
+  perform pg_temp.po_import(evidence||jsonb_build_array(pg_temp.po_evidence('PO-A','Invalid',-1,today)));
+  perform pg_temp.po_assert((select count(*)=8 and bool_and(supplier_name<>'Invalid') from private.stockflow_supplier_prices),'Invalid rate was not skipped');
+  perform pg_temp.po_import(evidence||jsonb_build_array(evidence->0));
+  perform pg_temp.po_assert((select count(*)=8 from private.stockflow_supplier_prices),'Duplicate changed row count');
   -- Three lines, two suppliers (explicit override C to Alpha).
   p:=jsonb_build_object('idempotencyKey',gen_random_uuid(),'lines',jsonb_build_array(
     jsonb_build_object('itemKey','PO-A','quantity',6),jsonb_build_object('itemKey','PO-B','quantity',10),
@@ -128,10 +150,14 @@ begin
   perform pg_temp.po_assert(x->'lowestSupplier'='{"supplierName":"Alpha"}'::jsonb,'To order supplier contract failed');
   -- All action responses for operations must be recursively rate-free.
   perform pg_temp.po_private(pg_temp.po_call('supplier_options','{"itemKey":"PO-A"}','operations'));
-  perform pg_temp.po_private(pg_temp.po_call('list_purchase_orders','{}','operations'));
+  r:=pg_temp.po_call('list_purchase_orders','{}','operations');
+  perform pg_temp.po_private(r);
+  perform pg_temp.po_assert(jsonb_typeof(r->'total')='number' and (r->>'total')::integer=before_count,
+    'Operations list lost pagination total');
   foreach role_name in array array['administrator','management'] loop
     r:=pg_temp.po_call('list_purchase_orders','{}',role_name);
-    perform pg_temp.po_assert(jsonb_path_exists(r,'$.**.rate') and jsonb_path_exists(r,'$.**.total'),'Privileged list missing prices');
+    perform pg_temp.po_assert(jsonb_path_exists(r,'$.**.rate') and jsonb_path_exists(r,'$.**.totalValue'),'Privileged list missing prices');
+    perform pg_temp.po_assert(jsonb_typeof(r->'total')='number','Privileged list lost pagination total');
     r:=pg_temp.po_call('supplier_options','{"itemKey":"PO-A"}',role_name);
     perform pg_temp.po_assert(jsonb_path_exists(r,'$.**.rate'),'Privileged suppliers missing prices');
   end loop;

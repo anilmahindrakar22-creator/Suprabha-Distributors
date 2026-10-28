@@ -1,5 +1,5 @@
 export type PurchaseOrderLine = { itemKey: string; itemName: string; quantity: number; unit: string | null; receivedQuantity: number; rate?: number | null };
-export type PurchaseOrder = { id: string; poNumber: string; supplierName: string; status: 'open' | 'received' | 'cancelled'; sharedAt: string | null; version: number; createdAt: string; createdByEmail: string; lines: PurchaseOrderLine[]; total?: number | null };
+export type PurchaseOrder = { id: string; poNumber: string; supplierName: string; status: 'open' | 'received' | 'cancelled'; sharedAt: string | null; version: number; createdAt: string; createdByEmail: string; lines: PurchaseOrderLine[]; totalValue?: number | null };
 export type SupplierOption = { supplierName: string; effectiveAt: string; lowest: boolean; rate?: number };
 
 const uuid = /^[0-9a-f]{8}-[0-9a-f]{4}-[1-8][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i;

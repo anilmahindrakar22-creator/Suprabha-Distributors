@@ -1091,7 +1091,7 @@
     },
     {
       "localFile": "20261029100000_supplier_purchase_orders.sql",
-      "localSha256": "73acaf1bc2f6df193b8665b2b6f910d632131eb2f6d03cac440ddd1a3418defb",
+      "localSha256": "b2582828d844ba7659475a3b22225bea41c84d5c032e5197836c0b4c49a2e5f1",
       "remoteVersion": null,
       "remoteSha256": null,
       "status": "not_deployed"

@@ -12,6 +12,7 @@ export function purchaseOrderLine(o: Partial<PurchaseOrderLine> = {}): PurchaseO
 }
 
 export function purchaseOrder(o: Partial<PurchaseOrder> = {}): PurchaseOrder {
+  // Operations omit rate and totalValue; management fixtures supply them through overrides.
   return { id: '61000000-0000-4000-8000-000000000001', poNumber: 'PO/26-27/0001', supplierName: 'Test supplier',
     status: 'open', sharedAt: null, version: 1, createdAt: timestamp, createdByEmail: 'operations@example.test',
     lines: [purchaseOrderLine()], ...o } satisfies PurchaseOrder;

@@ -162,7 +162,8 @@ function Get-SupplierPurchasePriceEvidence($Records, [int]$MaximumRows = 5000) {
             $unit = ([string]$line.unit).Trim()
             if (-not $unit) { $unit = $null }
             # Length prefixes avoid collisions in supplier/item names containing delimiters.
-            $key = "$($item.Length):$item$($supplier.Length):$supplier$unit"
+            $unitKey = if ($null -eq $unit) { '' } else { $unit.ToLowerInvariant() }
+            $key = "$($item.Length):$item$($supplier.Length):$supplier$unitKey"
             $row = [ordered]@{
                 tallyItemKey = $item; supplierName = $supplier; rate = [decimal]$line.rate; unit = $unit
                 effectiveAt = $date.ToString('yyyy-MM-dd'); sourceReference = [string]$voucher.voucherNumber

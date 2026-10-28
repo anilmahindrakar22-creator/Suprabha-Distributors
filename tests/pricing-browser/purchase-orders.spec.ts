@@ -8,7 +8,7 @@ const orderItems = [
   toOrderItem({ itemKey: 'B', itemName: 'Reagent B', lowestSupplier: { supplierName: 'Supplier B' } }),
 ];
 
-async function setup(page: Page, { role = 'operations', orders = [purchaseOrder()], failures = [] as number[], noSuppliers = false, omitTotal = false }: { role?: string; orders?: PurchaseOrder[]; failures?: number[]; noSuppliers?: boolean; omitTotal?: boolean } = {}) {
+async function setup(page: Page, { role = 'operations', orders = [purchaseOrder()], failures = [] as number[], noSuppliers = false }: { role?: string; orders?: PurchaseOrder[]; failures?: number[]; noSuppliers?: boolean } = {}) {
   const commands: Command[] = [];
   const reads: string[] = [];
   await page.setViewportSize({ width: 375, height: 812 });
@@ -36,7 +36,7 @@ async function setup(page: Page, { role = 'operations', orders = [purchaseOrder(
       reads.push(url.search);
       const filtered = orders.filter((po) => po.status === url.searchParams.get('status'));
       const pageNumber = Number(url.searchParams.get('page'));
-      await route.fulfill({ json: { page: pageNumber, items: filtered.slice((pageNumber - 1) * 20, pageNumber * 20), ...(!omitTotal ? { total: filtered.length } : {}) } });
+      await route.fulfill({ json: { page: pageNumber, items: filtered.slice((pageNumber - 1) * 20, pageNumber * 20), total: filtered.length } });
     }
   });
   await page.goto(`/?view=frame&role=${role}`);
@@ -72,7 +72,7 @@ test('operations groups two suppliers, creates both POs and never sees rates', a
   await expect(page.getByText('2 selected', { exact: true })).toHaveCount(0);
 });
 
-test('operations PO section contains no currency when rate and total keys are omitted', async ({ page }) => {
+test('operations PO section contains no currency when rate and totalValue keys are omitted', async ({ page }) => {
   await setup(page);
   const section = page.getByRole('region', { name: 'Purchase orders', exact: true });
   await section.getByRole('button', { name: 'Details for PO/26-27/0001' }).click();
@@ -81,7 +81,7 @@ test('operations PO section contains no currency when rate and total keys are om
 });
 
 test('management sees the supplied line rate, total and supplier option rate', async ({ page }) => {
-  await setup(page, { role: 'management', orders: [purchaseOrder({ total: 546, lines: [purchaseOrderLine({ rate: 42 })] })] });
+  await setup(page, { role: 'management', orders: [purchaseOrder({ totalValue: 546, lines: [purchaseOrderLine({ rate: 42 })] })] });
   const section = page.getByRole('region', { name: 'Purchase orders', exact: true });
   await section.getByRole('button', { name: 'Details for PO/26-27/0001' }).click();
   await expect(section.getByText('Total ₹546', { exact: true })).toBeVisible();
@@ -227,7 +227,7 @@ test('PO conflict shows the reload message and refreshes the list', async ({ pag
 
 test('PO status chips and pagination use the status and page query', async ({ page }) => {
   const orders = Array.from({ length: 21 }, (_, index) => purchaseOrder({ id: String(index), poNumber: `PO/26-27/${index + 1}` }));
-  const { reads } = await setup(page, { orders, omitTotal: true });
+  const { reads } = await setup(page, { orders });
   const section = page.getByRole('region', { name: 'Purchase orders', exact: true });
   await expect(section.getByRole('button', { name: 'Open', exact: true })).toHaveAttribute('aria-pressed', 'true');
   await section.getByRole('button', { name: 'Load more', exact: true }).click();

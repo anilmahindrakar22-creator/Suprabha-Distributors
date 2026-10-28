@@ -12,19 +12,19 @@ create table private.stockflow_supplier_prices (
   imported_at timestamptz not null default now()
 );
 create unique index stockflow_supplier_prices_key on private.stockflow_supplier_prices
-  (tally_item_key,supplier_name,coalesce(unit,''));
+  (tally_item_key,supplier_name,lower(coalesce(unit,'')));
 
 -- Extend the existing snapshot trigger before it removes private pricingHistory.
 do $patch$
 declare f text := replace(pg_get_functiondef('private.stockflow_import_tally_pricing_evidence()'::regprocedure),chr(13),'');
-  anchor text := $a$new.payload:=new.payload-'pricingHistory';$a$;
+  anchor text := 'insert into private.stockflow_pricing_import_runs(';
+  declaration_anchor text := 'entry jsonb;';
+  summary_anchor text := $a$'invalid_purchase_cost',purchase_rejected)$a$;
   replacement text := $a$
-  if new.payload->'pricingHistory' ? 'supplierPrices' then
-    if jsonb_typeof(new.payload->'pricingHistory'->'supplierPrices') is distinct from 'array' then
-      raise exception 'supplierPrices must be an array' using errcode='22023';
-    end if;
-    if jsonb_array_length(new.payload->'pricingHistory'->'supplierPrices')>5000 then
-      raise exception 'Supplier prices exceed safe import limit' using errcode='22023';
+  if jsonb_typeof(new.payload->'pricingHistory'->'supplierPrices')='array' then
+    supplier_received:=jsonb_array_length(new.payload->'pricingHistory'->'supplierPrices');
+    if supplier_received>5000 then
+      raise exception 'Supplier prices exceed safe import limit' using errcode='54000';
     end if;
     -- Serialize full replacement, including an empty set, with PO rate snapshots.
     perform pg_advisory_xact_lock(hashtextextended('stockflow_supplier_prices',0));
@@ -40,20 +40,39 @@ declare f text := replace(pg_get_functiondef('private.stockflow_import_tally_pri
         or jsonb_typeof(entry->'sourceId') is distinct from 'string'
         or (entry ? 'unit' and jsonb_typeof(entry->'unit') not in ('string','null'))
         or (entry ? 'voucherType' and entry->>'voucherType' is distinct from 'Purchase') then
-        raise exception 'Invalid supplier purchase evidence' using errcode='22023';
+        supplier_rejected:=supplier_rejected+1;
+        continue;
       end if;
       begin
+        supplier_duplicate:=exists(select 1 from private.stockflow_supplier_prices
+          where tally_item_key=btrim(entry->>'tallyItemKey') and supplier_name=btrim(entry->>'supplierName')
+            and lower(coalesce(unit,''))=lower(coalesce(nullif(btrim(entry->>'unit'),''),'')));
         insert into private.stockflow_supplier_prices(tally_item_key,supplier_name,rate,unit,effective_at,source_reference,source_id)
         values(btrim(entry->>'tallyItemKey'),btrim(entry->>'supplierName'),(entry->>'rate')::numeric,
-          nullif(btrim(entry->>'unit'),''),(entry->>'effectiveAt')::date,btrim(entry->>'sourceReference'),btrim(entry->>'sourceId'));
-      exception when data_exception or check_violation or not_null_violation or unique_violation then
-        raise exception 'Invalid supplier purchase evidence' using errcode='22023';
+          nullif(btrim(entry->>'unit'),''),(entry->>'effectiveAt')::date,btrim(entry->>'sourceReference'),btrim(entry->>'sourceId'))
+        on conflict(tally_item_key,supplier_name,lower(coalesce(unit,''))) do update
+          set rate=excluded.rate,unit=excluded.unit,effective_at=excluded.effective_at,
+            source_reference=excluded.source_reference,source_id=excluded.source_id,imported_at=excluded.imported_at
+          where excluded.effective_at>stockflow_supplier_prices.effective_at
+            or (excluded.effective_at=stockflow_supplier_prices.effective_at
+              and excluded.source_reference>stockflow_supplier_prices.source_reference);
+        if supplier_duplicate then supplier_duplicates:=supplier_duplicates+1;
+        else supplier_accepted:=supplier_accepted+1; end if;
+      exception when data_exception or check_violation or not_null_violation then
+        supplier_rejected:=supplier_rejected+1;
       end;
     end loop;
   end if;
-  new.payload:=new.payload-'pricingHistory';$a$;
+  insert into private.stockflow_pricing_import_runs($a$;
 begin
   if (length(f)-length(replace(f,anchor,'')))/length(anchor)<>1 then raise exception 'Supplier import anchor changed'; end if;
+  if (length(f)-length(replace(f,declaration_anchor,'')))/length(declaration_anchor)<>1
+    or (length(f)-length(replace(f,summary_anchor,'')))/length(summary_anchor)<>1 then
+    raise exception 'Supplier import summary anchors changed'; end if;
+  f:=replace(f,declaration_anchor,declaration_anchor||' supplier_received integer:=0; supplier_accepted integer:=0; supplier_rejected integer:=0; supplier_duplicates integer:=0; supplier_duplicate boolean;');
+  f:=replace(f,summary_anchor,$a$'invalid_purchase_cost',purchase_rejected,
+    'supplierReceived',supplier_received,'supplierAccepted',supplier_accepted,
+    'supplierRejected',supplier_rejected,'supplierDuplicates',supplier_duplicates)$a$);
   execute replace(f,anchor,replacement);
 end $patch$;
 
@@ -124,7 +143,7 @@ returns jsonb language sql stable set search_path=pg_catalog,private as $$
       'quantity',l.quantity,'unit',l.unit,'receivedQuantity',l.received_quantity)
       || case when p_show_rates then jsonb_build_object('rate',l.rate) else '{}'::jsonb end order by l.tally_item_key)
       from private.stockflow_purchase_order_lines l where l.po_id=o.id))
-    || case when p_show_rates then jsonb_build_object('total',
+    || case when p_show_rates then jsonb_build_object('totalValue',
       (select case when count(rate)=count(*) then sum(quantity*rate) end from private.stockflow_purchase_order_lines where po_id=o.id))
       else '{}'::jsonb end
   from private.stockflow_purchase_orders o where o.id=p_id
@@ -137,7 +156,7 @@ declare r jsonb;
 begin
   if jsonb_typeof(p_value)='object' then
     select coalesce(jsonb_object_agg(key,private.stockflow_purchase_redact(value)),'{}') into r
-      from jsonb_each(p_value) where key not in ('rate','total');
+      from jsonb_each(p_value) where key not in ('rate','totalValue');
   elsif jsonb_typeof(p_value)='array' then
     select coalesce(jsonb_agg(private.stockflow_purchase_redact(value) order by ordinal),'[]') into r
       from jsonb_array_elements(p_value) with ordinality a(value,ordinal);
@@ -189,7 +208,7 @@ begin
       private.stockflow_purchase_order_json(q.id,v_show_rates) order by (q.status='open') desc,q.created_at desc,q.po_number desc),'[]')) into v_result
       from (select * from private.stockflow_purchase_orders where v_status='all' or status=v_status
         order by (status='open') desc,created_at desc,po_number desc limit 20 offset (v_page-1)*20) q;
-    -- Pagination total is an operational count; the contract prohibits the key for operations too.
+    -- Pagination total is an operational count and remains visible to every allowed role.
     if not v_show_rates then return private.stockflow_purchase_redact(v_result); end if;
     return v_result;
   end if;
