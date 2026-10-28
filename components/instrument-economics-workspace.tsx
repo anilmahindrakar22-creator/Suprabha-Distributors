@@ -233,7 +233,7 @@ const approvalLabel: Record<EconomicTarget['approval'], string> = { approved: 'A
 export function EconomicTargetCard({ target, selected, pooledInName, expanded, onToggle, children, lifetime, period, onReviewCosts }: { target: EconomicTarget; selected?: boolean; pooledInName?: string; expanded?: boolean; onToggle?: () => void; children?: ReactNode; lifetime?: ReagentLifetime; period?: string; onReviewCosts?: () => void }) {
   const missingCost = target.approval === 'proposed' ? 0 : lifetime?.missingCostLines ?? target.missingCostLines;
   return <article className={`rounded-2xl border bg-white p-4 shadow-sm sm:p-5 ${selected ? 'border-sf-accent ring-2 ring-sf-accent/20' : 'border-sf-line-soft'}`}>
-    <div className="flex flex-wrap items-start justify-between gap-3"><div className="min-w-0"><p className="text-xs font-semibold text-sf-muted">{target.customerName}{target.kind === 'group' ? ' · group' : ''}</p><h3 className="mt-1 break-words text-lg font-extrabold text-sf-ink">{target.name}</h3><p className="mt-1 text-xs text-sf-muted">Since {displayDate(target.effectiveFrom)}{target.effectiveTo ? ` to ${displayDate(target.effectiveTo)}` : ''} · {approvalLabel[target.approval]}</p></div><EconomicHealthBadge health={target.health} /></div>
+     <div className="flex flex-wrap items-start justify-between gap-3"><div className="min-w-0"><p className="text-xs font-semibold text-sf-muted">{target.customerName}{target.kind === 'group' ? ' · group' : ''}</p><h3 className="mt-1 break-words text-lg font-extrabold text-sf-ink">{target.name}</h3>{target.kind === 'placement' && target.instrumentSerialNumber ? <p className="mt-1 text-xs text-sf-muted">Instrument SN {target.instrumentSerialNumber} · placed here since {displayDate(target.effectiveFrom)}{target.instrumentMovedFrom ? ` · previously at ${target.instrumentMovedFrom}` : ''}</p> : null}<p className="mt-1 text-xs text-sf-muted">Since {displayDate(target.effectiveFrom)}{target.effectiveTo ? ` to ${displayDate(target.effectiveTo)}` : ''} · {approvalLabel[target.approval]}</p></div><EconomicHealthBadge health={target.health} /></div>
     {missingCost > 0 ? onReviewCosts
       ? <button type="button" onClick={onReviewCosts} className="mt-3 inline-flex min-h-10 items-center gap-2 rounded-lg border border-sf-warning-line bg-sf-warning-soft px-3 text-sm font-bold text-sf-warning"><AlertTriangle size={16} aria-hidden="true" />{salesWithoutPurchase(missingCost)} · See To do</button>
       : <p className="mt-3 inline-flex items-center gap-2 rounded-lg border border-sf-warning-line bg-sf-warning-soft px-3 py-2 text-sm font-bold text-sf-warning"><AlertTriangle size={16} aria-hidden="true" />{salesWithoutPurchase(missingCost)}</p> : null}
@@ -339,7 +339,7 @@ const fields: Record<string, Array<{ name: string; label: string; type?: string;
   create_target: [
     { name: 'kind', label: 'Target kind', type: 'select', required: true }, { name: 'name', label: 'Target name', required: true }, { name: 'companyId', label: 'Tally company GUID', required: true },
     { name: 'customerId', label: 'Customer', type: 'customer', required: true }, { name: 'customerSourceId', label: 'Canonical customer GUID', required: true }, { name: 'siteId', label: 'Site ID', required: true },
-    { name: 'modelId', label: 'Model ID', required: true }, { name: 'installationId', label: 'Installation', type: 'installation' }, { name: 'effectiveFrom', label: 'Effective from', type: 'date', required: true },
+    { name: 'installationId', label: 'Installation', type: 'installation' }, { name: 'modelId', label: 'Model ID', required: true }, { name: 'effectiveFrom', label: 'Effective from', type: 'date', required: true },
   ],
   set_mapping: [
     { name: 'effect', label: 'Effect', type: 'effect', required: true }, { name: 'effectiveFrom', label: 'Effective from', type: 'date', required: true }, { name: 'effectiveTo', label: 'Effective to', type: 'date' }, { name: 'reason', label: 'Reason', required: true },
@@ -367,7 +367,7 @@ const fields: Record<string, Array<{ name: string; label: string; type?: string;
 };
 const titleFor: Record<string, string> = { register_historical_instrument: 'Register existing instrument', review_acquisition: 'Review acquisition revision', link_instrument_billing: 'Link instrument selling invoice', create_target: 'Create target', set_mapping: 'Set product mapping', set_item_group_mapping: 'Map item group to instrument', set_expectation: 'Set expectation', record_observation: 'Record consumption observation', approve_target: 'Review proposed target', close_target: 'Close target', record_capital: 'Record capital or contribution', set_group_members: 'Set group member', close_group_membership: 'Close group membership', set_allocation: 'Set product allocation', close_allocation: 'Close product allocation', set_policy: 'Set policy version', verify_cost: 'Verify sale cost', claim_recovery: 'Claim recovery', resolve_line: 'Review source line' };
 
-function Field({ field, data, targets }: { field: (typeof fields[string])[number]; data: EconomicsWorkspaceData; targets: EconomicTarget[] }) {
+function Field({ field, data, targets, model }: { field: (typeof fields[string])[number]; data: EconomicsWorkspaceData; targets: EconomicTarget[]; model?: { value: string; locked: boolean; onChange: (value: string) => void } }) {
   const common = { 'aria-label': field.label, id: field.name, name: field.name, required: field.required, className: 'min-h-10 w-full rounded-lg border border-sf-line bg-white px-3 text-sm outline-none focus-visible:ring-2 focus-visible:ring-sf-accent' };
   let input: ReactNode;
   if (field.type === 'checkbox') input = <input {...common} type="checkbox" className="size-5 accent-sf-accent" />;
@@ -378,7 +378,7 @@ function Field({ field, data, targets }: { field: (typeof fields[string])[number
     if (field.type === 'decision') options = [['approved', 'Approve'], ['rejected', 'Reject']];
     if (field.type === 'capitalKind') options = [['capital', 'Capital'], ['contribution', 'Contribution']];
     if (field.type === 'customer') options = data.customers.map(row => [row.id, row.name]);
-    if (field.type === 'installation') options = [['', 'None'], ...data.installations.map<[string, string]>(row => [row.id, `${row.name} · ${row.serialNumber} · ${row.customerName}`])];
+    if (field.type === 'installation') options = data.installations.map<[string, string]>(row => [row.id, `${row.name} · ${row.serialNumber} · ${row.customerName}${row.movedFrom ? ` · moved from ${row.movedFrom}` : ''}`]);
     if (field.type === 'target') options = targets.map<[string, string]>(row => [row.id, `${row.name} · ${row.customerName}`]);
     if (field.type === 'capitalTarget') options = targets.filter(row => !row.pooledIn).map<[string, string]>(row => [row.id, `${row.name} · ${row.customerName}`]);
     if (field.type === 'group') options = targets.filter(row => row.kind === 'group').map<[string, string]>(row => [row.id, `${row.name} · ${row.customerName}`]);
@@ -391,6 +391,7 @@ function Field({ field, data, targets }: { field: (typeof fields[string])[number
     if (field.type === 'product') options = [...new Map((data.sourceLines ?? []).map(row => [row.productId, row])).values()].map<[string, string]>(row => [row.productId, row.productName ? `${row.productName} · ${row.productId}` : row.productId]);
     input = <select {...common} defaultValue="">{!field.required ? <option value="">None</option> : <option value="" disabled>Select…</option>}{options.map(([value, label]) => <option key={value} value={value}>{label}</option>)}</select>;
   } else input = <><input {...common} list={field.name === 'productId' ? 'economic-product-options' : undefined} type={field.type === 'money' || field.type === 'decimal' ? 'text' : field.type ?? 'text'} inputMode={field.type === 'money' || field.type === 'decimal' ? 'decimal' : field.type === 'number' ? 'numeric' : undefined} min={field.name === 'testsPerUnit' ? '0.001' : ['testCount', 'qcUnits', 'externalSupply'].includes(field.name) ? '0' : undefined} step={field.type === 'decimal' ? 'any' : field.type === 'number' ? '1' : undefined} placeholder={field.placeholder} />{field.name === 'productId' ? <datalist id="economic-product-options">{[...new Map((data.sourceLines ?? []).map(line => [line.productId, line])).values()].map(line => <option key={line.productId} value={line.productId}>{line.productName ?? line.productId}</option>)}</datalist> : null}</>;
+  if (model) input = <><input {...common} className={model.locked ? `${common.className} bg-sf-soft text-sf-muted cursor-not-allowed` : common.className} value={model.value} readOnly={model.locked} onChange={event => model.onChange(event.target.value)} aria-describedby={model.locked ? 'instrument-model-hint' : undefined} />{model.locked ? <span id="instrument-model-hint" className="text-xs font-normal text-sf-muted">Locked to this instrument&apos;s model.</span> : null}</>;
   return <label htmlFor={field.name} className="grid gap-1.5 text-xs font-semibold text-sf-body">{field.label}{input}</label>;
 }
 
@@ -401,8 +402,11 @@ function ExpectationProductRows({ data }: { data: EconomicsWorkspaceData }) {
 }
 
 type SubmitCommand = (event: SubmitEvent<HTMLFormElement>, action: EconomicAction) => Promise<void>;
-function CommandForm({ action, data, disabled, busy, onSubmit, label, simpleMapping = false }: { action: EconomicAction; data: EconomicsWorkspaceData; disabled: boolean; busy: boolean; onSubmit: SubmitCommand; label?: string; simpleMapping?: boolean }) {
+export function CommandForm({ action, data, disabled, busy, onSubmit, label, simpleMapping = false }: { action: EconomicAction; data: EconomicsWorkspaceData; disabled: boolean; busy: boolean; onSubmit: SubmitCommand; label?: string; simpleMapping?: boolean }) {
   const targets = data.targets;
+  const [installationId, setInstallationId] = useState('');
+  const [typedModelId, setTypedModelId] = useState('');
+  const lockedModelId = action === 'create_target' ? data.installations.find(row => row.id === installationId)?.modelId : null;
   const [acquisitionBlocked, setAcquisitionBlocked] = useState(false);
   const [capitalTargetId, setCapitalTargetId] = useState('');
   const [capitalAmount, setCapitalAmount] = useState('');
@@ -414,7 +418,7 @@ function CommandForm({ action, data, disabled, busy, onSubmit, label, simpleMapp
   const [mappingTargetId, setMappingTargetId] = useState('');
   const mappingTarget = targets.find(row => row.id === mappingTargetId);
   const mappingFrom = mappingTarget?.salesFrom;
-  return <form onChange={event => { const input = event.target; if (!(input instanceof HTMLInputElement || input instanceof HTMLSelectElement)) return; if (input.name === 'targetId') setCapitalTargetId(input.value); if (input.name === 'amountPaise') setCapitalAmount(input.value); if (input.name === 'kind') setCapitalKind(input.value); }} onSubmit={event => { if (capitalBlocked || acquisitionBlocked) { event.preventDefault(); return; } void onSubmit(event, action); }} className="mt-4 grid gap-3 sm:grid-cols-2"><fieldset disabled={disabled} className="contents">
+  return <form onChange={event => { const input = event.target; if (!(input instanceof HTMLInputElement || input instanceof HTMLSelectElement)) return; if (action === 'create_target' && input.name === 'installationId') setInstallationId(input.value); if (input.name === 'targetId') setCapitalTargetId(input.value); if (input.name === 'amountPaise') setCapitalAmount(input.value); if (input.name === 'kind') setCapitalKind(input.value); }} onSubmit={event => { if (capitalBlocked || acquisitionBlocked) { event.preventDefault(); return; } void onSubmit(event, action); }} className="mt-4 grid gap-3 sm:grid-cols-2"><fieldset disabled={disabled} className="contents">
     {action === 'set_mapping' ? <EconomicMappingIdentityFields key={data.generation} data={data} simpleOnly={simpleMapping} onTargetChange={setMappingTargetId} /> : null}
     {action === 'set_item_group_mapping' ? <ItemGroupMappingFields key={data.generation} data={data} onTargetChange={setMappingTargetId} /> : null}
     {action === 'link_instrument_billing' ? <InstrumentBillingFields data={data} /> : null}
@@ -424,7 +428,7 @@ function CommandForm({ action, data, disabled, busy, onSubmit, label, simpleMapp
     {action === 'verify_cost' ? <PurchaseCostVerificationFields lines={data.sourceLines ?? []} attributionLines={data.attributionLines ?? []} /> : null}
     {action === 'set_allocation' ? <EconomicAllocationRows targets={targets} /> : null}
     {action === 'set_mapping' || action === 'set_item_group_mapping' ? <MappingOptions key={`${data.generation}:${mappingTargetId}`} data={data} defaultFrom={mappingFrom} /> : null}
-    {fields[action]?.filter(field => action !== 'set_mapping' && action !== 'set_item_group_mapping' && (field.name !== 'directorException' || !!data.canAdministrator)).map(field => <Field key={field.name} field={field} data={data} targets={targets} />)}
+    {fields[action]?.filter(field => action !== 'set_mapping' && action !== 'set_item_group_mapping' && (field.name !== 'directorException' || !!data.canAdministrator)).map(field => <Field key={field.name} field={field} data={data} targets={targets} model={action === 'create_target' && field.name === 'modelId' ? { value: lockedModelId || typedModelId, locked: !!lockedModelId, onChange: setTypedModelId } : undefined} />)}
     {capitalBlocked ? <p className="text-xs text-sf-muted sm:col-span-2">Needs an Administrator to approve (payback over {data.policy.reviewMonths} months).</p> : null}
     {action === 'set_expectation' ? <ExpectationProductRows data={data} /> : null}
     <button disabled={disabled || capitalBlocked || acquisitionBlocked} className="min-h-11 rounded-xl bg-sf-brand px-4 text-sm font-bold text-white disabled:opacity-50 sm:col-span-2">{busy ? 'Saving…' : label ?? titleFor[action]}</button>

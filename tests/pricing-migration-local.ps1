@@ -121,7 +121,23 @@ try {
     if (($migrationPlan | Select-Object -ExpandProperty Name | Sort-Object -Unique).Count -ne $migrationPlan.Count) { throw 'Deployment migration plan contains duplicates' }
   }
 
+  # Register migrations must follow the latest purchase-order migration in both plans.
+  $registerNames = @('20261030090000_instrument_register.sql','20261030091000_instrument_register_read.sql')
+  $planNames = @($migrationPlan | Select-Object -ExpandProperty Name)
+  if ([array]::IndexOf($planNames,$registerNames[0]) -le [array]::IndexOf($planNames,'20261029100000_supplier_purchase_orders.sql') -or [array]::IndexOf($planNames,$registerNames[1]) -le [array]::IndexOf($planNames,$registerNames[0])) { throw 'Instrument register replay order is invalid' }
   foreach ($migration in $migrationPlan) {
+    if ($migration.Name -eq $registerNames[0]) {
+      $registerCopies = @()
+      foreach ($registerName in $registerNames) {
+        $registerSql = [IO.File]::ReadAllText((Join-Path $migrationSource $registerName)).Replace("`r",'').Trim()
+        if (-not $registerSql.StartsWith('begin;') -or -not $registerSql.EndsWith('commit;')) { throw 'Register migration transaction boundaries changed' }
+        $registerCopy = Join-Path $work ('rollback-' + $registerName)
+        [IO.File]::WriteAllText($registerCopy,$registerSql.Substring(6,$registerSql.Length-13),[Text.UTF8Encoding]::new($false))
+        $registerCopies += $registerCopy.Replace('\','/')
+      }
+      Invoke-DatabaseCommand $psqlProgram @('-U',$databaseUser,'-X','-q','-v','ON_ERROR_STOP=1','-v','instrument_register_upgrade=1','-v',('instrument_register_migration='+$registerCopies[0]),'-v',('instrument_register_read_migration='+$registerCopies[1]),'-d',$database,'-f',(Join-Path $repository 'supabase/tests/instrument_register.sql'))
+      Write-Output 'PASS: register backfill identity/count, byte-identical placements/events/results/service tickets'
+    }
     if (-not $StrictHistory -and -not $DeploymentOrder -and $migration.Name -eq $deferredMigration) { continue }
     if ($migration.Name -eq '20260913130000_customer_price_book.sql') {
       $seed = @'
@@ -140,6 +156,8 @@ create table public.test_upgrade_expected as select to_jsonb(o) as order_data,(s
   }
 
   $lateTriggers = 'create trigger stockflow_delivery_exceptions_no_delete before delete on private.stockflow_delivery_exceptions for each row execute function private.prevent_business_delete(); create trigger stockflow_equipment_installations_no_delete before delete on private.stockflow_equipment_installations for each row execute function private.prevent_business_delete();'
+  Invoke-DatabaseCommand $psqlProgram @('-U',$databaseUser,'-X','-q','-v','ON_ERROR_STOP=1','-d',$database,'-f',(Join-Path $repository 'supabase/tests/instrument_register.sql'))
+  Invoke-DatabaseCommand $psqlProgram @('-U',$databaseUser,'-X','-q','-v','ON_ERROR_STOP=1','-d',$database,'-f',(Join-Path $repository 'supabase/tests/instrument_register_read.sql'))
   if (-not $StrictHistory -and -not $DeploymentOrder) { Invoke-DatabaseCommand $psqlProgram @('-U',$databaseUser,'-X','-q','-v','ON_ERROR_STOP=1','-d',$database,'-c',$lateTriggers) }
   Invoke-DatabaseCommand $psqlProgram @('-U',$databaseUser,'-X','-q','-v','ON_ERROR_STOP=1','-d',$database,'-f',(Join-Path $repository 'supabase/tests/snapshot_upload_privilege.sql'))
   Write-Output 'PASS: service-role snapshot upload imports pricing evidence without broad grants'
@@ -286,6 +304,8 @@ end$$;
   Write-Output 'PASS: supplier snapshot evidence, private purchase orders and to-order coverage'
   Invoke-DatabaseCommand $psqlProgram @('-U',$databaseUser,'-X','-q','-v','ON_ERROR_STOP=1','-d',$database,'-f',(Join-Path $repository 'supabase/tests/order_list_priority_sort.sql'))
   Write-Output 'PASS: to-order priority sorting and stable pagination'
+  Invoke-DatabaseCommand $psqlProgram @('-U',$databaseUser,'-X','-q','-v','ON_ERROR_STOP=1','-d',$database,'-f',(Join-Path $repository 'supabase/tests/instrument_register_concurrency.sql'))
+  Write-Output 'PASS: two-session instrument commissioning and placement races'
 } finally {
   if ($databaseCreated) { & $dropdbProgram -U $databaseUser --if-exists $database | Out-Null }
   if ($serverStartedByScript) { & $pgCtlProgram -D $postgresData -m fast -w stop | Out-Null }

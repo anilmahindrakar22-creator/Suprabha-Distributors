@@ -1095,6 +1095,20 @@
       "remoteVersion": null,
       "remoteSha256": null,
       "status": "not_deployed"
+    },
+    {
+      "localFile": "20261030090000_instrument_register.sql",
+      "localSha256": "0fa8442a5d29b00f919c5527a0da1ecaff5f4b3df329741ab788ab5d0508ba07",
+      "remoteVersion": null,
+      "remoteSha256": null,
+      "status": "not_deployed"
+    },
+    {
+      "localFile": "20261030091000_instrument_register_read.sql",
+      "localSha256": "13f9b22fa1a8d8f6d010a55f60648c94a3e0265ca7d7e9194ebf2c5c57fb3b90",
+      "remoteVersion": null,
+      "remoteSha256": null,
+      "status": "not_deployed"
     }
   ],
   "liveCheck": {

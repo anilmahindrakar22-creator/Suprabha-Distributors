@@ -8,6 +8,7 @@ export type EconomicTarget = {
   id: string; kind: 'placement' | 'group'; name: string; companyId: string; customerId: string;
   customerName: string; customerSourceId: string; siteId: string; modelId: string;
   installationId: string | null; effectiveFrom: string; effectiveTo: string | null;
+  instrumentSerialNumber?: string | null; instrumentMovedFrom?: string | null;
   salesFrom?: string | null;
   approval: 'proposed' | 'approved' | 'rejected'; version: number;
   pooledIn?: string | null;
@@ -55,7 +56,7 @@ export type EconomicsWorkspaceData = {
   expectationHistory?: Record<string, unknown>[];
   targets: EconomicTarget[]; mappings: EconomicMapping[]; exceptions: EconomicException[];
   leakage: LeakageOpportunity[]; cases: LeakageCase[];
-  installations: { id: string; name: string; serialNumber: string; customerName: string }[];
+  installations: { id: string; name: string; serialNumber: string; customerName: string; instrumentId?: string | null; modelId?: string | null; movedFrom?: string | null }[];
   customers: { id: string; name: string }[];
   canManage: boolean; canApprove: boolean; canAct: boolean;
   generation: string | null; lastRebuiltAt: string | null; sourceImportedAt: string | null;

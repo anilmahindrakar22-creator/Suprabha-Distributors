@@ -3,7 +3,7 @@ import { describe, expect, it, vi } from 'vitest';
 vi.mock('next/link', () => ({ default: 'a' }));
 import { renderToStaticMarkup } from 'react-dom/server';
 import { CumulativeFinancialBreakdown, importProblemText, ImportProblemItem } from '@/components/instrument-economics-workspace';
-import { EconomicActionOptions, ProposedTargetReview, EconomicApprovalPreview, EconomicHealthBadge, EconomicTargetAdvancedDetails, EconomicTargetCard, InstrumentEconomicsWorkspace, economicCommandNotice, ItemGpBreakdown, reagentLifetime, reportingPeriodLabel } from '@/components/instrument-economics-workspace';
+import { EconomicActionOptions, ProposedTargetReview, EconomicApprovalPreview, EconomicHealthBadge, EconomicTargetAdvancedDetails, EconomicTargetCard, InstrumentEconomicsWorkspace, economicCommandNotice, ItemGpBreakdown, reagentLifetime, reportingPeriodLabel, CommandForm } from '@/components/instrument-economics-workspace';
 import { capitalBeyondManagementReview, capitalPreviewPaise } from '@/components/instrument-economics-evidence-forms';
 import type { EconomicTarget } from '@/lib/instrument-economics-types';
 
@@ -16,6 +16,24 @@ const target: EconomicTarget = {
 };
 
 describe('instrument economics presentation', () => {
+  it('shows a previous customer in installation options and the instrument serial on placement cards', () => {
+    const data: import('@/lib/instrument-economics-types').EconomicsWorkspaceData = {
+      actorEmail: 'rr-management@test.local', targets: [{ ...target, instrumentSerialNumber: 'rr 1', instrumentMovedFrom: 'Lab A' }], customers: [], sourceLines: [], mappings: [], exceptions: [], leakage: [], cases: [],
+      canManage: true, canApprove: false, canAct: false, generation: null, lastRebuiltAt: null, sourceImportedAt: null,
+      sourceLineCount: 0, unattributedPaise: '0', reportingFrom: '2026-09-01', reportingTo: '2026-10-01',
+      policy: { attractiveMonths: 24, reviewMonths: 36, exceptionMonths: 48, forecastWindowMonths: 3, watchRevenuePercent: 80, criticalRevenuePercent: 50 },
+      installations: [
+        { id: 'rr-installation', name: 'RR analyzer', serialNumber: 'rr 1', customerName: 'Lab B', instrumentId: 'rr-instrument', modelId: 'rr-model', movedFrom: 'Lab A' },
+        { id: 'new-installation', name: 'New analyzer', serialNumber: 'NEW-1', customerName: 'Lab B', movedFrom: null },
+      ],
+    };
+    const form = renderToStaticMarkup(<CommandForm action="create_target" data={data} disabled={false} busy={false} onSubmit={async () => undefined} />);
+    expect(form).toContain('RR analyzer · rr 1 · Lab B · moved from Lab A');
+    expect(form).toContain('New analyzer · NEW-1 · Lab B</option>');
+    expect(form.match(/<option value=""[^>]*>None<\/option>/g)).toHaveLength(1);
+    const card = renderToStaticMarkup(<EconomicTargetCard target={data.targets[0]} />);
+    expect(card).toContain('Instrument SN rr 1 · placed here since 1 Jan 2026 · previously at Lab A');
+  });
   it('keeps cumulative financial totals separate from a zero-sale selected month and upfront billing', () => {
     const recorded = { ...target, salesFrom: '2026-07-23', capitalPaise: '62500000', instrumentBillingPaise: '40000000', netInvestmentPaise: '22500000', recoveryPaise: '69853706', outstandingPaise: '0', revenuePaise: '0', knownGpPaise: '0', reagentLifetime: { salesPaise: '45266952', knownGpPaise: '29853706', lines: 35, missingCostLines: 0 } };
     const html = renderToStaticMarkup(<CumulativeFinancialBreakdown target={recorded} />);

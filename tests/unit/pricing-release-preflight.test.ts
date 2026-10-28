@@ -9,6 +9,28 @@ const original = JSON.parse(readFileSync(new URL('../../supabase/migration-histo
 const source = new Map(readdirSync(fileURLToPath(directory)).filter((name) => name.endsWith('.sql')).map((name) => [name, readFileSync(new URL(name, directory), 'utf8')]));
 
 describe('read-only pricing release preflight', () => {
+  it('keeps register anchors unique in the logic-bearing definitions', () => {
+    const history = source.get('20261010071925_historical_instrument_registration.sql')!;
+    const gateway = source.get('20261007183000_instrument_economics_commands.sql')!;
+    const registration = source.get('20261030090000_instrument_register.sql')!;
+    const anchors = [
+      [history, 'coalesce(i.customer_id,o.customer_id)=customer and i.serial_number=serial'],
+      [gateway, 'target private.stockflow_economic_targets%rowtype;'],
+      [gateway, 'insert into private.stockflow_economic_targets(kind,name,company_id,customer_id,customer_source_id,site_id,model_id,installation_id,effective_from,created_by)'],
+    ];
+    for (const [definition, anchor] of anchors) {
+      expect(definition.split(anchor), anchor).toHaveLength(2);
+      expect(registration).toContain(anchor);
+    }
+    const runner = readFileSync(new URL('../pricing-migration-local.ps1', import.meta.url), 'utf8');
+    for (const name of ['instrument_register.sql', 'instrument_register_read.sql', 'instrument_register_concurrency.sql']) {
+      expect(runner).toContain(`supabase/tests/${name}`);
+    }
+    expect(runner).toContain('instrument_register_upgrade=1');
+    const read = source.get('20261030091000_instrument_register_read.sql')!;
+    expect(read).toContain('private.stockflow_economic_workspace_read(text[],boolean)');
+    expect(read).toContain('private.stockflow_economic_workspace_detail(text[])');
+  });
   it('registers supplier purchase replay and patches each live anchor exactly once', () => {
     const migration = source.get('20261029100000_supplier_purchase_orders.sql')!;
     const importer = source.get('20260921110000_observable_pricing_evidence_import.sql')!;
@@ -128,6 +150,8 @@ describe('read-only pricing release preflight', () => {
       '20261029090000_challan_delivery.sql',
       '20261029091000_order_list_priority_sort.sql',
       '20261029100000_supplier_purchase_orders.sql',
+      '20261030090000_instrument_register.sql',
+      '20261030091000_instrument_register_read.sql',
     ]);
     expect(result.deployed.at(-1)?.localFile).toBe('20261026150000_rate_check_units.sql');
     expect(result.deployed).toHaveLength(147);
@@ -148,6 +172,8 @@ describe('read-only pricing release preflight', () => {
       '20261029090000_challan_delivery.sql',
       '20261029091000_order_list_priority_sort.sql',
       '20261029100000_supplier_purchase_orders.sql',
+      '20261030090000_instrument_register.sql',
+      '20261030091000_instrument_register_read.sql',
     ]);
   });
   it('rejects changed SQL including changes inside literals', () => {
