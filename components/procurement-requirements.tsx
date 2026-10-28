@@ -271,13 +271,13 @@ export function ProcurementRequirements({ onOpenOrder }: { onOpenOrder?: (orderI
     {error ? <p role="alert" className="mt-2 text-sm text-sf-danger">{error}</p> : null}
     {loading && !result ? <p className="mt-3 text-sm text-sf-subtle">Loading to order…</p> : null}
     <div className="mt-3 space-y-2">
-      {items.map((item) => <article key={item.itemKey} aria-label={item.itemName} className={`min-w-0 rounded-lg border border-sf-line-soft p-3 ${item.state === 'stock_unknown' ? 'bg-sf-soft-2 text-sf-muted' : 'bg-sf-soft-0 text-sf-body'}`}>
-        <div className="flex min-w-0 flex-col gap-2">
+      {items.map((item) => <article key={item.itemKey} aria-label={item.itemName} className={`min-w-0 rounded-lg border border-sf-line-soft px-3 py-2 ${item.state === 'stock_unknown' ? 'bg-sf-soft-2 text-sf-muted' : 'bg-sf-soft-0 text-sf-body'}`}>
+        <div className="flex items-start justify-between gap-3">
           <h3 className="min-w-0 break-words text-sm font-bold">{item.itemName}</h3>
-          <p className="break-words text-right text-lg font-bold">Order {item.state === 'stock_unknown' || item.suggestedQty === null ? '—' : quantity(item.suggestedQty)}</p>
+          <p className="shrink-0 text-right text-lg font-bold">Order {item.state === 'stock_unknown' || item.suggestedQty === null ? '—' : quantity(item.suggestedQty)}</p>
         </div>
-        <p className="mt-1 break-words text-xs">{toOrderReasonText(item)}</p>
-        <p className="mt-1 break-words text-xs text-sf-muted">{toOrderStockText(item)}</p>
+        <p className="mt-0.5 break-words text-xs">{toOrderReasonText(item)}</p>
+        <p className="mt-0.5 break-words text-xs text-sf-muted">{toOrderStockText(item)}</p>
         {item.waitingOrders > 0 ? <button type="button" aria-expanded={waitingOrigin === item.itemKey} onClick={() => toggleWaitingOrders(item.itemKey)} className="mt-2 min-h-11 rounded-lg border border-sf-line px-3 text-xs font-bold text-sf-body">
           {waitingOrigin === item.itemKey ? 'Hide waiting orders' : 'View waiting orders'}
         </button> : null}
