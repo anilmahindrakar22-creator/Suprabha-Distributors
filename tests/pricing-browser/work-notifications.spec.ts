@@ -24,10 +24,10 @@ const order = (id: string, number: string, customer: string, status: string) => 
 const waiting = order('11111111-1111-4111-8111-111111111111', 'SF-26-1001', 'Apollo Clinic Lab', 'awaiting_tally_billing');
 const packedNow = order('22222222-2222-4222-8222-222222222222', 'SF-26-1043', 'Care Hospital', 'awaiting_tally_billing');
 
-async function mockAccounts(page: Page, billing: () => OrderSummary[]) {
+async function mockAccounts(page: Page, billing: () => OrderSummary[], role: 'accounts' | 'billing' = 'accounts') {
   await page.route('**/api/orders**', (route) => {
     const url = new URL(route.request().url());
-    const list = (orders: OrderSummary[]) => orderBootstrap({ actor: { email: 'staff@example.test', role: 'accounts', roles: ['accounts'] }, snapshot: { company: 'T', fetchedAt: now(), catalog: [] }, customers: [], operations: {}, orders, pagination: { total: orders.length, page: 1, pageCount: 1, pageSize: 20 } });
+    const list = (orders: OrderSummary[]) => orderBootstrap({ actor: { email: 'staff@example.test', role, roles: [role] }, snapshot: { company: 'T', fetchedAt: now(), catalog: [] }, customers: [], operations: {}, orders, pagination: { total: orders.length, page: 1, pageCount: 1, pageSize: 20 } });
     if (url.searchParams.get('summary') === '1') return route.fulfill({ json: { operations: { awaitingTallyBilling: billing().length } } });
     if (url.searchParams.get('status') === 'billing') return route.fulfill({ json: list(billing()) });
     if (url.searchParams.get('status') === 'packed') return route.fulfill({ json: list([]) });
@@ -37,6 +37,27 @@ async function mockAccounts(page: Page, billing: () => OrderSummary[]) {
     return route.fulfill({ json: list(billing()) });
   });
 }
+
+test('billing-only staff see ready-to-bill arrivals and desktop pop-ups in the bell', async ({ page, isMobile }) => {
+  let billing = [waiting];
+  await page.clock.install();
+  await mockAccounts(page, () => billing, 'billing');
+  await page.goto('/?view=frame&role=billing');
+  const bell = page.getByRole('button', { name: /^Notifications/ });
+  await expect(bell).toBeVisible();
+  await page.clock.runFor(5_000);
+  await expect(bell).toHaveAccessibleName('Notifications, 1 waiting for you');
+
+  billing = [waiting, packedNow];
+  await advanceToNextCheck(page, bell, 'Notifications, 2 waiting for you, 1 new');
+  await bell.click();
+  const panel = page.getByRole('dialog', { name: 'Notifications' });
+  const arrival = panel.getByRole('button', { name: /^New: Care Hospital, SF-26-1043/ });
+  await expect(arrival).toBeVisible();
+  await expect(arrival).toContainText('Packed and priced · ready to bill');
+  await expect(panel.getByRole('button', { name: /^Ready to bill/ })).toContainText('2');
+  if (!isMobile) await expect(panel.getByText('Desktop pop-ups', { exact: true })).toBeVisible();
+});
 
 test('Accounts hears at once when a packed order reaches Tally billing, and can open that exact order', async ({ page, isMobile }) => {
   let billing = [waiting];

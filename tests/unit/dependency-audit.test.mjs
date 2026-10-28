@@ -24,6 +24,24 @@ describe('hash-bound dependency mitigation gate', () => {
     clean.metadata.vulnerabilities.high = 0;
     expect(verifyDependencyAudit(clean, 0, {}, now)).toEqual({ mitigated: false });
   });
+  it('accepts complete lower-severity reports under the unchanged high/critical release policy', () => {
+    const lower = {
+      advisories: { 1: { severity: 'moderate' }, 2: { severity: 'low' } },
+      metadata: { vulnerabilities: { info: 0, low: 1, moderate: 1, high: 0, critical: 0 } },
+    };
+    expect(verifyDependencyAudit(lower, 1, {}, Date.now())).toEqual({ mitigated: false });
+    expect(() => verifyDependencyAudit(lower, 0, {}, now)).toThrow();
+    expect(() => verifyDependencyAudit({ ...lower, advisories: {} }, 1, {}, now)).toThrow();
+  });
+  it('rejects any unmitigated high or critical advisory in a complete report', () => {
+    for (const severity of ['high', 'critical']) {
+      const unsafe = {
+        advisories: { 1: { severity, module_name: 'unreviewed' } },
+        metadata: { vulnerabilities: { info: 0, low: 0, moderate: 0, high: 0, critical: 0, [severity]: 1 } },
+      };
+      expect(() => verifyDependencyAudit(unsafe, 1, {}, Date.now())).toThrow();
+    }
+  });
   for (const field of ['patchHash', 'workspace', 'lockfile']) {
     it(`fails closed on missing or changed ${field}`, () => {
       expect(() => verifyDependencyAudit(report(), 1, { ...evidence, [field]: '' }, now)).toThrow();
