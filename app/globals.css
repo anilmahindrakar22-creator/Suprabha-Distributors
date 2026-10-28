@@ -48,6 +48,54 @@
   --radius-4xl: calc(var(--radius) * 2.6);
 }
 
+/* StockFlow semantic colours (12 Oct 2026). Use these instead of raw hex in class names. */
+@theme {
+  --color-sf-ink: #092f36;
+  --color-sf-strong: #173239;
+  --color-sf-body: #31585d;
+  --color-sf-label: #456367;
+  --color-sf-muted: #586e71;
+  --color-sf-subtle: #627579;
+  --color-sf-faint: #8a9a9c;
+  --color-sf-line-strong: #9fb9b5;
+  --color-sf-line: #cedfdd;
+  --color-sf-line-soft: #dce7e5;
+  --color-sf-page: #f7f6f1;
+  --color-sf-soft: #f4f8f6;
+  --color-sf-soft-2: #eef4f2;
+  --color-sf-brand: #145e62;
+  --color-sf-accent: #0f7b6c;
+  --color-sf-accent-bright: #3aa585;
+  --color-sf-accent-soft: #e3f6f1;
+  --color-sf-success: #176246;
+  --color-sf-success-soft: #e9f6ea;
+  --color-sf-success-line: #cfe6d9;
+  --color-sf-warning: #8a5a0a;
+  --color-sf-warning-soft: #fff4dc;
+  --color-sf-warning-line: #f0d7a5;
+  --color-sf-danger: #8d3a34;
+  --color-sf-danger-soft: #fff0ef;
+  --color-sf-danger-line: #f0c9c4;
+  --color-sf-stage-confirm: #2f6fb3;
+  --color-sf-stage-confirm-soft: #e8f1fb;
+  --color-sf-stage-pack: #7a4fb0;
+  --color-sf-stage-pack-soft: #f2ecfa;
+  --color-sf-stage-bill: #b0286f;
+  --color-sf-stage-bill-soft: #fceaf3;
+  --color-sf-ink-hover: #073e46;
+  --color-sf-soft-0: #f9fbfa;
+  --color-sf-mint: #64d4ad;
+  --color-sf-accent-line: #badfd4;
+  --color-sf-info: #315f75;
+  --color-sf-info-soft: #e8f4fa;
+  --color-sf-cool: #2d5f8f;
+  --color-sf-cool-soft: #ebf2fa;
+  --color-sf-cool-line: #c3d6ea;
+  --color-sf-warm: #a24a12;
+  --color-sf-warm-soft: #fdf0e6;
+  --color-sf-warm-line: #f1cfb4;
+}
+
 body {
   font-family: var(--font-geist-sans), Arial, Helvetica, sans-serif;
   margin: 0;

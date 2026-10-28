@@ -1,10 +1,14 @@
-param([int]$Port = 8765, [switch]$NoBrowser, [ValidateRange(5, 120)][int]$SyncMinutes = 15, [ValidateRange(15, 1440)][int]$CustomerSyncMinutes = 240, [ValidateRange(15, 1440)][int]$CatalogSyncMinutes = 240, [ValidateRange(15, 1440)][int]$PurchaseSyncMinutes = 240, [ValidateRange(1, 14)][int]$SalesRecentDays = 7, [ValidateRange(4, 168)][int]$SalesReconcileHours = 24, [switch]$RebuildSalesHistory)
+param([int]$Port = 8765, [switch]$NoBrowser, [ValidateRange(5, 120)][int]$SyncMinutes = 15, [ValidateRange(15, 1440)][int]$CustomerSyncMinutes = 240, [ValidateRange(15, 1440)][int]$CatalogSyncMinutes = 240, [ValidateRange(15, 1440)][int]$PurchaseSyncMinutes = 240, [ValidateRange(1, 14)][int]$SalesRecentDays = 7, [ValidateRange(4, 168)][int]$SalesReconcileHours = 24, [switch]$RebuildSalesHistory, [ValidateRange(1,60)][int]$EconomicHistoryMonths=3, [ValidateRange(1,24)][int]$EconomicPurchaseHistoryMonths=12, [switch]$DisableInstrumentEconomics)
 
 $ErrorActionPreference = 'Stop'
 $dashboardRoot = Split-Path -Parent $MyInvocation.MyCommand.Path
 $indexPath = Join-Path $dashboardRoot 'index.html'
 $companyName = 'SUPRABHA DISTRIBUTORS'
 . (Join-Path $dashboardRoot 'recovery.ps1')
+. (Join-Path $dashboardRoot 'economics.ps1')
+$script:nextEconomicRead=Get-Date
+$script:lastEconomicEvidence=$null
+$script:economicSyncError=$null
 $stateDirectory = Join-Path ([Environment]::GetFolderPath('LocalApplicationData')) 'SuprabhaStockFlow'
 [IO.Directory]::CreateDirectory($stateDirectory) | Out-Null
 $snapshotPath = Join-Path $stateDirectory 'snapshot-v1.json'
@@ -92,7 +96,7 @@ function Publish-CloudSnapshot([string]$Json) {
     $watch = [Diagnostics.Stopwatch]::StartNew()
     $payloadBytes = [Text.Encoding]::UTF8.GetByteCount($Json)
     try {
-        Invoke-WebRequest -Uri $cloudSyncUrl -Method Post -ContentType 'application/json' -Headers @{ 'x-upload-key' = $cloudUploadKey } -Body $Json -UseBasicParsing -TimeoutSec 15 | Out-Null
+        Invoke-WebRequest -Uri $cloudSyncUrl -Method Post -ContentType 'application/json' -Headers @{ 'x-upload-key' = $cloudUploadKey } -Body $Json -UseBasicParsing -TimeoutSec 35 | Out-Null
         $watch.Stop()
     } catch {
         $watch.Stop()
@@ -429,6 +433,28 @@ function Read-ReorderData {
     $lastSupplyMap = $salesData.lastSupply
     $pricingSales = @(Get-PricingSalesEvidence $salesData.records $customers)
     $pricingPurchaseCosts = @(Get-PricingPurchaseCostEvidence $purchaseRecords)
+    if (-not $DisableInstrumentEconomics -and (Get-Date) -ge $script:nextEconomicRead) {
+        $script:nextEconomicRead=(Get-Date).AddMinutes($PurchaseSyncMinutes)
+        try {
+            $ledgerRoles=@{}
+            $rolePath=Join-Path $stateDirectory 'economic-ledger-roles.json'
+            if (Test-Path -LiteralPath $rolePath) {
+                $configured=Get-Content -LiteralPath $rolePath -Raw | ConvertFrom-Json
+                foreach($property in $configured.PSObject.Properties){$ledgerRoles[$property.Name]=[string]$property.Value}
+            }
+            $voucherRoles=@{}
+            $voucherRolePath=Join-Path $stateDirectory 'economic-voucher-roles.json'
+            if (Test-Path -LiteralPath $voucherRolePath) {
+                $voucherRoleDocument=Get-Content -LiteralPath $voucherRolePath -Raw | ConvertFrom-Json
+                foreach($property in $voucherRoleDocument.PSObject.Properties){$voucherRoles[$property.Name]=[string]$property.Value}
+            }
+            $script:lastEconomicEvidence=Read-TallyEconomicEvidence $companyName $EconomicHistoryMonths $ledgerRoles $voucherRoles $EconomicPurchaseHistoryMonths
+            $script:economicSyncError=$null
+        } catch {
+            $script:economicSyncError=$_.Exception.Message
+            Write-ConnectorHealth "$([datetimeoffset]::Now.ToString('o')) domain=instrument_economics status=failed reason=$($script:economicSyncError)"
+        }
+    }
     $groupMap = @{}
     foreach ($item in $stockDoc.SelectNodes('//STOCKITEM')) { $groupMap[$item.GetAttribute('NAME')] = [string]$item.PARENT.'#text' }
     $groupParents = @{}
@@ -536,6 +562,8 @@ function Read-ReorderData {
         customers = $customers
         tallyInvoices = @($salesData.invoices)
         pricingHistory = [ordered]@{ sales = $pricingSales; purchaseCosts = $pricingPurchaseCosts }
+        economicEvidence = $script:lastEconomicEvidence
+        economicSyncError = $script:economicSyncError
     }
 }
 

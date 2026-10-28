@@ -5,6 +5,7 @@ import { isOrderDeliveryOverdue, orderNeedsBillingAttention, ordersCsv, validate
 import { measuredJsonResponse } from '@/lib/measured-json-response';
 import { matchingOrderList, parseOrderListQuery, queryBillingAttentionList, queryOrderList } from '@/lib/order-list-query';
 import { BoundedJsonRequestError, readBoundedJsonRequest } from '@/lib/bounded-json-request';
+import type { TallyRecentProducts } from '@/lib/tally-recent-products';
 
 const privateHeaders = { 'cache-control': 'private, no-store' };
 
@@ -41,7 +42,17 @@ export async function GET(request: Request) {
   const startedAt = performance.now();
   try {
     const user = await authorizedUser();
+    // Sign-in check time: about 1 ms when the verified-session cache hits.
+    const authMs = performance.now() - startedAt;
     const parameters = new URL(request.url).searchParams;
+    const recentProductsFor = parameters.get('recentProductsFor');
+    if (recentProductsFor !== null) {
+      if (!/^[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i.test(recentProductsFor)) return failure('Valid customer ID is required', 400);
+      return measuredJsonResponse(
+        await callOrderGateway<TallyRecentProducts>(user.email, 'get_tally_recent_products', { customerId: recentProductsFor }),
+        startedAt,
+      );
+    }
     const eventsFor = parameters.get('eventsFor');
     if (eventsFor) {
       if (!/^[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i.test(eventsFor)) return failure('Valid order ID is required', 400);
@@ -103,7 +114,7 @@ export async function GET(request: Request) {
           pageSize, query: listQuery.query, status: listQuery.status,
           date: listQuery.captureDate, dateTo: listQuery.captureDateTo || '',
         });
-        if (!exporting) return measuredJsonResponse(first, startedAt);
+        if (!exporting) return measuredJsonResponse(first, startedAt, performance.now(), { auth: authMs });
         const orders = [...first.orders];
         const pageCount = first.pagination?.pageCount || 1;
         for (let page = 2; page <= pageCount; page += 1) {
@@ -151,6 +162,8 @@ export async function POST(request: Request) {
   const startedAt = performance.now();
   try {
     const user = await authorizedUser();
+    const expectedActor = request.headers.get('x-stockflow-actor');
+    if (expectedActor !== null && expectedActor !== user.email) return failure('Sign in with the account that saved this order.', 403);
     const command = validateOrderCommand(await readBoundedJsonRequest(request));
     if (!command) return failure('Invalid order request', 400);
 

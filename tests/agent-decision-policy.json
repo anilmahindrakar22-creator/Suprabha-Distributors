@@ -1,0 +1,22 @@
+{
+  "policyVersion": "2026-10-12.3",
+  "enforcement": { "deny": "refuse", "ask": "record", "escalate": "suggest", "tier": "observe" },
+  "_comment": "denyPatterns and askPatterns are informational prose mentions only; permissions come from declared actions, sandbox and write sensitivity.",
+  "classes": {
+    "restricted": [".env*", "**/*.pem", "**/*.key", ".codex/setup-*keys*.ps1", "wrangler*.json*", "**/wrangler.toml", "tests/pricing-release-preflight.mjs", "supabase/migration-history-map.json"],
+    "sensitive": ["tests/agent-decision-*", "tests/*preflight*.mjs", "AGENTS.md", ".github/**", ".gitignore", "supabase/**", "app/api/**", "lib/*pricing*", "lib/*economic*", "lib/*price*", "lib/access-control.mjs", "lib/staff-auth*", "lib/*tally*", "desktop-connector/**", "public/sw.js", "lib/order-gateway.ts"],
+    "app": ["app/**", "components/**", "lib/**", "hooks/**", "offline/**"],
+    "public": ["docs/**", "tests/**", "*.md"]
+  },
+  "scores": { "public": 0.1, "app": 0.4, "sensitive": 0.75, "restricted": 1 },
+  "lanes": {
+    "closedActions": ["migrate", "deploy", "hosted-db", "secrets", "delete"],
+    "closed": ["supabase/migrations/**", "desktop-connector/**"],
+    "wide": ["lib/**", "app/api/**", "app/globals.css", "app/layout.tsx", "components/ui/**", "hooks/**", "public/sw.js", "supabase/**"],
+    "wideWriteCount": 6,
+    "maxAttempts": 3
+  },
+  "denyPatterns": ["--dangerously-bypass-approvals-and-sandbox", "danger-full-access", "wrangler deploy", "supabase db push", "apply_migration", "aormuidjbdqruglmyseh", "write .*secret", "service_role"],
+  "askPatterns": ["migration", "deploy"],
+  "logicKeywords": ["state", "effect", "concurren", "idempoten", "permission", "role", "calculat"]
+}

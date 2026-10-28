@@ -10,6 +10,9 @@ import { StockFlowFrame } from '@/components/stockflow-frame';
 import { StaffSignIn, StaffAccountSwitch } from '@/components/staff-sign-in';
 import { StaffPasswordReset } from '@/components/staff-password-reset';
 import { UserManagement } from '@/components/user-management';
+import { InstrumentEconomicsWorkspace } from '@/components/instrument-economics-workspace';
+import { ServiceWorkspace } from '@/components/service-workspace';
+import { AccountsWorkspace } from '@/components/accounts-workspace';
 import type { PricingLineResolution } from '@/lib/pricing-types';
 import type { OrderBootstrap } from '@/lib/order-types';
 import { normalizeStockFlowRoles } from '@/lib/user-types';
@@ -28,14 +31,18 @@ function OrderRecoveryFixture({ data }: { data: OrderBootstrap }) {
   return result ? <output>Accepted {result}</output> : <><button onClick={() => setRevision(current => current + 1)}>Refresh fixture props {revision}</button><HydratedNewOrderPanel data={data} templateOrder={null} onClose={() => setResult('discarded')} onCreated={number => setResult(number)} onViewCustomer={() => undefined} /></>;
 }
 function Fixture() {
-  const [entry, setEntry] = useState({ rate: '445', reason: '' });
+  const [entry, setEntry] = useState({ rate: new URLSearchParams(location.search).has('noHistory') ? '' : '445', reason: '' });
   const parameters = new URLSearchParams(location.search);
   if (parameters.get('view') === 'staff-signin') return <StaffSignIn />;
+  if (parameters.get('view') === 'staff-signin-resume') return <StaffSignIn resume />;
   if (parameters.get('view') === 'staff-signin-choice') return <StaffSignIn chatGPTSignInUrl="https://stockflow.chatgpt.site/signin-with-chatgpt?return_to=%2F" />;
   if (parameters.get('view') === 'staff-reset') return <React.StrictMode><StaffPasswordReset /></React.StrictMode>;
   if (parameters.get('view') === 'staff-switch') return <StaffAccountSwitch />;
   if (parameters.get('view') === 'staff-users') return <UserManagement staffAuth emailActionsEnabled />;
   if (parameters.get('view') === 'staff-users-disabled') return <UserManagement staffAuth />;
+  if (parameters.get('view') === 'instrument-economics') return <InstrumentEconomicsWorkspace />;
+  if (parameters.get('view') === 'service') return <main className="h-dvh overflow-hidden"><ServiceWorkspace /></main>;
+  if (parameters.get('view') === 'accounts') return <main className="h-dvh overflow-auto"><AccountsWorkspace /></main>;
   if (parameters.get('view') === 'frame') return <StockFlowFrame actorEmail="staff@example.test" actorRole={parameters.get('role') || 'sales'} actorRoles={parameters.has('roles') ? normalizeStockFlowRoles(parameters.get('roles')?.split(',')) ?? [] : undefined} />;
   if (parameters.get('view') === 'staff-frame') return <StockFlowFrame actorEmail="staff@example.test" actorRole="administrator" staffAuth />;
   if (parameters.get('view') === 'product-requests') return <ProductRequestInbox />;
@@ -63,7 +70,9 @@ function Fixture() {
   }
   if (parameters.get('view') === 'workspace') return <PricingWorkspace actorEmail="fixture@example.test" actorRole="management"/>;
   return <main className="mx-auto max-w-5xl p-4"><h1>Pricing test fixture</h1>{parameters.get('view') === 'order'
-    ? <PricingOptions line={{ ...row, fixed: parameters.has('fixed') }} entry={entry} onChange={setEntry}/>
+    ? <PricingOptions line={{ ...row, fixed: parameters.has('fixed'), ...(parameters.has('noHistory') ? { lastRate: null, historicCost: null, continuityPrice: null, recommendedPrice: null, proposedRate: null, targetMarginPrice: null } : {}) }} entry={entry} onChange={setEntry}/>
     : <CustomerPriceBook actorEmail="fixture@example.test" actorRole={parameters.get('role') || 'management'}/>}</main>;
 }
+// The isolated fixture omits RootLayout's next/font loader; keep its sans fallback.
+document.documentElement.style.setProperty('--font-geist-sans', 'Arial, Helvetica, sans-serif');
 createRoot(document.getElementById('root')!).render(<Fixture/>);

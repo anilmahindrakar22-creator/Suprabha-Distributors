@@ -1,5 +1,7 @@
 # Suprabha OS delivery roadmap
 
+> **Historical milestone ordering** (13 Oct 2026). The owner-adopted [master roadmap](planning/MASTER-ROADMAP.md) (ADR-0010, D-09) replaces the milestone ordering below. The deferrals and cost/portability guardrails here stay authoritative.
+
 The roadmap grows one transactional spine. It is not authorization to build every listed domain simultaneously.
 
 The current detailed requirements, acceptance gates and ordered recovery slices are in [Requirements and delivery plan](REQUIREMENTS-AND-DELIVERY-PLAN.md). That plan takes precedence over conflicting historical milestone wording below. Next implementation: durable connector recovery (R1), after the R0 deployment and measurement audit.

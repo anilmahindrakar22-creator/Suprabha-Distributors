@@ -1,4 +1,5 @@
 import { test, expect } from '@playwright/test';
+import { orderBootstrap, orderLine, orderSummary } from '../fixtures/api-builders';
 
 test('office request review loads on demand and retries the same versioned decision', async ({ page }) => {
   const decisions: unknown[] = [];
@@ -30,7 +31,7 @@ test('missing-product request retries one command without creating an order', as
   let orders = 0;
   await page.route('**/api/orders**', async (route) => {
     if (route.request().method() === 'POST') orders += 1;
-    await route.fulfill({ json: { orders: [], pagination: { total: 0 } } });
+    await route.fulfill({ json: orderBootstrap({ orders: [], pagination: { page: 1, pageCount: 1, pageSize: 20, total: 0 } }) });
   });
   await page.route('**/api/product-requests', async (route) => {
     requests.push(route.request().postDataJSON());
@@ -57,7 +58,7 @@ test('five-product keyboard capture saves exact quantities once and records loca
     if (route.request().method() === 'POST') {
       commands.push(route.request().postDataJSON());
       await route.fulfill({ json: { orderNumber: 'SF-TEST-FIVE' } });
-    } else await route.fulfill({ json: { orders: [], pagination: { total: 0 } } });
+    } else await route.fulfill({ json: orderBootstrap({ orders: [], pagination: { page: 1, pageCount: 1, pageSize: 20, total: 0 } }) });
   });
   await page.goto('/?view=order-entry');
   const customer = page.getByRole('combobox', { name: 'Name' });
@@ -67,7 +68,7 @@ test('five-product keyboard capture saves exact quantities once and records loca
   for (const [index, name] of ['Glucose A', 'Glucose B', 'CRP', 'HbA1c', 'Cleaner'].entries()) {
     await product.fill(name);
     await product.press('Enter');
-    const quantity = page.getByRole('spinbutton', { name: `Quantity for ${name}`, exact: true });
+    const quantity = page.getByRole('spinbutton', { name: `Quantity for ${name} in ` });
     await expect(quantity).toBeFocused();
     await quantity.fill(String(index + 1));
     await quantity.press('Enter');
@@ -87,7 +88,7 @@ test('order desk can select customer and products, enter quantities, and keep th
   let submissions = 0;
   await page.route('**/api/orders**', async (route) => {
     if (route.request().method() === 'POST') submissions += 1;
-    await route.fulfill({ json: { orders: [], pagination: { total: 0 } } });
+    await route.fulfill({ json: orderBootstrap({ orders: [], pagination: { page: 1, pageCount: 1, pageSize: 20, total: 0 } }) });
   });
   await page.goto('/?view=order-entry');
   const customer = page.getByRole('combobox', { name: 'Name' });
@@ -155,26 +156,28 @@ test('device draft protection stays explicit without dominating the form', async
   await expect(consent).not.toBeChecked();
 });
 
-test('recent customer products can be added from the existing history response', async ({ page }) => {
+test('recent customer products come from Tally bills, independently of StockFlow orders', async ({ page }, testInfo) => {
   let historyRequests = 0;
   let submissions = 0;
+  await page.route('**/api/orders?recentProductsFor=*', route => route.fulfill({ json: {
+    customerId: '22222222-2222-4222-8222-222222222222', linked: true, billCount: 2,
+    products: [{ tallyKey: 'GLUCOSE-B', billCount: 2, lastBilledAt: '2026-09-20', lastQuantity: 3 }, { tallyKey: 'CRP', billCount: 1, lastBilledAt: '2026-09-19', lastQuantity: 1 }, { tallyKey: 'OLD-ITEM', billCount: 1, lastBilledAt: '2026-09-19', lastQuantity: 1 }],
+  } }));
   await page.route('**/api/orders?list=1*', async (route) => {
     historyRequests += 1;
-    await route.fulfill({ json: { orders: [{
+    await route.fulfill({ json: orderBootstrap({ orders: [orderSummary({
       id: '33333333-3333-4333-8333-333333333333', orderNumber: 'SF-TEST-1', customerName: 'Test Beta Laboratory',
       customerPhone: null, status: 'delivered', source: 'phone', notes: null, version: 1,
       createdAt: '2026-09-20T10:00:00Z', updatedAt: '2026-09-20T10:00:00Z', lineCount: 3,
       totalQuantity: 3, reservedQuantity: 0, tallyInvoiceNumber: null,
       lines: [
-        { tallyKey: 'GLUCOSE-B', itemName: 'Glucose B', quantity: 1 },
-        { tallyKey: 'CRP', itemName: 'CRP', quantity: 1 },
-        { tallyKey: 'OLD-ITEM', itemName: 'Old item', quantity: 1 },
+        orderLine({ tallyKey: 'CLEANER', itemName: 'Cleaner', quantity: 99 }),
       ], events: [], exceptions: [], installations: [],
-    }], pagination: { total: 1 } } });
+    })], pagination: { total: 1, page: 1, pageCount: 1, pageSize: 20 } }) });
   });
   await page.route('**/api/orders', async (route) => {
     if (route.request().method() === 'POST') submissions += 1;
-    await route.fulfill({ json: {} });
+    await route.fulfill({ json: orderBootstrap({ orders: [] }) });
   });
   await page.goto('/?view=order-entry');
   const customer = page.getByRole('combobox', { name: 'Name' });
@@ -184,10 +187,14 @@ test('recent customer products can be added from the existing history response',
   await expect(recent.getByRole('button', { name: 'Add Glucose B' })).toBeVisible();
   await expect(recent.getByRole('button', { name: 'Add CRP' })).toBeVisible();
   await expect(recent.getByRole('button', { name: 'Add Old item' })).toHaveCount(0);
+  await expect(recent.getByRole('button', { name: 'Add Cleaner' })).toHaveCount(0);
+  await expect(recent).toContainText('imported Tally bills');
+  await recent.scrollIntoViewIfNeeded();
+  await page.screenshot({ path: testInfo.outputPath('tally-recent-products.png') });
   const quickQuantity = recent.getByRole('spinbutton', { name: 'Recent quantity for Glucose B' });
   await quickQuantity.fill('0');
   await quickQuantity.press('Enter');
-  await expect(page.getByRole('spinbutton', { name: 'Quantity for Glucose B', exact: true })).toHaveCount(0);
+  await expect(page.getByRole('spinbutton', { name: /^Quantity for Glucose B in / })).toHaveCount(0);
   await quickQuantity.fill('4');
   await quickQuantity.press('Enter');
   await expect(page.getByRole('spinbutton', { name: 'Quantity for Glucose B' })).toBeFocused();
@@ -197,21 +204,61 @@ test('recent customer products can be added from the existing history response',
   expect(submissions).toBe(0);
 });
 
+test('recent products rank by frequency and default to last quantity', async ({ page }) => {
+  await page.route('**/api/orders?recentProductsFor=*', route => route.fulfill({ json: {
+    customerId: '22222222-2222-4222-8222-222222222222', linked: true, billCount: 3,
+    products: [{ tallyKey: 'GLUCOSE-A', billCount: 3, lastBilledAt: '2026-09-23', lastQuantity: 6 }, { tallyKey: 'CRP', billCount: 1, lastBilledAt: '2026-09-23', lastQuantity: 2 }],
+  } }));
+  await page.route('**/api/orders?list=1*', async (route) => {
+    const orders = [
+      { id: 'rank-newest', createdAt: '2026-09-23T10:00:00Z', status: 'delivered', lines: [{ tallyKey: 'GLUCOSE-A', itemName: 'Glucose A', quantity: 6 }, { tallyKey: 'CRP', itemName: 'CRP', quantity: 2 }] },
+      { id: 'rank-middle', createdAt: '2026-09-22T10:00:00Z', status: 'delivered', lines: [{ tallyKey: 'GLUCOSE-A', itemName: 'Glucose A', quantity: 4 }] },
+      { id: 'rank-oldest', createdAt: '2026-09-21T10:00:00Z', status: 'delivered', lines: [{ tallyKey: 'GLUCOSE-A', itemName: 'Glucose A', quantity: 1 }] },
+      { id: 'rank-cancelled', createdAt: '2026-09-24T10:00:00Z', status: 'cancelled', lines: [{ tallyKey: 'CLEANER', itemName: 'Cleaner', quantity: 9 }] },
+    ].map((order) => orderSummary({
+      orderNumber: order.id, customerName: 'Test Beta Laboratory', customerPhone: null,
+      source: 'phone', notes: null, version: 1, updatedAt: order.createdAt,
+      lineCount: order.lines.length, totalQuantity: order.lines.reduce((sum, line) => sum + line.quantity, 0),
+      reservedQuantity: 0, tallyInvoiceNumber: null, events: [], exceptions: [], installations: [], ...order,
+      lines: order.lines.map((line) => orderLine(line)),
+    }));
+    await route.fulfill({ json: orderBootstrap({ orders, pagination: { total: 4, page: 1, pageCount: 1, pageSize: 20 } }) });
+  });
+  await page.goto('/?view=order-entry');
+  const customer = page.getByRole('combobox', { name: 'Name' });
+  await customer.fill('Beta');
+  await customer.press('Enter');
+  const recent = page.getByRole('region', { name: 'Recently ordered products' });
+  await expect(recent.getByRole('button')).toHaveText(['Add', 'Add']);
+  await expect(recent.getByRole('button').nth(0)).toHaveAttribute('aria-label', 'Add Glucose A');
+  await expect(recent.getByRole('button').nth(1)).toHaveAttribute('aria-label', 'Add CRP');
+  await expect(recent.getByRole('button', { name: 'Add Cleaner' })).toHaveCount(0);
+  await expect(recent.getByRole('spinbutton', { name: 'Recent quantity for Glucose A' })).toHaveValue('6');
+  await expect(recent.getByRole('spinbutton', { name: 'Recent quantity for CRP' })).toHaveValue('2');
+  await expect(recent.getByRole('button', { name: 'Add Glucose A' }).locator('..')).toContainText('3 of last 3 imported Tally bills');
+});
+
 test('switching back to a customer reuses only that customer’s history', async ({ page }) => {
   const historyQueries: string[] = [];
+  const tallyQueries: string[] = [];
+  await page.route('**/api/orders?recentProductsFor=*', route => {
+    const customerId = new URL(route.request().url()).searchParams.get('recentProductsFor')!;
+    tallyQueries.push(customerId);
+    return route.fulfill({ json: { customerId, linked: true, billCount: 1, products: [{ tallyKey: customerId.startsWith('1111') ? 'GLUCOSE-A' : 'CRP', billCount: 1, lastBilledAt: '2026-09-20', lastQuantity: 1 }] } });
+  });
   await page.route('**/api/orders?list=1*', async (route) => {
     const query = new URL(route.request().url()).searchParams.get('query') || '';
     historyQueries.push(query);
     const alpha = query.includes('Alpha');
-    await route.fulfill({ json: { orders: [{
+    await route.fulfill({ json: orderBootstrap({ orders: [orderSummary({
       id: alpha ? 'aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa' : 'bbbbbbbb-bbbb-4bbb-8bbb-bbbbbbbbbbbb',
       orderNumber: alpha ? 'SF-ALPHA' : 'SF-BETA', customerName: alpha ? 'Test Alpha Laboratory' : 'Test Beta Laboratory',
       customerPhone: null, status: 'delivered', source: 'phone', notes: null, version: 1,
       createdAt: '2026-09-20T10:00:00Z', updatedAt: '2026-09-20T10:00:00Z', lineCount: 1,
       totalQuantity: 1, reservedQuantity: 0, tallyInvoiceNumber: null,
-      lines: [{ tallyKey: alpha ? 'GLUCOSE-A' : 'CRP', itemName: alpha ? 'Glucose A' : 'CRP', quantity: 1 }],
+      lines: [orderLine({ tallyKey: alpha ? 'GLUCOSE-A' : 'CRP', itemName: alpha ? 'Glucose A' : 'CRP', quantity: 1 })],
       events: [], exceptions: [], installations: [],
-    }], pagination: { total: 1 } } });
+    })], pagination: { total: 1, page: 1, pageCount: 1, pageSize: 20 } }) });
   });
   await page.goto('/?view=order-entry');
   const customer = page.getByRole('combobox', { name: 'Name' });
@@ -234,6 +281,46 @@ test('switching back to a customer reuses only that customer’s history', async
   await expect(recent.getByRole('button', { name: 'Add CRP' })).toBeVisible();
   await expect(recent.getByRole('button', { name: 'Add Glucose A' })).toHaveCount(0);
   expect(historyQueries).toHaveLength(2);
+  expect(tallyQueries).toHaveLength(2);
+});
+
+test('failed Tally history is explicit and retry does not create an order', async ({ page }) => {
+  let reads = 0;
+  await page.route('**/api/orders?list=1*', route => route.fulfill({ json: orderBootstrap({ orders: [], pagination: { total: 0, page: 1, pageCount: 1, pageSize: 20 } }) }));
+  await page.route('**/api/orders?recentProductsFor=*', route => {
+    reads += 1;
+    return reads === 1 ? route.fulfill({ status: 502, json: { error: 'Unavailable' } }) : route.fulfill({ json: { customerId: '22222222-2222-4222-8222-222222222222', linked: false, billCount: 0, products: [] } });
+  });
+  await page.goto('/?view=order-entry');
+  await page.getByRole('combobox', { name: 'Name' }).fill('Beta');
+  await page.getByRole('combobox', { name: 'Name' }).press('Enter');
+  await page.getByRole('button', { name: 'Retry Tally purchases' }).click();
+  await expect(page.getByText('No linked Tally ledger yet. Search products below to create this order.')).toBeVisible();
+  expect(reads).toBe(2);
+  await expect(page.getByRole('combobox', { name: 'Find product' })).toBeEnabled();
+});
+
+test('a late Tally response cannot replace the newly selected customer', async ({ page }) => {
+  let releaseBeta!: () => void;
+  let betaStarted!: () => void;
+  const started = new Promise<void>(resolve => { betaStarted = resolve; });
+  const gate = new Promise<void>(resolve => { releaseBeta = resolve; });
+  await page.route('**/api/orders?list=1*', route => route.fulfill({ json: orderBootstrap({ orders: [], pagination: { total: 0, page: 1, pageCount: 1, pageSize: 20 } }) }));
+  await page.route('**/api/orders?recentProductsFor=*', async route => {
+    const customerId = new URL(route.request().url()).searchParams.get('recentProductsFor')!;
+    const beta = customerId.startsWith('2222');
+    if (beta) { betaStarted(); await gate; }
+    await route.fulfill({ json: { customerId, linked: true, billCount: 1, products: [{ tallyKey: beta ? 'CRP' : 'GLUCOSE-A', billCount: 1, lastBilledAt: '2026-09-20', lastQuantity: beta ? 99 : 2 }] } });
+  });
+  await page.goto('/?view=order-entry');
+  const customer = page.getByRole('combobox', { name: 'Name' });
+  await customer.fill('Beta'); await customer.press('Enter'); await started;
+  await customer.fill('Alpha'); await customer.press('Enter');
+  const recent = page.getByRole('region', { name: 'Recently ordered products' });
+  await expect(recent.getByRole('button', { name: 'Add Glucose A' })).toBeVisible();
+  releaseBeta();
+  await expect(recent.getByRole('button', { name: 'Add CRP' })).toHaveCount(0);
+  await expect(recent.getByRole('spinbutton', { name: 'Recent quantity for Glucose A' })).toHaveValue('2');
 });
 
 test('returning to customer search cancels the earlier blur timer', async ({ page }) => {

@@ -9,11 +9,77 @@ const original = JSON.parse(readFileSync(new URL('../../supabase/migration-histo
 const source = new Map(readdirSync(fileURLToPath(directory)).filter((name) => name.endsWith('.sql')).map((name) => [name, readFileSync(new URL(name, directory), 'utf8')]));
 
 describe('read-only pricing release preflight', () => {
+  it('patches exactly the live sales import and keeps unit fixtures on real gateways', () => {
+    const migration = source.get('20261026150000_rate_check_units.sql')!;
+    const anchor = migration.split('$anchor$')[1];
+    const importer = source.get('20260921110000_observable_pricing_evidence_import.sql')!.replace(/\r/g, '');
+    expect(importer.split(anchor).length - 1).toBe(1);
+    expect(migration).toContain("pg_get_functiondef('private.stockflow_import_tally_pricing_evidence()'::regprocedure)");
+    expect(migration).toContain("nullif(btrim(entry->>'unit'),'')");
+    const fixture = readFileSync(new URL('../../supabase/tests/rate_check_units.sql', import.meta.url), 'utf8');
+    expect(fixture).not.toMatch(/(?:insert\s+into|update)\s+private\.stockflow_(?:orders|order_lines|order_pricing_decisions|billing_snapshots|order_tally_invoices)\b/i);
+    expect(fixture).not.toMatch(/is\s+distinct\s+from\s+case\b/i);
+    expect(fixture.trimEnd()).toMatch(/rollback;$/);
+    for (const action of ['create_order', 'apply_governed_order_pricing', 'transition_order', 'get_order_pricing']) {
+      expect(fixture).toContain(`'${action}'`);
+    }
+  });
+  it('keeps push fixtures on real order gateways and valid member/state literals', () => {
+    const fixture = readFileSync(new URL('../../supabase/tests/push_alerts.sql', import.meta.url), 'utf8');
+    expect(fixture).not.toMatch(/insert\s+into\s+private\.stockflow_(?:orders|order_events|order_lines|billing_snapshots)\b/i);
+    expect(fixture).not.toMatch(/update\s+private\.stockflow_(?:orders|order_events|order_lines)\b/i);
+    expect(fixture).not.toContain("'draft'");
+    expect(fixture).not.toMatch(/is\s+distinct\s+from\s+case\b/i);
+    expect(fixture).not.toMatch(/[\u00c2\u00c3\ufffd]/);
+    expect(fixture.trimEnd()).toMatch(/rollback;$/);
+    for (const action of ['create_order', 'transition_order', 'save_fulfilment', 'set_order_assignee']) {
+      expect(fixture).toContain(`'${action}'`);
+    }
+    const literals = (sql: string) => [...sql.matchAll(/'([^']+)'/g)].map((match) => match[1]);
+    const statesSql = source.get('20260902091533_centralize_order_policy.sql')!
+      .split('insert into private.stockflow_order_states(status, terminal) values')[1].split(';')[0];
+    const states = new Set(literals(statesSql));
+    const transitions = [...fixture.matchAll(/push_test_transition\(o,'([^']+)'/g)].map((match) => match[1]);
+    expect(transitions.length).toBeGreaterThan(0);
+    for (const status of ['awaiting_confirmation', ...transitions]) expect(states.has(status), status).toBe(true);
+    const transitionRules = source.get('20260902091533_centralize_order_policy.sql')!;
+    let previous = 'awaiting_confirmation';
+    for (const status of transitions) {
+      expect(transitionRules).toContain(`('${previous}','${status}',array[`);
+      previous = status;
+    }
+    const memberSql = source.get('20260830071657_create_stockflow_member_allowlist.sql')!;
+    const memberStatuses = new Set(literals(memberSql.match(/check \(status in \(([^)]+)\)\)/)![1]));
+    const rolesSql = source.get('20261025090000_billing_role.sql')!.match(/check \(role = any \(array\[([^\]]+)\]/)![1];
+    const roles = new Set(literals(rolesSql));
+    const memberInserts = [...fixture.matchAll(/insert into public\.stockflow_members[^;]+;/g)];
+    expect(memberInserts).toHaveLength(2);
+    for (const [statement] of memberInserts) {
+      for (const value of literals(statement.split('values')[1])) {
+        if (!value.includes('@')) expect(roles.has(value) || memberStatuses.has(value), value).toBe(true);
+      }
+    }
+    for (const match of fixture.matchAll(/update public\.stockflow_members set status\s*=\s*'([^']+)'/g)) {
+      expect(memberStatuses.has(match[1]), match[1]).toBe(true);
+    }
+    const roleSets = [...fixture.matchAll(/set roles\s*=\s*array\[([^\]]+)\]/g)];
+    for (const match of roleSets) {
+      const values = literals(match[1]);
+      expect(new Set(values).size).toBe(values.length);
+      for (const role of values) expect(roles.has(role), role).toBe(true);
+    }
+    const pushSql = source.get('20261026140000_push_alerts.sql')!;
+    const outcomes = new Set(literals(pushSql.match(/status text not null check \(status in \(([^)]+)\)/)![1]));
+    for (const match of fixture.matchAll(/'outcome',\s*'([^']+)'/g)) expect(outcomes.has(match[1]), match[1]).toBe(true);
+    const scopesSql = source.get('20260902145535_enforce_order_scope_and_state_constraints.sql')!;
+    const scopes = new Set(literals(scopesSql.match(/check \(scope in \(([^)]+)\)\)/)![1]));
+    for (const match of fixture.matchAll(/set scope\s*=\s*'([^']+)'/g)) expect(scopes.has(match[1]), match[1]).toBe(true);
+  });
   it('validates the saved production evidence after deployment', () => {
     const result = pricingReleasePreflight(original, source);
-    expect(result.pending).toHaveLength(0);
-    expect(result.deployed.at(-1)?.localFile).toBe('20261005055748_activate_governed_role_union.sql');
-    expect(result.deployed).toHaveLength(103);
+    expect(result.pending).toEqual([]);
+    expect(result.deployed.at(-1)?.localFile).toBe('20261026150000_rate_check_units.sql');
+    expect(result.deployed).toHaveLength(147);
     const names = result.deployed.map((entry: { localFile: string }) => entry.localFile);
     expect(names.slice(0, 2)).toEqual([
       '20260829054025_create_stockflow_private_snapshots.sql',
@@ -70,11 +136,7 @@ describe('read-only pricing release preflight', () => {
     const evidence = structuredClone(original);
     for (const entry of evidence.migrations) {
       if (entry.status !== 'not_deployed') continue;
-      Object.assign(entry, {
-        status: 'exact_normalized_match',
-        remoteVersion: entry.localFile.slice(0, 14),
-        remoteSha256: entry.localSha256,
-      });
+      Object.assign(entry, { status: 'exact_normalized_match', remoteVersion: entry.localFile.slice(0, 14), remoteSha256: entry.localSha256 });
     }
     const result = pricingReleasePreflight(evidence, source);
     expect(result.pending).toEqual([]);

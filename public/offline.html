@@ -1,0 +1,9 @@
+<!doctype html>
+<html lang="en"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><meta name="theme-color" content="#092f36"><meta http-equiv="Content-Security-Policy" content="default-src 'none'; script-src 'self'; style-src 'self'; connect-src 'self'; img-src 'self'; base-uri 'none'; form-action 'none'"><title>StockFlow offline orders</title><link rel="stylesheet" href="/offline.css"></head>
+<body><main><h1>Offline orders</h1><p>Drafts only. Stock and pricing require online verification.</p><a href="/">Reconnect / sign in</a> · <a href="/offline-preparation">Prepare this device</a><p id="message" role="status" aria-live="polite"></p>
+<form id="unlock"><label>Offline PIN<input id="pin" type="password" inputmode="numeric" autocomplete="off" minlength="6" maxlength="64" required></label><button>Unlock saved data</button></form>
+<button id="reset" type="button">Forgot PIN / reset local offline data</button>
+<section id="editor" hidden><button id="lock" type="button">Lock</button><p id="account"></p><h2>New draft</h2>
+<form id="order"><label>Search customer<input id="customer-search" type="search" autocomplete="off"></label><label>Customer<select id="customer" required></select></label><label>Search product<input id="product-search" type="search" autocomplete="off"></label><label>Product<select id="product"></select></label><label>Quantity<input id="quantity" type="number" min="1" step="1" value="1"></label><button id="add" type="button">Add product</button><ul id="lines"></ul><label>Notes<textarea id="notes" maxlength="2000"></textarea></label><button>Save encrypted draft — not submitted</button></form>
+<h2>Saved drafts</h2><div id="drafts"></div></section>
+</main><script type="module" src="/generated-offline/offline-app.js"></script></body></html>

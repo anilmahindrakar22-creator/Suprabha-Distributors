@@ -1,15 +1,16 @@
 import { expect, test } from '@playwright/test';
+import { orderBootstrap } from '../fixtures/api-builders';
 
 test('slow order masters show a cancellable preparation panel without opening a cancelled order', async ({ page }) => {
   let releaseMasters: () => void = () => undefined;
   let catalogRequests = 0;
   let customerRequests = 0;
   const mastersReady = new Promise<void>((resolve) => { releaseMasters = resolve; });
-  const list = {
+  const list = orderBootstrap({
     actor: { email: 'order-desk@example.test', role: 'sales' },
     snapshot: { company: 'TEST', fetchedAt: '2026-09-29T00:00:00Z', catalogVersion: 'test-v1', catalog: [] },
     customers: [], customerVersion: 'test-v1', orders: [], operations: {},
-  };
+  });
   await page.route('**/api/orders?list=1', (route) => route.fulfill({ json: list }));
   await page.route('**/api/orders?catalog=1', async (route) => {
     catalogRequests += 1;

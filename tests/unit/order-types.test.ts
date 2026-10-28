@@ -249,7 +249,7 @@ describe('order workflow and history', () => {
   it('identifies the team responsible for the next visible workflow step', () => {
     expect(orderNextOwnerLabel('phone_order_received')).toBe('Sales or operations');
     expect(orderNextOwnerLabel('confirmed')).toBe('Warehouse or operations');
-    expect(orderNextOwnerLabel('awaiting_tally_billing')).toBe('Accounts');
+    expect(orderNextOwnerLabel('awaiting_tally_billing')).toBe('Billing');
     expect(orderNextOwnerLabel('billed_in_tally')).toBe('Operations');
     expect(orderNextOwnerLabel('delivered')).toBeNull();
   });
@@ -415,13 +415,52 @@ describe('order workflow and history', () => {
   it('compares aggregated order lines with cached Tally invoice details', () => {
     const billed = { ...baseOrder, tallyInvoiceNumber: 'INV-88' };
     const invoice = { voucherNumber: 'INV-88', reference: null, party: 'City Hospital', date: '20260903', masterId: '44', lineItems: [{ itemName: ' glucose   reagent ', quantity: 1 }, { itemName: 'Glucose Reagent', quantity: 1 }] };
-    expect(tallyInvoiceLineReconciliation(billed, [invoice])).toEqual({ state: 'matched', differences: [] });
-    expect(tallyInvoiceLineReconciliation(billed, [{ ...invoice, lineItems: [{ itemName: 'Glucose Reagent', quantity: 1 }, { itemName: 'Extra item', quantity: 3 }] }])).toEqual({ state: 'mismatch', differences: [
-      { itemName: 'Glucose Reagent', orderedQuantity: 2, invoicedQuantity: 1 },
-      { itemName: 'Extra item', orderedQuantity: 0, invoicedQuantity: 3 },
+    expect(tallyInvoiceLineReconciliation(billed, [invoice])).toEqual({ state: 'matched', quantitySource: 'ordered', differences: [] });
+    expect(tallyInvoiceLineReconciliation(billed, [{ ...invoice, lineItems: [{ itemName: 'Glucose Reagent', quantity: 1 }, { itemName: 'Extra item', quantity: 3 }] }])).toEqual({ state: 'mismatch', quantitySource: 'ordered', differences: [
+      { itemName: 'Glucose Reagent', orderedQuantity: 2, expectedQuantity: 2, invoicedQuantity: 1 },
+      { itemName: 'Extra item', orderedQuantity: 0, expectedQuantity: 0, invoicedQuantity: 3 },
     ] });
     expect(tallyInvoiceLineReconciliation(billed, [{ ...invoice, lineItems: undefined }]).state).toBe('awaiting_detail');
     expect(tallyInvoiceLineReconciliation({ ...billed, customerName: 'Other Lab' }, [invoice]).state).toBe('identity_unverified');
+  });
+
+  it('matches the packed quantity and flags invoicing the ordered quantity after a shortage', () => {
+    const billed = { ...baseOrder, tallyInvoiceNumber: 'INV-88', totalQuantity: 3, lines: [{ ...baseOrder.lines[0], quantity: 3, fulfilledQuantity: 2 }] };
+    const invoice = { voucherNumber: 'INV-88', reference: null, party: 'City Hospital', date: '20260903', masterId: '44', lineItems: [{ itemName: 'Glucose Reagent', quantity: 2 }] };
+    expect(tallyInvoiceLineReconciliation(billed, [invoice])).toEqual({ state: 'matched', quantitySource: 'packed', differences: [] });
+    expect(orderNeedsBillingAttention(billed, [invoice])).toBe(false);
+    const overbilled = { ...invoice, lineItems: [{ itemName: 'Glucose Reagent', quantity: 3 }] };
+    expect(tallyInvoiceLineReconciliation(billed, [overbilled])).toEqual({ state: 'mismatch', quantitySource: 'packed', differences: [
+      { itemName: 'Glucose Reagent', orderedQuantity: 3, expectedQuantity: 2, invoicedQuantity: 3 },
+    ] });
+    expect(orderNeedsBillingAttention(billed, [overbilled])).toBe(true);
+  });
+
+  it('falls back to ordered quantities when every packed quantity is zero', () => {
+    const billed = { ...baseOrder, tallyInvoiceNumber: 'INV-88', totalQuantity: 3, lines: [{ ...baseOrder.lines[0], quantity: 3, fulfilledQuantity: 0 }] };
+    const invoice = { voucherNumber: 'INV-88', reference: null, party: 'City Hospital', date: '20260903', masterId: '44', lineItems: [{ itemName: 'Glucose Reagent', quantity: 3 }] };
+    expect(tallyInvoiceLineReconciliation(billed, [invoice])).toEqual({ state: 'matched', quantitySource: 'ordered', differences: [] });
+  });
+
+  it.each([0, undefined])('allows a line packed at %s to be absent when another line has packing recorded', (fulfilledQuantity) => {
+    const billed = { ...baseOrder, tallyInvoiceNumber: 'INV-88', lineCount: 2, totalQuantity: 5, lines: [
+      { ...baseOrder.lines[0], quantity: 3, fulfilledQuantity: 2 },
+      { ...baseOrder.lines[0], tallyKey: 'ITEM-2', itemName: 'Control Reagent', fulfilledQuantity },
+    ] };
+    const invoice = { voucherNumber: 'INV-88', reference: null, party: 'City Hospital', date: '20260903', masterId: '44', lineItems: [{ itemName: 'Glucose Reagent', quantity: 2 }] };
+    expect(tallyInvoiceLineReconciliation(billed, [invoice])).toEqual({ state: 'matched', quantitySource: 'packed', differences: [] });
+  });
+
+  it('aggregates packed and ordered quantities by normalized item name', () => {
+    const billed = { ...baseOrder, tallyInvoiceNumber: 'INV-88', lineCount: 2, totalQuantity: 6, lines: [
+      { ...baseOrder.lines[0], quantity: 3, fulfilledQuantity: 2 },
+      { ...baseOrder.lines[0], itemName: ' glucose   reagent ', quantity: 3, fulfilledQuantity: 1 },
+    ] };
+    const invoice = { voucherNumber: 'INV-88', reference: null, party: 'City Hospital', date: '20260903', masterId: '44', lineItems: [{ itemName: 'Glucose Reagent', quantity: 3 }] };
+    expect(tallyInvoiceLineReconciliation(billed, [invoice])).toEqual({ state: 'matched', quantitySource: 'packed', differences: [] });
+    expect(tallyInvoiceLineReconciliation(billed, [{ ...invoice, lineItems: [{ itemName: 'Glucose Reagent', quantity: 6 }] }])).toEqual({ state: 'mismatch', quantitySource: 'packed', differences: [
+      { itemName: ' glucose   reagent ', orderedQuantity: 6, expectedQuantity: 3, invoicedQuantity: 6 },
+    ] });
   });
 
   it('reconciles combined quantities across split Tally invoices', () => {
@@ -430,7 +469,7 @@ describe('order workflow and history', () => {
     const second = { ...first, voucherNumber: 'SD/26-27/0552', masterId: '52' };
     const now = new Date('2026-09-03T06:00:00Z');
     expect(tallyInvoiceReconciliationDetail(billed, [first, second], now)).toEqual({ state: 'verified', matchedVoucherNumber: 'SD/26-27/0551, SD/26-27/0552' });
-    expect(tallyInvoiceLineReconciliation(billed, [first, second], now)).toEqual({ state: 'matched', differences: [] });
+    expect(tallyInvoiceLineReconciliation(billed, [first, second], now)).toEqual({ state: 'matched', quantitySource: 'ordered', differences: [] });
     expect(tallyInvoiceReconciliationDetail({ ...billed, tallyInvoiceNumber: '551, 551' }, [first], now).state).toBe('ambiguous');
     expect(tallyInvoiceReconciliationDetail(billed, [first], now).state).toBe('unmatched');
   });

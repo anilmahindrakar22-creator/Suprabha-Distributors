@@ -15,6 +15,11 @@ const prefix = 'stockflow:order-draft:v1:';
 const consentPrefix = 'stockflow:order-draft-consent:v1:';
 const retentionMs = 7 * 24 * 60 * 60 * 1000;
 
+export function pinProtectedOfflineDevice(storage: Pick<Storage, 'getItem'>) {
+  try { return storage.getItem('stockflow:encrypted-offline:v1') !== null; }
+  catch { return true; }
+}
+
 export type ProductRequestPayload = { productName: string; customerId?: string; details: string; idempotencyKey: string };
 const productRequestPrefix = 'stockflow:product-request-retry:v1:';
 const requestUuid = /^[0-9a-f]{8}-[0-9a-f]{4}-[1-8][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i;
@@ -104,6 +109,7 @@ export function readOfflineOrderDraft(storage: DraftStorage, actorEmail: string)
 
 export function writeOfflineOrderDraft(storage: DraftStorage, draft: OfflineOrderDraft) {
   try {
+    if (pinProtectedOfflineDevice(storage)) return false;
     storage.setItem(key(draft.actorEmail), JSON.stringify(draft));
     return true;
   } catch {
@@ -129,6 +135,7 @@ export function updateOfflineDraftState(storage: DraftStorage, actorEmail: strin
 
 export function readOfflineDraftConsent(storage: DraftStorage, actorEmail: string) {
   try {
+    if (pinProtectedOfflineDevice(storage)) return false;
     return storage.getItem(`${consentPrefix}${actorEmail.trim().toLocaleLowerCase('en-IN')}`) === 'yes';
   } catch {
     return false;
@@ -137,6 +144,7 @@ export function readOfflineDraftConsent(storage: DraftStorage, actorEmail: strin
 
 export function writeOfflineDraftConsent(storage: DraftStorage, actorEmail: string, allowed: boolean) {
   try {
+    if (allowed && pinProtectedOfflineDevice(storage)) return false;
     const consentKey = `${consentPrefix}${actorEmail.trim().toLocaleLowerCase('en-IN')}`;
     if (allowed) storage.setItem(consentKey, 'yes');
     else storage.removeItem(consentKey);
@@ -144,4 +152,13 @@ export function writeOfflineDraftConsent(storage: DraftStorage, actorEmail: stri
   } catch {
     return false;
   }
+}
+
+/** Call only after decrypt/read-back verification. Never delete a changed original. */
+export function finishEncryptedDraftMigration(storage: DraftStorage, actorEmail: string, original: OfflineOrderDraft | null) {
+  if (!pinProtectedOfflineDevice(storage)) throw new Error('Encrypted copy is missing. Original draft retained.');
+  const current = readOfflineOrderDraft(storage, actorEmail);
+  if (JSON.stringify(current) !== JSON.stringify(original)) throw new Error('Original draft changed during preparation. Both copies retained.');
+  if (original && !removeOfflineOrderDraft(storage, actorEmail)) throw new Error('Original draft cleanup failed. Both copies retained.');
+  if (!writeOfflineDraftConsent(storage, actorEmail, false)) throw new Error('Could not disable unencrypted draft storage.');
 }

@@ -14,6 +14,17 @@ const connectorControl = readFileSync(
 );
 
 describe('Tally stock sync health', () => {
+  it('shows snapshot time in IST even when the device uses another timezone', () => {
+    const nodes: Record<string, { value: string; innerHTML: string; textContent: string; className: string }> = {};
+    const node = (id: string) => nodes[id] ??= { value: '', innerHTML: '', textContent: '', className: '' };
+    const apply = dashboard.match(/^function applyData\(body,status\).*$/m)?.[0];
+    expect(apply).toBeTruthy();
+    const context = { $: node, esc: (value: string) => value, snapshotAge: () => 0, TALLY_STALE_AFTER_MS: 1200000, saveHistory: () => {}, render: () => {}, data: {} };
+    runInNewContext(`${apply}; applyData({groups:[],company:'Test',fetchedAtIso:'2026-10-15T10:00:00Z'},'Current')`, context);
+    expect(node('time').textContent).toMatch(/15 Oct 2026.*3:30\s*pm/i);
+    runInNewContext(`${apply}; applyData({groups:[],company:'Test',fetchedAtIso:'invalid'},'Current')`, context);
+    expect(node('time').textContent).toBe('Not available');
+  });
   it('clears an earlier cached warning when a fresh snapshot arrives', () => {
     const nodes: Record<string, { value: string; innerHTML: string; textContent: string; className: string }> = {};
     const node = (id: string) => nodes[id] ??= { value: '', innerHTML: '', textContent: '', className: '' };
