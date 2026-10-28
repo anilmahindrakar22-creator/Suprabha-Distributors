@@ -1,6 +1,18 @@
 import { describe, expect, it } from 'vitest';
 import { canAddOrderNotes, canBillChallan, canSendOnChallan, canCreateOrders, canEditOrders, canManageDeliveryExceptions, canManageInstallations, canRecordFulfilment } from '../../lib/order-permissions';
 import { validateOrderCommand } from '../../lib/order-types';
+import { canManagePurchaseOrders } from '../../lib/order-permissions';
+
+describe('purchase order permissions mirror server roles', () => {
+  it.each(['administrator', 'management', 'operations'])('allows %s', (role) => {
+    expect(canManagePurchaseOrders(role)).toBe(true);
+    expect(canManagePurchaseOrders([role])).toBe(true);
+    expect(canManagePurchaseOrders(['viewer', role])).toBe(true);
+  });
+  it.each(['sales', 'warehouse', 'accounts', 'billing', 'viewer', null, undefined, [], ['viewer', 'warehouse'], ['operations', 'unknown']])('denies %j', (roles) => {
+    expect(canManagePurchaseOrders(roles)).toBe(false);
+  });
+});
 
 describe('challan commands', () => {
   it.each(['send_on_challan', 'bill_challan'])('strictly validates %s', action => {

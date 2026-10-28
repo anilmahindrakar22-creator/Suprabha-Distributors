@@ -9,6 +9,22 @@ const original = JSON.parse(readFileSync(new URL('../../supabase/migration-histo
 const source = new Map(readdirSync(fileURLToPath(directory)).filter((name) => name.endsWith('.sql')).map((name) => [name, readFileSync(new URL(name, directory), 'utf8')]));
 
 describe('read-only pricing release preflight', () => {
+  it('registers supplier purchase replay and patches each live anchor exactly once', () => {
+    const migration = source.get('20261029100000_supplier_purchase_orders.sql')!;
+    const importer = source.get('20260921110000_observable_pricing_evidence_import.sql')!;
+    const reader = source.get('20261028090000_to_order_list.sql')!;
+    expect(importer.split("new.payload:=new.payload-'pricingHistory';")).toHaveLength(2);
+    for (const anchor of ['d.oldest_order_at', '-coalesce(purchase_order,0) as need', "'openDemand',open_demand"]) {
+      expect(reader.split(anchor), anchor).toHaveLength(2);
+      expect(migration).toContain(anchor);
+    }
+    const fixture = readFileSync(new URL('../../supabase/tests/supplier_purchase_orders.sql', import.meta.url), 'utf8');
+    expect(fixture).not.toMatch(/(?:insert\s+into|update)\s+private\.stockflow_(?:purchase_orders|purchase_order_lines|purchase_order_events|supplier_prices)\b/i);
+    expect(fixture).toContain('update public.stockflow_snapshots');
+    expect(fixture).toContain('public.stockflow_purchase_gateway');
+    expect(fixture.trimEnd()).toMatch(/rollback;$/);
+    expect(readFileSync(new URL('../pricing-migration-local.ps1', import.meta.url), 'utf8')).toContain('supabase/tests/supplier_purchase_orders.sql');
+  });
   it('keeps to-order fixtures on real gateways with constrained literals', () => {
     const fixture = readFileSync(new URL('../../supabase/tests/to_order_list.sql', import.meta.url), 'utf8');
     expect(fixture).not.toMatch(/(?:insert\s+into|update)\s+private\.stockflow_(?:orders|order_lines|order_events|order_pricing_decisions|billing_snapshots)\b/i);
@@ -111,6 +127,7 @@ describe('read-only pricing release preflight', () => {
       '20261028090000_to_order_list.sql',
       '20261029090000_challan_delivery.sql',
       '20261029091000_order_list_priority_sort.sql',
+      '20261029100000_supplier_purchase_orders.sql',
     ]);
     expect(result.deployed.at(-1)?.localFile).toBe('20261026150000_rate_check_units.sql');
     expect(result.deployed).toHaveLength(147);
@@ -130,6 +147,7 @@ describe('read-only pricing release preflight', () => {
       '20261028090000_to_order_list.sql',
       '20261029090000_challan_delivery.sql',
       '20261029091000_order_list_priority_sort.sql',
+      '20261029100000_supplier_purchase_orders.sql',
     ]);
   });
   it('rejects changed SQL including changes inside literals', () => {

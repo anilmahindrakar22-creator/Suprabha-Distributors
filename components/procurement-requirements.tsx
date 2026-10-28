@@ -3,8 +3,11 @@
 import { useEffect, useEffectEvent, useRef, useState } from 'react';
 import { CircleAlert, CircleCheck } from 'lucide-react';
 import { readJsonBody } from '@/lib/http-json';
+import { canManagePurchaseOrders } from '@/lib/order-permissions';
+import type { StockFlowRole } from '@/lib/user-types';
+import { PurchaseOrderReview } from './purchase-orders-panel';
 
-import { toOrderReasonText, toOrderStockText, type ToOrderResponse } from '@/lib/to-order';
+import { toOrderReasonText, toOrderStockText, type ToOrderItem, type ToOrderResponse } from '@/lib/to-order';
 
 type WaitingOrder = {
   orderId: string;
@@ -51,7 +54,11 @@ function displayDate(value: string | null) {
   return date.toLocaleString('en-IN', { dateStyle: 'medium', timeStyle: 'short', timeZone: 'Asia/Kolkata' });
 }
 
-export function ProcurementRequirements({ onOpenOrder }: { onOpenOrder?: (orderId: string, orderNumber: string) => void } = {}) {
+export function ProcurementRequirements({ onOpenOrder, roles = [], refreshKey = 0, onPurchaseOrdersCreated }: { onOpenOrder?: (orderId: string, orderNumber: string) => void; roles?: readonly StockFlowRole[]; refreshKey?: number; onPurchaseOrdersCreated?: () => void } = {}) {
+  const permitted = canManagePurchaseOrders(roles);
+  const [selected, setSelected] = useState<ToOrderItem[]>([]);
+  const [review, setReview] = useState(false);
+  const [success, setSuccess] = useState('');
   const [page, setPage] = useState(1);
   const [result, setResult] = useState<ToOrderResponse | null>(null);
   const [loading, setLoading] = useState(false);
@@ -252,7 +259,7 @@ export function ProcurementRequirements({ onOpenOrder }: { onOpenOrder?: (orderI
   useEffect(() => {
     const timer = setTimeout(() => loadInitial(), 0);
     return () => clearTimeout(timer);
-  }, []);
+  }, [refreshKey]);
 
   const items = [...(result?.items ?? [])].sort((a, b) => Number(a.state === 'stock_unknown') - Number(b.state === 'stock_unknown'));
   return <section aria-label="To order" className="mt-3 min-w-0 rounded-xl border border-sf-line-soft bg-sf-soft p-3">
@@ -263,21 +270,36 @@ export function ProcurementRequirements({ onOpenOrder }: { onOpenOrder?: (orderI
       </div>
       <button type="button" disabled={loading || alertsLoading} onClick={() => { void load(1); void loadAlerts(alertsPage); }} className="min-h-11 rounded-lg border border-sf-line bg-sf-soft-0 px-3 text-xs font-bold text-sf-body disabled:opacity-50">{loading || alertsLoading ? 'Loading…' : 'Refresh'}</button>
     </div>
+    {permitted && selected.length > 0 ? <div data-po-selection-bar className="fixed inset-x-3 bottom-[calc(4.5rem+env(safe-area-inset-bottom))] z-40 mx-auto flex max-w-[calc(64rem-3rem)] flex-wrap items-center justify-between gap-2 rounded-xl border border-sf-line bg-sf-page p-3 shadow-lg sm:bottom-[calc(1rem+env(safe-area-inset-bottom))]">
+      <span className="text-sm font-semibold text-sf-body">{selected.length} selected</span>
+      <button type="button" className="min-h-12 rounded-lg bg-sf-ink px-3 text-sm font-bold text-sf-soft-0" onClick={() => setReview(true)}>Create purchase order{new Set(selected.map((item) => item.lowestSupplier?.supplierName ?? '')).size > 1 ? 's' : ''}</button>
+    </div> : null}
+    {permitted && review ? <PurchaseOrderReview items={selected} onClose={() => setReview(false)} onConflict={() => { void load(1); onPurchaseOrdersCreated?.(); }} onCreated={(orders) => {
+      setSuccess(`Created ${orders.map((order) => order.poNumber).join(', ')}`);
+      setReview(false); setSelected([]); void load(1); onPurchaseOrdersCreated?.();
+    }} /> : null}
     {result ? <div className="mt-3 flex flex-wrap gap-2 text-xs font-semibold text-sf-label">
       <span className="rounded-full bg-sf-soft-2 px-3 py-2">{result.total} to order</span>
       <span className="rounded-full bg-sf-soft-2 px-3 py-2">{result.waitingCount} with customers waiting</span>
       {result.unknownCount > 0 ? <span className="rounded-full bg-sf-soft-2 px-3 py-2">{result.unknownCount} stock unknown</span> : null}
     </div> : null}
     {error ? <p role="alert" className="mt-2 text-sm text-sf-danger">{error}</p> : null}
+    {success ? <output className="mt-2 block text-sm text-sf-success">{success}</output> : null}
     {loading && !result ? <p className="mt-3 text-sm text-sf-subtle">Loading to order…</p> : null}
-    <div className="mt-3 space-y-2">
+    <div className={`mt-3 space-y-2 ${selected.length ? 'pb-28' : ''}`}>
       {items.map((item) => <article key={item.itemKey} aria-label={item.itemName} className={`min-w-0 rounded-lg border border-sf-line-soft px-3 py-2 ${item.state === 'stock_unknown' ? 'bg-sf-soft-2 text-sf-muted' : 'bg-sf-soft-0 text-sf-body'}`}>
         <div className="flex items-start justify-between gap-3">
-          <h3 className="min-w-0 break-words text-sm font-bold">{item.itemName}</h3>
+          {permitted && item.state === 'order' ? <label className="flex min-h-11 shrink-0 items-center">
+            <input type="checkbox" aria-label={`Select ${item.itemName}`} checked={selected.some((line) => line.itemKey === item.itemKey)} onChange={(event) => {
+              setSelected((previous) => event.target.checked ? [...previous, item] : previous.filter((line) => line.itemKey !== item.itemKey));
+            }} />
+          </label> : null}
+          <h3 className="min-w-0 flex-1 break-words text-left text-sm font-bold">{item.itemName}</h3>
           <p className="shrink-0 text-right text-lg font-bold">Order {item.state === 'stock_unknown' || item.suggestedQty === null ? '—' : quantity(item.suggestedQty)}</p>
         </div>
         <p className="mt-0.5 break-words text-xs">{toOrderReasonText(item)}</p>
         <p className="mt-0.5 break-words text-xs text-sf-muted">{toOrderStockText(item)}</p>
+        {item.lowestSupplier ? <p className="mt-0.5 break-words text-xs text-sf-muted">Lowest price: {item.lowestSupplier.supplierName}</p> : null}
         {item.waitingOrders > 0 ? <button type="button" aria-expanded={waitingOrigin === item.itemKey} onClick={() => toggleWaitingOrders(item.itemKey)} className="mt-2 min-h-11 rounded-lg border border-sf-line px-3 text-xs font-bold text-sf-body">
           {waitingOrigin === item.itemKey ? 'Hide waiting orders' : 'View waiting orders'}
         </button> : null}

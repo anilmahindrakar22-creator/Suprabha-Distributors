@@ -282,6 +282,8 @@ end$$;
   Write-Output 'PASS: unified to-order read, real demand, legacy delegation, pagination and access checks'
   Invoke-DatabaseCommand $psqlProgram @('-U',$databaseUser,'-X','-q','-v','ON_ERROR_STOP=1','-d',$database,'-f',(Join-Path $repository 'supabase/tests/challan_delivery.sql'))
   Write-Output 'PASS: challan delivery state and gateway behavior'
+  Invoke-DatabaseCommand $psqlProgram @('-U',$databaseUser,'-X','-q','-v','ON_ERROR_STOP=1','-d',$database,'-f',(Join-Path $repository 'supabase/tests/supplier_purchase_orders.sql'))
+  Write-Output 'PASS: supplier snapshot evidence, private purchase orders and to-order coverage'
   Invoke-DatabaseCommand $psqlProgram @('-U',$databaseUser,'-X','-q','-v','ON_ERROR_STOP=1','-d',$database,'-f',(Join-Path $repository 'supabase/tests/order_list_priority_sort.sql'))
   Write-Output 'PASS: to-order priority sorting and stable pagination'
 } finally {

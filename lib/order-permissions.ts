@@ -1,5 +1,11 @@
 import { hasAnyStockFlowRole } from './user-types';
 
+// Mirrors supabase/migrations/20261029100000_supplier_purchase_orders.sql.
+export const PURCHASE_ORDER_ROLES = ['administrator', 'management', 'operations'] as const;
+export function canManagePurchaseOrders(roles: unknown): boolean {
+  return hasAnyStockFlowRole(roles, PURCHASE_ORDER_ROLES);
+}
+
 // Mirrors supabase/migrations/20261029090000_challan_delivery.sql.
 export const CHALLAN_SEND_ROLES = ['administrator', 'operations'] as const;
 // Mirrors supabase/migrations/20261029090000_challan_delivery.sql.

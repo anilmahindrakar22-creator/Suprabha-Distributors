@@ -146,6 +146,38 @@ function Get-PricingPurchaseCostEvidence($Records, [int]$LimitPerItem = 5, [int]
     return @($evidence | Sort-Object effectiveAt -Descending | Group-Object { [string]$_.tallyItemKey } | ForEach-Object { $_.Group | Select-Object -First $LimitPerItem } | Select-Object -First $MaximumRows)
 }
 
+function Get-SupplierPurchasePriceEvidence($Records, [int]$MaximumRows = 5000) {
+    $today = [datetimeoffset]::UtcNow.ToOffset([timespan]::FromMinutes(330)).Date
+    $latest = [Collections.Generic.Dictionary[string,object]]::new([StringComparer]::Ordinal)
+    foreach ($voucher in @($Records)) {
+        if ($voucher.cancelled -or $voucher.optional -or [string]$voucher.sourceDomain -cne 'purchase' -or [string]$voucher.voucherType -cne 'Purchase') { continue }
+        $supplier = ([string]$voucher.party).Trim()
+        if (-not $supplier) { continue }
+        $date = [datetime]::MinValue
+        if (-not [datetime]::TryParseExact([string]$voucher.date, 'yyyyMMdd', [Globalization.CultureInfo]::InvariantCulture, [Globalization.DateTimeStyles]::None, [ref]$date)) { continue }
+        if ($date -lt $today.AddDays(-365) -or $date -gt $today) { continue }
+        foreach ($line in @($voucher.lineItems)) {
+            $item = ([string]$line.itemName).Trim()
+            if (-not $item -or $null -eq $line.rate -or [decimal]$line.rate -le 0) { continue }
+            $unit = ([string]$line.unit).Trim()
+            if (-not $unit) { $unit = $null }
+            # Length prefixes avoid collisions in supplier/item names containing delimiters.
+            $key = "$($item.Length):$item$($supplier.Length):$supplier$unit"
+            $row = [ordered]@{
+                tallyItemKey = $item; supplierName = $supplier; rate = [decimal]$line.rate; unit = $unit
+                effectiveAt = $date.ToString('yyyy-MM-dd'); sourceReference = [string]$voucher.voucherNumber
+                sourceId = "$([string]$voucher.masterId)|$([int]$line.lineNumber)|$item"
+            }
+            $previous = $latest[$key]
+            if ($null -eq $previous -or $row.effectiveAt -gt $previous.effectiveAt -or
+                ($row.effectiveAt -eq $previous.effectiveAt -and [string]::CompareOrdinal($row.sourceReference, $previous.sourceReference) -gt 0)) {
+                $latest[$key] = $row
+            }
+        }
+    }
+    return @($latest.Values | Sort-Object tallyItemKey, supplierName, unit | Select-Object -First ([Math]::Max(0, $MaximumRows)))
+}
+
 function Get-TrustedSalesSnapshot($Snapshot, [string]$Company) {
     if ($null -eq $Snapshot -or $Snapshot.company -ne $Company -or $Snapshot.sourceScope -ne 'sales_vouchers_v1') { return $null }
     if ($null -eq $Snapshot.records) { return $null }

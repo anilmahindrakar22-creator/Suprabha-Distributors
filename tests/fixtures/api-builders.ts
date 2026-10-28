@@ -3,15 +3,30 @@ import type { OrderBootstrap, OrderLineSummary, OrderSummary } from '../../lib/o
 import type { BillingSheet } from '../../lib/billing-sheet';
 import type { RateCheck, RateExceptions } from '../../lib/rate-check';
 import type { ToOrderItem, ToOrderResponse } from '../../lib/to-order';
+import type { PurchaseOrder, PurchaseOrderLine, SupplierOption } from '../../lib/purchase-orders';
 
 const timestamp = '2026-10-01T06:00:00Z';
+
+export function purchaseOrderLine(o: Partial<PurchaseOrderLine> = {}): PurchaseOrderLine {
+  return { itemKey: 'TEST-ITEM', itemName: 'Test item', quantity: 13, unit: 'Nos', receivedQuantity: 0, ...o } satisfies PurchaseOrderLine;
+}
+
+export function purchaseOrder(o: Partial<PurchaseOrder> = {}): PurchaseOrder {
+  return { id: '61000000-0000-4000-8000-000000000001', poNumber: 'PO/26-27/0001', supplierName: 'Test supplier',
+    status: 'open', sharedAt: null, version: 1, createdAt: timestamp, createdByEmail: 'operations@example.test',
+    lines: [purchaseOrderLine()], ...o } satisfies PurchaseOrder;
+}
+
+export function supplierOption(o: Partial<SupplierOption> = {}): SupplierOption {
+  return { supplierName: 'Test supplier', effectiveAt: timestamp, lowest: true, ...o } satisfies SupplierOption;
+}
 
 export function toOrderItem(o: Partial<ToOrderItem> = {}): ToOrderItem {
   return {
     itemKey: 'TEST-ITEM', itemName: 'Test item', group: 'Reagents', closing: 2,
     reorderLevel: 5, minimumOrder: null, tallyOpenPurchase: 0, openDemand: 10,
     waitingOrders: 3, oldestOrderAt: timestamp, reasons: ['waiting_orders', 'below_reorder'],
-    state: 'order', suggestedQty: 13, ...o,
+    state: 'order', suggestedQty: 13, openPoQty: 0, lowestSupplier: null, ...o,
   } satisfies ToOrderItem;
 }
 

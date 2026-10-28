@@ -30,6 +30,12 @@ describe('to order API pass-through', () => {
 });
 
 describe('to order text', () => {
+  it('appends open purchase orders without displaying zero or absent values', () => {
+    expect(toOrderStockText(toOrderItem({ openPoQty: 7 }))).toBe('In stock 2 · reorder level 5 · on order 7');
+    expect(toOrderStockText(toOrderItem({ openPoQty: 0 }))).toBe('In stock 2 · reorder level 5');
+    expect(toOrderStockText(toOrderItem({ openPoQty: undefined }))).toBe('In stock 2 · reorder level 5');
+    expect(toOrderStockText(toOrderItem({ openPoQty: 3, state: 'stock_unknown' }))).toBe('Stock unknown, check Tally · on order 3');
+  });
   it('joins waiting and reorder reasons', () => {
     expect(toOrderReasonText(toOrderItem())).toBe('3 customer orders waiting · Below reorder level');
     expect(toOrderReasonText(toOrderItem({ waitingOrders: 1, reasons: ['waiting_orders'] }))).toBe('1 customer order waiting');
