@@ -661,6 +661,9 @@ export function OrderWorkspace({ actorEmail, initialStatus = 'open', initialQuer
   if (pricesToApprove && data && approvalCount === 0) setPricesToApprove(false);
   const stageFilters: StageFilter[] = [
     { status: 'open', label: 'Active' },
+    { status: 'recent', label: 'Recent' },
+    { status: 'priority_high', label: 'Urgent & high' },
+    ...(canBillChallan(actorRoles) && (operations.challanUnbilled ?? 0) > 0 ? [{ status: 'challan_unbilled', label: 'Challans to bill', count: operations.challanUnbilled }] : []),
     ...(approvalCount > 0 ? [{ status: 'prices_to_approve', label: 'Prices to approve', count: approvalCount, tone: 'warning' as const }] : []),
     { status: 'awaiting_confirmation', label: 'Confirm', count: operations.awaitingConfirmation, tone: 'confirm' },
     { status: 'picking', label: 'Pack', tone: 'pack' },
@@ -668,6 +671,9 @@ export function OrderWorkspace({ actorEmail, initialStatus = 'open', initialQuer
     { status: 'dispatch_ready', label: 'Dispatch', count: operations.billedNotDispatched, tone: 'dispatch' },
     { status: 'attention', label: 'Issues', count: operations.needsAttention, tone: 'alert' },
   ];
+  const activeStage = status === 'open' && captureDate === istDaysAgo(6) && !captureDateTo && !query ? 'recent'
+    : pricesToApprove && status === 'open' ? 'prices_to_approve'
+    : status;
   const yourQueue = hasAnyStockFlowRole(actorRoles, ['administrator', 'management']) ? 'awaiting_confirmation' : hasAnyStockFlowRole(actorRoles, ['accounts']) ? 'billing' : hasAnyStockFlowRole(actorRoles, ['warehouse']) ? 'picking' : '';
   function showQueue(queue: string) {
     setFocusNotice('');
@@ -678,7 +684,7 @@ export function OrderWorkspace({ actorEmail, initialStatus = 'open', initialQuer
       return;
     }
     setPricesToApprove(false);
-    setStatus(queue); setQuery(''); setCaptureDate(''); setCaptureDateTo(''); setPage(1);
+    setStatus(queue === 'recent' ? 'open' : queue); setQuery(''); setCaptureDate(queue === 'recent' ? istDaysAgo(6) : ''); setCaptureDateTo(''); setPage(1);
   }
   function openOrderDetail(order: OrderSummary) {
     if (desktopControlCenter) setSelectedOrderId(order.id);
@@ -736,14 +742,6 @@ export function OrderWorkspace({ actorEmail, initialStatus = 'open', initialQuer
 
           </div>
         </header>
-        <div aria-label="Order quick views" className="mt-2 flex min-w-0 max-w-full gap-2 overflow-x-auto lg:order-5 lg:basis-full">
-          {[
-            { label: 'Recent', active: status === 'open' && captureDate === istDaysAgo(6) && !captureDateTo && !query, select: () => { showQueue('open'); setCaptureDate(istDaysAgo(6)); } },
-            { label: 'Urgent & high', active: status === 'priority_high' && !captureDate && !captureDateTo && !query, select: () => showQueue('priority_high') },
-            ...(canBillChallan(actorRoles) && (operations.challanUnbilled ?? 0) > 0 ? [{ label: `Challans to bill (${operations.challanUnbilled})`, active: status === 'challan_unbilled' && !captureDate && !captureDateTo && !query, select: () => showQueue('challan_unbilled') }] : []),
-            { label: 'All open', active: status === 'open' && !captureDate && !captureDateTo && !query && !pricesToApprove, select: () => showQueue('open') },
-          ].map((view) => <button key={view.label} type="button" aria-pressed={view.active} onClick={view.select} className="min-h-10 shrink-0 whitespace-nowrap rounded-full border border-sf-line bg-white px-3 text-sm font-bold text-sf-body aria-pressed:border-sf-ink aria-pressed:bg-sf-ink aria-pressed:text-white">{view.label}</button>)}
-        </div>
         {deviceDraftState ? <span aria-live="polite" className={`lg:order-5 lg:basis-full mt-1 block text-right text-xs font-bold ${deviceDraftState === 'pending' ? 'text-sf-warning' : deviceDraftState === 'error' ? 'text-sf-danger' : 'text-sf-muted'}`}>{deviceDraftState === 'pending' ? '1 pending order on this device' : deviceDraftState === 'error' ? '1 device draft needs attention' : '1 draft on this device'}</span> : null}
 
         <div className="mt-2 flex items-center gap-2 lg:order-2 lg:mt-0 lg:w-[22rem] lg:flex-none">
@@ -762,9 +760,9 @@ export function OrderWorkspace({ actorEmail, initialStatus = 'open', initialQuer
           <button type="button" aria-pressed={query === `assignee:${actorEmail.toLocaleLowerCase('en-IN')}`} onClick={() => { setFocusNotice(''); setQuery((current) => current === `assignee:${actorEmail.toLocaleLowerCase('en-IN')}` ? '' : `assignee:${actorEmail.toLocaleLowerCase('en-IN')}`); setStatus('open'); setCaptureDate(''); setCaptureDateTo(''); setPage(1); }} className="hidden min-h-10 shrink-0 rounded-xl border border-sf-line bg-white px-3 text-sm font-bold text-sf-body hover:bg-sf-soft aria-pressed:border-sf-accent-bright aria-pressed:bg-sf-accent-soft sm:block">My work</button>
           <button type="button" aria-expanded={mobileFiltersOpen} aria-controls="mobile-order-filters" onClick={() => setMobileFiltersOpen((open) => !open)} className={`flex min-h-10 shrink-0 items-center gap-1 rounded-xl border px-3 text-sm font-bold ${mobileFiltersOpen || !stageFilters.some((filter) => filter.status === status) || captureDate ? 'border-sf-ink bg-sf-ink text-white' : 'border-sf-line bg-white text-sf-body'}`}>Filters <span className={`transition ${mobileFiltersOpen ? 'rotate-180' : ''}`}><ChevronDownIcon /></span></button>
         </div>
-        <div className="mt-2 lg:order-3 lg:mt-0 lg:min-w-0 lg:flex-1">
-          <OrderStageChips filters={stageFilters} active={pricesToApprove && status === 'open' ? 'prices_to_approve' : status} onSelect={showQueue} />
-        </div>
+        <nav aria-label="Order queues" className="mt-2 lg:order-3 lg:mt-0 lg:min-w-0 lg:flex-1">
+          <OrderStageChips filters={stageFilters} active={activeStage} onSelect={showQueue} />
+        </nav>
         <div id="mobile-order-filters" className={`${mobileFiltersOpen ? 'grid' : 'hidden'} mt-2 gap-3 rounded-2xl border border-sf-line-soft bg-white p-3 shadow-sm sm:grid-cols-[minmax(0,1fr)_auto] sm:items-end lg:order-6 lg:basis-full`}>
           <div><label className="block text-xs font-bold text-sf-muted" htmlFor="order-status">Show orders</label>
           <select
@@ -1158,7 +1156,7 @@ const currency = new Intl.NumberFormat('en-IN', { style: 'currency', currency: '
 
 /** Full pricing (cost, margin, history) for pricing roles only; billing and other roles never request it. */
 function useOrderPricing(order: OrderSummary, enabled = true) {
-  const readKey = `${order.id}:${order.pricingState}:${order.status}:${order.version}`;
+  const readKey = `${order.id}:${order.pricingState}:${order.status}`;
   const autoLoad = enabled && order.pricingState !== 'approved' && !['delivered', 'cancelled'].includes(order.status);
   const [result, setResult] = useState<{ key: string; workspace: OrderPricingWorkspace | null; state: 'idle' | 'loading' | 'error'; message: string }>(() => ({ key: readKey, workspace: null, state: autoLoad ? 'loading' : 'idle', message: '' }));
   const request = useRef<AbortController | null>(null);
@@ -1198,12 +1196,13 @@ function useOrderPricing(order: OrderSummary, enabled = true) {
     const stale = result.workspace?.orderId === order.id && result.workspace.orderVersion !== order.version;
     const versionKey = `${order.id}:${order.version}`;
     if (stale) {
+      if (order.pricingState !== 'approved') return;
       if (automaticVersion.current === versionKey) return;
       automaticVersion.current = versionKey;
     } else if (!autoLoad || automaticReadKey.current === readKey) return;
     automaticReadKey.current = readKey;
     void reload();
-  }, [autoLoad, enabled, order.id, order.status, order.version, readKey, reload, result.workspace]);
+  }, [autoLoad, enabled, order.id, order.pricingState, order.status, order.version, readKey, reload, result.workspace]);
   return {
     workspace: result.workspace?.orderId === order.id ? result.workspace : null,
     reload,

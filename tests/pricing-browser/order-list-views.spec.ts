@@ -30,9 +30,9 @@ test('priority borders and IST open age are visible on order cards', async ({ pa
   }
 });
 
-test('quick views use the existing list request filters', async ({ page }) => {
+test('queue chips use the existing list request filters', async ({ page }) => {
   const requests = await mockViews(page);
-  const views = page.getByLabel('Order quick views');
+  const views = page.getByRole('navigation', { name: 'Order queues', exact: true });
   const today = new Date().toLocaleDateString('en-CA', { timeZone: 'Asia/Kolkata' });
   const from = new Date(`${today}T00:00:00Z`);
   from.setUTCDate(from.getUTCDate() - 6);
@@ -42,15 +42,16 @@ test('quick views use the existing list request filters', async ({ page }) => {
   expect(requests.at(-1)?.searchParams.has('dateTo')).toBe(false);
   await views.getByRole('button', { name: 'Urgent & high', exact: true }).click();
   await expect.poll(() => requests.at(-1)?.searchParams.get('status')).toBe('priority_high');
-  await views.getByRole('button', { name: 'Challans to bill (2)', exact: true }).click();
+  await views.getByRole('button', { name: 'Challans to bill 2', exact: true }).click();
   await expect.poll(() => requests.at(-1)?.searchParams.get('status')).toBe('challan_unbilled');
-  await views.getByRole('button', { name: 'All open', exact: true }).click();
+  await views.getByRole('button', { name: 'Active', exact: true }).click();
   await expect.poll(() => requests.at(-1)?.searchParams.get('status')).toBe('open');
   expect(requests.at(-1)?.searchParams.has('date')).toBe(false);
   expect(await page.evaluate(() => document.documentElement.scrollWidth <= innerWidth)).toBe(true);
 });
 
-test('warehouse does not see the challan billing quick view', async ({ page }) => {
+test('warehouse does not see the challan billing queue chip', async ({ page }) => {
   await mockViews(page, 'warehouse');
-  await expect(page.getByRole('button', { name: 'Challans to bill (2)', exact: true })).toHaveCount(0);
+  const views = page.getByRole('navigation', { name: 'Order queues', exact: true });
+  await expect(views.getByRole('button', { name: 'Challans to bill 2', exact: true })).toHaveCount(0);
 });

@@ -10,7 +10,7 @@ const frame = read('../../components/stockflow-frame.tsx');
 describe('order-list density (list-first redesign)', () => {
   it('pins one compact header with search, stage chips and a Filters panel', () => {
     expect(workspace).toContain('sticky top-0 z-20');
-    expect(workspace).toContain("<OrderStageChips filters={stageFilters} active={pricesToApprove && status === 'open' ? 'prices_to_approve' : status} onSelect={showQueue} />");
+    expect(workspace).toContain("<OrderStageChips filters={stageFilters} active={activeStage} onSelect={showQueue} />");
     for (const chip of ["label: 'Active'", "label: 'Confirm'", "label: 'Pack'", "label: 'Bill'", "label: 'Dispatch'", "label: 'Issues'"]) expect(workspace).toContain(chip);
     expect(workspace).toContain('aria-expanded={mobileFiltersOpen}');
     expect(workspace).toContain('aria-controls="mobile-order-filters"');
