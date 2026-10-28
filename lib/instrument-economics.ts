@@ -1,4 +1,8 @@
 /** Shared server-side economics primitives. Money is signed integer paise. */
+export function validateEconomicReadAction(action: string | null): 'get_instrument_economics' | 'get_sales_coverage' | null {
+  if (action === null || action === 'get_instrument_economics') return 'get_instrument_economics';
+  return action === 'get_sales_coverage' ? action : null;
+}
 export type EconomicMoney = string;
 export type CostEvidence =
   | { status: 'verified'; amountPaise: EconomicMoney; sourceRevisionId: string; policyVersion: string }

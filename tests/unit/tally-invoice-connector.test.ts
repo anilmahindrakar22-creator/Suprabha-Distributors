@@ -1,4 +1,4 @@
-import { readFileSync } from 'node:fs';
+import { readFileSync, readdirSync } from 'node:fs';
 import { spawnSync } from 'node:child_process';
 import { fileURLToPath } from 'node:url';
 import { describe, expect, it } from 'vitest';
@@ -72,6 +72,37 @@ describe('Tally invoice reconciliation connector', () => {
     expect(recovery).toContain('A duplicate display name cannot prove an exact canonical Tally ledger.');
     expect(connector).toContain('lineItems = $safeInvoiceLines');
     expect(connector).not.toMatch(/CREATE\s+VOUCHER|ALTER\s+VOUCHER|DELETE\s+VOUCHER/i);
+  });
+
+  it('guards the only Tally transport and keeps all connector templates read-only', () => {
+    const root = new URL('../../desktop-connector/', import.meta.url);
+    const guard = connector.match(/function Invoke-Tally\([^]*?\n}\r?\n/)?.[0];
+    expect(guard).toBeTruthy();
+    expect(guard).toContain('Refused: StockFlow only reads from Tally');
+    expect(guard).toContain('$requests.Count -ne 1');
+    expect(guard).toContain("Value.Trim() -ine 'Export'");
+    expect(guard).toContain('IMPORTDATA|\\bACTION\\s*=');
+    expect(guard).toContain('status=refused');
+    expect(guard!.indexOf('throw')).toBeLessThan(guard!.indexOf('Invoke-WebRequest'));
+    let transports = 0;
+    for (const name of readdirSync(root).filter(name => name.endsWith('.ps1'))) {
+      const source = readFileSync(new URL(name, root), 'utf8');
+      const requests = [...source.matchAll(/<TALLYREQUEST>([^<]*)<\/TALLYREQUEST>/gi)];
+      expect(source.match(/<TALLYREQUEST>/gi)?.length ?? 0, name).toBe(requests.length);
+      for (const request of requests) expect(request[1].trim().toLowerCase(), name).toBe('export');
+      // The guard must name the forbidden token; exclude only its exact matcher.
+      expect(source.replace("(?i)IMPORTDATA|\\bACTION\\s*=", ''), name).not.toMatch(/IMPORTDATA|<[A-Za-z][^>\r\n]*\sACTION\s*=/i);
+      for (const line of source.split(/\r?\n/).filter(line => /:9000\b/.test(line))) {
+        // No endpoint aliases: the sole literal is the central HTTP transport.
+        expect(name).toBe('dashboard.ps1');
+        expect(guard).toContain(line);
+        expect(line).toMatch(/Invoke-WebRequest.*127\.0\.0\.1:9000/);
+        transports++;
+      }
+      const outside = name === 'dashboard.ps1' ? source.replace(guard!, '') : source;
+      expect(outside).not.toMatch(/(?:Invoke-WebRequest|Invoke-RestMethod|WebClient|HttpClient)[^\r\n]*9000/i);
+    }
+    expect(transports).toBe(1);
   });
 
   it('reads purchase costs on a slower bounded incremental schedule', () => {

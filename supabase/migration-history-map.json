@@ -1109,6 +1109,20 @@
       "remoteVersion": null,
       "remoteSha256": null,
       "status": "not_deployed"
+    },
+    {
+      "localFile": "20261030100000_economic_rebuild_containment.sql",
+      "localSha256": "cb447fe1249459dd3d08845b2391a4b169245c4451d5f6c2b27238302bae1ef6",
+      "remoteVersion": null,
+      "remoteSha256": null,
+      "status": "not_deployed"
+    },
+    {
+      "localFile": "20261030101000_sales_coverage.sql",
+      "localSha256": "b2c94259b148e1247bbff009735f306c77ec4ddc7c96619ca27a14ed7a1221b2",
+      "remoteVersion": null,
+      "remoteSha256": null,
+      "status": "not_deployed"
     }
   ],
   "liveCheck": {

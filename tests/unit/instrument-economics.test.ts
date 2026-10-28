@@ -1,4 +1,13 @@
 import { describe, expect, it } from 'vitest';
+import { validateEconomicReadAction } from '@/lib/instrument-economics';
+
+it('accepts sales coverage only as a known economics GET read', () => {
+  expect(validateEconomicReadAction('get_sales_coverage')).toBe('get_sales_coverage');
+  expect(validateEconomicReadAction(null)).toBe('get_instrument_economics');
+  expect(validateEconomicReadAction('get_instrument_economics')).toBe('get_instrument_economics');
+  expect(validateEconomicReadAction('rebuild')).toBeNull();
+  expect(validateEconomicReadAction('')).toBeNull();
+});
 import { actualReagentEconomics, allocateEconomicMoney, isEffectiveOn, reagentLeakageOpportunity, recoveryPosition, resolveEconomicTarget } from '@/lib/instrument-economics';
 const verifiedCost = (amountPaise: string) => ({ status: 'verified' as const, amountPaise, sourceRevisionId: 'purchase-rev-1', policyVersion: 'batch-v1' });
 

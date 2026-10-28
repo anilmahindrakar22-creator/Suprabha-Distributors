@@ -1,0 +1,47 @@
+{
+  "window": {
+    "from": "2026-07-01",
+    "to": "2026-09-30"
+  },
+  "complete": true,
+  "coveredFrom": "2026-07-01",
+  "coveredTo": "2026-09-30",
+  "importedAt": "2026-10-30T16:44:00Z",
+  "sourceVersion": "2026-10-30T16:43:51Z",
+  "blockingCount": 0,
+  "blockingItems": [
+    {
+      "sourceId": "c0071957-…-00005966",
+      "reason": "…",
+      "recordedAt": "2026-10-30T16:44:00Z"
+    }
+  ],
+  "rebuild": {
+    "state": "ok",
+    "since": null,
+    "reason": null
+  },
+  "months": [
+    {
+      "month": "2026-07",
+      "appNetPaise": 123456789,
+      "tallyNetPaise": 123456789,
+      "differencePaise": 0,
+      "state": "matches"
+    },
+    {
+      "month": "2026-08",
+      "appNetPaise": 98765432,
+      "tallyNetPaise": null,
+      "differencePaise": null,
+      "state": "no_control"
+    },
+    {
+      "month": "2026-09",
+      "appNetPaise": 5550000,
+      "tallyNetPaise": 5560000,
+      "differencePaise": -10000,
+      "state": "differs"
+    }
+  ]
+}

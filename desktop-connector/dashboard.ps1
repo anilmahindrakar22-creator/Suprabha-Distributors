@@ -1,4 +1,4 @@
-param([int]$Port = 8765, [switch]$NoBrowser, [ValidateRange(5, 120)][int]$SyncMinutes = 15, [ValidateRange(15, 1440)][int]$CustomerSyncMinutes = 240, [ValidateRange(15, 1440)][int]$CatalogSyncMinutes = 240, [ValidateRange(15, 1440)][int]$PurchaseSyncMinutes = 240, [ValidateRange(1, 14)][int]$SalesRecentDays = 7, [ValidateRange(4, 168)][int]$SalesReconcileHours = 24, [switch]$RebuildSalesHistory, [ValidateRange(1,60)][int]$EconomicHistoryMonths=3, [ValidateRange(1,24)][int]$EconomicPurchaseHistoryMonths=12, [switch]$DisableInstrumentEconomics)
+param([int]$Port = 8765, [switch]$NoBrowser, [ValidateRange(5, 120)][int]$SyncMinutes = 15, [ValidateRange(15, 1440)][int]$CustomerSyncMinutes = 240, [ValidateRange(15, 1440)][int]$CatalogSyncMinutes = 240, [ValidateRange(15, 1440)][int]$PurchaseSyncMinutes = 240, [ValidateRange(1, 14)][int]$SalesRecentDays = 7, [ValidateRange(4, 168)][int]$SalesReconcileHours = 24, [switch]$RebuildSalesHistory, [ValidateRange(1,60)][int]$EconomicHistoryMonths=3, [ValidateRange(1,24)][int]$EconomicPurchaseHistoryMonths=12, [switch]$DisableInstrumentEconomics, [switch]$DisableSalesCoverage)
 
 $ErrorActionPreference = 'Stop'
 $dashboardRoot = Split-Path -Parent $MyInvocation.MyCommand.Path
@@ -17,6 +17,11 @@ $purchasePath = Join-Path $stateDirectory 'purchase-history-v1.json'
 $customerPath = Join-Path $stateDirectory 'customer-master-v1.json'
 $catalogPath = Join-Path $stateDirectory 'catalog-master-v1.json'
 $uploadStatePath = Join-Path $stateDirectory 'cloud-upload-state-v1.json'
+$salesCoverageStatePath = Join-Path $stateDirectory 'sales-coverage-state-v1.json'
+$script:salesCoverageState = Read-SalesCoverageState $salesCoverageStatePath $companyName
+$script:salesCoverageAttemptDate = $null
+$script:salesCoverageUploadFailures = 0
+$script:salesCoverageUploadAttemptDate = $null
 $healthLogPath = Join-Path $stateDirectory 'connector-health.log'
 $script:tallyFailures = @{}
 # A held file handle prevents duplicate extraction across launches and ports.
@@ -25,6 +30,10 @@ try {
 } catch {
     Write-Host 'StockFlow connector is already running.'
     exit 0
+}
+if(-not $script:salesCoverageState){
+    $script:salesCoverageState=@{company=$companyName;lastSalesCoverageDate=$null;firstObservedDate=(Get-SalesCoverageClock).ToString('yyyy-MM-dd')}
+    Save-ConnectorSnapshot $salesCoverageStatePath $script:salesCoverageState
 }
 $script:lastReorderData = Read-ConnectorSnapshotWithBackup $snapshotPath $companyName
 $script:lastReorderJson = if ($script:lastReorderData) { $script:lastReorderData | ConvertTo-Json -Depth 6 -Compress } else { $null }
@@ -88,9 +97,30 @@ function Write-ConnectorHealth([string]$Message) {
     }
 }
 
+function Remove-PendingSalesCoverage([string]$Reason) {
+    if ($script:pendingUpload.economicEvidence.purpose -ne 'sales_coverage') { return }
+    $script:salesCoverageAttemptDate = (Get-SalesCoverageClock).ToString('yyyy-MM-dd')
+    $script:economicSyncError = 'Sales coverage upload dropped after repeated failure'
+    foreach ($key in @('economicEvidence','salesControlTotals','salesCoverageDate')) {
+        if ($script:pendingUpload -is [System.Collections.IDictionary]) { $script:pendingUpload.Remove($key) }
+        else { $script:pendingUpload.PSObject.Properties.Remove($key) }
+    }
+    if ($script:pendingUpload -is [System.Collections.IDictionary]) { $script:pendingUpload.economicSyncError = $script:economicSyncError }
+    else { $script:pendingUpload | Add-Member -NotePropertyName economicSyncError -NotePropertyValue $script:economicSyncError -Force }
+    $script:pendingUploadJson = $script:pendingUpload | ConvertTo-Json -Depth 6 -Compress
+    $script:uploadPayloadBlocked = Test-ConnectorUploadPayloadRejected $script:uploadState $script:pendingUploadJson
+    Write-ConnectorHealth "$([datetimeoffset]::Now.ToString('o')) request=sales_coverage status=dropped reason=$Reason"
+    try { Save-ConnectorSnapshot $snapshotPath $script:pendingUpload }
+    catch { Write-ConnectorHealth "$([datetimeoffset]::Now.ToString('o')) request=sales_coverage_snapshot status=failed" }
+}
+
+# A rejected coverage snapshot restored from disk must not block stock uploads.
+if ($script:uploadPayloadBlocked) { Remove-PendingSalesCoverage 'payload_rejected' }
+
 function Publish-CloudSnapshot([string]$Json) {
     if (Test-ConnectorUploadPayloadRejected $script:uploadState $Json) {
         $script:uploadPayloadBlocked = $true
+        Remove-PendingSalesCoverage 'payload_rejected'
         return $false
     }
     $watch = [Diagnostics.Stopwatch]::StartNew()
@@ -115,6 +145,13 @@ function Publish-CloudSnapshot([string]$Json) {
             catch { Write-ConnectorHealth "$([datetimeoffset]::Now.ToString('o')) request=cloud_upload_state status=failed" }
         }
         Write-ConnectorHealth "$([datetimeoffset]::Now.ToString('o')) request=cloud_upload durationMs=$($watch.ElapsedMilliseconds) bytes=$payloadBytes consecutiveFailures=$($script:cloudUploadFailures) status=failed failure=$failureCode"
+        $failedUpload = $Json | ConvertFrom-Json
+        if ($failedUpload.economicEvidence.purpose -eq 'sales_coverage') {
+            $script:salesCoverageUploadFailures++
+            $script:salesCoverageUploadAttemptDate = (Get-SalesCoverageClock).ToString('yyyy-MM-dd')
+            if ($script:uploadPayloadBlocked) { Remove-PendingSalesCoverage 'payload_rejected' }
+            elseif ($script:salesCoverageUploadFailures -ge 3) { Remove-PendingSalesCoverage 'upload_failures' }
+        }
         # The local dashboard must remain usable even when the internet is down.
         if ($script:uploadAuthBlocked) {
             Write-Host 'Cloud upload authorization was rejected. The saved snapshot is retained; correct the upload key and restart the connector.' -ForegroundColor DarkYellow
@@ -135,6 +172,20 @@ function Publish-CloudSnapshot([string]$Json) {
         company = $script:uploadState.company; kind = 'cloud_upload_state_v1'
         ackedHash = Get-StableEvidenceVersion $Json; blockedKeyHash = $null; rejectedPayloadHash = $null
     }
+    $uploaded=$Json | ConvertFrom-Json
+    if($uploaded.economicEvidence.purpose -eq 'sales_coverage' -and $uploaded.salesCoverageDate){
+        try{
+            $coverageState=@{company=$companyName;lastSalesCoverageDate=[string]$uploaded.salesCoverageDate}
+            Save-ConnectorSnapshot $salesCoverageStatePath $coverageState
+            $script:salesCoverageState=$coverageState
+            $script:salesCoverageUploadFailures=0
+        }catch{
+            Write-ConnectorHealth "$([datetimeoffset]::Now.ToString('o')) request=sales_coverage_state status=failed"
+            return $false
+        }
+    }
+    # Save coverage success before the generic receipt: a restart must not treat
+    # this generation as acknowledged while its daily coverage state is missing.
     try { Save-ConnectorUploadState $uploadStatePath $receipt }
     catch {
         $script:cloudUploadFailures++
@@ -157,6 +208,11 @@ function Get-Number([string]$Text) {
 }
 
 function Invoke-Tally([string]$Body, [int]$TimeoutSeconds = 15, [string]$MetricName = '') {
+    $requests=[regex]::Matches($Body,'(?is)<TALLYREQUEST\s*>(.*?)</TALLYREQUEST\s*>')
+    if ($requests.Count -ne 1 -or [regex]::Matches($Body,'(?i)<TALLYREQUEST\b').Count -ne 1 -or $requests[0].Groups[1].Value.Trim() -ine 'Export' -or $Body -match '(?i)IMPORTDATA|\bACTION\s*=') {
+        Write-ConnectorHealth "$([datetimeoffset]::Now.ToString('o')) request=tally status=refused reason=read_only"
+        throw 'Refused: StockFlow only reads from Tally'
+    }
     $requestName = if ($MetricName) { $MetricName } elseif ($Body -match 'DashboardSalesVouchers') { 'sales' } elseif ($Body -match 'DashboardCustomerLedgers') { 'customers' } elseif ($Body -match 'DashboardItems') { 'catalog' } elseif ($Body -match 'StockFlowCompanyIdentity') { 'company' } else { 'reorder' }
     $watch = [Diagnostics.Stopwatch]::StartNew()
     try {
@@ -355,9 +411,22 @@ function Get-ReorderData {
     }
     $script:nextReorderRead = (Get-Date).AddMinutes($SyncMinutes)
     try {
+        if (Test-ConnectorUploadPayloadRejected $script:uploadState $script:pendingUploadJson) {
+            Remove-PendingSalesCoverage 'payload_rejected'
+        }
         $fresh = Read-ReorderData
+        $retainCoverage=$script:pendingUpload -and $script:pendingUpload.economicEvidence.purpose -eq 'sales_coverage'
+        if($retainCoverage){
+            $fresh.economicEvidence=$script:pendingUpload.economicEvidence
+            $fresh.salesControlTotals=$script:pendingUpload.salesControlTotals
+            $fresh.salesCoverageDate=$script:pendingUpload.salesCoverageDate
+        } elseif($fresh.economicEvidence.purpose -eq 'sales_coverage') {
+            $script:salesCoverageUploadFailures=0
+            $script:salesCoverageUploadAttemptDate=$null
+        }
         $freshJson = $fresh | ConvertTo-Json -Depth 6 -Compress
         Save-ConnectorSnapshot $snapshotPath $fresh
+        if($fresh.economicEvidence.purpose -eq 'sales_coverage'){$script:salesCoverageAttemptDate=$fresh.salesCoverageDate}
         $script:lastReorderData = $fresh
         $script:lastReorderJson = $freshJson
         $script:pendingUpload = $fresh
@@ -434,8 +503,12 @@ function Read-ReorderData {
     $pricingSales = @(Get-PricingSalesEvidence $salesData.records $customers)
     $pricingPurchaseCosts = @(Get-PricingPurchaseCostEvidence $purchaseRecords)
     $supplierPrices = @(Get-SupplierPurchasePriceEvidence $purchaseRecords)
+    $coverage=$null;$coverageDate=$null
     if (-not $DisableInstrumentEconomics -and (Get-Date) -ge $script:nextEconomicRead) {
         $script:nextEconomicRead=(Get-Date).AddMinutes($PurchaseSyncMinutes)
+        $coverageNow=[datetimeoffset]::UtcNow
+        $istDate=(Get-SalesCoverageClock $coverageNow).ToString('yyyy-MM-dd')
+        $coverageDue=-not $DisableSalesCoverage -and $script:pendingUpload.economicEvidence.purpose -ne 'sales_coverage' -and $script:salesCoverageAttemptDate -ne $istDate -and (Test-SalesCoverageDue $script:salesCoverageState $coverageNow)
         try {
             $ledgerRoles=@{}
             $rolePath=Join-Path $stateDirectory 'economic-ledger-roles.json'
@@ -449,11 +522,19 @@ function Read-ReorderData {
                 $voucherRoleDocument=Get-Content -LiteralPath $voucherRolePath -Raw | ConvertFrom-Json
                 foreach($property in $voucherRoleDocument.PSObject.Properties){$voucherRoles[$property.Name]=[string]$property.Value}
             }
-            $script:lastEconomicEvidence=Read-TallyEconomicEvidence $companyName $EconomicHistoryMonths $ledgerRoles $voucherRoles $EconomicPurchaseHistoryMonths
+            if($coverageDue){
+                $coverage=Read-TallySalesCoverage $companyName $ledgerRoles $voucherRoles $coverageNow
+                $coverageDate=$istDate
+                # Restore the normal envelope on the next cycle, not after four hours.
+                $script:nextEconomicRead=Get-Date
+            }else{
+                $script:lastEconomicEvidence=Read-TallyEconomicEvidence $companyName $EconomicHistoryMonths $ledgerRoles $voucherRoles $EconomicPurchaseHistoryMonths
+            }
             $script:economicSyncError=$null
         } catch {
             $script:economicSyncError=$_.Exception.Message
-            Write-ConnectorHealth "$([datetimeoffset]::Now.ToString('o')) domain=instrument_economics status=failed reason=$($script:economicSyncError)"
+            $domain=if($coverageDue){'sales_coverage'}else{'instrument_economics'}
+            Write-ConnectorHealth "$([datetimeoffset]::Now.ToString('o')) domain=$domain status=failed reason=$($script:economicSyncError)"
         }
     }
     $groupMap = @{}
@@ -563,7 +644,9 @@ function Read-ReorderData {
         customers = $customers
         tallyInvoices = @($salesData.invoices)
         pricingHistory = [ordered]@{ sales = $pricingSales; purchaseCosts = $pricingPurchaseCosts; supplierPrices = $supplierPrices }
-        economicEvidence = $script:lastEconomicEvidence
+        economicEvidence = if($coverage){$coverage.economicEvidence}else{$script:lastEconomicEvidence}
+        salesControlTotals = if($coverage){$coverage.salesControlTotals}else{$null}
+        salesCoverageDate = $coverageDate
         economicSyncError = $script:economicSyncError
     }
 }

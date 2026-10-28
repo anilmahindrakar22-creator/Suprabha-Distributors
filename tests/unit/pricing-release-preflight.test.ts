@@ -9,6 +9,37 @@ const original = JSON.parse(readFileSync(new URL('../../supabase/migration-histo
 const source = new Map(readdirSync(fileURLToPath(directory)).filter((name) => name.endsWith('.sql')).map((name) => [name, readFileSync(new URL(name, directory), 'utf8')]));
 
 describe('read-only pricing release preflight', () => {
+  it('keeps full-sales patches additive with unique source anchors and registered replay tests', () => {
+    const expectedOwners = [
+      ['private.stockflow_import_economic_vouchers', '20261016053720_economic_import_execution_budget.sql'],
+      ['private.stockflow_rebuild_instrument_economics', '20261016061635_mapped_instrument_cost_scope.sql'],
+      ['public.stockflow_economics_gateway', '20261030090000_instrument_register.sql'],
+    ];
+    for (const [name, expectedOwner] of expectedOwners) {
+      const owners = [...source].filter(([file, sql]) => file < '20261030100000' && (
+        sql.includes(`pg_get_functiondef('${name}(`) ||
+        new RegExp(`create(?: or replace)? function ${name.replaceAll('.', '\\.')}\\(`, 'i').test(sql)
+      )).map(([file]) => file).sort();
+      expect(owners.at(-1), `Final existing definition of ${name}: ${owners.join(', ')}`).toBe(expectedOwner);
+    }
+    const importer = source.get('20261007181000_instrument_economic_import_and_rebuild.sql')!;
+    const containment = source.get('20261030100000_economic_rebuild_containment.sql')!;
+    const coverage = source.get('20261030101000_sales_coverage.sql')!;
+    for (const anchor of [
+      "perform private.stockflow_rebuild_instrument_economics('tally-sync');",
+      "'Complete window omitted known vouchers; supply cancellation revisions',doc-'vouchers'",
+    ]) expect(importer.split(anchor), anchor).toHaveLength(2);
+    expect(containment).toContain("exception when sqlstate '54000'");
+    expect(containment).not.toContain('stockflow_economic_import_exceptions');
+    expect(containment).not.toContain('create or replace function private.stockflow_rebuild_instrument_economics');
+    const gateway = source.get('20261007183000_instrument_economics_commands.sql')!;
+    expect(gateway.split("if p_action='get_instrument_economics' then")).toHaveLength(2);
+    expect(coverage).toContain("return private.stockflow_sales_coverage_read(roles)");
+    expect(coverage).toContain("from public,anon,authenticated");
+    const runner = readFileSync(new URL('../pricing-migration-local.ps1', import.meta.url), 'utf8');
+    expect(runner).toContain('supabase/tests/economic_rebuild_containment.sql');
+    expect(runner).toContain('supabase/tests/sales_coverage.sql');
+  });
   it('keeps register anchors unique in the logic-bearing definitions', () => {
     const history = source.get('20261010071925_historical_instrument_registration.sql')!;
     const gateway = source.get('20261007183000_instrument_economics_commands.sql')!;
@@ -152,6 +183,8 @@ describe('read-only pricing release preflight', () => {
       '20261029100000_supplier_purchase_orders.sql',
       '20261030090000_instrument_register.sql',
       '20261030091000_instrument_register_read.sql',
+      '20261030100000_economic_rebuild_containment.sql',
+      '20261030101000_sales_coverage.sql',
     ]);
     expect(result.deployed.at(-1)?.localFile).toBe('20261026150000_rate_check_units.sql');
     expect(result.deployed).toHaveLength(147);
@@ -174,6 +207,8 @@ describe('read-only pricing release preflight', () => {
       '20261029100000_supplier_purchase_orders.sql',
       '20261030090000_instrument_register.sql',
       '20261030091000_instrument_register_read.sql',
+      '20261030100000_economic_rebuild_containment.sql',
+      '20261030101000_sales_coverage.sql',
     ]);
   });
   it('rejects changed SQL including changes inside literals', () => {

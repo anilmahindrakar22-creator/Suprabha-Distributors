@@ -4,6 +4,7 @@ import { hasAnyStockFlowRole } from '@/lib/user-types';
 import { BoundedJsonRequestError, readBoundedJsonRequest } from '@/lib/bounded-json-request';
 import { callOrderGateway, OrderGatewayError } from '@/lib/order-gateway';
 import { measuredJsonResponse } from '@/lib/measured-json-response';
+import { validateEconomicReadAction } from '@/lib/instrument-economics';
 import { economicActions, validateEconomicCommand, type EconomicsWorkspaceData } from '@/lib/instrument-economics-types';
 
 const headers = { 'cache-control': 'private, no-store' };
@@ -27,6 +28,9 @@ export async function GET(request?: Request) {
   try {
     const timings = { auth: 0, member: 0 };
     const session = await actor(timings);
+    const action = validateEconomicReadAction(request ? new URL(request.url).searchParams.get('action') : null);
+    if (!action) return Response.json({ error: 'Invalid economics read action' }, { status: 400, headers });
+    if (action === 'get_sales_coverage') return Response.json(await callOrderGateway(session.email, action, {}), { headers });
     const view = request?.headers.get('x-stockflow-economics-view') ?? 'full';
     if (view !== 'full' && view !== 'summary' && view !== 'detail') return Response.json({ error: 'Invalid economics view' }, { status: 400, headers });
     const rpcStartedAt = performance.now();

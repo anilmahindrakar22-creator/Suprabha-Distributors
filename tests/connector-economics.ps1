@@ -207,3 +207,184 @@ try{
     Assert-Economic $bounded 'Separate monthly exports bypassed the combined voucher bound'
 }finally{Set-Item Function:Convert-TallyEconomicEvidence $savedConverter}
 Write-Output 'PASS: combined monthly history fails explicitly above the upload bound'
+
+# Coverage uses an explicit IST clock, independent of the office/CI timezone.
+$coverageNow=[datetimeoffset]'2026-10-30T22:00:00+05:30'
+$window=Get-SalesCoverageWindow $coverageNow
+Assert-Economic ($window.From.ToString('yyyy-MM-dd') -eq '2026-07-01' -and $window.To.ToString('yyyy-MM-dd') -eq '2026-10-01') 'Coverage window is not three complete IST months'
+$request=Get-TallyEconomicCollection 'SUPRABHA DISTRIBUTORS' 'EconomicVouchers' 'Voucher' $script:EconomicVoucherFetch $window.From $window.To
+Assert-Economic ($request -match '<SVTODATE TYPE="Date">20260930</SVTODATE>') 'Inclusive Tally end was not September 30'
+$prior=@{lastSalesCoverageDate='2026-10-29'}
+Assert-Economic (-not (Test-SalesCoverageDue $prior ([datetimeoffset]'2026-10-30T21:59:00+05:30'))) 'Coverage ran before 22:00'
+Assert-Economic (Test-SalesCoverageDue $prior $coverageNow) 'Coverage did not run at 22:00'
+Assert-Economic (-not (Test-SalesCoverageDue @{lastSalesCoverageDate='2026-10-30'} $coverageNow)) 'Coverage repeated on the same IST day'
+Assert-Economic (Test-SalesCoverageDue $prior ([datetimeoffset]'2026-10-31T09:00:00+05:30')) 'Missed day did not catch up'
+Assert-Economic (Test-SalesCoverageDue @{firstObservedDate='2026-10-30'} ([datetimeoffset]'2026-10-31T09:00:00+05:30')) 'First missed night did not catch up'
+$stateTest=Join-Path ([IO.Path]::GetTempPath()) ('sales-coverage-'+[guid]::NewGuid().ToString('N')+'.json')
+try{
+    Save-ConnectorSnapshot $stateTest @{company='fixture';lastSalesCoverageDate='2026-10-29'}
+    Save-ConnectorSnapshot $stateTest @{company='fixture';lastSalesCoverageDate='2026-10-30'}
+    $persisted=Read-SalesCoverageState $stateTest 'fixture'
+    Assert-Economic ($persisted.lastSalesCoverageDate -eq '2026-10-30' -and -not (Test-SalesCoverageDue $persisted $coverageNow)) 'Coverage state did not persist'
+    Assert-Economic ($null -eq (Read-SalesCoverageState $stateTest 'other')) 'Coverage state crossed companies'
+}finally{foreach($path in @($stateTest,"$stateTest.bak")){if([IO.File]::Exists($path)){[IO.File]::Delete($path)}}}
+Write-Output 'PASS: IST coverage window, inclusive Tally end, daily schedule, catch-up and atomic state'
+
+$controlLedger='<LEDGER NAME="Sales"><GUID>sales-guid</GUID><OPENINGBALANCE>1000000.00</OPENINGBALANCE><CLOSINGBALANCE>1250000.00</CLOSINGBALANCE></LEDGER>'
+$control=Convert-TallySalesControlMonth ([xml]('<ENVELOPE><COLLECTION>'+$controlLedger+'</COLLECTION></ENVELOPE>')) $window.From
+Assert-Economic ($control.month -eq '2026-07' -and $control.salesLedgers[0].openingPaise -eq 100000000 -and $control.salesLedgers[0].closingPaise -eq 125000000 -and $control.salesLedgers[0].netPaise -eq 25000000) 'Sales movement sign or opening subtraction is incorrect'
+$reversed=Convert-TallySalesControlMonth ([xml]('<ENVELOPE><COLLECTION>'+$controlLedger.Replace('1250000.00','750000.00')+'</COLLECTION></ENVELOPE>')) $window.From
+Assert-Economic ($reversed.salesLedgers[0].netPaise -eq -25000000) 'Returns were made positive by absolute value'
+$tooManyLedgers='<ENVELOPE><COLLECTION>'+($controlLedger*501)+'</COLLECTION></ENVELOPE>'
+$rejected=$false;try{Convert-TallySalesControlMonth ([xml]$tooManyLedgers) $window.From | Out-Null}catch{$rejected=$_.Exception.Message -eq 'Sales control month exceeds 500 ledgers'}
+Assert-Economic $rejected 'Sales control bound was not enforced'
+Write-Output 'PASS: July native control movement, sign and 500-ledger bound'
+
+$script:coverageVoucherXml=$vouchers.ENVELOPE.InnerXml
+$script:coverageVoucherXml+=$vouchers.ENVELOPE.InnerXml.Replace('voucher-guid-1','cancelled').Replace('<VOUCHER>','<VOUCHER><ISCANCELLED>Yes</ISCANCELLED>')
+$script:coverageVoucherXml+='<VOUCHER><GUID>banking</GUID><ALTERID>1</ALTERID><DATE>20260701</DATE><VOUCHERTYPENAME>Receipt</VOUCHERTYPENAME></VOUCHER>'
+$script:coverageVoucherXml+='<VOUCHER><GUID>optional</GUID><ALTERID>1</ALTERID><DATE>20260930</DATE><VOUCHERTYPENAME>Sales</VOUCHERTYPENAME><ISOPTIONAL>Yes</ISOPTIONAL></VOUCHER>'
+$script:tallyRequests.Clear()
+function Invoke-Tally([string]$Body,[int]$TimeoutSeconds,[string]$MetricName){
+    Assert-Economic ($TimeoutSeconds -eq 30 -and $MetricName -eq 'sales_coverage') 'Coverage request lost timeout or metric'
+    $script:tallyRequests.Add($Body)
+    $content=''
+    if($Body -match '<TYPE>Company</TYPE>'){$content='<COMPANY NAME="SUPRABHA DISTRIBUTORS"><GUID>company-guid-1</GUID></COMPANY>'}
+    elseif($Body -match '<ID>SalesCoverageLedgers</ID>'){$content=$controlLedger}
+    elseif($Body -match '<TYPE>Ledger</TYPE>'){$content=$ledgers.ENVELOPE.InnerXml}
+    elseif($Body -match '<TYPE>StockItem</TYPE>'){$content=$products.ENVELOPE.InnerXml}
+    elseif($Body -match '<ID>EconomicVouchers</ID>'){$content=$script:coverageVoucherXml}
+    return '<ENVELOPE><COLLECTION>'+$content+'</COLLECTION></ENVELOPE>'
+}
+$coverage=Read-TallySalesCoverage 'SUPRABHA DISTRIBUTORS' @{} @{} $coverageNow
+Assert-Economic ($coverage.economicEvidence.purpose -eq 'sales_coverage' -and $coverage.economicEvidence.completeWindow -and $coverage.economicEvidence.vouchers.Count -eq 3) 'Coverage dropped non-economic or cancelled vouchers, or retained an optional voucher'
+Assert-Economic (@($coverage.economicEvidence.vouchers | Where-Object sourceId -eq 'optional').Count -eq 0) 'Coverage retained an optional voucher'
+$coverageVersion=[datetimeoffset]::MinValue
+Assert-Economic ([datetimeoffset]::TryParseExact($coverage.economicEvidence.sourceVersion,'o',[Globalization.CultureInfo]::InvariantCulture,[Globalization.DateTimeStyles]::None,[ref]$coverageVersion)) 'Coverage sourceVersion is not an ISO timestamp'
+Assert-Economic (@($coverage.economicEvidence.vouchers | Where-Object {$_.date -lt '2026-07-01' -or $_.date -ge '2026-10-01'}).Count -eq 0) 'Coverage included dates outside its window'
+Assert-Economic (@($coverage.economicEvidence.vouchers | Where-Object cancelled).Count -eq 1 -and @($coverage.economicEvidence.vouchers | Where-Object amountStatus -eq 'unverified').Count -eq 1) 'Coverage lost cancellation or unverified evidence'
+Assert-Economic ($coverage.salesControlTotals.months.Count -eq 3 -and $coverage.salesControlTotals.sourceVersion -eq $coverage.economicEvidence.sourceVersion -and -not $coverage.salesControlTotals.months[0].Contains('customers')) 'Controls lost generation binding or guessed customer controls'
+$controlRequests=@($script:tallyRequests | Where-Object {$_ -match '<ID>SalesCoverageLedgers</ID>'})
+Assert-Economic ($controlRequests.Count -eq 3 -and $controlRequests[0] -match '<SVFROMDATE TYPE="Date">20260701</SVFROMDATE>' -and $controlRequests[0] -match '<SVTODATE TYPE="Date">20260731</SVTODATE>' -and $controlRequests[0] -match '<CHILDOF>Sales Accounts</CHILDOF><BELONGSTO>Yes</BELONGSTO>') 'Monthly controls did not request the native group and period'
+foreach($badDate in @('20260630','20261001')){
+    $script:coverageVoucherXml=$vouchers.ENVELOPE.InnerXml.Replace('20260915',$badDate)
+    $rejected=$false;try{Read-TallySalesCoverage 'SUPRABHA DISTRIBUTORS' @{} @{} $coverageNow | Out-Null}catch{$rejected=$_.Exception.Message -eq 'Tally ignored the sales coverage date window.'}
+    Assert-Economic $rejected 'Coverage accepted out-of-window source vouchers'
+}
+$script:coverageVoucherXml=$vouchers.ENVELOPE.InnerXml*1801
+$rejected=$false;try{Read-TallySalesCoverage 'SUPRABHA DISTRIBUTORS' @{} @{} $coverageNow | Out-Null}catch{$rejected=$_.Exception.Message -eq 'Sales coverage window exceeds 1800 vouchers'}
+Assert-Economic $rejected 'Coverage truncated or accepted more than 1800 vouchers'
+Write-Output 'PASS: ISO coverage version bound to controls; optional vouchers skipped; accounting-only and cancelled vouchers retained; bounds and dates'
+
+# Extract only the real transport function; never start the dashboard or contact Tally.
+$dashboardPath=Join-Path $PSScriptRoot '../desktop-connector/dashboard.ps1'
+$tokens=$null;$parseErrors=$null
+$ast=[Management.Automation.Language.Parser]::ParseFile($dashboardPath,[ref]$tokens,[ref]$parseErrors)
+Assert-Economic ($parseErrors.Count -eq 0) 'Dashboard parser errors'
+$economicAst=[Management.Automation.Language.Parser]::ParseFile((Join-Path $PSScriptRoot '../desktop-connector/economics.ps1'),[ref]$tokens,[ref]$parseErrors)
+Assert-Economic ($parseErrors.Count -eq 0) 'Economics parser errors'
+$transport=$ast.Find({param($node) $node -is [Management.Automation.Language.FunctionDefinitionAst] -and $node.Name -eq 'Invoke-Tally'},$true)
+Invoke-Expression $transport.Extent.Text
+$script:networkCalls=0;$script:healthLines=@();$script:tallyFailures=@{}
+function Write-ConnectorHealth([string]$Line){$script:healthLines+=,$Line}
+function Invoke-WebRequest { $script:networkCalls++;return @{Content='fixture';RawContentLength=7} }
+foreach($unsafe in @('<TALLYREQUEST>Import</TALLYREQUEST>','<TALLYREQUEST>Export</TALLYREQUEST><VOUCHER ACTION="Create"/>','<TALLYREQUEST>Export</TALLYREQUEST><TALLYREQUEST>Export</TALLYREQUEST>','<TALLYREQUEST>Export</TALLYREQUEST><IMPORTDATA/>')){
+    $rejected=$false;try{Invoke-Tally $unsafe | Out-Null}catch{$rejected=$_.Exception.Message -eq 'Refused: StockFlow only reads from Tally'}
+    Assert-Economic $rejected 'Read-only transport accepted a write or ambiguous request'
+}
+Assert-Economic ($script:networkCalls -eq 0 -and $script:healthLines.Count -eq 4) 'Refused request reached transport or lacked health line'
+Assert-Economic ($request -match 'AlterID' -and (Invoke-Tally $request) -eq 'fixture' -and $script:networkCalls -eq 1) 'Read-only guard rejected real AlterID export'
+Assert-Economic ((Invoke-Tally '<TALLYREQUEST>  eXpOrT </TALLYREQUEST>') -eq 'fixture') 'Guard rejected case-insensitive trimmed Export'
+Write-Output 'PASS: both PowerShell parsers; read-only guard rejects before network and accepts AlterID exports'
+
+# Exercise the real acknowledgement path with an in-memory HTTP stub.
+$publisher=$ast.Find({param($node) $node -is [Management.Automation.Language.FunctionDefinitionAst] -and $node.Name -eq 'Publish-CloudSnapshot'},$true)
+Invoke-Expression $publisher.Extent.Text
+$dropper=$ast.Find({param($node) $node -is [Management.Automation.Language.FunctionDefinitionAst] -and $node.Name -eq 'Remove-PendingSalesCoverage'},$true)
+Invoke-Expression $dropper.Extent.Text
+$salesCoverageStatePath=Join-Path ([IO.Path]::GetTempPath()) ('coverage-receipt-'+[guid]::NewGuid().ToString('N')+'.json')
+$uploadStatePath=$salesCoverageStatePath+'.upload'
+$companyName='fixture';$cloudSyncUrl='https://fixture.invalid';$cloudUploadKey='fixture'
+$script:uploadState=@{company='fixture';rejectedPayloadHash=$null;blockedKeyHash=$null}
+$script:cloudUploadFailures=0;$script:salesCoverageState=$null;$script:failCloud=$true
+function Invoke-WebRequest { if($script:failCloud){throw 'fixture offline'};return @{Content='ok';RawContentLength=2} }
+$uploadJson=@{economicEvidence=$coverage.economicEvidence;salesControlTotals=$coverage.salesControlTotals;salesCoverageDate='2026-10-30'} | ConvertTo-Json -Depth 12 -Compress
+try{
+    Assert-Economic (-not (Publish-CloudSnapshot $uploadJson)) 'Failed cloud upload was accepted'
+    Assert-Economic (-not [IO.File]::Exists($salesCoverageStatePath) -and $null -eq $script:salesCoverageState) 'Failed cloud upload advanced coverage state'
+    $script:failCloud=$false
+    Assert-Economic (Publish-CloudSnapshot $uploadJson) 'Successful coverage upload was not acknowledged'
+    $acknowledged=Read-SalesCoverageState $salesCoverageStatePath 'fixture'
+    Assert-Economic ($acknowledged.lastSalesCoverageDate -eq '2026-10-30') 'Cloud acceptance did not persist daily coverage state'
+    Assert-Economic (Publish-CloudSnapshot '{"economicEvidence":{"purpose":"normal"}}') 'Normal upload failed after coverage'
+    Assert-Economic ((Read-SalesCoverageState $salesCoverageStatePath 'fixture').lastSalesCoverageDate -eq '2026-10-30') 'Normal upload changed coverage state'
+}finally{
+    foreach($path in @($salesCoverageStatePath,"$salesCoverageStatePath.bak",$uploadStatePath,"$uploadStatePath.bak")){if([IO.File]::Exists($path)){[IO.File]::Delete($path)}}
+}
+Write-Output 'PASS: coverage success persists only after cloud acceptance; failed and normal uploads do not advance it'
+
+# Exercise fresh reads and retries through the real queue and publisher functions.
+$getter=$ast.Find({param($node) $node -is [Management.Automation.Language.FunctionDefinitionAst] -and $node.Name -eq 'Get-ReorderData'},$true)
+Invoke-Expression $getter.Extent.Text
+# Evaluate the production schedule expression with a deterministic IST clock.
+$dueAssignment=$ast.Find({param($node) $node -is [Management.Automation.Language.AssignmentStatementAst] -and $node.Left.Extent.Text -eq '$coverageDue'},$true)
+$script:testCoverageNow=[datetimeoffset]'2026-10-30T22:00:00+05:30'
+function Get-SalesCoverageClock([datetimeoffset]$Now=$script:testCoverageNow){return $Now.ToOffset([timespan]::FromMinutes(330))}
+function Read-ReorderData {
+    $script:freshStock++
+    return [ordered]@{company='fixture';fetchedAtIso=[datetimeoffset]::UtcNow.ToString('o');tallyInvoices=@();stock=$script:freshStock;catalog=@('fresh catalog');pricingHistory=@{price=$script:freshStock};economicEvidence=@{purpose='normal'};salesControlTotals=$null;salesCoverageDate=$null;economicSyncError=$script:economicSyncError}
+}
+$snapshotPath=$salesCoverageStatePath+'.snapshot'
+$SyncMinutes=15;$DisableSalesCoverage=$false
+try {
+    foreach($mode in @('three_failures','rejection','saved_rejection')) {
+        $script:pendingUpload=$uploadJson | ConvertFrom-Json
+        $script:pendingUploadJson=$uploadJson
+        $script:uploadState=@{company='fixture';rejectedPayloadHash=$null;blockedKeyHash=$null}
+        $script:salesCoverageUploadFailures=0;$script:salesCoverageUploadAttemptDate=$null
+        $script:salesCoverageAttemptDate=$null;$script:salesCoverageState=@{lastSalesCoverageDate='2026-10-29'}
+        $script:healthLines=@();$script:freshStock=10;$script:failCloud=$true
+        $script:lastReorderData=$null;$script:nextReorderRead=Get-Date
+        $fresh=Get-ReorderData
+        $saved=Read-ConnectorSnapshot $snapshotPath 'fixture'
+        $queued=$script:pendingUploadJson | ConvertFrom-Json
+        Assert-Economic ($fresh.stock -eq 11 -and $saved.stock -eq 11 -and $queued.stock -eq 11 -and $queued.catalog[0] -eq 'fresh catalog' -and $queued.pricingHistory.price -eq 11) 'Pending coverage held back fresh stock, catalog or prices'
+        Assert-Economic ($queued.economicEvidence.sourceVersion -eq $coverage.economicEvidence.sourceVersion -and $saved.economicEvidence.purpose -eq 'sales_coverage' -and $queued.salesControlTotals.sourceVersion -eq $coverage.economicEvidence.sourceVersion -and $queued.salesCoverageDate -eq '2026-10-30') 'Fresh snapshot did not carry the complete coverage generation'
+        if($mode -eq 'three_failures') {
+            foreach($attempt in 1..3) {
+                Assert-Economic (-not (Publish-CloudSnapshot $script:pendingUploadJson)) 'Offline upload succeeded'
+                Assert-Economic ($script:salesCoverageUploadFailures -eq $attempt -and $script:salesCoverageUploadAttemptDate -eq '2026-10-30') 'Coverage failure count or date was lost'
+                if($attempt -lt 3) {
+                    $script:nextReorderRead=Get-Date
+                    $fresh=Get-ReorderData
+                    Assert-Economic ($fresh.stock -eq (11+$attempt) -and $fresh.economicEvidence.purpose -eq 'sales_coverage') 'Retry froze stock or lost coverage'
+                }
+            }
+        } elseif($mode -eq 'rejection') {
+            function Get-ConnectorUploadFailureCode { return 'http_400' }
+            Assert-Economic (-not (Publish-CloudSnapshot $script:pendingUploadJson)) 'Rejected upload succeeded'
+            Assert-Economic ($script:salesCoverageUploadFailures -eq 1) 'Rejection required more than one attempt'
+        } else {
+            $script:uploadState.rejectedPayloadHash=Get-StableEvidenceVersion $script:pendingUploadJson
+            Assert-Economic (-not (Publish-CloudSnapshot $script:pendingUploadJson)) 'Previously rejected payload was accepted'
+        }
+        $queued=$script:pendingUploadJson | ConvertFrom-Json
+        foreach($key in @('economicEvidence','salesControlTotals','salesCoverageDate')) {
+            Assert-Economic ($null -eq $queued.PSObject.Properties[$key]) "Dropped payload retained $key"
+        }
+        Assert-Economic ($queued.stock -eq $script:freshStock -and -not $script:uploadPayloadBlocked) 'Dropping coverage lost stock or kept uploads blocked'
+        Assert-Economic (@($script:healthLines | Where-Object {$_ -match 'request=sales_coverage status=dropped reason='}).Count -eq 1) 'Coverage drop health line missing or duplicated'
+        Assert-Economic ($script:economicSyncError -eq 'Sales coverage upload dropped after repeated failure' -and $script:salesCoverageAttemptDate -eq '2026-10-30') 'Drop did not set error and daily attempt gate'
+        $coverageNow=$script:testCoverageNow;$istDate=(Get-SalesCoverageClock $coverageNow).ToString('yyyy-MM-dd')
+        Invoke-Expression $dueAssignment.Extent.Text
+        Assert-Economic (-not $coverageDue) 'Dropped coverage ran again on the same IST day'
+        $coverageNow=$script:testCoverageNow.AddDays(1);$istDate=(Get-SalesCoverageClock $coverageNow).ToString('yyyy-MM-dd')
+        Invoke-Expression $dueAssignment.Extent.Text
+        Assert-Economic $coverageDue 'Dropped coverage did not become due the next IST day'
+        $script:failCloud=$false
+        Assert-Economic (Publish-CloudSnapshot $script:pendingUploadJson) 'Stock could not upload after coverage was dropped'
+        Write-Output "PASS: fresh stock and carried coverage; $mode drops coverage, logs health, unblocks stock and gates until next IST day"
+    }
+} finally {
+    foreach($path in @($snapshotPath,"$snapshotPath.bak",$uploadStatePath,"$uploadStatePath.bak")){if([IO.File]::Exists($path)){[IO.File]::Delete($path)}}
+}

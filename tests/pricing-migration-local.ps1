@@ -124,6 +124,10 @@ try {
   # Register migrations must follow the latest purchase-order migration in both plans.
   $registerNames = @('20261030090000_instrument_register.sql','20261030091000_instrument_register_read.sql')
   $planNames = @($migrationPlan | Select-Object -ExpandProperty Name)
+  $salesNames = @('20261030091000_instrument_register_read.sql','20261030100000_economic_rebuild_containment.sql','20261030101000_sales_coverage.sql')
+  for ($salesIndex = 1; $salesIndex -lt $salesNames.Count; $salesIndex++) {
+    if ([array]::IndexOf($planNames,$salesNames[$salesIndex]) -le [array]::IndexOf($planNames,$salesNames[$salesIndex-1])) { throw 'Full sales replay order is invalid' }
+  }
   if ([array]::IndexOf($planNames,$registerNames[0]) -le [array]::IndexOf($planNames,'20261029100000_supplier_purchase_orders.sql') -or [array]::IndexOf($planNames,$registerNames[1]) -le [array]::IndexOf($planNames,$registerNames[0])) { throw 'Instrument register replay order is invalid' }
   foreach ($migration in $migrationPlan) {
     if ($migration.Name -eq $registerNames[0]) {
@@ -288,6 +292,9 @@ end$$;
   Write-Output 'PASS: native Debit Note stock depletion, cost conservation, replay and cancellation'
   Invoke-DatabaseCommand $psqlProgram @('-U',$databaseUser,'-X','-q','-v','ON_ERROR_STOP=1','-d',$database,'-f',(Join-Path $repository 'supabase/tests/economic_import_execution_budget.sql'))
   Write-Output 'PASS: bounded service-only snapshot ingest, unchanged-generation replay and changed-source publication'
+  Invoke-DatabaseCommand $psqlProgram @('-U',$databaseUser,'-X','-q','-v','ON_ERROR_STOP=1','-d',$database,'-f',(Join-Path $repository 'supabase/tests/economic_rebuild_containment.sql'))
+  Invoke-DatabaseCommand $psqlProgram @('-U',$databaseUser,'-X','-q','-v','ON_ERROR_STOP=1','-d',$database,'-f',(Join-Path $repository 'supabase/tests/sales_coverage.sql'))
+  Write-Output 'PASS: rebuild containment, sales coverage and exact control reconciliation'
   Invoke-DatabaseCommand $psqlProgram @('-U',$databaseUser,'-X','-q','-v','ON_ERROR_STOP=1','-d',$database,'-f',(Join-Path $repository 'supabase/tests/mapped_instrument_cost_scope.sql'))
   Write-Output 'PASS: mapped-only costing retains earlier consumption, historical group members and native-return depletion'
   Invoke-DatabaseCommand $psqlProgram @('-U',$databaseUser,'-X','-q','-v','ON_ERROR_STOP=1','-d',$database,'-f',(Join-Path $repository 'supabase/tests/tally_recent_products.sql'))

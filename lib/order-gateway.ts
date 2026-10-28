@@ -24,6 +24,7 @@ export type GatewayAction =
   | 'log_visit'
   | 'set_class_policy'
   | 'get_instrument_economics'
+  | 'get_sales_coverage'
   | 'get_link_suggestions'
   | 'confirm_customer_links'
   | 'recover_economic_command'

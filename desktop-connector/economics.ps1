@@ -90,7 +90,7 @@ function Convert-TallyEconomicItemCatalog([xml]$ProductDocument,[xml]$GroupDocum
     }
     return @{groups=@($groupRows | Sort-Object id);products=@($productRows | Sort-Object id)}
 }
-function Convert-TallyEconomicEvidence([xml]$CompanyDocument,[xml]$LedgerDocument,[xml]$ProductDocument,[xml]$VoucherDocument,[datetime]$From,[datetime]$To,[hashtable]$LedgerRoles=@{},[hashtable]$VoucherRoles=@{},[xml]$ZeroAmountDocument=$null,[xml]$GroupDocument=$null) {
+function Convert-TallyEconomicEvidence([xml]$CompanyDocument,[xml]$LedgerDocument,[xml]$ProductDocument,[xml]$VoucherDocument,[datetime]$From,[datetime]$To,[hashtable]$LedgerRoles=@{},[hashtable]$VoucherRoles=@{},[xml]$ZeroAmountDocument=$null,[xml]$GroupDocument=$null,[switch]$SalesCoverage) {
     foreach($role in $LedgerRoles.GetEnumerator()){
         if(-not $role.Key -or $role.Value -notin @('gst','discount','rounding','charge','trade')){throw 'Economic ledger role configuration is invalid.'}
     }
@@ -118,12 +118,15 @@ function Convert-TallyEconomicEvidence([xml]$CompanyDocument,[xml]$LedgerDocumen
     $seen = @{}
     foreach ($voucher in $VoucherDocument.SelectNodes('//VOUCHER')) {
         $type = Get-EconomicXmlText $voucher './VOUCHERTYPENAME'
-        if ((Get-EconomicXmlText $voucher './ISOPTIONAL') -eq 'Yes') { continue }
+        $optional=(Get-EconomicXmlText $voucher './ISOPTIONAL') -eq 'Yes'
+        if ($optional) { continue }
         $kind = switch ($type) { 'Sales' {'sale'} 'GST SALE' {'sale'} 'Purchase' {'purchase'} 'Credit Note' {'return'} 'Debit Note' {'native_debit_note'} default {$VoucherRoles[$type]} }
         # Ordinary non-stock banking/accounting documents are outside this ledger.
         # Unknown stock documents must be visible exceptions, never silently omitted.
         $inventoryEntries=@(Get-EconomicVoucherEntries $voucher 'INVENTORY' | Where-Object { $_.SelectSingleNode('./STOCKITEMNAME | ./AMOUNT | ./ACTUALQTY | ./BILLEDQTY') })
-        if (-not $kind -and $inventoryEntries.Count -eq 0) { continue }
+        if (-not $kind -and $inventoryEntries.Count -eq 0) {
+            if(-not $SalesCoverage){continue}
+        }
         $id = Get-EconomicXmlText $voucher './GUID'
         $revision = Get-EconomicXmlText $voucher './ALTERID'
         $dateText = Get-EconomicXmlText $voucher './DATE'
@@ -355,6 +358,83 @@ function Get-TallyEconomicNumericAmountCollection([string]$Company,[datetime]$Fr
     # export to the voucher revision and exact ordered inventory fields.
     $body=Get-TallyEconomicCollection $Company 'EconomicAmountVouchers' 'Voucher' 'GUID,AlterID,AllInventoryEntries.StockItemName,AllInventoryEntries.Amount,AllInventoryEntries.ActualQty,AllInventoryEntries.BilledQty' $From $To
     return $body.Replace('<ID>EconomicAmountVouchers</ID>','<ID>EconomicNumericAmounts</ID>').Replace('</TDLMESSAGE>','<COLLECTION NAME="EconomicNumericAmounts"><SOURCECOLLECTION>EconomicAmountVouchers</SOURCECOLLECTION><WALK>AllInventoryEntries</WALK><FETCH>StockItemName,Amount,ActualQty,BilledQty</FETCH><COMPUTE>EconomicAmountNumber : $$Number:$Amount</COMPUTE><COMPUTE>EconomicVoucherId : $$Owner:$GUID</COMPUTE><COMPUTE>EconomicVoucherRevision : $$Owner:$AlterID</COMPUTE></COLLECTION></TDLMESSAGE>')
+}
+function Get-SalesCoverageClock([datetimeoffset]$Now=[datetimeoffset]::UtcNow) {
+    # IST has no daylight saving; the explicit offset also works on PS 5.1.
+    return $Now.ToOffset([timespan]::FromMinutes(330)).DateTime
+}
+function Get-SalesCoverageWindow([datetimeoffset]$Now=[datetimeoffset]::UtcNow) {
+    $ist=Get-SalesCoverageClock $Now
+    $to=[datetime]::new($ist.Year,$ist.Month,1)
+    return @{From=$to.AddMonths(-3);To=$to}
+}
+function Read-SalesCoverageState([string]$Path,[string]$Company) {
+    foreach($candidate in @($Path,"$Path.bak")){
+        try{
+            $saved=Read-ConnectorJson $candidate
+            if($saved.schemaVersion -eq 1 -and $saved.snapshot.company -ceq $Company -and ($saved.snapshot.lastSalesCoverageDate -match '^\d{4}-\d{2}-\d{2}$' -or $saved.snapshot.firstObservedDate -match '^\d{4}-\d{2}-\d{2}$')){return $saved.snapshot}
+        }catch{}
+    }
+    return $null
+}
+function Test-SalesCoverageDue($State,[datetimeoffset]$Now=[datetimeoffset]::UtcNow) {
+    $ist=Get-SalesCoverageClock $Now
+    $last=[string]$State.lastSalesCoverageDate
+    if($last -ge $ist.ToString('yyyy-MM-dd')){return $false}
+    # With no prior state, start at 22:00; a known missed day catches up next morning.
+    return ($ist.Hour -ge 22 -or ($last -and $last -lt $ist.AddDays(-1).ToString('yyyy-MM-dd')) -or (-not $last -and $State.firstObservedDate -and $State.firstObservedDate -lt $ist.ToString('yyyy-MM-dd')))
+}
+function Get-TallySalesControlCollection([string]$Company,[datetime]$From,[datetime]$To) {
+    $body=Get-TallyEconomicCollection $Company 'SalesCoverageLedgers' 'Ledger' 'Name,GUID,OpeningBalance,ClosingBalance' $From $To
+    return $body.Replace('<TYPE>Ledger</TYPE>','<TYPE>Ledger</TYPE><CHILDOF>Sales Accounts</CHILDOF><BELONGSTO>Yes</BELONGSTO>')
+}
+function Convert-TallySalesControlMonth([xml]$Document,[datetime]$Month) {
+    if($Document.SelectSingleNode('//LINEERROR') -or -not $Document.SelectSingleNode('//COLLECTION')){throw 'Sales control export was unsuccessful.'}
+    $nodes=$Document.SelectNodes('//LEDGER')
+    if($nodes.Count -gt 500){throw 'Sales control month exceeds 500 ledgers'}
+    $seen=@{}
+    $rows=@(foreach($node in $nodes){
+        $id=Get-EconomicXmlText $node './GUID';$name=$node.GetAttribute('NAME')
+        if(-not $name){$name=Get-EconomicXmlText $node './NAME'}
+        if(-not $id -or -not $name -or $seen.ContainsKey($id)){throw 'Sales control ledger identity is incomplete or duplicated.'}
+        $seen[$id]=$true
+        $opening=Convert-EconomicAmount (Get-EconomicXmlText $node './OPENINGBALANCE')
+        $closing=Convert-EconomicAmount (Get-EconomicXmlText $node './CLOSINGBALANCE')
+        # Tally XML represents credit sales balances as positive (debits negative).
+        # Preserve that sign: closing minus opening, never Abs, so returns reduce sales.
+        [ordered]@{ledgerId=$id;name=$name;openingPaise=$opening;closingPaise=$closing;netPaise=($closing-$opening)}
+    })
+    return [ordered]@{month=$Month.ToString('yyyy-MM');salesLedgers=$rows}
+}
+function Read-TallySalesCoverage([string]$Company,[hashtable]$LedgerRoles=@{},[hashtable]$VoucherRoles=@{},[datetimeoffset]$Now=[datetimeoffset]::UtcNow) {
+    $window=Get-SalesCoverageWindow $Now;$from=$window.From;$to=$window.To
+    $documents=@{}
+    foreach($definition in @(
+        @('Company','Company','Name,GUID'),@('Ledgers','Ledger','Name,GUID,Parent,TaxType'),@('Products','StockItem','Name,GUID,BaseUnits,Parent'),@('Groups','StockGroup','Name,GUID,Parent'),@('Vouchers','Voucher',$script:EconomicVoucherFetch)
+    )){
+        $raw=Invoke-Tally (Get-TallyEconomicCollection $Company ('Economic'+$definition[0]) $definition[1] $definition[2] $from $to) -TimeoutSeconds 30 -MetricName 'sales_coverage'
+        $document=ConvertFrom-TallyEconomicXml $raw
+        if($document.SelectSingleNode('//LINEERROR') -or -not $document.SelectSingleNode('//COLLECTION')){throw 'Sales coverage export was unsuccessful.'}
+        $documents[$definition[0]]=$document
+    }
+    Assert-TallyCompanyIdentity $documents.Company $Company
+    if($documents.Vouchers.SelectNodes('//VOUCHER').Count -gt 1800){throw 'Sales coverage window exceeds 1800 vouchers'}
+    foreach($voucher in $documents.Vouchers.SelectNodes('//VOUCHER')){
+        $date=[datetime]::ParseExact((Get-EconomicXmlText $voucher './DATE'),'yyyyMMdd',[Globalization.CultureInfo]::InvariantCulture)
+        if($date -lt $from -or $date -ge $to){throw 'Tally ignored the sales coverage date window.'}
+    }
+    $zero=ConvertFrom-TallyEconomicXml (Invoke-Tally (Get-TallyEconomicNumericAmountCollection $Company $from $to) -TimeoutSeconds 30 -MetricName 'sales_coverage')
+    if($zero.SelectSingleNode('//LINEERROR') -or -not $zero.SelectSingleNode('//COLLECTION')){throw 'Sales coverage numeric export was unsuccessful.'}
+    $evidence=Convert-TallyEconomicEvidence $documents.Company $documents.Ledgers $documents.Products $documents.Vouchers $from $to $LedgerRoles $VoucherRoles $zero $documents.Groups -SalesCoverage
+    $evidence.purpose='sales_coverage'
+    $evidence.sourceVersion=[datetimeoffset]::UtcNow.ToString('o')
+    $months=@(for($month=$from;$month -lt $to;$month=$month.AddMonths(1)){
+        $doc=ConvertFrom-TallyEconomicXml (Invoke-Tally (Get-TallySalesControlCollection $Company $month $month.AddMonths(1)) -TimeoutSeconds 30 -MetricName 'sales_coverage')
+        Convert-TallySalesControlMonth $doc $month
+    })
+    if($months.Count -ne 3){throw 'Sales controls require exactly 3 months'}
+    # No customer controls: debtor balances also include receipts and non-sales postings.
+    return @{economicEvidence=$evidence;salesControlTotals=@{companyId=$evidence.companyId;sourceVersion=$evidence.sourceVersion;months=$months}}
 }
 function Get-EconomicPreflightSummary($Evidence) {
     $verified=0;$cancelled=0;$excluded=0;$exceptions=@{};$kinds=@{}
