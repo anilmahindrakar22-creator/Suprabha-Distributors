@@ -10,6 +10,12 @@ const stockPayload = (sourceFetchedAtIso?: Record<string, unknown>) => ({
   ...(sourceFetchedAtIso ? { sourceFetchedAtIso } : {}),
 });
 
+test.beforeEach(async ({ page }) => {
+  await page.route('**/api/requirements?view=to_order&page=1', (route) => route.fulfill({
+    json: { view: 'to_order', total: 21, waitingCount: 6, unknownCount: 0, page: 1, pageSize: 25, items: [] },
+  }));
+});
+
 async function openStockDashboard(page: import('@playwright/test').Page, payload: ReturnType<typeof stockPayload>) {
   await page.route('**/api/stock?view=dashboard', (route) => route.fulfill({ json: payload }));
   await page.route('**/api/orders?summary=1', (route) => route.fulfill({ json: {} }));
@@ -17,85 +23,53 @@ async function openStockDashboard(page: import('@playwright/test').Page, payload
   await expect(page.locator('details dl')).toContainText('Stock');
 }
 
-test('phone stock overview shows the first reorder row without scrolling or page overflow', async ({ page }) => {
+test('phone Stock shows unified Requests counts with Daily active and no page overflow', async ({ page }) => {
   await page.setViewportSize({ width: 375, height: 812 });
-  const payload = stockPayload();
-  payload.fetchedAtIso = new Date(Date.now() - 30 * 60 * 1000).toISOString();
-  payload.groups = ['Test group'];
-  payload.rows = [{ group: 'Test group', item: 'First reorder item', closing: 0, reorderLevel: 10, minimumOrder: 1, shortfall: 10, orderToBePlaced: 10 }];
-  await openStockDashboard(page, payload);
+  await openStockDashboard(page, stockPayload());
 
-  const firstRow = page.locator('#rows tr').first();
-  await expect(firstRow).toBeVisible();
-  await expect(page.locator('#syncNotice')).toBeVisible();
-  await expect(page.getByRole('button', { name: 'Clear focus', exact: true })).toBeHidden();
-  const bounds = await firstRow.boundingBox();
-  expect(bounds).not.toBeNull();
-  expect(bounds!.y).toBeGreaterThanOrEqual(0);
-  expect(bounds!.y).toBeLessThan(600);
-  expect(await page.evaluate(() => window.scrollY)).toBe(0);
+  await expect(page.locator('.metric-chips [data-action="items"] strong')).toHaveText('21 to order');
+  await expect(page.locator('#itemHint')).toHaveText('6 with customers waiting');
+  await expect(page.locator('.metric-chips [data-action="critical"]')).toHaveText('6 customers waiting');
+  await expect(page.locator('.metric-chips [data-action="critical"]')).toHaveClass(/has-critical/);
+  await expect(page.getByRole('button', { name: 'Reorder list', exact: true })).toHaveCount(0);
+  await expect(page.getByText('Order to be placed', { exact: true })).toHaveCount(0);
+  await expect(page.locator('.tab.active')).toHaveText('Daily');
+  await expect(page.locator('#operationsView')).toHaveClass(/active/);
   expect(await page.evaluate(() => document.documentElement.scrollWidth <= innerWidth)).toBe(true);
-  await expect(page.getByText('Total order qty', { exact: true })).toHaveCount(0);
-
-  await page.locator('.metric-chips [data-action="items"]').click();
-  await expect(page.getByRole('button', { name: 'Clear focus', exact: true })).toBeVisible();
-  await page.getByRole('button', { name: 'Clear focus', exact: true }).click();
-  await expect(page.getByRole('button', { name: 'Clear focus', exact: true })).toBeHidden();
 });
 
-test('phone reorder rows show the last sale without a dropdown', async ({ page }) => {
-  await page.setViewportSize({ width: 375, height: 812 });
-  const payload = stockPayload();
-  payload.groups = ['Test group'];
-  payload.rows = [{ group: 'Test group', item: 'Reorder item', closing: 0, reorderLevel: 10, minimumOrder: 1, shortfall: 10, orderToBePlaced: 10, lastSuppliedParty: 'Sysmex India Pvt Ltd', lastSuppliedQty: 4, lastSuppliedDate: '12 Oct 2026' }];
-  await openStockDashboard(page, payload);
-
-  const line = page.locator('#rows .supply-line');
-  await expect(line).toBeVisible();
-  await expect(line).toHaveText('Last sold: 12 Oct 2026 · 4 · Sysmex India Pvt Ltd');
-  await expect(line.locator('strong')).toHaveText('Sysmex India Pvt Ltd');
-  await expect(line).toHaveAttribute('title', 'Last sold: Sysmex India Pvt Ltd · 4 · 12 Oct 2026');
-  await expect(line).toHaveAttribute('aria-label', 'Last sold to Sysmex India Pvt Ltd, quantity 4, on 12 Oct 2026');
-  await expect(page.locator('details.supply-drop')).toHaveCount(0);
-});
-
-test('phone reorder rows without sale data show the history window', async ({ page }) => {
-  await page.setViewportSize({ width: 375, height: 812 });
-  const payload = stockPayload();
-  payload.rows = [{ group: 'Test group', item: 'No sale item', closing: 0, reorderLevel: 10, minimumOrder: 1, shortfall: 10, orderToBePlaced: 10 }];
-  await openStockDashboard(page, payload);
-
-  await expect(page.locator('#rows .supply-line.muted')).toBeVisible();
-  await expect(page.locator('#rows .supply-line.muted')).toContainText('No sale in');
-});
-
-test('a long last-sale party stays on one line without phone page overflow', async ({ page }) => {
-  await page.setViewportSize({ width: 375, height: 812 });
-  const payload = stockPayload();
-  const party = 'S'.repeat(120);
-  payload.rows = [{ group: 'Test group', item: 'Long party item', closing: 0, reorderLevel: 10, minimumOrder: 1, shortfall: 10, orderToBePlaced: 10, lastSuppliedParty: party, lastSuppliedQty: 4, lastSuppliedDate: '12 Oct 2026' }];
-  await openStockDashboard(page, payload);
-
-  const line = page.locator('#rows .supply-line');
-  await expect(line).toBeVisible();
-  await expect(line.locator('strong')).toHaveText(party);
-  await expect(line).toHaveAttribute('title', `Last sold: ${party} · 4 · 12 Oct 2026`);
-  await expect(line).toHaveText(`Last sold: 12 Oct 2026 · 4 · ${party}`);
-  await expect(line.locator('.supply-date')).toBeVisible();
-  await expect(line.locator('.supply-date')).toHaveText('12 Oct 2026');
-  await expect(line.locator('.supply-qty')).toBeVisible();
-  await expect(line.locator('.supply-qty')).toHaveText('4');
-  expect(await line.evaluate((element) => {
-    const bounds = element.getBoundingClientRect();
-    return ['.supply-date', '.supply-qty'].every((selector) => {
-      const value = element.querySelector(selector)!;
-      const rect = value.getBoundingClientRect();
-      return rect.left >= bounds.left && rect.right <= bounds.right && value.scrollWidth <= value.clientWidth;
+test('both Stock chips open Requests to order from the frame', async ({ page }) => {
+  const messages: unknown[] = [];
+  await page.exposeFunction('captureStockMessage', (message: unknown) => messages.push(message));
+  await page.addInitScript(() => {
+    if (window.parent !== window) return;
+    window.addEventListener('message', (event) => {
+      if (event.origin === location.origin && event.data?.type === 'stockflow-open-requests') {
+        void (window as unknown as { captureStockMessage: (message: unknown) => Promise<void> }).captureStockMessage(event.data);
+      }
     });
-  })).toBe(true);
-  await expect(line).toHaveCSS('white-space', 'nowrap');
-  await expect(line.locator('.supply-party')).toHaveCSS('text-overflow', 'ellipsis');
-  expect(await page.evaluate(() => document.documentElement.scrollWidth <= innerWidth)).toBe(true);
+  });
+  await page.route('**/requests-link-test', (route) => route.fulfill({ contentType: 'text/html', body: '<iframe src="/stockflow.html"></iframe>' }));
+  await page.route('**/api/stock?view=dashboard', (route) => route.fulfill({ json: stockPayload() }));
+  await page.route('**/api/orders?summary=1', (route) => route.fulfill({ json: {} }));
+  await page.goto('/requests-link-test');
+  const stock = page.frameLocator('iframe');
+  for (const action of ['items', 'critical']) {
+    await stock.locator(`.metric-chips [data-action="${action}"]`).click();
+  }
+  await expect.poll(() => messages).toEqual([
+    { type: 'stockflow-open-requests', section: 'to-order' },
+    { type: 'stockflow-open-requests', section: 'to-order' },
+  ]);
+});
+
+test('requirements failure leaves both Stock chips available with unknown counts', async ({ page }) => {
+  await page.route('**/api/requirements?view=to_order&page=1', (route) => route.fulfill({ status: 503, json: {} }));
+  await openStockDashboard(page, stockPayload());
+  await expect(page.locator('#itemCount')).toHaveText('—');
+  await expect(page.locator('#criticalCount')).toHaveText('—');
+  await expect(page.locator('.metric-chips button')).toHaveCount(2);
+  for (const chip of await page.locator('.metric-chips button').all()) await expect(chip).toBeEnabled();
 });
 
 test('source update times stay collapsed and safely display per-source timestamps', async ({ page }) => {

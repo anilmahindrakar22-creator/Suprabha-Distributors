@@ -8,6 +8,12 @@ export async function GET(request: Request) {
     if (!user) return Response.json({ error: 'Sign in required' }, { status: 401, headers });
     const page = Number(new URL(request.url).searchParams.get('page') || 1);
     if (!Number.isInteger(page) || page < 1 || page > 4000) return Response.json({ error: 'Invalid requirements page' }, { status: 400, headers });
+    const params = new URL(request.url).searchParams;
+    const view = params.get('view');
+    if (view !== null) {
+      if (view !== 'to_order' || !params.get('page')?.trim() || params.has('alerts') || params.has('itemKey')) return Response.json({ error: 'Invalid requirements view' }, { status: 400, headers });
+      return Response.json(await callOrderGateway(user.email, 'get_requirements', { page, view: 'to_order' }), { headers });
+    }
     const alerts = new URL(request.url).searchParams.get('alerts');
     if (alerts !== null) {
       if (alerts !== '1' || new URL(request.url).searchParams.has('itemKey')) return Response.json({ error: 'Invalid alert query' }, { status: 400, headers });

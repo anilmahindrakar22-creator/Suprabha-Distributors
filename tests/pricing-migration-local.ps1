@@ -278,6 +278,8 @@ end$$;
   Write-Output 'PASS: real-path rate exceptions, billing review, order revisions, edit invalidation and packed shortage totals'
   Invoke-DatabaseCommand $psqlProgram @('-U',$databaseUser,'-X','-q','-v','ON_ERROR_STOP=1','-d',$database,'-f',(Join-Path $repository 'supabase/tests/rate_check_units.sql'))
   Write-Output 'PASS: invoice units, legacy rate fallback and snapshot unit import'
+  Invoke-DatabaseCommand $psqlProgram @('-U',$databaseUser,'-X','-q','-v','ON_ERROR_STOP=1','-d',$database,'-f',(Join-Path $repository 'supabase/tests/to_order_list.sql'))
+  Write-Output 'PASS: unified to-order read, real demand, legacy delegation, pagination and access checks'
 } finally {
   if ($databaseCreated) { & $dropdbProgram -U $databaseUser --if-exists $database | Out-Null }
   if ($serverStartedByScript) { & $pgCtlProgram -D $postgresData -m fast -w stop | Out-Null }

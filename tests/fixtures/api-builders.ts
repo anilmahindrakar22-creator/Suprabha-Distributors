@@ -2,8 +2,23 @@ import type { CustomerPriceContract, OrderPricingWorkspace, PricingLineResolutio
 import type { OrderBootstrap, OrderLineSummary, OrderSummary } from '../../lib/order-types';
 import type { BillingSheet } from '../../lib/billing-sheet';
 import type { RateCheck, RateExceptions } from '../../lib/rate-check';
+import type { ToOrderItem, ToOrderResponse } from '../../lib/to-order';
 
 const timestamp = '2026-10-01T06:00:00Z';
+
+export function toOrderItem(o: Partial<ToOrderItem> = {}): ToOrderItem {
+  return {
+    itemKey: 'TEST-ITEM', itemName: 'Test item', group: 'Reagents', closing: 2,
+    reorderLevel: 5, minimumOrder: null, tallyOpenPurchase: 0, openDemand: 10,
+    waitingOrders: 3, oldestOrderAt: timestamp, reasons: ['waiting_orders', 'below_reorder'],
+    state: 'order', suggestedQty: 13, ...o,
+  } satisfies ToOrderItem;
+}
+
+export function toOrderResponse(o: Partial<ToOrderResponse> = {}): ToOrderResponse {
+  return { view: 'to_order', page: 1, pageSize: 25, total: 1, waitingCount: 1,
+    unknownCount: 0, items: [toOrderItem()], ...o } satisfies ToOrderResponse;
+}
 
 export function pricingLine(o: Partial<PricingLineResolution> = {}): PricingLineResolution {
   return {

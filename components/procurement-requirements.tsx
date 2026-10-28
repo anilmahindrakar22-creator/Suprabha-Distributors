@@ -1,27 +1,10 @@
 'use client';
 
-import { Fragment, useEffect, useRef, useState } from 'react';
-import { CircleAlert, CircleCheck, PackageX } from 'lucide-react';
+import { useEffect, useEffectEvent, useRef, useState } from 'react';
+import { CircleAlert, CircleCheck } from 'lucide-react';
 import { readJsonBody } from '@/lib/http-json';
 
-type RequirementRow = {
-  tallyKey: string;
-  itemName: string;
-  openDemand: number;
-  currentStock: number | null;
-  shortage: number | null;
-  state: 'shortage' | 'unknown' | 'covered';
-  affectedOrders: number;
-  priority: string;
-  oldestOrderAt: string;
-};
-
-type RequirementsResponse = {
-  fetchedAt: string | null;
-  rows: RequirementRow[];
-  counts: { shortageItems: number; unknownItems: number; coveredItems: number };
-  pagination: { page: number; pageCount: number; total: number };
-};
+import { toOrderReasonText, toOrderStockText, type ToOrderResponse } from '@/lib/to-order';
 
 type WaitingOrder = {
   orderId: string;
@@ -68,18 +51,9 @@ function displayDate(value: string | null) {
   return date.toLocaleString('en-IN', { dateStyle: 'medium', timeStyle: 'short', timeZone: 'Asia/Kolkata' });
 }
 
-function priorityLabel(value: string) {
-  const normalized = value.trim().toLowerCase();
-  if (normalized === 'urgent' || normalized === 'high' || normalized === 'normal') {
-    return normalized[0].toUpperCase() + normalized.slice(1);
-  }
-  return 'Review';
-}
-
 export function ProcurementRequirements({ onOpenOrder }: { onOpenOrder?: (orderId: string, orderNumber: string) => void } = {}) {
-  const [open, setOpen] = useState(false);
   const [page, setPage] = useState(1);
-  const [result, setResult] = useState<RequirementsResponse | null>(null);
+  const [result, setResult] = useState<ToOrderResponse | null>(null);
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState('');
   const requestRef = useRef<{ id: number; controller: AbortController } | null>(null);
@@ -169,7 +143,7 @@ export function ProcurementRequirements({ onOpenOrder }: { onOpenOrder?: (orderI
   }
 
   async function load(nextPage: number) {
-    resetWaitingOrders();
+    if (nextPage === 1 && !waitingOrigin?.startsWith('alert:')) resetWaitingOrders();
     requestRef.current?.controller.abort();
     const controller = new AbortController();
     const id = ++requestIdRef.current;
@@ -177,25 +151,27 @@ export function ProcurementRequirements({ onOpenOrder }: { onOpenOrder?: (orderI
     setLoading(true);
     setError('');
     try {
-      const response = await fetch(`/api/requirements?page=${nextPage}`, { cache: 'no-store', signal: controller.signal });
-      const body = await readJsonBody<RequirementsResponse & { error?: string }>(response);
-      if (!response.ok) throw new Error(body.error || 'Customer requirements could not be loaded.');
-      if (!body.counts || ![body.counts.shortageItems, body.counts.unknownItems, body.counts.coveredItems].every((count) => Number.isSafeInteger(count) && count >= 0)
-        || !Array.isArray(body.rows) || !body.pagination || !Number.isSafeInteger(body.pagination.page) || body.pagination.page < 1
-        || !Number.isSafeInteger(body.pagination.pageCount) || body.pagination.pageCount < 1 || !Number.isSafeInteger(body.pagination.total) || body.pagination.total < 0
-        || body.rows.some((row) => !row || typeof row.tallyKey !== 'string' || typeof row.itemName !== 'string'
-          || !['shortage', 'unknown', 'covered'].includes(row.state)
-          || (row.state === 'shortage' ? !(row.shortage !== null && row.shortage > 0 && row.currentStock !== null) : row.state === 'unknown' ? !(row.currentStock === null && row.shortage === null) : !(row.shortage === 0 && row.currentStock !== null))
-          || typeof row.openDemand !== 'number' || !Number.isFinite(row.openDemand) || row.openDemand <= 0
-          || !Number.isSafeInteger(row.affectedOrders) || row.affectedOrders < 1 || typeof row.priority !== 'string' || typeof row.oldestOrderAt !== 'string'
-          || !(row.currentStock === null || typeof row.currentStock === 'number' && Number.isFinite(row.currentStock))
-          || !(row.shortage === null || typeof row.shortage === 'number' && Number.isFinite(row.shortage) && row.shortage >= 0))) throw new Error('Customer requirements response was incomplete.');
+      const response = await fetch(`/api/requirements?view=to_order&page=${nextPage}`, { cache: 'no-store', signal: controller.signal });
+      const body = await readJsonBody<ToOrderResponse & { error?: string }>(response);
+      if (!response.ok) throw new Error(body.error || 'To order could not be loaded.');
+      if (body.view !== 'to_order' || body.page !== nextPage || body.pageSize !== 25
+        || ![body.total, body.waitingCount, body.unknownCount].every((count) => Number.isSafeInteger(count) && count >= 0)
+        || !Array.isArray(body.items) || body.items.length > 25
+        || body.items.some((item) => !item || typeof item.itemKey !== 'string' || !item.itemKey.trim()
+          || typeof item.itemName !== 'string' || !item.itemName.trim()
+          || !['order', 'stock_unknown'].includes(item.state)
+          || !Number.isSafeInteger(item.waitingOrders) || item.waitingOrders < 0
+          || !Array.isArray(item.reasons) || item.reasons.some((reason) => !['waiting_orders', 'below_reorder'].includes(reason))
+          || ![item.closing, item.reorderLevel, item.minimumOrder, item.tallyOpenPurchase, item.suggestedQty].every((value) => value === null || typeof value === 'number' && Number.isFinite(value))
+          || typeof item.openDemand !== 'number' || !Number.isFinite(item.openDemand) || item.openDemand < 0
+          || (item.state === 'order' && (item.suggestedQty === null || item.suggestedQty < 0))))
+        throw new Error('To order response was incomplete.');
       if (requestRef.current?.id !== id) return;
-      setResult(body);
-      setPage(body.pagination.page);
+      setResult((previous) => nextPage === 1 || !previous ? body : { ...body, items: [...previous.items, ...body.items] });
+      setPage(body.page);
     } catch (cause) {
       if (requestRef.current?.id !== id || controller.signal.aborted) return;
-      setError(cause instanceof Error ? cause.message : 'Customer requirements could not be loaded.');
+      setError(cause instanceof Error ? cause.message : 'To order could not be loaded.');
     } finally {
       if (requestRef.current?.id === id) setLoading(false);
     }
@@ -268,39 +244,48 @@ export function ProcurementRequirements({ onOpenOrder }: { onOpenOrder?: (orderI
     </div>;
   }
 
-  async function loadSection(requirementsPage: number, stockAlertsPage: number) {
-    await Promise.all([load(requirementsPage), loadAlerts(stockAlertsPage)]);
-  }
+  const loadInitial = useEffectEvent(() => {
+    void load(1);
+    void loadAlerts(1);
+  });
 
-  function toggle() {
-    if (open) {
-      requestRef.current?.controller.abort();
-      requestRef.current = null;
-      requestIdRef.current += 1;
-      setLoading(false);
-      alertsRequestRef.current?.controller.abort();
-      alertsRequestRef.current = null;
-      alertsRequestIdRef.current += 1;
-      setAlertsLoading(false);
-      resetWaitingOrders();
-      setOpen(false);
-      return;
-    }
-    setOpen(true);
-    void loadSection(1, 1);
-  }
+  useEffect(() => {
+    const timer = setTimeout(() => loadInitial(), 0);
+    return () => clearTimeout(timer);
+  }, []);
 
-  const pagination = result?.pagination;
-  return <section aria-label="Customer demand and requirements" className="mt-3 rounded-xl border border-sf-line-soft bg-white p-3">
-    <button type="button" aria-expanded={open} onClick={toggle} className="flex min-h-11 w-full items-center justify-between gap-3 text-left text-sm font-bold text-sf-body">
-      <span>Customer demand / requirements</span><span aria-hidden="true">{open ? '−' : '+'}</span>
-    </button>
-    {open ? <div className="mt-2 border-t border-sf-line-soft pt-3">
-      <div className="mt-2 flex flex-wrap items-center justify-between gap-2">
-        <p className="min-w-0 flex-1 text-xs leading-5 text-sf-subtle">Advisory view from Tally stock as of {displayDate(result?.fetchedAt ?? null)}; nothing is reserved or allocated.</p>
-        <button type="button" disabled={loading || alertsLoading} onClick={() => void loadSection(page, alertsPage)} className="min-h-11 rounded-lg border border-sf-line bg-white px-3 text-xs font-bold text-sf-body disabled:opacity-50">{loading || alertsLoading ? 'Loading…' : 'Refresh'}</button>
+  const items = [...(result?.items ?? [])].sort((a, b) => Number(a.state === 'stock_unknown') - Number(b.state === 'stock_unknown'));
+  return <section aria-label="To order" className="mt-3 min-w-0 rounded-xl border border-sf-line-soft bg-sf-soft p-3">
+    <div className="flex flex-wrap items-start justify-between gap-2">
+      <div className="min-w-0 flex-1">
+        <h2 className="text-sm font-bold text-sf-body">To order</h2>
+        <p className="mt-1 text-xs leading-5 text-sf-subtle">Suggested quantity covers waiting customer orders and refills to the Tally reorder level.</p>
       </div>
-      {result ? <p className="mt-2 text-xs font-semibold text-sf-label">Need to order: {result.counts.shortageItems} · Stock unknown: {result.counts.unknownItems} · Covered by stock: {result.counts.coveredItems}</p> : null}
+      <button type="button" disabled={loading || alertsLoading} onClick={() => { void load(1); void loadAlerts(alertsPage); }} className="min-h-11 rounded-lg border border-sf-line bg-sf-soft-0 px-3 text-xs font-bold text-sf-body disabled:opacity-50">{loading || alertsLoading ? 'Loading…' : 'Refresh'}</button>
+    </div>
+    {result ? <div className="mt-3 flex flex-wrap gap-2 text-xs font-semibold text-sf-label">
+      <span className="rounded-full bg-sf-soft-2 px-3 py-2">{result.total} to order</span>
+      <span className="rounded-full bg-sf-soft-2 px-3 py-2">{result.waitingCount} with customers waiting</span>
+      {result.unknownCount > 0 ? <span className="rounded-full bg-sf-soft-2 px-3 py-2">{result.unknownCount} stock unknown</span> : null}
+    </div> : null}
+    {error ? <p role="alert" className="mt-2 text-sm text-sf-danger">{error}</p> : null}
+    {loading && !result ? <p className="mt-3 text-sm text-sf-subtle">Loading to order…</p> : null}
+    <div className="mt-3 space-y-2">
+      {items.map((item) => <article key={item.itemKey} aria-label={item.itemName} className={`min-w-0 rounded-lg border border-sf-line-soft p-3 ${item.state === 'stock_unknown' ? 'bg-sf-soft-2 text-sf-muted' : 'bg-sf-soft-0 text-sf-body'}`}>
+        <div className="flex min-w-0 flex-col gap-2">
+          <h3 className="min-w-0 break-words text-sm font-bold">{item.itemName}</h3>
+          <p className="break-words text-right text-lg font-bold">Order {item.state === 'stock_unknown' || item.suggestedQty === null ? '—' : quantity(item.suggestedQty)}</p>
+        </div>
+        <p className="mt-1 break-words text-xs">{toOrderReasonText(item)}</p>
+        <p className="mt-1 break-words text-xs text-sf-muted">{toOrderStockText(item)}</p>
+        {item.waitingOrders > 0 ? <button type="button" aria-expanded={waitingOrigin === item.itemKey} onClick={() => toggleWaitingOrders(item.itemKey)} className="mt-2 min-h-11 rounded-lg border border-sf-line px-3 text-xs font-bold text-sf-body">
+          {waitingOrigin === item.itemKey ? 'Hide waiting orders' : 'View waiting orders'}
+        </button> : null}
+        {renderWaitingOrders(item.itemKey, item.itemName)}
+      </article>)}
+      {result && !result.total ? <p className="text-sm text-sf-subtle">Nothing to order.</p> : null}
+    </div>
+    {result && result.items.length < result.total ? <button type="button" disabled={loading} onClick={() => void load(page + 1)} className="mt-3 min-h-11 rounded-lg border border-sf-line px-3 text-xs font-bold text-sf-body disabled:opacity-50">{loading ? 'Loading…' : 'Load more'}</button> : null}
       <div className="mt-3 rounded-lg border border-sf-line-soft bg-sf-soft-0 p-3">
         {alertsResult && alertsResult.pagination.total > 0 ? <h2 className="text-sm font-bold text-sf-body">New stock for waiting orders ({alertsResult.pagination.total})</h2> : null}
         <div>
@@ -330,39 +315,5 @@ export function ProcurementRequirements({ onOpenOrder }: { onOpenOrder?: (orderI
           </> : null}
         </div>
       </div>
-      {error ? <p role="alert" className="mt-2 inline-flex items-center gap-1 text-sm text-sf-danger"><CircleAlert size={14} aria-hidden="true" className="shrink-0" />{error}</p> : null}
-      {loading && !result ? <p className="mt-3 text-sm text-sf-subtle">Loading customer demand…</p> : null}
-      {result ? <>
-        <div className="mt-2 space-y-2">
-          {result.rows.map((row, index) => <Fragment key={row.tallyKey}>
-            {index === 0 || result.rows[index - 1].state !== row.state ? <h2 className="pt-2 text-xs font-bold text-sf-label">{row.state === 'shortage' ? 'Need to order' : row.state === 'unknown' ? 'Stock unknown, check Tally' : 'Covered by current stock'}</h2> : null}
-            <article className={`rounded-lg border border-sf-line-soft p-3 ${row.state === 'covered' ? 'bg-white text-sf-muted [&_dd]:text-sf-muted [&_h3]:text-sf-muted' : 'bg-sf-soft-0'}`}>
-            <div className="flex flex-wrap items-start justify-between gap-2">
-              <h3 className="min-w-0 flex-1 break-words text-sm font-bold text-sf-strong">{row.itemName}</h3>
-              <span className="shrink-0 rounded-full bg-sf-soft-2 px-2 py-1 text-xs font-semibold text-sf-label">{priorityLabel(row.priority)}</span>
-            </div>
-            <dl className="mt-2 grid grid-cols-2 gap-x-3 gap-y-2 break-words text-xs sm:grid-cols-4">
-              <div><dt className="text-sf-subtle">Open demand</dt><dd className="mt-0.5 font-semibold text-sf-strong">{quantity(row.openDemand)}</dd></div>
-              <div><dt className="text-sf-subtle">Current stock</dt><dd className="mt-0.5 font-semibold text-sf-strong">{row.currentStock === null ? 'Unknown · review' : quantity(row.currentStock)}</dd></div>
-              <div><dt className="text-sf-subtle">Shortage</dt><dd className={row.state === 'shortage' ? 'mt-0.5 inline-flex items-center gap-1 text-sm font-bold text-sf-warning' : 'mt-0.5 font-semibold text-sf-strong'}>{row.state === 'shortage' ? <PackageX size={14} aria-hidden="true" className="shrink-0" /> : null}{row.shortage === null ? 'Unknown · review' : quantity(row.shortage)}</dd></div>
-              <div><dt className="text-sf-subtle">Affected orders</dt><dd className="mt-0.5 font-semibold text-sf-strong">{quantity(row.affectedOrders)}</dd></div>
-            </dl>
-            <p className="mt-2 text-xs text-sf-subtle">Oldest open order: {displayDate(row.oldestOrderAt)}</p>
-            <button type="button" aria-expanded={waitingOrigin === row.tallyKey} onClick={() => toggleWaitingOrders(row.tallyKey)} className="mt-3 min-h-11 rounded-lg border border-sf-line px-3 text-xs font-bold text-sf-body">
-              {waitingOrigin === row.tallyKey ? 'Hide waiting orders' : 'View waiting orders'}
-            </button>
-            {renderWaitingOrders(row.tallyKey, row.itemName)}
-          </article></Fragment>)}
-          {!result.rows.length ? <p className="rounded-lg bg-sf-soft-0 p-3 text-sm text-sf-subtle">No open customer demand on this page.</p> : null}
-        </div>
-        {result.pagination.pageCount > 1 ? <div className="mt-3 flex flex-wrap items-center justify-between gap-3 text-xs text-sf-muted">
-          <span>Page {result.pagination.page} of {result.pagination.pageCount}</span>
-          <div className="flex gap-2">
-            <button type="button" disabled={loading || page <= 1} onClick={() => void load(page - 1)} className="min-h-11 rounded-lg border border-sf-line px-3 font-bold disabled:opacity-40">Previous</button>
-            <button type="button" disabled={loading || !pagination || page >= pagination.pageCount} onClick={() => void load(page + 1)} className="min-h-11 rounded-lg border border-sf-line px-3 font-bold disabled:opacity-40">Next</button>
-          </div>
-        </div> : null}
-      </> : null}
-    </div> : null}
   </section>;
 }

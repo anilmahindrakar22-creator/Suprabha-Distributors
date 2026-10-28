@@ -1,5 +1,5 @@
 import { expect, test, type Page } from '@playwright/test';
-import { orderBootstrap, orderLine, orderSummary } from '../fixtures/api-builders';
+import { orderBootstrap, orderLine, orderSummary, toOrderItem, toOrderResponse } from '../fixtures/api-builders';
 
 // Use the route-mocked workspace and frame hosts from order-opening and work-notifications.
 const customer = { id: '11111111-1111-4111-8111-111111111111', name: 'Test Laboratory', phone: null, city: null, tallyKey: 'LAB' };
@@ -115,7 +115,7 @@ test('blank unit shows units and the Tally hint', async ({ page }) => {
 test('Requirements contributing order opens that order through the frame', async ({ page }) => {
   await page.setViewportSize({ width: 375, height: 812 });
   const { order, queries } = await mockOrders(page);
-  // Same lazy summary / itemKey route pattern as requirements.spec.ts.
+  // Unified To order summary with lazy waiting-order details.
   await page.route('**/api/requirements?*', async (route) => {
     const url = new URL(route.request().url());
     const pagination = { page: 1, pageCount: 1, total: 1 };
@@ -124,12 +124,17 @@ test('Requirements contributing order opens that order through the frame', async
     } else if (url.searchParams.has('itemKey')) {
       await route.fulfill({ json: { orders: [{ orderId: order.id, orderNumber: order.orderNumber, customerName: customer.name, status: 'confirmed', remainingQuantity: 2, priority: 'normal', createdAt: order.createdAt }], pagination } });
     } else {
-      await route.fulfill({ json: { fetchedAt: null, counts: { shortageItems: 1, unknownItems: 0, coveredItems: 0 }, rows: [{ tallyKey: 'GLUCOSE', itemName: 'Glucose', openDemand: 2, currentStock: 0, shortage: 2, state: 'shortage', affectedOrders: 1, priority: 'normal', oldestOrderAt: order.createdAt }], pagination } });
+      expect(url.searchParams.get('view')).toBe('to_order');
+      expect(url.searchParams.get('page')).toBe('1');
+      await route.fulfill({ json: toOrderResponse({ total: 1, waitingCount: 1, items: [
+        toOrderItem({ itemKey: 'GLUCOSE', itemName: 'Glucose', openDemand: 2, closing: 0, reorderLevel: null, suggestedQty: 2, waitingOrders: 1, reasons: ['waiting_orders'], oldestOrderAt: order.createdAt }),
+      ] }) });
     }
   });
   await page.goto('/?view=frame&role=sales');
   await page.getByRole('button', { name: /^requests/i }).click();
-  await page.getByRole('button', { name: 'Customer demand / requirements' }).click();
+  await expect(page.getByRole('heading', { name: 'To order', level: 2, exact: true })).toBeVisible();
+  await expect(page.getByRole('region', { name: 'To order', exact: true }).getByText('1 to order', { exact: true })).toBeVisible();
   await page.getByRole('button', { name: 'View waiting orders' }).click();
   const contributing = page.getByRole('button', { name: `Open order ${order.orderNumber}`, exact: true });
   await expect(contributing).toContainText(`${customer.name} · ${order.orderNumber}`);

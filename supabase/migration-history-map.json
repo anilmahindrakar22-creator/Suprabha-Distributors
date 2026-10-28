@@ -1067,6 +1067,13 @@
       "remoteVersion": "20261028054756",
       "remoteSha256": "998361c4eb704a295545e08b3311eac08f4ba1e5fd26b9d7b0e40ea3adfae0e3",
       "status": "exact_normalized_match"
+    },
+    {
+      "localFile": "20261028090000_to_order_list.sql",
+      "localSha256": "45f90ca5a5be14c7a8a0e170b16b4d659b4b8cff62c15fdaded25ccc1630f4b2",
+      "remoteVersion": null,
+      "remoteSha256": null,
+      "status": "not_deployed"
     }
   ],
   "liveCheck": {

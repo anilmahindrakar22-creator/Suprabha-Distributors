@@ -20,6 +20,9 @@ for (const width of [320, 375, 768, 1280]) {
     await page.setViewportSize({ width, height: 532 });
     await page.route('**/api/staff-auth', route => route.fulfill({ json: { ok: true, renewAfterSeconds: 3000 } }));
     await page.route('**/api/stock', route => route.fulfill({ json: { rows: [], groups: [] } }));
+    await page.route('**/api/requirements?view=to_order&page=1', route => route.fulfill({
+      json: { view: 'to_order', total: 0, waitingCount: 0, unknownCount: 0, page: 1, pageSize: 25, items: [] },
+    }));
     await page.route('**/stockflow.html', route => route.fulfill({ contentType: 'text/html', body: readFileSync('public/stockflow.html', 'utf8') }));
     await page.goto('/?view=staff-frame');
     const header = page.locator('header').first();
@@ -33,7 +36,7 @@ for (const width of [320, 375, 768, 1280]) {
     await expect(frame.getByLabel('Find an item', { exact: true })).toBeInViewport();
     await expect(frame.locator('.mobile-nav')).toHaveCount(0);
     const stockViews = frame.getByRole('navigation', { name: 'Stock views' });
-    for (const [label, view] of [['Daily', 'operations'], ['Insights', 'insights'], ['Groups', 'groups'], ['Reorder list', 'orders']]) {
+    for (const [label, view] of [['Daily', 'operations'], ['Insights', 'insights'], ['Groups', 'groups']]) {
       const button = stockViews.getByRole('button', { name: label, exact: true });
       await button.scrollIntoViewIfNeeded();
       await expect(button).toBeInViewport();

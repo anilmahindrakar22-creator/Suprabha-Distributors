@@ -1,4 +1,5 @@
 import { test, expect } from '@playwright/test';
+import { toOrderItem, toOrderResponse } from '../fixtures/api-builders';
 
 const itemKey = 'Chem & β';
 const emptyAlerts = { windowDays: 7, alerts: [], pagination: { page: 1, pageCount: 1, total: 0 } };
@@ -14,17 +15,17 @@ test('requirements show shortages first with counts and alert coverage', async (
       ], pagination: { page: 1, pageCount: 1, total: 3 } } });
       return;
     }
-    await route.fulfill({ json: { fetchedAt: '2026-10-01T00:00:00Z', counts: { shortageItems: 1, unknownItems: 1, coveredItems: 1 }, rows: [
-      { tallyKey: 'SHORT', itemName: 'Short item', openDemand: 10, currentStock: 7, shortage: 3, state: 'shortage', affectedOrders: 3, priority: 'normal', oldestOrderAt: '2026-09-01T00:00:00Z' },
-      { tallyKey: 'UNKNOWN', itemName: 'Unknown item', openDemand: 5, currentStock: null, shortage: null, state: 'unknown', affectedOrders: 1, priority: 'high', oldestOrderAt: '2026-09-01T00:00:00Z' },
-      { tallyKey: 'COVERED', itemName: 'Covered item', openDemand: 8, currentStock: 8, shortage: 0, state: 'covered', affectedOrders: 2, priority: 'urgent', oldestOrderAt: '2026-09-01T00:00:00Z' },
-    ], pagination: { page: 1, pageCount: 1, total: 3 } } });
+    await route.fulfill({ json: toOrderResponse({ page: 1, total: 3, waitingCount: 1, unknownCount: 1, items: [
+      toOrderItem({ itemKey: 'SHORT', itemName: 'Short item', openDemand: 10, closing: 7, suggestedQty: 3, state: 'order', waitingOrders: 3, oldestOrderAt: '2026-09-01T00:00:00Z' }),
+      toOrderItem({ itemKey: 'UNKNOWN', itemName: 'Unknown item', openDemand: 5, closing: null, suggestedQty: null, state: 'stock_unknown', waitingOrders: 1, oldestOrderAt: '2026-09-01T00:00:00Z' }),
+      toOrderItem({ itemKey: 'COVERED', itemName: 'Covered item', openDemand: 8, closing: 8, suggestedQty: 0, state: 'order', waitingOrders: 2, oldestOrderAt: '2026-09-01T00:00:00Z' }),
+    ] }) });
   });
   await page.goto('/?view=requirements');
-  await page.getByRole('button', { name: 'Customer demand / requirements' }).click();
-  const section = page.getByRole('region', { name: 'Customer demand and requirements' });
-  await expect(section.getByText('Need to order: 1 · Stock unknown: 1 · Covered by stock: 1')).toBeVisible();
-  await expect(section.locator('h2')).toHaveText(['New stock for waiting orders (3)', 'Need to order', 'Stock unknown, check Tally', 'Covered by current stock']);
+  const section = page.getByRole('region', { name: 'To order' });
+  await expect(section.getByText('3 to order', { exact: true })).toBeVisible();
+  await expect(section.getByText('1 stock unknown', { exact: true })).toBeVisible();
+  await expect(section.locator('h2')).toHaveText(['To order', 'New stock for waiting orders (3)']);
   await expect(section.getByText('Tally now shows 7 · enough for 2 of 3 waiting orders')).toBeVisible();
   await expect(section.getByText('Tally now shows 8 · enough for both waiting orders')).toBeVisible();
   await expect(section.getByText('current stock unknown', { exact: true })).toBeVisible();
@@ -39,12 +40,11 @@ for (const invalid of ['counts', 'state'] as const) {
   test(`invalid requirement ${invalid} fails visibly`, async ({ page }) => {
     await page.route('**/api/requirements?*', async (route) => {
       if (new URL(route.request().url()).searchParams.has('alerts')) { await route.fulfill({ json: emptyAlerts }); return; }
-      await route.fulfill({ json: { fetchedAt: null, counts: { shortageItems: invalid === 'counts' ? -1 : 1, unknownItems: 0, coveredItems: 0 }, rows: [
-        { tallyKey: 'BAD', itemName: 'Invalid requirement', openDemand: 5, currentStock: 2, shortage: 3, state: invalid === 'state' ? 'invalid' : 'shortage', affectedOrders: 1, priority: 'normal', oldestOrderAt: '2026-09-01T00:00:00Z' },
-      ], pagination: { page: 1, pageCount: 1, total: 1 } } });
+      await route.fulfill({ json: toOrderResponse({ page: 1, total: 1, waitingCount: invalid === 'counts' ? -1 : 1, unknownCount: 0, items: [
+        toOrderItem({ itemKey: 'BAD', itemName: 'Invalid requirement', openDemand: 5, closing: 2, suggestedQty: 3, state: (invalid === 'state' ? 'invalid' : 'order') as 'order', waitingOrders: 1, oldestOrderAt: '2026-09-01T00:00:00Z' }),
+      ] }) });
     });
     await page.goto('/?view=requirements');
-    await page.getByRole('button', { name: 'Customer demand / requirements' }).click();
     await expect(page.getByRole('alert')).toContainText('incomplete');
     await expect(page.getByRole('heading', { name: 'Invalid requirement' })).toHaveCount(0);
   });
@@ -65,13 +65,12 @@ test('waiting orders load only on request, encode the exact key and paginate', a
     }
     summaryReads += 1;
     const number = Number(url.searchParams.get('page'));
-    await route.fulfill({ json: { fetchedAt: '2026-10-01T00:00:00Z', counts: { shortageItems: 0, unknownItems: 1, coveredItems: 0 }, rows: [{ tallyKey: itemKey, itemName: 'Demand reagent', openDemand: 13, currentStock: null, shortage: null, state: 'unknown', affectedOrders: 2, priority: 'high', oldestOrderAt: '2026-09-01T00:00:00Z' }], pagination: { page: number, pageCount: 1, total: 1 } } });
+    await route.fulfill({ json: toOrderResponse({ page: number, total: 1, waitingCount: 0, unknownCount: 1, items: [toOrderItem({ itemKey: itemKey, itemName: 'Demand reagent', openDemand: 13, closing: null, suggestedQty: null, state: 'stock_unknown', waitingOrders: 2, oldestOrderAt: '2026-09-01T00:00:00Z' })] }) });
   });
   await page.goto('/?view=requirements');
-  expect(summaryReads).toBe(0);
   expect(waitingPages).toEqual([]);
-  await page.getByRole('button', { name: 'Customer demand / requirements' }).click();
   await expect(page.getByText('Demand reagent')).toBeVisible();
+  expect(summaryReads).toBe(1);
   expect(waitingPages).toEqual([]);
   await page.getByRole('button', { name: 'View waiting orders' }).click();
   await expect(page.getByText('Customer 1 · SO-1')).toBeVisible();
@@ -90,10 +89,9 @@ test('invalid or failed waiting order responses are visible without fabricated f
       await route.fulfill({ status: 503, json: { error: 'Waiting orders unavailable.' } });
       return;
     }
-    await route.fulfill({ json: { fetchedAt: null, counts: { shortageItems: 0, unknownItems: 1, coveredItems: 0 }, rows: [{ tallyKey: itemKey, itemName: 'Demand reagent', openDemand: 13, currentStock: null, shortage: null, state: 'unknown', affectedOrders: 2, priority: 'high', oldestOrderAt: '2026-09-01T00:00:00Z' }], pagination: { page: 1, pageCount: 1, total: 1 } } });
+    await route.fulfill({ json: toOrderResponse({ page: 1, total: 1, waitingCount: 0, unknownCount: 1, items: [toOrderItem({ itemKey: itemKey, itemName: 'Demand reagent', openDemand: 13, closing: null, suggestedQty: null, state: 'stock_unknown', waitingOrders: 2, oldestOrderAt: '2026-09-01T00:00:00Z' })] }) });
   });
   await page.goto('/?view=requirements');
-  await page.getByRole('button', { name: 'Customer demand / requirements' }).click();
   await page.getByRole('button', { name: 'View waiting orders' }).click();
   await expect(page.getByRole('alert')).toContainText('Waiting orders unavailable.');
   await expect(page.getByText(/Customer 1|SO-1|Remaining:/)).toHaveCount(0);
@@ -107,43 +105,39 @@ test('malformed waiting order quantities fail visibly', async ({ page }) => {
       await route.fulfill({ json: { orders: [{ orderId: 'order-1', orderNumber: 'SO-1', customerName: 'Customer', status: 'Open', remainingQuantity: 'unknown', priority: 'high', createdAt: '2026-09-01T00:00:00Z' }], pagination: { page: 1, pageCount: 1, total: 1 } } });
       return;
     }
-    await route.fulfill({ json: { fetchedAt: null, counts: { shortageItems: 0, unknownItems: 1, coveredItems: 0 }, rows: [{ tallyKey: itemKey, itemName: 'Demand reagent', openDemand: 13, currentStock: null, shortage: null, state: 'unknown', affectedOrders: 2, priority: 'high', oldestOrderAt: '2026-09-01T00:00:00Z' }], pagination: { page: 1, pageCount: 1, total: 1 } } });
+    await route.fulfill({ json: toOrderResponse({ page: 1, total: 1, waitingCount: 0, unknownCount: 1, items: [toOrderItem({ itemKey: itemKey, itemName: 'Demand reagent', openDemand: 13, closing: null, suggestedQty: null, state: 'stock_unknown', waitingOrders: 2, oldestOrderAt: '2026-09-01T00:00:00Z' })] }) });
   });
   await page.goto('/?view=requirements');
-  await page.getByRole('button', { name: 'Customer demand / requirements' }).click();
   await page.getByRole('button', { name: 'View waiting orders' }).click();
   await expect(page.getByRole('alert')).toContainText('incomplete');
   await expect(page.getByText('Customer · SO-1')).toHaveCount(0);
 });
 
-test('customer requirements load lazily, keep unknown stock explicit and paginate', async ({ page }) => {
+test('to order loads immediately, keeps unknown stock explicit and appends pages', async ({ page }) => {
   let reads = 0;
   await page.route('**/api/requirements?*', async (route) => {
     const url = new URL(route.request().url());
     if (url.searchParams.has('alerts')) { await route.fulfill({ json: emptyAlerts }); return; }
     reads += 1;
     const number = Number(url.searchParams.get('page'));
-    await route.fulfill({ json: { fetchedAt: '2026-10-01T00:00:00Z', counts: { shortageItems: 25, unknownItems: 1, coveredItems: 0 }, rows: [{ tallyKey: `DEMAND-${number}`, itemName: `Demand reagent ${number}`, openDemand: 13, currentStock: number === 1 ? 4 : null, shortage: number === 1 ? 9 : null, state: number === 1 ? 'shortage' : 'unknown', affectedOrders: 2, priority: 'high', oldestOrderAt: '2026-09-01T00:00:00Z' }], pagination: { page: number, pageCount: 2, total: 26 } } });
+    await route.fulfill({ json: toOrderResponse({ page: number, total: 2, waitingCount: 25, unknownCount: 1, items: [toOrderItem({ itemKey: `DEMAND-${number}`, itemName: `Demand reagent ${number}`, openDemand: 13, closing: number === 1 ? 4 : null, suggestedQty: number === 1 ? 9 : null, state: number === 1 ? 'order' : 'stock_unknown', waitingOrders: 2, oldestOrderAt: '2026-09-01T00:00:00Z' })] }) });
   });
   await page.goto('/?view=requirements');
-  expect(reads).toBe(0);
-  await page.getByRole('button', { name: 'Customer demand / requirements' }).click();
   await expect(page.getByText('Demand reagent 1')).toBeVisible();
-  await page.getByRole('button', { name: 'Next', exact: true }).last().click();
+  await page.getByRole('button', { name: 'Load more', exact: true }).click();
   await expect(page.getByText('Demand reagent 2')).toBeVisible();
-  await expect(page.getByText('Unknown · review')).toHaveCount(2);
+  await expect(page.getByText('Stock unknown, check Tally', { exact: true })).toBeVisible();
+  await expect(page.getByText('Demand reagent 1')).toBeVisible();
   await expect(page.getByText('No new stock for waiting orders in the last 7 days.')).toBeVisible();
-  await expect(page.getByText('Page 2 of 2')).toBeVisible();
   expect(reads).toBe(2);
 });
 
 test('incomplete quantities fail visibly instead of inventing zero stock', async ({ page }) => {
   await page.route('**/api/requirements?*', async (route) => {
     if (new URL(route.request().url()).searchParams.has('alerts')) { await route.fulfill({ json: emptyAlerts }); return; }
-    await route.fulfill({ json: { counts: { shortageItems: 1, unknownItems: 0, coveredItems: 0 }, rows: [{ tallyKey: 'BAD', itemName: 'Bad data', state: 'shortage' }], pagination: { page: 1, pageCount: 1, total: 1 } } });
+    await route.fulfill({ json: toOrderResponse({ page: 1, total: 1, waitingCount: 1, unknownCount: 0, items: [{ itemKey: 'BAD', itemName: 'Bad data', state: 'order' }] as never }) });
   });
   await page.goto('/?view=requirements');
-  await page.getByRole('button', { name: 'Customer demand / requirements' }).click();
   await expect(page.getByRole('alert')).toContainText('incomplete');
   await expect(page.getByRole('heading', { name: 'Bad data' })).toHaveCount(0);
 });
@@ -165,17 +159,15 @@ test('stock arrival alerts load with the section and show exact-key waiting orde
       await route.fulfill({ json: { orders: [{ orderId: 'alert-order', orderNumber: 'SO-alert', customerName: 'Alert customer', status: 'Open', remainingQuantity: 4, priority: 'high', createdAt: '2026-09-01T00:00:00Z' }], pagination: { page: 1, pageCount: 1, total: 1 } } });
       return;
     }
-    await route.fulfill({ json: { fetchedAt: null, counts: { shortageItems: 0, unknownItems: 0, coveredItems: 1 }, rows: [{ tallyKey: itemKey, itemName: 'Same demand item', openDemand: 4, currentStock: 7, shortage: 0, state: 'covered', affectedOrders: 1, priority: 'normal', oldestOrderAt: '2026-09-01T00:00:00Z' }], pagination: { page: 1, pageCount: 1, total: 1 } } });
+    await route.fulfill({ json: toOrderResponse({ page: 1, total: 1, waitingCount: 0, unknownCount: 0, items: [toOrderItem({ itemKey: itemKey, itemName: 'Same demand item', openDemand: 4, closing: 7, suggestedQty: 0, state: 'order', waitingOrders: 1, oldestOrderAt: '2026-09-01T00:00:00Z' })] }) });
   });
   await page.goto('/?view=requirements');
-  expect(alertReads).toBe(0);
-  await page.getByRole('button', { name: 'Customer demand / requirements' }).click();
   await expect(page.getByText('Reported reagent')).toBeVisible();
   await expect(page.getByRole('heading', { name: 'New stock for waiting orders (1)' })).toBeVisible();
   await expect(page.getByText('2 → 7 on', { exact: false })).toBeVisible();
   await expect(page.getByText('Tally now shows 7 · enough for 2 of 3 waiting orders')).toBeVisible();
   expect(alertReads).toBe(1);
-  await page.getByRole('button', { name: 'View waiting orders' }).first().click();
+  await page.getByRole('heading', { name: 'Reported reagent' }).locator('..').getByRole('button', { name: 'View waiting orders' }).click();
   await expect(page.getByText('Alert customer · SO-alert')).toBeVisible();
   await expect(page.getByText('Alert customer · SO-alert')).toHaveCount(1);
   expect(new URL(waitingUrl).searchParams.get('itemKey')).toBe(itemKey);
@@ -188,10 +180,9 @@ test('invalid reported stock increases response fails visibly', async ({ page })
       await route.fulfill({ json: { windowDays: 7, alerts: [{ tallyKey: itemKey, itemName: 'Invalid increase', stockBefore: 2, stockAfter: 4, sourceAt: '2026-10-01T00:00:00Z', affectedOrders: 1, currentStock: 4, waitingOrders: 1, waitingQuantity: 5, coveredOrders: -1 }], pagination: { page: 1, pageCount: 1, total: 1 } } });
       return;
     }
-    await route.fulfill({ json: { fetchedAt: null, counts: { shortageItems: 0, unknownItems: 0, coveredItems: 0 }, rows: [], pagination: { page: 1, pageCount: 1, total: 0 } } });
+    await route.fulfill({ json: toOrderResponse({ page: 1, total: 0, waitingCount: 0, unknownCount: 0, items: [] }) });
   });
   await page.goto('/?view=requirements');
-  await page.getByRole('button', { name: 'Customer demand / requirements' }).click();
   await expect(page.getByRole('alert')).toContainText('incomplete');
   await expect(page.getByRole('heading', { name: 'Invalid increase' })).toHaveCount(0);
 });
@@ -203,9 +194,8 @@ test('reported stock increase endpoint errors are visible', async ({ page }) => 
       await route.fulfill({ status: 503, json: { error: 'Stock increase alerts unavailable.' } });
       return;
     }
-    await route.fulfill({ json: { fetchedAt: null, counts: { shortageItems: 0, unknownItems: 0, coveredItems: 0 }, rows: [], pagination: { page: 1, pageCount: 1, total: 0 } } });
+    await route.fulfill({ json: toOrderResponse({ page: 1, total: 0, waitingCount: 0, unknownCount: 0, items: [] }) });
   });
   await page.goto('/?view=requirements');
-  await page.getByRole('button', { name: 'Customer demand / requirements' }).click();
   await expect(page.getByRole('alert')).toContainText('Stock increase alerts unavailable.');
 });
