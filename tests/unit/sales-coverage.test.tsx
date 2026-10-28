@@ -69,7 +69,8 @@ describe('sales coverage card', () => {
     expect(html).toContain('<details');
     expect(html).toContain('Missing ledger · 30 Oct, 10:14 pm · source-1');
     expect(html).toContain('Missing party · 30 Oct, 10:14 pm · source-2');
-    expect(html).toContain('Economics results paused since 30 Oct, 10:14 pm: Sales review required');
+    expect(html).toContain('Economics results paused since 30 Oct, 10:14 pm. Figures shown are from before the pause.');
+    expect(html).toContain('title="Sales review required"');
   });
   it('shows the absence of any complete window and both years across a year boundary', () => {
     expect(renderToStaticMarkup(<SalesCoverageContents coverage={{ ...example, complete: false, coveredFrom: null, coveredTo: null, importedAt: null, sourceVersion: null }} />)).toContain('No complete sales window yet');

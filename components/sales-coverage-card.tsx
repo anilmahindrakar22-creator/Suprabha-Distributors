@@ -55,7 +55,7 @@ export function SalesCoverageContents({ coverage }: { coverage: SalesCoverage })
       <summary className="cursor-pointer font-semibold">Blocking items ({coverage.blockingCount})</summary>
       <ul className="mt-2 space-y-2">{coverage.blockingItems.slice(0, 20).map((item, index) => <li key={`${item.sourceId}:${index}`}>{item.reason} · {timestamp(item.recordedAt)} · {item.sourceId}</li>)}</ul>
     </details> : null}
-    {coverage.rebuild.state === 'paused' ? <output className="block text-sf-warning">Economics results paused since {timestamp(coverage.rebuild.since!)}: {coverage.rebuild.reason}</output> : null}
+    {coverage.rebuild.state === 'paused' ? <output title={coverage.rebuild.reason ?? undefined} className="block text-sf-warning">Economics results paused since {timestamp(coverage.rebuild.since!)}. Figures shown are from before the pause.</output> : null}
     <dl className="space-y-3">{coverage.months.map(row => <div key={row.month} className="min-w-0 sm:flex sm:gap-4">
       <dt className="font-semibold sm:w-20 sm:shrink-0">{monthYear.format(new Date(`${row.month}-01T00:00:00Z`))}</dt>
       <dd className={row.state === 'matches' ? 'text-sf-success' : row.state === 'differs' ? 'text-sf-warning' : 'text-sf-muted'}>

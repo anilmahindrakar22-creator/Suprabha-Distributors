@@ -49,7 +49,7 @@ for (const width of [375, 1280]) {
     });
     test('rebuild paused warning', async ({ page }) => {
       await mockCoverage(page, { ...example, rebuild: { state: 'paused', since: example.importedAt, reason: 'Sales review required' } });
-      await expect(page.getByRole('region', { name: 'Sales coverage', exact: true }).getByRole('status')).toHaveText('Economics results paused since 30 Oct, 10:14 pm: Sales review required');
+      await expect(page.getByRole('region', { name: 'Sales coverage', exact: true }).getByRole('status')).toHaveText('Economics results paused since 30 Oct, 10:14 pm. Figures shown are from before the pause.');
     });
     for (const role of ['sales', 'operations']) {
       test(`${role} cannot see the card`, async ({ page }) => {
