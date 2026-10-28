@@ -9,6 +9,21 @@ const original = JSON.parse(readFileSync(new URL('../../supabase/migration-histo
 const source = new Map(readdirSync(fileURLToPath(directory)).filter((name) => name.endsWith('.sql')).map((name) => [name, readFileSync(new URL(name, directory), 'utf8')]));
 
 describe('read-only pricing release preflight', () => {
+  it('patches exactly the live sales import and keeps unit fixtures on real gateways', () => {
+    const migration = source.get('20261026150000_rate_check_units.sql')!;
+    const anchor = migration.split('$anchor$')[1];
+    const importer = source.get('20260921110000_observable_pricing_evidence_import.sql')!.replace(/\r/g, '');
+    expect(importer.split(anchor).length - 1).toBe(1);
+    expect(migration).toContain("pg_get_functiondef('private.stockflow_import_tally_pricing_evidence()'::regprocedure)");
+    expect(migration).toContain("nullif(btrim(entry->>'unit'),'')");
+    const fixture = readFileSync(new URL('../../supabase/tests/rate_check_units.sql', import.meta.url), 'utf8');
+    expect(fixture).not.toMatch(/(?:insert\s+into|update)\s+private\.stockflow_(?:orders|order_lines|order_pricing_decisions|billing_snapshots|order_tally_invoices)\b/i);
+    expect(fixture).not.toMatch(/is\s+distinct\s+from\s+case\b/i);
+    expect(fixture.trimEnd()).toMatch(/rollback;$/);
+    for (const action of ['create_order', 'apply_governed_order_pricing', 'transition_order', 'get_order_pricing']) {
+      expect(fixture).toContain(`'${action}'`);
+    }
+  });
   it('keeps push fixtures on real order gateways and valid member/state literals', () => {
     const fixture = readFileSync(new URL('../../supabase/tests/push_alerts.sql', import.meta.url), 'utf8');
     expect(fixture).not.toMatch(/insert\s+into\s+private\.stockflow_(?:orders|order_events|order_lines|billing_snapshots)\b/i);
@@ -62,7 +77,7 @@ describe('read-only pricing release preflight', () => {
   });
   it('validates the saved production evidence after deployment', () => {
     const result = pricingReleasePreflight(original, source);
-    expect(result.pending).toEqual([]);
+    expect(result.pending).toEqual(['20261026150000_rate_check_units.sql']);
     expect(result.deployed.at(-1)?.localFile).toBe('20261026140000_push_alerts.sql');
     expect(result.deployed).toHaveLength(146);
     const names = result.deployed.map((entry: { localFile: string }) => entry.localFile);
@@ -77,7 +92,7 @@ describe('read-only pricing release preflight', () => {
   });
   it('accepts documented CRLF normalization without modifying source', () => {
     const crlf = new Map([...source].map(([name, sql]) => [name, sql.replace(/\r/g, '').replace(/\n/g, '\r\n')]));
-    expect(pricingReleasePreflight(original, crlf).pending).toHaveLength(0);
+    expect(pricingReleasePreflight(original, crlf).pending).toHaveLength(1);
   });
   it('rejects changed SQL including changes inside literals', () => {
     const files = new Map(source);

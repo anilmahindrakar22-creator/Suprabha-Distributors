@@ -1,4 +1,6 @@
 import { expect, test, type Locator, type Page } from '@playwright/test';
+import { orderBootstrap, orderLine, orderSummary } from '../fixtures/api-builders';
+import type { OrderSummary } from '../../lib/order-types';
 
 async function advanceToNextCheck(page: Page, bell: Locator, expectedName: string) {
   // After each fake-clock step, give in-flight requests a short real-time window to land before the clock moves
@@ -14,18 +16,18 @@ async function advanceToNextCheck(page: Page, bell: Locator, expectedName: strin
 }
 
 const now = () => new Date().toISOString();
-const order = (id: string, number: string, customer: string, status: string) => ({
+const order = (id: string, number: string, customer: string, status: string) => orderSummary({
   id, orderNumber: number, customerName: customer, customerPhone: null, status, source: 'phone', notes: null, version: 1,
   createdAt: now(), updatedAt: now(), lineCount: 1, totalQuantity: 2, reservedQuantity: 0, tallyInvoiceNumber: null, pricingState: 'approved',
-  lines: [{ tallyKey: 'G', itemName: 'Glucose', itemGroup: 'Diasys', quantity: 2, baseUnit: 'Nos', fulfilledQuantity: 2 }], events: [], exceptions: [], installations: [],
+  lines: [orderLine({ tallyKey: 'G', itemName: 'Glucose', itemGroup: 'Diasys', quantity: 2, baseUnit: 'Nos', fulfilledQuantity: 2 })], events: [], exceptions: [], installations: [],
 });
 const waiting = order('11111111-1111-4111-8111-111111111111', 'SF-26-1001', 'Apollo Clinic Lab', 'awaiting_tally_billing');
 const packedNow = order('22222222-2222-4222-8222-222222222222', 'SF-26-1043', 'Care Hospital', 'awaiting_tally_billing');
 
-async function mockAccounts(page: Page, billing: () => unknown[]) {
+async function mockAccounts(page: Page, billing: () => OrderSummary[]) {
   await page.route('**/api/orders**', (route) => {
     const url = new URL(route.request().url());
-    const list = (orders: unknown[]) => ({ actor: { email: 'staff@example.test', role: 'accounts', roles: ['accounts'] }, snapshot: { company: 'T', fetchedAt: now(), catalog: [] }, customers: [], operations: {}, orders, pagination: { total: orders.length, page: 1, pageCount: 1, pageSize: 20 } });
+    const list = (orders: OrderSummary[]) => orderBootstrap({ actor: { email: 'staff@example.test', role: 'accounts', roles: ['accounts'] }, snapshot: { company: 'T', fetchedAt: now(), catalog: [] }, customers: [], operations: {}, orders, pagination: { total: orders.length, page: 1, pageCount: 1, pageSize: 20 } });
     if (url.searchParams.get('summary') === '1') return route.fulfill({ json: { operations: { awaitingTallyBilling: billing().length } } });
     if (url.searchParams.get('status') === 'billing') return route.fulfill({ json: list(billing()) });
     if (url.searchParams.get('status') === 'packed') return route.fulfill({ json: list([]) });

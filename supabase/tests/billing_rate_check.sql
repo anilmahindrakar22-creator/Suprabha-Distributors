@@ -18,7 +18,7 @@ declare
   customer uuid; o uuid; line_a uuid; line_b uuid; snapshot uuid; incomplete_snapshot uuid;
   result jsonb; item jsonb; delegated jsonb; payload jsonb;
   keys text[]; a text; expected_checked integer;
-  limitations constant jsonb := '["Units are not compared", "Items removed from a Tally invoice, or deleted vouchers, keep their last synced rates"]'::jsonb;
+  limitations constant jsonb := '["Items removed from a Tally invoice, or deleted vouchers, keep their last synced rates"]'::jsonb;
 begin
   insert into private.stockflow_customers(name,tally_key,created_by_email)
     values('Rate Check Lab','rate-check-lab','test') returning id into customer;
@@ -88,7 +88,7 @@ begin
   end if;
   for item in select value from jsonb_array_elements(result->'lines') loop
     select array_agg(k order by k) into keys from jsonb_object_keys(item) k;
-    if keys is distinct from array['approvedRate','difference','invoiceRates','itemName','lineId','state','tallyKey'] then
+    if keys is distinct from array['approvedRate','difference','invoiceRates','invoiceUnits','itemName','lineId','orderUnit','state','tallyKey'] then
       raise exception 'Unexpected rate line keys: %', keys;
     end if;
   end loop;

@@ -1,11 +1,12 @@
 import { expect, test } from '@playwright/test';
+import { orderBootstrap } from '../fixtures/api-builders';
 import { readFileSync } from 'node:fs';
 
 test('phone frame stays pinned while embedded stock views scroll and resize', async ({ page }, testInfo) => {
   await page.setViewportSize({ width: 375, height: 532 });
   await page.route('**/api/staff-auth', route => route.fulfill({ json: { ok: true, renewAfterSeconds: 3000 } }));
   await page.route('**/api/stock**', route => route.fulfill({ json: { rows: [], groups: [] } }));
-  await page.route('**/api/orders**', route => route.fulfill({ json: { operations: {} } }));
+  await page.route('**/api/orders**', route => route.fulfill({ json: orderBootstrap({ orders: [], operations: {} }) }));
   await page.route('**/stockflow.html', route => route.fulfill({ contentType: 'text/html', body: readFileSync('public/stockflow.html', 'utf8') }));
 
   await page.goto('/?view=staff-frame');

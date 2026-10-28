@@ -1,4 +1,5 @@
 import { test, expect } from '@playwright/test';
+import { priceContract } from '../fixtures/api-builders';
 
 test('missing customer pricing exposes the agreed-rate input without guessing a price', async ({ page }) => {
   await page.goto('/?view=order&noHistory=1');
@@ -86,7 +87,7 @@ for (const status of [401, 403]) {
     await page.route('**/api/orders?customers=1', route => route.fulfill({ json: { customers: [] } }));
     await page.route('**/api/pricing**', route => route.fulfill(denied
       ? { status, json: { error: 'Pricing access is restricted' } }
-      : { json: route.request().url().includes('policies=1') ? { policies: [] } : { contracts: [{ id: customerId, customerId, customerName: 'Test Laboratory', tallyKey: 'GLUCOSE', price: 445, validFrom: '2026-01-01', status: 'pending_approval', source: 'customer_contract', reason: 'Test', version: 1 }] } }));
+      : { json: route.request().url().includes('policies=1') ? { policies: [] } : { contracts: [priceContract({ id: customerId, customerId, customerName: 'Test Laboratory', tallyKey: 'GLUCOSE', price: 445, validFrom: '2026-01-01', status: 'pending_approval', source: 'customer_contract', reason: 'Test', version: 1 })] } }));
     await page.goto('/?view=workspace');
     await expect(page.getByText('GLUCOSE · ₹445.00').first()).toBeVisible();
     denied = true;
@@ -169,7 +170,7 @@ for (const action of ['approve_price_contract', 'reject_price_contract', 'create
     await page.route('**/api/pricing**', async route => {
       if (route.request().method() === 'POST') { commands.push(route.request().postDataJSON()); await route.abort('failed'); }
       else if (route.request().url().includes('recoveryKey=')) await route.fulfill({ json: { status: recoveryStatus } });
-      else await route.fulfill({ json: route.request().url().includes('policies=1') ? { policies: [] } : { contracts: [{ id: customerId, customerId, customerName: 'Test Laboratory', tallyKey: 'GLUCOSE', price: 445, validFrom: '2026-01-01', status: 'pending_approval', source: 'customer_contract', reason: 'Test', version: 1 }] } });
+      else await route.fulfill({ json: route.request().url().includes('policies=1') ? { policies: [] } : { contracts: [priceContract({ id: customerId, customerId, customerName: 'Test Laboratory', tallyKey: 'GLUCOSE', price: 445, validFrom: '2026-01-01', status: 'pending_approval', source: 'customer_contract', reason: 'Test', version: 1 })] } });
     });
     await page.goto('/?view=workspace');
     let buttonName: string;

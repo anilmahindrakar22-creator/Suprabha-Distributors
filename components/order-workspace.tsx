@@ -35,8 +35,8 @@ import { readJsonBody } from '@/lib/http-json';
 import { orderDateLabel, orderDateTime } from '@/lib/order-date';
 import { PriceApprovalCard } from './price-approval-card';
 import { BillingSheetPanel } from './billing-sheet-panel';
-import { RateCheckPanel } from './rate-check-panel';
-import { RATE_CHECK_ROLES, RATE_CHECK_STATUSES } from '@/lib/rate-check';
+import { RateCheckPanel, useRateCheck } from './rate-check-panel';
+import { rateCheckBadge, RATE_CHECK_ROLES, RATE_CHECK_STATUSES } from '@/lib/rate-check';
 import { BILLING_ROLES, BILLING_STATUSES } from '@/lib/billing-sheet';
 import { courierChoices, defaultReceiver, isLocalDelivery, istToday, LOCAL_DELIVERY, type DispatchMode } from '@/lib/dispatch-options';
 import { hasAnyStockFlowRole, type StockFlowRole } from '@/lib/user-types';
@@ -950,6 +950,9 @@ function OrderRow({
   inOrderPage?: boolean;
 }) {
   const roles = actorRoles ?? [actorRole as StockFlowRole];
+  const rateCheckEnabled = Boolean(order.tallyInvoiceNumber) && (RATE_CHECK_STATUSES as readonly string[]).includes(order.status) && hasAnyStockFlowRole(roles, [...RATE_CHECK_ROLES]);
+  // OrderRow mounts only for the selected desktop order or the open mobile dialog.
+  const rateCheck = useRateCheck(order.id, rateCheckEnabled);
   const [busy, setBusy] = useState(false);
   const [cancelling, setCancelling] = useState(false);
   const [cancelReason, setCancelReason] = useState('');
@@ -1000,6 +1003,7 @@ function OrderRow({
           {deliveryReminder ? <span className={`inline-flex items-center gap-1 rounded-full px-2.5 py-1 text-[11px] font-extrabold ${deliveryReminder === 'overdue' ? 'bg-sf-danger-soft text-sf-danger' : deliveryReminder === 'today' ? 'bg-sf-warning-soft text-sf-warning' : 'bg-sf-info-soft text-sf-info'}`}><Truck aria-hidden="true" className="shrink-0" size={12} />{deliveryReminder === 'overdue' ? 'Delivery overdue' : deliveryReminder === 'today' ? 'Delivery due today' : 'Delivery due soon'}</span> : null}
           {followUpReminder ? <span className={`inline-flex items-center gap-1 rounded-full px-2.5 py-1 text-[11px] font-extrabold ${followUpReminder === 'overdue' ? 'bg-sf-danger-soft text-sf-danger' : followUpReminder === 'today' ? 'bg-sf-warning-soft text-sf-warning' : 'bg-sf-info-soft text-sf-info'}`}><PhoneCall aria-hidden="true" className="shrink-0" size={12} />{followUpReminder === 'overdue' ? 'Follow-up overdue' : followUpReminder === 'today' ? 'Follow-up today' : `Follow-up ${order.followUpDate}`}</span> : null}
           {lineMatch.state === 'mismatch' ? <span className="inline-flex items-center gap-1 rounded-full bg-sf-danger-soft px-2.5 py-1 text-[11px] font-extrabold text-sf-danger"><ReceiptText aria-hidden="true" className="shrink-0" size={12} />Billing mismatch</span> : null}
+          {rateCheckBadge(rateCheck.check) ? <span className="inline-flex items-center gap-1 rounded-full bg-sf-danger-soft px-2.5 py-1 text-[11px] font-extrabold text-sf-danger"><ReceiptText aria-hidden="true" className="shrink-0" size={12} />Rate differs</span> : null}
           <span className={`inline-flex items-center gap-1 rounded-full px-2.5 py-1 text-[11px] font-extrabold ${order.pricingState === 'approved' ? 'bg-sf-success-soft text-sf-success' : order.pricingState === 'approval_required' ? 'bg-sf-warning-soft text-sf-warning' : 'bg-sf-soft text-sf-muted'}`}>{order.pricingState === 'approved' ? <ShieldCheck aria-hidden="true" className="shrink-0" size={12} /> : order.pricingState === 'approval_required' ? <ShieldAlert aria-hidden="true" className="shrink-0" size={12} /> : <ShieldQuestionMark aria-hidden="true" className="shrink-0" size={12} />}Pricing: {order.pricingState === 'approved' ? 'verified' : order.pricingState === 'approval_required' ? 'approval required' : 'review required'}</span>
         </div>
         {inOrderPage ? null : <p className="mt-2 font-bold text-sf-strong">{order.customerName}</p>}
@@ -1053,7 +1057,7 @@ function OrderRow({
           </dl>
         </div>
           {lineMatch.state === 'mismatch' ? <div className="mt-3 rounded-xl border border-sf-danger-line bg-sf-danger-soft p-3"><p className="text-xs font-extrabold uppercase tracking-wide text-sf-danger">Tally invoice differences</p><ul className="mt-2 space-y-1 text-sm text-sf-danger">{lineMatch.differences.map((difference) => <li key={difference.itemName}>{difference.itemName}: {lineMatch.quantitySource === 'packed' ? 'packed' : 'ordered'} {formatQuantity(difference.expectedQuantity)}, invoiced {formatQuantity(difference.invoicedQuantity)}</li>)}</ul><BillingReviewPanel order={order} actorRole={actorRole} actorRoles={roles} onSave={onBillingReview} /></div> : null}
-        {order.tallyInvoiceNumber && (RATE_CHECK_STATUSES as readonly string[]).includes(order.status) && hasAnyStockFlowRole(roles, [...RATE_CHECK_ROLES]) ? <RateCheckPanel orderId={order.id} /> : null}
+        {rateCheckEnabled ? <RateCheckPanel orderId={order.id} state={rateCheck} /> : null}
         {!['cancelled', 'delivered'].includes(order.status) ? <FulfilmentEditor order={order} onSave={onSaveFulfilment} /> : null}
         {['ready_for_dispatch', 'dispatched', 'delivered'].includes(order.status) ? <DispatchPanel key={order.status} order={order} actorRole={actorRole} actorRoles={roles} onSave={onDelivery} /> : null}
         {['phone_order_received','awaiting_confirmation','awaiting_approval','confirmed','partially_reserved','fully_reserved','ready_for_picking','picked','packed'].includes(order.status) ? <OrderEditPanel order={order} onSave={onEdit} /> : null}

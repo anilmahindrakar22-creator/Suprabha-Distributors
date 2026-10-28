@@ -6,8 +6,10 @@ export type RateCheckLine = {
   itemName: string;
   approvedRate: number | null;
   invoiceRates: number[];
+  invoiceUnits?: string[];
+  orderUnit?: string | null;
   difference: number | null;
-  state: 'matches' | 'different' | 'missing_on_invoice' | 'not_on_order' | 'no_approved_rate';
+  state: 'matches' | 'different' | 'unit_differs' | 'missing_on_invoice' | 'not_on_order' | 'no_approved_rate';
 };
 
 export type RateCheck = {
@@ -28,6 +30,10 @@ export const RATE_CHECK_ROLES = ['administrator', 'management', 'accounts'] as c
 export const RATE_EXCEPTION_ROLES = ['administrator', 'management'] as const;
 export const RATE_CHECK_STATUSES = ['billed_in_tally', 'ready_for_dispatch', 'dispatched', 'delivered'] as const;
 
+export function rateCheckBadge(check: RateCheck | null): string | null {
+  return check?.state === 'different' ? 'Rate differs' : null;
+}
+
 export function rateCheckSummary(check: RateCheck): string {
   switch (check.state) {
     case 'matches': return 'Tally rates match the approved price (within ₹1)';
@@ -43,6 +49,10 @@ export function rateCheckSummary(check: RateCheck): string {
 
 export function rateLineLabel(line: RateCheckLine): string {
   switch (line.state) {
+    case 'unit_differs': {
+      const units = line.invoiceUnits ?? [];
+      return units.length ? `Billed per ${units.join(' / ')}, order is per ${line.orderUnit ?? 'unit'}: check the unit` : 'Billed in a different unit';
+    }
     case 'different': {
       const d = line.difference ?? 0;
       return `Billed ${formatRupees(Math.abs(d))} ${d < 0 ? 'lower' : 'higher'} per unit`;

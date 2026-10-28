@@ -1,17 +1,18 @@
 import { expect, test, type Page } from '@playwright/test';
+import { orderBootstrap, orderLine, orderSummary } from '../fixtures/api-builders';
 
 // Use the route-mocked workspace and frame hosts from order-opening and work-notifications.
 const customer = { id: '11111111-1111-4111-8111-111111111111', name: 'Test Laboratory', phone: null, city: null, tallyKey: 'LAB' };
 const catalog = [{ tallyKey: 'GLUCOSE', item: 'Glucose', group: 'Diasys', baseUnit: 'Nos', closing: 10, active: true }];
 function recentOrder() {
-  return {
+  return orderSummary({
     id: '22222222-2222-4222-8222-222222222222', orderNumber: 'SF-REPEAT-001', customerName: customer.name,
     customerPhone: null, status: 'confirmed', source: 'phone', notes: null, version: 1,
     createdAt: new Date(Date.now() - 86400000).toISOString(), updatedAt: new Date().toISOString(),
     lineCount: 1, totalQuantity: 2, reservedQuantity: 0, tallyInvoiceNumber: null,
-    lines: [{ tallyKey: 'GLUCOSE', itemName: 'Glucose', itemGroup: 'Diasys', quantity: 2, reservedQuantity: 0, baseUnit: 'Nos' }],
+    lines: [orderLine({ tallyKey: 'GLUCOSE', itemName: 'Glucose', itemGroup: 'Diasys', quantity: 2, reservedQuantity: 0, baseUnit: 'Nos' })],
     events: [], exceptions: [], installations: [],
-  };
+  });
 }
 
 async function mockOrders(page: Page, baseUnit = 'Nos') {
@@ -26,12 +27,13 @@ async function mockOrders(page: Page, baseUnit = 'Nos') {
       return;
     }
     queries.push(url.searchParams.get('query') || '');
-    await route.fulfill({ json: {
+    await route.fulfill({ json: { ...orderBootstrap({
       actor: { email: 'order-desk@example.test', role: 'sales', roles: ['sales'] },
       snapshot: { company: 'TEST', fetchedAt: new Date().toISOString(), catalogVersion: 'clarity', catalog: catalog.map((item) => ({ ...item, baseUnit })) },
-      catalogVersion: 'clarity', catalog: catalog.map((item) => ({ ...item, baseUnit })),
       customerVersion: 'clarity', customers: [customer], orders: [order], operations: {},
       pagination: { total: 1, page: 1, pageCount: 1, pageSize: 20 },
+    }),
+      catalogVersion: 'clarity', catalog: catalog.map((item) => ({ ...item, baseUnit })),
       exceptions: [], installations: [], events: [],
     } });
   });
