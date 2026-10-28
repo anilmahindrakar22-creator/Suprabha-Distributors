@@ -8,6 +8,14 @@ const list = read('../../components/order-list.tsx');
 const frame = read('../../components/stockflow-frame.tsx');
 
 describe('order-list density (list-first redesign)', () => {
+  it('shows confirmation pricing help once above the compact new-order lines', () => {
+    const products = workspace.slice(workspace.indexOf('<legend className="px-2 text-sm font-extrabold text-sf-strong">Products</legend>'), workspace.indexOf('<ProductRequest key='));
+    const lines = products.slice(products.indexOf('{lines.map((line) =>'));
+    expect(products).toContain('{lines.length > 0 ? <p className="mb-3 text-xs text-sf-subtle">Pricing is checked at confirmation.</p> : null}');
+    expect(lines).toContain('Quantity for {line.item?.item || line.tallyKey} in {unit}');
+    expect(lines).not.toContain('Pricing is checked at confirmation.');
+  });
+
   it('pins one compact header with search, stage chips and a Filters panel', () => {
     expect(workspace).toContain('sticky top-0 z-20');
     expect(workspace).toContain("<OrderStageChips filters={stageFilters} active={activeStage} onSelect={showQueue} />");
@@ -35,7 +43,7 @@ describe('order-list density (list-first redesign)', () => {
     expect(workspace).not.toContain('aria-label="Order notifications"');
     expect(frame).toContain('<NotificationBell state={work}');
     expect(workspace).toContain('aria-label="Back to orders"');
-    expect(workspace).toContain('<OrderProgress status={openOrder.status} />');
+    expect(workspace).toContain('<OrderProgress status={openOrder.status} challan={');
     expect(list).toContain('min-h-15');
     expect(list).toContain("confirm: { bar: 'bg-sf-stage-confirm'");
     expect(list).toContain("'bg-sf-danger-soft text-sf-danger'");
@@ -75,7 +83,7 @@ describe('order-list density (list-first redesign)', () => {
     expect(workspace).toContain('↑ ↓ to navigate');
     expect(workspace).toContain('orderDateLabel(order.createdAt)');
     expect(workspace).toContain("order.assignedToEmail ? `Owner: ${order.assignedToEmail}` : 'Unassigned'");
-    expect(workspace).toContain('<OrderProgress status={selectedOrder.status} />');
+    expect(workspace).toContain('<OrderProgress status={selectedOrder.status} challan={');
     expect(workspace).toContain('aria-label="Order product preview"');
     expect(workspace).toContain('order.lines.slice(0, 4)');
   });

@@ -188,7 +188,7 @@ test('recent customer products come from Tally bills, independently of StockFlow
   await expect(recent.getByRole('button', { name: 'Add CRP' })).toBeVisible();
   await expect(recent.getByRole('button', { name: 'Add Old item' })).toHaveCount(0);
   await expect(recent.getByRole('button', { name: 'Add Cleaner' })).toHaveCount(0);
-  await expect(recent).toContainText('imported Tally bills');
+  await expect(recent).toContainText(/of last d+ bills/);
   await recent.scrollIntoViewIfNeeded();
   await page.screenshot({ path: testInfo.outputPath('tally-recent-products.png') });
   const quickQuantity = recent.getByRole('spinbutton', { name: 'Recent quantity for Glucose B' });
@@ -235,7 +235,7 @@ test('recent products rank by frequency and default to last quantity', async ({ 
   await expect(recent.getByRole('button', { name: 'Add Cleaner' })).toHaveCount(0);
   await expect(recent.getByRole('spinbutton', { name: 'Recent quantity for Glucose A' })).toHaveValue('6');
   await expect(recent.getByRole('spinbutton', { name: 'Recent quantity for CRP' })).toHaveValue('2');
-  await expect(recent.getByRole('button', { name: 'Add Glucose A' }).locator('..')).toContainText('3 of last 3 imported Tally bills');
+  await expect(recent.getByRole('button', { name: 'Add Glucose A' }).locator('..')).toContainText('3 of last 3 bills');
 });
 
 test('switching back to a customer reuses only that customer’s history', async ({ page }) => {
