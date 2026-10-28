@@ -1,6 +1,6 @@
 'use client';
 
-import { useCallback, useEffect, useEffectEvent, useMemo, useRef, useState, useSyncExternalStore } from 'react';
+import { useCallback, useEffect, useEffectEvent, useLayoutEffect, useMemo, useRef, useState, useSyncExternalStore } from 'react';
 import { ArrowUp, CircleCheck, Clock, Flame, Info, PackageX, PhoneCall, ReceiptText, ShieldAlert, ShieldCheck, ShieldQuestionMark, TriangleAlert, Truck, UserCheck } from 'lucide-react';
 import type {
   CatalogItem,
@@ -40,10 +40,49 @@ import { rateCheckBadge, RATE_CHECK_ROLES, RATE_CHECK_STATUSES } from '@/lib/rat
 import { BILLING_ROLES, BILLING_STATUSES } from '@/lib/billing-sheet';
 import { courierChoices, defaultReceiver, isLocalDelivery, istToday, LOCAL_DELIVERY, type DispatchMode } from '@/lib/dispatch-options';
 import { hasAnyStockFlowRole, type StockFlowRole } from '@/lib/user-types';
-import { canAddOrderNotes, canCreateOrders, canEditOrders, canRecordFulfilment } from '@/lib/order-permissions';
+import { canAddOrderNotes, canBillChallan, canSendOnChallan, canCreateOrders, canEditOrders, canManageDeliveryExceptions, canManageInstallations, canRecordFulfilment } from '@/lib/order-permissions';
 import type { TallyRecentProducts } from '@/lib/tally-recent-products';
 
 type DraftLine = { tallyKey: string; item: CatalogItem | null; quantity: number };
+
+function istDaysAgo(days: number) {
+  const date = new Date(`${istToday()}T00:00:00Z`);
+  date.setUTCDate(date.getUTCDate() - days);
+  return date.toISOString().slice(0, 10);
+}
+
+function openOrderDays(order: OrderSummary) {
+  if (['delivered', 'cancelled'].includes(order.status)) return 0;
+  const created = new Date(order.createdAt);
+  if (!Number.isFinite(created.getTime())) return 0;
+  const createdDay = created.toLocaleDateString('en-CA', { timeZone: 'Asia/Kolkata' });
+  return Math.floor((Date.parse(`${istToday()}T00:00:00Z`) - Date.parse(`${createdDay}T00:00:00Z`)) / 86_400_000);
+}
+
+// Retain the exact command after an ambiguous failure, even if the sheet is closed.
+function useChallanCommand(order: OrderSummary, onChanged: () => Promise<void>) {
+  const pending = useRef<{ action: 'send_on_challan' | 'bill_challan'; payload: Record<string, unknown> } | null>(null);
+  const [hasPending, setHasPending] = useState(false);
+  const [busy, setBusy] = useState(false);
+  const [error, setError] = useState('');
+  async function submit(action: 'send_on_challan' | 'bill_challan', number: string) {
+    if (busy) return false;
+    setBusy(true); setError('');
+    if (!pending.current) pending.current = { action, payload: { orderId: order.id, expectedVersion: order.version, [action === 'send_on_challan' ? 'challanNumber' : 'invoiceNumber']: number.trim(), idempotencyKey: crypto.randomUUID() } };
+    setHasPending(true);
+    try {
+      const response = await fetch('/api/orders', { method: 'POST', headers: { 'content-type': 'application/json' }, body: JSON.stringify(pending.current) });
+      if (response.ok || (response.status >= 400 && response.status < 500 && response.status !== 408 && response.status !== 429)) { pending.current = null; setHasPending(false); }
+      await readResponse(response);
+      await onChanged();
+      return true;
+    } catch (cause) {
+      setError(cause instanceof Error ? cause.message : 'Unable to save challan details');
+      return false;
+    } finally { setBusy(false); }
+  }
+  return { busy, error, submit, pending: hasPending };
+}
 // A null draft means no customer is selected; callers supply only that customer's history.
 export function findPossibleRepeat(lines: readonly { tallyKey: string }[] | null, recentOrders: readonly OrderSummary[], today: Date) {
   if (!lines?.length) return null;
@@ -622,6 +661,9 @@ export function OrderWorkspace({ actorEmail, initialStatus = 'open', initialQuer
   if (pricesToApprove && data && approvalCount === 0) setPricesToApprove(false);
   const stageFilters: StageFilter[] = [
     { status: 'open', label: 'Active' },
+    { status: 'recent', label: 'Recent' },
+    { status: 'priority_high', label: 'Urgent & high' },
+    ...(canBillChallan(actorRoles) && (operations.challanUnbilled ?? 0) > 0 ? [{ status: 'challan_unbilled', label: 'Challans to bill', count: operations.challanUnbilled }] : []),
     ...(approvalCount > 0 ? [{ status: 'prices_to_approve', label: 'Prices to approve', count: approvalCount, tone: 'warning' as const }] : []),
     { status: 'awaiting_confirmation', label: 'Confirm', count: operations.awaitingConfirmation, tone: 'confirm' },
     { status: 'picking', label: 'Pack', tone: 'pack' },
@@ -629,6 +671,9 @@ export function OrderWorkspace({ actorEmail, initialStatus = 'open', initialQuer
     { status: 'dispatch_ready', label: 'Dispatch', count: operations.billedNotDispatched, tone: 'dispatch' },
     { status: 'attention', label: 'Issues', count: operations.needsAttention, tone: 'alert' },
   ];
+  const activeStage = status === 'open' && captureDate === istDaysAgo(6) && !captureDateTo && !query ? 'recent'
+    : pricesToApprove && status === 'open' ? 'prices_to_approve'
+    : status;
   const yourQueue = hasAnyStockFlowRole(actorRoles, ['administrator', 'management']) ? 'awaiting_confirmation' : hasAnyStockFlowRole(actorRoles, ['accounts']) ? 'billing' : hasAnyStockFlowRole(actorRoles, ['warehouse']) ? 'picking' : '';
   function showQueue(queue: string) {
     setFocusNotice('');
@@ -639,7 +684,7 @@ export function OrderWorkspace({ actorEmail, initialStatus = 'open', initialQuer
       return;
     }
     setPricesToApprove(false);
-    setStatus(queue); setQuery(''); setCaptureDate(''); setCaptureDateTo(''); setPage(1);
+    setStatus(queue === 'recent' ? 'open' : queue); setQuery(''); setCaptureDate(queue === 'recent' ? istDaysAgo(6) : ''); setCaptureDateTo(''); setPage(1);
   }
   function openOrderDetail(order: OrderSummary) {
     if (desktopControlCenter) setSelectedOrderId(order.id);
@@ -715,11 +760,11 @@ export function OrderWorkspace({ actorEmail, initialStatus = 'open', initialQuer
           <button type="button" aria-pressed={query === `assignee:${actorEmail.toLocaleLowerCase('en-IN')}`} onClick={() => { setFocusNotice(''); setQuery((current) => current === `assignee:${actorEmail.toLocaleLowerCase('en-IN')}` ? '' : `assignee:${actorEmail.toLocaleLowerCase('en-IN')}`); setStatus('open'); setCaptureDate(''); setCaptureDateTo(''); setPage(1); }} className="hidden min-h-10 shrink-0 rounded-xl border border-sf-line bg-white px-3 text-sm font-bold text-sf-body hover:bg-sf-soft aria-pressed:border-sf-accent-bright aria-pressed:bg-sf-accent-soft sm:block">My work</button>
           <button type="button" aria-expanded={mobileFiltersOpen} aria-controls="mobile-order-filters" onClick={() => setMobileFiltersOpen((open) => !open)} className={`flex min-h-10 shrink-0 items-center gap-1 rounded-xl border px-3 text-sm font-bold ${mobileFiltersOpen || !stageFilters.some((filter) => filter.status === status) || captureDate ? 'border-sf-ink bg-sf-ink text-white' : 'border-sf-line bg-white text-sf-body'}`}>Filters <span className={`transition ${mobileFiltersOpen ? 'rotate-180' : ''}`}><ChevronDownIcon /></span></button>
         </div>
-        <div className="mt-2 lg:order-3 lg:mt-0 lg:min-w-0 lg:flex-1">
-          <OrderStageChips filters={stageFilters} active={pricesToApprove && status === 'open' ? 'prices_to_approve' : status} onSelect={showQueue} />
-        </div>
+        <nav aria-label="Order queues" className="mt-2 lg:order-3 lg:mt-0 lg:min-w-0 lg:flex-1">
+          <OrderStageChips filters={stageFilters} active={activeStage} onSelect={showQueue} />
+        </nav>
         <div id="mobile-order-filters" className={`${mobileFiltersOpen ? 'grid' : 'hidden'} mt-2 gap-3 rounded-2xl border border-sf-line-soft bg-white p-3 shadow-sm sm:grid-cols-[minmax(0,1fr)_auto] sm:items-end lg:order-6 lg:basis-full`}>
-          <label className="block text-xs font-bold text-sf-muted" htmlFor="order-status">Show orders
+          <div><label className="block text-xs font-bold text-sf-muted" htmlFor="order-status">Show orders</label>
           <select
             id="order-status"
             value={status}
@@ -730,6 +775,7 @@ export function OrderWorkspace({ actorEmail, initialStatus = 'open', initialQuer
             <option value="attention">Needs attention</option>
             <option value="billing">Tally billing queue</option>
             <option value="billing_attention">Billing attention</option>
+            <option value="challan_unbilled">Challans to bill</option>
             <option value="history">Old orders</option>
             <option value="all">All orders</option>
             <option value="awaiting_confirmation">Awaiting confirmation</option>
@@ -752,7 +798,7 @@ export function OrderWorkspace({ actorEmail, initialStatus = 'open', initialQuer
             <option value="overdue">Overdue deliveries</option>
             <option value="cancelled">Cancelled</option>
           </select>
-          </label>
+          </div>
           <div className="grid grid-cols-2 gap-2 sm:w-80">
             <label className="text-xs font-bold text-sf-muted">Ordered from<input type="date" value={captureDate} max={captureDateTo || undefined} onChange={(event) => { const nextDate = event.target.value; setCaptureDate(nextDate); if (!nextDate || (captureDateTo && nextDate > captureDateTo)) setCaptureDateTo(''); setPage(1); }} className="mt-1 block min-h-11 w-full rounded-xl border border-sf-line bg-white px-2.5 text-sm font-normal text-sf-strong outline-none focus:border-sf-accent-bright" /></label>
             <label className="text-xs font-bold text-sf-muted">To (optional)<input type="date" value={captureDateTo} min={captureDate || undefined} disabled={!captureDate} onChange={(event) => { setCaptureDateTo(event.target.value); setPage(1); }} className="mt-1 block min-h-11 w-full rounded-xl border border-sf-line bg-white px-2.5 text-sm font-normal text-sf-strong outline-none focus:border-sf-accent-bright disabled:bg-sf-soft disabled:text-sf-faint" /></label>
@@ -796,7 +842,7 @@ export function OrderWorkspace({ actorEmail, initialStatus = 'open', initialQuer
             <div className="grid items-start lg:h-[calc(100dvh-9.5rem)] lg:min-h-96 lg:grid-cols-[minmax(360px,440px)_minmax(0,1fr)]">
               <aside aria-label="Desktop order queue" className="h-full overflow-y-auto border-r border-sf-line-soft bg-sf-soft-0">
                 {orderGroups.map((group) => <section key={group.id} aria-label={group.label}>
-                  <h3 className={`sticky top-0 z-[1] border-b border-sf-soft-2 bg-sf-soft-0/95 px-4 py-1.5 text-[11px] font-extrabold uppercase tracking-wide backdrop-blur ${group.id === 'action' ? 'text-sf-danger' : 'text-sf-subtle'}`}>{group.label} <span className="font-bold tabular-nums">· {group.orders.length}</span></h3>
+                  <h3 className={`sticky top-0 z-[1] border-b border-sf-soft-2 bg-sf-soft-0/95 px-4 py-1.5 text-[11px] font-extrabold uppercase tracking-wide backdrop-blur ${group.id === 'priority' ? 'text-sf-danger' : 'text-sf-subtle'}`}>{group.label} <span className="font-bold tabular-nums">· {group.orders.length}</span></h3>
                   {group.orders.map((order) => {
                   const selected = order.id === selectedOrder?.id;
                   const nextAction = nextStatus[order.status]?.label || orderNextOwnerLabel(order.status) || 'View order';
@@ -828,7 +874,7 @@ export function OrderWorkspace({ actorEmail, initialStatus = 'open', initialQuer
           ) : (
             <div>
               {orderGroups.map((group) => <section key={group.id} aria-label={group.label}>
-                <h3 className={`border-b border-sf-soft-2 bg-sf-soft-0 px-4 py-1.5 text-[11px] font-extrabold uppercase tracking-wide ${group.id === 'action' ? 'text-sf-danger' : 'text-sf-subtle'}`}>{group.label} <span className="font-bold tabular-nums">· {group.orders.length}</span></h3>
+                <h3 className={`border-b border-sf-soft-2 bg-sf-soft-0 px-4 py-1.5 text-[11px] font-extrabold uppercase tracking-wide ${group.id === 'priority' ? 'text-sf-danger' : 'text-sf-subtle'}`}>{group.label} <span className="font-bold tabular-nums">· {group.orders.length}</span></h3>
                 {group.orders.map((order) => <CompactOrderRow key={order.id} order={order} onOpen={openOrderDetail} isNew={newOrderIds?.has(order.id)} />)}
               </section>)}
             </div>
@@ -973,6 +1019,9 @@ function OrderRow({
   const deliveryReminder = orderDeliveryReminder(order);
   const followUpReminder = orderFollowUpReminder(order);
   const phoneHref = customerPhoneHref(order.customerPhone);
+  const challanNumber = order?.challanNumber ?? null;
+  const challanUnbilled = Boolean(challanNumber && !order.tallyInvoiceNumber && !(order?.challanBilledAt ?? null));
+  const ageDays = openOrderDays(order);
   const mergeById = <T extends { id: string },>(history: T[], current: T[]) => [...new Map([...history, ...current].map((item) => [item.id, item])).values()];
   const detailedOrder = detailHistory ? {
     ...order,
@@ -992,10 +1041,13 @@ function OrderRow({
   }
   return (
     // content-visibility adds paint containment, which would trap the pinned next-step bar; the order page skips it.
-    <article className={inOrderPage ? 'min-w-0 p-3 pb-36 [overflow-wrap:anywhere]' : 'min-w-0 [overflow-wrap:anywhere] [content-visibility:auto] [contain-intrinsic-size:auto_260px] p-3 sm:p-5'}>
+    <article className={`${inOrderPage ? 'min-w-0 p-3 pb-36 [overflow-wrap:anywhere]' : 'min-w-0 [overflow-wrap:anywhere] [content-visibility:auto] [contain-intrinsic-size:auto_260px] p-3 sm:p-5'} ${order.priority === 'urgent' ? 'border-l-4 border-l-sf-danger bg-sf-danger-soft' : order.priority === 'high' ? 'border-l-4 border-l-sf-warning' : ''}`}>
       <div className="grid grid-cols-[minmax(0,1fr)] gap-4 lg:grid-cols-[minmax(0,1.5fr)_minmax(0,1fr)_auto] lg:items-center">
       <div>
         <div className="flex flex-wrap items-center gap-2">
+          {challanNumber ? <span className="rounded-full bg-sf-info-soft px-2.5 py-1 text-[11px] font-extrabold text-sf-info">On challan {challanNumber}</span> : null}
+          {challanUnbilled ? <span className={`rounded-full px-2.5 py-1 text-[11px] font-extrabold ${(order?.challanOverdue ?? false) ? 'bg-sf-danger-soft text-sf-danger' : 'bg-sf-warning-soft text-sf-warning'}`}>{(order?.challanOverdue ?? false) ? 'Challan not billed' : 'Bill at month end'}</span> : null}
+          {ageDays >= 7 ? <span className={`rounded-full px-2.5 py-1 text-[11px] font-extrabold ${ageDays >= 14 ? 'bg-sf-warning-soft text-sf-warning' : 'bg-sf-soft text-sf-muted'}`}>Open {ageDays} days</span> : null}
           {inOrderPage ? null : <><strong className="text-sf-ink">{order.orderNumber}</strong>
           <span className="rounded-full bg-sf-soft px-2.5 py-1 text-[11px] font-extrabold text-sf-label">{orderStage(order.status)}</span>
           <time dateTime={order.createdAt} className="text-xs font-semibold text-sf-subtle">Ordered {orderDateTime(order.createdAt)}</time></>}
@@ -1020,8 +1072,8 @@ function OrderRow({
       </div>
       <OrderNextStepBar order={order} roles={roles} pricing={pricing} inOrderPage={inOrderPage} onAdvance={onAdvance} onDelivery={onDelivery} onPricingChanged={onPricingChanged} onPack={onPack} />
       </div>
-      {pricing.workspace?.pricingState === 'approval_required' ? <PriceApprovalCard workspace={pricing.workspace} /> : null}
-      {(BILLING_STATUSES as readonly string[]).includes(order.status) && hasAnyStockFlowRole(roles, [...BILLING_ROLES]) ? <BillingSheetPanel order={order} /> : null}
+      {order.pricingState === 'approval_required' && pricing.workspace?.pricingState === 'approval_required' && pricing.workspace.orderVersion === order.version ? <PriceApprovalCard workspace={pricing.workspace} /> : null}
+      {challanNumber && !order.tallyInvoiceNumber && canBillChallan(roles) ? <BillChallanPanel order={order} onChanged={onPricingChanged} /> : (BILLING_STATUSES as readonly string[]).includes(order.status) && hasAnyStockFlowRole(roles, [...BILLING_ROLES]) ? <BillingSheetPanel order={order} /> : null}
       <details className="mt-3 rounded-xl border border-sf-line-soft bg-sf-soft-0 text-sm">
         <summary className="flex min-h-10 cursor-pointer list-none items-center justify-between gap-3 px-3 font-bold text-sf-label marker:hidden [&::-webkit-details-marker]:hidden">
           <span>More order controls</span>
@@ -1063,8 +1115,8 @@ function OrderRow({
         {['ready_for_dispatch', 'dispatched', 'delivered'].includes(order.status) ? <DispatchPanel key={order.status} order={order} actorRole={actorRole} actorRoles={roles} onSave={onDelivery} /> : null}
         {['phone_order_received','awaiting_confirmation','awaiting_approval','confirmed','partially_reserved','fully_reserved','ready_for_picking','picked','packed'].includes(order.status) && canEditOrders(roles) ? <OrderEditPanel order={order} onSave={onEdit} /> : null}
         {detailState === 'loading' ? <p className="mt-4 text-xs text-sf-subtle">Loading operational history…</p> : detailState === 'error' ? <button type="button" onClick={() => void loadDetails()} className="mt-4 text-xs font-bold text-sf-danger">Operational history could not load · Retry</button> : null}
-        <DeliveryExceptionPanel order={detailedOrder} onSave={onException} />
-        <InstallationPanel order={detailedOrder} onSave={onInstallation} />
+        <DeliveryExceptionPanel order={detailedOrder} canManage={canManageDeliveryExceptions(roles)} onSave={onException} />
+        <InstallationPanel order={detailedOrder} canManage={canManageInstallations(roles)} onSave={onInstallation} />
         {order.status === 'awaiting_tally_billing' ? <BillingHandoff order={order} /> : null}
         {canAddOrderNotes(roles) ? <OrderNotePanel order={order} onSave={onAddNote} /> : null}
         <OrderActivityLog key={`${order.id}-${order.version}`} orderId={order.id} initialEvents={order.events || []} />
@@ -1072,6 +1124,25 @@ function OrderRow({
       </details>
     </article>
   );
+}
+
+function BillChallanPanel({ order, onChanged }: { order: OrderSummary; onChanged: () => Promise<void> }) {
+  const [open, setOpen] = useState(false);
+  const [invoice, setInvoice] = useState('');
+  const command = useChallanCommand(order, onChanged);
+  const inputId = `challan-invoice-${order.id}`;
+  return <section aria-label="Bill challan" className="mt-3 min-w-0 rounded-xl border border-sf-line bg-sf-info-soft p-3">
+    <button type="button" aria-expanded={open} onClick={() => setOpen(!open)} className="min-h-11 rounded-lg px-3 text-sm font-bold text-sf-info">Bill challan</button>
+    {open ? <>
+      <BillingSheetPanel order={order} />
+      <form className="mt-3 space-y-2" onSubmit={async (event) => { event.preventDefault(); if (await command.submit('bill_challan', invoice)) { setInvoice(''); setOpen(false); } }}>
+        <label htmlFor={inputId} className="block text-sm font-bold text-sf-body">Tally invoice number</label>
+        <input id={inputId} aria-label={`Tally invoice number for ${order.orderNumber}`} required maxLength={40} value={invoice} disabled={command.busy || command.pending} onChange={event => setInvoice(event.target.value)} className="min-h-11 w-full min-w-0 rounded-lg border border-sf-line bg-white px-3" />
+        {command.error ? <p role="alert" className="text-sm text-sf-danger">{command.error}</p> : null}
+        <button type="submit" disabled={command.busy || !invoice.trim()} className="min-h-11 rounded-xl bg-sf-ink px-4 font-bold text-white disabled:opacity-50">{command.busy ? 'Saving…' : 'Record invoice'}</button>
+      </form>
+    </> : null}
+  </section>;
 }
 
 function BillingReviewPanel({ order, actorRole, actorRoles, onSave }: { order: OrderSummary; actorRole: string; actorRoles?: readonly StockFlowRole[]; onSave: (order: OrderSummary, command: Extract<OrderCommand, { action: 'record_billing_review' }>) => Promise<void> }) {
@@ -1086,36 +1157,54 @@ const currency = new Intl.NumberFormat('en-IN', { style: 'currency', currency: '
 /** Full pricing (cost, margin, history) for pricing roles only; billing and other roles never request it. */
 function useOrderPricing(order: OrderSummary, enabled = true) {
   const readKey = `${order.id}:${order.pricingState}:${order.status}`;
+  const readKeyRef = useRef(readKey);
+  useLayoutEffect(() => { readKeyRef.current = readKey; }, [readKey]);
   const autoLoad = enabled && order.pricingState !== 'approved' && !['delivered', 'cancelled'].includes(order.status);
   const [result, setResult] = useState<{ key: string; workspace: OrderPricingWorkspace | null; state: 'idle' | 'loading' | 'error'; message: string }>(() => ({ key: readKey, workspace: null, state: autoLoad ? 'loading' : 'idle', message: '' }));
   const request = useRef<AbortController | null>(null);
+  const automaticVersion = useRef<string | null>(null);
+  const automaticReadKey = useRef<string | null>(null);
   const read = useCallback((controller: AbortController) => {
     return fetch(`/api/pricing?orderId=${encodeURIComponent(order.id)}`, { cache: 'no-store', signal: controller.signal }).then(readResponse<OrderPricingWorkspace>).then(workspace => {
       if (controller.signal.aborted) return;
-      setResult({ key: readKey, workspace, state: 'idle', message: '' });
+      setResult({ key: readKeyRef.current, workspace, state: 'idle', message: '' });
     }).catch(cause => {
       if (controller.signal.aborted) return;
-      setResult(current => ({ ...current, key: readKey, state: 'error', message: cause instanceof Error ? cause.message : 'Pricing could not load' }));
+      setResult(current => ({ ...current, key: readKeyRef.current, state: 'error', message: cause instanceof Error ? cause.message : 'Pricing could not load' }));
+    }).finally(() => {
+      if (request.current === controller) request.current = null;
     });
-  }, [order.id, readKey]);
+  }, [order.id]);
   const reload = useCallback(async () => {
     if (!enabled) return;
     request.current?.abort();
     const controller = new AbortController();
     request.current = controller;
-    setResult(current => ({ ...current, key: readKey, state: 'loading', message: '' }));
+    setResult(current => ({ ...current, key: readKeyRef.current, state: 'loading', message: '' }));
     await read(controller);
-  }, [enabled, read, readKey]);
+  }, [enabled, read]);
   useEffect(() => {
-    if (order.pricingState === 'approved') return () => request.current?.abort();
-    if (autoLoad) {
-      request.current?.abort();
-      const controller = new AbortController();
-      request.current = controller;
-      void read(controller);
-    }
-    return () => request.current?.abort();
-  }, [autoLoad, order.pricingState, read]);
+    return () => {
+      if (request.current) {
+        request.current.abort();
+        request.current = null;
+        automaticVersion.current = null;
+        automaticReadKey.current = null;
+      }
+    };
+  }, [enabled, read]);
+  useEffect(() => {
+    if (!enabled || ['delivered', 'cancelled'].includes(order.status)) return;
+    const stale = result.workspace?.orderId === order.id && result.workspace.orderVersion !== order.version;
+    const versionKey = `${order.id}:${order.version}`;
+    if (stale) {
+      if (order.pricingState !== 'approved') return;
+      if (automaticVersion.current === versionKey) return;
+      automaticVersion.current = versionKey;
+    } else if (!autoLoad || automaticReadKey.current === readKey) return;
+    automaticReadKey.current = readKey;
+    void reload();
+  }, [autoLoad, enabled, order.id, order.pricingState, order.status, order.version, readKey, reload, result.workspace]);
   return {
     workspace: result.workspace?.orderId === order.id ? result.workspace : null,
     reload,
@@ -1134,7 +1223,11 @@ function OrderNextStepBar({ order, roles, pricing, inOrderPage, onAdvance, onDel
 }) {
   const step = nextStepFor(order, roles, pricing.workspace);
   const [sheet, setSheet] = useState('');
-  const [busy, setBusy] = useState(false);
+  const [challanNumber, setChallanNumber] = useState('');
+  const challan = useChallanCommand(order, onPricingChanged);
+  const canSendChallan = order.status === 'packed' && order.pricingState === 'approved' && canSendOnChallan(roles);
+  const [stepBusy, setBusy] = useState(false);
+  const busy = stepBusy || challan.busy;
   const [error, setError] = useState('');
   const [success, setSuccess] = useState('');
   const [reason, setReason] = useState('');
@@ -1208,6 +1301,12 @@ function OrderNextStepBar({ order, roles, pricing, inOrderPage, onAdvance, onDel
     {pricingStep && (stale || pricing.state === 'error') ? <button type="button" disabled={busy || pricing.state === 'loading'} onClick={() => void pricing.reload()} className="min-h-11 rounded-xl border border-sf-line px-3 text-sm font-bold text-sf-body">Reload pricing</button> : null}
     {pricingStep && stale ? <p className="text-sm text-sf-warning">This order changed. Reload pricing before submitting.</p> : null}
     {sheet ? <div className="min-w-0 space-y-3">
+      {sheet === 'challan' && canSendChallan ? <form className="space-y-2" onSubmit={async event => { event.preventDefault(); if (await challan.submit('send_on_challan', challanNumber)) setSheet(''); }}>
+        <label htmlFor={`send-challan-${order.id}`} className="block text-sm font-bold text-sf-body">Tally delivery challan number</label>
+        <input id={`send-challan-${order.id}`} aria-label={`Tally delivery challan number for ${order.orderNumber}`} required maxLength={40} value={challanNumber} disabled={challan.busy || challan.pending} onChange={event => setChallanNumber(event.target.value)} className="min-h-11 w-full min-w-0 rounded-lg border border-sf-line px-3" />
+        {challan.error ? <p role="alert" className="text-sm text-sf-danger">{challan.error}</p> : null}
+        <button type="submit" disabled={challan.busy || !challanNumber.trim()} className={primary}>{challan.busy ? 'Saving…' : 'Send on challan'}</button>
+      </form> : null}
       <button type="button" disabled={busy} onClick={() => { setSheet(''); setReason(''); setChangedRate(''); priceChangeRequest.current = null; }} className="min-h-11 rounded-lg border border-sf-line px-4 font-bold text-sf-body">Cancel</button>
       {sheet === 'price' ? <PricingPanel order={order} actorRole={roles[0]} actorRoles={roles} pricing={pricing} sheet onSavingChange={setBusy} onChanged={async () => { await onPricingChanged(); setSheet(''); }} /> : null}
       {sheet === 'reject' ? <><label className="block text-sm font-bold text-sf-body">Rejection reason<input required minLength={3} maxLength={1000} value={reason} onChange={event => setReason(event.target.value)} className="mt-1 min-h-11 w-full min-w-0 rounded-lg border border-sf-line px-3" /></label><button type="button" disabled={busy || stale || reason.trim().length < 3} onClick={() => void run(() => pricingCommand('reject_price_exception'), 'Price rejected')} className={primary}>Reject price</button></> : null}
@@ -1242,6 +1341,7 @@ function OrderNextStepBar({ order, roles, pricing, inOrderPage, onAdvance, onDel
         {step.kind === 'pricing_approve' && canChangePrice ? <button type="button" disabled={busy || stale} onClick={() => { setChangedRate(String(step.exception!.enteredRate)); setReason(''); setError(''); setSheet('change'); }} className="min-h-11 rounded-xl border border-sf-line px-4 font-bold text-sf-body">Change price…</button> : null}
         {step.kind === 'pricing_approve' ? <button type="button" disabled={busy || stale} onClick={() => setSheet('reject')} className="min-h-11 rounded-xl border border-sf-danger-line px-4 font-bold text-sf-danger">Reject</button> : null}
       </>}
+      {canSendChallan ? <button type="button" disabled={busy || challan.busy} onClick={() => setSheet('challan')} className="min-h-11 rounded-xl border border-sf-line bg-white px-4 font-bold text-sf-body">Send on challan</button> : null}
     </>}
   </section>;
 }
@@ -1404,16 +1504,29 @@ async function readOrderSubmission(response: Response) {
   return { ...body, orderNumber };
 }
 
-function InstallationPanel({ order, onSave }: { order: OrderSummary; onSave: (order: OrderSummary, command: Extract<OrderCommand, { action: 'schedule_installation' | 'complete_installation' }>) => Promise<void> }) {
+function InstallationPanel({ order, canManage, onSave }: { order: OrderSummary; canManage: boolean; onSave: (order: OrderSummary, command: Extract<OrderCommand, { action: 'schedule_installation' | 'complete_installation' }>) => Promise<void> }) {
   const [open, setOpen] = useState(false); const [busy, setBusy] = useState(false);
   const [tallyKey, setTallyKey] = useState(order.lines[0]?.tallyKey || ''); const [scheduledDate, setScheduledDate] = useState('');
   const [siteContact, setSiteContact] = useState(''); const [engineerEmail, setEngineerEmail] = useState('');
   const [completion, setCompletion] = useState<Record<string, { serial: string; notes: string }>>({});
   const installations = order.installations || []; const scheduled = installations.filter((item) => item.status === 'scheduled').length;
+  if (!canManage && !installations.length) return null;
+  if (!canManage) return (
+    <div className="mt-5 border-t border-sf-line-soft pt-4">
+      <button type="button" onClick={() => setOpen(value => !value)} className="font-bold text-sf-body">{open ? '−' : '+'} Equipment installation{scheduled ? ` (${scheduled} scheduled)` : ''}</button>
+      {open ? <div className="mt-3 space-y-3 rounded-xl bg-white p-4">{installations.map(item => (
+        <div key={item.id} className="rounded-lg border border-sf-line-soft p-3">
+          <div className="flex flex-wrap justify-between gap-2"><strong className="text-sf-strong">{item.itemName}</strong><span className="text-xs font-bold capitalize text-sf-muted">{item.status}</span></div>
+          <p className="mt-1 text-xs text-sf-subtle">Scheduled {new Date(`${item.scheduledDate}T00:00:00`).toLocaleDateString('en-IN')}{item.engineerEmail ? ` · ${item.engineerEmail}` : ''}</p>
+          {item.status === 'completed' ? <p className="mt-2 text-xs text-sf-success">Serial {item.serialNumber} · {item.commissioningNotes}</p> : null}
+        </div>
+      ))}</div> : null}
+    </div>
+  );
   return <div className="mt-5 border-t border-sf-line-soft pt-4"><button type="button" onClick={() => setOpen((value) => !value)} className="font-bold text-sf-body">{open ? '−' : '+'} Equipment installation{scheduled ? ` (${scheduled} scheduled)` : ''}</button>{open ? <div className="mt-3 space-y-3 rounded-xl bg-white p-4">{installations.map((item) => { const current = completion[item.id] || { serial: '', notes: '' }; return <div key={item.id} className="rounded-lg border border-sf-line-soft p-3"><div className="flex flex-wrap justify-between gap-2"><strong className="text-sf-strong">{item.itemName}</strong><span className="text-xs font-bold capitalize text-sf-muted">{item.status}</span></div><p className="mt-1 text-xs text-sf-subtle">Scheduled {new Date(`${item.scheduledDate}T00:00:00`).toLocaleDateString('en-IN')}{item.engineerEmail ? ` · ${item.engineerEmail}` : ''}</p>{item.status === 'completed' ? <p className="mt-2 text-xs text-sf-success">Serial {item.serialNumber} · {item.commissioningNotes}</p> : <div className="mt-3 grid gap-2 sm:grid-cols-[160px_1fr_auto]"><input value={current.serial} onChange={(event) => setCompletion((value) => ({ ...value, [item.id]: { ...current, serial: event.target.value } }))} placeholder="Serial number" maxLength={100} className="min-h-10 rounded-lg border px-3 text-xs" /><input value={current.notes} onChange={(event) => setCompletion((value) => ({ ...value, [item.id]: { ...current, notes: event.target.value } }))} placeholder="Commissioning checks / notes" maxLength={1000} className="min-h-10 rounded-lg border px-3 text-xs" /><button type="button" disabled={busy || current.serial.trim().length < 2 || current.notes.trim().length < 3} onClick={async () => { setBusy(true); try { await onSave(order, { action: 'complete_installation', payload: { orderId: order.id, expectedVersion: order.version, installationId: item.id, serialNumber: current.serial.trim(), commissioningNotes: current.notes.trim() } }); } finally { setBusy(false); } }} className="min-h-10 rounded-lg border border-sf-accent-line px-3 text-xs font-bold text-sf-success disabled:opacity-50">Complete</button></div>}</div>; })}<div className="grid gap-2 border-t border-sf-line-soft pt-3 sm:grid-cols-2"><select value={tallyKey} onChange={(event) => setTallyKey(event.target.value)} className="min-h-10 rounded-lg border px-2 text-xs">{order.lines.map((line) => <option key={line.tallyKey} value={line.tallyKey}>{line.itemName}</option>)}</select><input type="date" value={scheduledDate} onChange={(event) => setScheduledDate(event.target.value)} className="min-h-10 rounded-lg border px-3 text-xs" /><input value={siteContact} onChange={(event) => setSiteContact(event.target.value)} placeholder="Site contact (optional)" maxLength={200} className="min-h-10 rounded-lg border px-3 text-xs" /><input type="email" maxLength={254} value={engineerEmail} onChange={(event) => setEngineerEmail(event.target.value)} placeholder="Engineer email (optional)" className="min-h-10 rounded-lg border px-3 text-xs" /></div><div className="flex justify-end"><button type="button" disabled={busy || !tallyKey || !scheduledDate || order.status === 'cancelled'} onClick={async () => { setBusy(true); try { await onSave(order, { action: 'schedule_installation', payload: { orderId: order.id, expectedVersion: order.version, tallyKey, scheduledDate, siteContact: siteContact.trim(), engineerEmail: engineerEmail.trim() } }); } finally { setBusy(false); } }} className="min-h-10 rounded-lg bg-sf-ink px-4 text-xs font-bold text-white disabled:opacity-50">Schedule installation</button></div><p className="text-xs text-sf-subtle">Use this only for equipment lines. Reagents need no installation record.</p></div> : null}</div>;
 }
 
-function DeliveryExceptionPanel({ order, onSave }: { order: OrderSummary; onSave: (order: OrderSummary, command: Extract<OrderCommand, { action: 'create_exception' | 'resolve_exception' }>) => Promise<void> }) {
+function DeliveryExceptionPanel({ order, canManage, onSave }: { order: OrderSummary; canManage: boolean; onSave: (order: OrderSummary, command: Extract<OrderCommand, { action: 'create_exception' | 'resolve_exception' }>) => Promise<void> }) {
   const [open, setOpen] = useState(false);
   const [busy, setBusy] = useState(false);
   const [category, setCategory] = useState<'delayed' | 'failed_delivery' | 'damaged' | 'wrong_item' | 'other'>('delayed');
@@ -1421,6 +1534,19 @@ function DeliveryExceptionPanel({ order, onSave }: { order: OrderSummary; onSave
   const [resolutions, setResolutions] = useState<Record<string, string>>({});
   const exceptions = order.exceptions || [];
   const openCount = exceptions.filter((item) => item.status === 'open').length;
+  if (!canManage && !exceptions.length) return null;
+  if (!canManage) return (
+    <div className="mt-5 border-t border-sf-line-soft pt-4">
+      <button type="button" onClick={() => setOpen(value => !value)} className="font-bold text-sf-body">{open ? '−' : '+'} Delivery exceptions{openCount ? ` (${openCount} open)` : ''}</button>
+      {open ? <div className="mt-3 space-y-3 rounded-xl bg-white p-4">{exceptions.map(item => (
+        <div key={item.id} className="rounded-lg border border-sf-line-soft p-3">
+          <div className="flex flex-wrap justify-between gap-2"><strong className="capitalize text-sf-strong">{item.category.replaceAll('_', ' ')}</strong><span className="text-xs font-bold text-sf-muted">{item.status}</span></div>
+          <p className="mt-1 text-xs text-sf-muted">{item.summary}</p>
+          {item.status === 'resolved' ? <p className="mt-2 text-xs text-sf-success">Resolution: {item.resolution}</p> : null}
+        </div>
+      ))}</div> : null}
+    </div>
+  );
   return <div className="mt-5 border-t border-sf-line-soft pt-4"><button type="button" onClick={() => setOpen((value) => !value)} className="font-bold text-sf-body">{open ? '−' : '+'} Delivery exceptions{openCount ? ` (${openCount} open)` : ''}</button>{open ? <div className="mt-3 space-y-3 rounded-xl bg-white p-4">{exceptions.map((item) => <div key={item.id} className="rounded-lg border border-sf-line-soft p-3"><div className="flex flex-wrap justify-between gap-2"><strong className="capitalize text-sf-strong">{item.category.replaceAll('_', ' ')}</strong><span className={`rounded-full px-2 py-1 text-[11px] font-bold ${item.status === 'open' ? 'bg-sf-warning-soft text-sf-warning' : 'bg-sf-accent-soft text-sf-success'}`}>{item.status}</span></div><p className="mt-1 text-xs text-sf-muted">{item.summary}</p>{item.status === 'resolved' ? <p className="mt-2 text-xs text-sf-success">Resolution: {item.resolution}</p> : <div className="mt-3 flex flex-col gap-2 sm:flex-row"><input value={resolutions[item.id] || ''} onChange={(event) => setResolutions((current) => ({ ...current, [item.id]: event.target.value }))} placeholder="How was it resolved?" maxLength={500} className="min-h-10 flex-1 rounded-lg border px-3 text-xs" /><button type="button" disabled={busy || (resolutions[item.id] || '').trim().length < 3} onClick={async () => { setBusy(true); try { await onSave(order, { action: 'resolve_exception', payload: { orderId: order.id, expectedVersion: order.version, exceptionId: item.id, resolution: resolutions[item.id].trim() } }); } finally { setBusy(false); } }} className="min-h-10 rounded-lg border border-sf-accent-line px-3 text-xs font-bold text-sf-success disabled:opacity-50">Resolve</button></div>}</div>)}<div className="grid gap-2 border-t border-sf-line-soft pt-3 sm:grid-cols-[170px_1fr_auto]"><select value={category} onChange={(event) => setCategory(event.target.value as typeof category)} className="min-h-10 rounded-lg border px-2 text-xs"><option value="delayed">Delayed</option><option value="failed_delivery">Failed delivery</option><option value="damaged">Damaged</option><option value="wrong_item">Wrong item</option><option value="other">Other</option></select><input value={summary} onChange={(event) => setSummary(event.target.value)} maxLength={500} placeholder="What happened?" className="min-h-10 rounded-lg border px-3 text-xs" /><button type="button" disabled={busy || summary.trim().length < 3 || ['cancelled', 'delivered'].includes(order.status)} onClick={async () => { setBusy(true); try { await onSave(order, { action: 'create_exception', payload: { orderId: order.id, expectedVersion: order.version, category, summary: summary.trim() } }); setSummary(''); } finally { setBusy(false); } }} className="min-h-10 rounded-lg bg-sf-ink px-3 text-xs font-bold text-white disabled:opacity-50">Add exception</button></div>{['cancelled', 'delivered'].includes(order.status) ? <p className="text-xs text-sf-subtle">Closed orders cannot receive new exceptions.</p> : null}</div> : null}</div>;
 }
 

@@ -3,7 +3,7 @@ import { orderAttentionReasons, orderDeliveryReminder, orderStage } from './orde
 
 // Presentation only: how the Orders list groups and labels rows. No order rule lives here.
 
-export type OrderListGroupId = 'action' | 'today' | 'yesterday' | 'earlier' | 'delivered';
+export type OrderListGroupId = 'priority' | 'today' | 'yesterday' | 'earlier' | 'delivered';
 export type OrderListGroup = { id: OrderListGroupId; label: string; orders: OrderSummary[] };
 export type OrderFlag = { label: string; tone: 'alert' | 'watch' };
 
@@ -18,11 +18,6 @@ export function istDateKey(value: string | Date) {
 export function deliveredTodayOrders(orders: readonly OrderSummary[], now = new Date()) {
   const today = istDateKey(now);
   return orders.filter((order) => order.status === 'delivered' && istDateKey(order.deliveredAt || order.updatedAt) === today);
-}
-
-export function orderNeedsAction(order: OrderSummary, now = new Date()) {
-  if (['delivered', 'cancelled'].includes(order.status)) return false;
-  return order.priority === 'urgent' || orderAttentionReasons(order, now).length > 0;
 }
 
 /** At most one flag per row: the most serious problem wins. */
@@ -44,22 +39,22 @@ export function orderListFlag(order: OrderSummary, now = new Date()): OrderFlag 
   return null;
 }
 
-/** Problems first, then by capture day; orders delivered today sit at the bottom. Keeps server order within a group. */
+/** High priority first, then by capture day; orders delivered today sit at the bottom. Keeps server order within a group. */
 export function groupOrdersForList(orders: readonly OrderSummary[], deliveredToday: readonly OrderSummary[] = [], now = new Date()): OrderListGroup[] {
   const today = istDateKey(now);
   const yesterday = istDateKey(new Date(now.getTime() - 86_400_000));
-  const groups: Record<OrderListGroupId, OrderSummary[]> = { action: [], today: [], yesterday: [], earlier: [], delivered: [] };
+  const groups: Record<OrderListGroupId, OrderSummary[]> = { priority: [], today: [], yesterday: [], earlier: [], delivered: [] };
   const seen = new Set<string>();
   for (const order of orders) {
     seen.add(order.id);
     const day = istDateKey(order.createdAt);
-    if (orderNeedsAction(order, now)) groups.action.push(order);
+    if (!['delivered', 'cancelled'].includes(order.status) && (order.priority === 'urgent' || order.priority === 'high')) groups.priority.push(order);
     else if (day === today) groups.today.push(order);
     else if (day === yesterday) groups.yesterday.push(order);
     else groups.earlier.push(order);
   }
   for (const order of deliveredToday) if (!seen.has(order.id)) groups.delivered.push(order);
-  const labels: Record<OrderListGroupId, string> = { action: 'Needs action', today: 'Today', yesterday: 'Yesterday', earlier: 'Earlier', delivered: 'Delivered today' };
+  const labels: Record<OrderListGroupId, string> = { priority: 'Urgent & high', today: 'Today', yesterday: 'Yesterday', earlier: 'Earlier', delivered: 'Delivered today' };
   return (Object.keys(groups) as OrderListGroupId[]).filter((id) => groups[id].length).map((id) => ({ id, label: labels[id], orders: groups[id] }));
 }
 

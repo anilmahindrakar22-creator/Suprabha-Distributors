@@ -32,7 +32,12 @@ describe('dedicated pricing control centre', () => {
 
   it('shows order price review without a second disclosure click and keeps approval one-click', () => {
     expect(orders).toContain('aria-label="Price review"');
-    expect(orders).toContain("if (order.pricingState === 'approved') return");
+    const pricingHook = orders.slice(orders.indexOf('function useOrderPricing('), orders.indexOf('type DeliveryCommand'));
+    expect(pricingHook).toContain("const autoLoad = enabled && order.pricingState !== 'approved' && !['delivered', 'cancelled'].includes(order.status)");
+    expect(pricingHook).toContain("state: autoLoad ? 'loading' : 'idle'");
+    expect(pricingHook).toContain("if (stale) {\n      if (order.pricingState !== 'approved') return;\n      if (automaticVersion.current === versionKey) return;");
+    expect(pricingHook).toContain('} else if (!autoLoad || automaticReadKey.current === readKey) return;');
+    expect(pricingHook).toContain('automaticReadKey.current = readKey;\n    void reload();');
     expect(orders).not.toContain('Commercial pricing · restricted');
     expect(orders.indexOf('{workspace.exceptions.map')).toBeLessThan(orders.indexOf('{workspace.lines.map'));
     expect(orders).toContain("reason.trim() || 'Price reviewed and approved'");

@@ -39,6 +39,10 @@ export type OrderSummary = {
   totalQuantity: number;
   reservedQuantity: number;
   tallyInvoiceNumber: string | null;
+  challanNumber?: string | null;
+  challanAt?: string | null;
+  challanBilledAt?: string | null;
+  challanOverdue?: boolean;
   deliveryAddress?: string | null;
   expectedDeliveryDate?: string | null;
   courierName?: string | null;
@@ -483,6 +487,7 @@ export function filterOrders(orders: OrderSummary[], query: string, status: stri
       (status === 'delivery_exception' && (order.exceptions || []).some((item) => item.status === 'open')) ||
       (status === 'priority_urgent' && order.priority === 'urgent' && !['delivered', 'cancelled'].includes(order.status)) ||
       (status === 'priority_high' && ['high', 'urgent'].includes(order.priority || 'normal') && !['delivered', 'cancelled'].includes(order.status)) ||
+      (status === 'challan_unbilled' && Boolean(order?.challanNumber ?? null) && !order.tallyInvoiceNumber && !(order?.challanBilledAt ?? null)) ||
       (status === 'overdue' && isOrderDeliveryOverdue(order)) ||
       (status === 'attention' && orderAttentionReasons(order).length > 0) ||
       order.status === status;
@@ -519,6 +524,8 @@ export function orderAttentionReasons(order: OrderSummary, now = new Date()) {
 }
 
 export type OrderCommand =
+  | { action: 'send_on_challan'; payload: { orderId: string; expectedVersion: number; challanNumber: string; idempotencyKey: string } }
+  | { action: 'bill_challan'; payload: { orderId: string; expectedVersion: number; invoiceNumber: string; idempotencyKey: string } }
   | {
       action: 'create_order';
       payload: {
@@ -685,7 +692,7 @@ export function validateOrderCommand(value: unknown): OrderCommand | null {
   if (!value || typeof value !== 'object') return null;
   const command = value as { action?: unknown; payload?: unknown };
   if (
-    !['create_order', 'transition_order', 'save_fulfilment', 'save_dispatch', 'confirm_delivery', 'edit_order', 'create_exception', 'resolve_exception', 'schedule_installation', 'complete_installation', 'set_order_priority', 'set_order_assignee', 'set_order_follow_up', 'complete_order_follow_up', 'record_billing_review', 'add_order_note'].includes(
+    !['send_on_challan', 'bill_challan', 'create_order', 'transition_order', 'save_fulfilment', 'save_dispatch', 'confirm_delivery', 'edit_order', 'create_exception', 'resolve_exception', 'schedule_installation', 'complete_installation', 'set_order_priority', 'set_order_assignee', 'set_order_follow_up', 'complete_order_follow_up', 'record_billing_review', 'add_order_note'].includes(
       String(command.action),
     ) ||
     !command.payload ||
@@ -704,7 +711,14 @@ export function validateOrderCommand(value: unknown): OrderCommand | null {
     const quantity = Number(item[quantityField]);
     return typeof item.tallyKey === 'string' && item.tallyKey.length >= 1 && item.tallyKey.length <= 300 && Number.isInteger(quantity) && quantity >= (allowZero ? 0 : 1) && quantity <= 1_000_000;
   };
-  if (command.action === 'create_order') {
+  if (command.action === 'send_on_challan' || command.action === 'bill_challan') {
+    const field = command.action === 'send_on_challan' ? 'challanNumber' : 'invoiceNumber';
+    const number = payload[field];
+    if (!validMutationIdentity() || typeof payload.expectedVersion !== 'number' || !Number.isInteger(payload.expectedVersion) ||
+      typeof payload.idempotencyKey !== 'string' || !/^[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i.test(payload.idempotencyKey) ||
+      typeof number !== 'string' || number.trim().length < 1 || number.trim().length > 40) return null;
+    return { action: command.action, payload: { orderId: payload.orderId, expectedVersion: payload.expectedVersion, [field]: number.trim(), idempotencyKey: payload.idempotencyKey } } as OrderCommand;
+  } else if (command.action === 'create_order') {
     const lines = Array.isArray(payload.lines) ? payload.lines : [];
     const validLines =
       lines.length >= 1 &&

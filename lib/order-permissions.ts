@@ -1,5 +1,26 @@
 import { hasAnyStockFlowRole } from './user-types';
 
+// Mirrors supabase/migrations/20261029100000_supplier_purchase_orders.sql.
+export const PURCHASE_ORDER_ROLES = ['administrator', 'management', 'operations'] as const;
+export function canManagePurchaseOrders(roles: unknown): boolean {
+  return hasAnyStockFlowRole(roles, PURCHASE_ORDER_ROLES);
+}
+
+// Mirrors supabase/migrations/20261029090000_challan_delivery.sql.
+export const CHALLAN_SEND_ROLES = ['administrator', 'operations'] as const;
+// Mirrors supabase/migrations/20261029090000_challan_delivery.sql.
+export const CHALLAN_BILL_ROLES = ['administrator', 'operations', 'accounts', 'billing'] as const;
+
+// Mirrors supabase/migrations/20261029090000_challan_delivery.sql.
+export function canSendOnChallan(roles: unknown): boolean {
+  return hasAnyStockFlowRole(roles, CHALLAN_SEND_ROLES);
+}
+
+// Mirrors supabase/migrations/20261029090000_challan_delivery.sql.
+export function canBillChallan(roles: unknown): boolean {
+  return hasAnyStockFlowRole(roles, CHALLAN_BILL_ROLES);
+}
+
 // Mirrors supabase/migrations/20260902091533_centralize_order_policy.sql:26-31.
 export const ORDER_CREATE_ROLES = ['administrator', 'sales', 'operations', 'management'] as const;
 
@@ -13,6 +34,22 @@ export const ORDER_FULFIL_ROLES = ['administrator', 'sales', 'operations', 'ware
 
 // Mirrors supabase/migrations/20261025090000_billing_role.sql:64 (order-note gateway role patch).
 export const ORDER_NOTE_ROLES = ['administrator', 'sales', 'operations', 'warehouse', 'accounts', 'management', 'billing'] as const;
+
+// Mirrors supabase/migrations/20260902110000_delivery_exceptions.sql:18;
+// combined-role matching: supabase/migrations/20261004073444_combined_role_operational_gateways.sql:24-25.
+export const DELIVERY_EXCEPTION_ROLES = ['administrator', 'operations', 'sales', 'warehouse', 'management'] as const;
+
+// Mirrors supabase/migrations/20260902113000_equipment_installations.sql:39;
+// combined-role matching: supabase/migrations/20261004073444_combined_role_operational_gateways.sql:24-25.
+export const INSTALLATION_ROLES = ['administrator', 'operations', 'sales', 'warehouse', 'management'] as const;
+
+export function canManageDeliveryExceptions(roles: unknown): boolean {
+  return hasAnyStockFlowRole(roles, DELIVERY_EXCEPTION_ROLES);
+}
+
+export function canManageInstallations(roles: unknown): boolean {
+  return hasAnyStockFlowRole(roles, INSTALLATION_ROLES);
+}
 
 export function canAddOrderNotes(roles: unknown): boolean {
   return hasAnyStockFlowRole(roles, ORDER_NOTE_ROLES);

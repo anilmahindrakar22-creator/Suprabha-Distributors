@@ -8,7 +8,7 @@ import { BellIcon } from './order-list';
 import { startWorkNotifications, workQueuesForRoles, type WorkItem, type WorkNotificationState } from '@/lib/work-notifications';
 import { currentPushState, disablePush, disablePushBeforeSignOut, enablePush, loadPushConfig, readOpenOrderLink, readOpenOrderMessage, retryPendingPushRemoval, type PushConfig, type PushState } from '@/lib/push-subscription';
 import Image from 'next/image';
-import { readOrderDashboardMessage } from '@/lib/stockflow-navigation';
+import { readOrderDashboardMessage, readRequestsDashboardMessage } from '@/lib/stockflow-navigation';
 import { prepareDeviceForAccount } from '@/lib/device-account-privacy';
 import { hasAnyStockFlowRole, type StockFlowRole } from '@/lib/user-types';
 import { revokeOfflineVault } from '@/lib/offline-vault-storage';
@@ -152,6 +152,10 @@ export function StockFlowFrame({ actorEmail, actorRole, actorRoles, staffAuth = 
   useEffect(() => {
     function receiveDashboardNavigation(event: MessageEvent) {
       if (event.origin !== window.location.origin) return;
+      if (readRequestsDashboardMessage(event.data)) {
+        setSurface('requests');
+        return;
+      }
       const message = readOrderDashboardMessage(event.data);
       if (!message) return;
       setOrderFilter(message.status);

@@ -182,7 +182,7 @@ create table public.test_upgrade_expected as select to_jsonb(o) as order_data,(s
   Write-Output 'PASS: product master refresh from catalogue snapshot, no deactivation, change-only versions'
   $preserved = @'
 do $$begin
-if not exists(select 1 from private.stockflow_orders o cross join public.test_upgrade_expected e where o.id='dddddddd-dddd-4ddd-8ddd-dddddddddddd' and to_jsonb(o)=e.order_data and (select jsonb_agg(to_jsonb(l)) from private.stockflow_order_lines l where l.order_id=o.id)=e.line_data) then raise exception 'Pricing upgrade changed existing order data'; end if;
+if not exists(select 1 from private.stockflow_orders o cross join public.test_upgrade_expected e where o.id='dddddddd-dddd-4ddd-8ddd-dddddddddddd' and (to_jsonb(o) - 'challan_number' - 'challan_at' - 'challan_billed_at')=e.order_data and o.challan_number is null and o.challan_at is null and o.challan_billed_at is null and (select jsonb_agg(to_jsonb(l)) from private.stockflow_order_lines l where l.order_id=o.id)=e.line_data) then raise exception 'Pricing upgrade changed existing order data'; end if;
 end$$;
 '@
   Invoke-DatabaseCommand $psqlProgram @('-U',$databaseUser,'-X','-q','-v','ON_ERROR_STOP=1','-d',$database,'-c',$preserved)
@@ -278,6 +278,14 @@ end$$;
   Write-Output 'PASS: real-path rate exceptions, billing review, order revisions, edit invalidation and packed shortage totals'
   Invoke-DatabaseCommand $psqlProgram @('-U',$databaseUser,'-X','-q','-v','ON_ERROR_STOP=1','-d',$database,'-f',(Join-Path $repository 'supabase/tests/rate_check_units.sql'))
   Write-Output 'PASS: invoice units, legacy rate fallback and snapshot unit import'
+  Invoke-DatabaseCommand $psqlProgram @('-U',$databaseUser,'-X','-q','-v','ON_ERROR_STOP=1','-d',$database,'-f',(Join-Path $repository 'supabase/tests/to_order_list.sql'))
+  Write-Output 'PASS: unified to-order read, real demand, legacy delegation, pagination and access checks'
+  Invoke-DatabaseCommand $psqlProgram @('-U',$databaseUser,'-X','-q','-v','ON_ERROR_STOP=1','-d',$database,'-f',(Join-Path $repository 'supabase/tests/challan_delivery.sql'))
+  Write-Output 'PASS: challan delivery state and gateway behavior'
+  Invoke-DatabaseCommand $psqlProgram @('-U',$databaseUser,'-X','-q','-v','ON_ERROR_STOP=1','-d',$database,'-f',(Join-Path $repository 'supabase/tests/supplier_purchase_orders.sql'))
+  Write-Output 'PASS: supplier snapshot evidence, private purchase orders and to-order coverage'
+  Invoke-DatabaseCommand $psqlProgram @('-U',$databaseUser,'-X','-q','-v','ON_ERROR_STOP=1','-d',$database,'-f',(Join-Path $repository 'supabase/tests/order_list_priority_sort.sql'))
+  Write-Output 'PASS: to-order priority sorting and stable pagination'
 } finally {
   if ($databaseCreated) { & $dropdbProgram -U $databaseUser --if-exists $database | Out-Null }
   if ($serverStartedByScript) { & $pgCtlProgram -D $postgresData -m fast -w stop | Out-Null }

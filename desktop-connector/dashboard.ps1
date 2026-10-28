@@ -433,6 +433,7 @@ function Read-ReorderData {
     $lastSupplyMap = $salesData.lastSupply
     $pricingSales = @(Get-PricingSalesEvidence $salesData.records $customers)
     $pricingPurchaseCosts = @(Get-PricingPurchaseCostEvidence $purchaseRecords)
+    $supplierPrices = @(Get-SupplierPurchasePriceEvidence $purchaseRecords)
     if (-not $DisableInstrumentEconomics -and (Get-Date) -ge $script:nextEconomicRead) {
         $script:nextEconomicRead=(Get-Date).AddMinutes($PurchaseSyncMinutes)
         try {
@@ -561,7 +562,7 @@ function Read-ReorderData {
         catalog = $catalog
         customers = $customers
         tallyInvoices = @($salesData.invoices)
-        pricingHistory = [ordered]@{ sales = $pricingSales; purchaseCosts = $pricingPurchaseCosts }
+        pricingHistory = [ordered]@{ sales = $pricingSales; purchaseCosts = $pricingPurchaseCosts; supplierPrices = $supplierPrices }
         economicEvidence = $script:lastEconomicEvidence
         economicSyncError = $script:economicSyncError
     }

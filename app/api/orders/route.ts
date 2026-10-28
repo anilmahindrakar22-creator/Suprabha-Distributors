@@ -9,6 +9,15 @@ import type { TallyRecentProducts } from '@/lib/tally-recent-products';
 
 const privateHeaders = { 'cache-control': 'private, no-store' };
 
+// Keep the new server filter within the same pagination/date validation as other lists.
+function parseListQuery(parameters: URLSearchParams) {
+  if (parameters.get('status') !== 'challan_unbilled') return parseOrderListQuery(parameters);
+  const base = new URLSearchParams(parameters);
+  base.set('status', 'open');
+  const query = parseOrderListQuery(base);
+  return query ? { ...query, status: 'challan_unbilled' } : null;
+}
+
 function failure(message: string, status: number) {
   return Response.json({ error: message }, { status, headers: privateHeaders });
 }
@@ -88,7 +97,7 @@ export async function GET(request: Request) {
       );
     }
     if (parameters.get('list') === '1' || parameters.get('export') === '1') {
-      const listQuery = parseOrderListQuery(parameters);
+      const listQuery = parseListQuery(parameters);
       if (!listQuery) return failure('Invalid order list filters', 400);
       const exporting = parameters.get('export') === '1';
       const pageSize = exporting ? 200 : 20;
@@ -128,7 +137,7 @@ export async function GET(request: Request) {
           headers: { ...privateHeaders, 'content-type': 'text/csv; charset=utf-8', 'content-disposition': `attachment; filename="stockflow-orders-${new Date().toISOString().slice(0, 10)}.csv"` },
         });
       } catch (error) {
-        if (listQuery.captureDateTo || listQuery.query.toLocaleLowerCase('en-IN').startsWith('customer:') || ['billing_attention', 'delivery_due_today', 'delivery_due_soon', 'back_ordered', 'delivery_exception', 'priority_high', 'priority_urgent'].includes(listQuery.status)) throw error;
+        if (listQuery.captureDateTo || listQuery.query.toLocaleLowerCase('en-IN').startsWith('customer:') || ['challan_unbilled', 'billing_attention', 'delivery_due_today', 'delivery_due_soon', 'back_ordered', 'delivery_exception', 'priority_high', 'priority_urgent'].includes(listQuery.status)) throw error;
         if (!(error instanceof OrderGatewayError) || ![400, 502].includes(error.status)) throw error;
         // Compatibility path while the database migration and edge function roll out.
       }
@@ -140,7 +149,7 @@ export async function GET(request: Request) {
     ).length;
     const enriched = { ...result, operations: { ...result.operations, delayedFailedDeliveries } };
     if (parameters.get('list') === '1' || parameters.get('export') === '1') {
-      const listQuery = parseOrderListQuery(parameters);
+      const listQuery = parseListQuery(parameters);
       if (!listQuery) return failure('Invalid order list filters', 400);
       if (parameters.get('export') === '1') {
         return new Response(`\uFEFF${ordersCsv(matchingOrderList(result.orders, listQuery), { invoices: result.snapshot.tallyInvoices, fetchedAt: result.snapshot.fetchedAt })}`, {

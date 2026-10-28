@@ -33,20 +33,31 @@ describe('Orders list grouping', () => {
     expect(deliveredTodayOrders([today, yesterday, cancelled], now).map((item) => item.id)).toEqual(['a']);
   });
 
-  it('puts problems first, then today, yesterday, earlier and delivered today', () => {
+  it('puts urgent and high first, then today, yesterday, earlier and delivered today', () => {
     const urgent = order('urgent', { priority: 'urgent', createdAt: hoursAgo(30), updatedAt: hoursAgo(1) });
-    const stalled = order('stalled', { status: 'awaiting_confirmation', updatedAt: hoursAgo(6), createdAt: hoursAgo(6) });
+    const high = order('high', { priority: 'high', createdAt: hoursAgo(80) });
+    const stalled = order('stalled', { priority: 'normal', updatedAt: hoursAgo(240), createdAt: hoursAgo(240) });
     const fresh = order('fresh');
     const old = order('old', { createdAt: hoursAgo(80), updatedAt: hoursAgo(2) });
     const yesterdays = order('yday', { createdAt: hoursAgo(20), updatedAt: hoursAgo(2) });
     const delivered = order('done', { status: 'delivered', deliveredAt: hoursAgo(1) });
-    const groups = groupOrdersForList([urgent, fresh, old, stalled, yesterdays], [delivered, fresh], now);
+    const groups = groupOrdersForList([high, fresh, old, urgent, stalled, yesterdays], [delivered, fresh], now);
+    expect(groups[0].label).toBe('Urgent & high');
+    expect(orderListFlag(stalled, now)?.label).toBe('Stalled');
     expect(groups.map((group) => [group.id, group.orders.map((item) => item.id)])).toEqual([
-      ['action', ['urgent', 'stalled']],
+      ['priority', ['high', 'urgent']],
       ['today', ['fresh']],
       ['yesterday', ['yday']],
-      ['earlier', ['old']],
+      ['earlier', ['old', 'stalled']],
       ['delivered', ['done']],
+    ]);
+  });
+
+  it('groups delivered urgent and cancelled high orders by capture day', () => {
+    const delivered = order('done', { status: 'delivered', priority: 'urgent' });
+    const cancelled = order('cancelled', { status: 'cancelled', priority: 'high' });
+    expect(groupOrdersForList([delivered, cancelled], [], now).map((group) => [group.id, group.orders.map((item) => item.id)])).toEqual([
+      ['today', ['done', 'cancelled']],
     ]);
   });
 

@@ -24,6 +24,63 @@ const pricing = pricingWorkspace({
   history: [],
 });
 
+test('management approval removes the pending card and refreshes the approved price on phone', async ({ page, isMobile }) => {
+  test.skip(!isMobile, 'phone approval journey');
+  let approved = false;
+  let approvedReads = 0;
+  let command: unknown;
+  const pending = pricingWorkspace({
+    ...pricing,
+    lines: [pricingLine({ ...pricing.lines[0], proposedRate: 590 })],
+    exceptions: [{ ...pricing.exceptions[0], enteredRate: 590, referenceRate: 590 }],
+  });
+  await page.route('**/api/orders**', route => {
+    const url = new URL(route.request().url());
+    if (url.searchParams.has('detailsFor')) return route.fulfill({ json: { exceptions: [], installations: [] } });
+    const orders = url.searchParams.get('status') === 'history' ? [] : [orderSummary({
+      ...order, version: approved ? order.version + 1 : order.version,
+      pricingState: approved ? 'approved' : 'approval_required',
+      createdAt: new Date().toISOString(), updatedAt: new Date().toISOString(),
+    })];
+    return route.fulfill({ json: orderBootstrap({
+      actor: { email: 'management@example.test', role: 'management', roles: ['management'] }, orders,
+      pagination: { total: orders.length, page: 1, pageCount: 1, pageSize: 20 },
+    }) });
+  });
+  await page.route('**/api/pricing**', route => {
+    if (route.request().method() === 'POST') {
+      command = route.request().postDataJSON();
+      approved = true;
+      return route.fulfill({ json: { pricingState: 'approved' } });
+    }
+    if (!approved) return route.fulfill({ json: pending });
+    approvedReads++;
+    return route.fulfill({ json: pricingWorkspace({
+      ...pending, orderVersion: order.version + 1, pricingState: 'approved', exceptions: [],
+      lines: [pricingLine({
+        ...pending.lines[0], proposedRate: 591, guardrail: 'PRICE_OK',
+        source: { type: 'APPROVED_CONTRACT', reference: 'Approved customer price ₹591', date: '2026-10-28', version: '2' },
+      })],
+    }) });
+  });
+  await page.goto('/?view=orders-workspace');
+  await page.getByRole('button', { name: /^SF-260920-00034/ }).click();
+  const card = page.getByRole('region', { name: 'Price waiting for approval' });
+  await expect(card).toContainText('₹590');
+  const bar = page.getByRole('region', { name: 'Order next step', exact: true });
+  await bar.getByRole('button', { name: 'Change price…', exact: true }).click();
+  await bar.getByRole('spinbutton', { name: `New price per unit (₹) for ${order.orderNumber}`, exact: true }).fill('591');
+  await bar.getByRole('textbox', { name: `Reason for the change for ${order.orderNumber}`, exact: true }).fill('Use the agreed customer rate');
+  await bar.getByRole('button', { name: 'Approve ₹591', exact: true }).click();
+  await expect.poll(() => command).toMatchObject({ action: 'approve_price_exception', payload: { changedRate: 591 } });
+  await expect(card).toHaveCount(0);
+  await page.getByText('View order details', { exact: true }).click();
+  const review = page.getByRole('region', { name: 'Price review', exact: true });
+  await expect(review).toContainText('Verified');
+  await expect(review).toContainText('Approved customer price ₹591');
+  await expect.poll(() => approvedReads).toBeGreaterThan(0);
+});
+
 test('price approval shows the item, recent bills, cost and margin before Approve', async ({ page, isMobile }, info) => {
   await page.route('**/api/pricing**', (route) => route.request().method() === 'GET' ? route.fulfill({ json: pricing }) : route.abort());
   await page.route('**/api/orders**', (route) => {

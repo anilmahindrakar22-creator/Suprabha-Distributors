@@ -3,6 +3,12 @@ import { SUPABASE_FUNCTION_REGION } from './supabase-region';
 import type { EconomicAction } from './instrument-economics-types';
 
 export type GatewayAction =
+  | 'supplier_options'
+  | 'create_purchase_orders'
+  | 'list_purchase_orders'
+  | 'mark_purchase_order_shared'
+  | 'receive_purchase_order'
+  | 'cancel_purchase_order'
   | 'create_customer'
   | 'record_style_observation'
   | 'set_style_override'
