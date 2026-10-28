@@ -5,6 +5,8 @@ import { resolve } from 'node:path';
 
 // Evidence-only: no database connection, SQL execution or migration-history repair.
 const pricingReleaseFiles = new Set([
+  '20261029090000_challan_delivery.sql',
+  '20261029091000_order_list_priority_sort.sql',
   '20261028090000_to_order_list.sql',
   '20261016130829_tally_recent_products.sql',
   '20261019090000_financial_year_order_numbers.sql',

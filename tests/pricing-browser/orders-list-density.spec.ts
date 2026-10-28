@@ -41,8 +41,8 @@ async function mockOrders(page: Page) {
 test('Active shows pending orders first and only orders delivered today', async ({ page }) => {
   await mockOrders(page);
   await page.goto('/?view=orders-workspace');
-  await expect(page.getByRole('region', { name: 'Needs action' })).toContainText('Laboratory 1');
-  const urgentChip = page.getByRole('region', { name: 'Needs action' }).getByText('Urgent', { exact: true }).first();
+  await expect(page.getByRole('region', { name: 'Urgent & high' })).toContainText('Laboratory 1');
+  const urgentChip = page.getByRole('region', { name: 'Urgent & high' }).getByText('Urgent', { exact: true }).first();
   await expect(urgentChip).toHaveText('Urgent');
   await expect(urgentChip.locator('svg[aria-hidden="true"]')).toHaveCount(1);
   await expect(page.getByRole('region', { name: 'Delivered today' })).toContainText('Delivered Today Lab');

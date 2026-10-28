@@ -21,6 +21,7 @@ describe('API builder key-set snapshots', () => {
     [orderSummary, [
       'id', 'orderNumber', 'customerName', 'customerPhone', 'status', 'source', 'notes', 'version',
       'createdAt', 'updatedAt', 'lineCount', 'totalQuantity', 'reservedQuantity', 'tallyInvoiceNumber',
+      'challanNumber', 'challanAt', 'challanBilledAt', 'challanOverdue',
       'lines', 'events', 'exceptions', 'installations',
     ]],
     [orderBootstrap, ['actor', 'snapshot', 'customers', 'orders', 'operations', 'pagination']],

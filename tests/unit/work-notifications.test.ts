@@ -5,6 +5,14 @@ const order = (id: string, status: string, updatedAt = '2026-10-11T09:00:00Z') =
 const json = (body: unknown, status = 200) => new Response(JSON.stringify(body), { status, headers: { 'content-type': 'application/json' } });
 
 describe('who owns each stage', () => {
+  it.each(['accounts', 'billing', 'administrator', 'management', 'operations', 'sales', 'warehouse', 'viewer'])('limits challan reminders for %s', role => {
+    const allowed = ['accounts', 'billing', 'administrator', 'management'].includes(role);
+    expect(workReminders({ challanUnbilled: 2 }, [role])).toEqual(allowed ? [{ id: 'challans', label: 'Challans to bill', count: 2, status: 'challan_unbilled' }] : []);
+    for (const count of [undefined, 0, -1, '2']) expect(workReminders({ challanUnbilled: count }, [role])).toEqual([]);
+  });
+  it('includes challan reminders for a permitted combined role', () => {
+    expect(workReminders({ challanUnbilled: 1 }, ['viewer', 'billing'])).toHaveLength(1);
+  });
   it('gives billing-only staff exactly the ready-to-bill queue and viewers none', () => {
     expect(workQueuesForRoles(['billing'])).toEqual([{
       id: 'bill-ready', label: 'Ready to bill', statuses: ['awaiting_tally_billing'],

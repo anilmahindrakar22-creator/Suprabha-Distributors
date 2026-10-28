@@ -55,6 +55,7 @@ export function orderSummary(o: Partial<OrderSummary> = {}): OrderSummary {
     id: 'order-1', orderNumber: 'SF-TEST-001', customerName: 'Test laboratory', customerPhone: null,
     status: 'packed', source: 'phone', notes: null, version: 1, createdAt: timestamp, updatedAt: timestamp,
     lineCount: 1, totalQuantity: 1, reservedQuantity: 0, tallyInvoiceNumber: null,
+    challanNumber: null, challanAt: null, challanBilledAt: null, challanOverdue: false,
     lines: [orderLine()], events: [], exceptions: [], installations: [], ...o,
   } satisfies OrderSummary;
 }

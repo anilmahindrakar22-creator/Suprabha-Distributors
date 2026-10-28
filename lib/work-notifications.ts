@@ -72,6 +72,7 @@ export function workReminders(operations: Record<string, unknown>, roles: unknow
     return typeof value === 'number' && Number.isSafeInteger(value) && value > 0 ? value : 0;
   };
   const list: WorkReminder[] = [];
+  if (hasAnyStockFlowRole(roles, ['accounts', 'billing', 'administrator', 'management'])) list.push({ id: 'challans', label: 'Challans to bill', count: count('challanUnbilled'), status: 'challan_unbilled' });
   if (hasAnyStockFlowRole(roles, ['administrator', 'management', 'sales', 'operations'])) list.push({ id: 'follow-ups', label: 'Customer follow-ups due', count: count('followUpsDue'), status: 'follow_up_due' });
   if (hasAnyStockFlowRole(roles, ['administrator', 'management', 'operations'])) list.push({ id: 'delivery', label: 'Deliveries needing attention', count: count('deliveryAttention'), status: 'delivery_attention' });
   return list.filter((item) => item.count > 0);

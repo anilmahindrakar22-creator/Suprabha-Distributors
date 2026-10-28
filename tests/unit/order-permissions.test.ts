@@ -1,7 +1,35 @@
 import { describe, expect, it } from 'vitest';
-import { canAddOrderNotes, canCreateOrders, canEditOrders, canManageDeliveryExceptions, canManageInstallations, canRecordFulfilment } from '../../lib/order-permissions';
+import { canAddOrderNotes, canBillChallan, canSendOnChallan, canCreateOrders, canEditOrders, canManageDeliveryExceptions, canManageInstallations, canRecordFulfilment } from '../../lib/order-permissions';
+import { validateOrderCommand } from '../../lib/order-types';
+
+describe('challan commands', () => {
+  it.each(['send_on_challan', 'bill_challan'])('strictly validates %s', action => {
+    const field = action === 'send_on_challan' ? 'challanNumber' : 'invoiceNumber';
+    const payload = { orderId: 'order-1', expectedVersion: 1, idempotencyKey: '61000000-0000-4000-8000-000000000002', [field]: ' DC-101 ' };
+    expect(validateOrderCommand({ action, payload })?.payload).toMatchObject({ [field]: 'DC-101' });
+    for (const invalid of [{ [field]: '' }, { [field]: ' '.repeat(4) }, { [field]: 'x'.repeat(41) }, { expectedVersion: '1' }, { expectedVersion: 1.5 }, { idempotencyKey: 'not-a-valid-uuid' }]) {
+      expect(validateOrderCommand({ action, payload: { ...payload, ...invalid } })).toBeNull();
+    }
+  });
+});
 
 describe('order permissions mirror server role rules', () => {
+  it.each([
+    ['administrator', true, true], ['operations', true, true],
+    ['accounts', false, true], ['billing', false, true], ['management', false, false],
+    ['viewer', false, false], ['sales', false, false], ['warehouse', false, false],
+  ] as const)('%s: send challan=%s, bill challan=%s', (role, send, bill) => {
+    for (const roles of [role, [role]]) {
+      expect(canSendOnChallan(roles)).toBe(send);
+      expect(canBillChallan(roles)).toBe(bill);
+    }
+  });
+  it('accepts permitted combined challan roles', () => {
+    expect(canSendOnChallan(['viewer', 'operations'])).toBe(true);
+    expect(canBillChallan(['warehouse', 'billing'])).toBe(true);
+    expect(canSendOnChallan(['warehouse', 'billing'])).toBe(false);
+    expect(canBillChallan(['viewer', 'sales'])).toBe(false);
+  });
   it.each([
     ['administrator', true], ['operations', true], ['sales', true],
     ['warehouse', true], ['management', true], ['viewer', false],
@@ -60,6 +88,8 @@ describe('order permissions mirror server role rules', () => {
   });
 
   it.each([undefined, null, [], ['sales', 'unknown'], ['sales', 'sales']])('fails closed for invalid roles %j', (roles) => {
+    expect(canSendOnChallan(roles)).toBe(false);
+    expect(canBillChallan(roles)).toBe(false);
     expect(canAddOrderNotes(roles)).toBe(false);
     expect(canManageDeliveryExceptions(roles)).toBe(false);
     expect(canManageInstallations(roles)).toBe(false);

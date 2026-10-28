@@ -1074,6 +1074,20 @@
       "remoteVersion": null,
       "remoteSha256": null,
       "status": "not_deployed"
+    },
+    {
+      "localFile": "20261029090000_challan_delivery.sql",
+      "localSha256": "8e2eaa8667cf913c04b5525cfcd30cd81058d475aeca7bc57fe08ca85fe6f060",
+      "remoteVersion": null,
+      "remoteSha256": null,
+      "status": "not_deployed"
+    },
+    {
+      "localFile": "20261029091000_order_list_priority_sort.sql",
+      "localSha256": "246e4ad01cb5b3d1b456222b5523a6f411d0b4fac5bb3746476fdd21a78ec523",
+      "remoteVersion": null,
+      "remoteSha256": null,
+      "status": "not_deployed"
     }
   ],
   "liveCheck": {

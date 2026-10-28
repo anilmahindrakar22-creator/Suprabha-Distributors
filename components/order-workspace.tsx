@@ -40,10 +40,49 @@ import { rateCheckBadge, RATE_CHECK_ROLES, RATE_CHECK_STATUSES } from '@/lib/rat
 import { BILLING_ROLES, BILLING_STATUSES } from '@/lib/billing-sheet';
 import { courierChoices, defaultReceiver, isLocalDelivery, istToday, LOCAL_DELIVERY, type DispatchMode } from '@/lib/dispatch-options';
 import { hasAnyStockFlowRole, type StockFlowRole } from '@/lib/user-types';
-import { canAddOrderNotes, canCreateOrders, canEditOrders, canManageDeliveryExceptions, canManageInstallations, canRecordFulfilment } from '@/lib/order-permissions';
+import { canAddOrderNotes, canBillChallan, canSendOnChallan, canCreateOrders, canEditOrders, canManageDeliveryExceptions, canManageInstallations, canRecordFulfilment } from '@/lib/order-permissions';
 import type { TallyRecentProducts } from '@/lib/tally-recent-products';
 
 type DraftLine = { tallyKey: string; item: CatalogItem | null; quantity: number };
+
+function istDaysAgo(days: number) {
+  const date = new Date(`${istToday()}T00:00:00Z`);
+  date.setUTCDate(date.getUTCDate() - days);
+  return date.toISOString().slice(0, 10);
+}
+
+function openOrderDays(order: OrderSummary) {
+  if (['delivered', 'cancelled'].includes(order.status)) return 0;
+  const created = new Date(order.createdAt);
+  if (!Number.isFinite(created.getTime())) return 0;
+  const createdDay = created.toLocaleDateString('en-CA', { timeZone: 'Asia/Kolkata' });
+  return Math.floor((Date.parse(`${istToday()}T00:00:00Z`) - Date.parse(`${createdDay}T00:00:00Z`)) / 86_400_000);
+}
+
+// Retain the exact command after an ambiguous failure, even if the sheet is closed.
+function useChallanCommand(order: OrderSummary, onChanged: () => Promise<void>) {
+  const pending = useRef<{ action: 'send_on_challan' | 'bill_challan'; payload: Record<string, unknown> } | null>(null);
+  const [hasPending, setHasPending] = useState(false);
+  const [busy, setBusy] = useState(false);
+  const [error, setError] = useState('');
+  async function submit(action: 'send_on_challan' | 'bill_challan', number: string) {
+    if (busy) return false;
+    setBusy(true); setError('');
+    if (!pending.current) pending.current = { action, payload: { orderId: order.id, expectedVersion: order.version, [action === 'send_on_challan' ? 'challanNumber' : 'invoiceNumber']: number.trim(), idempotencyKey: crypto.randomUUID() } };
+    setHasPending(true);
+    try {
+      const response = await fetch('/api/orders', { method: 'POST', headers: { 'content-type': 'application/json' }, body: JSON.stringify(pending.current) });
+      if (response.ok || (response.status >= 400 && response.status < 500 && response.status !== 408 && response.status !== 429)) { pending.current = null; setHasPending(false); }
+      await readResponse(response);
+      await onChanged();
+      return true;
+    } catch (cause) {
+      setError(cause instanceof Error ? cause.message : 'Unable to save challan details');
+      return false;
+    } finally { setBusy(false); }
+  }
+  return { busy, error, submit, pending: hasPending };
+}
 // A null draft means no customer is selected; callers supply only that customer's history.
 export function findPossibleRepeat(lines: readonly { tallyKey: string }[] | null, recentOrders: readonly OrderSummary[], today: Date) {
   if (!lines?.length) return null;
@@ -697,6 +736,14 @@ export function OrderWorkspace({ actorEmail, initialStatus = 'open', initialQuer
 
           </div>
         </header>
+        <div aria-label="Order quick views" className="mt-2 flex min-w-0 max-w-full gap-2 overflow-x-auto lg:order-5 lg:basis-full">
+          {[
+            { label: 'Recent', active: status === 'open' && captureDate === istDaysAgo(6) && !captureDateTo && !query, select: () => { showQueue('open'); setCaptureDate(istDaysAgo(6)); } },
+            { label: 'Urgent & high', active: status === 'priority_high' && !captureDate && !captureDateTo && !query, select: () => showQueue('priority_high') },
+            ...(canBillChallan(actorRoles) && (operations.challanUnbilled ?? 0) > 0 ? [{ label: `Challans to bill (${operations.challanUnbilled})`, active: status === 'challan_unbilled' && !captureDate && !captureDateTo && !query, select: () => showQueue('challan_unbilled') }] : []),
+            { label: 'All open', active: status === 'open' && !captureDate && !captureDateTo && !query && !pricesToApprove, select: () => showQueue('open') },
+          ].map((view) => <button key={view.label} type="button" aria-pressed={view.active} onClick={view.select} className="min-h-10 shrink-0 whitespace-nowrap rounded-full border border-sf-line bg-white px-3 text-sm font-bold text-sf-body aria-pressed:border-sf-ink aria-pressed:bg-sf-ink aria-pressed:text-white">{view.label}</button>)}
+        </div>
         {deviceDraftState ? <span aria-live="polite" className={`lg:order-5 lg:basis-full mt-1 block text-right text-xs font-bold ${deviceDraftState === 'pending' ? 'text-sf-warning' : deviceDraftState === 'error' ? 'text-sf-danger' : 'text-sf-muted'}`}>{deviceDraftState === 'pending' ? '1 pending order on this device' : deviceDraftState === 'error' ? '1 device draft needs attention' : '1 draft on this device'}</span> : null}
 
         <div className="mt-2 flex items-center gap-2 lg:order-2 lg:mt-0 lg:w-[22rem] lg:flex-none">
@@ -719,7 +766,7 @@ export function OrderWorkspace({ actorEmail, initialStatus = 'open', initialQuer
           <OrderStageChips filters={stageFilters} active={pricesToApprove && status === 'open' ? 'prices_to_approve' : status} onSelect={showQueue} />
         </div>
         <div id="mobile-order-filters" className={`${mobileFiltersOpen ? 'grid' : 'hidden'} mt-2 gap-3 rounded-2xl border border-sf-line-soft bg-white p-3 shadow-sm sm:grid-cols-[minmax(0,1fr)_auto] sm:items-end lg:order-6 lg:basis-full`}>
-          <label className="block text-xs font-bold text-sf-muted" htmlFor="order-status">Show orders
+          <div><label className="block text-xs font-bold text-sf-muted" htmlFor="order-status">Show orders</label>
           <select
             id="order-status"
             value={status}
@@ -730,6 +777,7 @@ export function OrderWorkspace({ actorEmail, initialStatus = 'open', initialQuer
             <option value="attention">Needs attention</option>
             <option value="billing">Tally billing queue</option>
             <option value="billing_attention">Billing attention</option>
+            <option value="challan_unbilled">Challans to bill</option>
             <option value="history">Old orders</option>
             <option value="all">All orders</option>
             <option value="awaiting_confirmation">Awaiting confirmation</option>
@@ -752,7 +800,7 @@ export function OrderWorkspace({ actorEmail, initialStatus = 'open', initialQuer
             <option value="overdue">Overdue deliveries</option>
             <option value="cancelled">Cancelled</option>
           </select>
-          </label>
+          </div>
           <div className="grid grid-cols-2 gap-2 sm:w-80">
             <label className="text-xs font-bold text-sf-muted">Ordered from<input type="date" value={captureDate} max={captureDateTo || undefined} onChange={(event) => { const nextDate = event.target.value; setCaptureDate(nextDate); if (!nextDate || (captureDateTo && nextDate > captureDateTo)) setCaptureDateTo(''); setPage(1); }} className="mt-1 block min-h-11 w-full rounded-xl border border-sf-line bg-white px-2.5 text-sm font-normal text-sf-strong outline-none focus:border-sf-accent-bright" /></label>
             <label className="text-xs font-bold text-sf-muted">To (optional)<input type="date" value={captureDateTo} min={captureDate || undefined} disabled={!captureDate} onChange={(event) => { setCaptureDateTo(event.target.value); setPage(1); }} className="mt-1 block min-h-11 w-full rounded-xl border border-sf-line bg-white px-2.5 text-sm font-normal text-sf-strong outline-none focus:border-sf-accent-bright disabled:bg-sf-soft disabled:text-sf-faint" /></label>
@@ -796,7 +844,7 @@ export function OrderWorkspace({ actorEmail, initialStatus = 'open', initialQuer
             <div className="grid items-start lg:h-[calc(100dvh-9.5rem)] lg:min-h-96 lg:grid-cols-[minmax(360px,440px)_minmax(0,1fr)]">
               <aside aria-label="Desktop order queue" className="h-full overflow-y-auto border-r border-sf-line-soft bg-sf-soft-0">
                 {orderGroups.map((group) => <section key={group.id} aria-label={group.label}>
-                  <h3 className={`sticky top-0 z-[1] border-b border-sf-soft-2 bg-sf-soft-0/95 px-4 py-1.5 text-[11px] font-extrabold uppercase tracking-wide backdrop-blur ${group.id === 'action' ? 'text-sf-danger' : 'text-sf-subtle'}`}>{group.label} <span className="font-bold tabular-nums">· {group.orders.length}</span></h3>
+                  <h3 className={`sticky top-0 z-[1] border-b border-sf-soft-2 bg-sf-soft-0/95 px-4 py-1.5 text-[11px] font-extrabold uppercase tracking-wide backdrop-blur ${group.id === 'priority' ? 'text-sf-danger' : 'text-sf-subtle'}`}>{group.label} <span className="font-bold tabular-nums">· {group.orders.length}</span></h3>
                   {group.orders.map((order) => {
                   const selected = order.id === selectedOrder?.id;
                   const nextAction = nextStatus[order.status]?.label || orderNextOwnerLabel(order.status) || 'View order';
@@ -828,7 +876,7 @@ export function OrderWorkspace({ actorEmail, initialStatus = 'open', initialQuer
           ) : (
             <div>
               {orderGroups.map((group) => <section key={group.id} aria-label={group.label}>
-                <h3 className={`border-b border-sf-soft-2 bg-sf-soft-0 px-4 py-1.5 text-[11px] font-extrabold uppercase tracking-wide ${group.id === 'action' ? 'text-sf-danger' : 'text-sf-subtle'}`}>{group.label} <span className="font-bold tabular-nums">· {group.orders.length}</span></h3>
+                <h3 className={`border-b border-sf-soft-2 bg-sf-soft-0 px-4 py-1.5 text-[11px] font-extrabold uppercase tracking-wide ${group.id === 'priority' ? 'text-sf-danger' : 'text-sf-subtle'}`}>{group.label} <span className="font-bold tabular-nums">· {group.orders.length}</span></h3>
                 {group.orders.map((order) => <CompactOrderRow key={order.id} order={order} onOpen={openOrderDetail} isNew={newOrderIds?.has(order.id)} />)}
               </section>)}
             </div>
@@ -973,6 +1021,9 @@ function OrderRow({
   const deliveryReminder = orderDeliveryReminder(order);
   const followUpReminder = orderFollowUpReminder(order);
   const phoneHref = customerPhoneHref(order.customerPhone);
+  const challanNumber = order?.challanNumber ?? null;
+  const challanUnbilled = Boolean(challanNumber && !order.tallyInvoiceNumber && !(order?.challanBilledAt ?? null));
+  const ageDays = openOrderDays(order);
   const mergeById = <T extends { id: string },>(history: T[], current: T[]) => [...new Map([...history, ...current].map((item) => [item.id, item])).values()];
   const detailedOrder = detailHistory ? {
     ...order,
@@ -992,10 +1043,13 @@ function OrderRow({
   }
   return (
     // content-visibility adds paint containment, which would trap the pinned next-step bar; the order page skips it.
-    <article className={inOrderPage ? 'min-w-0 p-3 pb-36 [overflow-wrap:anywhere]' : 'min-w-0 [overflow-wrap:anywhere] [content-visibility:auto] [contain-intrinsic-size:auto_260px] p-3 sm:p-5'}>
+    <article className={`${inOrderPage ? 'min-w-0 p-3 pb-36 [overflow-wrap:anywhere]' : 'min-w-0 [overflow-wrap:anywhere] [content-visibility:auto] [contain-intrinsic-size:auto_260px] p-3 sm:p-5'} ${order.priority === 'urgent' ? 'border-l-4 border-l-sf-danger bg-sf-danger-soft' : order.priority === 'high' ? 'border-l-4 border-l-sf-warning' : ''}`}>
       <div className="grid grid-cols-[minmax(0,1fr)] gap-4 lg:grid-cols-[minmax(0,1.5fr)_minmax(0,1fr)_auto] lg:items-center">
       <div>
         <div className="flex flex-wrap items-center gap-2">
+          {challanNumber ? <span className="rounded-full bg-sf-info-soft px-2.5 py-1 text-[11px] font-extrabold text-sf-info">On challan {challanNumber}</span> : null}
+          {challanUnbilled ? <span className={`rounded-full px-2.5 py-1 text-[11px] font-extrabold ${(order?.challanOverdue ?? false) ? 'bg-sf-danger-soft text-sf-danger' : 'bg-sf-warning-soft text-sf-warning'}`}>{(order?.challanOverdue ?? false) ? 'Challan not billed' : 'Bill at month end'}</span> : null}
+          {ageDays >= 7 ? <span className={`rounded-full px-2.5 py-1 text-[11px] font-extrabold ${ageDays >= 14 ? 'bg-sf-warning-soft text-sf-warning' : 'bg-sf-soft text-sf-muted'}`}>Open {ageDays} days</span> : null}
           {inOrderPage ? null : <><strong className="text-sf-ink">{order.orderNumber}</strong>
           <span className="rounded-full bg-sf-soft px-2.5 py-1 text-[11px] font-extrabold text-sf-label">{orderStage(order.status)}</span>
           <time dateTime={order.createdAt} className="text-xs font-semibold text-sf-subtle">Ordered {orderDateTime(order.createdAt)}</time></>}
@@ -1021,7 +1075,7 @@ function OrderRow({
       <OrderNextStepBar order={order} roles={roles} pricing={pricing} inOrderPage={inOrderPage} onAdvance={onAdvance} onDelivery={onDelivery} onPricingChanged={onPricingChanged} onPack={onPack} />
       </div>
       {order.pricingState === 'approval_required' && pricing.workspace?.pricingState === 'approval_required' && pricing.workspace.orderVersion === order.version ? <PriceApprovalCard workspace={pricing.workspace} /> : null}
-      {(BILLING_STATUSES as readonly string[]).includes(order.status) && hasAnyStockFlowRole(roles, [...BILLING_ROLES]) ? <BillingSheetPanel order={order} /> : null}
+      {challanNumber && !order.tallyInvoiceNumber && canBillChallan(roles) ? <BillChallanPanel order={order} onChanged={onPricingChanged} /> : (BILLING_STATUSES as readonly string[]).includes(order.status) && hasAnyStockFlowRole(roles, [...BILLING_ROLES]) ? <BillingSheetPanel order={order} /> : null}
       <details className="mt-3 rounded-xl border border-sf-line-soft bg-sf-soft-0 text-sm">
         <summary className="flex min-h-10 cursor-pointer list-none items-center justify-between gap-3 px-3 font-bold text-sf-label marker:hidden [&::-webkit-details-marker]:hidden">
           <span>More order controls</span>
@@ -1072,6 +1126,25 @@ function OrderRow({
       </details>
     </article>
   );
+}
+
+function BillChallanPanel({ order, onChanged }: { order: OrderSummary; onChanged: () => Promise<void> }) {
+  const [open, setOpen] = useState(false);
+  const [invoice, setInvoice] = useState('');
+  const command = useChallanCommand(order, onChanged);
+  const inputId = `challan-invoice-${order.id}`;
+  return <section aria-label="Bill challan" className="mt-3 min-w-0 rounded-xl border border-sf-line bg-sf-info-soft p-3">
+    <button type="button" aria-expanded={open} onClick={() => setOpen(!open)} className="min-h-11 rounded-lg px-3 text-sm font-bold text-sf-info">Bill challan</button>
+    {open ? <>
+      <BillingSheetPanel order={order} />
+      <form className="mt-3 space-y-2" onSubmit={async (event) => { event.preventDefault(); if (await command.submit('bill_challan', invoice)) { setInvoice(''); setOpen(false); } }}>
+        <label htmlFor={inputId} className="block text-sm font-bold text-sf-body">Tally invoice number</label>
+        <input id={inputId} aria-label={`Tally invoice number for ${order.orderNumber}`} required maxLength={40} value={invoice} disabled={command.busy || command.pending} onChange={event => setInvoice(event.target.value)} className="min-h-11 w-full min-w-0 rounded-lg border border-sf-line bg-white px-3" />
+        {command.error ? <p role="alert" className="text-sm text-sf-danger">{command.error}</p> : null}
+        <button type="submit" disabled={command.busy || !invoice.trim()} className="min-h-11 rounded-xl bg-sf-ink px-4 font-bold text-white disabled:opacity-50">{command.busy ? 'Saving…' : 'Record invoice'}</button>
+      </form>
+    </> : null}
+  </section>;
 }
 
 function BillingReviewPanel({ order, actorRole, actorRoles, onSave }: { order: OrderSummary; actorRole: string; actorRoles?: readonly StockFlowRole[]; onSave: (order: OrderSummary, command: Extract<OrderCommand, { action: 'record_billing_review' }>) => Promise<void> }) {
@@ -1149,7 +1222,11 @@ function OrderNextStepBar({ order, roles, pricing, inOrderPage, onAdvance, onDel
 }) {
   const step = nextStepFor(order, roles, pricing.workspace);
   const [sheet, setSheet] = useState('');
-  const [busy, setBusy] = useState(false);
+  const [challanNumber, setChallanNumber] = useState('');
+  const challan = useChallanCommand(order, onPricingChanged);
+  const canSendChallan = order.status === 'packed' && order.pricingState === 'approved' && canSendOnChallan(roles);
+  const [stepBusy, setBusy] = useState(false);
+  const busy = stepBusy || challan.busy;
   const [error, setError] = useState('');
   const [success, setSuccess] = useState('');
   const [reason, setReason] = useState('');
@@ -1223,6 +1300,12 @@ function OrderNextStepBar({ order, roles, pricing, inOrderPage, onAdvance, onDel
     {pricingStep && (stale || pricing.state === 'error') ? <button type="button" disabled={busy || pricing.state === 'loading'} onClick={() => void pricing.reload()} className="min-h-11 rounded-xl border border-sf-line px-3 text-sm font-bold text-sf-body">Reload pricing</button> : null}
     {pricingStep && stale ? <p className="text-sm text-sf-warning">This order changed. Reload pricing before submitting.</p> : null}
     {sheet ? <div className="min-w-0 space-y-3">
+      {sheet === 'challan' && canSendChallan ? <form className="space-y-2" onSubmit={async event => { event.preventDefault(); if (await challan.submit('send_on_challan', challanNumber)) setSheet(''); }}>
+        <label htmlFor={`send-challan-${order.id}`} className="block text-sm font-bold text-sf-body">Tally delivery challan number</label>
+        <input id={`send-challan-${order.id}`} aria-label={`Tally delivery challan number for ${order.orderNumber}`} required maxLength={40} value={challanNumber} disabled={challan.busy || challan.pending} onChange={event => setChallanNumber(event.target.value)} className="min-h-11 w-full min-w-0 rounded-lg border border-sf-line px-3" />
+        {challan.error ? <p role="alert" className="text-sm text-sf-danger">{challan.error}</p> : null}
+        <button type="submit" disabled={challan.busy || !challanNumber.trim()} className={primary}>{challan.busy ? 'Saving…' : 'Send on challan'}</button>
+      </form> : null}
       <button type="button" disabled={busy} onClick={() => { setSheet(''); setReason(''); setChangedRate(''); priceChangeRequest.current = null; }} className="min-h-11 rounded-lg border border-sf-line px-4 font-bold text-sf-body">Cancel</button>
       {sheet === 'price' ? <PricingPanel order={order} actorRole={roles[0]} actorRoles={roles} pricing={pricing} sheet onSavingChange={setBusy} onChanged={async () => { await onPricingChanged(); setSheet(''); }} /> : null}
       {sheet === 'reject' ? <><label className="block text-sm font-bold text-sf-body">Rejection reason<input required minLength={3} maxLength={1000} value={reason} onChange={event => setReason(event.target.value)} className="mt-1 min-h-11 w-full min-w-0 rounded-lg border border-sf-line px-3" /></label><button type="button" disabled={busy || stale || reason.trim().length < 3} onClick={() => void run(() => pricingCommand('reject_price_exception'), 'Price rejected')} className={primary}>Reject price</button></> : null}
@@ -1257,6 +1340,7 @@ function OrderNextStepBar({ order, roles, pricing, inOrderPage, onAdvance, onDel
         {step.kind === 'pricing_approve' && canChangePrice ? <button type="button" disabled={busy || stale} onClick={() => { setChangedRate(String(step.exception!.enteredRate)); setReason(''); setError(''); setSheet('change'); }} className="min-h-11 rounded-xl border border-sf-line px-4 font-bold text-sf-body">Change price…</button> : null}
         {step.kind === 'pricing_approve' ? <button type="button" disabled={busy || stale} onClick={() => setSheet('reject')} className="min-h-11 rounded-xl border border-sf-danger-line px-4 font-bold text-sf-danger">Reject</button> : null}
       </>}
+      {canSendChallan ? <button type="button" disabled={busy || challan.busy} onClick={() => setSheet('challan')} className="min-h-11 rounded-xl border border-sf-line bg-white px-4 font-bold text-sf-body">Send on challan</button> : null}
     </>}
   </section>;
 }

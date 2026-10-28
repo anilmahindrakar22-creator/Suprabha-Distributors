@@ -1,5 +1,20 @@
 import { hasAnyStockFlowRole } from './user-types';
 
+// Mirrors supabase/migrations/20261029090000_challan_delivery.sql.
+export const CHALLAN_SEND_ROLES = ['administrator', 'operations'] as const;
+// Mirrors supabase/migrations/20261029090000_challan_delivery.sql.
+export const CHALLAN_BILL_ROLES = ['administrator', 'operations', 'accounts', 'billing'] as const;
+
+// Mirrors supabase/migrations/20261029090000_challan_delivery.sql.
+export function canSendOnChallan(roles: unknown): boolean {
+  return hasAnyStockFlowRole(roles, CHALLAN_SEND_ROLES);
+}
+
+// Mirrors supabase/migrations/20261029090000_challan_delivery.sql.
+export function canBillChallan(roles: unknown): boolean {
+  return hasAnyStockFlowRole(roles, CHALLAN_BILL_ROLES);
+}
+
 // Mirrors supabase/migrations/20260902091533_centralize_order_policy.sql:26-31.
 export const ORDER_CREATE_ROLES = ['administrator', 'sales', 'operations', 'management'] as const;
 

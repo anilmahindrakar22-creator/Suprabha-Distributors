@@ -107,7 +107,11 @@ describe('read-only pricing release preflight', () => {
   });
   it('validates the saved production evidence after deployment', () => {
     const result = pricingReleasePreflight(original, source);
-    expect(result.pending).toEqual(['20261028090000_to_order_list.sql']);
+    expect(result.pending).toEqual([
+      '20261028090000_to_order_list.sql',
+      '20261029090000_challan_delivery.sql',
+      '20261029091000_order_list_priority_sort.sql',
+    ]);
     expect(result.deployed.at(-1)?.localFile).toBe('20261026150000_rate_check_units.sql');
     expect(result.deployed).toHaveLength(147);
     const names = result.deployed.map((entry: { localFile: string }) => entry.localFile);
@@ -122,7 +126,11 @@ describe('read-only pricing release preflight', () => {
   });
   it('accepts documented CRLF normalization without modifying source', () => {
     const crlf = new Map([...source].map(([name, sql]) => [name, sql.replace(/\r/g, '').replace(/\n/g, '\r\n')]));
-    expect(pricingReleasePreflight(original, crlf).pending).toEqual(['20261028090000_to_order_list.sql']);
+    expect(pricingReleasePreflight(original, crlf).pending).toEqual([
+      '20261028090000_to_order_list.sql',
+      '20261029090000_challan_delivery.sql',
+      '20261029091000_order_list_priority_sort.sql',
+    ]);
   });
   it('rejects changed SQL including changes inside literals', () => {
     const files = new Map(source);
