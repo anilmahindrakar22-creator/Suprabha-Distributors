@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest';
 import type { OrderSummary } from '@/lib/order-types';
-import { deliveredTodayOrders, groupOrdersForList, istDateKey, orderListFlag, orderProgressIndex } from '@/lib/order-list-groups';
+import { deliveredTodayOrders, groupOrdersForList, istDateKey, orderListFlag, orderProgressIndex, orderProgressModel } from '@/lib/order-list-groups';
 import { stageStyles } from '@/components/order-list';
 
 // 11 Oct 2026, 15:00 IST.
@@ -78,5 +78,23 @@ describe('Orders list grouping', () => {
     expect(orderProgressIndex('dispatched')).toBe(3);
     expect(orderProgressIndex('delivered')).toBe(4);
     expect(orderProgressIndex('cancelled')).toBe(-1);
+  });
+
+  it('keeps normal order progress unchanged', () => {
+    for (const status of ['confirmed', 'packed', 'awaiting_tally_billing', 'dispatched', 'delivered']) {
+      const model = orderProgressModel(status);
+      expect(model.steps).toEqual(['Confirm', 'Pack', 'Bill', 'Dispatch', 'Delivered']);
+      expect(model.current).toBe(orderProgressIndex(status));
+      expect(model.tones).toEqual(['confirm', 'pack', 'bill', 'dispatch', 'done']);
+      expect(model.complete).toEqual([0, 1, 2, 3, 4].map(index => index < orderProgressIndex(status)));
+    }
+  });
+
+  it('places challan billing after delivery', () => {
+    expect(orderProgressModel('ready_for_dispatch', { billed: false })).toMatchObject({ current: 2, steps: ['Confirm', 'Pack', 'Dispatch', 'Delivered', 'Bill'] });
+    expect(orderProgressModel('delivered', { billed: false })).toMatchObject({ current: 4, tones: ['confirm', 'pack', 'dispatch', 'done', 'bill'] });
+    expect(orderProgressModel('delivered', { billed: true })).toMatchObject({ current: 4, tones: ['confirm', 'pack', 'dispatch', 'done', 'done'] });
+    expect(orderProgressModel('dispatched', { billed: true })).toMatchObject({ current: 2, complete: [true, true, false, false, true] });
+    expect(orderProgressModel('cancelled', { billed: false }).current).toBe(-1);
   });
 });

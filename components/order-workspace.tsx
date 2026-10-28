@@ -866,7 +866,7 @@ export function OrderWorkspace({ actorEmail, initialStatus = 'open', initialQuer
                       <button type="button" aria-label="Next order" disabled={selectedOrderIndex < 0 || selectedOrderIndex >= displayedOrders.length - 1} onClick={() => setSelectedOrderId(displayedOrders[selectedOrderIndex + 1].id)} className="min-h-9 rounded-lg border border-sf-line px-3 text-xs font-bold text-sf-body disabled:opacity-35">Next</button>
                     </div>
                   </div>
-                  {selectedOrder ? <div className="mt-1.5 max-w-md"><OrderProgress status={selectedOrder.status} /></div> : null}
+                  {selectedOrder ? <div className="mt-1.5 max-w-md"><OrderProgress status={selectedOrder.status} challan={selectedOrder.challanNumber ? { billed: Boolean(selectedOrder.tallyInvoiceNumber || selectedOrder.challanBilledAt) } : undefined} /></div> : null}
                 </div>
                 {selectedOrder ? <OrderRow key={selectedOrder.id} order={selectedOrder} {...orderRowProps} /> : null}
               </div>
@@ -893,7 +893,7 @@ export function OrderWorkspace({ actorEmail, initialStatus = 'open', initialQuer
                 <p className="flex flex-wrap items-center gap-x-1.5 gap-y-0.5 text-xs text-sf-subtle"><span className={`rounded-full px-2 py-0.5 text-[10px] font-extrabold ${orderStageStyle(openOrder.status).chip}`}>{orderStageStyle(openOrder.status).label}</span><OrderFlagBadge order={openOrder} /><span>{openOrder.orderNumber}</span><time dateTime={openOrder.createdAt} className="basis-full sm:basis-auto">Ordered {orderDateTime(openOrder.createdAt)}</time></p>
               </div>
             </div>
-            <div className="mt-1.5 px-2"><OrderProgress status={openOrder.status} /></div>
+            <div className="mt-1.5 px-2"><OrderProgress status={openOrder.status} challan={openOrder.challanNumber ? { billed: Boolean(openOrder.tallyInvoiceNumber || openOrder.challanBilledAt) } : undefined} /></div>
           </div>
           <div className="min-h-0 flex-1 overflow-y-auto overscroll-contain">
             {notice ? <p className="mx-3 mt-3 flex items-center gap-1 rounded-xl border border-sf-success-line bg-sf-success-soft px-3 py-2 text-sm font-semibold text-sf-success"><CircleCheck aria-hidden="true" className="shrink-0" size={14} />{notice}</p> : null}
@@ -1303,7 +1303,8 @@ function OrderNextStepBar({ order, roles, pricing, inOrderPage, onAdvance, onDel
     {sheet ? <div className="min-w-0 space-y-3">
       {sheet === 'challan' && canSendChallan ? <form className="space-y-2" onSubmit={async event => { event.preventDefault(); if (await challan.submit('send_on_challan', challanNumber)) setSheet(''); }}>
         <label htmlFor={`send-challan-${order.id}`} className="block text-sm font-bold text-sf-body">Tally delivery challan number</label>
-        <input id={`send-challan-${order.id}`} aria-label={`Tally delivery challan number for ${order.orderNumber}`} required maxLength={40} value={challanNumber} disabled={challan.busy || challan.pending} onChange={event => setChallanNumber(event.target.value)} className="min-h-11 w-full min-w-0 rounded-lg border border-sf-line px-3" />
+        <input id={`send-challan-${order.id}`} aria-label={`Tally delivery challan number for ${order.orderNumber}`} aria-describedby={`send-challan-hint-${order.id}`} required maxLength={40} value={challanNumber} disabled={challan.busy || challan.pending} onChange={event => setChallanNumber(event.target.value)} className="min-h-11 w-full min-w-0 rounded-lg border border-sf-line px-3" />
+        <p id={`send-challan-hint-${order.id}`} className="text-xs text-sf-muted">Billing adds the Tally invoice at month end.</p>
         {challan.error ? <p role="alert" className="text-sm text-sf-danger">{challan.error}</p> : null}
         <button type="submit" disabled={challan.busy || !challanNumber.trim()} className={primary}>{challan.busy ? 'Saving…' : 'Send on challan'}</button>
       </form> : null}

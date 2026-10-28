@@ -77,3 +77,20 @@ export const orderProgressSteps = ['Confirm', 'Pack', 'Bill', 'Dispatch', 'Deliv
 export function orderProgressIndex(status: string) {
   return (['confirm', 'pack', 'bill', 'dispatch', 'done'] as StageKey[]).indexOf(orderStageKey(status));
 }
+
+/** Builds the five-step progress display, placing challan billing after delivery. */
+export function orderProgressModel(status: string, challan?: { billed: boolean }): { steps: readonly string[]; current: number; tones: StageKey[]; complete: boolean[] } {
+  if (!challan) {
+    const current = orderProgressIndex(status);
+    return { steps: orderProgressSteps, current, tones: ['confirm', 'pack', 'bill', 'dispatch', 'done'], complete: orderProgressSteps.map((_, index) => index < current) };
+  }
+  const steps = ['Confirm', 'Pack', 'Dispatch', 'Delivered', 'Bill'];
+  const tones: StageKey[] = ['confirm', 'pack', 'dispatch', 'done', 'bill'];
+  const stage = orderStageKey(status);
+  let current = stage === 'confirm' ? 0 : stage === 'pack' ? 1 : stage === 'dispatch' ? 2 : stage === 'done' ? 3 : -1;
+  if (stage === 'done') current = 4;
+  if (stage === 'done' && challan.billed) tones[4] = 'done';
+  const complete = steps.map((_, index) => index < current);
+  if (challan.billed && current < 4) complete[4] = true;
+  return { steps, current, tones, complete };
+}

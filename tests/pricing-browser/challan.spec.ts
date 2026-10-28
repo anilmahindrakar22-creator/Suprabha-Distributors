@@ -33,6 +33,7 @@ test('operations sends an approved packed order on challan on a phone', async ({
   const { commands, dialog } = await mockChallan(page, 'operations');
   const bar = dialog.getByRole('region', { name: 'Order next step' });
   await bar.getByRole('button', { name: 'Send on challan', exact: true }).click();
+  await expect(page.getByText('Billing adds the Tally invoice at month end.', { exact: true })).toBeVisible();
   await bar.getByLabel(/^Tally delivery challan number/).fill('DC-101');
   await bar.getByRole('button', { name: 'Send on challan', exact: true }).click();
   await expect.poll(() => commands.length).toBe(1);

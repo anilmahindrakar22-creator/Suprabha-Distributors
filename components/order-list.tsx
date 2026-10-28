@@ -5,7 +5,7 @@ import { ArrowUp, Flame, Hourglass, PackageCheck, PackageX, ShieldAlert, Triangl
 import type { OrderSummary } from '@/lib/order-types';
 import { orderStage } from '@/lib/order-types';
 import { orderDateLabel, orderDateTime } from '@/lib/order-date';
-import { orderListFlag, orderProgressIndex, orderProgressSteps, orderStageKey, type StageKey } from '@/lib/order-list-groups';
+import { orderListFlag, orderProgressModel, orderStageKey, type StageKey } from '@/lib/order-list-groups';
 
 // One colour per stage, used everywhere on the Orders screens. Red is reserved for problems.
 export const stageStyles: Record<StageKey, { bar: string; chip: string; label: string }> = {
@@ -87,15 +87,15 @@ export function CompactOrderRow({ order, onOpen, selected = false, isNew = false
   );
 }
 
-/** Five-step progress: Confirm → Pack → Bill → Dispatch → Delivered. */
-export function OrderProgress({ status }: { status: string }) {
-  const current = orderProgressIndex(status);
+/** Shows normal order progress or dispatch-first progress for challan orders. */
+export function OrderProgress({ status, challan }: { status: string; challan?: { billed: boolean } }) {
+  const { steps, current, tones, complete } = orderProgressModel(status, challan);
   if (current < 0) return <p className="text-xs font-bold text-sf-muted">{orderStage(status)}</p>;
   return (
     <ol aria-label="Order progress" className="grid grid-cols-5 gap-1">
-      {orderProgressSteps.map((step, index) => (
+      {steps.map((step, index) => (
         <li key={step} aria-current={index === current ? 'step' : undefined} className="min-w-0">
-          <span className={`block h-1.5 rounded-full ${index < current ? 'bg-sf-success' : index === current ? stageStyles[(['confirm', 'pack', 'bill', 'dispatch', 'done'] as const)[index]].bar : 'bg-sf-line-soft'}`} />
+          <span className={`block h-1.5 rounded-full ${complete[index] && index !== current ? 'bg-sf-success' : index === current ? stageStyles[tones[index]].bar : 'bg-sf-line-soft'}`} />
           <span className={`mt-1 block truncate text-[10px] font-bold ${index === current ? 'text-sf-ink' : 'text-sf-faint'}`}>{step}</span>
         </li>
       ))}
