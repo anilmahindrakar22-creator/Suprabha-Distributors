@@ -83,3 +83,30 @@ In `components/accounts-workspace.tsx`, add a **"My actions"** entry next to the
 - the not-yours message;
 - the empty state;
 - no horizontal scroll.
+
+## 7. Addendum (29 Oct): closing a Visit action records the visit
+**Why:** today a done visit leaves no visit record, so the diagnosis "Last visit" signal never moves.
+
+**Gateway change** (`20261031130000_wallet_my_actions.sql` is not deployed, so amend it in place):
+- `close_my_action` takes an optional `visit: { outcome: 'met'|'not_available'|'order_taken'|'issue_raised'|'other'; nextVisitOn: string | null } | null`.
+- **Allowed only when** the action's type is `visit` **and** `result = 'done'`. Otherwise a non-null `visit` gives 22023.
+- **When present:** in the **same transaction**, call
+  `public.stockflow_accounts_gateway(p_gateway_key, p_actor_email, 'log_visit', jsonb_build_object('idempotencyKey', requestId||':visit', 'customerId', <action customer>, 'visitedOn', today IST, 'outcome', …, 'note', left(note,500), 'nextVisitOn', …))`.
+  - Pass the caller's own key and actor through.
+  - All of `log_visit`'s rules, roles and idempotency apply.
+  - Any error aborts the close (all-or-nothing).
+  - The close result gains `visitId`.
+- Replaying the same `requestId` returns the original result (including `visitId`) and logs no second visit.
+
+**Contract:** add `visit` to the `close_my_action` payload in `lib/my-actions-types.ts`; the validator mirrors the rules above.
+
+**Screen:**
+- On **Mark done** for a Visit action, the form adds "Visit outcome" (select: Met, Not available, Order taken, Issue raised, Other; required) and an optional "Next visit" date (after today, within 180 days).
+- Drop and non-visit actions are unchanged.
+
+**Acceptance:**
+- **M7:** closing a visit action as done with a visit inserts exactly one `stockflow_customer_visits` row for the action's customer, dated today IST, by the actor. `get_account_signals` `lastVisitOn` then equals today.
+- **M8:** a visit on a non-visit action, or with result `dropped`, gives 22023 and closes nothing.
+- **M9:** an invalid `nextVisitOn` (≤ today) makes `log_visit` fail. The action stays open: assert there's no result row.
+- **M10:** a replay inserts no second visit.
+- **Browser:** the outcome select appears only for a Visit with Mark done; the POST body carries `visit`.
