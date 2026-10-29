@@ -1154,7 +1154,7 @@
     },
     {
       "localFile": "20261031130000_wallet_my_actions.sql",
-      "localSha256": "37d3d544c51186e55d876ec107f18feafd4120c90b062950e11485defa8794d4",
+      "localSha256": "e9a656c33e044397fc4f75e3420d17b12c59c1119ab854161f626c822bd50d9d",
       "remoteVersion": null,
       "remoteSha256": null,
       "status": "not_deployed"

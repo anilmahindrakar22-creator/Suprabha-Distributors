@@ -1,6 +1,7 @@
 'use client';
 
 import { useCallback, useEffect, useId, useRef, useState } from 'react';
+import { ChevronDown } from 'lucide-react';
 import { isPowerMap, validatePowerMapCommand, type InfluenceStrength, type PowerMap, type PowerMapCommand } from '@/lib/power-map-types';
 import { walletRoleLabels } from '@/lib/wallet-labels';
 import { readJsonBody } from '@/lib/http-json';
@@ -79,7 +80,7 @@ export function PowerMapInfluence({ customerId, customerName, refreshOn, busy = 
     <p>{readError ? 'Influence unavailable' : !map ? 'Loading influence…' : steps ? <>Route to decider: {steps.map((step, index) => <span key={step.contactId}>{index ? ' → ' : ''}{index === steps.length - 1 ? <strong>{step.name}</strong> : step.name}</span>)}</> : !map.contacts.some(c => c.stance === 'supporter') ? 'No supporter yet: find a champion' : !decider ? 'No decision maker known' : `No known route to ${decider.name}: ask who they listen to`}</p>
     {readError ? <div><p role="alert">{readError}</p><button type="button" className={buttonClass} onClick={() => void load()}>Retry influence</button></div> : null}
     {map ? <>
-      <button type="button" className="min-h-11 text-xs text-sf-muted" aria-expanded={expanded} aria-controls={`${prefix}-details`} onClick={() => setExpanded(value => !value)}>Influence ({map.links.length})</button>
+      <button type="button" className="inline-flex min-h-11 items-center gap-1 text-xs text-sf-muted" aria-expanded={expanded} aria-controls={`${prefix}-details`} onClick={() => setExpanded(value => !value)}>Influence ({map.links.length})<ChevronDown aria-hidden="true" size={16} className={`transition-transform ${expanded ? 'rotate-180' : ''}`} /></button>
       {expanded ? <div id={`${prefix}-details`} className="min-w-0 space-y-3">
         <ul className="space-y-3" aria-label="Influence links">{map.links.map(link => <li key={link.id} className="min-w-0">
           <div className="flex min-w-0 flex-wrap items-center gap-x-2"><span className="min-w-0 break-words [overflow-wrap:anywhere]">{map.contacts.find(c => c.id === link.fromContactId)?.name ?? 'Removed contact'} → {map.contacts.find(c => c.id === link.toContactId)?.name ?? 'Removed contact'}</span><span className="rounded-full bg-sf-soft-0 px-2 py-1 text-xs">{strengths[link.strength]}</span><button type="button" disabled={disabled} className="min-h-11 text-xs text-sf-muted" aria-label={`End influence from ${map.contacts.find(c => c.id === link.fromContactId)?.name ?? 'removed contact'} to ${map.contacts.find(c => c.id === link.toContactId)?.name ?? 'removed contact'}`} onClick={event => { origin.current = event.currentTarget; setForm(link.id); setReason(''); setError(''); setNotice(''); }}>End</button></div>

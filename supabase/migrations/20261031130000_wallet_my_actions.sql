@@ -10,13 +10,16 @@ begin
  where r.action_id is null and a.owner_email=actor_value;
  select coalesce(jsonb_agg(item order by due_on,customer_name,action_id),'[]'::jsonb) into result_data from (
   select jsonb_build_object('actionId',a.id,'customerId',c.id,'customerName',c.name,'city',c.city,
-   'actionType',a.action_type,'detail',a.detail,'dueOn',a.due_on,'overdue',a.due_on<p_today,'constraintCategory',cc.category) item,
+   'actionType',a.action_type,'detail',a.detail,'dueOn',a.due_on,'overdue',a.due_on<p_today,'constraintCategory',cc.category,
+   'routeToDecider',case when route_data.route is null then null else
+    (select jsonb_agg(step->>'name' order by ordinality) from jsonb_array_elements(route_data.route->'steps') with ordinality as s(step,ordinality)) end) item,
    a.due_on,c.name customer_name,a.id action_id
   from private.stockflow_commercial_actions a
   join private.stockflow_commercial_opportunities o on o.id=a.opportunity_id
   join private.stockflow_customers c on c.id=o.customer_id
   left join private.stockflow_commercial_action_results r on r.action_id=a.id
   left join lateral(select category from private.stockflow_commercial_constraints x where x.opportunity_id=o.id order by x.recorded_at desc,x.id desc limit 1) cc on true
+  left join lateral(select private.stockflow_power_route(o.customer_id) as route) route_data on true
   where r.action_id is null and a.owner_email=actor_value
   order by a.due_on,c.name,a.id offset (p_page-1)*50 limit 50
  ) selected_rows;

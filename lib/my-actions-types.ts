@@ -1,6 +1,6 @@
 import type { ActionResult, ActionType } from '@/lib/wallet-action-types';
 
-export type MyActionRow = { actionId: string; customerId: string; customerName: string; city: string | null; actionType: ActionType; detail: string; dueOn: string; overdue: boolean; constraintCategory: string | null };
+export type MyActionRow = { actionId: string; customerId: string; customerName: string; city: string | null; actionType: ActionType; detail: string; dueOn: string; overdue: boolean; constraintCategory: string | null; routeToDecider: string[] | null };
 export type MyActions = { page: number; pageSize: 50; total: number; overdueCount: number; rows: MyActionRow[] };
 export type MyActionCommand =
   | { action: 'get_my_actions'; payload: { page: number } }

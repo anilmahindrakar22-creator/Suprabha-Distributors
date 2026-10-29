@@ -13,7 +13,9 @@ insert into private.stockflow_customers(id,name,tally_key,created_by_email) valu
  ('b2700000-0000-4000-8000-000000000022','My Actions Fixture Two','my-actions-fixture-two','test'),
  ('b2700000-0000-4000-8000-000000000023','My Actions Fixture Three','my-actions-fixture-three','test'),
  ('b2700000-0000-4000-8000-000000000024','My Actions Fixture Four','my-actions-fixture-four','test'),
- ('b2700000-0000-4000-8000-000000000025','My Actions Fixture Five','my-actions-fixture-five','test') on conflict(id) do nothing;
+ ('b2700000-0000-4000-8000-000000000025','My Actions Fixture Five','my-actions-fixture-five','test'),
+ ('b2b00000-0000-4000-8000-000000000001','My Actions M11 Route Fixture','my-actions-m11-route-fixture','test'),
+ ('b2b00000-0000-4000-8000-000000000002','My Actions M11 No Route Fixture','my-actions-m11-no-route-fixture','test') on conflict(id) do nothing;
 create function pg_temp.my_action_call(p_action text,p_payload jsonb,p_actor text default 'my-actions-sales@test.local') returns jsonb language sql as $$
  select public.stockflow_my_actions_gateway('actions-test-key',p_actor,p_action,p_payload)
 $$;
@@ -32,6 +34,7 @@ end$$;
 do $checks$
 declare opp_one uuid; opp_two uuid; opp_three uuid; opp_four uuid; opp_five uuid; own_first uuid; own_second uuid; other_action uuid; closed_action uuid; visit_action uuid;
  output jsonb; listed jsonb; denied boolean; role_name text; action_name text; retry_result jsonb; expected_keys text[]; visit_id uuid; visit_count int; visit_signals jsonb; fixture_today date:=(now() at time zone 'Asia/Kolkata')::date;
+ route_opportunity uuid; plain_opportunity uuid; route_action uuid; plain_action uuid; m11_territory uuid; m11_champion uuid; m11_influencer uuid; m11_decider uuid; route_row jsonb; plain_row jsonb;
 begin
  output:=public.stockflow_opportunity_gateway('actions-test-key','my-actions-manager@test.local','open_opportunity',jsonb_build_object('requestId','wallet-my-actions-open-first-0001','customerId','b2700000-0000-4000-8000-000000000021','kind','capture','reason','Fixture for own actions'))::jsonb;
  opp_one:=(output->>'id')::uuid;
@@ -59,7 +62,7 @@ begin
  if (listed->>'total')::int<>2 or (listed->>'overdueCount')::int<>1 or jsonb_array_length(listed->'rows')<>2 then raise exception 'M1 owner/open filtering failed';end if;
  if listed->'rows'->0->>'actionId'<>own_first::text or listed->'rows'->0->>'customerName'<>'My Actions Fixture One' or listed->'rows'->0->>'constraintCategory'<>'price' or listed->'rows'->0->>'overdue'<>'true' or listed->'rows'->1->>'actionId'<>own_second::text or listed->'rows'->1->>'overdue'<>'false' then raise exception 'M1 order/overdue/constraint failed';end if;
  select array_agg(key order by key) into expected_keys from jsonb_object_keys(listed->'rows'->0) as row_keys(key);
- if expected_keys is distinct from array['actionId','actionType','city','constraintCategory','customerId','customerName','detail','dueOn','overdue']::text[] then raise exception 'M4 row key set mismatch: %',expected_keys;end if;
+ if expected_keys is distinct from array['actionId','actionType','city','constraintCategory','customerId','customerName','detail','dueOn','overdue','routeToDecider']::text[] then raise exception 'M4 row key set mismatch: %',expected_keys;end if;
  -- M2: ownership is opaque, own action closes, and duplicate close is a conflict.
  perform pg_temp.my_action_error('close_my_action',jsonb_build_object('requestId','wallet-my-actions-close-other-error-0009','actionId',other_action,'result','done','note','Attempt other owner fixture')::jsonb,'22023','Action not found');
  retry_result:=pg_temp.my_action_call('close_my_action',jsonb_build_object('requestId','wallet-my-actions-close-own-success-0010','actionId',own_first,'result','done','note','Completed fixture visit')::jsonb);
@@ -113,5 +116,37 @@ begin
  if output is distinct from retry_result then raise exception 'M10 replay changed the close receipt';end if;
  select count(*) into visit_count from private.stockflow_customer_visits v where v.customer_id='b2700000-0000-4000-8000-000000000025' and v.visited_on=fixture_today and v.visited_by='my-actions-sales@test.local';
  if visit_count<>1 then raise exception 'M10 replay inserted another visit';end if;
+ -- M11 a linked fixture lab exposes only the ordered contact names; a lab without links exposes null.
+ insert into public.stockflow_members(email,role,roles,status) values
+  ('my-actions-manager@test.local','management',array['management']::text[],'active'),
+  ('my-actions-sales@test.local','sales',array['sales']::text[],'active')
+ on conflict(email) do update set role=excluded.role,roles=excluded.roles,status=excluded.status;
+ output:=public.stockflow_opportunity_gateway('actions-test-key','my-actions-manager@test.local','open_opportunity',jsonb_build_object('requestId','wallet-my-actions-m11-open-route-0030','customerId','b2b00000-0000-4000-8000-000000000001','kind','capture','reason','M11 influence route action fixture')::jsonb);
+ route_opportunity:=(output->>'id')::uuid;
+ output:=public.stockflow_opportunity_gateway('actions-test-key','my-actions-manager@test.local','open_opportunity',jsonb_build_object('requestId','wallet-my-actions-m11-open-plain-0031','customerId','b2b00000-0000-4000-8000-000000000002','kind','capture','reason','M11 no route action fixture')::jsonb);
+ plain_opportunity:=(output->>'id')::uuid;
+ output:=pg_temp.manager_action_call('create_action',jsonb_build_object('requestId','wallet-my-actions-m11-create-route-0032','opportunityId',route_opportunity,'actionType','visit','detail','Meet the fixture decision maker','ownerEmail','my-actions-sales@test.local','dueOn',fixture_today+10,'expectedMonthlyGainPaise',null)::jsonb);
+ route_action:=(output->>'id')::uuid;
+ output:=pg_temp.manager_action_call('create_action',jsonb_build_object('requestId','wallet-my-actions-m11-create-plain-0033','opportunityId',plain_opportunity,'actionType','visit','detail','Visit the no route fixture','ownerEmail','my-actions-sales@test.local','dueOn',fixture_today+11,'expectedMonthlyGainPaise',null)::jsonb);
+ plain_action:=(output->>'id')::uuid;
+ output:=public.stockflow_accounts_gateway('actions-test-key','my-actions-manager@test.local','create_territory',jsonb_build_object('idempotencyKey','wallet-my-actions-m11-territory-0034','name','My Actions M11 Territory')::jsonb);
+ m11_territory:=(output#>>'{territory,id}')::uuid;
+ output:=public.stockflow_accounts_gateway('actions-test-key','my-actions-manager@test.local','assign_account',jsonb_build_object('idempotencyKey','wallet-my-actions-m11-assignment-0035','customerId','b2b00000-0000-4000-8000-000000000001','ownerEmail','my-actions-sales@test.local','territoryId',m11_territory,'expectedVersion',(select assignment_row.version from private.stockflow_customer_assignments assignment_row where assignment_row.customer_id='b2b00000-0000-4000-8000-000000000001' and assignment_row.effective_to is null))::jsonb);
+ output:=public.stockflow_accounts_gateway('actions-test-key','my-actions-manager@test.local','add_contact',jsonb_build_object('idempotencyKey','wallet-my-actions-m11-add-champion-0036','customerId','b2b00000-0000-4000-8000-000000000001','name','M11 Champion','businessRole','Laboratory champion','phone',null,'email',null)::jsonb);
+ m11_champion:=(output->>'contactId')::uuid;
+ output:=public.stockflow_accounts_gateway('actions-test-key','my-actions-manager@test.local','add_contact',jsonb_build_object('idempotencyKey','wallet-my-actions-m11-add-influencer-0037','customerId','b2b00000-0000-4000-8000-000000000001','name','M11 Influencer','businessRole','Laboratory influencer','phone',null,'email',null)::jsonb);
+ m11_influencer:=(output->>'contactId')::uuid;
+ output:=public.stockflow_accounts_gateway('actions-test-key','my-actions-manager@test.local','add_contact',jsonb_build_object('idempotencyKey','wallet-my-actions-m11-add-decider-0038','customerId','b2b00000-0000-4000-8000-000000000001','name','M11 Decider','businessRole','Laboratory decision maker','phone',null,'email',null)::jsonb);
+ m11_decider:=(output->>'contactId')::uuid;
+ perform public.stockflow_accounts_gateway('actions-test-key','my-actions-manager@test.local','set_assessment',jsonb_build_object('idempotencyKey','wallet-my-actions-m11-assess-champion-0039','contactId',m11_champion,'decisionRole','champion','stance','supporter','influence','high','reason',null)::jsonb);
+ perform public.stockflow_accounts_gateway('actions-test-key','my-actions-manager@test.local','set_assessment',jsonb_build_object('idempotencyKey','wallet-my-actions-m11-assess-influencer-0040','contactId',m11_influencer,'decisionRole','influencer','stance','neutral','influence','medium','reason',null)::jsonb);
+ perform public.stockflow_accounts_gateway('actions-test-key','my-actions-manager@test.local','set_assessment',jsonb_build_object('idempotencyKey','wallet-my-actions-m11-assess-decider-0041','contactId',m11_decider,'decisionRole','decision_maker','stance','neutral','influence','high','reason',null)::jsonb);
+ perform public.stockflow_power_map_gateway('actions-test-key','my-actions-manager@test.local','set_influence',jsonb_build_object('requestId','wallet-my-actions-m11-link-one-0042','customerId','b2b00000-0000-4000-8000-000000000001','fromContactId',m11_champion,'toContactId',m11_influencer,'strength','strong','evidence','Champion guides the influencer')::jsonb);
+ perform public.stockflow_power_map_gateway('actions-test-key','my-actions-manager@test.local','set_influence',jsonb_build_object('requestId','wallet-my-actions-m11-link-two-0043','customerId','b2b00000-0000-4000-8000-000000000001','fromContactId',m11_influencer,'toContactId',m11_decider,'strength','strong','evidence','Influencer guides the decider')::jsonb);
+ listed:=public.stockflow_my_actions_gateway('actions-test-key','my-actions-sales@test.local','get_my_actions',jsonb_build_object('page',1)::jsonb);
+ select row_item.value into route_row from jsonb_array_elements(listed->'rows') as row_item(value) where row_item.value->>'actionId'=route_action::text;
+ select row_item.value into plain_row from jsonb_array_elements(listed->'rows') as row_item(value) where row_item.value->>'actionId'=plain_action::text;
+ if route_row->'routeToDecider' is distinct from jsonb_build_array('M11 Champion','M11 Influencer','M11 Decider') then raise exception 'M11 linked route names or order mismatch';end if;
+ if plain_row->'routeToDecider' is distinct from 'null'::jsonb then raise exception 'M11 unlinked fixture route should be null';end if;
 end$checks$;
 rollback;
