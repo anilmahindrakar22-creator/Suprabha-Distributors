@@ -51,7 +51,7 @@ export type AccountsResponse = {
   page: { page: number; pageSize: number; total: number };
   owners: { email: string; name: string | null }[];
   territories: { id: string; name: string }[];
-  canAssign: boolean; canEraseContacts: boolean; canSeePowerMap: boolean; actorEmail: string; today: string;
+  canAssign: boolean; canSeeMyActions?: boolean; canEraseContacts: boolean; canSeePowerMap: boolean; actorEmail: string; today: string;
 };
 export type AccountsGatewayResponse = Omit<AccountsResponse, 'canAssign' | 'canEraseContacts' | 'actorEmail'>;
 export function withAccountContacts<T extends { accounts: (Omit<AccountRow, 'appContacts'> & { appContacts?: AccountRow['appContacts'] })[] }>(response: T): T & { accounts: AccountRow[] } {

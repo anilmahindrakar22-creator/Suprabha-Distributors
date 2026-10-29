@@ -3,8 +3,8 @@
 import { useEffect, useRef, useState } from 'react';
 import { formatPaise, rupeesToPaise } from '@/lib/wallet-format';
 import type { ActionDueRow, ActionOwner, ActionType, WalletAction } from '@/lib/wallet-action-types';
+import { walletActionLabels as labels } from '@/lib/wallet-labels';
 
-const labels: Record<ActionType, string> = { visit: 'Visit', demo: 'Demo', get_competitor_proof: 'Get competitor proof', add_product: 'Add product', fix_service: 'Fix service issue', fix_supply: 'Fix supply issue', instrument_proposal: 'Instrument proposal', credit_terms: 'Credit terms', price_review: 'Price review', no_action: 'No action (deliberate)' };
 const types = Object.keys(labels) as ActionType[];
 const button = 'min-h-11 rounded-xl border border-sf-line px-3 text-sm font-bold text-sf-body disabled:opacity-50';
 const primary = 'min-h-11 rounded-xl bg-sf-brand px-4 text-sm font-bold text-white disabled:opacity-50';

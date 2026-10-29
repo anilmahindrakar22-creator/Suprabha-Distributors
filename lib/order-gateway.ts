@@ -41,6 +41,8 @@ export type GatewayAction =
   | 'get_action_owners'
   | 'create_action'
   | 'close_action'
+  | 'get_my_actions'
+  | 'close_my_action'
   | 'confirm_customer_links'
   | 'recover_economic_command'
   | EconomicAction

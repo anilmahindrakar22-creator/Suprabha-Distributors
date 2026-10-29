@@ -3,13 +3,13 @@
 import { useEffect, useRef, useState } from 'react';
 import { formatPaise, permilleLabel, rupeesToPaise } from '@/lib/wallet-format';
 import type { ConstraintCategory, EvidenceSource, OpportunityKind, OpportunityOutcome, WalletOpportunity, WalletSignals } from '@/lib/wallet-diagnosis-types';
+import { walletConstraintLabels as labels } from '@/lib/wallet-labels';
 import { WalletActions } from '@/components/wallet-actions';
 
 const button = 'min-h-11 rounded-xl border border-sf-line px-3 text-sm font-bold text-sf-body disabled:opacity-50';
 const primary = 'min-h-11 rounded-xl bg-sf-brand px-4 text-sm font-bold text-white disabled:opacity-50';
 const input = 'min-h-11 w-full min-w-0 rounded-xl border border-sf-line bg-sf-soft-0 px-3 text-sm text-sf-body';
 const formText = (form: FormData, key: string) => { const value = form.get(key); return typeof value === 'string' ? value.trim() : ''; };
-const labels: Record<ConstraintCategory, string> = { price: 'Price', portfolio: 'Portfolio gap', instrument: 'Instrument', service: 'Service', relationship: 'Relationship', credit: 'Credit', availability: 'Availability', clinical: 'Clinical', contract_tender: 'Contract / tender', competitor_lock_in: 'Competitor lock-in', unknown: 'Unknown' };
 const categories = Object.keys(labels) as ConstraintCategory[];
 const isCategory = (value: string): value is ConstraintCategory => categories.includes(value as ConstraintCategory);
 type Facts = Record<string, string | number>;
