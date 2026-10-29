@@ -44,6 +44,8 @@ async function fixture(page: Page, options: Options = {}) {
     }
     return route.fulfill({ json: opportunities.filter(item => item.customerId === url.searchParams.get('customerId')) });
   });
+  await page.route('**/api/wallet/actions?**', route => route.fulfill({ json: route.request().url().includes('get_actions_due') ? { page: 1, pageSize: 50, total: 0, overdueCount: 0, rows: [] } : [] }));
+  await page.route('**/api/wallet/actions', route => route.fulfill({ json: { ok: true } }));
   await page.route('**/api/wallet?**', async route => {
     const url = new URL(route.request().url());
     if (url.searchParams.get('action') === 'get_wallet_account') return route.fulfill({ json: { policy, coverage, row, current, history: [current], divisions: [{ code: 'BIOCHEM', name: 'Biochemistry' }] } satisfies WalletAccount });

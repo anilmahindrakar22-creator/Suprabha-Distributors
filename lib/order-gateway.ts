@@ -36,6 +36,11 @@ export type GatewayAction =
   | 'open_opportunity'
   | 'record_constraint'
   | 'close_opportunity'
+  | 'get_actions_due'
+  | 'get_opportunity_actions'
+  | 'get_action_owners'
+  | 'create_action'
+  | 'close_action'
   | 'confirm_customer_links'
   | 'recover_economic_command'
   | EconomicAction
@@ -138,7 +143,7 @@ export async function callOrderGateway<T>(
   const failure = result as { message?: string; code?: string };
   const message = failure.message || 'Order service request failed';
   const status =
-    failure.code === '42501'
+    failure.code === '42501' || failure.code === 'PT403'
       ? 403
       : failure.code === '40001' || failure.code === 'PT409'
         ? 409

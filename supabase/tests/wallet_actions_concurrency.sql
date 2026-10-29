@@ -1,0 +1,56 @@
+create extension if not exists dblink with schema public;
+begin;
+create table public.test_actions_gateway_backup as select secret_sha256 from private.stockflow_gateway_config where name='orders';
+insert into private.stockflow_gateway_config(name,secret_sha256) values('orders',encode(extensions.digest('actions-race-key','sha256'),'hex')) on conflict(name) do update set secret_sha256=excluded.secret_sha256;
+insert into public.stockflow_members(email,role,status) values('actions-race-a@test.local','management','active'),('actions-race-b@test.local','management','active') on conflict(email) do update set status='active';
+insert into private.stockflow_customers(id,name,tally_key,created_by_email) values('b2800000-0000-4000-8000-000000000001','Actions race','actions-race','test') on conflict(id) do nothing;
+create function public.test_actions_race(actor text,request text,opp uuid) returns text language plpgsql as $$ declare result_data jsonb;
+begin result_data:=public.stockflow_action_gateway('actions-race-key',actor,'create_action',jsonb_build_object('requestId',request,'opportunityId',opp,'actionType','visit','detail','Race action fixture','ownerEmail',actor,'dueOn',(now() at time zone 'Asia/Kolkata')::date,'expectedMonthlyGainPaise',null)); return 'ok';
+exception when sqlstate 'PT409' then return 'PT409';end$$;
+revoke all on function public.test_actions_race(text,text,uuid) from public,anon,authenticated,service_role;
+create function public.test_actions_close_race(actor text,request text,opp uuid) returns text language plpgsql as $$
+begin perform public.stockflow_opportunity_gateway('actions-race-key',actor,'close_opportunity',jsonb_build_object('requestId',request,'opportunityId',opp,'outcome','lost','reason','Race close attempt'));return 'ok';
+exception when sqlstate '22023' then return '22023';end$$;
+revoke all on function public.test_actions_close_race(text,text,uuid) from public,anon,authenticated,service_role;
+commit;
+do $fixtures$ declare result_data jsonb; begin
+ result_data:=public.stockflow_opportunity_gateway('actions-race-key','actions-race-a@test.local','open_opportunity',jsonb_build_object('requestId','actions-race-open-create','customerId','b2800000-0000-4000-8000-000000000001','kind','capture','reason','Race create opportunity')); 
+ create temporary table action_race_ids(first_op uuid,close_op uuid) on commit preserve rows;
+ insert into action_race_ids(first_op) values((result_data->>'id')::uuid);
+ result_data:=public.stockflow_opportunity_gateway('actions-race-key','actions-race-a@test.local','open_opportunity',jsonb_build_object('requestId','actions-race-open-close','customerId','b2800000-0000-4000-8000-000000000001','kind','defend','reason','Race close opportunity'));
+ update action_race_ids set close_op=(result_data->>'id')::uuid;
+end$fixtures$;
+do $race$
+declare first_result text; second_result text; second_pid integer; attempt integer; action_opp uuid; close_opp uuid; create_result text; close_result text; close_error text;
+begin
+ select first_op,close_op into action_opp,close_opp from action_race_ids;
+ perform public.dblink_connect('actions_a','dbname='||current_database()||' user='||current_user||' options=-cstatement_timeout=15000');
+ perform public.dblink_connect('actions_b','dbname='||current_database()||' user='||current_user||' options=-cstatement_timeout=15000');
+ select pid into second_pid from public.dblink('actions_b','select pg_backend_pid()') as t(pid integer);
+ perform public.dblink_exec('actions_a','begin');
+ select result into first_result from public.dblink('actions_a',format('select public.test_actions_race(%L,%L,%L::uuid)','actions-race-a@test.local','actions-race-one',action_opp)) as t(result text);
+ perform public.dblink_send_query('actions_b',format('select public.test_actions_race(%L,%L,%L::uuid)','actions-race-b@test.local','actions-race-two',action_opp));
+ for attempt in 1..500 loop exit when exists(select 1 from pg_locks where pid=second_pid and not granted and locktype='advisory'); perform pg_sleep(0.01);end loop;
+ if not exists(select 1 from pg_locks where pid=second_pid and not granted and locktype='advisory') then raise exception 'Create contender did not wait for opportunity lock';end if;
+ perform public.dblink_exec('actions_a','commit');
+ select result into second_result from public.dblink_get_result('actions_b') as t(result text); perform * from public.dblink_get_result('actions_b') as t(result text);
+ if first_result<>'ok' or second_result<>'PT409' then raise exception 'Create race results: %, %',first_result,second_result;end if;
+ perform public.dblink_exec('actions_a','begin');
+ select result into create_result from public.dblink('actions_a',format('select public.test_actions_race(%L,%L,%L::uuid)','actions-race-a@test.local','actions-race-close-create',close_opp)) as t(result text);
+ perform public.dblink_send_query('actions_b',format('select public.test_actions_close_race(%L,%L,%L::uuid)','actions-race-b@test.local','actions-race-close-opportunity',close_opp));
+ for attempt in 1..500 loop exit when exists(select 1 from pg_locks where pid=second_pid and not granted and locktype='advisory'); perform pg_sleep(0.01);end loop;
+ if not exists(select 1 from pg_locks where pid=second_pid and not granted and locktype='advisory') then raise exception 'Close contender did not wait for opportunity lock';end if;
+ perform public.dblink_exec('actions_a','commit');
+ select result into close_result from public.dblink_get_result('actions_b') as t(result text); perform * from public.dblink_get_result('actions_b') as t(result text);
+ if create_result<>'ok' then raise exception 'Create side of close race failed: %',create_result;end if;
+ if close_result not in ('ok','22023') then raise exception 'Unexpected close race result: %',close_result;end if;
+ perform public.dblink_disconnect('actions_a'); perform public.dblink_disconnect('actions_b');
+ if exists(select 1 from private.stockflow_commercial_actions a left join private.stockflow_commercial_action_results r on r.action_id=a.id join private.stockflow_commercial_opportunity_closures c on c.opportunity_id=a.opportunity_id where r.action_id is null) then raise exception 'Open action exists on a closed opportunity';end if;
+ raise notice 'PASS A9 create/create and create/close races serialize on opportunity-action lock';
+end$race$;
+begin;
+update private.stockflow_gateway_config set secret_sha256=(select secret_sha256 from public.test_actions_gateway_backup) where name='orders';
+drop table public.test_actions_gateway_backup;
+drop function public.test_actions_race(text,text,uuid);
+drop function public.test_actions_close_race(text,text,uuid);
+commit;

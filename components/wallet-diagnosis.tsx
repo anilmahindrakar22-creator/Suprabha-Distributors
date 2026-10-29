@@ -3,6 +3,7 @@
 import { useEffect, useRef, useState } from 'react';
 import { formatPaise, permilleLabel, rupeesToPaise } from '@/lib/wallet-format';
 import type { ConstraintCategory, EvidenceSource, OpportunityKind, OpportunityOutcome, WalletOpportunity, WalletSignals } from '@/lib/wallet-diagnosis-types';
+import { WalletActions } from '@/components/wallet-actions';
 
 const button = 'min-h-11 rounded-xl border border-sf-line px-3 text-sm font-bold text-sf-body disabled:opacity-50';
 const primary = 'min-h-11 rounded-xl bg-sf-brand px-4 text-sm font-bold text-white disabled:opacity-50';
@@ -52,6 +53,7 @@ export function WalletDiagnosis({ customerId, divisions, onConflict, onForbidden
     {loadFailed ? <p className="text-sm text-sf-muted">Couldn&apos;t load the diagnosis.</p> : items === null ? null : open ? <>
       <div className="space-y-2 text-sm"><h4 className="font-semibold">{open.constraint && open.constraint.category !== 'unknown' ? labels[open.constraint.category] : 'Not diagnosed yet'}</h4>{open.constraint ? <><p>{formatConstraint(open.constraint.category, open.constraint.facts, open.constraint.gapPermille)}</p><p>Confidence: {titleCase(open.constraint.confidence)} ({open.constraint.source.replace('_', ' ')})</p><p>{open.constraint.sourcePerson ? `Told by ${open.constraint.sourcePerson} · ` : ''}Observed {dateLabel(open.constraint.observedOn)}</p><p>{open.constraint.evidence}</p>{open.constraint.priceUnproven ? <p className="font-semibold text-sf-danger">Price not proven: get the competitor&apos;s quote before any price action.</p> : null}</> : null}<p>{titleCase(open.kind)} opportunity · {open.openedReason}</p></div>
       {signalsPanel}
+      <WalletActions key={open.id} opportunityId={open.id} category={open.constraint?.category ?? null} priceUnproven={open.constraint?.priceUnproven ?? false} onForbidden={onForbidden} onConflict={async () => { await reload(); await onConflict(); }} />
       <div className="flex flex-wrap gap-2"><button className={button} onClick={() => { setMode('record'); setError(''); }}>Record constraint</button><button className="min-h-11 px-2 text-sm text-sf-muted underline" onClick={() => { setMode('close'); setError(''); }}>Close opportunity</button></div>
       {open.history.length > 0 ? <details><summary className="flex min-h-11 cursor-pointer items-center">Constraint history ({open.history.length})</summary><ul className="space-y-2">{open.history.map(entry => <li key={entry.id} className="text-sm">{labels[entry.category]} · {titleCase(entry.confidence)}: {entry.evidence}</li>)}</ul></details> : null}
     </> : <>{signalsPanel}<button className={button} onClick={() => { setMode('open'); setError(''); }}>Start diagnosis</button></>}
