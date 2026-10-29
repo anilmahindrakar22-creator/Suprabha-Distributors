@@ -18,6 +18,8 @@
     "test": "vitest run --coverage",
     "test:connector": "pwsh -NoProfile -File tests/connector-recovery.ps1 && pwsh -NoProfile -File tests/connector-sales-window.ps1 && pwsh -NoProfile -File tests/connector-control-status.ps1 && pwsh -NoProfile -File tests/connector-economics.ps1",
     "test:pricing:db": "pwsh -NoProfile -File tests/pricing-migration-local.ps1",
+    "test:sql:keep": "powershell -NoProfile -ExecutionPolicy Bypass -Command \"$env:STOCKFLOW_KEEP_DATABASE='1'; & ./tests/pricing-migration-local.ps1\"",
+    "test:sql:only": "node tests/sql-run-only.mjs",
     "test:pricing:deployment": "pwsh -NoProfile -File tests/pricing-migration-local.ps1 -DeploymentOrder",
     "check:staff-auth": "node tests/staff-auth-preflight.mjs",
     "test:watch": "vitest",

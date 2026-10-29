@@ -321,8 +321,12 @@ end$$;
   Invoke-DatabaseCommand $psqlProgram @('-U',$databaseUser,'-X','-q','-v','ON_ERROR_STOP=1','-d',$database,'-f',(Join-Path $repository 'supabase/tests/instrument_register_concurrency.sql'))
   Write-Output 'PASS: two-session instrument commissioning and placement races'
 } finally {
-  if ($databaseCreated) { & $dropdbProgram -U $databaseUser --if-exists $database | Out-Null }
-  if ($serverStartedByScript) { & $pgCtlProgram -D $postgresData -m fast -w stop | Out-Null }
+  if ($env:STOCKFLOW_KEEP_DATABASE -eq '1') {
+    Write-Output "KEPT DATABASE: $database"
+  } else {
+    if ($databaseCreated) { & $dropdbProgram -U $databaseUser --if-exists $database | Out-Null }
+    if ($serverStartedByScript) { & $pgCtlProgram -D $postgresData -m fast -w stop | Out-Null }
+  }
   $resolvedWork = [IO.Path]::GetFullPath($work)
   if ($resolvedWork.StartsWith($temporaryRoot, [StringComparison]::OrdinalIgnoreCase) -and (Split-Path $resolvedWork -Leaf).StartsWith('stockflow-migrations-')) {
     Remove-Item -LiteralPath $resolvedWork -Recurse -Force -ErrorAction SilentlyContinue
