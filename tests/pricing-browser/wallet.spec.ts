@@ -19,6 +19,9 @@ async function fixture(page: Page, options: Options = {}) {
   await page.route('**/api/accounts**', route => route.fulfill({ json: { accounts: [], page: { page: 1, pageSize: 50, total: 0 }, owners: [], territories: [], canAssign: options.canAssign !== false, canEraseContacts: false, canSeePowerMap: false, actorEmail: 'manager@example.test', today: '2026-10-30', classPolicy: { aMinPaise: '20000000', bMinPaise: '7500000' } } }));
   await page.route('**/api/wallet**', async route => {
     const url = new URL(route.request().url());
+    if (url.pathname === '/api/wallet/diagnosis' && route.request().method() === 'GET') {
+      return route.fulfill({ json: url.searchParams.get('action') === 'get_account_opportunities' ? [] : { rows: [], undiagnosedFocusCount: null, focusCount: null } });
+    }
     if (options.failure === 'forbidden') return route.fulfill({ status: 403, json: { error: 'Wallet access required' } });
     if (route.request().method() === 'POST') {
       const body = route.request().postDataJSON() as WalletCommand; posts.push(body);

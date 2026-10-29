@@ -1,0 +1,14 @@
+import { beforeEach, describe, expect, it, vi } from 'vitest';
+const mocks = vi.hoisted(() => ({ user: vi.fn(), session: vi.fn(), gateway: vi.fn() }));
+vi.mock('@/app/chatgpt-auth', () => ({ getChatGPTUser: mocks.user }));
+vi.mock('@/lib/stockflow-session', () => ({ getStockFlowSession: mocks.session }));
+vi.mock('@/lib/order-gateway', async original => ({ ...await original<typeof import('@/lib/order-gateway')>(), callOrderGateway: mocks.gateway }));
+import { GET, POST } from '@/app/api/wallet/diagnosis/route';
+const id = '11111111-1111-4111-8111-111111111111'; const requestId = '22222222-2222-4222-8222-222222222222';
+const post = (body: unknown) => new Request('http://localhost/api/wallet/diagnosis', { method: 'POST', headers: { 'content-type': 'application/json' }, body: JSON.stringify(body) });
+beforeEach(() => { vi.clearAllMocks(); mocks.user.mockResolvedValue({ email: 'manager@example.test' }); mocks.session.mockResolvedValue({ email: 'manager@example.test', roles: ['management'] }); mocks.gateway.mockResolvedValue({ ok: true }); });
+describe('wallet diagnosis route', () => {
+  it('rejects unauthenticated and invalid input before gateway', async () => { mocks.user.mockResolvedValue(null); expect((await GET(new Request('http://localhost/api/wallet/diagnosis?action=get_wallet_diagnoses&customerIds=' + id))).status).toBe(401); mocks.user.mockResolvedValue({ email: 'manager@example.test' }); expect((await POST(post({ action: 'open_opportunity', payload: {} }))).status).toBe(400); expect(mocks.gateway).not.toHaveBeenCalled(); });
+  it('passes reads and writes through', async () => { const read = await GET(new Request('http://localhost/api/wallet/diagnosis?action=get_wallet_diagnoses&customerIds=' + id)); expect(mocks.gateway).toHaveBeenCalledWith('manager@example.test', 'get_wallet_diagnoses', { customerIds: [id] }); expect(await read.json()).toEqual({ ok: true }); const response = await POST(post({ action: 'open_opportunity', payload: { requestId, customerId: id, kind: 'capture', reason: 'Customer demand' } })); expect(response.status).toBe(200); });
+  it.each([['PT403', 403], ['PT409', 409]] as const)('maps %s', async (code, status) => { const { OrderGatewayError } = await import('@/lib/order-gateway'); mocks.gateway.mockRejectedValue(new OrderGatewayError(code, status)); expect((await GET(new Request('http://localhost/api/wallet/diagnosis?action=get_account_opportunities&customerId=' + id))).status).toBe(status); });
+});

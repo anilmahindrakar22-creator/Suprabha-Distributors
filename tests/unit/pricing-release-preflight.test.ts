@@ -9,12 +9,12 @@ const original = JSON.parse(readFileSync(new URL('../../supabase/migration-histo
 const source = new Map(readdirSync(fileURLToPath(directory)).filter((name) => name.endsWith('.sql')).map((name) => [name, readFileSync(new URL(name, directory), 'utf8')]));
 
 describe('read-only pricing release preflight', () => {
-  it('registers the wallet migration after candidate rebuild and both SQL tests after sales coverage', () => {
+  it('registers the wallet migrations after candidate rebuild and SQL tests after sales coverage', () => {
     const result = pricingReleasePreflight(original, source);
     expect(result.pending.indexOf('20261030130000_wallet_v2.sql')).toBeGreaterThan(result.pending.indexOf('20261030110000_economics_candidate_rebuild.sql'));
-    expect(result.sqlTests).toEqual(['supabase/tests/sales_coverage.sql', 'supabase/tests/wallet_v2.sql', 'supabase/tests/wallet_v2_concurrency.sql']);
+    expect(result.sqlTests).toEqual(['supabase/tests/sales_coverage.sql', 'supabase/tests/wallet_v2.sql', 'supabase/tests/wallet_v2_concurrency.sql', 'supabase/tests/wallet_diagnosis.sql', 'supabase/tests/wallet_diagnosis_concurrency.sql']);
     const runner = readFileSync(new URL('../pricing-migration-local.ps1', import.meta.url), 'utf8');
-    expect(runner).toContain("'20261030110000_economics_candidate_rebuild.sql','20261030130000_wallet_v2.sql'");
+    expect(runner).toContain("'20261030110000_economics_candidate_rebuild.sql','20261030130000_wallet_v2.sql','20261031090000_wallet_diagnosis.sql'");
     let previous = -1;
     for (const path of result.sqlTests) {
       const position = runner.indexOf(path);
@@ -252,6 +252,7 @@ describe('read-only pricing release preflight', () => {
       '20261030101000_sales_coverage.sql',
       '20261030110000_economics_candidate_rebuild.sql',
       '20261030130000_wallet_v2.sql',
+      '20261031090000_wallet_diagnosis.sql',
     ]);
     expect(result.deployed.at(-1)?.localFile).toBe('20261026150000_rate_check_units.sql');
     expect(result.deployed).toHaveLength(147);
@@ -278,6 +279,7 @@ describe('read-only pricing release preflight', () => {
       '20261030101000_sales_coverage.sql',
       '20261030110000_economics_candidate_rebuild.sql',
       '20261030130000_wallet_v2.sql',
+      '20261031090000_wallet_diagnosis.sql',
     ]);
   });
   it('rejects changed SQL including changes inside literals', () => {

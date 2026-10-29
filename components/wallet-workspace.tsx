@@ -4,6 +4,8 @@ import Link from 'next/link';
 import { useEffect, useRef, useState, type ReactNode } from 'react';
 import type { WalletAccount, WalletCommand, WalletPolicy, WalletRow, WalletSnapshot, WalletView, WalletWorkspace as Workspace } from '@/lib/wallet-types';
 import { formatPaise, permilleLabel, rupeesToPaise } from '@/lib/wallet-format';
+import { WalletDiagnosis } from '@/components/wallet-diagnosis';
+import type { WalletDiagnoses, WalletDiagnosisRow } from '@/lib/wallet-diagnosis-types';
 
 const button = 'min-h-11 rounded-xl border border-sf-line px-3 text-sm font-bold text-sf-body disabled:opacity-50';
 const primary = 'min-h-11 rounded-xl bg-sf-brand px-4 text-sm font-bold text-white disabled:opacity-50';
@@ -31,7 +33,7 @@ function Sheet({ title, children, onClose, locked = false }: { title: string; ch
   const dialog = useRef<HTMLDialogElement>(null);
   useEffect(() => { dialog.current?.showModal(); }, []);
   return <dialog ref={dialog} aria-label={title} onCancel={event => { event.preventDefault(); if (!locked) onClose(); }} className="m-auto max-h-[90dvh] w-[calc(100%_-_2rem)] max-w-xl overflow-y-auto rounded-xl border border-sf-line bg-white p-4 text-sf-body backdrop:bg-black/30 [overflow-wrap:anywhere]">
-    <div className="mb-4 flex items-center justify-between gap-2"><h3 className="text-lg font-bold">{title}</h3><button className={button} disabled={locked} onClick={onClose}>Close</button></div>{children}
+    <div className="mb-4 flex items-center justify-between gap-2"><h3 className="min-w-0 text-lg font-bold">{title}</h3><button className={`${button} shrink-0 whitespace-nowrap`} disabled={locked} onClick={onClose}>Close</button></div>{children}
   </dialog>;
 }
 
@@ -143,6 +145,9 @@ export function WalletWorkspace({ onBack, onReviewLinks }: { onBack: () => void;
   const [targets, setTargets] = useState(false);
   const [notice, setNotice] = useState('');
   const [writeLocked, setWriteLocked] = useState(false);
+  const [diagnoses, setDiagnoses] = useState<WalletDiagnosisRow[] | null>(null);
+  const [undiagnosedFocusCount, setUndiagnosedFocusCount] = useState<number | null>(null);
+  const [focusCount, setFocusCount] = useState<number | null>(null);
   useEffect(() => { const timer = setTimeout(() => { setSearch(query); setPage(1); }, 300); return () => clearTimeout(timer); }, [query]);
   useEffect(() => {
     if (forbidden) return;
@@ -157,6 +162,19 @@ export function WalletWorkspace({ onBack, onReviewLinks }: { onBack: () => void;
     }).catch(failure => { if (!controller.signal.aborted) { setError(message(failure)); setLoading(false); if (failure instanceof WalletError && failure.status === 403) setForbidden(true); } });
     return () => controller.abort();
   }, [view, page, search, revision, forbidden]);
+  useEffect(() => {
+    if (!workspace || forbidden) return;
+    let active = true;
+    const ids = workspace.rows.map(row => row.customerId);
+    void request<unknown>(`/api/wallet/diagnosis?${new URLSearchParams({ action: 'get_wallet_diagnoses', customerIds: ids.join(',') })}`).then(data => {
+      const result = data as WalletDiagnoses;
+      const valid = !!data && typeof data === 'object' && Array.isArray(result.rows)
+        && result.rows.every(row => !!row && typeof row.customerId === 'string' && ids.includes(row.customerId) && ['capture', 'defend', 'recover'].includes(row.kind) && (row.category === null || ['price', 'portfolio', 'instrument', 'service', 'relationship', 'credit', 'availability', 'clinical', 'contract_tender', 'competitor_lock_in', 'unknown'].includes(row.category)) && (row.confidence === null || ['high', 'medium', 'low'].includes(row.confidence)))
+        && (result.undiagnosedFocusCount === null || Number.isInteger(result.undiagnosedFocusCount)) && (result.focusCount === null || Number.isInteger(result.focusCount));
+      if (active) { setDiagnoses(valid ? result.rows : null); setUndiagnosedFocusCount(valid ? result.undiagnosedFocusCount : null); setFocusCount(valid ? result.focusCount : null); }
+    }).catch(() => { if (active) { setDiagnoses(null); setUndiagnosedFocusCount(null); setFocusCount(null); } });
+    return () => { active = false; };
+  }, [workspace, forbidden]);
   useEffect(() => {
     if (!customerId || forbidden) return;
     const controller = new AbortController();
@@ -174,12 +192,12 @@ export function WalletWorkspace({ onBack, onReviewLinks }: { onBack: () => void;
       {notice && !customerId && !targets ? <p className="text-sm text-sf-body">{notice}</p> : null}
       {workspace ? <>
         <div className={`${card} space-y-2`}>
-          {workspace.coverage.certified ? <><p className="font-bold">Focus band: {workspace.summary.focusCount} accounts hold {permilleLabel(workspace.policy.focusBandBps / 10)} of the capture gap · {formatPaise(workspace.summary.focusGapPaise ?? 0, true)}/month</p><p className="text-sm text-sf-muted">Ranked by gap to the {permilleLabel(workspace.policy.walletShareTargetBps / 10)} Wallet-share target · based on {workspace.summary.estimatedAccounts} of {workspace.summary.accountsWithSales} accounts with an estimate · From Tally, {workspace.coverage.windowLabel}</p></> : <><p>Sales figures appear once Tally coverage is certified ({workspace.coverage.windowLabel})</p><Link className="inline-flex min-h-11 items-center text-sm text-sf-muted underline" href="/?view=instrument-economics">See Sales coverage</Link></>}
+          {workspace.coverage.certified ? <><p className="font-bold">Focus band: {workspace.summary.focusCount} accounts hold {permilleLabel(workspace.policy.focusBandBps / 10)} of the capture gap · {formatPaise(workspace.summary.focusGapPaise ?? 0, true)}/month</p>{undiagnosedFocusCount !== null && undiagnosedFocusCount > 0 ? <p className="text-sm text-sf-muted">{undiagnosedFocusCount} of {focusCount} Focus accounts not diagnosed</p> : null}<p className="text-sm text-sf-muted">Ranked by gap to the {permilleLabel(workspace.policy.walletShareTargetBps / 10)} Wallet-share target · based on {workspace.summary.estimatedAccounts} of {workspace.summary.accountsWithSales} accounts with an estimate · From Tally, {workspace.coverage.windowLabel}</p></> : <><p>Sales figures appear once Tally coverage is certified ({workspace.coverage.windowLabel})</p><Link className="inline-flex min-h-11 items-center text-sm text-sf-muted underline" href="/?view=instrument-economics">See Sales coverage</Link></>}
         </div>
         {workspace.coverage.certified && (workspace.summary.unlinkedLedgers ?? 0) > 0 ? <p className="text-sm text-sf-muted">Not linked to a customer: {formatPaise(workspace.summary.unlinkedSalesPaise ?? 0)}/month across {workspace.summary.unlinkedLedgers} Tally ledgers · <button className="min-h-11 underline" onClick={onReviewLinks}>Review links</button></p> : null}
         <div className="flex flex-wrap gap-2" aria-label="Wallet views">{views.map(([key, label]) => <button key={key} className={`${button} ${view === key ? 'bg-sf-brand text-white' : 'bg-white'}`} aria-pressed={view === key} disabled={!workspace.coverage.certified && (key === 'focus' || key === 'below_sales')} onClick={() => { setView(key); setPage(1); }}>{label}</button>)}</div>
         <label className="block text-sm">Search accounts<input className={input} placeholder="Name or town" maxLength={80} value={query} onChange={event => setQuery(event.target.value)} /></label>
-        <ul aria-label="Wallet accounts" className="space-y-3" aria-busy={loading}>{workspace.rows.map(row => <li key={row.customerId}><button className={`${card} min-h-11 w-full space-y-2 text-left disabled:opacity-50`} disabled={loading || query !== search} onClick={() => { setNotice(''); setEditing(false); setCustomerId(row.customerId); }}><p className="font-bold">{row.name} <span className="font-normal text-sf-muted">{row.city}</span></p><Figures row={row} certified={workspace.coverage.certified} walletShareTargetBps={workspace.policy.walletShareTargetBps} /><div className="flex flex-wrap gap-x-3 gap-y-1 text-xs text-sf-muted">{row.confidence ? <span className="inline-flex items-center gap-1"><span aria-hidden="true" className={`size-2 rounded-full ${row.confidence === 'high' ? 'bg-sf-success' : row.confidence === 'medium' ? 'bg-sf-warning' : 'bg-sf-muted'}`} />{row.confidence[0].toUpperCase() + row.confidence.slice(1)}</span> : null}{row.asOf ? <span>As of {dateLabel(row.asOf)}</span> : null}{row.walletPaise !== null && !row.verified ? <span>Not verified</span> : null}{row.stale ? <span>Stale</span> : null}{workspace.coverage.certified && row.belowSales ? <span>Below sales</span> : null}</div></button></li>)}</ul>
+        <ul aria-label="Wallet accounts" className="space-y-3" aria-busy={loading}>{workspace.rows.map(row => { const diagnosis = diagnoses?.find(item => item.customerId === row.customerId); const names: Record<string, string> = { price: 'Price', portfolio: 'Portfolio gap', instrument: 'Instrument', service: 'Service', relationship: 'Relationship', credit: 'Credit', availability: 'Availability', clinical: 'Clinical', contract_tender: 'Contract / tender', competitor_lock_in: 'Competitor lock-in' }; return <li key={row.customerId}><button className={`${card} min-h-11 w-full space-y-2 text-left disabled:opacity-50`} disabled={loading || query !== search} onClick={() => { setNotice(''); setEditing(false); setCustomerId(row.customerId); }}><p className="font-bold">{row.name} <span className="font-normal text-sf-muted">{row.city}</span></p><Figures row={row} certified={workspace.coverage.certified} walletShareTargetBps={workspace.policy.walletShareTargetBps} />{row.walletPaise !== null && diagnoses ? <span className="inline-flex rounded-full bg-sf-soft-0 px-2 py-1 text-xs">{diagnosis?.category && diagnosis.category !== 'unknown' ? `Why: ${names[diagnosis.category]}` : 'Not diagnosed'}</span> : null}<div className="flex flex-wrap gap-x-3 gap-y-1 text-xs text-sf-muted">{row.confidence ? <span className="inline-flex items-center gap-1"><span aria-hidden="true" className={`size-2 rounded-full ${row.confidence === 'high' ? 'bg-sf-success' : row.confidence === 'medium' ? 'bg-sf-warning' : 'bg-sf-muted'}`} />{row.confidence[0].toUpperCase() + row.confidence.slice(1)}</span> : null}{row.asOf ? <span>As of {dateLabel(row.asOf)}</span> : null}{row.walletPaise !== null && !row.verified ? <span>Not verified</span> : null}{row.stale ? <span>Stale</span> : null}{workspace.coverage.certified && row.belowSales ? <span>Below sales</span> : null}</div></button></li>; })}</ul>
         {!workspace.rows.length && !loading ? <p className="text-sm text-sf-muted">No accounts match.</p> : null}
         <div className="flex flex-wrap items-center justify-between gap-2 text-sm"><span>Page {workspace.page} · {workspace.total} accounts</span><div className="flex gap-2"><button className={button} disabled={loading || page <= 1} onClick={() => setPage(n => n - 1)}>Previous</button><button className={button} disabled={loading || page * 50 >= workspace.total} onClick={() => setPage(n => n + 1)}>Next</button></div></div>
       </> : null}
@@ -188,6 +206,7 @@ export function WalletWorkspace({ onBack, onReviewLinks }: { onBack: () => void;
         {notice ? <p className="mb-3 text-sm text-sf-body">{notice}</p> : null}
         {account ? <div className="space-y-4"><Figures row={account.row} certified={account.coverage.certified} walletShareTargetBps={account.policy.walletShareTargetBps} />{account.current ? <><SnapshotDetails snapshot={account.current} /><table className="w-full table-fixed text-sm"><caption className="mb-2 text-left font-bold">Division wallet / month</caption><tbody>{account.divisions.map(d => <tr key={d.code}><th className="py-2 text-left font-normal">{d.name}</th><td className="py-2 text-right">{formatPaise(account.current!.divisions.find(part => part.code === d.code)?.monthlyWalletPaise ?? 0)}</td></tr>)}<tr><th className="py-2 text-left">Unallocated</th><td className="py-2 text-right">{formatPaise(account.current.unallocatedPaise)}</td></tr></tbody></table></> : <p>No estimate</p>}
           <details><summary className="flex min-h-11 cursor-pointer items-center">History ({account.history.length})</summary><ul className="space-y-3">{account.history.map(snapshot => <li key={snapshot.id} className={card}><SnapshotDetails snapshot={snapshot} /></li>)}</ul></details>
+          <WalletDiagnosis key={customerId!} customerId={customerId!} onForbidden={deny} onConflict={async () => { setRevision(n => n + 1); }} />
           {editing ? <EstimateForm key={account.current?.id ?? 'new'} account={account} onLock={setWriteLocked} onSaved={reloadAccount} onConflict={conflict} onForbidden={deny} /> : <button className={primary} onClick={() => setEditing(true)}>Update estimate</button>}
         </div> : <p>{accountError || 'Loading account…'}</p>}
       </Sheet> : null}

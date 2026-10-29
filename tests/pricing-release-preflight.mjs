@@ -11,6 +11,7 @@ const pricingReleaseFiles = new Set([
   '20261030101000_sales_coverage.sql',
   '20261030110000_economics_candidate_rebuild.sql',
   '20261030130000_wallet_v2.sql',
+  '20261031090000_wallet_diagnosis.sql',
   '20261029100000_supplier_purchase_orders.sql',
   '20261029090000_challan_delivery.sql',
   '20261029091000_order_list_priority_sort.sql',
@@ -107,6 +108,8 @@ export const pricingReleaseSqlTests = [
   'supabase/tests/sales_coverage.sql',
   'supabase/tests/wallet_v2.sql',
   'supabase/tests/wallet_v2_concurrency.sql',
+  'supabase/tests/wallet_diagnosis.sql',
+  'supabase/tests/wallet_diagnosis_concurrency.sql',
 ];
 
 export function pricingReleasePreflight(evidence, files) {

@@ -30,6 +30,11 @@ export type GatewayAction =
   | 'get_wallet_account'
   | 'record_wallet_snapshot'
   | 'set_wallet_policy'
+  | 'get_wallet_diagnoses'
+  | 'get_account_opportunities'
+  | 'open_opportunity'
+  | 'record_constraint'
+  | 'close_opportunity'
   | 'confirm_customer_links'
   | 'recover_economic_command'
   | EconomicAction
