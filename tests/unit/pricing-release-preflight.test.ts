@@ -36,6 +36,17 @@ describe('read-only pricing release preflight', () => {
     expect(definition.indexOf('into cost_products')).toBeLessThan(definition.indexOf('into rebuild_candidate_ids'));
     expect(definition.indexOf('into rebuild_candidate_ids')).toBeLessThan(definition.indexOf('insert into private.stockflow_economic_runs(actor)'));
     expect(definition.split('>10000 then raise exception')).toHaveLength(2); // containment test's seam
+    const pruning = source.get('20261030120000_economic_result_pruning.sql')!;
+    const activation = pruning.match(/anchor text:='([^']+)'/)![1];
+    expect(activation).toBe('update private.stockflow_economic_runs set active=true where id=run;');
+    expect(definition.split(activation)).toHaveLength(2);
+    expect(pruning).toContain("pg_get_functiondef('private.stockflow_rebuild_instrument_economics(text)'::regprocedure)");
+    expect(pruning).toContain("chr(13),''");
+    expect(pruning).toContain("raise exception 'Unexpected economics activation seam'");
+    expect(pruning).toContain("anchor||E'\\n perform private.stockflow_prune_economic_results();'");
+    expect(pruning).not.toContain('stockflow_rebuild_instrument_economics_full_scan');
+    expect(pruning).toContain('revoke all on function private.stockflow_prune_economic_results() from public,anon,authenticated,service_role;');
+    expect(pruning.trim()).toMatch(/^begin;[\s\S]*select private\.stockflow_prune_economic_results\(\);\ncommit;$/);
     expect(migration).toContain('if occurrences<>1 then raise exception');
     for (const signature of ['stockflow_rebuild_instrument_economics_full_scan(text)', 'stockflow_economic_rebuild_candidates(jsonb)']) {
       expect(migration).toContain(`revoke all on function private.${signature} from public,anon,authenticated,service_role;`);
@@ -44,6 +55,8 @@ describe('read-only pricing release preflight', () => {
     const runner = readFileSync(new URL('../pricing-migration-local.ps1', import.meta.url), 'utf8');
     expect(runner).toContain("'20261030101000_sales_coverage.sql','20261030110000_economics_candidate_rebuild.sql'");
     expect(runner).toContain('supabase/tests/economics_candidate_rebuild.sql');
+    expect(runner).toContain("'20261030110000_economics_candidate_rebuild.sql','20261030120000_economic_result_pruning.sql'");
+    expect(runner.indexOf('supabase/tests/economic_result_pruning.sql')).toBeGreaterThan(runner.indexOf('supabase/tests/economics_candidate_rebuild.sql'));
     expect(runner).not.toContain('supabase/scripts/economics-candidate-parity.sql');
     const fixture = readFileSync(new URL('../../supabase/tests/economics_candidate_rebuild.sql', import.meta.url), 'utf8');
     const acceptance = readFileSync(new URL('../../supabase/scripts/economics-candidate-parity.sql', import.meta.url), 'utf8');
@@ -232,6 +245,7 @@ describe('read-only pricing release preflight', () => {
       '20261030100000_economic_rebuild_containment.sql',
       '20261030101000_sales_coverage.sql',
       '20261030110000_economics_candidate_rebuild.sql',
+      '20261030120000_economic_result_pruning.sql',
     ]);
     expect(result.deployed.at(-1)?.localFile).toBe('20261026150000_rate_check_units.sql');
     expect(result.deployed).toHaveLength(147);
@@ -257,6 +271,7 @@ describe('read-only pricing release preflight', () => {
       '20261030100000_economic_rebuild_containment.sql',
       '20261030101000_sales_coverage.sql',
       '20261030110000_economics_candidate_rebuild.sql',
+      '20261030120000_economic_result_pruning.sql',
     ]);
   });
   it('rejects changed SQL including changes inside literals', () => {
