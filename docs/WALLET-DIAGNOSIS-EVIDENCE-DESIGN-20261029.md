@@ -1,8 +1,8 @@
 # Wallet diagnosis evidence (Market rework, third slice): design
 
-**Date:** 31 Oct 2026. **Author:** Claude. **Builder:** Codex.
-**Owner question (31 Oct):** "how are we determining why we are not winning. What questions or data do we need exactly determine that it's accurate".
-**Amends** `WALLET-DIAGNOSIS-DESIGN-20261031.md`. It is not deployed, so `20261031090000_wallet_diagnosis.sql`, its contract and its screen change in place. **Train:** with the diagnosis slice.
+**Date:** 29 Oct 2026. **Author:** Claude. **Builder:** Codex.
+**Owner question (29 Oct):** "how are we determining why we are not winning. What questions or data do we need exactly determine that it's accurate".
+**Amends** `WALLET-DIAGNOSIS-DESIGN-20261029.md`. It is not deployed, so `20261031090000_wallet_diagnosis.sql`, its contract and its screen change in place. **Train:** with the diagnosis slice.
 
 ## 1. Decision and accuracy model
 A diagnosis is trustworthy when four things hold:
@@ -86,7 +86,7 @@ The validator mirrors the gateway rules exactly.
   5. "When" (date, default today).
   6. Note.
 - **Confidence is shown, not chosen:** "Confidence: High (document)".
-- **Unknown:** above the fields, show the visit question list as a numbered list. The five questions are in the owner reply of 31 Oct and below.
+- **Unknown:** above the fields, show the visit question list as a numbered list. The five questions are in the owner reply of 29 Oct and below.
   1. Which analysers do you run in each department, and who owns them: you, a supplier's placement, or a rental?
   2. Who supplies the reagents for each, and why them?
   3. What would make you move this business to us?

@@ -1,6 +1,6 @@
 # Wallet diagnosis (Market rework, second slice): design
 
-**Date:** 31 Oct 2026. **Author:** Claude (design, and design review of the screens). **Builder:** Codex. **Advisor-reviewed** before the handoff.
+**Date:** 29 Oct 2026. **Author:** Claude (design, and design review of the screens). **Builder:** Codex. **Advisor-reviewed** before the handoff.
 **Owner request:** "continue build until sunday" (Market / wallet).
 **Train:** train 2 only if the full gate passes by Fri 6 Nov; otherwise train 3. Wallet V2 (`e8b0533`) is untouched, so it ships on its own if this slice misses the gate.
 
@@ -9,7 +9,7 @@
 
 Management records one **binding constraint** per open opportunity, with evidence and a confidence level. The Wallet list then shows "Why: Price" or "Not diagnosed", and the header counts the undiagnosed Focus accounts. This follows plan §4 (Engine B): **diagnose the constraint before discounting.**
 
-**Why this slice and not the GP ranking.** Read-only on production, 31 Oct: in Jul–Sep the active economics run has 1,362 sale-line results, and only **28 lines (1 customer)** carry GP. The GP ranking (ADR-0006) is blocked on margin evidence, so this slice goes first.
+**Why this slice and not the GP ranking.** Read-only on production, 29 Oct: in Jul–Sep the active economics run has 1,362 sale-line results, and only **28 lines (1 customer)** carry GP. The GP ranking (ADR-0006) is blocked on margin evidence, so this slice goes first.
 
 **Release conditions (owner):**
 - This implements **ADR-0008, which is still Proposed**: one `opportunity` entity, kind capture/defend/recover, shared later with Power Maps. **Accept ADR-0008 before release.**
