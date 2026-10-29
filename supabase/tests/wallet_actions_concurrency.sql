@@ -5,19 +5,19 @@ insert into private.stockflow_gateway_config(name,secret_sha256) values('orders'
 insert into public.stockflow_members(email,role,status) values('actions-race-a@test.local','management','active'),('actions-race-b@test.local','management','active') on conflict(email) do update set status='active';
 insert into private.stockflow_customers(id,name,tally_key,created_by_email) values('b2800000-0000-4000-8000-000000000001','Actions race','actions-race','test') on conflict(id) do nothing;
 create function public.test_actions_race(actor text,request text,opp uuid) returns text language plpgsql as $$ declare result_data jsonb;
-begin result_data:=public.stockflow_action_gateway('actions-race-key',actor,'create_action',jsonb_build_object('requestId',request,'opportunityId',opp,'actionType','visit','detail','Race action fixture','ownerEmail',actor,'dueOn',(now() at time zone 'Asia/Kolkata')::date,'expectedMonthlyGainPaise',null)); return 'ok';
+begin result_data:=public.stockflow_action_gateway('actions-race-key',actor,'create_action',jsonb_build_object('requestId','wallet-actions-'||request,'opportunityId',opp,'actionType','visit','detail','Race action fixture','ownerEmail',actor,'dueOn',(now() at time zone 'Asia/Kolkata')::date,'expectedMonthlyGainPaise',null)); return 'ok';
 exception when sqlstate 'PT409' then return 'PT409';end$$;
 revoke all on function public.test_actions_race(text,text,uuid) from public,anon,authenticated,service_role;
 create function public.test_actions_close_race(actor text,request text,opp uuid) returns text language plpgsql as $$
-begin perform public.stockflow_opportunity_gateway('actions-race-key',actor,'close_opportunity',jsonb_build_object('requestId',request,'opportunityId',opp,'outcome','lost','reason','Race close attempt'));return 'ok';
+begin perform public.stockflow_opportunity_gateway('actions-race-key',actor,'close_opportunity',jsonb_build_object('requestId','wallet-actions-'||request,'opportunityId',opp,'outcome','lost','reason','Race close attempt'));return 'ok';
 exception when sqlstate '22023' then return '22023';end$$;
 revoke all on function public.test_actions_close_race(text,text,uuid) from public,anon,authenticated,service_role;
 commit;
 do $fixtures$ declare result_data jsonb; begin
- result_data:=public.stockflow_opportunity_gateway('actions-race-key','actions-race-a@test.local','open_opportunity',jsonb_build_object('requestId','actions-race-open-create','customerId','b2800000-0000-4000-8000-000000000001','kind','capture','reason','Race create opportunity')); 
+ result_data:=public.stockflow_opportunity_gateway('actions-race-key','actions-race-a@test.local','open_opportunity',jsonb_build_object('requestId','wallet-actions-race-open-create','customerId','b2800000-0000-4000-8000-000000000001','kind','capture','reason','Race create opportunity')); 
  create temporary table action_race_ids(first_op uuid,close_op uuid) on commit preserve rows;
  insert into action_race_ids(first_op) values((result_data->>'id')::uuid);
- result_data:=public.stockflow_opportunity_gateway('actions-race-key','actions-race-a@test.local','open_opportunity',jsonb_build_object('requestId','actions-race-open-close','customerId','b2800000-0000-4000-8000-000000000001','kind','defend','reason','Race close opportunity'));
+ result_data:=public.stockflow_opportunity_gateway('actions-race-key','actions-race-a@test.local','open_opportunity',jsonb_build_object('requestId','wallet-actions-race-open-close','customerId','b2800000-0000-4000-8000-000000000001','kind','defend','reason','Race close opportunity'));
  update action_race_ids set close_op=(result_data->>'id')::uuid;
 end$fixtures$;
 do $race$
