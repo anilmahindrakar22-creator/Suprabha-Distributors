@@ -1123,6 +1123,13 @@
       "remoteVersion": null,
       "remoteSha256": null,
       "status": "not_deployed"
+    },
+    {
+      "localFile": "20261030110000_economics_candidate_rebuild.sql",
+      "localSha256": "7678e6bdcf847f1a65f874ba99cbff01d641be2a888544c366585039623f39ae",
+      "remoteVersion": null,
+      "remoteSha256": null,
+      "status": "not_deployed"
     }
   ],
   "liveCheck": {

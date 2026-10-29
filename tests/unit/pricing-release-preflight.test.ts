@@ -9,6 +9,52 @@ const original = JSON.parse(readFileSync(new URL('../../supabase/migration-histo
 const source = new Map(readdirSync(fileURLToPath(directory)).filter((name) => name.endsWith('.sql')).map((name) => [name, readFileSync(new URL(name, directory), 'utf8')]));
 
 describe('read-only pricing release preflight', () => {
+  it('bounds economics with checked final-definition anchors and registers parity separately from acceptance', () => {
+    const migration = source.get('20261030110000_economics_candidate_rebuild.sql')!;
+    const base = source.get('20261007181000_instrument_economic_import_and_rebuild.sql')!;
+    const scope = source.get('20261016061635_mapped_instrument_cost_scope.sql')!;
+    // The mapped-scope migration is the last writer of the rebuild. Earlier
+    // cost/date/return patches leave these five seams intact.
+    const writers = [...source].filter(([file, sql]) => file < '20261030110000' && (
+      sql.includes("pg_get_functiondef('private.stockflow_rebuild_instrument_economics(text)'::regprocedure)") ||
+      /create(?: or replace)? function private\.stockflow_rebuild_instrument_economics\(/i.test(sql)
+    )).map(([file]) => file).sort();
+    expect(writers.at(-1)).toBe('20261016061635_mapped_instrument_cost_scope.sql');
+    let definition = base.slice(base.indexOf('create function private.stockflow_rebuild_instrument_economics('));
+    definition = definition.replace('recovery_origin date;', 'recovery_origin date; cost_products jsonb;');
+    const scopedInsert = scope.split('$replacement$')[1];
+    expect(definition.split(' insert into private.stockflow_economic_runs(actor)')).toHaveLength(2);
+    definition = definition.replace(' insert into private.stockflow_economic_runs(actor)', scopedInsert);
+    const patches = [...migration.matchAll(/\(\$old\$([\s\S]*?)\$old\$,\s*(?:\$new\$([\s\S]*?)\$new\$|(''))\)/g)];
+    expect(patches).toHaveLength(5);
+    for (const [, anchor, replacement] of patches) {
+      expect(definition.split(anchor), anchor).toHaveLength(2);
+      definition = definition.replace(anchor, replacement ?? '');
+    }
+    expect(definition).not.toContain('Economic rebuild exceeds V1 limit; narrow source window');
+    expect(definition.split('private.stockflow_economic_rebuild_candidates(cost_products)')).toHaveLength(2);
+    expect(definition.indexOf('into cost_products')).toBeLessThan(definition.indexOf('into rebuild_candidate_ids'));
+    expect(definition.indexOf('into rebuild_candidate_ids')).toBeLessThan(definition.indexOf('insert into private.stockflow_economic_runs(actor)'));
+    expect(definition.split('>10000 then raise exception')).toHaveLength(2); // containment test's seam
+    expect(migration).toContain('if occurrences<>1 then raise exception');
+    for (const signature of ['stockflow_rebuild_instrument_economics_full_scan(text)', 'stockflow_economic_rebuild_candidates(jsonb)']) {
+      expect(migration).toContain(`revoke all on function private.${signature} from public,anon,authenticated,service_role;`);
+    }
+    expect(migration).not.toContain('stockflow_economics_gateway');
+    const runner = readFileSync(new URL('../pricing-migration-local.ps1', import.meta.url), 'utf8');
+    expect(runner).toContain("'20261030101000_sales_coverage.sql','20261030110000_economics_candidate_rebuild.sql'");
+    expect(runner).toContain('supabase/tests/economics_candidate_rebuild.sql');
+    expect(runner).not.toContain('supabase/scripts/economics-candidate-parity.sql');
+    const fixture = readFileSync(new URL('../../supabase/tests/economics_candidate_rebuild.sql', import.meta.url), 'utf8');
+    const acceptance = readFileSync(new URL('../../supabase/scripts/economics-candidate-parity.sql', import.meta.url), 'utf8');
+    for (const sql of [fixture, acceptance]) {
+      expect(sql.trimEnd()).toMatch(/rollback;$/);
+      expect(sql).toContain('stockflow_rebuild_instrument_economics_full_scan');
+      expect(sql).not.toMatch(/INSERT_HERE/);
+    }
+    const helpers = (sql: string) => sql.split('-- BEGIN SHARED PARITY HELPERS')[1].split('-- END SHARED PARITY HELPERS')[0];
+    expect(helpers(acceptance)).toBe(helpers(fixture));
+  });
   it('keeps full-sales patches additive with unique source anchors and registered replay tests', () => {
     const expectedOwners = [
       ['private.stockflow_import_economic_vouchers', '20261016053720_economic_import_execution_budget.sql'],
@@ -185,6 +231,7 @@ describe('read-only pricing release preflight', () => {
       '20261030091000_instrument_register_read.sql',
       '20261030100000_economic_rebuild_containment.sql',
       '20261030101000_sales_coverage.sql',
+      '20261030110000_economics_candidate_rebuild.sql',
     ]);
     expect(result.deployed.at(-1)?.localFile).toBe('20261026150000_rate_check_units.sql');
     expect(result.deployed).toHaveLength(147);
@@ -209,6 +256,7 @@ describe('read-only pricing release preflight', () => {
       '20261030091000_instrument_register_read.sql',
       '20261030100000_economic_rebuild_containment.sql',
       '20261030101000_sales_coverage.sql',
+      '20261030110000_economics_candidate_rebuild.sql',
     ]);
   });
   it('rejects changed SQL including changes inside literals', () => {

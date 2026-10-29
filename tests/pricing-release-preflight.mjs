@@ -9,6 +9,7 @@ const pricingReleaseFiles = new Set([
   '20261030091000_instrument_register_read.sql',
   '20261030100000_economic_rebuild_containment.sql',
   '20261030101000_sales_coverage.sql',
+  '20261030110000_economics_candidate_rebuild.sql',
   '20261029100000_supplier_purchase_orders.sql',
   '20261029090000_challan_delivery.sql',
   '20261029091000_order_list_priority_sort.sql',
