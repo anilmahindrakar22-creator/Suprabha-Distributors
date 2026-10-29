@@ -10,20 +10,20 @@ export type ConstraintFacts =
   | { category: 'service'; issue: string; since: string }
   | { category: 'availability'; product: string; issue: string }
   | { category: 'credit'; issue: string }
-  | { category: 'relationship'; decisionMaker: string; issue: string }
+  | { category: 'relationship'; decisionMaker: string; issue: string; contactId?: string }
   | { category: 'clinical'; issue: string }
   | { category: 'contract_tender'; holder: string; endsOn: string }
   | { category: 'competitor_lock_in'; competitor: string; endsOn: string }
   | { category: 'unknown'; nextQuestion: string; askBy: string };
-export type WalletConstraint = { id: string; category: ConstraintCategory; evidence: string; confidence: ConstraintConfidence; recordedBy: string; recordedAt: string; source: EvidenceSource; sourcePerson: string | null; observedOn: string; facts: Omit<ConstraintFacts, 'category'>; priceUnproven: boolean; gapPermille: number | null };
+export type WalletConstraint = { id: string; category: ConstraintCategory; evidence: string; confidence: ConstraintConfidence; recordedBy: string; recordedAt: string; source: EvidenceSource; sourcePerson: string | null; observedOn: string; facts: Omit<ConstraintFacts, 'category'>; contactName?: string | null; priceUnproven: boolean; gapPermille: number | null };
 export type WalletOpportunity = {
   id: string; customerId: string; kind: OpportunityKind; openedReason: string; openedBy: string; openedAt: string;
   closure: { outcome: OpportunityOutcome; reason: string; closedBy: string; closedAt: string } | null;
   constraint: WalletConstraint | null; history: WalletConstraint[];
 };
 export type WalletDiagnosisRow = { customerId: string; kind: OpportunityKind; category: ConstraintCategory | null; confidence: ConstraintConfidence | null; priceUnproven: boolean };
-export type WalletDiagnoses = { rows: WalletDiagnosisRow[]; undiagnosedFocusCount: number | null; focusCount: number | null };
-export type WalletSignals = { priceExceptions90d: number; deliveryProblems90d: number; deliveryProblemsOpen: number; serviceTicketsOpen: number; serviceTickets90d: number; ourInstallations: number; lastVisitOn: string | null };
+export type WalletDiagnoses = { rows: WalletDiagnosisRow[]; undiagnosedFocusCount: number | null; focusCount: number | null; focusWithoutDecisionMaker?: number | null };
+export type WalletSignals = { priceExceptions90d: number; deliveryProblems90d: number; deliveryProblemsOpen: number; serviceTicketsOpen: number; serviceTickets90d: number; ourInstallations: number; lastVisitOn: string | null; powerAlerts?: string[]; decisionMakerLastMetOn?: string | null };
 type FactsWithoutCategory = Omit<ConstraintFacts, 'category'>;
 export type WalletDiagnosisCommand =
   | { action: 'get_wallet_diagnoses'; payload: { customerIds: string[] } }
@@ -56,7 +56,7 @@ function validFacts(category: ConstraintCategory, facts: unknown): facts is Fact
     case 'service': return exactKeys(facts, ['issue','since']) && textFact(facts.issue) && validDate(facts.since);
     case 'availability': return exactKeys(facts, ['product','issue']) && textFact(facts.product) && textFact(facts.issue);
     case 'credit': return exactKeys(facts, ['issue']) && textFact(facts.issue);
-    case 'relationship': return exactKeys(facts, ['decisionMaker','issue']) && textFact(facts.decisionMaker) && textFact(facts.issue);
+    case 'relationship': return (exactKeys(facts, ['decisionMaker','issue']) || (exactKeys(facts, ['decisionMaker','issue','contactId']) && typeof facts.contactId === 'string' && uuid.test(facts.contactId))) && textFact(facts.decisionMaker) && textFact(facts.issue);
     case 'clinical': return exactKeys(facts, ['issue']) && textFact(facts.issue);
     case 'contract_tender': return exactKeys(facts, ['holder','endsOn']) && textFact(facts.holder) && validDate(facts.endsOn);
     case 'competitor_lock_in': return exactKeys(facts, ['competitor','endsOn']) && textFact(facts.competitor) && validDate(facts.endsOn);

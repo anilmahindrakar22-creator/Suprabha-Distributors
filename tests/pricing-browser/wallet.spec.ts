@@ -21,7 +21,7 @@ async function fixture(page: Page, options: Options = {}) {
     const url = new URL(route.request().url());
     if (url.pathname === '/api/wallet/actions') return route.fulfill({ json: route.request().method() === 'GET' ? (url.searchParams.get('action') === 'get_actions_due' ? { page: 1, pageSize: 50, total: 0, overdueCount: 0, rows: [] } : []) : { ok: true } });
     if (url.pathname === '/api/wallet/diagnosis' && route.request().method() === 'GET') {
-      return route.fulfill({ json: url.searchParams.get('action') === 'get_account_opportunities' ? [] : { rows: [], undiagnosedFocusCount: null, focusCount: null } });
+      return route.fulfill({ json: url.searchParams.get('action') === 'get_account_opportunities' ? [] : { rows: [], undiagnosedFocusCount: null, focusCount: null, focusWithoutDecisionMaker: 1 } });
     }
     if (options.failure === 'forbidden') return route.fulfill({ status: 403, json: { error: 'Wallet access required' } });
     if (route.request().method() === 'POST') {

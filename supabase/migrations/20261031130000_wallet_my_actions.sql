@@ -27,6 +27,7 @@ create function public.stockflow_my_actions_gateway(p_gateway_key text,p_actor_e
 returns jsonb language plpgsql security definer set search_path=pg_catalog,public,private,extensions as $$
 declare actor text:=lower(btrim(p_actor_email)); roles text[]; secret_hash text; command_key text; replay jsonb; result jsonb;
  today date:=(now() at time zone 'Asia/Kolkata')::date; action_entity uuid; action_row private.stockflow_commercial_actions%rowtype; entity uuid;
+ visit_data jsonb; visit_outcome text; customer_entity uuid; visit_result jsonb; visit_entity uuid;
 begin
  select secret_sha256 into secret_hash from private.stockflow_gateway_config where name='orders';
  if secret_hash is null or encode(extensions.digest(coalesce(p_gateway_key,''),'sha256'),'hex')<>secret_hash then raise exception 'Unauthorized gateway' using errcode='42501';end if;
@@ -47,12 +48,37 @@ begin
  action_entity:=(p_payload->>'actionId')::uuid;
  select a.* into action_row from private.stockflow_commercial_actions a where a.id=action_entity and a.owner_email=actor;
  if not found then raise exception 'Action not found' using errcode='22023';end if;
+ visit_data:=p_payload->'visit';
+ if p_payload ? 'visit' and visit_data<>'null'::jsonb then
+  if jsonb_typeof(visit_data) is distinct from 'object' or (select count(*) from jsonb_object_keys(visit_data))<>2
+   or not (visit_data ? 'outcome') or not (visit_data ? 'nextVisitOn')
+   or jsonb_typeof(visit_data->'outcome') is distinct from 'string'
+   or coalesce(visit_data->>'outcome','') not in ('met','not_available','order_taken','issue_raised','other')
+   or jsonb_typeof(visit_data->'nextVisitOn') not in ('string','null') then
+   raise exception 'Invalid visit details' using errcode='22023';
+  end if;
+  if action_row.action_type<>'visit' or p_payload->>'result'<>'done' then
+   raise exception 'Visit details require a completed visit action' using errcode='22023';
+  end if;
+ end if;
  perform pg_advisory_xact_lock(hashtextextended('opportunity-action:'||action_row.opportunity_id,0));
+ if p_payload ? 'visit' and visit_data<>'null'::jsonb then
+  select o.customer_id into customer_entity from private.stockflow_commercial_opportunities o where o.id=action_row.opportunity_id;
+  visit_outcome:=visit_data->>'outcome';
+  visit_result:=public.stockflow_accounts_gateway(p_gateway_key,p_actor_email,'log_visit',jsonb_build_object(
+   'idempotencyKey',command_key||':visit','customerId',customer_entity,'visitedOn',today,
+   'outcome',visit_outcome,'note',left(p_payload->>'note',500),'nextVisitOn',visit_data->'nextVisitOn'));
+  visit_entity:=(visit_result->>'visitId')::uuid;
+ end if;
  begin
   insert into private.stockflow_commercial_action_results(action_id,result,note,closed_by)
   values(action_entity,p_payload->>'result',btrim(p_payload->>'note'),actor);
  exception when unique_violation then raise exception 'Action already closed' using errcode='PT409';end;
- result:=jsonb_build_object('actionId',action_entity,'result',p_payload->>'result','note',btrim(p_payload->>'note'),'closedBy',actor,'closedAt',clock_timestamp());
+ if visit_entity is not null then
+  result:=jsonb_build_object('actionId',action_entity,'result',p_payload->>'result','note',btrim(p_payload->>'note'),'closedBy',actor,'closedAt',clock_timestamp(),'visitId',visit_entity);
+ else
+  result:=jsonb_build_object('actionId',action_entity,'result',p_payload->>'result','note',btrim(p_payload->>'note'),'closedBy',actor,'closedAt',clock_timestamp());
+ end if;
  entity:=action_entity;
  insert into private.stockflow_economic_audit(action,entity_id,actor,payload) values(p_action,entity,actor,p_payload);
  perform private.finish_stockflow_command(actor,p_action,command_key,p_payload,entity,result);

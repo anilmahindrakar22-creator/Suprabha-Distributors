@@ -6,6 +6,7 @@ import { NewVisitCustomer } from '@/components/new-visit-customer';
 import { Briefcase, Calculator, Check, Coffee, Crown, FileSearch, Gavel, Handshake, Heart, Hourglass, ListChecks, Megaphone, MessageCircleQuestionMark, Snail, Timer, Users, Zap } from 'lucide-react';
 import { ArrowLeft, Ban, CalendarCheck, CalendarClock, CalendarPlus, CalendarX, ChevronDown, CircleAlert, CircleCheck, CircleQuestionMark, ClipboardList, Ellipsis, FileClock, Info, Lightbulb, Mail, MapIcon, MapPin, MapPinOff, Network, Pencil, Phone, ShieldX, Signal, SkipForward, ThumbsUp, Trash2, TriangleAlert, User, UserCog, UserPlus, Wand } from 'lucide-react';
 import { isInsideMarketArea, MARKET_AREA, parseLocationInput, powerAlerts, socialStyles, styleCues, withAccountContacts, type ContactStyle, type SocialStyle, type StyleCue, type AppContact, type ContactAssessment, type PowerAlert, type AccountRow, type AccountsResponse, type VisitOutcome } from '@/lib/account-types';
+import { walletPowerAlertLabels, walletRoleLabels } from '@/lib/wallet-labels';
 import { readJsonBody } from '@/lib/http-json';
 
 type Mode = 'mine' | 'all';
@@ -24,7 +25,7 @@ const chipDangerClass = 'inline-flex min-h-11 items-center gap-2 rounded-lg bord
 const contactActionClass = 'inline-flex min-h-11 items-center gap-2 px-1 text-xs text-sf-brand/80 disabled:opacity-50';
 const outcomes: Record<VisitOutcome, string> = { met: 'Met', not_available: 'Not available', order_taken: 'Order taken', issue_raised: 'Issue raised', other: 'Other' };
 const pinError = 'Paste a Google Maps link or two numbers like 18.52, 73.85';
-const roleLabels = { unknown: 'Unknown', decision_maker: 'Decision maker', influencer: 'Influencer', user: 'User', gatekeeper: 'Gatekeeper' };
+const roleLabels = walletRoleLabels;
 const stanceLabels = { unknown: 'Unknown', supporter: 'Supporter', neutral: 'Neutral', sceptical: 'Sceptical', blocker: 'Blocker' };
 const influenceLabels = { unknown: 'Unknown', high: 'High', medium: 'Medium', low: 'Low' };
 const styleLabels: Record<SocialStyle, string> = { analytical: 'Analytical', driving: 'Driving', expressive: 'Expressive', amiable: 'Amiable' };
@@ -204,7 +205,7 @@ export function assessmentSummary(contact: AppContact) {
     value.influence !== 'unknown' ? `${influenceLabels[value.influence]} influence` : null].filter(Boolean).join(' · ') || 'Role not set' : 'Role not set';
 }
 export function alertLabel(alert: PowerAlert) {
-  return { no_decision_maker: 'No decision maker known', decision_maker_not_met: 'Decision maker not met in 60 days', influential_blocker: 'Influential blocker' }[alert];
+  return walletPowerAlertLabels[alert];
 }
 
 export function accountDate(date: string) {
@@ -441,7 +442,7 @@ export function AccountDetails({ row, mode, today, renderActions, ratingContactI
     <p className="mt-2 break-words text-xs text-sf-muted">{accountMetaLine(row, mode)}</p>
     <div hidden={!!ratingContactId}>
     {canSeePowerMap && row.powerAlerts?.length ? <div className="mt-2 flex flex-wrap gap-2">{row.powerAlerts.map(alert => {
-      const Icon = alert === 'no_decision_maker' ? Crown : alert === 'decision_maker_not_met' ? CalendarX : Ban;
+      const Icon = alert === 'no_decision_maker' ? Crown : alert === 'decision_maker_not_met' ? CalendarX : alert === 'influential_unknown' ? CircleQuestionMark : alert === 'no_influential_supporter' ? Users : Ban;
       return <span key={alert} className={`${summaryChipClass} max-w-full ${alert === 'influential_blocker' ? stanceToneClasses.danger : stanceToneClasses.warning}`}><Icon aria-hidden="true" size={16} className="shrink-0" />{alertLabel(alert)}</span>;
     })}</div> : null}
     {canSeePowerMap && whoDecidesLine(row) ? <p className="mt-2 flex items-center gap-1 break-words text-sm text-sf-body"><Crown aria-hidden="true" size={16} className="shrink-0 text-sf-brand" /><span className="min-w-0">{whoDecidesLine(row)}</span></p> : null}

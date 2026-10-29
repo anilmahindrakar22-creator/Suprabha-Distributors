@@ -1140,7 +1140,7 @@
     },
     {
       "localFile": "20261031090000_wallet_diagnosis.sql",
-      "localSha256": "4ae2d95343022c23ca60a2fd2d6f9bdc27cd5ec1bac5f7b13b7d4e15e94f109c",
+      "localSha256": "17d47d07ad9c2ac29e93b9d5fa10eeb96a9c9aae5b945c4f3a0267997480e70b",
       "remoteVersion": null,
       "remoteSha256": null,
       "status": "not_deployed"
@@ -1154,7 +1154,14 @@
     },
     {
       "localFile": "20261031130000_wallet_my_actions.sql",
-      "localSha256": "8b9f9ca880a05f9caef8bf1d248d4932fc2d2f2a8fd7f2485e0e34977936b688",
+      "localSha256": "37d3d544c51186e55d876ec107f18feafd4120c90b062950e11485defa8794d4",
+      "remoteVersion": null,
+      "remoteSha256": null,
+      "status": "not_deployed"
+    },
+    {
+      "localFile": "20261031140000_power_map_enhancement.sql",
+      "localSha256": "817bc6d046069642c11cf25a48d88bf154f9c104d6dca5f9bed0ccc29d86daaa",
       "remoteVersion": null,
       "remoteSha256": null,
       "status": "not_deployed"

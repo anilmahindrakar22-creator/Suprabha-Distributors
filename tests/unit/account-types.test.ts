@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { isInsideMarketArea, parseAccountClass, parseAccountCommand, parseLocationInput, withAccountContacts } from '@/lib/account-types';
+import { decisionRoles, isInsideMarketArea, parseAccountClass, parseAccountCommand, parseLocationInput, powerAlerts, withAccountContacts } from '@/lib/account-types';
 import type { AccountRow } from '@/lib/account-types';
 
 describe('optional app contacts response', () => {
@@ -177,5 +177,14 @@ describe('account location input', () => {
   });
   it.each(['', 'nonsense', '0,0', '91,77', '12,181', 'https://maps.app.goo.gl/short', 'ftp://maps.google.com/?q=12,77', 'https://google.com/maps/place/Bengaluru'])('rejects invalid input %s', input => {
     expect(parseLocationInput(input).ok).toBe(false);
+  });
+});
+describe('Power Map account types', () => {
+  it('accepts the added roles and alerts', () => {
+    expect(decisionRoles).toEqual(expect.arrayContaining(['champion', 'technical_evaluator', 'coach']));
+    expect(powerAlerts).toEqual(expect.arrayContaining(['influential_unknown', 'no_influential_supporter']));
+    for (const decisionRole of ['champion', 'technical_evaluator', 'coach']) {
+      expect(parseAccountCommand({ action: 'set_assessment', contactId: '66666666-6666-4666-8666-666666666666', decisionRole, stance: 'supporter', influence: 'high', idempotencyKey: 'assessment-key-0001' })).not.toBeNull();
+    }
   });
 });

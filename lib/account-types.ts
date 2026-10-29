@@ -21,9 +21,9 @@ export type ContactStyle = {
 };
 export type StyleObservation = { observer: string; recordedAt: string; a: StyleRatings; r: StyleRatings; cues: StyleCue[] };
 export type LogVisitResult = { ok: true; customerId: string; visitId: string };
-export const powerAlerts = ['no_decision_maker', 'decision_maker_not_met', 'influential_blocker'] as const;
+export const powerAlerts = ['no_decision_maker', 'decision_maker_not_met', 'influential_blocker', 'influential_unknown', 'no_influential_supporter'] as const;
 export type PowerAlert = typeof powerAlerts[number];
-export const decisionRoles = ['decision_maker', 'influencer', 'user', 'gatekeeper', 'unknown'] as const;
+export const decisionRoles = ['decision_maker', 'champion', 'influencer', 'technical_evaluator', 'user', 'gatekeeper', 'coach', 'unknown'] as const;
 export const contactStances = ['supporter', 'neutral', 'sceptical', 'blocker', 'unknown'] as const;
 export const contactInfluences = ['high', 'medium', 'low', 'unknown'] as const;
 export type ContactAssessment = { decisionRole: typeof decisionRoles[number]; stance: typeof contactStances[number]; influence: typeof contactInfluences[number]; reason: string | null; recordedAt: string; actor: string };

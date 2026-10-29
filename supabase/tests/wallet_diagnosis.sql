@@ -10,16 +10,22 @@ insert into private.stockflow_customers(id,name,tally_key,created_by_email) valu
  ('b2500000-0000-4000-8000-000000000001','Diagnosis One','diagnosis-1','test'),
  ('b2500000-0000-4000-8000-000000000002','Diagnosis Two','diagnosis-2','test'),
  ('b2500000-0000-4000-8000-000000000003','Diagnosis Three','diagnosis-3','test'),
- ('b2500000-0000-4000-8000-000000000004','Diagnosis Four','diagnosis-4','test');
+ ('b2500000-0000-4000-8000-000000000004','Diagnosis Four','diagnosis-4','test'),
+ ('b2900000-0000-4000-8000-000000000005','Diagnosis Five','diagnosis-5','test'),
+ ('b2900000-0000-4000-8000-000000000004','Diagnosis Other','diagnosis-other-4','test');
 insert into private.stockflow_economic_customer_identities(company_id,source_id,customer_id,verified_by) values
  ('diagnosis-test','diagnosis-1','b2500000-0000-4000-8000-000000000001','test'),
  ('diagnosis-test','diagnosis-2','b2500000-0000-4000-8000-000000000002','test'),
  ('diagnosis-test','diagnosis-3','b2500000-0000-4000-8000-000000000003','test'),
- ('diagnosis-test','diagnosis-4','b2500000-0000-4000-8000-000000000004','test');
+ ('diagnosis-test','diagnosis-4','b2500000-0000-4000-8000-000000000004','test'),
+ ('diagnosis-test','diagnosis-5','b2900000-0000-4000-8000-000000000005','test');
 insert into private.stockflow_wallet_divisions(code,name,sort_order,active) values('DIAGTEST','Diagnosis Test Division',100,true)
 on conflict(code) do update set active=true;
 create function pg_temp.diagnosis_call(p_action text,p_payload jsonb) returns jsonb language sql as $$
  select public.stockflow_opportunity_gateway('diagnosis-test-key','diagnosis-manager@test.local',p_action,p_payload);
+$$;
+create function pg_temp.diagnosis_account_call(p_action text,p_payload jsonb) returns jsonb language sql as $$
+ select public.stockflow_accounts_gateway('diagnosis-test-key','diagnosis-manager@test.local',p_action,p_payload||jsonb_build_object('idempotencyKey',p_payload->>'idempotencyKey'));
 $$;
 create function pg_temp.diagnosis_error(p_action text,p_payload jsonb,p_expected text) returns void language plpgsql as $$
 begin
@@ -81,6 +87,7 @@ begin
  -- D6 uncertified reads retain diagnosis rows and fail closed for focus counts.
  result_data:=pg_temp.diagnosis_call('get_wallet_diagnoses','{"customerIds":["b2500000-0000-4000-8000-000000000001"]}');
  if result_data->'focusCount' is distinct from 'null'::jsonb or result_data->'undiagnosedFocusCount' is distinct from 'null'::jsonb
+  or result_data->'focusWithoutDecisionMaker' is distinct from 'null'::jsonb
   or jsonb_array_length(result_data->'rows')<>1 then raise exception 'Uncertified diagnosis response failed: %',result_data;end if;
  -- D7 certified three-account focus fixture: mirror W7/W8 coverage controls and set full focus band.
  perform public.stockflow_wallet_gateway('diagnosis-test-key','diagnosis-manager@test.local','set_wallet_policy',
@@ -125,6 +132,16 @@ begin
   or exists(select 1 from private.stockflow_commercial_opportunities opportunity_row where opportunity_row.customer_id not in
    ('b2500000-0000-4000-8000-000000000001','b2500000-0000-4000-8000-000000000002','b2500000-0000-4000-8000-000000000003','b2500000-0000-4000-8000-000000000004'))
   then raise exception 'D7 Focus counts failed: %',result_data;end if;
+ -- P3 coverage counts all Focus rows without a decision maker; the fixtures are checked separately.
+ if result_data->>'focusWithoutDecisionMaker' is distinct from
+   (select count(*)::text from jsonb_array_elements(private.stockflow_wallet_read((now() at time zone 'Asia/Kolkata')::date)->'rows') as power_fixture_row(item)
+    where (power_fixture_row.item->>'inFocusBand')::boolean and private.stockflow_power_alerts((power_fixture_row.item->>'customerId')::uuid,(now() at time zone 'Asia/Kolkata')::date) ? 'no_decision_maker')::text then
+  raise exception 'P3 fixture missing-decision-maker count mismatch: %',result_data;end if;
+ if (select count(*) from jsonb_array_elements(private.stockflow_wallet_read((now() at time zone 'Asia/Kolkata')::date)->'rows') as power_customer_row(item)
+      where power_customer_row.item->>'customerId' in ('b2500000-0000-4000-8000-000000000001','b2500000-0000-4000-8000-000000000002','b2500000-0000-4000-8000-000000000003')
+       and (power_customer_row.item->>'inFocusBand')::boolean
+       and private.stockflow_power_alerts((power_customer_row.item->>'customerId')::uuid,(now() at time zone 'Asia/Kolkata')::date) ? 'no_decision_maker')<>3 then
+  raise exception 'P3 fixture Focus or missing-decision-maker assertion failed';end if;
  -- D8 latest open opportunity and newest constraint are reflected in the list.
  select value into row_value from jsonb_array_elements(result_data->'rows') where value->>'customerId'='b2500000-0000-4000-8000-000000000001';
  if row_value->>'kind'<>'recover' or row_value->>'category'<>'service' then raise exception 'Latest open opportunity/current constraint failed: %',row_value;end if;
@@ -140,6 +157,22 @@ begin
  if diag_four_data#>>'{rows,0,kind}'<>'defend' or diag_four_data#>>'{rows,0,category}'<>'price'
   then raise exception 'D8b diagnosed opportunity must outrank newer undiagnosed opportunity: %',diag_four_data;end if;
  -- E1 every category accepts its exact structured facts; representative shape errors are 22023.
+ -- P5 relationship facts accept a same-customer current contact and reject cross-customer or removed contacts.
+ result_data:=pg_temp.diagnosis_account_call('create_territory',jsonb_build_object('idempotencyKey','wallet-p5-territory-0001','name','Wallet Diagnosis P5 Territory'));
+ perform pg_temp.diagnosis_account_call('assign_account',jsonb_build_object('idempotencyKey','wallet-p5-assignment-0005','customerId','b2900000-0000-4000-8000-000000000005','ownerEmail','diagnosis-manager@test.local','territoryId',result_data#>>'{territory,id}','expectedVersion',null));
+ perform pg_temp.diagnosis_account_call('assign_account',jsonb_build_object('idempotencyKey','wallet-p5-assignment-0004','customerId','b2900000-0000-4000-8000-000000000004','ownerEmail','diagnosis-manager@test.local','territoryId',result_data#>>'{territory,id}','expectedVersion',null));
+ result_data:=pg_temp.diagnosis_call('open_opportunity',jsonb_build_object('requestId','wallet-p5-opportunity-0001','customerId','b2900000-0000-4000-8000-000000000005','kind','recover','reason','Relationship facts fixture'));
+ insert into private.stockflow_account_contacts(customer_id,name,business_role,added_by,updated_by)
+ values('b2900000-0000-4000-8000-000000000005','P5 Current Person','Lab lead','diagnosis-manager@test.local','diagnosis-manager@test.local') returning id into signal_line;
+ insert into private.stockflow_account_contacts(customer_id,name,business_role,added_by,updated_by)
+ values('b2900000-0000-4000-8000-000000000004','P5 Other Person','Lab lead','diagnosis-manager@test.local','diagnosis-manager@test.local') returning id into signal_install;
+ fact_data:=jsonb_build_object('decisionMaker','Dr P5','issue','No regular contact','contactId',signal_line::text);
+ row_value:=pg_temp.diagnosis_call('record_constraint',jsonb_build_object('requestId','wallet-p5-valid-constraint-01','opportunityId',result_data->>'id','category','relationship','evidence','Relationship gap observed','source','our_view','sourcePerson',null,'observedOn',(now() at time zone 'Asia/Kolkata')::date,'facts',fact_data,'expectedCurrentConstraintId',null));
+ if row_value->>'contactName'<>'P5 Current Person' then raise exception 'P5 relationship contact name missing: %',row_value;end if;
+ perform pg_temp.diagnosis_error('record_constraint',jsonb_build_object('requestId','wallet-p5-cross-customer-01','opportunityId',result_data->>'id','category','relationship','evidence','Cross-customer contact rejected','source','our_view','sourcePerson',null,'observedOn',(now() at time zone 'Asia/Kolkata')::date,'facts',jsonb_build_object('decisionMaker','Dr P5','issue','No regular contact','contactId',signal_install::text),'expectedCurrentConstraintId',row_value->>'id'),'22023');
+ update private.stockflow_account_contacts set removed_at=now(),removed_by='diagnosis-manager@test.local' where id=signal_line;
+ perform pg_temp.diagnosis_error('record_constraint',jsonb_build_object('requestId','wallet-p5-removed-contact-01','opportunityId',result_data->>'id','category','relationship','evidence','Removed contact rejected','source','our_view','sourcePerson',null,'observedOn',(now() at time zone 'Asia/Kolkata')::date,'facts',jsonb_build_object('decisionMaker','Dr P5','issue','No regular contact','contactId',signal_line::text),'expectedCurrentConstraintId',row_value->>'id'),'22023');
+ row_value:=pg_temp.diagnosis_call('record_constraint',jsonb_build_object('requestId','wallet-p5-no-contact-0001','opportunityId',result_data->>'id','category','relationship','evidence','Relationship without citation','source','our_view','sourcePerson',null,'observedOn',(now() at time zone 'Asia/Kolkata')::date,'facts',jsonb_build_object('decisionMaker','Dr P5','issue','No regular contact'),'expectedCurrentConstraintId',row_value->>'id'));
  result_data:=pg_temp.diagnosis_call('open_opportunity',jsonb_build_object('requestId','wallet-diagnosis-e1-open','customerId',signal_other,'kind','recover','reason','Evidence facts coverage'));
  foreach action_name in array array['price','portfolio','instrument','service','availability','credit','relationship','clinical','contract_tender','competitor_lock_in','unknown'] loop
   fact_data:=case action_name
@@ -217,6 +250,7 @@ begin
  if signal_data->>'priceExceptions90d'<>'1' or signal_data->>'deliveryProblems90d'<>'1' or signal_data->>'deliveryProblemsOpen'<>'1' or signal_data->>'serviceTickets90d'<>'1'
   or signal_data->>'serviceTicketsOpen'<>'1' or signal_data->>'ourInstallations'<>'1' or signal_data->>'lastVisitOn'<>(now() at time zone 'Asia/Kolkata')::date::text
   then raise exception 'E5 customer signals failed: %',signal_data;end if;
+ if jsonb_typeof(signal_data->'powerAlerts')<>'array' or signal_data->'decisionMakerLastMetOn' is distinct from 'null'::jsonb then raise exception 'P4 Power Map signals missing: %',signal_data;end if;
  signal_data:=pg_temp.diagnosis_call('get_account_signals',jsonb_build_object('customerId',signal_other));
  if signal_data->>'priceExceptions90d'<>'0' or signal_data->>'deliveryProblems90d'<>'0' or signal_data->>'serviceTicketsOpen'<>'0'
   or signal_data->>'ourInstallations'<>'0' or signal_data->'lastVisitOn' is distinct from 'null'::jsonb then raise exception 'E5 other customer/null visit failed: %',signal_data;end if;

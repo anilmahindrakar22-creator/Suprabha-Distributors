@@ -44,6 +44,14 @@ const powerContacts: AccountRow['appContacts'] = [
   { ...appContact, id: '77777777-7777-4777-8777-777777777777', name: 'Ravi' },
 ];
 
+test('shows the new Power Map role and alert labels', async ({ page }) => {
+  await mockAccounts(page, { canSeePowerMap: true, powerAlerts: ['influential_unknown', 'no_influential_supporter'], appContacts: [{ ...appContact, assessment: { decisionRole: 'technical_evaluator', stance: 'unknown', influence: 'high', reason: null, recordedAt: '2026-10-14', actor: 'manager@example.test' } }] });
+  const card = firstCard(page);
+  await expect(card.getByText('Influential person, stance unknown', { exact: true })).toBeVisible();
+  await expect(card.getByText('No influential supporter', { exact: true })).toBeVisible();
+  await expect(card.getByText(/Technical evaluator/)).toBeVisible();
+});
+
 const analytical: NonNullable<AccountRow['appContacts'][number]['style']> = { state: 'analytical', computedStyle: 'analytical', confidence: 'high', observations: 3, distinctDates: 3, assertiveness: 1.5, responsiveness: 1.5, override: null, cues: {} };
 const recentVisit: NonNullable<AccountRow['lastVisit']> = { id: visitId, visitedOn: '2026-10-03', outcome: 'met', visitedBy: 'sales@example.test', note: null, metContacts: powerContacts.map(({ id, name }) => ({ id, name })) };
 test('account states and rating choices use semantic colours and decorative icons', async ({ page }) => {
@@ -431,7 +439,7 @@ test('visit hides the meeting fieldset without contacts', async ({ page }) => {
   await expect(page.getByRole('group', { name: 'Who did you meet?', exact: true })).toHaveCount(0);
 });
 
-test('Power Map filter sends the alert query parameter', async ({ page }) => {
+test('Power Map filter sends the alert query parameter and shows enhancement labels', async ({ page }) => {
   const { gets } = await mockAccounts(page, { canSeePowerMap: true });
   await page.getByLabel('Power Map', { exact: true }).selectOption('no_decision_maker');
   await expect.poll(() => new URL(gets.at(-1)!).searchParams.get('alert')).toBe('no_decision_maker');

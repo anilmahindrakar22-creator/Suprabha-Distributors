@@ -30,9 +30,26 @@ alter table private.stockflow_commercial_constraints add constraint stockflow_co
  check ((source='customer_stated' and source_person is not null) or (source<>'customer_stated' and source_person is null));
 create index stockflow_commercial_constraints_current on private.stockflow_commercial_constraints(opportunity_id,recorded_at desc,id desc);
 
-create function private.stockflow_constraint_facts_valid(p_category text,p_facts jsonb,p_today date) returns boolean
+create function private.stockflow_wallet_power_coverage(p_today date) returns jsonb
 language plpgsql stable set search_path=pg_catalog,private as $$
-declare expected text[]; key_name text; value_text text; amount numeric; date_value date; division_code text;
+declare wallet_data jsonb; total_focus bigint; missing_decider bigint;
+begin
+ wallet_data:=private.stockflow_wallet_read(p_today);
+ if wallet_data#>>'{coverage,certified}' is distinct from 'true' then
+  return jsonb_build_object('focusCount',null,'focusWithoutDecisionMaker',null);
+ end if;
+ if wallet_data->'rows' is null or jsonb_typeof(wallet_data->'rows')<>'array' then
+  return jsonb_build_object('focusCount',null,'focusWithoutDecisionMaker',null);
+ end if;
+ select count(*) filter(where (wallet_item.value->>'inFocusBand')::boolean),
+  count(*) filter(where (wallet_item.value->>'inFocusBand')::boolean and private.stockflow_power_alerts((wallet_item.value->>'customerId')::uuid,p_today) ? 'no_decision_maker')
+ into total_focus,missing_decider from jsonb_array_elements(wallet_data->'rows') wallet_item(value);
+ return jsonb_build_object('focusCount',total_focus,'focusWithoutDecisionMaker',missing_decider);
+end$$;
+
+create function private.stockflow_constraint_facts_valid(p_category text,p_facts jsonb,p_today date,p_customer uuid) returns boolean
+language plpgsql stable set search_path=pg_catalog,private as $$
+declare expected text[]; key_name text; value_text text; amount numeric; date_value date; division_code text; contact_id uuid;
 begin
  if p_facts is null or jsonb_typeof(p_facts)<>'object' or p_today is null then return false;end if;
  expected:=case p_category
@@ -48,10 +65,15 @@ begin
   when 'competitor_lock_in' then array['competitor','endsOn']
   when 'unknown' then array['nextQuestion','askBy']
   else null end;
+ if p_category='relationship' and p_facts ? 'contactId' then expected:=array_append(expected,'contactId');end if;
  if expected is null or (select count(*) from jsonb_object_keys(p_facts))<>cardinality(expected)
   or exists(select 1 from jsonb_object_keys(p_facts) as actual(key_name) where not actual.key_name=any(expected)) then return false;end if;
  foreach key_name in array expected loop
-  if key_name in ('competitor','product','analyser','issue','decisionMaker','holder','nextQuestion') then
+  if key_name='contactId' then
+   if jsonb_typeof(p_facts->key_name)<>'string' or (p_facts->>key_name) !~* '^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$' then return false;end if;
+   contact_id:=(p_facts->>key_name)::uuid;
+   if not exists(select 1 from private.stockflow_account_contacts contact_row where contact_row.id=contact_id and contact_row.customer_id=p_customer and contact_row.removed_at is null) then return false;end if;
+  elsif key_name in ('competitor','product','analyser','issue','decisionMaker','holder','nextQuestion') then
    if jsonb_typeof(p_facts->key_name)<>'string' then return false;end if;
    value_text:=btrim(p_facts->>key_name);if length(value_text) not between 2 and 200 then return false;end if;
   elsif key_name in ('competitorPricePaise','ourPricePaise') then
@@ -82,7 +104,8 @@ language sql stable set search_path=pg_catalog,private as $$
  select jsonb_build_object('id',c.id,'category',c.category,'evidence',c.evidence,'confidence',c.confidence,
   'recordedBy',c.recorded_by,'recordedAt',c.recorded_at,'source',c.source,'sourcePerson',c.source_person,
   'observedOn',c.observed_on,'facts',c.facts,'priceUnproven',c.category='price' and c.source='our_view',
-  'gapPermille',case when c.category='price' then round(((c.facts->>'ourPricePaise')::numeric-(c.facts->>'competitorPricePaise')::numeric)*1000/(c.facts->>'ourPricePaise')::numeric) end)
+  'gapPermille',case when c.category='price' then round(((c.facts->>'ourPricePaise')::numeric-(c.facts->>'competitorPricePaise')::numeric)*1000/(c.facts->>'ourPricePaise')::numeric) end,
+  'contactName',case when c.category='relationship' and c.facts ? 'contactId' then (select contact_row.name from private.stockflow_account_contacts contact_row where contact_row.id=(c.facts->>'contactId')::uuid) end)
  from private.stockflow_commercial_constraints c where c.id=p_constraint_id;
 $$;
 do $$ declare table_name text;
@@ -100,6 +123,7 @@ returns jsonb language plpgsql security definer set search_path=pg_catalog,publi
 declare actor text:=lower(btrim(p_actor_email)); roles text[]; secret_hash text; command_key text; replay jsonb; result jsonb;
  customer uuid; opportunity uuid; entity uuid; current_constraint uuid; today date:=(now() at time zone 'Asia/Kolkata')::date;
  wallet_data jsonb; rows_data jsonb; focus_count bigint; undiagnosed_count bigint; row_item jsonb; item jsonb;
+ coverage_data jsonb;
  fact_data jsonb; source_value text; source_person_value text; observed_date date; signals jsonb;
 begin
  select secret_sha256 into secret_hash from private.stockflow_gateway_config where name='orders';
@@ -128,8 +152,10 @@ begin
     where o.customer_id=(value->>'customerId')::uuid and cl.opportunity_id is null and cc.category is not null and cc.category<>'unknown'))
    into focus_count,undiagnosed_count from jsonb_array_elements(wallet_data->'rows');
   end if;
+  coverage_data:=private.stockflow_wallet_power_coverage(today);
   return jsonb_build_object('rows',rows_data,'focusCount',case when wallet_data#>>'{coverage,certified}'='true' then focus_count end,
-   'undiagnosedFocusCount',case when wallet_data#>>'{coverage,certified}'='true' then undiagnosed_count end);
+   'undiagnosedFocusCount',case when wallet_data#>>'{coverage,certified}'='true' then undiagnosed_count end,
+   'focusWithoutDecisionMaker',case when wallet_data#>>'{coverage,certified}'='true' then coverage_data->'focusWithoutDecisionMaker' else 'null'::jsonb end);
  elsif p_action='get_account_opportunities' then
   customer:=(p_payload->>'customerId')::uuid;
   if not exists(select 1 from private.stockflow_customers where id=customer) then raise exception 'Customer not found' using errcode='22023';end if;
@@ -153,7 +179,11 @@ begin
    'serviceTicketsOpen',(select count(*) from private.stockflow_service_tickets st join private.stockflow_orders ord on ord.id=st.order_id where ord.customer_id=customer and st.status='open'),
    'serviceTickets90d',(select count(*) from private.stockflow_service_tickets st join private.stockflow_orders ord on ord.id=st.order_id where ord.customer_id=customer and st.created_at>=((today-90)::timestamp at time zone 'Asia/Kolkata') and st.created_at<((today+1)::timestamp at time zone 'Asia/Kolkata')),
    'ourInstallations',(select count(*) from private.stockflow_equipment_installations ei join private.stockflow_orders ord on ord.id=ei.order_id where ord.customer_id=customer),
-   'lastVisitOn',(select max(visited_on) from private.stockflow_customer_visits where customer_id=customer)) into signals;
+   'lastVisitOn',(select max(visited_on) from private.stockflow_customer_visits where customer_id=customer),
+   'powerAlerts',private.stockflow_power_alerts(customer,today),
+   'decisionMakerLastMetOn',(select max(private.stockflow_contact_last_met(contact_row.id)) from private.stockflow_account_contacts contact_row
+    join lateral(select decision_role from private.stockflow_contact_assessments assessment_row where assessment_row.contact_id=contact_row.id order by recorded_at desc,id desc limit 1) latest_role on true
+    where contact_row.customer_id=customer and contact_row.removed_at is null and latest_role.decision_role='decision_maker')) into signals;
   return signals;
  end if;
  if p_action is null or p_action not in ('open_opportunity','record_constraint','close_opportunity') then raise exception 'Unsupported wallet diagnosis action' using errcode='22023';end if;
@@ -185,7 +215,7 @@ begin
    or jsonb_typeof(fact_data) is distinct from 'object' then raise exception 'Invalid constraint' using errcode='22023';end if;
   begin observed_date:=(p_payload->>'observedOn')::date;exception when others then raise exception 'Invalid constraint date' using errcode='22023';end;
   if to_char(observed_date,'YYYY-MM-DD')<>p_payload->>'observedOn' or observed_date>today or observed_date<(today-interval '2 years')::date
-   or not private.stockflow_constraint_facts_valid(p_payload->>'category',fact_data,today) then raise exception 'Invalid constraint facts or date' using errcode='22023';end if;
+   or not private.stockflow_constraint_facts_valid(p_payload->>'category',fact_data,today,(select customer_id from private.stockflow_commercial_opportunities opportunity_row where opportunity_row.id=opportunity)) then raise exception 'Invalid constraint facts or date' using errcode='22023';end if;
   insert into private.stockflow_commercial_constraints(opportunity_id,category,evidence,source,source_person,observed_on,facts,confidence,recorded_by)
   values(opportunity,p_payload->>'category',btrim(p_payload->>'evidence'),source_value,source_person_value,observed_date,fact_data,
    case source_value when 'document' then 'high' when 'customer_stated' then 'medium' else 'low' end,actor) returning id into entity;
@@ -205,6 +235,6 @@ begin
 end$$;
 
 revoke all on function public.stockflow_opportunity_gateway(text,text,text,jsonb) from public,anon,authenticated,service_role;
-revoke all on function private.stockflow_constraint_facts_valid(text,jsonb,date),private.stockflow_constraint_json(uuid) from public,anon,authenticated,service_role;
+revoke all on function private.stockflow_constraint_facts_valid(text,jsonb,date,uuid),private.stockflow_wallet_power_coverage(date),private.stockflow_constraint_json(uuid) from public,anon,authenticated,service_role;
 grant execute on function public.stockflow_opportunity_gateway(text,text,text,jsonb) to service_role;
 commit;

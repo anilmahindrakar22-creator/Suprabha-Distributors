@@ -5,6 +5,7 @@ import { resolve } from 'node:path';
 
 // Evidence-only: no database connection, SQL execution or migration-history repair.
 const pricingReleaseFiles = new Set([
+  '20261031140000_power_map_enhancement.sql',
   '20261030090000_instrument_register.sql',
   '20261030091000_instrument_register_read.sql',
   '20261030100000_economic_rebuild_containment.sql',
@@ -14,6 +15,7 @@ const pricingReleaseFiles = new Set([
   '20261031090000_wallet_diagnosis.sql',
   '20261031120000_wallet_actions.sql',
   '20261031130000_wallet_my_actions.sql',
+  '20261031140000_power_map_enhancement.sql',
   '20261029100000_supplier_purchase_orders.sql',
   '20261029090000_challan_delivery.sql',
   '20261029091000_order_list_priority_sort.sql',
@@ -115,6 +117,7 @@ export const pricingReleaseSqlTests = [
   'supabase/tests/wallet_actions.sql',
   'supabase/tests/wallet_actions_concurrency.sql',
   'supabase/tests/wallet_my_actions.sql',
+  'supabase/tests/power_map_enhancement.sql',
 ];
 
 export function pricingReleasePreflight(evidence, files) {

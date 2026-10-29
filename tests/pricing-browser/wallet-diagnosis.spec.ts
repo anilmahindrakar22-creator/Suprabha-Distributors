@@ -21,7 +21,7 @@ async function fixture(page: Page, options: Options = {}) {
   let opportunities: WalletOpportunity[] = [diagnosed];
   let attemptedConflict = false;
   let attemptedNetworkFailure = false;
-  await page.route('**/api/accounts**', route => route.fulfill({ json: { accounts: [], page: { page: 1, pageSize: 50, total: 0 }, owners: [], territories: [], canAssign: true, canEraseContacts: false, canSeePowerMap: false, actorEmail: 'manager@example.test', today: '2026-10-30', classPolicy: { aMinPaise: '20000000', bMinPaise: '7500000' } } }));
+  await page.route('**/api/accounts**', route => { const url = new URL(route.request().url()); return route.fulfill({ json: { accounts: url.searchParams.get('search') ? [{ id: a, name: 'Example Diagnostic Laboratory', appContacts: [{ id: '66111111-2222-4222-8222-111111111111', name: 'Dr Rao' }] }] : [], page: { page: 1, pageSize: 50, total: 0 }, owners: [], territories: [], canAssign: true, canEraseContacts: false, canSeePowerMap: false, actorEmail: 'manager@example.test', today: '2026-10-30', classPolicy: { aMinPaise: '20000000', bMinPaise: '7500000' } } }); });
   await page.route('**/api/wallet/diagnosis**', async route => {
     const url = new URL(route.request().url());
     if (route.request().method() === 'POST') {
@@ -40,7 +40,7 @@ async function fixture(page: Page, options: Options = {}) {
     }
     if (url.searchParams.get('action') === 'get_account_signals') {
       if (options.diagnosisFailure) return route.fulfill({ status: 500, json: { error: 'offline' } });
-      return route.fulfill({ json: { priceExceptions90d: 1, deliveryProblems90d: 2, deliveryProblemsOpen: 1, serviceTicketsOpen: 1, serviceTickets90d: 3, ourInstallations: 4, lastVisitOn: '2026-10-20' } });
+      return route.fulfill({ json: { priceExceptions90d: 1, deliveryProblems90d: 2, deliveryProblemsOpen: 1, serviceTicketsOpen: 1, serviceTickets90d: 3, ourInstallations: 4, lastVisitOn: '2026-10-20', powerAlerts: ['influential_unknown', 'no_influential_supporter'], decisionMakerLastMetOn: null } });
     }
     return route.fulfill({ json: opportunities.filter(item => item.customerId === url.searchParams.get('customerId')) });
   });
@@ -144,6 +144,8 @@ for (const width of [375, 1280]) test.describe(`Wallet diagnosis at ${width}px`,
     const diagnosis = page.getByRole('region', { name: "Why we're not winning" });
     await expect(diagnosis.getByText('From StockFlow records (90 days)')).toBeVisible();
     await expect(diagnosis.getByText('Receivables: not available')).toBeVisible();
+    await expect(diagnosis.getByText('Power Map: Influential person, stance unknown · No influential supporter', { exact: true })).toBeVisible();
+    await expect(diagnosis.getByText('Decision maker last met: never', { exact: true })).toBeVisible();
     await expect(diagnosis.getByText('Acme Diagnostics, Glucose kit: ₹1,200 vs our ₹1,400 (14.3% higher)', { exact: true })).toBeVisible();
     await expect(diagnosis.getByText(/Price not proven: get the competitor's quote/)).toBeVisible();
     await diagnosis.getByRole('button', { name: 'Record constraint' }).click();
@@ -155,6 +157,23 @@ for (const width of [375, 1280]) test.describe(`Wallet diagnosis at ${width}px`,
     const failedSheet = await openAccount(page);
     await expect(page.getByRole('region', { name: "Why we're not winning" }).getByText('From StockFlow records (90 days)')).toHaveCount(0);
     await failedSheet.getByRole('button', { name: 'Close', exact: true }).first().click();
+  });
+  test('relationship can cite a Person in the POST facts', async ({ page }) => {
+    const { posts } = await fixture(page);
+    await openAccount(page);
+    const diagnosis = page.getByRole('region', { name: "Why we're not winning" });
+    await diagnosis.getByRole('button', { name: 'Record constraint' }).click();
+    await diagnosis.getByLabel('Category').selectOption('relationship');
+    await diagnosis.getByLabel('Decision-maker').fill('Lab owner');
+    await diagnosis.getByLabel('Issue').fill('No access');
+    await expect(diagnosis.getByLabel('Person')).toHaveValue('');
+    await expect(diagnosis.getByLabel('Person').getByRole('option', { name: 'Dr Rao' })).toBeAttached();
+    await diagnosis.getByLabel('Person').selectOption('66111111-2222-4222-8222-111111111111');
+    await diagnosis.getByLabel('Seen a document (quote, invoice, tender)').check();
+    await diagnosis.getByLabel('Note').fill('Discussed access to the owner');
+    await diagnosis.getByRole('button', { name: 'Save', exact: true }).click();
+    await expect.poll(() => posts.length).toBe(1);
+    expect(posts[0]).toMatchObject({ action: 'record_constraint', payload: { category: 'relationship', facts: { decisionMaker: 'Lab owner', issue: 'No access', contactId: '66111111-2222-4222-8222-111111111111' } } });
   });
   test('network retry keeps the same requestId', async ({ page }) => {
     const { posts } = await fixture(page, { networkFailure: true });
