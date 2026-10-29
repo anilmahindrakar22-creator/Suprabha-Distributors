@@ -9,6 +9,25 @@ const original = JSON.parse(readFileSync(new URL('../../supabase/migration-histo
 const source = new Map(readdirSync(fileURLToPath(directory)).filter((name) => name.endsWith('.sql')).map((name) => [name, readFileSync(new URL(name, directory), 'utf8')]));
 
 describe('read-only pricing release preflight', () => {
+  it('registers the wallet migration after candidate rebuild and both SQL tests after sales coverage', () => {
+    const result = pricingReleasePreflight(original, source);
+    expect(result.pending.indexOf('20261030130000_wallet_v2.sql')).toBeGreaterThan(result.pending.indexOf('20261030110000_economics_candidate_rebuild.sql'));
+    expect(result.sqlTests).toEqual(['supabase/tests/sales_coverage.sql', 'supabase/tests/wallet_v2.sql', 'supabase/tests/wallet_v2_concurrency.sql']);
+    const runner = readFileSync(new URL('../pricing-migration-local.ps1', import.meta.url), 'utf8');
+    expect(runner).toContain("'20261030110000_economics_candidate_rebuild.sql','20261030130000_wallet_v2.sql'");
+    let previous = -1;
+    for (const path of result.sqlTests) {
+      const position = runner.indexOf(path);
+      expect(position).toBeGreaterThan(previous);
+      previous = position;
+      const fixture = readFileSync(new URL(`../../${path}`, import.meta.url), 'utf8');
+      if (path.includes('wallet_v2')) expect(fixture).toContain('raise notice \'PASS');
+    }
+    const migration = source.get('20261030130000_wallet_v2.sql')!;
+    expect(migration).toContain('stockflow_wallet_gateway');
+    expect(migration).toContain('pg_advisory_xact_lock');
+    expect(migration).not.toMatch(/create(?: or replace)? function private\.stockflow_sales_(?:coverage_status|reconciliation)\(/i);
+  });
   it('bounds economics with checked final-definition anchors and registers parity separately from acceptance', () => {
     const migration = source.get('20261030110000_economics_candidate_rebuild.sql')!;
     const base = source.get('20261007181000_instrument_economic_import_and_rebuild.sql')!;
@@ -232,6 +251,7 @@ describe('read-only pricing release preflight', () => {
       '20261030100000_economic_rebuild_containment.sql',
       '20261030101000_sales_coverage.sql',
       '20261030110000_economics_candidate_rebuild.sql',
+      '20261030130000_wallet_v2.sql',
     ]);
     expect(result.deployed.at(-1)?.localFile).toBe('20261026150000_rate_check_units.sql');
     expect(result.deployed).toHaveLength(147);
@@ -257,6 +277,7 @@ describe('read-only pricing release preflight', () => {
       '20261030100000_economic_rebuild_containment.sql',
       '20261030101000_sales_coverage.sql',
       '20261030110000_economics_candidate_rebuild.sql',
+      '20261030130000_wallet_v2.sql',
     ]);
   });
   it('rejects changed SQL including changes inside literals', () => {

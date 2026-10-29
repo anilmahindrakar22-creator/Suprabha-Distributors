@@ -1,0 +1,197 @@
+'use client';
+
+import Link from 'next/link';
+import { useEffect, useRef, useState, type ReactNode } from 'react';
+import type { WalletAccount, WalletCommand, WalletPolicy, WalletRow, WalletSnapshot, WalletView, WalletWorkspace as Workspace } from '@/lib/wallet-types';
+import { formatPaise, permilleLabel, rupeesToPaise } from '@/lib/wallet-format';
+
+const button = 'min-h-11 rounded-xl border border-sf-line px-3 text-sm font-bold text-sf-body disabled:opacity-50';
+const primary = 'min-h-11 rounded-xl bg-sf-brand px-4 text-sm font-bold text-white disabled:opacity-50';
+const input = 'min-h-11 w-full min-w-0 rounded-xl border border-sf-line bg-sf-soft-0 px-3 text-sm text-sf-body';
+const bigint = BigInt;
+const field = (data: FormData, key: string) => data.get(key) as string;
+const card = 'min-w-0 rounded-xl border border-sf-line-soft bg-white p-4';
+const views: [WalletView, string][] = [['focus', 'Focus'], ['all', 'All'], ['no_estimate', 'No estimate'], ['stale', 'Stale'], ['below_sales', 'Below sales']];
+const dateLabel = (date: string) => new Intl.DateTimeFormat('en-GB', { day: 'numeric', month: 'short', year: 'numeric', timeZone: 'Asia/Kolkata' }).format(new Date(`${date}T00:00:00Z`));
+const todayIST = () => new Intl.DateTimeFormat('en-CA', { timeZone: 'Asia/Kolkata', year: 'numeric', month: '2-digit', day: '2-digit' }).format(new Date());
+const rupees = (paise: number) => `${Math.trunc(paise / 100)}.${String(paise % 100).padStart(2, '0')}`;
+
+class WalletError extends Error {
+  constructor(message: string, readonly status: number) { super(message); }
+}
+async function request<T>(url: string, options?: RequestInit): Promise<T> {
+  const response = await fetch(url, { cache: 'no-store', ...options });
+  const body = await response.json() as T & { error?: string };
+  if (!response.ok) throw new WalletError(response.status === 403 ? 'Wallet is for management' : body.error || 'Wallet is temporarily unavailable', response.status);
+  return body as T;
+}
+function message(error: unknown) { return error instanceof Error ? error.message : 'Wallet is temporarily unavailable'; }
+
+function Sheet({ title, children, onClose, locked = false }: { title: string; children: ReactNode; onClose: () => void; locked?: boolean }) {
+  const dialog = useRef<HTMLDialogElement>(null);
+  useEffect(() => { dialog.current?.showModal(); }, []);
+  return <dialog ref={dialog} aria-label={title} onCancel={event => { event.preventDefault(); if (!locked) onClose(); }} className="m-auto max-h-[90dvh] w-[calc(100%_-_2rem)] max-w-xl overflow-y-auto rounded-xl border border-sf-line bg-white p-4 text-sf-body backdrop:bg-black/30 [overflow-wrap:anywhere]">
+    <div className="mb-4 flex items-center justify-between gap-2"><h3 className="text-lg font-bold">{title}</h3><button className={button} disabled={locked} onClick={onClose}>Close</button></div>{children}
+  </dialog>;
+}
+
+function Figures({ row, certified, walletShareTargetBps }: { row: WalletRow; certified: boolean; walletShareTargetBps: number }) {
+  if (row.walletPaise === null) return <p className="text-sm text-sf-muted">No estimate</p>;
+  return <div className="space-y-1 text-sm">
+    <p>Wallet {formatPaise(row.walletPaise)}/mo{certified ? <> · Sales {row.salesPaise === null ? '…' : formatPaise(row.salesPaise)}/mo{row.sharePermille !== null ? <> · {permilleLabel(row.sharePermille)} share</> : null}</> : null}</p>
+    {certified ? <div className="flex items-center gap-3">{row.sharePermille !== null ? <div aria-label={`Wallet share ${permilleLabel(row.sharePermille)}`} className="relative h-1 w-24 max-w-full shrink-0 rounded bg-sf-line-soft"><div className="h-1 rounded bg-sf-brand" style={{ width: `${Math.max(0, Math.min(100, row.sharePermille / 10))}%` }} /><svg aria-label={`Target ${permilleLabel(walletShareTargetBps / 10)}`} className="absolute -top-1 h-3 w-px -translate-x-1/2 text-sf-body" style={{ left: `${walletShareTargetBps / 100}%` }} viewBox="0 0 1 12"><path d="M0.5 0V12" stroke="currentColor" /></svg></div> : null}<span>Gap {row.captureGapPaise === null ? '…' : formatPaise(row.captureGapPaise)}/mo to target</span></div> : null}
+  </div>;
+}
+
+function SnapshotDetails({ snapshot }: { snapshot: WalletSnapshot }) {
+  return <div className="space-y-2 text-sm"><p>{formatPaise(snapshot.monthlyWalletPaise)}/month · {dateLabel(snapshot.asOf)} · {snapshot.confidence}</p><p>{snapshot.method.replaceAll('_', ' ')} · {snapshot.source}</p><p>{snapshot.note}</p>{snapshot.loweredReason ? <p>Lowered: {snapshot.loweredReason}</p> : null}<p className="text-sf-muted">Entered by {snapshot.enteredBy} · {snapshot.verifiedBy ? `Verified by ${snapshot.verifiedBy}` : 'Not verified'}</p></div>;
+}
+
+// An uncertain write keeps both its payload and requestId; edits stay locked until resolved.
+function useWrite(onSaved: () => Promise<void>, onConflict: () => Promise<void>, onForbidden: () => void) {
+  const pending = useRef<WalletCommand | null>(null);
+  const inFlight = useRef(false);
+  const [busy, setBusy] = useState(false);
+  const [uncertain, setUncertain] = useState(false);
+  const [error, setError] = useState('');
+  async function save(command: WalletCommand) {
+    if (inFlight.current) return;
+    inFlight.current = true; setBusy(true); setError('');
+    pending.current ??= command;
+    let succeeded = false;
+    try {
+      const result = await request<{ ok: boolean }>('/api/wallet', { method: 'POST', headers: { 'content-type': 'application/json' }, body: JSON.stringify(pending.current) });
+      if (result.ok !== true) throw new Error('Save could not be confirmed. Retry the same save.');
+      pending.current = null; setUncertain(false); succeeded = true;
+    } catch (failure) {
+      if (failure instanceof WalletError && failure.status >= 400 && failure.status < 500) {
+        pending.current = null; setUncertain(false);
+        if (failure.status === 403) onForbidden();
+        else if (failure.status === 409) await onConflict();
+        else setError(message(failure));
+      } else { setUncertain(true); setError('Save could not be confirmed. Check the connection and retry the same save.'); }
+    } finally { inFlight.current = false; setBusy(false); }
+    if (succeeded) await onSaved();
+  }
+  return { busy, uncertain, error, save, retry: () => { if (pending.current) void save(pending.current); } };
+}
+
+function EstimateForm({ account, onSaved, onConflict, onForbidden, onLock }: { account: WalletAccount; onSaved: () => Promise<void>; onConflict: () => Promise<void>; onForbidden: () => void; onLock: (locked: boolean) => void }) {
+  const [total, setTotal] = useState(account.current ? rupees(account.current.monthlyWalletPaise) : '');
+  const [split, setSplit] = useState(false);
+  const [parts, setParts] = useState<Record<string, string>>({});
+  const write = useWrite(onSaved, onConflict, onForbidden);
+  const amount = rupeesToPaise(total);
+  const lower = amount !== null && account.current !== null && amount < account.current.monthlyWalletPaise;
+  const allocations = account.divisions.filter(d => parts[d.code]?.trim()).map(d => ({ code: d.code, monthlyWalletPaise: rupeesToPaise(parts[d.code]) }));
+  const allocated = allocations.reduce((sum, d) => sum + bigint(d.monthlyWalletPaise ?? 0), bigint(0));
+  const invalidSplit = split && (allocations.some(d => d.monthlyWalletPaise === null) || allocated > bigint(amount ?? 0));
+  const locked = write.busy || write.uncertain;
+  useEffect(() => { onLock(locked); return () => onLock(false); }, [locked, onLock]);
+  return <form aria-label="Update estimate" className="space-y-3" onSubmit={event => {
+    event.preventDefault(); if (amount === null || invalidSplit) return;
+    const data = new FormData(event.currentTarget);
+    void write.save({ action: 'record_wallet_snapshot', payload: { requestId: crypto.randomUUID(), customerId: account.row.customerId, monthlyWalletPaise: amount, method: data.get('method') as WalletSnapshot['method'], source: field(data, 'source').trim(), confidence: data.get('confidence') as WalletSnapshot['confidence'], asOf: field(data, 'asOf'), note: field(data, 'note').trim(), loweredReason: lower ? field(data, 'reason').trim() : null, divisions: split ? allocations as { code: string; monthlyWalletPaise: number }[] : [], expectedCurrentSnapshotId: account.current?.id ?? null } });
+  }}>
+    <fieldset disabled={locked} className="min-w-0 space-y-3">
+      <label className="block">Total (₹/month)<input className={input} required inputMode="decimal" value={total} onChange={event => setTotal(event.target.value)} /></label>
+      {total && amount === null ? <p className="text-sm text-sf-danger">Enter rupees with up to 2 decimals.</p> : null}
+      <label className="block">Method<select className={input} name="method" defaultValue={account.current?.method ?? 'manager_estimate'}><option value="customer_stated">Customer stated</option><option value="test_volume">Test volume</option><option value="manager_estimate">Manager estimate</option></select></label>
+      <label className="block">Source<input className={input} name="source" required minLength={3} maxLength={500} /></label>
+      <label className="block">Confidence<select className={input} name="confidence" defaultValue={account.current?.confidence ?? 'medium'}><option value="high">High</option><option value="medium">Medium</option><option value="low">Low</option></select></label>
+      <label className="block">As-of<input className={input} name="asOf" type="date" required defaultValue={todayIST()} max={todayIST()} /></label>
+      <label className="block">Note<textarea className={input} name="note" required minLength={3} maxLength={500} /></label>
+      {lower ? <label className="block">Why is the estimate lower?<textarea className={input} name="reason" required minLength={3} maxLength={500} /></label> : null}
+      <label className="flex min-h-11 items-center gap-2"><input type="checkbox" checked={split} onChange={event => setSplit(event.target.checked)} />Add division split</label>
+      {split ? <div className="space-y-2">{account.divisions.map(d => <label key={d.code} className="block">{d.name} (₹/month)<input className={input} inputMode="decimal" value={parts[d.code] ?? ''} onChange={event => setParts({ ...parts, [d.code]: event.target.value })} /></label>)}<p>Unallocated: {formatPaise(Number(bigint(amount ?? 0) - allocated))}/month</p>{invalidSplit ? <p className="text-sf-danger">Enter valid division amounts whose sum does not exceed the total.</p> : null}</div> : null}
+    </fieldset>
+    {write.error ? <p role="alert" className="text-sm text-sf-danger">{write.error}</p> : null}
+    {write.uncertain ? <button type="button" className={primary} disabled={write.busy} onClick={write.retry}>Retry same save</button> : <button className={primary} disabled={write.busy || amount === null || invalidSplit}>Save estimate</button>}
+  </form>;
+}
+
+function PolicyForm({ policy, onSaved, onConflict, onForbidden, onLock }: { policy: WalletPolicy; onSaved: () => Promise<void>; onConflict: () => Promise<void>; onForbidden: () => void; onLock: (locked: boolean) => void }) {
+  const write = useWrite(onSaved, onConflict, onForbidden);
+  const locked = write.busy || write.uncertain;
+  useEffect(() => { onLock(locked); return () => onLock(false); }, [locked, onLock]);
+  return <form aria-label="Wallet targets" className="space-y-3" onSubmit={event => {
+    event.preventDefault(); const data = new FormData(event.currentTarget);
+    void write.save({ action: 'set_wallet_policy', payload: { requestId: crypto.randomUUID(), walletShareTargetBps: rupeesToPaise(field(data, 'target'))!, focusBandBps: rupeesToPaise(field(data, 'focus'))!, staleAfterMonths: Number(data.get('stale')), note: field(data, 'note').trim(), expectedVersion: policy.version } });
+  }}><fieldset disabled={write.busy || write.uncertain} className="min-w-0 space-y-3">
+    <label className="block">Wallet-share target (%)<input className={input} name="target" type="number" min="10" max="100" step="0.01" required defaultValue={policy.walletShareTargetBps / 100} /></label>
+    <label className="block">Focus band (%)<input className={input} name="focus" type="number" min="10" max="100" step="0.01" required defaultValue={policy.focusBandBps / 100} /></label>
+    <label className="block">Stale after (months)<input className={input} name="stale" type="number" min="1" max="24" step="1" required defaultValue={policy.staleAfterMonths} /></label>
+    <label className="block">Note<textarea className={input} name="note" required minLength={3} maxLength={500} /></label>
+  </fieldset>{write.error ? <p role="alert" className="text-sm text-sf-danger">{write.error}</p> : null}{write.uncertain ? <button type="button" className={primary} disabled={write.busy} onClick={write.retry}>Retry same save</button> : <button className={primary} disabled={write.busy}>Save targets</button>}</form>;
+}
+
+export function WalletWorkspace({ onBack, onReviewLinks }: { onBack: () => void; onReviewLinks: () => void }) {
+  const [workspace, setWorkspace] = useState<Workspace | null>(null);
+  const [view, setView] = useState<WalletView | null>(null);
+  const [page, setPage] = useState(1);
+  const [query, setQuery] = useState('');
+  const [search, setSearch] = useState('');
+  const [revision, setRevision] = useState(0);
+  const [loading, setLoading] = useState(true);
+  const [error, setError] = useState('');
+  const [forbidden, setForbidden] = useState(false);
+  const [customerId, setCustomerId] = useState<string | null>(null);
+  const [account, setAccount] = useState<WalletAccount | null>(null);
+  const [accountError, setAccountError] = useState('');
+  const [accountRevision, setAccountRevision] = useState(0);
+  const [editing, setEditing] = useState(false);
+  const [targets, setTargets] = useState(false);
+  const [notice, setNotice] = useState('');
+  const [writeLocked, setWriteLocked] = useState(false);
+  useEffect(() => { const timer = setTimeout(() => { setSearch(query); setPage(1); }, 300); return () => clearTimeout(timer); }, [query]);
+  useEffect(() => {
+    if (forbidden) return;
+    const controller = new AbortController();
+    queueMicrotask(() => { if (!controller.signal.aborted) { setLoading(true); setError(''); } });
+    const params = new URLSearchParams({ action: 'get_wallet_workspace', view: view ?? 'all', page: String(page), search });
+    void request<Workspace>(`/api/wallet?${params}`, { signal: controller.signal }).then(data => {
+      if (controller.signal.aborted) return;
+      if (view === null) { setView(data.coverage.certified ? 'focus' : 'all'); if (data.coverage.certified) return; }
+      if (!data.coverage.certified && (view === 'focus' || view === 'below_sales')) { setView('all'); setPage(1); return; }
+      setWorkspace(data); setLoading(false);
+    }).catch(failure => { if (!controller.signal.aborted) { setError(message(failure)); setLoading(false); if (failure instanceof WalletError && failure.status === 403) setForbidden(true); } });
+    return () => controller.abort();
+  }, [view, page, search, revision, forbidden]);
+  useEffect(() => {
+    if (!customerId || forbidden) return;
+    const controller = new AbortController();
+    queueMicrotask(() => { if (!controller.signal.aborted) { setAccount(null); setAccountError(''); } });
+    void request<WalletAccount>(`/api/wallet?${new URLSearchParams({ action: 'get_wallet_account', customerId })}`, { signal: controller.signal }).then(data => { if (!controller.signal.aborted) setAccount(data); }).catch(failure => { if (!controller.signal.aborted) { setAccountError(message(failure)); if (failure instanceof WalletError && failure.status === 403) setForbidden(true); } });
+    return () => controller.abort();
+  }, [customerId, accountRevision, forbidden]);
+  const refresh = async () => { setRevision(n => n + 1); };
+  const reloadAccount = async () => { setEditing(false); setAccountRevision(n => n + 1); setRevision(n => n + 1); };
+  const conflict = async () => { setNotice('Someone else updated this estimate. Reloaded.'); await reloadAccount(); };
+  const deny = () => setForbidden(true);
+  return <section aria-label="Wallet" className="min-w-0 space-y-4 [overflow-wrap:anywhere]">
+    <header className="flex flex-wrap items-center gap-3"><button className={button} onClick={onBack}>Back to Accounts</button><h2 className="text-xl font-bold text-sf-strong">Wallet</h2>{!forbidden && workspace ? <button className={button} onClick={() => { setNotice(''); setTargets(true); }}>Targets</button> : null}</header>
+    {forbidden ? <p>Wallet is for management</p> : <>
+      {notice && !customerId && !targets ? <p className="text-sm text-sf-body">{notice}</p> : null}
+      {workspace ? <>
+        <div className={`${card} space-y-2`}>
+          {workspace.coverage.certified ? <><p className="font-bold">Focus band: {workspace.summary.focusCount} accounts hold {permilleLabel(workspace.policy.focusBandBps / 10)} of the capture gap · {formatPaise(workspace.summary.focusGapPaise ?? 0, true)}/month</p><p className="text-sm text-sf-muted">Ranked by gap to the {permilleLabel(workspace.policy.walletShareTargetBps / 10)} Wallet-share target · based on {workspace.summary.estimatedAccounts} of {workspace.summary.accountsWithSales} accounts with an estimate · From Tally, {workspace.coverage.windowLabel}</p></> : <><p>Sales figures appear once Tally coverage is certified ({workspace.coverage.windowLabel})</p><Link className="inline-flex min-h-11 items-center text-sm text-sf-muted underline" href="/?view=instrument-economics">See Sales coverage</Link></>}
+        </div>
+        {workspace.coverage.certified && (workspace.summary.unlinkedLedgers ?? 0) > 0 ? <p className="text-sm text-sf-muted">Not linked to a customer: {formatPaise(workspace.summary.unlinkedSalesPaise ?? 0)}/month across {workspace.summary.unlinkedLedgers} Tally ledgers · <button className="min-h-11 underline" onClick={onReviewLinks}>Review links</button></p> : null}
+        <div className="flex flex-wrap gap-2" aria-label="Wallet views">{views.map(([key, label]) => <button key={key} className={`${button} ${view === key ? 'bg-sf-brand text-white' : 'bg-white'}`} aria-pressed={view === key} disabled={!workspace.coverage.certified && (key === 'focus' || key === 'below_sales')} onClick={() => { setView(key); setPage(1); }}>{label}</button>)}</div>
+        <label className="block text-sm">Search accounts<input className={input} placeholder="Name or town" maxLength={80} value={query} onChange={event => setQuery(event.target.value)} /></label>
+        <ul aria-label="Wallet accounts" className="space-y-3" aria-busy={loading}>{workspace.rows.map(row => <li key={row.customerId}><button className={`${card} min-h-11 w-full space-y-2 text-left disabled:opacity-50`} disabled={loading || query !== search} onClick={() => { setNotice(''); setEditing(false); setCustomerId(row.customerId); }}><p className="font-bold">{row.name} <span className="font-normal text-sf-muted">{row.city}</span></p><Figures row={row} certified={workspace.coverage.certified} walletShareTargetBps={workspace.policy.walletShareTargetBps} /><div className="flex flex-wrap gap-x-3 gap-y-1 text-xs text-sf-muted">{row.confidence ? <span className="inline-flex items-center gap-1"><span aria-hidden="true" className={`size-2 rounded-full ${row.confidence === 'high' ? 'bg-sf-success' : row.confidence === 'medium' ? 'bg-sf-warning' : 'bg-sf-muted'}`} />{row.confidence[0].toUpperCase() + row.confidence.slice(1)}</span> : null}{row.asOf ? <span>As of {dateLabel(row.asOf)}</span> : null}{row.walletPaise !== null && !row.verified ? <span>Not verified</span> : null}{row.stale ? <span>Stale</span> : null}{workspace.coverage.certified && row.belowSales ? <span>Below sales</span> : null}</div></button></li>)}</ul>
+        {!workspace.rows.length && !loading ? <p className="text-sm text-sf-muted">No accounts match.</p> : null}
+        <div className="flex flex-wrap items-center justify-between gap-2 text-sm"><span>Page {workspace.page} · {workspace.total} accounts</span><div className="flex gap-2"><button className={button} disabled={loading || page <= 1} onClick={() => setPage(n => n - 1)}>Previous</button><button className={button} disabled={loading || page * 50 >= workspace.total} onClick={() => setPage(n => n + 1)}>Next</button></div></div>
+      </> : null}
+      {loading ? <p className="text-sm text-sf-muted">Loading wallet…</p> : null}{error ? <p className="text-sm text-sf-danger">{error} <button className={button} onClick={() => void refresh()}>Retry</button></p> : null}
+      {customerId ? <Sheet title={account?.row.name ?? 'Account wallet'} locked={writeLocked} onClose={() => { setCustomerId(null); setAccount(null); }}>
+        {notice ? <p className="mb-3 text-sm text-sf-body">{notice}</p> : null}
+        {account ? <div className="space-y-4"><Figures row={account.row} certified={account.coverage.certified} walletShareTargetBps={account.policy.walletShareTargetBps} />{account.current ? <><SnapshotDetails snapshot={account.current} /><table className="w-full table-fixed text-sm"><caption className="mb-2 text-left font-bold">Division wallet / month</caption><tbody>{account.divisions.map(d => <tr key={d.code}><th className="py-2 text-left font-normal">{d.name}</th><td className="py-2 text-right">{formatPaise(account.current!.divisions.find(part => part.code === d.code)?.monthlyWalletPaise ?? 0)}</td></tr>)}<tr><th className="py-2 text-left">Unallocated</th><td className="py-2 text-right">{formatPaise(account.current.unallocatedPaise)}</td></tr></tbody></table></> : <p>No estimate</p>}
+          <details><summary className="flex min-h-11 cursor-pointer items-center">History ({account.history.length})</summary><ul className="space-y-3">{account.history.map(snapshot => <li key={snapshot.id} className={card}><SnapshotDetails snapshot={snapshot} /></li>)}</ul></details>
+          {editing ? <EstimateForm key={account.current?.id ?? 'new'} account={account} onLock={setWriteLocked} onSaved={reloadAccount} onConflict={conflict} onForbidden={deny} /> : <button className={primary} onClick={() => setEditing(true)}>Update estimate</button>}
+        </div> : <p>{accountError || 'Loading account…'}</p>}
+      </Sheet> : null}
+      {targets && workspace ? <Sheet title="Targets" locked={writeLocked} onClose={() => setTargets(false)}>{notice ? <p className="mb-3 text-sm text-sf-body">{notice}</p> : null}<PolicyForm key={workspace.policy.version} policy={workspace.policy} onLock={setWriteLocked} onForbidden={deny} onSaved={async () => { setTargets(false); await refresh(); }} onConflict={async () => { setNotice('Someone else updated the targets. Reloaded.'); await refresh(); }} /></Sheet> : null}
+    </>}
+  </section>;
+}

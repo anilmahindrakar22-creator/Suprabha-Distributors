@@ -10,6 +10,7 @@ const pricingReleaseFiles = new Set([
   '20261030100000_economic_rebuild_containment.sql',
   '20261030101000_sales_coverage.sql',
   '20261030110000_economics_candidate_rebuild.sql',
+  '20261030130000_wallet_v2.sql',
   '20261029100000_supplier_purchase_orders.sql',
   '20261029090000_challan_delivery.sql',
   '20261029091000_order_list_priority_sort.sql',
@@ -101,6 +102,13 @@ const sha = (sql) => createHash('sha256').update(sql.replace(/\r/g, '').trim(), 
 const hashPattern = /^[a-f0-9]{64}$/;
 const versionPattern = /^\d{14}$/;
 
+// Replay registration only; this evidence checker never executes SQL.
+export const pricingReleaseSqlTests = [
+  'supabase/tests/sales_coverage.sql',
+  'supabase/tests/wallet_v2.sql',
+  'supabase/tests/wallet_v2_concurrency.sql',
+];
+
 export function pricingReleasePreflight(evidence, files) {
   if (evidence.projectId !== 'aormuidjbdqruglmyseh') throw new Error('Unexpected evidence project');
   const seen = new Set();
@@ -151,6 +159,7 @@ export function pricingReleasePreflight(evidence, files) {
     releaseReady: false,
     deployed: deployed.sort((a, b) => a.remoteVersion.localeCompare(b.remoteVersion)),
     pending,
+    sqlTests: [...pricingReleaseSqlTests],
     blockers: [
       'Refresh live migration history and compare content again before release.',
       'Run the deployed-order clean-install replay immediately before release.',

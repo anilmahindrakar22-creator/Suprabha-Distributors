@@ -1130,6 +1130,13 @@
       "remoteVersion": null,
       "remoteSha256": null,
       "status": "not_deployed"
+    },
+    {
+      "localFile": "20261030130000_wallet_v2.sql",
+      "localSha256": "76207fec94f03c13336097386794f1984a171e07757b968a814b9034a67d501a",
+      "remoteVersion": null,
+      "remoteSha256": null,
+      "status": "not_deployed"
     }
   ],
   "liveCheck": {
