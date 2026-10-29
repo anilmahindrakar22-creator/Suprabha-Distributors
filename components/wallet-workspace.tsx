@@ -158,12 +158,14 @@ export function WalletWorkspace({ onBack, onReviewLinks }: { onBack: () => void;
       if (controller.signal.aborted) return;
       if (view === null) { setView(data.coverage.certified ? 'focus' : 'all'); if (data.coverage.certified) return; }
       if (!data.coverage.certified && (view === 'focus' || view === 'below_sales')) { setView('all'); setPage(1); return; }
+      if (data.rows.length === 0) { setDiagnoses(null); setUndiagnosedFocusCount(null); setFocusCount(null); }
       setWorkspace(data); setLoading(false);
     }).catch(failure => { if (!controller.signal.aborted) { setError(message(failure)); setLoading(false); if (failure instanceof WalletError && failure.status === 403) setForbidden(true); } });
     return () => controller.abort();
   }, [view, page, search, revision, forbidden]);
   useEffect(() => {
     if (!workspace || forbidden) return;
+    if (workspace.rows.length === 0) return;
     let active = true;
     const ids = workspace.rows.map(row => row.customerId);
     void request<unknown>(`/api/wallet/diagnosis?${new URLSearchParams({ action: 'get_wallet_diagnoses', customerIds: ids.join(',') })}`).then(data => {

@@ -29,7 +29,7 @@ do $checks$
 declare result_data jsonb; first_id uuid; second_id uuid; third_id uuid; first_constraint uuid; newer_constraint uuid; row_value jsonb;
  denied_flag boolean; actor_role text; action_name text; table_name text; row_count_before bigint; audit_count_before bigint;
  fixture_company text; fixture_month date; fixture_net bigint; fixture_start date; fixture_end date;
- fixture_focus bigint; fixture_focus_members bigint;
+ fixture_focus bigint; fixture_focus_members bigint; diag_four_data jsonb;
 begin
  -- D2 open conflict, other-kind success and reopening after closure.
  result_data:=pg_temp.diagnosis_call('open_opportunity','{"requestId":"wallet-diagnosis-d2-open-a","customerId":"b2500000-0000-4000-8000-000000000001","kind":"capture","reason":"Capture account"}');
@@ -123,6 +123,16 @@ begin
  -- D8 latest open opportunity and newest constraint are reflected in the list.
  select value into row_value from jsonb_array_elements(result_data->'rows') where value->>'customerId'='b2500000-0000-4000-8000-000000000001';
  if row_value->>'kind'<>'recover' or row_value->>'category'<>'service' then raise exception 'Latest open opportunity/current constraint failed: %',row_value;end if;
+ -- D8b a diagnosed older opportunity outranks a newer undiagnosed one.
+ diag_four_data:=pg_temp.diagnosis_call('open_opportunity',jsonb_build_object('requestId','wallet-diagnosis-d8b-defend',
+  'customerId','b2500000-0000-4000-8000-000000000004','kind','defend','reason','Defend account four'));
+ perform pg_temp.diagnosis_call('record_constraint',jsonb_build_object('requestId','wallet-diagnosis-d8b-price',
+  'opportunityId',diag_four_data->>'id','category','price','evidence','Competitor quote for account four','confidence','high','expectedCurrentConstraintId',null));
+ perform pg_temp.diagnosis_call('open_opportunity',jsonb_build_object('requestId','wallet-diagnosis-d8b-capture',
+  'customerId','b2500000-0000-4000-8000-000000000004','kind','capture','reason','Newer capture account four'));
+ diag_four_data:=pg_temp.diagnosis_call('get_wallet_diagnoses','{"customerIds":["b2500000-0000-4000-8000-000000000004"]}');
+ if diag_four_data#>>'{rows,0,kind}'<>'defend' or diag_four_data#>>'{rows,0,category}'<>'price'
+  then raise exception 'D8b diagnosed opportunity must outrank newer undiagnosed opportunity: %',diag_four_data;end if;
  -- D9 command replay stores the initial receipt and produces no duplicate row or audit.
  row_count_before:=(select count(*) from private.stockflow_commercial_opportunities);
  audit_count_before:=(select count(*) from private.stockflow_economic_audit audit_row where audit_row.action='open_opportunity');

@@ -23,8 +23,9 @@ export async function GET(request: Request) {
     const session = await actor();
     const params = new URL(request.url).searchParams;
     const action = params.get('action');
+    const customerIds = params.get('customerIds');
     const raw = action === 'get_wallet_diagnoses'
-      ? { action, payload: { customerIds: (params.get('customerIds') ?? '').split(',').filter(Boolean) } }
+      ? { action, payload: { customerIds: customerIds ? customerIds.split(',').filter(Boolean) : [] } }
       : action === 'get_account_opportunities' ? { action, payload: { customerId: params.get('customerId') } } : null;
     if (!raw) return Response.json({ error: 'Invalid wallet diagnosis read action' }, { status: 400, headers });
     const command = validateWalletDiagnosisCommand(raw);

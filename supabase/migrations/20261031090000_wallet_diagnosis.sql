@@ -55,7 +55,7 @@ begin
     from private.stockflow_commercial_opportunities o left join private.stockflow_commercial_opportunity_closures cl on cl.opportunity_id=o.id
     left join lateral (select category,confidence from private.stockflow_commercial_constraints where opportunity_id=o.id order by recorded_at desc,id desc limit 1) c on true
     where cl.opportunity_id is null and o.customer_id in (select value::uuid from jsonb_array_elements_text(p_payload->'customerIds'))
-    order by o.customer_id,o.opened_at desc,o.id desc
+    order by o.customer_id,(c.category is not null and c.category<>'unknown') desc,o.opened_at desc,o.id desc
    ) latest;
   wallet_data:=private.stockflow_wallet_read(today);
   if wallet_data#>>'{coverage,certified}'='true' then

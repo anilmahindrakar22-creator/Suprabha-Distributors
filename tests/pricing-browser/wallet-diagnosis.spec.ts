@@ -15,16 +15,18 @@ const second = { ...row, customerId: b, name: 'Not diagnosed lab' };
 const none = { ...row, customerId: c, name: 'No estimate lab', walletPaise: null, sharePermille: null, confidence: null, asOf: null };
 const current = { id: snapshotId, monthlyWalletPaise: 10000000, method: 'customer_stated' as const, source: 'Discussion', confidence: 'high' as const, asOf: row.asOf, note: 'Estimate', loweredReason: null, enteredBy: 'manager@example.test', enteredAt: '2026-10-01T00:00:00Z', verifiedBy: null, divisions: [{ code: 'BIOCHEM', name: 'Biochemistry', monthlyWalletPaise: 4000000 }], unallocatedPaise: 6000000 };
 const diagnosed: WalletOpportunity = { id: opportunityId, customerId: a, kind: 'capture', openedReason: 'Tender price pressure', openedBy: 'manager@example.test', openedAt: '2026-10-01T00:00:00Z', closure: null, constraint: { id: constraintId, category: 'price', evidence: 'Competitor quote', confidence: 'high', recordedBy: 'manager@example.test', recordedAt: '2026-10-02T00:00:00Z' }, history: [] };
-type Options = { diagnosisFailure?: '500' | 'shape'; conflict?: boolean };
+type Options = { diagnosisFailure?: '500' | 'shape'; conflict?: boolean; networkFailure?: boolean };
 async function fixture(page: Page, options: Options = {}) {
   const posts: Array<{ action: string; payload: Record<string, unknown> }> = [];
   let opportunities: WalletOpportunity[] = [diagnosed];
   let attemptedConflict = false;
+  let attemptedNetworkFailure = false;
   await page.route('**/api/accounts**', route => route.fulfill({ json: { accounts: [], page: { page: 1, pageSize: 50, total: 0 }, owners: [], territories: [], canAssign: true, canEraseContacts: false, canSeePowerMap: false, actorEmail: 'manager@example.test', today: '2026-10-30', classPolicy: { aMinPaise: '20000000', bMinPaise: '7500000' } } }));
   await page.route('**/api/wallet/diagnosis**', async route => {
     const url = new URL(route.request().url());
     if (route.request().method() === 'POST') {
       const body = route.request().postDataJSON() as { action: string; payload: Record<string, unknown> }; posts.push(body);
+      if (options.networkFailure && body.action === 'record_constraint' && !attemptedNetworkFailure) { attemptedNetworkFailure = true; return route.abort('failed'); }
       if (options.conflict && !attemptedConflict) { attemptedConflict = true; return route.fulfill({ status: 409, json: { error: 'PT409' } }); }
       if (body.action === 'open_opportunity') opportunities = [...opportunities, { ...diagnosed, id: opportunityId, customerId: String(body.payload.customerId), kind: String(body.payload.kind) as WalletOpportunity['kind'], openedReason: String(body.payload.reason), constraint: null, history: [] }];
       if (body.action === 'record_constraint') opportunities = opportunities.map(item => item.id === body.payload.opportunityId ? { ...item, constraint: { id: constraintId, category: String(body.payload.category) as WalletOpportunity['constraint'] extends infer _ ? 'price' : never, evidence: String(body.payload.evidence), confidence: String(body.payload.confidence) as 'high', recordedBy: 'manager@example.test', recordedAt: '2026-10-02T00:00:00Z' }, history: [] } : item);
@@ -103,6 +105,21 @@ for (const width of [375, 1280]) test.describe(`Wallet diagnosis at ${width}px`,
     await diagnosis.getByRole('button', { name: 'Save', exact: true }).click();
     await expect(diagnosis.getByText('Someone else just updated this. Reloaded.', { exact: true })).toBeVisible();
     await expect(sheet).toBeVisible();
+  });
+  test('network retry keeps the same requestId', async ({ page }) => {
+    const { posts } = await fixture(page, { networkFailure: true });
+    await openAccount(page);
+    const diagnosis = page.getByRole('region', { name: "Why we're not winning" });
+    await diagnosis.getByRole('button', { name: 'Record constraint' }).click();
+    await diagnosis.getByLabel('Category').selectOption('price');
+    await diagnosis.getByLabel('Evidence').fill('Competitor quote');
+    await diagnosis.getByRole('button', { name: 'Save', exact: true }).click();
+    await expect(diagnosis.getByRole('button', { name: 'Save', exact: true })).toHaveCount(0);
+    await expect(diagnosis.getByRole('button', { name: 'Retry same save', exact: true })).toBeVisible();
+    await diagnosis.getByRole('button', { name: 'Retry same save', exact: true }).click();
+    await expect.poll(() => posts.length).toBe(2);
+    expect(posts[1].payload.requestId).toBe(posts[0].payload.requestId);
+    expect(posts[1].payload).toEqual(posts[0].payload);
   });
   test('failed and malformed diagnosis reads leave list chips out', async ({ page }) => {
     await fixture(page, { diagnosisFailure: '500' });
