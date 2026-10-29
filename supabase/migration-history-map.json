@@ -1140,7 +1140,7 @@
     },
     {
       "localFile": "20261031090000_wallet_diagnosis.sql",
-      "localSha256": "423675b1622f98e014fc8251d6e5d841b6356ab4a864b8189e55cca2419dcfa1",
+      "localSha256": "4ae2d95343022c23ca60a2fd2d6f9bdc27cd5ec1bac5f7b13b7d4e15e94f109c",
       "remoteVersion": null,
       "remoteSha256": null,
       "status": "not_deployed"

@@ -16,6 +16,8 @@ insert into private.stockflow_economic_customer_identities(company_id,source_id,
  ('diagnosis-test','diagnosis-2','b2500000-0000-4000-8000-000000000002','test'),
  ('diagnosis-test','diagnosis-3','b2500000-0000-4000-8000-000000000003','test'),
  ('diagnosis-test','diagnosis-4','b2500000-0000-4000-8000-000000000004','test');
+insert into private.stockflow_wallet_divisions(code,name,sort_order,active) values('DIAGTEST','Diagnosis Test Division',100,true)
+on conflict(code) do update set active=true;
 create function pg_temp.diagnosis_call(p_action text,p_payload jsonb) returns jsonb language sql as $$
  select public.stockflow_opportunity_gateway('diagnosis-test-key','diagnosis-manager@test.local',p_action,p_payload);
 $$;
@@ -29,7 +31,10 @@ do $checks$
 declare result_data jsonb; first_id uuid; second_id uuid; third_id uuid; first_constraint uuid; newer_constraint uuid; row_value jsonb;
  denied_flag boolean; actor_role text; action_name text; table_name text; row_count_before bigint; audit_count_before bigint;
  fixture_company text; fixture_month date; fixture_net bigint; fixture_start date; fixture_end date;
- fixture_focus bigint; fixture_focus_members bigint; diag_four_data jsonb;
+ fixture_focus bigint; fixture_focus_members bigint; diag_four_data jsonb; signal_order uuid; signal_order_old uuid; signal_install uuid;
+ signal_customer uuid:='b2500000-0000-4000-8000-000000000001'; signal_other uuid:='b2500000-0000-4000-8000-000000000003'; signal_data jsonb;
+ signal_line uuid; signal_decision uuid; signal_policy uuid; signal_price_order uuid;
+ fact_data jsonb; source_value text;
 begin
  -- D2 open conflict, other-kind success and reopening after closure.
  result_data:=pg_temp.diagnosis_call('open_opportunity','{"requestId":"wallet-diagnosis-d2-open-a","customerId":"b2500000-0000-4000-8000-000000000001","kind":"capture","reason":"Capture account"}');
@@ -41,15 +46,15 @@ begin
  result_data:=pg_temp.diagnosis_call('open_opportunity','{"requestId":"wallet-diagnosis-d2-reopen","customerId":"b2500000-0000-4000-8000-000000000001","kind":"capture","reason":"Reopen account"}');
  third_id:=(result_data->>'id')::uuid;
  -- D3 optimistic constraint, closed and missing entities, double close.
- result_data:=pg_temp.diagnosis_call('record_constraint',('{"requestId":"wallet-diagnosis-d3-one","opportunityId":"'||second_id||'","category":"price","evidence":"Competitor quote recorded","confidence":"high","expectedCurrentConstraintId":null}')::jsonb);
+ result_data:=pg_temp.diagnosis_call('record_constraint',('{"requestId":"wallet-diagnosis-d3-one","opportunityId":"'||second_id||'","category":"price","evidence":"Competitor quote recorded","source":"document","sourcePerson":null,"observedOn":"'||(now() at time zone 'Asia/Kolkata')::date||'","facts":{"competitor":"Acme Lab","product":"Glucose kit","competitorPricePaise":120000,"ourPricePaise":140000},"expectedCurrentConstraintId":null}')::jsonb);
  first_constraint:=(result_data->>'id')::uuid;
- perform pg_temp.diagnosis_error('record_constraint',('{"requestId":"wallet-diagnosis-d3-stale","opportunityId":"'||second_id||'","category":"service","evidence":"Response took too long","confidence":"low","expectedCurrentConstraintId":null}')::jsonb,'PT409');
- result_data:=pg_temp.diagnosis_call('record_constraint',('{"requestId":"wallet-diagnosis-d3-two","opportunityId":"'||second_id||'","category":"portfolio","evidence":"Required assay absent","confidence":"medium","expectedCurrentConstraintId":"'||first_constraint||'"}')::jsonb);
+ perform pg_temp.diagnosis_error('record_constraint',('{"requestId":"wallet-diagnosis-d3-stale","opportunityId":"'||second_id||'","category":"service","evidence":"Response took too long","source":"our_view","sourcePerson":null,"observedOn":"'||(now() at time zone 'Asia/Kolkata')::date||'","facts":{"issue":"Slow response","since":"'||(now() at time zone 'Asia/Kolkata')::date||'"},"expectedCurrentConstraintId":null}')::jsonb,'PT409');
+ result_data:=pg_temp.diagnosis_call('record_constraint',('{"requestId":"wallet-diagnosis-d3-two","opportunityId":"'||second_id||'","category":"portfolio","evidence":"Required assay absent","source":"customer_stated","sourcePerson":"Lab manager","observedOn":"'||(now() at time zone 'Asia/Kolkata')::date||'","facts":{"product":"Thyroid panel","division":"BIOCHEM"},"expectedCurrentConstraintId":"'||first_constraint||'"}')::jsonb);
  perform pg_temp.diagnosis_call('close_opportunity',('{"requestId":"wallet-diagnosis-d3-close","opportunityId":"'||second_id||'","outcome":"dropped","reason":"No active demand"}')::jsonb);
- perform pg_temp.diagnosis_error('record_constraint',('{"requestId":"wallet-diagnosis-d3-closed","opportunityId":"'||second_id||'","category":"unknown","evidence":"Need to ask the account","confidence":"low","expectedCurrentConstraintId":null}')::jsonb,'22023');
+ perform pg_temp.diagnosis_error('record_constraint',('{"requestId":"wallet-diagnosis-d3-closed","opportunityId":"'||second_id||'","category":"unknown","evidence":"Need to ask the account","source":"our_view","sourcePerson":null,"observedOn":"'||(now() at time zone 'Asia/Kolkata')::date||'","facts":{"nextQuestion":"Which analyser is used?","askBy":"'||(now() at time zone 'Asia/Kolkata')::date||'"},"expectedCurrentConstraintId":null}')::jsonb,'22023');
  perform pg_temp.diagnosis_error('close_opportunity',('{"requestId":"wallet-diagnosis-d3-double-close","opportunityId":"'||second_id||'","outcome":"won","reason":"Won account"}')::jsonb,'PT409');
  perform pg_temp.diagnosis_error('open_opportunity','{"requestId":"wallet-diagnosis-d3-missing-customer","customerId":"b2500000-0000-4000-8000-999999999999","kind":"capture","reason":"Missing account"}','22023');
- perform pg_temp.diagnosis_error('record_constraint','{"requestId":"wallet-diagnosis-d3-missing-opportunity","opportunityId":"b2500000-0000-4000-8000-999999999999","category":"price","evidence":"Competitor quote recorded","confidence":"high","expectedCurrentConstraintId":null}','22023');
+ perform pg_temp.diagnosis_error('record_constraint','{"requestId":"wallet-diagnosis-d3-missing-opportunity","opportunityId":"b2500000-0000-4000-8000-999999999999","category":"price","evidence":"Competitor quote recorded","source":"document","sourcePerson":null,"observedOn":"2026-10-29","facts":{"competitor":"Acme Lab","product":"Glucose kit","competitorPricePaise":120000,"ourPricePaise":140000},"expectedCurrentConstraintId":null}','22023');
  perform pg_temp.diagnosis_error('get_account_opportunities','{"customerId":"b2500000-0000-4000-8000-999999999999"}','22023');
  -- D1 append-only: actual rows in each table are guarded against update and delete.
  foreach table_name in array array['stockflow_commercial_opportunities','stockflow_commercial_opportunity_closures','stockflow_commercial_constraints'] loop
@@ -66,7 +71,7 @@ begin
  end loop;
  -- D5 every excluded role is denied on all five actions.
  foreach actor_role in array array['sales','operations','warehouse','billing','accounts','viewer'] loop
-  foreach action_name in array array['get_wallet_diagnoses','get_account_opportunities','open_opportunity','record_constraint','close_opportunity'] loop
+  foreach action_name in array array['get_wallet_diagnoses','get_account_opportunities','get_account_signals','open_opportunity','record_constraint','close_opportunity'] loop
    denied_flag:=false;
    begin perform public.stockflow_opportunity_gateway('diagnosis-test-key','diagnosis-'||actor_role||'@test.local',action_name,'{}');
    exception when sqlstate 'PT403' then denied_flag:=true;end;
@@ -104,12 +109,12 @@ begin
  -- Reconciliation for each month uses dynamic IST months and company-specific control totals.
  result_data:=private.stockflow_wallet_read((now() at time zone 'Asia/Kolkata')::date);
  if result_data#>>'{coverage,certified}'<>'true' then raise exception 'D7 fixture not certified: %',result_data#>'{coverage}';end if;
- perform pg_temp.diagnosis_call('record_constraint',('{"requestId":"wallet-diagnosis-d7-diagnosed","opportunityId":"'||third_id||'","category":"price","evidence":"Competitor quote at lower price","confidence":"high","expectedCurrentConstraintId":null}')::jsonb);
+ perform pg_temp.diagnosis_call('record_constraint',('{"requestId":"wallet-diagnosis-d7-diagnosed","opportunityId":"'||third_id||'","category":"price","evidence":"Competitor quote at lower price","source":"our_view","sourcePerson":null,"observedOn":"'||(now() at time zone 'Asia/Kolkata')::date||'","facts":{"competitor":"Acme Lab","product":"Glucose kit","competitorPricePaise":120000,"ourPricePaise":140000},"expectedCurrentConstraintId":null}')::jsonb);
  result_data:=pg_temp.diagnosis_call('open_opportunity','{"requestId":"wallet-diagnosis-d8-latest-open","customerId":"b2500000-0000-4000-8000-000000000001","kind":"recover","reason":"Recover account"}');
- perform pg_temp.diagnosis_call('record_constraint',('{"requestId":"wallet-diagnosis-d8-constraint-one","opportunityId":"'||(result_data->>'id')||'","category":"portfolio","evidence":"Assay panel is incomplete","confidence":"medium","expectedCurrentConstraintId":null}')::jsonb);
- newer_constraint:=(pg_temp.diagnosis_call('record_constraint',('{"requestId":"wallet-diagnosis-d8-constraint-two","opportunityId":"'||(result_data->>'id')||'","category":"service","evidence":"Response times exceed target","confidence":"high","expectedCurrentConstraintId":"'||(select c.id from private.stockflow_commercial_constraints c where c.opportunity_id=(result_data->>'id')::uuid order by c.recorded_at desc,c.id desc limit 1)||'"}')::jsonb)->>'id')::uuid;
+ perform pg_temp.diagnosis_call('record_constraint',('{"requestId":"wallet-diagnosis-d8-constraint-one","opportunityId":"'||(result_data->>'id')||'","category":"portfolio","evidence":"Assay panel is incomplete","source":"customer_stated","sourcePerson":"Lab manager","observedOn":"'||(now() at time zone 'Asia/Kolkata')::date||'","facts":{"product":"Thyroid panel","division":"BIOCHEM"},"expectedCurrentConstraintId":null}')::jsonb);
+ newer_constraint:=(pg_temp.diagnosis_call('record_constraint',('{"requestId":"wallet-diagnosis-d8-constraint-two","opportunityId":"'||(result_data->>'id')||'","category":"service","evidence":"Response times exceed target","source":"document","sourcePerson":null,"observedOn":"'||(now() at time zone 'Asia/Kolkata')::date||'","facts":{"issue":"Slow response","since":"'||(now() at time zone 'Asia/Kolkata')::date||'"},"expectedCurrentConstraintId":"'||(select c.id from private.stockflow_commercial_constraints c where c.opportunity_id=(result_data->>'id')::uuid order by c.recorded_at desc,c.id desc limit 1)||'"}')::jsonb)->>'id')::uuid;
  result_data:=pg_temp.diagnosis_call('open_opportunity','{"requestId":"wallet-diagnosis-d7-unknown-open","customerId":"b2500000-0000-4000-8000-000000000002","kind":"capture","reason":"Diagnose open account"}');
- perform pg_temp.diagnosis_call('record_constraint',('{"requestId":"wallet-diagnosis-d7-unknown","opportunityId":"'||(result_data->>'id')||'","category":"unknown","evidence":"Ask which instrument is in use","confidence":"low","expectedCurrentConstraintId":null}')::jsonb);
+ perform pg_temp.diagnosis_call('record_constraint',('{"requestId":"wallet-diagnosis-d7-unknown","opportunityId":"'||(result_data->>'id')||'","category":"unknown","evidence":"Ask which instrument is in use","source":"our_view","sourcePerson":null,"observedOn":"'||(now() at time zone 'Asia/Kolkata')::date||'","facts":{"nextQuestion":"Which analyser is used?","askBy":"'||(now() at time zone 'Asia/Kolkata')::date||'"},"expectedCurrentConstraintId":null}')::jsonb);
  result_data:=pg_temp.diagnosis_call('get_wallet_diagnoses','{"customerIds":["b2500000-0000-4000-8000-000000000001","b2500000-0000-4000-8000-000000000002","b2500000-0000-4000-8000-000000000003"]}');
  select count(*) into fixture_focus from jsonb_array_elements(private.stockflow_wallet_read((now() at time zone 'Asia/Kolkata')::date)->'rows') as focus_rows(item)
  where (focus_rows.item->>'inFocusBand')::boolean;
@@ -127,12 +132,96 @@ begin
  diag_four_data:=pg_temp.diagnosis_call('open_opportunity',jsonb_build_object('requestId','wallet-diagnosis-d8b-defend',
   'customerId','b2500000-0000-4000-8000-000000000004','kind','defend','reason','Defend account four'));
  perform pg_temp.diagnosis_call('record_constraint',jsonb_build_object('requestId','wallet-diagnosis-d8b-price',
-  'opportunityId',diag_four_data->>'id','category','price','evidence','Competitor quote for account four','confidence','high','expectedCurrentConstraintId',null));
+  'opportunityId',diag_four_data->>'id','category','price','evidence','Competitor quote for account four','source','document','sourcePerson',null,
+  'observedOn',(now() at time zone 'Asia/Kolkata')::date,'facts',jsonb_build_object('competitor','Acme Lab','product','Glucose kit','competitorPricePaise',120000,'ourPricePaise',140000),'expectedCurrentConstraintId',null));
  perform pg_temp.diagnosis_call('open_opportunity',jsonb_build_object('requestId','wallet-diagnosis-d8b-capture',
   'customerId','b2500000-0000-4000-8000-000000000004','kind','capture','reason','Newer capture account four'));
  diag_four_data:=pg_temp.diagnosis_call('get_wallet_diagnoses','{"customerIds":["b2500000-0000-4000-8000-000000000004"]}');
  if diag_four_data#>>'{rows,0,kind}'<>'defend' or diag_four_data#>>'{rows,0,category}'<>'price'
   then raise exception 'D8b diagnosed opportunity must outrank newer undiagnosed opportunity: %',diag_four_data;end if;
+ -- E1 every category accepts its exact structured facts; representative shape errors are 22023.
+ result_data:=pg_temp.diagnosis_call('open_opportunity',jsonb_build_object('requestId','wallet-diagnosis-e1-open','customerId',signal_other,'kind','recover','reason','Evidence facts coverage'));
+ foreach action_name in array array['price','portfolio','instrument','service','availability','credit','relationship','clinical','contract_tender','competitor_lock_in','unknown'] loop
+  fact_data:=case action_name
+   when 'price' then '{"competitor":"Acme Lab","product":"Glucose kit","competitorPricePaise":120000,"ourPricePaise":140000}'::jsonb
+   when 'portfolio' then '{"product":"Thyroid panel","division":"BIOCHEM"}'::jsonb
+   when 'instrument' then '{"analyser":"Analyzer X","owner":"customer","closedSystem":"unknown","division":"BIOCHEM"}'::jsonb
+   when 'service' then jsonb_build_object('issue','Slow response','since',(now() at time zone 'Asia/Kolkata')::date)
+   when 'availability' then '{"product":"Glucose kit","issue":"Frequent stockouts"}'::jsonb
+   when 'credit' then '{"issue":"Credit terms too short"}'::jsonb
+   when 'relationship' then '{"decisionMaker":"Dr Sharma","issue":"No regular contact"}'::jsonb
+   when 'clinical' then '{"issue":"Needs clinical support"}'::jsonb
+   when 'contract_tender' then jsonb_build_object('holder','District hospital','endsOn',(now() at time zone 'Asia/Kolkata')::date)
+   when 'competitor_lock_in' then jsonb_build_object('competitor','Acme Lab','endsOn',(now() at time zone 'Asia/Kolkata')::date)
+   else jsonb_build_object('nextQuestion','Which analyser is used?','askBy',(now() at time zone 'Asia/Kolkata')::date) end;
+  perform pg_temp.diagnosis_call('record_constraint',jsonb_build_object('requestId','wallet-diagnosis-e1-'||action_name,'opportunityId',result_data->>'id',
+   'category',action_name,'evidence','Structured evidence fixture','source','document','sourcePerson',null,'observedOn',(now() at time zone 'Asia/Kolkata')::date,
+   'facts',fact_data,'expectedCurrentConstraintId',(select c.id from private.stockflow_commercial_constraints c where c.opportunity_id=(result_data->>'id')::uuid order by c.recorded_at desc,c.id desc limit 1)));
+ end loop;
+ perform pg_temp.diagnosis_error('record_constraint',jsonb_build_object('requestId','wallet-diagnosis-e1-price-missing','opportunityId',result_data->>'id','category','price','evidence','Bad price facts','source','document','sourcePerson',null,'observedOn',(now() at time zone 'Asia/Kolkata')::date,'facts','{"competitor":"Acme Lab"}'::jsonb,'expectedCurrentConstraintId',(select c.id from private.stockflow_commercial_constraints c where c.opportunity_id=(result_data->>'id')::uuid order by c.recorded_at desc,c.id desc limit 1)),'22023');
+ perform pg_temp.diagnosis_error('record_constraint',jsonb_build_object('requestId','wallet-diagnosis-e1-instrument-extra','opportunityId',result_data->>'id','category','instrument','evidence','Bad instrument facts','source','document','sourcePerson',null,'observedOn',(now() at time zone 'Asia/Kolkata')::date,'facts','{"analyser":"Analyzer X","owner":"customer","closedSystem":"yes","division":"BIOCHEM","extra":true}'::jsonb,'expectedCurrentConstraintId',(select c.id from private.stockflow_commercial_constraints c where c.opportunity_id=(result_data->>'id')::uuid order by c.recorded_at desc,c.id desc limit 1)),'22023');
+ perform pg_temp.diagnosis_error('record_constraint',jsonb_build_object('requestId','wallet-diagnosis-e1-unknown-type','opportunityId',result_data->>'id','category','unknown','evidence','Bad unknown facts','source','document','sourcePerson',null,'observedOn',(now() at time zone 'Asia/Kolkata')::date,'facts','{"nextQuestion":7,"askBy":"2026-10-29"}'::jsonb,'expectedCurrentConstraintId',(select c.id from private.stockflow_commercial_constraints c where c.opportunity_id=(result_data->>'id')::uuid order by c.recorded_at desc,c.id desc limit 1)),'22023');
+ perform pg_temp.diagnosis_error('record_constraint',jsonb_build_object('requestId','wallet-diagnosis-e1-tender-extra','opportunityId',result_data->>'id','category','contract_tender','evidence','Bad tender facts','source','document','sourcePerson',null,'observedOn',(now() at time zone 'Asia/Kolkata')::date,'facts','{"holder":"District hospital","endsOn":"2026-10-29","extra":1}'::jsonb,'expectedCurrentConstraintId',(select c.id from private.stockflow_commercial_constraints c where c.opportunity_id=(result_data->>'id')::uuid order by c.recorded_at desc,c.id desc limit 1)),'22023');
+ -- E2 source, person and dates are validated against the IST day.
+ perform pg_temp.diagnosis_error('record_constraint',jsonb_build_object('requestId','wallet-diagnosis-e2-no-person','opportunityId',result_data->>'id','category','credit','evidence','Credit concern','source','customer_stated','observedOn',(now() at time zone 'Asia/Kolkata')::date,'facts','{"issue":"Credit terms too short"}'::jsonb,'expectedCurrentConstraintId',(select c.id from private.stockflow_commercial_constraints c where c.opportunity_id=(result_data->>'id')::uuid order by c.recorded_at desc,c.id desc limit 1)),'22023');
+ perform pg_temp.diagnosis_error('record_constraint',jsonb_build_object('requestId','wallet-diagnosis-e2-document-person','opportunityId',result_data->>'id','category','credit','evidence','Credit concern','source','document','sourcePerson','Lab manager','observedOn',(now() at time zone 'Asia/Kolkata')::date,'facts','{"issue":"Credit terms too short"}'::jsonb,'expectedCurrentConstraintId',(select c.id from private.stockflow_commercial_constraints c where c.opportunity_id=(result_data->>'id')::uuid order by c.recorded_at desc,c.id desc limit 1)),'22023');
+ perform pg_temp.diagnosis_error('record_constraint',jsonb_build_object('requestId','wallet-diagnosis-e2-future-observed','opportunityId',result_data->>'id','category','credit','evidence','Credit concern','source','document','sourcePerson',null,'observedOn',((now() at time zone 'Asia/Kolkata')::date+1),'facts','{"issue":"Credit terms too short"}'::jsonb,'expectedCurrentConstraintId',(select c.id from private.stockflow_commercial_constraints c where c.opportunity_id=(result_data->>'id')::uuid order by c.recorded_at desc,c.id desc limit 1)),'22023');
+ perform pg_temp.diagnosis_error('record_constraint',jsonb_build_object('requestId','wallet-diagnosis-e2-past-ask','opportunityId',result_data->>'id','category','unknown','evidence','Question is overdue','source','our_view','sourcePerson',null,'observedOn',(now() at time zone 'Asia/Kolkata')::date,'facts',jsonb_build_object('nextQuestion','Which analyser is used?','askBy',(now() at time zone 'Asia/Kolkata')::date-1),'expectedCurrentConstraintId',(select c.id from private.stockflow_commercial_constraints c where c.opportunity_id=(result_data->>'id')::uuid order by c.recorded_at desc,c.id desc limit 1)),'22023');
+ -- E3 confidence follows source; confidence input is rejected.
+ foreach source_value in array array['document','customer_stated','our_view'] loop
+  result_data:=pg_temp.diagnosis_call('record_constraint',jsonb_build_object('requestId','wallet-diagnosis-e3-'||source_value,'opportunityId',(select o.id from private.stockflow_commercial_opportunities o where o.customer_id=signal_customer and o.kind='recover' order by o.opened_at desc limit 1),
+   'category','credit','evidence','Confidence derivation fixture','source',source_value,'sourcePerson',case when source_value='customer_stated' then 'Lab manager' end,
+   'observedOn',(now() at time zone 'Asia/Kolkata')::date,'facts','{"issue":"Credit terms too short"}'::jsonb,'expectedCurrentConstraintId',(select c.id from private.stockflow_commercial_constraints c join private.stockflow_commercial_opportunities o on o.id=c.opportunity_id where o.customer_id=signal_customer and o.kind='recover' order by c.recorded_at desc,c.id desc limit 1)));
+  if result_data->>'confidence'<>(case source_value when 'document' then 'high' when 'customer_stated' then 'medium' else 'low' end) then raise exception 'Confidence not derived from source: %',result_data;end if;
+ end loop;
+ perform pg_temp.diagnosis_error('record_constraint',jsonb_build_object('requestId','wallet-diagnosis-e3-confidence-input','opportunityId',(select o.id from private.stockflow_commercial_opportunities o where o.customer_id=signal_customer and o.kind='recover' order by o.opened_at desc limit 1),
+  'category','credit','evidence','Reject selected confidence','source','document','sourcePerson',null,'observedOn',(now() at time zone 'Asia/Kolkata')::date,'facts','{"issue":"Credit terms too short"}'::jsonb,'confidence','high','expectedCurrentConstraintId',(select c.id from private.stockflow_commercial_constraints c join private.stockflow_commercial_opportunities o on o.id=c.opportunity_id where o.customer_id=signal_customer and o.kind='recover' order by c.recorded_at desc,c.id desc limit 1)),'22023');
+ -- E4 price source warning and hand-checked rounded gap.
+ diag_four_data:=pg_temp.diagnosis_call('open_opportunity',jsonb_build_object('requestId','wallet-diagnosis-e4-open','customerId',signal_customer,'kind','defend','reason','Verify price evidence'));
+ perform pg_temp.diagnosis_call('record_constraint',jsonb_build_object('requestId','wallet-diagnosis-e4-price','opportunityId',diag_four_data->>'id','category','price','evidence','Internal estimate only',
+  'source','our_view','sourcePerson',null,'observedOn',(now() at time zone 'Asia/Kolkata')::date,'facts','{"competitor":"Acme Lab","product":"Glucose kit","competitorPricePaise":120000,"ourPricePaise":140000}'::jsonb,'expectedCurrentConstraintId',null));
+ result_data:=pg_temp.diagnosis_call('get_account_opportunities',jsonb_build_object('customerId',signal_customer));
+ select value into row_value from jsonb_array_elements(result_data) where value->>'kind'='defend';
+ if row_value#>>'{constraint,priceUnproven}'<>'true' or row_value#>>'{constraint,gapPermille}'<>'143' then raise exception 'Price read derivation failed: %',row_value;end if;
+ result_data:=pg_temp.diagnosis_call('get_wallet_diagnoses',jsonb_build_object('customerIds',jsonb_build_array(signal_customer)));
+ select value into row_value from jsonb_array_elements(result_data->'rows') where value->>'customerId'=signal_customer::text;
+ if row_value->>'priceUnproven'<>'true' then raise exception 'Diagnosis priceUnproven failed: %',result_data;end if;
+ -- E5 signal counts honor customer, 90-day window and open statuses.
+ insert into private.stockflow_orders(customer_id,customer_name,idempotency_key,created_by_email,updated_by_email)
+ values(signal_customer,'Diagnosis One','diagnosis-signal-current','test','test') returning id into signal_order;
+ insert into private.stockflow_orders(customer_id,customer_name,idempotency_key,created_by_email,updated_by_email)
+ values(signal_customer,'Diagnosis One','diagnosis-signal-old','test','test') returning id into signal_order_old;
+ update private.stockflow_orders set created_at=((now() at time zone 'Asia/Kolkata')::date-interval '91 days')::timestamp at time zone 'Asia/Kolkata' where id=signal_order_old;
+ insert into private.stockflow_delivery_exceptions(order_id,category,summary,created_by_email) values(signal_order,'delayed','Signal delivery problem','test');
+ insert into private.stockflow_delivery_exceptions(order_id,category,status,summary,created_by_email) values(signal_order_old,'damaged','resolved','Old delivery problem','test');
+ update private.stockflow_delivery_exceptions set created_at=((now() at time zone 'Asia/Kolkata')::date-interval '91 days')::timestamp at time zone 'Asia/Kolkata' where order_id=signal_order_old;
+ insert into private.stockflow_order_lines(order_id,tally_item_key,item_name,quantity) values(signal_order,'diagnosis-signal-price','Signal price item',1) returning id into signal_line;
+ select id into signal_policy from private.stockflow_pricing_policies order by created_at desc limit 1;
+ insert into private.stockflow_order_pricing_decisions(order_id,order_line_id,decision_version,order_version,state,resolution_type,source_type,
+  guardrail_state,pricing_policy_id,pricing_policy_version,rounding_rule_version,requested_by_email,request_id)
+ values(signal_order,signal_line,1,1,'pending_approval','price_exception','manual_review','price_review_required',signal_policy,'diagnosis-test','test-rounding','test','diagnosis-price-decision-current') returning id into signal_decision;
+ insert into private.stockflow_price_exceptions(decision_id,order_id,order_line_id,entered_rate,reason,state,requested_by_email)
+ values(signal_decision,signal_order,signal_line,1,'Signal current price exception','pending','test');
+ insert into private.stockflow_order_lines(order_id,tally_item_key,item_name,quantity) values(signal_order_old,'diagnosis-signal-old-price','Old signal price item',1) returning id into signal_line;
+ insert into private.stockflow_order_pricing_decisions(order_id,order_line_id,decision_version,order_version,state,resolution_type,source_type,
+  guardrail_state,pricing_policy_id,pricing_policy_version,rounding_rule_version,requested_by_email,request_id)
+ values(signal_order_old,signal_line,1,1,'pending_approval','price_exception','manual_review','price_review_required',signal_policy,'diagnosis-test','test-rounding','test','diagnosis-price-decision-old') returning id into signal_decision;
+ insert into private.stockflow_price_exceptions(decision_id,order_id,order_line_id,entered_rate,reason,state,requested_by_email)
+ values(signal_decision,signal_order_old,signal_line,1,'Old signal price exception','pending','test');
+ update private.stockflow_price_exceptions set requested_at=((now() at time zone 'Asia/Kolkata')::date-interval '91 days')::timestamp at time zone 'Asia/Kolkata' where decision_id=signal_decision;
+ insert into private.stockflow_equipment_installations(order_id,tally_key,item_name,scheduled_date,created_by_email)
+ values(signal_order,'signal-instrument','Analyzer X',(now() at time zone 'Asia/Kolkata')::date,'test') returning id into signal_install;
+ insert into private.stockflow_service_tickets(installation_id,order_id,category,summary,created_by_email) values(signal_install,signal_order,'training','Signal service ticket','test');
+ insert into private.stockflow_customer_visits(customer_id,visited_on,visited_by,outcome,request_id) values(signal_customer,(now() at time zone 'Asia/Kolkata')::date,'test','met','diagnosis-signal-visit');
+ signal_data:=pg_temp.diagnosis_call('get_account_signals',jsonb_build_object('customerId',signal_customer));
+ if signal_data->>'priceExceptions90d'<>'1' or signal_data->>'deliveryProblems90d'<>'1' or signal_data->>'deliveryProblemsOpen'<>'1' or signal_data->>'serviceTickets90d'<>'1'
+  or signal_data->>'serviceTicketsOpen'<>'1' or signal_data->>'ourInstallations'<>'1' or signal_data->>'lastVisitOn'<>(now() at time zone 'Asia/Kolkata')::date::text
+  then raise exception 'E5 customer signals failed: %',signal_data;end if;
+ signal_data:=pg_temp.diagnosis_call('get_account_signals',jsonb_build_object('customerId',signal_other));
+ if signal_data->>'priceExceptions90d'<>'0' or signal_data->>'deliveryProblems90d'<>'0' or signal_data->>'serviceTicketsOpen'<>'0'
+  or signal_data->>'ourInstallations'<>'0' or signal_data->'lastVisitOn' is distinct from 'null'::jsonb then raise exception 'E5 other customer/null visit failed: %',signal_data;end if;
+ denied_flag:=false;begin perform public.stockflow_opportunity_gateway('diagnosis-test-key','diagnosis-sales@test.local','get_account_signals',jsonb_build_object('customerId',signal_customer));exception when sqlstate 'PT403' then denied_flag:=true;end;
+ if not denied_flag then raise exception 'E5 role authorization failed';end if;
  -- D9 command replay stores the initial receipt and produces no duplicate row or audit.
  row_count_before:=(select count(*) from private.stockflow_commercial_opportunities);
  audit_count_before:=(select count(*) from private.stockflow_economic_audit audit_row where audit_row.action='open_opportunity');

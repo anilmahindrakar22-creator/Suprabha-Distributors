@@ -14,7 +14,7 @@ const row = { customerId: a, name: 'Example Diagnostic Laboratory', city: 'Bidar
 const second = { ...row, customerId: b, name: 'Not diagnosed lab' };
 const none = { ...row, customerId: c, name: 'No estimate lab', walletPaise: null, sharePermille: null, confidence: null, asOf: null };
 const current = { id: snapshotId, monthlyWalletPaise: 10000000, method: 'customer_stated' as const, source: 'Discussion', confidence: 'high' as const, asOf: row.asOf, note: 'Estimate', loweredReason: null, enteredBy: 'manager@example.test', enteredAt: '2026-10-01T00:00:00Z', verifiedBy: null, divisions: [{ code: 'BIOCHEM', name: 'Biochemistry', monthlyWalletPaise: 4000000 }], unallocatedPaise: 6000000 };
-const diagnosed: WalletOpportunity = { id: opportunityId, customerId: a, kind: 'capture', openedReason: 'Tender price pressure', openedBy: 'manager@example.test', openedAt: '2026-10-01T00:00:00Z', closure: null, constraint: { id: constraintId, category: 'price', evidence: 'Competitor quote', confidence: 'high', recordedBy: 'manager@example.test', recordedAt: '2026-10-02T00:00:00Z' }, history: [] };
+const diagnosed: WalletOpportunity = { id: opportunityId, customerId: a, kind: 'capture', openedReason: 'Tender price pressure', openedBy: 'manager@example.test', openedAt: '2026-10-01T00:00:00Z', closure: null, constraint: { id: constraintId, category: 'price', evidence: 'Competitor quote', confidence: 'low', source: 'our_view', sourcePerson: null, observedOn: '2026-10-02', facts: { competitor: 'Acme Diagnostics', product: 'Glucose kit', competitorPricePaise: 120000, ourPricePaise: 140000 }, priceUnproven: true, gapPermille: 143, recordedBy: 'manager@example.test', recordedAt: '2026-10-02T00:00:00Z' }, history: [] };
 type Options = { diagnosisFailure?: '500' | 'shape'; conflict?: boolean; networkFailure?: boolean };
 async function fixture(page: Page, options: Options = {}) {
   const posts: Array<{ action: string; payload: Record<string, unknown> }> = [];
@@ -29,14 +29,18 @@ async function fixture(page: Page, options: Options = {}) {
       if (options.networkFailure && body.action === 'record_constraint' && !attemptedNetworkFailure) { attemptedNetworkFailure = true; return route.abort('failed'); }
       if (options.conflict && !attemptedConflict) { attemptedConflict = true; return route.fulfill({ status: 409, json: { error: 'PT409' } }); }
       if (body.action === 'open_opportunity') opportunities = [...opportunities, { ...diagnosed, id: opportunityId, customerId: String(body.payload.customerId), kind: String(body.payload.kind) as WalletOpportunity['kind'], openedReason: String(body.payload.reason), constraint: null, history: [] }];
-      if (body.action === 'record_constraint') opportunities = opportunities.map(item => item.id === body.payload.opportunityId ? { ...item, constraint: { id: constraintId, category: String(body.payload.category) as WalletOpportunity['constraint'] extends infer _ ? 'price' : never, evidence: String(body.payload.evidence), confidence: String(body.payload.confidence) as 'high', recordedBy: 'manager@example.test', recordedAt: '2026-10-02T00:00:00Z' }, history: [] } : item);
+      if (body.action === 'record_constraint') opportunities = opportunities.map(item => item.id === body.payload.opportunityId ? { ...item, constraint: { ...diagnosed.constraint!, id: constraintId, category: String(body.payload.category) as 'price', evidence: String(body.payload.evidence), source: String(body.payload.source) as 'document', sourcePerson: body.payload.sourcePerson as string | null, observedOn: String(body.payload.observedOn), facts: body.payload.facts as NonNullable<WalletOpportunity['constraint']>['facts'], confidence: body.payload.source === 'document' ? 'high' : body.payload.source === 'customer_stated' ? 'medium' : 'low', priceUnproven: body.payload.source === 'our_view', recordedBy: 'manager@example.test', recordedAt: '2026-10-02T00:00:00Z' }, history: [] } : item);
       if (body.action === 'close_opportunity') opportunities = opportunities.map(item => item.id === body.payload.opportunityId ? { ...item, closure: { outcome: String(body.payload.outcome) as 'lost', reason: String(body.payload.reason), closedBy: 'manager@example.test', closedAt: '2026-10-03T00:00:00Z' } } : item);
       return route.fulfill({ json: { ok: true } });
     }
     if (url.searchParams.get('action') === 'get_wallet_diagnoses') {
       if (options.diagnosisFailure === '500') return route.fulfill({ status: 500, json: { error: 'offline' } });
       if (options.diagnosisFailure === 'shape') return route.fulfill({ json: { rows: 'wrong', undiagnosedFocusCount: 2, focusCount: 3 } });
-      return route.fulfill({ json: { rows: [{ customerId: a, kind: 'capture', category: 'price', confidence: 'high' }], undiagnosedFocusCount: 2, focusCount: 3 } });
+      return route.fulfill({ json: { rows: [{ customerId: a, kind: 'capture', category: 'price', confidence: 'low', priceUnproven: true }], undiagnosedFocusCount: 2, focusCount: 3 } });
+    }
+    if (url.searchParams.get('action') === 'get_account_signals') {
+      if (options.diagnosisFailure) return route.fulfill({ status: 500, json: { error: 'offline' } });
+      return route.fulfill({ json: { priceExceptions90d: 1, deliveryProblems90d: 2, deliveryProblemsOpen: 1, serviceTicketsOpen: 1, serviceTickets90d: 3, ourInstallations: 4, lastVisitOn: '2026-10-20' } });
     }
     return route.fulfill({ json: opportunities.filter(item => item.customerId === url.searchParams.get('customerId')) });
   });
@@ -56,7 +60,7 @@ for (const width of [375, 1280]) test.describe(`Wallet diagnosis at ${width}px`,
   test.use({ viewport: { width, height: 812 } });
   test('renders diagnosis chips and the certified header count without horizontal scroll', async ({ page }) => {
     await fixture(page);
-    await expect(page.getByText('Why: Price', { exact: true })).toBeVisible();
+    await expect(page.getByText('Why: Price (not proven)', { exact: true })).toBeVisible();
     await expect(page.getByText('Not diagnosed', { exact: true })).toBeVisible();
     const noEstimate = page.getByRole('button', { name: /No estimate lab/ });
     await expect(noEstimate).toContainText('No estimate');
@@ -78,15 +82,20 @@ for (const width of [375, 1280]) test.describe(`Wallet diagnosis at ${width}px`,
     await diagnosis.getByRole('button', { name: 'Record constraint' }).click();
     await expect(diagnosis.getByText('Capture opportunity · Customer has a new tender', { exact: true })).toBeVisible();
     await diagnosis.getByLabel('Category').selectOption('price');
-    await expect(diagnosis.getByText('Competitor, product and their price')).toBeVisible();
-    await diagnosis.getByLabel('Evidence').fill('Competitor quote for product X');
-    await diagnosis.getByLabel('Confidence').selectOption('high');
+    await diagnosis.getByLabel('Competitor', { exact: true }).fill('Acme Diagnostics');
+    await diagnosis.getByLabel('Product', { exact: true }).fill('Glucose kit');
+    await diagnosis.getByLabel('Their price (₹)').fill('1200');
+    await diagnosis.getByLabel('Our price (₹)').fill('1400');
+    await diagnosis.getByLabel('Seen a document (quote, invoice, tender)').check();
+    await diagnosis.getByLabel('Note').fill('Competitor quote for product X');
     await diagnosis.getByRole('button', { name: 'Save', exact: true }).click();
     await expect.poll(() => posts.length).toBe(2);
-    expect(posts[1]).toMatchObject({ action: 'record_constraint', payload: { opportunityId, category: 'price', evidence: 'Competitor quote for product X', confidence: 'high', expectedCurrentConstraintId: null } });
+    expect(posts[1]).toMatchObject({ action: 'record_constraint', payload: { opportunityId, category: 'price', facts: { competitor: 'Acme Diagnostics', product: 'Glucose kit', competitorPricePaise: 120000, ourPricePaise: 140000 }, evidence: 'Competitor quote for product X', source: 'document', sourcePerson: null, expectedCurrentConstraintId: null } });
+    await expect(diagnosis.getByText('Confidence: High (document)', { exact: true })).toBeVisible();
     await diagnosis.getByRole('button', { name: 'Record constraint' }).click();
     await diagnosis.getByLabel('Category').selectOption('unknown');
     await expect(diagnosis.getByText('What we need to find out')).toBeVisible();
+    await expect(diagnosis.getByText(/Which analysers do you run in each department/)).toBeVisible();
     await diagnosis.getByRole('button', { name: 'Cancel' }).click();
     await diagnosis.getByRole('button', { name: 'Close opportunity', exact: true }).click();
     await diagnosis.getByLabel('Outcome').selectOption('lost');
@@ -95,16 +104,55 @@ for (const width of [375, 1280]) test.describe(`Wallet diagnosis at ${width}px`,
     await expect.poll(() => posts.length).toBe(3);
     expect(posts[2]).toMatchObject({ action: 'close_opportunity', payload: { opportunityId, outcome: 'lost', reason: 'Lost the tender' } });
   });
+  test('unknown shows the visit questions', async ({ page }) => {
+    await fixture(page);
+    await openAccount(page);
+    const diagnosis = page.getByRole('region', { name: "Why we're not winning" });
+    await diagnosis.getByRole('button', { name: 'Record constraint' }).click();
+    await diagnosis.getByLabel('Category').selectOption('unknown');
+    for (const question of [
+      "Which analysers do you run in each department, and who owns them: you, a supplier's placement, or a rental?",
+      'Who supplies the reagents for each, and why them?',
+      'What would make you move this business to us?',
+      'Any problem with our delivery, service or billing in the last 3 months?',
+      'Who decides purchases, and when does any contract or tender end?',
+    ]) await expect(diagnosis.getByText(question, { exact: true })).toBeVisible();
+    await expect(diagnosis.getByLabel('Next question')).toBeVisible();
+    await expect(diagnosis.getByLabel('Ask by')).toBeVisible();
+  });
   test('keeps the 409 reload message visible', async ({ page }) => {
     await fixture(page, { conflict: true });
     const sheet = await openAccount(page);
     const diagnosis = page.getByRole('region', { name: "Why we're not winning" });
     await diagnosis.getByRole('button', { name: 'Record constraint' }).click();
     await diagnosis.getByLabel('Category').selectOption('price');
-    await diagnosis.getByLabel('Evidence').fill('Competitor quote');
+    await diagnosis.getByLabel('Competitor', { exact: true }).fill('Acme');
+    await diagnosis.getByLabel('Product', { exact: true }).fill('Kit');
+    await diagnosis.getByLabel('Their price (₹)').fill('1200');
+    await diagnosis.getByLabel('Our price (₹)').fill('1400');
+    await diagnosis.getByLabel('Seen a document (quote, invoice, tender)').check();
+    await diagnosis.getByLabel('Note').fill('Competitor quote');
     await diagnosis.getByRole('button', { name: 'Save', exact: true }).click();
     await expect(diagnosis.getByText('Someone else just updated this. Reloaded.', { exact: true })).toBeVisible();
     await expect(sheet).toBeVisible();
+  });
+  test('shows told-by field, signals, and price proof warning; hides signals on failed read', async ({ page }) => {
+    await fixture(page);
+    const sheet = await openAccount(page);
+    const diagnosis = page.getByRole('region', { name: "Why we're not winning" });
+    await expect(diagnosis.getByText('From StockFlow records (90 days)')).toBeVisible();
+    await expect(diagnosis.getByText('Receivables: not available')).toBeVisible();
+    await expect(diagnosis.getByText('Acme Diagnostics, Glucose kit: ₹1,200 vs our ₹1,400 (14.3% higher)', { exact: true })).toBeVisible();
+    await expect(diagnosis.getByText(/Price not proven: get the competitor's quote/)).toBeVisible();
+    await diagnosis.getByRole('button', { name: 'Record constraint' }).click();
+    await diagnosis.getByLabel('Category').selectOption('credit');
+    await diagnosis.getByLabel('Told by someone at the lab').check();
+    await expect(diagnosis.getByLabel('Who told us')).toBeVisible();
+    await sheet.getByRole('button', { name: 'Close', exact: true }).first().click();
+    await fixture(page, { diagnosisFailure: '500' });
+    const failedSheet = await openAccount(page);
+    await expect(page.getByRole('region', { name: "Why we're not winning" }).getByText('From StockFlow records (90 days)')).toHaveCount(0);
+    await failedSheet.getByRole('button', { name: 'Close', exact: true }).first().click();
   });
   test('network retry keeps the same requestId', async ({ page }) => {
     const { posts } = await fixture(page, { networkFailure: true });
@@ -112,7 +160,12 @@ for (const width of [375, 1280]) test.describe(`Wallet diagnosis at ${width}px`,
     const diagnosis = page.getByRole('region', { name: "Why we're not winning" });
     await diagnosis.getByRole('button', { name: 'Record constraint' }).click();
     await diagnosis.getByLabel('Category').selectOption('price');
-    await diagnosis.getByLabel('Evidence').fill('Competitor quote');
+    await diagnosis.getByLabel('Competitor', { exact: true }).fill('Acme');
+    await diagnosis.getByLabel('Product', { exact: true }).fill('Kit');
+    await diagnosis.getByLabel('Their price (₹)').fill('1200');
+    await diagnosis.getByLabel('Our price (₹)').fill('1400');
+    await diagnosis.getByLabel('Seen a document (quote, invoice, tender)').check();
+    await diagnosis.getByLabel('Note').fill('Competitor quote');
     await diagnosis.getByRole('button', { name: 'Save', exact: true }).click();
     await expect(diagnosis.getByRole('button', { name: 'Save', exact: true })).toHaveCount(0);
     await expect(diagnosis.getByRole('button', { name: 'Retry same save', exact: true })).toBeVisible();

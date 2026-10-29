@@ -24,9 +24,10 @@ export async function GET(request: Request) {
     const params = new URL(request.url).searchParams;
     const action = params.get('action');
     const customerIds = params.get('customerIds');
+    const customerId = params.get('customerId');
     const raw = action === 'get_wallet_diagnoses'
       ? { action, payload: { customerIds: customerIds ? customerIds.split(',').filter(Boolean) : [] } }
-      : action === 'get_account_opportunities' ? { action, payload: { customerId: params.get('customerId') } } : null;
+      : action === 'get_account_opportunities' || action === 'get_account_signals' ? { action, payload: { customerId } } : null;
     if (!raw) return Response.json({ error: 'Invalid wallet diagnosis read action' }, { status: 400, headers });
     const command = validateWalletDiagnosisCommand(raw);
     return Response.json(await callOrderGateway(session.email, command.action, command.payload), { headers });
@@ -37,7 +38,7 @@ export async function POST(request: Request) {
     const session = await actor();
     const input = await readBoundedJsonRequest(request, 32_768);
     const command = validateWalletDiagnosisCommand(input);
-    if (command.action === 'get_wallet_diagnoses' || command.action === 'get_account_opportunities') return Response.json({ error: 'Invalid wallet diagnosis write action' }, { status: 400, headers });
+    if (command.action === 'get_wallet_diagnoses' || command.action === 'get_account_opportunities' || command.action === 'get_account_signals') return Response.json({ error: 'Invalid wallet diagnosis write action' }, { status: 400, headers });
     return Response.json(await callOrderGateway(session.email, command.action, command.payload), { headers });
   } catch (error) { return failure(error); }
 }
