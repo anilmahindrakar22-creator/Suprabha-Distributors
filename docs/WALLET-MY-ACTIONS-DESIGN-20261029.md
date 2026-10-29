@@ -110,3 +110,22 @@ In `components/accounts-workspace.tsx`, add a **"My actions"** entry next to the
 - **M9:** an invalid `nextVisitOn` (≤ today) makes `log_visit` fail. The action stays open: assert there's no result row.
 - **M10:** a replay inserts no second visit.
 - **Browser:** the outcome select appears only for a Visit with Mark done; the POST body carries `visit`.
+
+## 8. Addendum (29 Oct): show the route to the decider on each action
+**Why:** the person doing the visit needs to know whom to meet. The Power Map route (`private.stockflow_power_route`, from `docs/POWER-MAP-INFLUENCE-DESIGN-20261029.md`) is the answer.
+
+**Data exposed to the action owner:** the route's contact **names** only, as an ordered array. No stances, roles, evidence, wallet figures or prices.
+- **Reason this is acceptable:** `POWER-MAPS.md` §4 allows the assigned owner to see the Power Map, and the action owner was assigned by management for this lab.
+
+**SQL:** edit `20261031130000_wallet_my_actions.sql` in place (not deployed) and refresh its hash.
+- `private.stockflow_my_actions_read` rows gain `routeToDecider`: the array of `steps[].name` from `private.stockflow_power_route(customer)`, or null.
+- The function is plpgsql, so the reference resolves at run time, after the later influence migration has created `stockflow_power_route`.
+
+**Contract:** `MyActionRow` gains `routeToDecider: string[] | null`.
+
+**Screen:** one muted line under the action detail: `Meet: Asha → Ravi → **Meena**` (the last name bold). Hidden when null.
+
+**Acceptance:**
+- **M11:** with an influence chain on a fixture lab, `get_my_actions` returns the ordered names. Without one, it returns null.
+- **M4's exact key set** gains `routeToDecider`.
+- **Browser:** the Meet line shows and hides correctly.
