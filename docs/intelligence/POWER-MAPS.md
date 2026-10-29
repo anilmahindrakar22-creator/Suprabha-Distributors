@@ -3,12 +3,21 @@
 **Purpose and scope:** who influences a customer's purchase decision, how that influence flows, and how to communicate with each person. This is a **relationship model, not a geographic map** (ADR-0005).
 
 **Status:**
-- APPROVED DESIGN ONLY: source is [`cba7f67` ROADMAP §Stakeholder Power Map / §Social Styles](https://github.com/anilmahindrakar22-creator/Suprabha-Distributors/blob/cba7f67/docs/ROADMAP.md), on an unmerged branch.
-- Nothing is built.
+- Approved design: source is [`cba7f67` ROADMAP §Stakeholder Power Map / §Social Styles](https://github.com/anilmahindrakar22-creator/Suprabha-Distributors/blob/cba7f67/docs/ROADMAP.md).
+- **Built (deployed, 14 Oct 2026):**
+  - contacts;
+  - per-contact assessments (role, stance, influence);
+  - visit contacts and last met;
+  - Social Style observations and overrides;
+  - three alerts (`no_decision_maker`, `decision_maker_not_met` 60 days, `influential_blocker`).
+- **Built on train 2026-11-06, not yet released:**
+  - [slice 1](../POWER-MAP-ENHANCEMENT-DESIGN-20261029.md): Champion, Technical evaluator and Coach roles; the alerts `influential_unknown` and `no_influential_supporter`; the Wallet Focus "no known decision maker" count; Power Map gaps in the diagnosis; a Relationship constraint can cite a contact.
+  - [slice 2](../POWER-MAP-INFLUENCE-DESIGN-20261029.md), in build: influence links and the route to the decider.
+- **Not built:** the graph view (deferred, recorded deviation), and assessment evidence/confidence fields.
 - Phase 6 of the [MASTER-ROADMAP](../planning/MASTER-ROADMAP.md).
 
 **Sources:** the above; owner brief §Phase 6 (13 Oct 2026); dominance framework (A accounts require a full Power Map).
-**Last verified:** 13 Oct 2026.
+**Last verified:** 29 Oct 2026.
 
 ## 1. Model
 - **People** are canonical `customer_contact` records (Customer domain), never duplicated.
