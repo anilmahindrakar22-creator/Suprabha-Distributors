@@ -23,17 +23,18 @@ export function validateMyActionCommand(input: unknown): MyActionCommand {
     return { action: input.action, payload: { page: Number(payload.page) } };
   }
   if (input.action === 'close_my_action') {
-    if (!exact(payload, ['requestId', 'actionId', 'result', 'note', 'visit']) || typeof payload.requestId !== 'string' || !uuid.test(payload.requestId) || typeof payload.actionId !== 'string' || !uuid.test(payload.actionId) || !results.includes(payload.result as ActionResult) || typeof payload.note !== 'string' || payload.note.trim() !== payload.note || payload.note.length < 3 || payload.note.length > 500) return fail();
-    if (payload.visit !== null) {
-      if (payload.result !== 'done' || !object(payload.visit) || !exact(payload.visit, ['outcome', 'nextVisitOn']) || !visitOutcomes.includes(payload.visit.outcome as typeof visitOutcomes[number])) return fail();
-      const nextVisitOn = payload.visit.nextVisitOn;
+    if (!exact(payload, ['requestId', 'actionId', 'result', 'note', ...(Object.hasOwn(payload, 'visit') ? ['visit'] : [])]) || typeof payload.requestId !== 'string' || !uuid.test(payload.requestId) || typeof payload.actionId !== 'string' || !uuid.test(payload.actionId) || !results.includes(payload.result as ActionResult) || typeof payload.note !== 'string' || payload.note.trim() !== payload.note || payload.note.length < 3 || payload.note.length > 500) return fail();
+    const visit = Object.hasOwn(payload, 'visit') ? payload.visit : null;
+    if (visit !== null) {
+      if (payload.result !== 'done' || !object(visit) || !exact(visit, ['outcome', 'nextVisitOn']) || !visitOutcomes.includes(visit.outcome as typeof visitOutcomes[number])) return fail();
+      const nextVisitOn = visit.nextVisitOn;
       if (nextVisitOn !== null) {
         if (!validDate(nextVisitOn)) return fail();
         const today = todayIST(); const last = new Date(`${today}T00:00:00Z`); last.setUTCDate(last.getUTCDate() + 180);
         if (nextVisitOn <= today || nextVisitOn > last.toISOString().slice(0, 10)) return fail();
       }
     }
-    return { action: input.action, payload: payload as unknown as Extract<MyActionCommand, { action: 'close_my_action' }>['payload'] };
+    return { action: input.action, payload: { requestId: payload.requestId, actionId: payload.actionId, result: payload.result as ActionResult, note: payload.note, visit: visit as Extract<MyActionCommand, { action: 'close_my_action' }>['payload']['visit'] } };
   }
   return fail();
 }

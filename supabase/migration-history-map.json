@@ -1165,6 +1165,13 @@
       "remoteVersion": null,
       "remoteSha256": null,
       "status": "not_deployed"
+    },
+    {
+      "localFile": "20261031150000_power_map_influence.sql",
+      "localSha256": "0b76c255be0c7ca5f3a0ac520e99a2186b3308935f3aab80fb4893a23eed3389",
+      "remoteVersion": null,
+      "remoteSha256": null,
+      "status": "not_deployed"
     }
   ],
   "liveCheck": {

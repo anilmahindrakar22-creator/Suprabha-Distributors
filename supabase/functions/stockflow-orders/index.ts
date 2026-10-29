@@ -32,6 +32,9 @@ actions.push('get_wallet_workspace', 'get_wallet_account', 'record_wallet_snapsh
 actions.push('get_wallet_diagnoses', 'get_account_opportunities', 'get_account_signals', 'open_opportunity', 'record_constraint', 'close_opportunity');
 actions.push('get_actions_due', 'get_opportunity_actions', 'get_action_owners', 'create_action', 'close_action');
 actions.push('get_my_actions', 'close_my_action');
+const powerMapActions = ['get_power_map', 'set_influence', 'end_influence'];
+actions.push(...powerMapActions);
+readActions.add('get_power_map');
 readActions.add('get_my_actions');
 readActions.add('get_actions_due');
 readActions.add('get_opportunity_actions');
@@ -73,7 +76,8 @@ Deno.serve(async (request: Request) => {
     // Modern Supabase secret keys belong only in `apikey`. The supabase-js
     // default Authorization header treats them as JWTs and rejects the call.
     const rpcGateway = ['get_my_actions', 'close_my_action'].includes(body.action) ? 'stockflow_my_actions_gateway' : ['get_actions_due', 'get_opportunity_actions', 'get_action_owners', 'create_action', 'close_action'].includes(body.action) ? 'stockflow_action_gateway' : purchaseActions.includes(body.action) ? 'stockflow_purchase_gateway' : pushActions.includes(body.action) ? 'stockflow_push_gateway' : accountActions.includes(body.action) ? 'stockflow_accounts_gateway' : ['get_wallet_workspace', 'get_wallet_account', 'record_wallet_snapshot', 'set_wallet_policy'].includes(body.action) ? 'stockflow_wallet_gateway' : ['get_wallet_diagnoses', 'get_account_opportunities', 'get_account_signals', 'open_opportunity', 'record_constraint', 'close_opportunity'].includes(body.action) ? 'stockflow_opportunity_gateway' : economicActions.includes(body.action) ? 'stockflow_economics_gateway' : body.action === 'get_stock_alerts' ? 'stockflow_stock_alert_gateway' : body.action === 'get_requirement_orders' ? 'stockflow_requirement_orders_gateway' : body.action === 'get_requirements' ? 'stockflow_requirements_gateway' : productRequestActions.includes(body.action) ? 'stockflow_product_request_gateway' : gateway;
-    const response = await fetch(`${url}/rest/v1/rpc/${rpcGateway}`, {
+    const routedGateway = powerMapActions.includes(body.action) ? 'stockflow_power_map_gateway' : rpcGateway;
+    const response = await fetch(`${url}/rest/v1/rpc/${routedGateway}`, {
       method: "POST",
       headers: { apikey: secretKey, "content-type": "application/json" },
       body: JSON.stringify({

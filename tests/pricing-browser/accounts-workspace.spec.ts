@@ -16,6 +16,7 @@ async function mockAccounts(page: Page, options: { location?: AccountRow['locati
   const gets: string[] = [];
   const posts: Command[] = [];
   const territories = [...fixture.territories];
+  await page.route('**/api/power-map**', route => route.fulfill({ json: { contacts: [], links: [], route: null } }));
   await page.route('**/api/accounts**', async route => {
     if (route.request().method() === 'POST') {
       const body = route.request().postDataJSON() as Command;

@@ -16,6 +16,7 @@ const pricingReleaseFiles = new Set([
   '20261031120000_wallet_actions.sql',
   '20261031130000_wallet_my_actions.sql',
   '20261031140000_power_map_enhancement.sql',
+  '20261031150000_power_map_influence.sql',
   '20261029100000_supplier_purchase_orders.sql',
   '20261029090000_challan_delivery.sql',
   '20261029091000_order_list_priority_sort.sql',
@@ -118,6 +119,7 @@ export const pricingReleaseSqlTests = [
   'supabase/tests/wallet_actions_concurrency.sql',
   'supabase/tests/wallet_my_actions.sql',
   'supabase/tests/power_map_enhancement.sql',
+  'supabase/tests/power_map_influence.sql',
 ];
 
 export function pricingReleasePreflight(evidence, files) {

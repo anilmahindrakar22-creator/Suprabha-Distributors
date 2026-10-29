@@ -10,6 +10,10 @@ describe('my actions command contract', () => {
     expect(validateMyActionCommand({ action: 'get_my_actions', payload: { page: 2 } })).toEqual({ action: 'get_my_actions', payload: { page: 2 } });
     expect(validateMyActionCommand(close())).toMatchObject({ action: 'close_my_action', payload: { result: 'done', note: 'Visit completed', visit: null } });
   });
+  it('normalizes an omitted visit to null', () => {
+    const input = { action: 'close_my_action', payload: { requestId: id, actionId: id, result: 'done', note: 'Visit completed' } };
+    expect(validateMyActionCommand(input)).toEqual({ action: 'close_my_action', payload: { requestId: id, actionId: id, result: 'done', note: 'Visit completed', visit: null } });
+  });
   it.each(['met', 'not_available', 'order_taken', 'issue_raised', 'other'] as const)('accepts visit outcome %s', outcome => {
     expect(validateMyActionCommand(close({ visit: { outcome, nextVisitOn: null } }))).toMatchObject({ payload: { visit: { outcome, nextVisitOn: null } } });
   });

@@ -13,6 +13,7 @@ type Mode = 'mine' | 'all';
 const CustomerLinks = lazy(() => import('./customer-links').then(module => ({ default: module.CustomerLinks })));
 const WalletWorkspace = lazy(() => import('./wallet-workspace').then(module => ({ default: module.WalletWorkspace })));
 const MyActions = lazy(() => import('./my-actions').then(module => ({ default: module.MyActions })));
+const PowerMapInfluence = lazy(() => import('./power-map-influence').then(module => ({ default: module.PowerMapInfluence })));
 type FormKind = 'visit' | 'location' | 'owner';
 const inputClass = 'min-h-11 w-full min-w-0 max-w-full rounded-xl border border-sf-line bg-sf-soft-0 px-3 text-sm text-sf-body outline-none focus:border-sf-mint';
 const buttonClass = 'min-h-11 rounded-xl border border-sf-line px-3 text-sm font-bold text-sf-body disabled:opacity-50';
@@ -448,8 +449,9 @@ export function AccountDetails({ row, mode, today, renderActions, ratingContactI
     {canSeePowerMap && whoDecidesLine(row) ? <p className="mt-2 flex items-center gap-1 break-words text-sm text-sf-body"><Crown aria-hidden="true" size={16} className="shrink-0 text-sf-brand" /><span className="min-w-0">{whoDecidesLine(row)}</span></p> : null}
     <p className="mt-2 flex flex-wrap items-center gap-2 text-sm text-sf-body">{row.location?.precision === 'pin' ? <><span className="inline-flex items-center gap-1"><MapPin aria-hidden="true" size={16} className="shrink-0 text-sf-success" />Pin set</span>{!isInsideMarketArea(Number(row.location.latitude), Number(row.location.longitude)) ? <span className={`${summaryChipClass} ${stanceToneClasses.warning}`}><MapPinOff aria-hidden="true" size={16} className="shrink-0" /> · outside market area</span> : null}<a className="inline-flex min-h-11 items-center gap-1 font-semibold text-sf-brand" href={`https://www.google.com/maps?q=${row.location.latitude},${row.location.longitude}`} target="_blank" rel="noopener" aria-label={`Open map for ${row.name} (${row.id})`}><MapIcon aria-hidden="true" size={16} className="shrink-0" />Open map</a></> : <span className="inline-flex items-center gap-1 text-sf-muted"><MapPin aria-hidden="true" size={16} className={`shrink-0 ${row.location?.precision === 'town' ? 'text-sf-muted' : 'text-sf-faint'}`} />{row.location?.precision === 'town' ? `Town: ${row.location.town}` : 'No location'}</span>}</p>
     </div>
-    <div className="mt-2">
+    <div className="mt-2 min-w-0">
       <AppContacts row={row} today={today} ratingContactId={ratingContactId} canSeePowerMap={canSeePowerMap} canEraseContacts={canEraseContacts} renderActions={renderActions} {...contactCallbacks} />
+      {canSeePowerMap && !ratingContactId ? <Suspense fallback={<p className="text-xs text-sf-muted">Loading influence…</p>}><PowerMapInfluence key={row.id} customerId={row.id} customerName={row.name} refreshOn={row.appContacts} busy={contactCallbacks.busy} onBusy={contactCallbacks.onBusy} /></Suspense> : null}
     </div>
   </>;
 }

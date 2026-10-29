@@ -1,0 +1,26 @@
+import { beforeEach, describe, expect, it, vi } from 'vitest';
+const mocks = vi.hoisted(() => ({ user: vi.fn(), session: vi.fn(), gateway: vi.fn() }));
+vi.mock('@/app/chatgpt-auth', () => ({ getChatGPTUser: mocks.user }));
+vi.mock('@/lib/stockflow-session', () => ({ getStockFlowSession: mocks.session }));
+vi.mock('@/lib/order-gateway', async original => ({ ...await original<typeof import('@/lib/order-gateway')>(), callOrderGateway: mocks.gateway }));
+import { GET, POST } from '@/app/api/power-map/route';
+import { OrderGatewayError } from '@/lib/order-gateway';
+const id = '11111111-1111-4111-8111-111111111111';
+const other = '22222222-2222-4222-8222-222222222222';
+const url = `http://localhost/api/power-map?action=get_power_map&customerId=${id}`;
+const set = { action: 'set_influence', payload: { requestId: id, customerId: id, fromContactId: id, toContactId: other, strength: 'strong', evidence: 'Owner asks pathologist' } };
+const end = { action: 'end_influence', payload: { requestId: id, influenceId: other, reason: 'No longer current' } };
+const post = (body: unknown) => new Request(url, { method: 'POST', headers: { 'content-type': 'application/json' }, body: JSON.stringify(body) });
+beforeEach(() => { vi.clearAllMocks(); mocks.user.mockResolvedValue({ email: 'manager@example.test' }); mocks.session.mockResolvedValue({ email: 'manager@example.test', roles: ['management'] }); mocks.gateway.mockResolvedValue({ contacts: [], links: [], route: null }); });
+describe('power map route', () => {
+  it('forwards GET with private no-store headers', async () => { const response = await GET(new Request(url)); expect(response.status).toBe(200); expect(response.headers.get('cache-control')).toBe('private, no-store'); expect(await response.json()).toEqual({ contacts: [], links: [], route: null }); expect(mocks.gateway).toHaveBeenCalledWith('manager@example.test', 'get_power_map', { customerId: id }); });
+  it.each([set, end])('forwards $action unchanged', async command => { expect((await POST(post(command))).status).toBe(200); expect(mocks.gateway).toHaveBeenCalledWith('manager@example.test', command.action, command.payload); });
+  it('allows administrators', async () => { mocks.session.mockResolvedValue({ email: 'admin@example.test', roles: ['administrator'] }); expect((await GET(new Request(url))).status).toBe(200); });
+  it('requires authentication', async () => { mocks.user.mockResolvedValue(null); expect((await GET(new Request(url))).status).toBe(401); expect((await POST(post(set))).status).toBe(401); expect(mocks.gateway).not.toHaveBeenCalled(); });
+  it.each(['sales', 'operations', 'warehouse', 'billing', 'accounts', 'viewer'])('denies %s on reads and writes', async role => { mocks.session.mockResolvedValue({ email: 'staff@example.test', roles: [role] }); expect((await GET(new Request(url))).status).toBe(403); expect((await POST(post(set))).status).toBe(403); expect(mocks.gateway).not.toHaveBeenCalled(); });
+  it('denies missing sessions', async () => { mocks.session.mockResolvedValue(null); expect((await GET(new Request(url))).status).toBe(403); });
+  it.each([400, 403, 409, 429, 502])('passes gateway messages through at %s', async status => { mocks.gateway.mockRejectedValue(new OrderGatewayError('Gateway detail', status)); for (const response of [await GET(new Request(url)), await POST(post(end))]) { expect(response.status).toBe(status); expect(await response.json()).toEqual({ error: 'Gateway detail' }); expect(response.headers.get('cache-control')).toBe('private, no-store'); } });
+  it('uses a safe fallback for unexpected failures', async () => { mocks.gateway.mockRejectedValue(new Error('secret')); const response = await GET(new Request(url)); expect(response.status).toBe(502); expect(await response.json()).toEqual({ error: 'Power map is temporarily unavailable' }); });
+  it('rejects invalid input and actions on the wrong method', async () => { expect((await GET(new Request('http://localhost/api/power-map?action=end_influence'))).status).toBe(400); expect((await GET(new Request('http://localhost/api/power-map?action=get_power_map'))).status).toBe(400); expect((await POST(post({ action: 'get_power_map', payload: { customerId: id } }))).status).toBe(400); expect((await POST(post({ ...set, payload: { ...set.payload, toContactId: id } }))).status).toBe(400); expect(mocks.gateway).not.toHaveBeenCalled(); });
+  it('bounds and parses JSON requests', async () => { expect((await POST(new Request(url, { method: 'POST', body: '{}' }))).status).toBe(415); expect((await POST(new Request(url, { method: 'POST', headers: { 'content-type': 'application/json' }, body: '{' }))).status).toBe(400); expect((await POST(post({ data: 'x'.repeat(33_000) }))).status).toBe(413); expect(mocks.gateway).not.toHaveBeenCalled(); });
+});
