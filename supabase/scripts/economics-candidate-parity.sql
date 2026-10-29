@@ -52,6 +52,22 @@ begin
  end if;
  return p_value;
 end$$;
+-- A5 normalisation (conductor decision, 30 Oct 2026): the full read's ledger
+-- accumulates history across runs. Compare only the live postings: drop reversal
+-- rows and the rows they reverse, strip generated identifiers and the run actor,
+-- and sort. Amounts, dates, targets, kinds and reasons are still compared exactly.
+create function pg_temp.candidate_strip(p jsonb) returns jsonb language sql immutable as $$
+ select p-'id'-'request_id'-'requestId'-'source_result_id'-'sourceResultId'-'reverses_id'-'reversesId'-'actor'-'resultId'
+$$;
+create function pg_temp.candidate_full_read(p jsonb) returns jsonb language sql immutable as $$
+ select pg_temp.candidate_read_bytes(p)
+  || jsonb_build_object('ledger',coalesce((select jsonb_agg(pg_temp.candidate_strip(e) order by pg_temp.candidate_strip(e)::text)
+     from jsonb_array_elements(p->'ledger') e
+     where e->>'kind'<>'reversal'
+      and not exists(select 1 from jsonb_array_elements(p->'ledger') r where r->>'kind'='reversal' and r->>'reverses_id'=e->>'id')),'[]'::jsonb))
+  || jsonb_build_object('attributionLines',coalesce((select jsonb_agg(pg_temp.candidate_strip(pg_temp.candidate_read_bytes(a)) order by pg_temp.candidate_strip(pg_temp.candidate_read_bytes(a))::text)
+     from jsonb_array_elements(p->'attributionLines') a),'[]'::jsonb))
+$$;
 -- END SHARED PARITY HELPERS
 
 -- Recursively report every differing field, preserving duplicate array entries.
@@ -81,16 +97,18 @@ begin
  old_snapshot:=pg_temp.candidate_snapshot(old_run);
  new_run:=private.stockflow_rebuild_instrument_economics('candidate-parity');
  new_snapshot:=pg_temp.candidate_snapshot(new_run);
- foreach part in array array['summary','full'] loop
-  old_snapshot:=jsonb_set(old_snapshot,array[part],pg_temp.candidate_read_bytes(old_snapshot->part));
-  new_snapshot:=jsonb_set(new_snapshot,array[part],pg_temp.candidate_read_bytes(new_snapshot->part));
- end loop;
- foreach part in array array['results','links','events','summary','full'] loop
+ old_snapshot:=jsonb_set(old_snapshot,array['summary'],pg_temp.candidate_read_bytes(old_snapshot->'summary'));
+ new_snapshot:=jsonb_set(new_snapshot,array['summary'],pg_temp.candidate_read_bytes(new_snapshot->'summary'));
+ foreach part in array array['results','links','events','summary'] loop
   for difference in select * from pg_temp.candidate_differences(old_snapshot->part,new_snapshot->part,part) loop
    differences:=differences+1;
    raise notice 'PARITY DIFFERENCE %: full_scan=% candidate=%',difference.path,difference.old_value,difference.new_value;
   end loop;
  end loop;
+ if pg_temp.candidate_full_read(old_snapshot->'full')::text is distinct from pg_temp.candidate_full_read(new_snapshot->'full')::text then
+  differences:=differences+1;
+  raise notice 'PARITY DIFFERENCE full: full_scan=% candidate=%',pg_temp.candidate_full_read(old_snapshot->'full'),pg_temp.candidate_full_read(new_snapshot->'full');
+ end if;
  if differences=0 then
   raise notice 'PARITY OK: results %, automatic cost links %, GP/contribution events %, summary and full reads',
    jsonb_array_length(new_snapshot->'results'),jsonb_array_length(new_snapshot->'links'),jsonb_array_length(new_snapshot->'events');
