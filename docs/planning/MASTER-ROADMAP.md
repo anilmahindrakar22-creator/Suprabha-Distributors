@@ -77,7 +77,11 @@ flowchart LR
   - PO/GRN **references** to Tally;
   - delivery exceptions.
 - **Reused:** requirements, waiting orders, stock-increase alerts, repeat order.
-- **Missing:** frequent products; consolidation and arrival matching (depth unverified); PO/GRN references.
+- **Missing:** ~~frequent products; consolidation and arrival matching; PO references~~. **Checked 30 Oct 2026 (Claude): already built.**
+  - **Frequent products:** order capture lists the customer's recent Tally purchases ("n of last N bills").
+  - **Arrival matching:** stock-increase alerts per waiting order, shown as "enough for both waiting orders", with the waiting orders in priority order.
+  - **Supplier POs:** StockFlow purchase orders from "To order", with manual received quantities (`20261029100000`, on train `claude/train-20261106`).
+  - **Still open:** matching a Tally purchase/GRN voucher to a StockFlow PO automatically. The receipt is entered by hand today.
 - **Dependencies:** Phase 0.
 - **Data:** Tally snapshot freshness.
 - **Database changes:** a frequent-products read model; requirement consolidation links.
