@@ -126,6 +126,23 @@ It is shown as a graph plus a list view.
 
 **Decision (proposed):** a single `opportunity` entity in Commercial Intelligence, with type capture/defend/recover. Stakeholder relevance, constraints, actions and outcomes reference it.
 
+**Refined 30 Oct 2026 (Claude, after building train 2026-11-06; awaiting owner acceptance):**
+- **Scope:** an opportunity belongs to one customer and **optionally one wallet division**. Null means the whole lab, so a lab can carry separate opportunities, such as capture Immunoassay and capture Haematology. **At most one open opportunity per (customer, type, division)**.
+- **Lifecycle:** open → closed with outcome won, lost or dropped, plus a reason. History is append-only; nothing is edited or deleted.
+- **What hangs off it (built):**
+  - one binding constraint at a time, with history, graded evidence and facts;
+  - at most one open next action;
+  - the owner's view (My actions);
+  - a Relationship constraint can cite a contact.
+- **Provenance:** who opened it, when and why. An `origin` field (manual versus suggested) is added only when the system starts suggesting opportunities.
+- **Not yet:** per-opportunity stakeholder relevance on Power Map assessments, and measured outcomes (share before and after).
+- **Tables:**
+  - `private.stockflow_commercial_opportunities`;
+  - `…_opportunity_closures`;
+  - `…_constraints`;
+  - `…_actions`;
+  - `…_action_results`.
+
 ## ADR-0009: Prospects are Customer-domain accounts
 **Status:** Proposed.
 

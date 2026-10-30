@@ -152,3 +152,36 @@ export type WalletDiagnosisCommand =
 
 ## 7. Not in this slice
 Actions and EV cards; the Action Center; outcomes; scoring snapshots; any price link; verification of estimates; prospects.
+
+## 8. Refinement (30 Oct): opportunities can be scoped to a division (ADR-0008 refined)
+**Why:** the plan's second Pareto pass works inside an account, by division. With one open opportunity per (lab, kind), a lab can't carry "capture Immunoassay" and "capture Haematology" separately, each with its own reason and action.
+
+**Data:** edit `20261031090000_wallet_diagnosis.sql` in place (not deployed), and refresh its hash.
+- `stockflow_commercial_opportunities` gains `division_id uuid null references private.stockflow_wallet_divisions(id)`. Read the divisions table's real key column; use its code if the key is the code. Null means the whole lab.
+- **Open uniqueness:** one open per (customer, kind, division), where null counts as its own scope ("Whole lab").
+  - The advisory lock key becomes `'opportunity:'||customer||':'||kind||':'||coalesce(division,'all')`.
+  - The PT409 check compares `division_id is not distinct from` the requested one.
+- `open_opportunity` takes an optional `divisionCode`: null or omitted means the whole lab, and an unknown or inactive code gives 22023.
+- **Reads:**
+  - every opportunity JSON gains `divisionCode` and `divisionName`, null for the whole lab;
+  - `get_wallet_diagnoses` rows gain `divisionName` (the chosen row's).
+- **"Undiagnosed Focus" and the row rule are unchanged:** any diagnosed open opportunity of the lab counts.
+- The actions, My actions and route code need no change. They reference the opportunity id; check they still pass.
+
+**Contract:**
+- `WalletOpportunity` and `WalletDiagnosisRow` gain `divisionCode: string | null; divisionName: string | null`;
+- the `open_opportunity` payload gains `divisionCode: string | null`.
+
+**Screen** (declutter rule):
+- the Start diagnosis form gains a "Division" select, defaulting to "Whole lab", using the account's divisions already loaded in the sheet;
+- the opportunity's muted line shows `{Kind} opportunity · {Division or Whole lab} · {reason}`;
+- the row chip stays `Why: {category}`; the division appears only inside the sheet.
+
+**Acceptance:**
+- **D11:**
+  - open capture for Immunoassay and capture for Haematology at the same lab: both succeed;
+  - a second capture for Immunoassay gives PT409;
+  - capture for the whole lab is a separate scope and succeeds;
+  - an unknown division gives 22023;
+  - D4's race still holds per scope.
+- **Browser:** the Division select, the POST body `divisionCode`, and the division in the muted line.
