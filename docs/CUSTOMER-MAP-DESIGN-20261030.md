@@ -28,23 +28,50 @@
   | grey | nothing known yet |
 - **Filter chips:** Wallet (the default for administrator/management), Actions, Orders, No data. Each filter only hides pins; it never changes their colour.
 
-## 3. Customer sheet (bottom sheet, as in the reference)
-A dark sheet (`#1b2124` surface, `#262d30` tiles) that opens on a pin tap and on a row tap in the "Not on map" list. From top to bottom:
-1. **Header:** the name, `town · Owner: <assignee>`, and a share chip coloured by share tone. Administrator and management only.
-2. **"Held back by: <current constraint label>"** in amber, with the category icon; price that isn't proven gets "(not proven)". It appears only when a current constraint exists.
-3. **Four tiles:**
-   - **administrator and management:** wallet per month, sales per month, gap per month (danger colour), and last visit (days);
-   - **sales and operations:** open orders, last visit, next action due, and overdue count.
+## 3. Customer sheet (bottom sheet, as in the reference; amended 30 Oct with the owner's request)
+**Owner, 30 Oct:** "Clicking on customer should show relevant information like wallet share, instruments, decision maker and etc."
 
-   **Wallet, sales, share and gap never reach sales or operations**; the server omits those fields for them.
-4. **Next action row:** the earliest open action (type icon, text, due state) with one button, **Plan** (administrator/management) or **Done** (the action's owner). Each button opens the existing flows.
-5. **Meet:** the route chips with the crown on the decider (reusing the My actions component).
-6. **Recent orders:** the last 3. Each shows the stage chip (existing colours), order number, ₹ value when it's known (administrator/management only, customer rate as in Today T-4), and date, and opens that order.
-7. **"Pin here":** shown only when the lab has no pin, or under "Move pin" in the overflow menu.
-   - It uses `navigator.geolocation` with high accuracy and a 10 s timeout.
-   - It shows the accuracy ("±25 m") and asks for confirmation.
-   - It saves through the **existing** location write as `precision:'pin'`, `source:'manual_pin'`, with no schema change.
-   - Positions outside the market area are rejected, using the existing `isInsideMarketArea`.
+A dark sheet (`#1b2124` surface, `#262d30` tiles). It opens on a pin tap, on a row tap in "Not on map", and from Today's Grow cards. **Each section appears only when it has content** (the declutter rule). The order runs top to bottom.
+
+1. **Header:**
+   - the name;
+   - `town · Owner: <assignee> · Class <A/B>` (the class only when published);
+   - the **share chip** coloured by share tone, plus a thin share bar with the 80% tick.
+
+   The share chip and bar are administrator/management only.
+2. **Held back by:** `Held back by: <current constraint label>` in amber, with the category icon; price that isn't proven gets "(not proven)".
+3. **Tiles (4):**
+   - **administrator and management:** wallet per month, sales per month, gap per month (danger colour), and last visit;
+   - **sales and operations:** open orders, last visit, next action due, and overdue.
+4. **Next action:** the earliest open action with one button (**Plan** for administrator/management, **Done** for the owner).
+5. **Decision maker:**
+   - the decider contact (crown icon, name, role, stance chip: supportive in green, neutral or unknown in amber, opposed in red);
+   - "Reach via" route chips, with the champion marked.
+   - If no decider is known, one amber row reads "No decider known · Add contact".
+
+   Source: Power Map contacts, influence and route (`stockflow_power_route`).
+6. **Instruments** (at most 3 rows, then "+n more"):
+   - **Ours:** from the instrument register, installations and Instrument Economics targets. Each row shows the model or item name, the placed date, and the serial.
+     - For administrator/management (and accounts, as on the Economics screen), a **payback chip** comes from the existing economics read: "Paying back" (green), "Behind" (red), or "Awaiting data" (grey).
+     - Other roles see no chip.
+   - **Theirs:** from the current `instrument` constraint facts (`analyser`, `owner`, `closedSystem`) and the `competitor_lock_in` deadline. Each row shows the analyser, "closed system" when set, and the lock-in countdown chip.
+   - Nothing is invented: if neither source has data, the section is hidden.
+7. **Open work:** orders on this lab that aren't delivered or cancelled (stage chip, number, ₹ for administrator/management, date), plus pending price approvals ("Price" chip, "≈ ₹" from the proposed rate). Each opens the order. At most 3.
+8. **Recent orders:** the last 3 delivered orders.
+9. **Contacts:** "n contacts · m champions", which opens the existing contacts.
+10. **Action bar** (fixed at the bottom of the sheet):
+    - **Call:** `tel:` with the primary contact or customer phone; hidden when there's none.
+    - **Pin here:** see below.
+    - **Order:** starts a new order for this customer, using the existing order capture with the customer preselected.
+
+**Pin here:**
+- shown when the lab has no pin, otherwise behind a "Move pin" overflow;
+- uses `navigator.geolocation` with high accuracy and a 10 s timeout;
+- shows the accuracy and asks for confirmation;
+- saves through the existing location write (`precision:'pin'`, `source:'manual_pin'`);
+- rejects positions outside `isInsideMarketArea`.
+
+**Never sent to sales or operations:** wallet, sales, share, gap, payback, ₹ order values, or any cost, margin or purchase field. The server omits them; the UI doesn't just hide them.
 
 ## 4. Read gateway
 `public.stockflow_customer_map_gateway`. It uses the key check, active member, and role from members. Read-only.
@@ -64,7 +91,9 @@ Migration `2026110212xxxx_customer_map.sql` holds the function only. No tables.
 - **M2:** each tone rule, first match wins.
 - **M3:** a sales member gets tones but no wallet, sales or gap keys in pins or the sheet.
 - **M4:** an invalid or oversized bounding box returns 22023, and an unauthorised key returns 42501.
-- **M5:** the sheet's recent orders and next action are correct.
+- **M5:** the sheet's recent orders, open work and next action are correct.
+- **M7:** the decider and route come from the Power Map, and "No decider known" appears when none exists.
+- **M8:** instruments show ours (register and targets, with payback for administrator/management only) and theirs (current instrument and lock-in constraints). The section is absent when both are empty.
 - **M6:** no `cost`, `margin` or `purchase` keys appear.
 
 **Browser**, at 375 and 1280, with Leaflet tiles mocked to a blank PNG and no network:
