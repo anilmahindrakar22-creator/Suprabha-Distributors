@@ -9,6 +9,7 @@ import type { ConstraintCategory, WalletDiagnoses, WalletDiagnosisRow } from '@/
 import type { ActionsDue } from '@/lib/wallet-action-types';
 import { WalletActionDueRows, counted } from '@/components/wallet-actions';
 import { WalletQuickEntry } from '@/components/wallet-quick-entry';
+import { parseContractWindows, windowLabel, type ContractWindows } from '@/lib/contract-windows';
 
 const button = 'min-h-11 rounded-xl border border-sf-line px-3 text-sm font-bold text-sf-body disabled:opacity-50';
 const primary = 'min-h-11 rounded-xl bg-sf-brand px-4 text-sm font-bold text-white disabled:opacity-50';
@@ -32,6 +33,39 @@ async function request<T>(url: string, options?: RequestInit): Promise<T> {
   return body as T;
 }
 function message(error: unknown) { return error instanceof Error ? error.message : 'Wallet is temporarily unavailable'; }
+
+function ContractWindowRows({ onOpen }: { onOpen: (customerId: string) => void }) {
+  const [windows, setWindows] = useState<ContractWindows | null>(null);
+  const [page, setPage] = useState(1);
+  const [loading, setLoading] = useState(true);
+  const [failed, setFailed] = useState(false);
+  useEffect(() => {
+    const controller = new AbortController();
+    void request<unknown>(`/api/wallet/actions?${new URLSearchParams({ action: 'get_contract_windows', page: String(page) })}`, { signal: controller.signal }).then(value => {
+      const data = parseContractWindows(value);
+      if (data.page !== page) throw new Error('Unexpected contract windows page');
+      if (!controller.signal.aborted) {
+        setWindows(previous => ({ ...data, rows: page === 1 ? data.rows : [...(previous?.rows ?? []), ...data.rows] }));
+        setLoading(false);
+      }
+    }).catch(() => { if (!controller.signal.aborted) { setWindows(null); setFailed(true); setLoading(false); } });
+    return () => controller.abort();
+  }, [page]);
+  if (failed) return <p className="text-sm text-sf-muted">Contract dates could not load</p>;
+  return <>
+    {windows && windows.total > 0 ? <section aria-label="Contracts ending soon" className="min-w-0 space-y-3">
+      <h3 className="font-bold">Contracts ending soon ({windows.total})</h3>
+      <ul className="space-y-3">{windows.rows.map(row => <li key={row.opportunityId}><button className="min-h-11 w-full min-w-0 space-y-1 rounded-xl border border-sf-line-soft bg-white p-4 text-left" onClick={() => onOpen(row.customerId)}>
+        <span className="block font-bold">{row.customerName}{row.town ? ` · ${row.town}` : ''}</span>
+        <span className="block text-sm">{row.category === 'competitor_lock_in' ? 'Competitor lock-in' : 'Tender'}: {row.party}</span>
+        <span className={`block text-sm${row.daysLeft < 0 ? ' text-sf-danger' : ''}`}>{windowLabel(row)}</span>
+        <span className="block text-xs text-sf-muted">No action planned before it ends</span>
+      </button></li>)}</ul>
+      {windows.rows.length < windows.total ? <button className={button} disabled={loading} onClick={() => { setLoading(true); setPage(n => n + 1); }}>Load more</button> : null}
+    </section> : null}
+    {windows && windows.plannedCount > 0 ? <p className="text-sm text-sf-muted">{windows.plannedCount} more already {windows.plannedCount === 1 ? 'has' : 'have'} an action planned</p> : null}
+  </>;
+}
 
 function Sheet({ title, children, onClose, locked = false }: { title: string; children: ReactNode; onClose: () => void; locked?: boolean }) {
   const dialog = useRef<HTMLDialogElement>(null);
@@ -201,6 +235,7 @@ export function WalletWorkspace({ onBack, onReviewLinks }: { onBack: () => void;
   const reloadAccount = async () => { setEditing(false); setAccountRevision(n => n + 1); setRevision(n => n + 1); };
   const conflict = async () => { setNotice('Someone else updated this estimate. Reloaded.'); await reloadAccount(); };
   const deny = () => setForbidden(true);
+  const openActionAccount = (id: string) => { setNotice(''); setEditing(false); setCustomerId(id); };
   if (quickEntry && !forbidden) return <WalletQuickEntry onBack={() => setQuickEntry(false)} onForbidden={deny} />;
   return <section aria-label="Wallet" className="min-w-0 space-y-4 [overflow-wrap:anywhere]">
     <header className="flex flex-wrap items-center gap-3"><button className={button} onClick={onBack}>Back to Accounts</button><h2 className="text-xl font-bold text-sf-strong">Wallet</h2>{!forbidden && workspace ? <><button className={button} onClick={() => { setNotice(''); setTargets(true); }}>Targets</button><button className="min-h-11 text-sm text-sf-muted underline" onClick={() => setQuickEntry(true)}>Quick entry</button></> : null}</header>
@@ -212,7 +247,7 @@ export function WalletWorkspace({ onBack, onReviewLinks }: { onBack: () => void;
         </div>
         {workspace.coverage.certified && (workspace.summary.unlinkedLedgers ?? 0) > 0 ? <p className="text-sm text-sf-muted">Not linked to a customer: {formatPaise(workspace.summary.unlinkedSalesPaise ?? 0)}/month across {workspace.summary.unlinkedLedgers} Tally ledgers · <button className="min-h-11 underline" onClick={onReviewLinks}>Review links</button></p> : null}
         <div className="flex flex-wrap gap-2" aria-label="Wallet views">{views.map(([key, label]) => <button key={key} className={`${button} ${view === key ? 'bg-sf-brand text-white' : 'bg-white'}`} aria-pressed={view === key} disabled={key !== 'actions_due' && !workspace.coverage.certified && (key === 'focus' || key === 'below_sales')} onClick={() => { setView(key); setPage(1); }}>{label}</button>)}</div>
-        {view === 'actions_due' ? <><h3 className="font-bold">{actionsDue ? `${counted(actionsDue.total, 'action', 'actions')} due this week · ${actionsDue.overdueCount} overdue` : 'Actions due this week'}</h3>{actionsDue ? <WalletActionDueRows rows={actionsDue.rows} constraintLabels={constraintLabels} onOpen={id => { setNotice(''); setEditing(false); setCustomerId(id); }} /> : null}{actionsDue && actionsDue.rows.length === 0 ? <p className="text-sm text-sf-muted">No actions due.</p> : null}</> : <>
+        {view === 'actions_due' ? <><ContractWindowRows key={revision} onOpen={openActionAccount} /><h3 className="font-bold">{actionsDue ? `${counted(actionsDue.total, 'action', 'actions')} due this week · ${actionsDue.overdueCount} overdue` : 'Actions due this week'}</h3>{actionsDue ? <WalletActionDueRows rows={actionsDue.rows} constraintLabels={constraintLabels} onOpen={openActionAccount} /> : null}{actionsDue && actionsDue.rows.length === 0 ? <p className="text-sm text-sf-muted">No actions due.</p> : null}</> : <>
         <label className="block text-sm">Search accounts<input className={input} placeholder="Name or town" maxLength={80} value={query} onChange={event => setQuery(event.target.value)} /></label>
         <ul aria-label="Wallet accounts" className="space-y-3" aria-busy={loading}>{workspace.rows.map(row => {
           const diagnosis = diagnoses?.find(item => item.customerId === row.customerId);

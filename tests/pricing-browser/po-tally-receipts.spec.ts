@@ -10,7 +10,7 @@ const orderItems = [
 ];
 
 // Same frame URL, fixtures and baseline mocks as purchase-orders.spec.ts.
-async function setup(page: Page, width: number, { candidates = [candidate], countsFail = false, receiptsFail = false, failures = [] as number[], orders = [purchaseOrder()] } = {}) {
+async function setup(page: Page, width: number, { candidates = [candidate], countsFail = false, receiptsFail = false, failures = [] as number[], failureBodies = [] as Array<{ error: string }>, orders = [purchaseOrder()] } = {}) {
   const commands: Command[] = [];
   const reads: string[] = [];
   const countsReads: string[][] = [];
@@ -31,7 +31,7 @@ async function setup(page: Page, width: number, { candidates = [candidate], coun
       const command = request.postDataJSON() as Command;
       commands.push(command);
       const failure = failures.shift();
-      if (failure) { await route.fulfill({ status: failure, json: { error: 'Try again' } }); return; }
+      if (failure) { await route.fulfill({ status: failure, json: failureBodies.shift() ?? { error: 'Try again' } }); return; }
       await route.fulfill({ json: command.action === 'create_purchase_orders' ? { purchaseOrders: [purchaseOrder(), purchaseOrder({ poNumber: 'PO/26-27/0002' })] } : { purchaseOrder: orders[0] } });
     } else if (url.searchParams.has('supplierOptions')) {
       const key = url.searchParams.get('supplierOptions')!;
@@ -103,6 +103,22 @@ for (const width of [375, 1280]) test.describe(`${width}px`, () => {
     await expect(sheet.getByRole('button', { name: 'Record Tally receipt' })).toBeDisabled();
     await sheet.getByRole('button', { name: 'Enter quantities by hand' }).click();
     await expect(sheet.getByLabel('Received quantity for Test item')).toHaveValue('13');
+  });
+
+  test('manual form toggle changes to Use Tally receipts', async ({ page }) => {
+    await setup(page, width);
+    const sheet = await openSheet(page);
+    const toggle = sheet.getByRole('button', { name: 'Enter quantities by hand' });
+    await expect(toggle).toHaveAttribute('aria-expanded', 'false');
+    await toggle.click();
+    await expect(sheet.getByRole('button', { name: 'Use Tally receipts' })).toHaveAttribute('aria-expanded', 'true');
+  });
+
+  test('409 already recorded on another PO shows the specific message', async ({ page }) => {
+    await setup(page, width, { failures: [409], failureBodies: [{ error: 'Already recorded on another PO' }] });
+    const sheet = await openSheet(page);
+    await sheet.getByRole('button', { name: 'Record Tally receipt' }).click();
+    await expect(sheet.getByText('Already recorded on another PO. Check and try again.', { exact: true })).toBeVisible();
   });
 
   test('409 keeps the sheet open, reloads candidates and PO, and drops the key', async ({ page }) => {

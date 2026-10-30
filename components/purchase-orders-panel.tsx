@@ -28,7 +28,14 @@ function usePurchaseOrderWrite(onConflict: () => void, conflictMessage = 'This p
       const response = await fetch('/api/purchase-orders', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(pending.current) });
       const definite = response.ok || (response.status >= 400 && response.status < 500 && ![408, 429].includes(response.status));
       if (definite) { pending.current = null; setLocked(false); }
-      if (response.status === 409) { onConflict(); throw new Error(conflictMessage); }
+      if (response.status === 409) {
+        onConflict();
+        if (action === 'receive_from_tally') {
+          const body = await readJsonBody<{ error?: string }>(response);
+          throw new Error(body.error?.includes('Already recorded on another PO') ? 'Already recorded on another PO. Check and try again.' : conflictMessage);
+        }
+        throw new Error(conflictMessage);
+      }
       const body = await readJsonBody<T & { error?: string }>(response);
       if (!response.ok) throw new Error(body.error || 'Purchase order could not be saved. Retry.');
       return body;
@@ -167,7 +174,7 @@ function TallyReceiveSheet({ po, onClose, onRefresh, onConflict }: { po: Purchas
               })}
             </div>)}
           </fieldset>
-          <button type="button" className={button} aria-expanded={manual} disabled={command.locked} onClick={() => setManual(!manual)}>Enter quantities by hand</button>
+          <button type="button" className={button} aria-expanded={manual} disabled={command.locked} onClick={() => setManual(!manual)}>{manual ? 'Use Tally receipts' : 'Enter quantities by hand'}</button>
         </> : null}
         {failed ? <p className="text-sm text-sf-muted">Tally receipts could not load</p> : null}
         {!fromTally ? <fieldset disabled={command.locked} className="min-w-0 space-y-3">

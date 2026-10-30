@@ -3,9 +3,12 @@ export type ActionResult = 'done' | 'dropped';
 export type WalletAction = { id: string; opportunityId: string; actionType: ActionType; detail: string; ownerEmail: string; dueOn: string; expectedMonthlyGainPaise: number | null; createdBy: string; createdAt: string; result: { result: ActionResult; note: string; closedBy: string; closedAt: string } | null };
 export type ActionDueRow = { actionId: string; customerId: string; customerName: string; city: string | null; opportunityKind: 'capture' | 'defend' | 'recover'; constraintCategory: string | null; actionType: ActionType; detail: string; ownerEmail: string; dueOn: string; overdue: boolean; expectedMonthlyGainPaise: number | null };
 export type ActionsDue = { page: number; pageSize: 50; total: number; overdueCount: number; rows: ActionDueRow[] };
+export type ContractWindowRow = { customerId: string; customerName: string; town: string | null; opportunityId: string; kind: 'capture' | 'defend' | 'recover'; divisionName: string | null; category: 'competitor_lock_in' | 'contract_tender'; party: string; endsOn: string; daysLeft: number; confidence: 'high' | 'medium' | 'low'; source: 'document' | 'customer_stated' | 'our_view' };
+export type ContractWindows = { rows: ContractWindowRow[]; total: number; plannedCount: number; page: number; pageSize: 20 };
 export type ActionOwner = { email: string; name: string | null };
 export type WalletActionCommand =
   | { action: 'get_actions_due'; payload: { page: number } }
+  | { action: 'get_contract_windows'; payload: { page: number } }
   | { action: 'get_opportunity_actions'; payload: { opportunityId: string } }
   | { action: 'get_action_owners'; payload: Record<string, never> }
   | { action: 'create_action'; payload: { requestId: string; opportunityId: string; actionType: ActionType; detail: string; ownerEmail: string; dueOn: string; expectedMonthlyGainPaise: number | null } }
@@ -27,6 +30,9 @@ export function validateWalletActionCommand(input: unknown): WalletActionCommand
   switch (input.action) {
     case 'get_actions_due':
       if (!exact(p, ['page']) || !Number.isInteger(p.page) || Number(p.page) < 1 || Number(p.page) > 10000) return fail();
+      return { action: input.action, payload: { page: Number(p.page) } };
+    case 'get_contract_windows':
+      if (!exact(p, ['page']) || !Number.isInteger(p.page) || Number(p.page) < 1 || Number(p.page) > 4000) return fail();
       return { action: input.action, payload: { page: Number(p.page) } };
     case 'get_opportunity_actions':
       if (!exact(p, ['opportunityId']) || typeof p.opportunityId !== 'string' || !uuid.test(p.opportunityId)) return fail();

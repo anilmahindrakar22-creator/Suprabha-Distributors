@@ -4,5 +4,28 @@ import { RequestGate, readBoundedJson, isApprovedGatewayKey } from '../../supaba
 const source = readFileSync(new URL('../../supabase/functions/stockflow-orders/index.ts', import.meta.url), 'utf8');
 const javascript = ts.transpileModule(source.replace(/^import .*;\r?\n/gm, ''), { compilerOptions: { target: ts.ScriptTarget.ES2022 } }).outputText;
 const key = 'wallet-action-edge-test-key-0000000000000000';
+// Execute trusted repository Edge source with injected Deno/fetch test doubles.
+// oxlint-disable-next-line typescript/no-implied-eval
 function fixture() { let handler!: (request: Request) => Promise<Response>; const fetcher = vi.fn().mockResolvedValue(Response.json({ ok: true })); const values: Record<string, string> = { SUPABASE_URL: 'https://database.example.test', SUPABASE_SECRET_KEYS: '{"stockflowedge":"test-secret"}', STOCKFLOW_ORDER_GATEWAY_SHA256: createHash('sha256').update(key).digest('hex') }; const deno = { serve: (callback: typeof handler) => { handler = callback; }, env: { get: (name: string) => values[name] } }; new Function('Deno', 'fetch', 'RequestGate', 'readBoundedJson', 'isApprovedGatewayKey', javascript)(deno, fetcher, RequestGate, readBoundedJson, isApprovedGatewayKey); const send = (action: string) => handler(new Request('https://edge.test', { method: 'POST', headers: { 'content-type': 'application/json', 'x-order-gateway-key': key }, body: JSON.stringify({ actorEmail: 'manager@example.test', action, payload: {} }) })); return { send, fetcher }; }
-describe('wallet action Edge routing', () => { it.each(['get_actions_due', 'get_opportunity_actions', 'get_action_owners', 'create_action', 'close_action'])('routes %s to action gateway', async action => { const { send, fetcher } = fixture(); expect((await send(action)).status).toBe(200); expect(fetcher.mock.calls[0][0]).toBe('https://database.example.test/rest/v1/rpc/stockflow_action_gateway'); }); });
+describe('wallet action Edge routing', () => {
+  it.each(['get_actions_due', 'get_opportunity_actions', 'get_action_owners', 'create_action', 'close_action'])('routes %s to action gateway', async action => {
+    const { send, fetcher } = fixture();
+    expect((await send(action)).status).toBe(200);
+    expect(fetcher.mock.calls[0][0]).toBe('https://database.example.test/rest/v1/rpc/stockflow_action_gateway');
+  });
+  it('routes contract windows through its read gateway', async () => {
+    const { send, fetcher } = fixture();
+    expect((await send('get_contract_windows')).status).toBe(200);
+    expect(fetcher.mock.calls[0][0]).toBe('https://database.example.test/rest/v1/rpc/stockflow_contract_window_gateway');
+  });
+  it.each(['get_actions_due', 'get_contract_windows'])('bypasses write admission for %s', async action => {
+    const admission = vi.spyOn(RequestGate.prototype, 'begin');
+    try {
+      const { send } = fixture();
+      expect((await send(action)).status).toBe(200);
+      expect(admission).not.toHaveBeenCalled();
+    } finally {
+      admission.mockRestore();
+    }
+  });
+});

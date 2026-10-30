@@ -22,6 +22,7 @@ export async function GET(request: Request) {
   try {
     const session = await actor(); const params = new URL(request.url).searchParams; const action = params.get('action');
     const raw = action === 'get_actions_due' ? { action, payload: { page: Number(params.get('page') ?? 1) } }
+      : action === 'get_contract_windows' ? { action, payload: { page: Number(params.get('page') ?? 1) } }
       : action === 'get_opportunity_actions' ? { action, payload: { opportunityId: params.get('opportunityId') } }
       : action === 'get_action_owners' ? { action, payload: {} } : null;
     if (!raw) return Response.json({ error: 'Invalid wallet action read action' }, { status: 400, headers });
@@ -32,7 +33,7 @@ export async function GET(request: Request) {
 export async function POST(request: Request) {
   try {
     const session = await actor(); const input = await readBoundedJsonRequest(request, 32_768); const command = validateWalletActionCommand(input);
-    if (command.action === 'get_actions_due' || command.action === 'get_opportunity_actions' || command.action === 'get_action_owners') return Response.json({ error: 'Invalid wallet action write action' }, { status: 400, headers });
+    if (command.action === 'get_actions_due' || command.action === 'get_contract_windows' || command.action === 'get_opportunity_actions' || command.action === 'get_action_owners') return Response.json({ error: 'Invalid wallet action write action' }, { status: 400, headers });
     return Response.json(await callOrderGateway(session.email, command.action, command.payload), { headers });
   } catch (error) { return failure(error); }
 }

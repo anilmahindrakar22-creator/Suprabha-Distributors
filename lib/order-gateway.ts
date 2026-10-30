@@ -44,6 +44,7 @@ export type GatewayAction =
   | 'record_constraint'
   | 'close_opportunity'
   | 'get_actions_due'
+  | 'get_contract_windows'
   | 'get_opportunity_actions'
   | 'get_action_owners'
   | 'create_action'

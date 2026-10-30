@@ -1179,6 +1179,13 @@
       "remoteVersion": null,
       "remoteSha256": null,
       "status": "not_deployed"
+    },
+    {
+      "localFile": "20261102100000_contract_windows.sql",
+      "localSha256": "b807362de6c36bce84a344e018f9d171010179f7858fea982e4548b470b78ec9",
+      "remoteVersion": null,
+      "remoteSha256": null,
+      "status": "not_deployed"
     }
   ],
   "liveCheck": {
