@@ -120,13 +120,13 @@ It is shown as a graph plus a list view.
 **Supersedes:** the division-only estimates and the Urine-inclusive seed on `claude/market-w1`.
 
 ## ADR-0008: One Opportunity entity shared by Suprabha 80 and Power Maps
-**Status:** Proposed.
+**Status:** Accepted (owner, 30 Oct 2026), as refined below.
 
 **Context:** `cba7f67` links Power Maps to "CRM opportunity records"; the spec defines `wallet_opportunity`. Two entities would duplicate the master.
 
 **Decision (proposed):** a single `opportunity` entity in Commercial Intelligence, with type capture/defend/recover. Stakeholder relevance, constraints, actions and outcomes reference it.
 
-**Refined 30 Oct 2026 (Claude, after building train 2026-11-06; awaiting owner acceptance):**
+**Refined 30 Oct 2026 (Claude, after building train 2026-11-06; accepted by the owner 30 Oct 2026):**
 - **Scope:** an opportunity belongs to one customer and **optionally one wallet division**. Null means the whole lab, so a lab can carry separate opportunities, such as capture Immunoassay and capture Haematology. **At most one open opportunity per (customer, type, division)**.
 - **Lifecycle:** open → closed with outcome won, lost or dropped, plus a reason. History is append-only; nothing is edited or deleted.
 - **What hangs off it (built):**
