@@ -1193,6 +1193,13 @@
       "remoteVersion": null,
       "remoteSha256": null,
       "status": "not_deployed"
+    },
+    {
+      "localFile": "20261102120000_customer_map.sql",
+      "localSha256": "f42d8f0b622f53ca39d1d9a18c98a79fbbd52a3089df62d9166fe2560afe4347",
+      "remoteVersion": null,
+      "remoteSha256": null,
+      "status": "not_deployed"
     }
   ],
   "liveCheck": {

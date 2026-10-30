@@ -19,6 +19,7 @@ import { hasUnsavedInput, sameRoles } from '@/lib/role-refresh';
 
 const loadOrderWorkspace = () => import('./order-workspace').then((module) => ({ default: module.OrderWorkspace }));
 const OrderWorkspace = lazy(loadOrderWorkspace);
+const NewOrderCapture = lazy(() => import('./order-workspace').then(module => ({ default: module.HydratedNewOrderPanel })));
 const ServiceWorkspace = lazy(() => import('./service-workspace').then((module) => ({ default: module.ServiceWorkspace })));
 const InstrumentEconomicsWorkspace = lazy(() => import('./instrument-economics-workspace').then((module) => ({ default: module.InstrumentEconomicsWorkspace })));
 const UserManagement = lazy(() => import('./user-management').then((module) => ({ default: module.UserManagement })));
@@ -48,7 +49,24 @@ export function StockFlowFrame({ actorEmail, actorRole, actorRoles, staffAuth = 
   const rolesKey = roles.join(',');
   const canSeeToday = hasAnyStockFlowRole(roles, ['administrator', 'management']);
   const [surface, setSurface] = useState<Surface>(() => canSeeToday ? 'today' : 'stock');
-  const [accountsOpen, setAccountsOpen] = useState<{ view?: 'my-actions' | 'wallet'; customerId?: string; walletView?: 'actions_due'; nonce: number }>({ nonce: 0 });
+  const [accountsOpen, setAccountsOpen] = useState<{ view?: 'my-actions' | 'wallet' | 'map'; customerId?: string; walletView?: 'actions_due'; nonce: number }>({ nonce: 0 });
+  const [newOrderData, setNewOrderData] = useState<import('@/lib/order-types').OrderBootstrap | null>(null);
+  const [captureError, setCaptureError] = useState('');
+  const openingCapture = useRef(false);
+  async function openMapOrder(_customerId: string) {
+    if (openingCapture.current) return;
+    openingCapture.current = true; setCaptureError('');
+    try {
+      const [{ loadOrderBootstrap }, { loadOrderCatalog, loadOrderCustomers }] = await Promise.all([import('@/lib/order-bootstrap-cache'), import('@/lib/order-capture-masters')]);
+      const data = await loadOrderBootstrap(actorEmail);
+      const [catalog, customers] = await Promise.all([
+        data.snapshot.catalog.length ? Promise.resolve(null) : loadOrderCatalog(actorEmail, data.snapshot.catalogVersion || data.snapshot.fetchedAt),
+        data.customers.length ? Promise.resolve(null) : loadOrderCustomers(actorEmail, data.customerVersion || ''),
+      ]);
+      setNewOrderData({ ...data, customers: customers?.customers ?? data.customers, snapshot: { ...data.snapshot, catalog: catalog?.catalog ?? data.snapshot.catalog } });
+    } catch { setCaptureError('Order capture could not open. Try again.'); }
+    finally { openingCapture.current = false; }
+  }
   const [todayOpenError, setTodayOpenError] = useState('');
   // Billing-only staff open Orders on the Bill queue; everyone else on Active.
   const homeOrderFilter = hasAnyStockFlowRole(roles, ['billing']) && !hasAnyStockFlowRole(roles, ['administrator', 'management', 'operations', 'sales', 'warehouse', 'accounts']) ? 'billing' : 'open';
@@ -435,7 +453,7 @@ export function StockFlowFrame({ actorEmail, actorRole, actorRoles, staffAuth = 
         ) : surface === 'requests' ? (
           <Suspense fallback={<SectionLoading />}><RequestsWorkspace roles={roles} onOpenOrder={(orderId, orderNumber) => openOrder({ orderId, orderNumber })} /></Suspense>
         ) : surface === 'accounts' && hasAnyStockFlowRole(roles, ['administrator', 'management', 'sales', 'operations']) ? (
-          <Suspense fallback={<SectionLoading />}><AccountsWorkspace key={accountsOpen.nonce} defaultMode={hasAnyStockFlowRole(roles, ['administrator', 'management']) ? 'all' : 'mine'} initialView={accountsOpen.view} initialCustomerId={accountsOpen.customerId} initialWalletView={accountsOpen.walletView} /></Suspense>
+          <Suspense fallback={<SectionLoading />}><AccountsWorkspace key={accountsOpen.nonce} defaultMode={hasAnyStockFlowRole(roles, ['administrator', 'management']) ? 'all' : 'mine'} initialView={accountsOpen.view} initialCustomerId={accountsOpen.customerId} initialWalletView={accountsOpen.walletView} onOpenOrder={openOrder} onNewOrder={id => void openMapOrder(id)} /></Suspense>
         ) : surface === 'pricing' ? (
           <Suspense fallback={<SectionLoading />}><PricingWorkspace actorEmail={actorEmail} actorRole={actorRole} actorRoles={roles} /></Suspense>
         ) : surface === 'economics' ? (
@@ -455,6 +473,8 @@ export function StockFlowFrame({ actorEmail, actorRole, actorRoles, staffAuth = 
           <button type="button" aria-label="Dismiss" onClick={() => setArrivals([])} className="grid min-h-11 min-w-9 shrink-0 place-items-center rounded-lg text-lg text-sf-muted hover:bg-sf-soft">×</button>
         </output>
       ) : null}
+      {captureError ? <p role="alert" className="p-3 text-sm text-sf-danger">{captureError}</p> : null}
+      {newOrderData ? <Suspense fallback={<SectionLoading />}><NewOrderCapture data={newOrderData} templateOrder={null} onClose={() => setNewOrderData(null)} onCreated={() => { setNewOrderData(null); workService.current?.reconcile(); }} onViewCustomer={() => { setNewOrderData(null); setSurface('accounts'); }} /></Suspense> : null}
       <nav aria-label="Application sections" className="relative flex shrink-0 border-t border-sf-line-soft bg-white sm:hidden">
         {phoneMain.map((item) => (
           <button key={item} type="button" aria-label={item} onClick={() => openSurface(item)} onPointerDown={item === 'orders' ? warmOrders : undefined} aria-pressed={surface === item} aria-describedby={item === 'orders' && waitingCount ? 'orders-new-work-phone' : undefined} className={`flex min-h-14 flex-1 flex-col items-center justify-center gap-0.5 text-xs font-bold capitalize ${surface === item ? 'text-sf-brand' : 'text-sf-muted'}`}>

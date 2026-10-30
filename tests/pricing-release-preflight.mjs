@@ -7,6 +7,7 @@ import { resolve } from 'node:path';
 const pricingReleaseFiles = new Set([
   '20261102100000_contract_windows.sql',
   '20261102110000_today_decisions.sql',
+  '20261102120000_customer_map.sql',
   '20261102090000_po_tally_receipts.sql',
   '20261031140000_power_map_enhancement.sql',
   '20261030090000_instrument_register.sql',
@@ -127,6 +128,7 @@ export const pricingReleaseSqlTests = [
   'supabase/tests/po_tally_receipts_concurrency.sql',
   'supabase/tests/contract_windows.sql',
   'supabase/tests/today_decisions.sql',
+  'supabase/tests/customer_map.sql',
 ];
 
 export function pricingReleasePreflight(evidence, files) {
