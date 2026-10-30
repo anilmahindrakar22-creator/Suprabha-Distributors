@@ -71,3 +71,21 @@ Migration `20261102100000_contract_windows.sql` adds only the function and its r
 - no horizontal overflow at 375.
 
 Also run unit tests for the route validation and the Edge routing, plus tsc and oxlint.
+
+## 6. Amendment (Claude, 30 Oct): one "Deadlines without a plan" section
+This adds the `unknown` category's `askBy` date. That date is captured and validated, but nothing surfaces it yet. Adding it as one section, not a second one, follows the declutter rule.
+
+- **Rule:** an open opportunity whose current constraint is `unknown`, with `facts.askBy` between `today - 30` and `today + 14`, is a deadline window.
+  - `party` = `facts.nextQuestion`;
+  - `endsOn` = `askBy` (the field name stays the same, for the contract);
+  - planned = an open action due on or before `askBy`.
+- The migration is still `not_deployed`, so edit it in place and recompute the map sha256.
+- **UI:**
+  - The section title becomes **"Deadlines without a plan (n)"**.
+  - Line 2 for `unknown` reads `Open question: <party>`.
+  - Line 3:
+    - for `unknown`: `Ask by 5 Nov 2026 · 6 days left` (or `· today`), or `Ask-by passed 3 days ago`, in the danger colour;
+    - for contracts: unchanged.
+  - Line 4 becomes `No action planned` for every row.
+- **SQL C8:** an `unknown` with `askBy` in 7 days and no action is listed with `party` = the question. `askBy` 15 days ahead is excluded. An action due on or before `askBy` makes it planned.
+- **Browser:** an `unknown` row shows its question and the ask-by wording.

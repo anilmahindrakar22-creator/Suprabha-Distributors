@@ -191,5 +191,53 @@ begin
   then raise exception 'C7 fixture membership or window order differs: % vs %',v_actual,v_expected;end if;
  if v_output::text ~* '(paise|wallet)' then raise exception 'C7 response contains money or wallet data';end if;
  raise notice 'PASS C7: ordered paginated fixture rows without money fields';
+
+ -- C8: unknown questions use askBy, a 14-day horizon and the same planning rule.
+ -- Separate IDs/keys and post-C7 setup preserve the existing exact membership check.
+ for v_i in 31..33 loop
+  v_customer:=('b2c80000-0000-4000-8000-'||lpad(v_i::text,12,'0'))::uuid;
+  v_days:=case when v_i=32 then 15 else 7 end;
+  insert into private.stockflow_customers(id,name,city,tally_key,created_by_email)
+  values(v_customer,'Deadline Question Lab '||v_i,'Pune','contract-window-c8-customer-'||v_i,'contract-manager@test.local');
+  v_output:=public.stockflow_opportunity_gateway('contract-windows-test-key','contract-manager@test.local',
+   'open_opportunity',jsonb_build_object('requestId','contract-windows-c8-open-'||v_i,
+    'customerId',v_customer,'kind','capture','reason','Open question deadline fixture'));
+  v_opportunity:=(v_output->>'id')::uuid;
+  v_output:=public.stockflow_opportunity_gateway('contract-windows-test-key','contract-manager@test.local',
+   'record_constraint',jsonb_build_object('requestId','contract-windows-c8-constraint-'||v_i,
+    'opportunityId',v_opportunity,'category','unknown','evidence','Next question confirmed for fixture',
+    'source','our_view','sourcePerson',null,'observedOn',v_today,
+    'facts',jsonb_build_object('nextQuestion','Who approves the next evaluation?','askBy',v_today+v_days),
+    'expectedCurrentConstraintId',null));
+  insert into contract_window_fixtures values(v_i,v_customer,v_opportunity,(v_output->>'id')::uuid,v_today+v_days);
+ end loop;
+ v_output:=pg_temp.contract_windows_read();
+ for v_i in 31..33 loop
+  select r.value into v_row from jsonb_array_elements(v_output->'rows') r(value)
+  join contract_window_fixtures f on f.customer_id::text=r.value->>'customerId' where f.fixture_no=v_i;
+  if v_i=32 then
+   if v_row is not null then raise exception 'C8 askBy 15 days ahead included';end if;
+  elsif v_row->>'category' is distinct from 'unknown'
+   or v_row->>'party' is distinct from 'Who approves the next evaluation?'
+   or v_row->>'endsOn' is distinct from (v_today+7)::text
+   or v_row->>'daysLeft' is distinct from '7'
+   or v_row->>'opportunityId' is distinct from (select opportunity_id::text from contract_window_fixtures where fixture_no=v_i)
+   then raise exception 'C8 incorrect unknown deadline row: %',v_row;
+  end if;
+ end loop;
+ v_baseline:=(v_output->>'plannedCount')::bigint;
+ for v_i in select fixture_no from contract_window_fixtures where fixture_no in (31,33) loop
+  select opportunity_id into v_opportunity from contract_window_fixtures where fixture_no=v_i;
+  perform public.stockflow_action_gateway('contract-windows-test-key','contract-manager@test.local','create_action',
+   jsonb_build_object('requestId','contract-windows-c8-action-'||v_i,'opportunityId',v_opportunity,
+    'actionType','visit','detail','Ask who approves the next evaluation','ownerEmail','contract-sales@test.local',
+    'dueOn',v_today+case when v_i=31 then 7 else 6 end,'expectedMonthlyGainPaise',null));
+ end loop;
+ v_output:=pg_temp.contract_windows_read();
+ if (v_output->>'plannedCount')::bigint is distinct from v_baseline+2 or exists(
+  select 1 from jsonb_array_elements(v_output->'rows') r(value)
+  join contract_window_fixtures f on f.customer_id::text=r.value->>'customerId' where f.fixture_no in (31,32,33))
+  then raise exception 'C8 actions due on or before askBy did not make questions planned';end if;
+ raise notice 'PASS C8: unknown askBy horizon, question party and actions due on or before askBy';
 end$checks$;
 rollback;

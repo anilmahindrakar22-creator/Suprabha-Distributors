@@ -26,12 +26,13 @@ begin
 
  with windows as materialized (
   select o.id opportunity_id,o.customer_id,c.name customer_name,c.city town,o.kind,d.name division_name,
-   cc.category,case cc.category when 'competitor_lock_in' then cc.facts->>'competitor' else cc.facts->>'holder' end party,
-   (cc.facts->>'endsOn')::date ends_on,cc.confidence,cc.source,
+   cc.category,case cc.category when 'competitor_lock_in' then cc.facts->>'competitor'
+    when 'unknown' then cc.facts->>'nextQuestion' else cc.facts->>'holder' end party,
+   deadline.ends_on,cc.confidence,cc.source,
    exists(
     select 1 from private.stockflow_commercial_actions a
     left join private.stockflow_commercial_action_results r on r.action_id=a.id
-    where a.opportunity_id=o.id and r.action_id is null and a.due_on<=(cc.facts->>'endsOn')::date
+    where a.opportunity_id=o.id and r.action_id is null and a.due_on<=deadline.ends_on
    ) planned
   from private.stockflow_commercial_opportunities o
   join private.stockflow_customers c on c.id=o.customer_id
@@ -41,8 +42,11 @@ begin
    select x.category,x.facts,x.confidence,x.source from private.stockflow_commercial_constraints x
    where x.opportunity_id=o.id order by x.recorded_at desc,x.id desc limit 1
   ) cc on true
-  where cl.opportunity_id is null and cc.category in ('competitor_lock_in','contract_tender')
-   and (cc.facts->>'endsOn')::date between v_today-30 and v_today+120
+  cross join lateral (
+   select (case when cc.category='unknown' then cc.facts->>'askBy' else cc.facts->>'endsOn' end)::date ends_on
+  ) deadline
+  where cl.opportunity_id is null and cc.category in ('competitor_lock_in','contract_tender','unknown')
+   and deadline.ends_on between v_today-30 and v_today+case when cc.category='unknown' then 14 else 120 end
  ), selected_rows as (
   select * from windows where not planned
   order by ends_on,customer_name,opportunity_id offset (v_page-1)*20 limit 20

@@ -3,7 +3,7 @@ import type { ConstraintConfidence, EvidenceSource, OpportunityKind } from './wa
 export type ContractWindow = {
   customerId: string; customerName: string; town: string | null; opportunityId: string;
   kind: OpportunityKind; divisionName: string | null;
-  category: 'competitor_lock_in' | 'contract_tender'; party: string; endsOn: string;
+  category: 'competitor_lock_in' | 'contract_tender' | 'unknown'; party: string; endsOn: string;
   daysLeft: number; confidence: ConstraintConfidence; source: EvidenceSource;
 };
 export type ContractWindows = { rows: ContractWindow[]; total: number; plannedCount: number; page: number; pageSize: 20 };
@@ -22,7 +22,7 @@ export function parseContractWindows(value: unknown): ContractWindows {
     || value.rows.length > 20 || value.rows.length > Number(value.total)
     || !value.rows.every(row => object(row) && uuid(row.customerId) && text(row.customerName) && nullableText(row.town)
       && uuid(row.opportunityId) && oneOf(row.kind, ['capture', 'defend', 'recover']) && nullableText(row.divisionName)
-      && oneOf(row.category, ['competitor_lock_in', 'contract_tender']) && text(row.party) && date(row.endsOn)
+      && oneOf(row.category, ['competitor_lock_in', 'contract_tender', 'unknown']) && text(row.party) && date(row.endsOn)
       && Number.isSafeInteger(row.daysLeft) && oneOf(row.confidence, ['high', 'medium', 'low'])
       && oneOf(row.source, ['document', 'customer_stated', 'our_view']))) {
     throw new Error('Invalid contract windows response');
@@ -30,8 +30,9 @@ export function parseContractWindows(value: unknown): ContractWindows {
   return value as ContractWindows;
 }
 
-export function windowLabel(row: Pick<ContractWindow, 'endsOn' | 'daysLeft'>): string {
-  if (row.daysLeft < 0) return `Ended ${-row.daysLeft} ${row.daysLeft === -1 ? 'day' : 'days'} ago`;
+export function windowLabel(row: Pick<ContractWindow, 'category' | 'endsOn' | 'daysLeft'>): string {
+  if (row.daysLeft < 0) return `${row.category === 'unknown' ? 'Ask-by passed' : 'Ended'} ${-row.daysLeft} ${row.daysLeft === -1 ? 'day' : 'days'} ago`;
   const end = new Intl.DateTimeFormat('en-GB', { day: 'numeric', month: 'short', year: 'numeric', timeZone: 'Asia/Kolkata' }).format(new Date(`${row.endsOn}T00:00:00Z`));
+  if (row.category === 'unknown') return `Ask by ${end} · ${row.daysLeft === 0 ? 'today' : `${row.daysLeft} ${row.daysLeft === 1 ? 'day' : 'days'} left`}`;
   return `Ends ${end} · ${row.daysLeft === 0 ? 'ends today' : `${row.daysLeft} ${row.daysLeft === 1 ? 'day' : 'days'} left`}`;
 }

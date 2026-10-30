@@ -53,13 +53,13 @@ function ContractWindowRows({ onOpen }: { onOpen: (customerId: string) => void }
   }, [page]);
   if (failed) return <p className="text-sm text-sf-muted">Contract dates could not load</p>;
   return <>
-    {windows && windows.total > 0 ? <section aria-label="Contracts ending soon" className="min-w-0 space-y-3">
-      <h3 className="font-bold">Contracts ending soon ({windows.total})</h3>
+    {windows && windows.total > 0 ? <section aria-label="Deadlines without a plan" className="min-w-0 space-y-3">
+      <h3 className="font-bold">Deadlines without a plan ({windows.total})</h3>
       <ul className="space-y-3">{windows.rows.map(row => <li key={row.opportunityId}><button className="min-h-11 w-full min-w-0 space-y-1 rounded-xl border border-sf-line-soft bg-white p-4 text-left" onClick={() => onOpen(row.customerId)}>
         <span className="block font-bold">{row.customerName}{row.town ? ` · ${row.town}` : ''}</span>
-        <span className="block text-sm">{row.category === 'competitor_lock_in' ? 'Competitor lock-in' : 'Tender'}: {row.party}</span>
+        <span className="block text-sm">{row.category === 'unknown' ? 'Open question' : row.category === 'competitor_lock_in' ? 'Competitor lock-in' : 'Tender'}: {row.party}</span>
         <span className={`block text-sm${row.daysLeft < 0 ? ' text-sf-danger' : ''}`}>{windowLabel(row)}</span>
-        <span className="block text-xs text-sf-muted">No action planned before it ends</span>
+        <span className="block text-xs text-sf-muted">No action planned</span>
       </button></li>)}</ul>
       {windows.rows.length < windows.total ? <button className={button} disabled={loading} onClick={() => { setLoading(true); setPage(n => n + 1); }}>Load more</button> : null}
     </section> : null}

@@ -10,7 +10,7 @@ const row: WalletRow = { customerId, name: 'Example Diagnostic Laboratory', city
 const coverage = { certified: true, windowFrom: '2026-07-01', windowTo: '2026-09-30', windowLabel: 'Jul–Sep 2026', reason: null };
 const window: ContractWindow = { customerId, customerName: row.name, town: row.city, opportunityId, kind: 'capture', divisionName: null, category: 'competitor_lock_in', party: 'Other Diagnostics', endsOn: '2027-01-12', daysLeft: 74, confidence: 'high', source: 'document' };
 const ended: ContractWindow = { ...window, opportunityId: '88222222-2222-4222-8222-222222222222', customerName: 'Ended Tender Lab', category: 'contract_tender', party: 'Tender Holder', endsOn: '2026-10-20', daysLeft: -10 };
-type Options = { empty?: boolean; plannedCount?: number; failure?: 'read' | 'malformed'; more?: boolean };
+type Options = { empty?: boolean; plannedCount?: number; failure?: 'read' | 'malformed'; more?: boolean; unknownDaysLeft?: number };
 
 async function fixture(page: Page, options: Options = {}) {
   const reads: number[] = [];
@@ -22,8 +22,9 @@ async function fixture(page: Page, options: Options = {}) {
     if (url.searchParams.get('action') === 'get_contract_windows') {
       const pageNumber = Number(url.searchParams.get('page')); reads.push(pageNumber);
       if (options.failure === 'read') return route.fulfill({ status: 502, json: { error: 'Unavailable' } });
-      const rows = options.empty ? [] : pageNumber === 1 ? [window, ended] : [{ ...window, opportunityId: '88333333-3333-4333-8333-333333333333', customerName: 'Next Page Lab' }];
-      return route.fulfill({ json: { rows: options.failure === 'malformed' ? [window, { ...ended, daysLeft: 1.5 }] : rows, total: options.empty ? 0 : options.more ? 3 : 2, plannedCount: options.plannedCount ?? 0, page: pageNumber, pageSize: 20 } });
+      const unknown: ContractWindow = { ...window, category: 'unknown', party: 'Who approves the purchase?', endsOn: '2026-11-05', daysLeft: options.unknownDaysLeft ?? 6 };
+      const rows = options.empty ? [] : options.unknownDaysLeft !== undefined ? [unknown] : pageNumber === 1 ? [window, ended] : [{ ...window, opportunityId: '88333333-3333-4333-8333-333333333333', customerName: 'Next Page Lab' }];
+      return route.fulfill({ json: { rows: options.failure === 'malformed' ? [window, { ...ended, daysLeft: 1.5 }] : rows, total: options.empty ? 0 : options.unknownDaysLeft !== undefined ? 1 : options.more ? 3 : 2, plannedCount: options.plannedCount ?? 0, page: pageNumber, pageSize: 20 } });
     }
     if (url.searchParams.get('action') === 'get_actions_due') return route.fulfill({ json: { page: 1, pageSize: 50, total: 1, overdueCount: 1, rows: [dueRow] } });
     return route.fulfill({ json: [] });
@@ -42,21 +43,22 @@ async function fixture(page: Page, options: Options = {}) {
   return reads;
 }
 
-for (const width of [375, 1280]) test.describe(`Contracts ending soon at ${width}px`, () => {
+for (const width of [375, 1280]) test.describe(`Deadlines without a plan at ${width}px`, () => {
   test.use({ viewport: { width, height: 812 } });
   test('section and rows appear above actions due without horizontal overflow', async ({ page }) => {
     await fixture(page);
-    const section = page.getByRole('region', { name: 'Contracts ending soon', exact: true });
-    await expect(section.getByRole('heading')).toHaveText('Contracts ending soon (2)');
+    const section = page.getByRole('region', { name: 'Deadlines without a plan', exact: true });
+    await expect(section.getByRole('heading')).toHaveText('Deadlines without a plan (2)');
     const button = section.getByRole('button', { name: /Example Diagnostic Laboratory/ });
-    for (const text of ['Example Diagnostic Laboratory · Bidar', 'Competitor lock-in: Other Diagnostics', 'Ends 12 Jan 2027 · 74 days left', 'No action planned before it ends']) await expect(button).toContainText(text);
+    for (const text of ['Example Diagnostic Laboratory · Bidar', 'Competitor lock-in: Other Diagnostics', 'Ends 12 Jan 2027 · 74 days left', 'No action planned']) await expect(button).toContainText(text);
+    await expect(button.getByText('No action planned', { exact: true })).toHaveClass(/text-sf-muted/);
     await expect(page.getByRole('list', { name: 'Actions due', exact: true })).toContainText('Visit about the quote');
     expect(await section.evaluate(el => !!(el.compareDocumentPosition(document.querySelector('ul[aria-label="Actions due"]')!) & Node.DOCUMENT_POSITION_FOLLOWING))).toBe(true);
     expect(await page.evaluate(() => document.documentElement.scrollWidth <= innerWidth)).toBe(true);
   });
   test('tapping a contract row opens the lab sheet', async ({ page }) => {
     await fixture(page);
-    await page.getByRole('region', { name: 'Contracts ending soon', exact: true }).getByRole('button', { name: /Example Diagnostic Laboratory/ }).click();
+    await page.getByRole('region', { name: 'Deadlines without a plan', exact: true }).getByRole('button', { name: /Example Diagnostic Laboratory/ }).click();
     await expect(page.getByRole('dialog', { name: row.name, exact: true })).toBeVisible();
   });
   test('ended tender shows ended wording in the danger colour', async ({ page }) => {
@@ -64,28 +66,44 @@ for (const width of [375, 1280]) test.describe(`Contracts ending soon at ${width
     const button = page.getByRole('button', { name: /Ended Tender Lab/ });
     await expect(button).toContainText('Tender: Tender Holder');
     await expect(button.getByText('Ended 10 days ago', { exact: true })).toHaveClass(/text-sf-danger/);
+    await expect(button.getByText('No action planned', { exact: true })).toBeVisible();
+  });
+  for (const [daysLeft, label] of [[6, 'Ask by 5 Nov 2026 · 6 days left'], [1, 'Ask by 5 Nov 2026 · 1 day left'], [0, 'Ask by 5 Nov 2026 · today'], [-1, 'Ask-by passed 1 day ago'], [-3, 'Ask-by passed 3 days ago']] as const) test(`unknown row shows its question and ask-by wording with ${daysLeft} days left`, async ({ page }) => {
+    await fixture(page, { unknownDaysLeft: daysLeft });
+    const section = page.getByRole('region', { name: 'Deadlines without a plan', exact: true });
+    await expect(section.getByRole('heading')).toHaveText('Deadlines without a plan (1)');
+    const button = section.getByRole('button', { name: /Example Diagnostic Laboratory/ });
+    await expect(button.getByText('Open question: Who approves the purchase?', { exact: true })).toBeVisible();
+    await expect(button.getByText('No action planned', { exact: true })).toHaveClass(/text-sf-muted/);
+    const deadline = button.getByText(label, { exact: true });
+    await expect(deadline).toBeVisible();
+    if (daysLeft < 0) await expect(deadline).toHaveClass(/text-sf-danger/);
+    else await expect(deadline).not.toHaveClass(/text-sf-danger/);
+    expect(await page.evaluate(() => document.documentElement.scrollWidth <= innerWidth)).toBe(true);
+    await button.click();
+    await expect(page.getByRole('dialog', { name: row.name, exact: true })).toBeVisible();
   });
   test('zero total hides the section', async ({ page }) => {
     const reads = await fixture(page, { empty: true });
     await expect.poll(() => reads.length).toBe(1);
-    await expect(page.getByRole('region', { name: 'Contracts ending soon', exact: true })).toHaveCount(0);
+    await expect(page.getByRole('region', { name: 'Deadlines without a plan', exact: true })).toHaveCount(0);
     await expect(page.getByText('more already', { exact: false })).toHaveCount(0);
     await expect(page.getByRole('button', { name: /Action Due Lab/ })).toBeVisible();
   });
   for (const plannedCount of [1, 3]) test(`planned count ${plannedCount} appears even with no unplanned windows`, async ({ page }) => {
     await fixture(page, { empty: true, plannedCount });
     await expect(page.getByText(`${plannedCount} more already ${plannedCount === 1 ? 'has' : 'have'} an action planned`, { exact: true })).toHaveClass(/text-sf-muted/);
-    await expect(page.getByRole('region', { name: 'Contracts ending soon', exact: true })).toHaveCount(0);
+    await expect(page.getByRole('region', { name: 'Deadlines without a plan', exact: true })).toHaveCount(0);
   });
   for (const failure of ['read', 'malformed'] as const) test(`${failure} failure shows muted message while actions due render`, async ({ page }) => {
     await fixture(page, { failure });
     await expect(page.getByText('Contract dates could not load', { exact: true })).toHaveClass(/text-sf-muted/);
-    await expect(page.getByRole('region', { name: 'Contracts ending soon', exact: true })).toHaveCount(0);
+    await expect(page.getByRole('region', { name: 'Deadlines without a plan', exact: true })).toHaveCount(0);
     await expect(page.getByRole('button', { name: /Action Due Lab/ })).toContainText('Visit about the quote');
   });
   test('load more appends the next page', async ({ page }) => {
     const reads = await fixture(page, { more: true });
-    const section = page.getByRole('region', { name: 'Contracts ending soon', exact: true });
+    const section = page.getByRole('region', { name: 'Deadlines without a plan', exact: true });
     await section.getByRole('button', { name: 'Load more', exact: true }).click();
     await expect(section.getByRole('button', { name: /Next Page Lab/ })).toBeVisible();
     await expect(section.getByRole('listitem')).toHaveCount(3);
