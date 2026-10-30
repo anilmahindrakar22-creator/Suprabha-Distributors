@@ -185,3 +185,35 @@ Actions and EV cards; the Action Center; outcomes; scoring snapshots; any price 
   - an unknown division gives 22023;
   - D4's race still holds per scope.
 - **Browser:** the Division select, the POST body `divisionCode`, and the division in the muted line.
+
+## 9. Suggested opportunities (30 Oct, ADR-0008 §6 provenance)
+**Decision it drives:** turn each Focus-band lab that has no opportunity into work, in one tap. A suggestion is **never** an opportunity until a person opens it.
+
+**Data:** edit `20261031090000_wallet_diagnosis.sql` in place (not deployed) and refresh its hash.
+- `stockflow_commercial_opportunities` gains `origin text not null default 'manual'`, with a check constraint named `stockflow_commercial_opportunities_origin_rule`: `origin in ('manual','wallet_gap')`.
+- `open_opportunity` takes an optional `origin`. Omitted means `manual`.
+- **`wallet_gap` is accepted only when** wallet coverage is certified **and** the customer is currently `inFocusBand` in `private.stockflow_wallet_read(today IST)`. Otherwise 22023 "Not a current Focus account". This keeps provenance honest.
+- Every opportunity JSON gains `origin`.
+
+**Contract:** `WalletOpportunity` gains `origin: 'manual' | 'wallet_gap'` (optional in response checks). The `open_opportunity` payload gains `origin?: 'manual' | 'wallet_gap'`.
+
+**Screen** (declutter rule; no new lines or counts):
+- In the Wallet list, **only when** `coverage.certified` and the row is `inFocusBand`, and the diagnoses read shows **no open opportunity** for that customer: replace the "Not diagnosed" chip with a small secondary button **"Start diagnosis"**.
+  - Tapping it opens that lab's sheet with the Start diagnosis form already open: kind Capture, division Whole lab, empty reason focused.
+  - Saving sends `origin: 'wallet_gap'`.
+- Rows with an open opportunity keep their existing chip ("Why: …" or "Not diagnosed").
+- Starting from the sheet's own "Start diagnosis" button still sends `manual`.
+
+**Acceptance:**
+- **D12:**
+  - `wallet_gap` on a certified Focus fixture lab succeeds and the JSON shows `origin: 'wallet_gap'`;
+  - on a lab not in the Focus band it gives 22023;
+  - with coverage uncertified it gives 22023;
+  - omitting origin gives `manual`;
+  - an invalid origin gives 22023.
+  - Reuse the D7 certified-fixture approach (relative dates, every identity company certified).
+- **Browser:**
+  - the button shows only for a certified Focus row without an opportunity;
+  - it's absent for a row with an opportunity, and when not certified;
+  - tapping opens the form, and the POST carries `origin: 'wallet_gap'`;
+  - no horizontal scroll at 375.
