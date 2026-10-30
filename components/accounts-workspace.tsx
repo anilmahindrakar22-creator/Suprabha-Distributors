@@ -457,8 +457,8 @@ export function AccountDetails({ row, mode, today, renderActions, ratingContactI
 }
 
 /** Managers start on All accounts; field staff start on the accounts assigned to them. */
-export function AccountsWorkspace({ defaultMode = 'mine' }: { defaultMode?: Mode } = {}) {
-  const [view, setView] = useState<'accounts' | 'links' | 'wallet' | 'my-actions'>('accounts');
+export function AccountsWorkspace({ defaultMode = 'mine', initialView }: { defaultMode?: Mode; initialView?: 'my-actions' } = {}) {
+  const [view, setView] = useState<'accounts' | 'links' | 'wallet' | 'my-actions'>(initialView ?? 'accounts');
   const [addingCustomer, setAddingCustomer] = useState(false);
   const addCustomerButton = useRef<HTMLButtonElement>(null);
   const restoreAddCustomerFocus = useRef(false);

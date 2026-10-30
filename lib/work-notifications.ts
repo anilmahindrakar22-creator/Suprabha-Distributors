@@ -78,6 +78,13 @@ export function workReminders(operations: Record<string, unknown>, roles: unknow
   return list.filter((item) => item.count > 0);
 }
 
+function myActionsOverdueCount(value: unknown): number {
+  if (!value || typeof value !== 'object' || Array.isArray(value)) throw new Error('Invalid my actions response');
+  const count = (value as { overdueCount?: unknown }).overdueCount;
+  if (typeof count !== 'number' || !Number.isSafeInteger(count) || count < 0) throw new Error('Invalid my actions count');
+  return count;
+}
+
 /** Server list filter for one queue status: exact status names use themselves, grouped names map as in Orders. */
 function listFilter(status: string) {
   return status === 'awaiting_tally_billing' ? 'billing' : status;
@@ -139,6 +146,7 @@ export function startWorkNotifications(options: {
   let lastSignature = '';
   let listsReadAt = 0;
   let statusTotals: Record<string, number> = {};
+  let overdueActions: number | null = null;
 
   const emit = (patch: Partial<WorkNotificationState>) => { state = { ...state, ...patch }; options.onState(state); };
   const clearTimer = () => { if (timer) clearTimeout(timer); timer = undefined; };
@@ -179,6 +187,10 @@ export function startWorkNotifications(options: {
       const arrivals: WorkItem[] = [];
       let listPatch: Partial<WorkNotificationState> = {};
       if (known === null || signature !== lastSignature || now() - listsReadAt >= WORK_LIST_REFRESH) {
+        if (hasAnyStockFlowRole(options.roles, ['administrator', 'management', 'sales', 'operations'])) {
+          try { overdueActions = myActionsOverdueCount(await getJson('/api/my-actions?action=get_my_actions&page=1', request.signal)); }
+          catch { /* This optional reminder must not affect bell connectivity or its cached count. */ }
+        }
         const { assignedPage, byStatus } = await readLists(request.signal);
         if (stopped || controller !== request) return;
         const firstCheck = known === null;
@@ -221,7 +233,9 @@ export function startWorkNotifications(options: {
       }
       failures = 0;
       nextCheck = now() + WORK_CHECK_INTERVAL;
-      emit({ ...listPatch, connection: 'live', reminders: workReminders(operations, options.roles), checkedAt: new Date(now()).toISOString() });
+      const reminders = workReminders(operations, options.roles);
+      if (overdueActions !== null && overdueActions > 0) reminders.push({ id: 'my-actions', label: 'My actions overdue', count: overdueActions, status: 'my_actions' });
+      emit({ ...listPatch, connection: 'live', reminders, checkedAt: new Date(now()).toISOString() });
       if (arrivals.length) options.onFresh?.(arrivals);
     } catch (cause) {
       if (stopped || controller !== request) return;

@@ -51,11 +51,14 @@ describe('foreground work checker', () => {
   let totals: Record<string, number>;
   let assignedTotal: number | undefined;
   let summaryStatus: number;
+  let overdueCount: unknown;
+  let myActionsStatus: number;
   let moves: number;
   let states: WorkNotificationState[];
   let arrivals: string[][];
   const fetchJson = vi.fn(async (url: string) => {
     if (url.includes('summary=1')) return json({ operations: { moves } }, summaryStatus);
+    if (url.includes('/api/my-actions')) return json({ overdueCount }, myActionsStatus);
     const parameters = new URL(url, 'https://x.test').searchParams;
     if ((parameters.get('query') || '').startsWith('assignee:')) return json({ orders: assigned, pagination: { total: assignedTotal ?? assigned.length } });
     const rows = lists[parameters.get('status') || ''] ?? [];
@@ -75,6 +78,8 @@ describe('foreground work checker', () => {
     totals = {};
     assignedTotal = undefined;
     summaryStatus = 200;
+    overdueCount = 0;
+    myActionsStatus = 200;
     moves = 0;
     states = [];
     arrivals = [];
@@ -221,6 +226,44 @@ describe('foreground work checker', () => {
     expect(last().work).toHaveLength(1);
     expect(last().work[0]).toMatchObject({ orderNumber: 'SF-1', assignedToMe: true });
     service.stop();
+  });
+
+  it('adds overdue My actions only when overdueCount is positive', async () => {
+    overdueCount = 2;
+    const service = start(['sales']);
+    await vi.advanceTimersByTimeAsync(0);
+    expect(last().reminders).toContainEqual({ id: 'my-actions', label: 'My actions overdue', count: 2, status: 'my_actions' });
+    overdueCount = 0;
+    await vi.advanceTimersByTimeAsync(5 * 60_000);
+    expect(last().reminders.some((reminder) => reminder.id === 'my-actions')).toBe(false);
+    service.stop();
+  });
+
+  it('keeps a failed My actions read from breaking the bell or adding a reminder', async () => {
+    myActionsStatus = 500;
+    const service = start(['sales']);
+    await vi.advanceTimersByTimeAsync(0);
+    expect(last().connection).toBe('live');
+    expect(last().reminders.some((reminder) => reminder.id === 'my-actions')).toBe(false);
+    service.stop();
+  });
+
+  it('does not request My actions for warehouse and refreshes it with the five-minute list cadence', async () => {
+    const warehouse = start(['warehouse']);
+    await vi.advanceTimersByTimeAsync(0);
+    expect(fetchJson.mock.calls.some(([url]) => String(url).includes('/api/my-actions'))).toBe(false);
+    warehouse.stop();
+
+    fetchJson.mockClear();
+    const sales = start(['sales']);
+    await vi.advanceTimersByTimeAsync(0);
+    const actionReads = () => fetchJson.mock.calls.filter(([url]) => String(url).includes('/api/my-actions')).length;
+    expect(actionReads()).toBe(1);
+    await vi.advanceTimersByTimeAsync(45_000);
+    expect(actionReads()).toBe(1);
+    await vi.advanceTimersByTimeAsync(5 * 60_000 - 45_000);
+    expect(actionReads()).toBe(2);
+    sales.stop();
   });
 
   it('backs off on server errors, and stops on sign-in loss or missing access', async () => {

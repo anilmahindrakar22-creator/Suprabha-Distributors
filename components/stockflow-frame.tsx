@@ -45,6 +45,7 @@ export function StockFlowFrame({ actorEmail, actorRole, actorRoles, staffAuth = 
   const roles = actorRoles ?? [actorRole as StockFlowRole];
   const rolesKey = roles.join(',');
   const [surface, setSurface] = useState<Surface>('stock');
+  const [accountsOpen, setAccountsOpen] = useState<{ view: 'my-actions' | undefined; nonce: number }>({ view: undefined, nonce: 0 });
   // Billing-only staff open Orders on the Bill queue; everyone else on Active.
   const homeOrderFilter = hasAnyStockFlowRole(roles, ['billing']) && !hasAnyStockFlowRole(roles, ['administrator', 'management', 'operations', 'sales', 'warehouse', 'accounts']) ? 'billing' : 'open';
   const [orderFilter, setOrderFilter] = useState(homeOrderFilter);
@@ -254,6 +255,11 @@ export function StockFlowFrame({ actorEmail, actorRole, actorRoles, staffAuth = 
     setSurface('orders');
   }
   function openQueue(status: string, query = '') {
+    if (status === 'my_actions') {
+      setAccountsOpen((current) => ({ view: 'my-actions', nonce: current.nonce + 1 }));
+      setSurface('accounts');
+      return;
+    }
     setOrderFilter(status);
     setOrderView((current) => ({ query: query === 'mine' ? `assignee:${actorEmail.toLocaleLowerCase('en-IN')}` : query, nonce: current.nonce + 1 }));
     setSurface('orders');
@@ -261,6 +267,7 @@ export function StockFlowFrame({ actorEmail, actorRole, actorRoles, staffAuth = 
 
   function openSurface(item: Surface) {
     setMoreOpen(false);
+    if (item === 'accounts') setAccountsOpen((current) => ({ ...current, view: undefined }));
     if (item === 'orders' && surface !== 'orders') {
       setOrderFilter(homeOrderFilter);
       setOrderView((current) => ({ query: '', nonce: current.nonce + 1 }));
@@ -390,7 +397,7 @@ export function StockFlowFrame({ actorEmail, actorRole, actorRoles, staffAuth = 
         ) : surface === 'requests' ? (
           <Suspense fallback={<SectionLoading />}><RequestsWorkspace roles={roles} onOpenOrder={(orderId, orderNumber) => openOrder({ orderId, orderNumber })} /></Suspense>
         ) : surface === 'accounts' && hasAnyStockFlowRole(roles, ['administrator', 'management', 'sales', 'operations']) ? (
-          <Suspense fallback={<SectionLoading />}><AccountsWorkspace defaultMode={hasAnyStockFlowRole(roles, ['administrator', 'management']) ? 'all' : 'mine'} /></Suspense>
+          <Suspense fallback={<SectionLoading />}><AccountsWorkspace key={accountsOpen.nonce} defaultMode={hasAnyStockFlowRole(roles, ['administrator', 'management']) ? 'all' : 'mine'} initialView={accountsOpen.view} /></Suspense>
         ) : surface === 'pricing' ? (
           <Suspense fallback={<SectionLoading />}><PricingWorkspace actorEmail={actorEmail} actorRole={actorRole} actorRoles={roles} /></Suspense>
         ) : surface === 'economics' ? (

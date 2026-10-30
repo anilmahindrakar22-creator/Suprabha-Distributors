@@ -24,10 +24,15 @@ const order = (id: string, number: string, customer: string, status: string) => 
 const waiting = order('11111111-1111-4111-8111-111111111111', 'SF-26-1001', 'Apollo Clinic Lab', 'awaiting_tally_billing');
 const packedNow = order('22222222-2222-4222-8222-222222222222', 'SF-26-1043', 'Care Hospital', 'awaiting_tally_billing');
 
-async function mockAccounts(page: Page, billing: () => OrderSummary[], role: 'accounts' | 'billing' = 'accounts') {
+async function mockAccounts(page: Page, billing: () => OrderSummary[], role: 'accounts' | 'billing' = 'accounts', options: { canSeeMyActions?: boolean } = {}) {
+  const actions = { page: 1, pageSize: 50, total: 2, overdueCount: 2, rows: [
+    { actionId: '11111111-1111-4111-8111-111111111111', customerId: 'aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa', customerName: 'Apollo Clinic Lab', city: 'Pune', actionType: 'visit', detail: 'Discuss repeat order', dueOn: '2026-10-01', overdue: true, constraintCategory: null, routeToDecider: null },
+    { actionId: '22222222-2222-4222-8222-222222222222', customerId: 'bbbbbbbb-bbbb-4bbb-8bbb-bbbbbbbbbbbb', customerName: 'Care Hospital', city: 'Pune', actionType: 'visit', detail: 'Follow up on samples', dueOn: '2026-10-02', overdue: true, constraintCategory: null, routeToDecider: null },
+  ] };
+  await page.route('**/api/my-actions?**', (route) => route.request().method() === 'GET' ? route.fulfill({ json: actions }) : route.continue());
   await page.route('**/api/orders**', (route) => {
     const url = new URL(route.request().url());
-    const list = (orders: OrderSummary[]) => orderBootstrap({ actor: { email: 'staff@example.test', role, roles: [role] }, snapshot: { company: 'T', fetchedAt: now(), catalog: [] }, customers: [], operations: {}, orders, pagination: { total: orders.length, page: 1, pageCount: 1, pageSize: 20 } });
+    const list = (orders: OrderSummary[]) => orderBootstrap({ actor: { email: 'staff@example.test', role, roles: [role] }, snapshot: { company: 'T', fetchedAt: now(), catalog: [] }, customers: [], operations: {}, orders, pagination: { total: orders.length, page: 1, pageCount: 1, pageSize: 20 }, ...(options.canSeeMyActions ? { canSeeMyActions: true } : {}) });
     if (url.searchParams.get('summary') === '1') return route.fulfill({ json: { operations: { awaitingTallyBilling: billing().length } } });
     if (url.searchParams.get('status') === 'billing') return route.fulfill({ json: list(billing()) });
     if (url.searchParams.get('status') === 'packed') return route.fulfill({ json: list([]) });
@@ -37,6 +42,29 @@ async function mockAccounts(page: Page, billing: () => OrderSummary[], role: 'ac
     return route.fulfill({ json: list(billing()) });
   });
 }
+
+test('overdue My actions appear under attention and open the My actions screen', async ({ page }) => {
+  await page.clock.install();
+  await mockAccounts(page, () => [], 'accounts', { canSeeMyActions: true });
+  await page.route('**/api/accounts**', route => route.fulfill({ json: {
+    accounts: [], page: { page: 1, pageSize: 50, total: 0 }, owners: [], territories: [],
+    canAssign: false, canEraseContacts: false, canSeePowerMap: false, canSeeMyActions: true,
+    actorEmail: 'staff@example.test', today: '2026-10-30', classPolicy: { aMinPaise: '20000000', bMinPaise: '7500000' },
+  } }));
+  await page.goto('/?view=frame&role=sales&roles=sales');
+  const bell = page.getByRole('button', { name: /^Notifications/ });
+  await expect(bell).toBeVisible();
+  await page.clock.runFor(5_000);
+  await expect(bell).toHaveAccessibleName('Notifications');
+  await bell.click();
+  const panel = page.getByRole('dialog', { name: 'Notifications' });
+  await expect(panel.getByRole('heading', { name: 'Also needs attention' })).toBeVisible();
+  const overdue = panel.getByRole('button', { name: 'My actions overdue 2' });
+  await expect(overdue).toBeVisible();
+  await overdue.click();
+  await expect(page.getByRole('heading', { name: 'My actions' })).toBeVisible();
+  await expect(page.getByText('2 open actions · 2 overdue')).toBeVisible();
+});
 
 test('billing-only staff see ready-to-bill arrivals and desktop pop-ups in the bell', async ({ page, isMobile }) => {
   let billing = [waiting];
