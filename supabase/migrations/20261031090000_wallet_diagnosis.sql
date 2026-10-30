@@ -3,6 +3,7 @@ begin;
 create table private.stockflow_commercial_opportunities (
  id uuid primary key default extensions.gen_random_uuid(),
  customer_id uuid not null references private.stockflow_customers(id),
+ division_id uuid references private.stockflow_wallet_divisions(id),
  kind text not null check(kind in ('capture','defend','recover')),
  opened_reason text not null check(length(btrim(opened_reason)) between 3 and 500),
  opened_by text not null, opened_at timestamptz not null default clock_timestamp()
@@ -49,7 +50,7 @@ end$$;
 
 create function private.stockflow_constraint_facts_valid(p_category text,p_facts jsonb,p_today date,p_customer uuid) returns boolean
 language plpgsql stable set search_path=pg_catalog,private as $$
-declare expected text[]; key_name text; value_text text; amount numeric; date_value date; division_code text; contact_id uuid;
+declare expected text[]; v_key_name text; value_text text; amount numeric; date_value date; division_code text; contact_id uuid;
 begin
  if p_facts is null or jsonb_typeof(p_facts)<>'object' or p_today is null then return false;end if;
  expected:=case p_category
@@ -68,31 +69,31 @@ begin
  if p_category='relationship' and p_facts ? 'contactId' then expected:=array_append(expected,'contactId');end if;
  if expected is null or (select count(*) from jsonb_object_keys(p_facts))<>cardinality(expected)
   or exists(select 1 from jsonb_object_keys(p_facts) as actual(key_name) where not actual.key_name=any(expected)) then return false;end if;
- foreach key_name in array expected loop
-  if key_name='contactId' then
-   if jsonb_typeof(p_facts->key_name)<>'string' or (p_facts->>key_name) !~* '^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$' then return false;end if;
-   contact_id:=(p_facts->>key_name)::uuid;
+ foreach v_key_name in array expected loop
+  if v_key_name='contactId' then
+   if jsonb_typeof(p_facts->v_key_name)<>'string' or (p_facts->>v_key_name) !~* '^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$' then return false;end if;
+   contact_id:=(p_facts->>v_key_name)::uuid;
    if not exists(select 1 from private.stockflow_account_contacts contact_row where contact_row.id=contact_id and contact_row.customer_id=p_customer and contact_row.removed_at is null) then return false;end if;
-  elsif key_name in ('competitor','product','analyser','issue','decisionMaker','holder','nextQuestion') then
-   if jsonb_typeof(p_facts->key_name)<>'string' then return false;end if;
-   value_text:=btrim(p_facts->>key_name);if length(value_text) not between 2 and 200 then return false;end if;
-  elsif key_name in ('competitorPricePaise','ourPricePaise') then
-   if jsonb_typeof(p_facts->key_name)<>'number' then return false;end if;
-   amount:=(p_facts->>key_name)::numeric;if amount<>trunc(amount) or amount not between 1 and 90000000000000 then return false;end if;
-  elsif key_name='division' then
-   if jsonb_typeof(p_facts->key_name)<>'string' then return false;end if;
-   if length(btrim(p_facts->>key_name)) not between 2 and 200 then return false;end if;
-   division_code:=p_facts->>key_name;
+  elsif v_key_name in ('competitor','product','analyser','issue','decisionMaker','holder','nextQuestion') then
+   if jsonb_typeof(p_facts->v_key_name)<>'string' then return false;end if;
+   value_text:=btrim(p_facts->>v_key_name);if length(value_text) not between 2 and 200 then return false;end if;
+  elsif v_key_name in ('competitorPricePaise','ourPricePaise') then
+   if jsonb_typeof(p_facts->v_key_name)<>'number' then return false;end if;
+   amount:=(p_facts->>v_key_name)::numeric;if amount<>trunc(amount) or amount not between 1 and 90000000000000 then return false;end if;
+  elsif v_key_name='division' then
+   if jsonb_typeof(p_facts->v_key_name)<>'string' then return false;end if;
+   if length(btrim(p_facts->>v_key_name)) not between 2 and 200 then return false;end if;
+   division_code:=p_facts->>v_key_name;
    if not exists(select 1 from private.stockflow_wallet_divisions where code=division_code and active) then return false;end if;
-  elsif key_name='owner' then
-   if jsonb_typeof(p_facts->key_name)<>'string' or p_facts->>key_name not in ('customer','competitor_placed','rental','unknown') then return false;end if;
-  elsif key_name='closedSystem' then
-   if jsonb_typeof(p_facts->key_name)<>'string' or p_facts->>key_name not in ('yes','no','unknown') then return false;end if;
-  elsif key_name in ('since','endsOn','askBy') then
-   if jsonb_typeof(p_facts->key_name)<>'string' or (p_facts->>key_name) !~ '^\d{4}-\d{2}-\d{2}$' then return false;end if;
-   begin date_value:=(p_facts->>key_name)::date;exception when others then return false;end;
-   if to_char(date_value,'YYYY-MM-DD')<>p_facts->>key_name then return false;end if;
-   if key_name='askBy' and date_value<p_today then return false;end if;
+  elsif v_key_name='owner' then
+   if jsonb_typeof(p_facts->v_key_name)<>'string' or p_facts->>v_key_name not in ('customer','competitor_placed','rental','unknown') then return false;end if;
+  elsif v_key_name='closedSystem' then
+   if jsonb_typeof(p_facts->v_key_name)<>'string' or p_facts->>v_key_name not in ('yes','no','unknown') then return false;end if;
+  elsif v_key_name in ('since','endsOn','askBy') then
+   if jsonb_typeof(p_facts->v_key_name)<>'string' or (p_facts->>v_key_name) !~ '^\d{4}-\d{2}-\d{2}$' then return false;end if;
+   begin date_value:=(p_facts->>v_key_name)::date;exception when others then return false;end;
+   if to_char(date_value,'YYYY-MM-DD')<>p_facts->>v_key_name then return false;end if;
+   if v_key_name='askBy' and date_value<p_today then return false;end if;
   end if;
  end loop;
  return true;
@@ -121,7 +122,8 @@ end$$;
 create function public.stockflow_opportunity_gateway(p_gateway_key text,p_actor_email text,p_action text,p_payload jsonb default '{}'::jsonb)
 returns jsonb language plpgsql security definer set search_path=pg_catalog,public,private,extensions as $$
 declare actor text:=lower(btrim(p_actor_email)); roles text[]; secret_hash text; command_key text; replay jsonb; result jsonb;
- customer uuid; opportunity uuid; entity uuid; current_constraint uuid; today date:=(now() at time zone 'Asia/Kolkata')::date;
+ customer uuid; opportunity uuid; entity uuid; current_constraint uuid; v_division uuid; v_division_code text; v_division_label text;
+ today date:=(now() at time zone 'Asia/Kolkata')::date;
  wallet_data jsonb; rows_data jsonb; focus_count bigint; undiagnosed_count bigint; row_item jsonb; item jsonb;
  coverage_data jsonb;
  fact_data jsonb; source_value text; source_person_value text; observed_date date; signals jsonb;
@@ -136,11 +138,12 @@ begin
    or exists(select 1 from jsonb_array_elements_text(p_payload->'customerIds') as ids(value) where ids.value !~* '^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$')
    or (select count(*) from jsonb_array_elements_text(p_payload->'customerIds'))<>(select count(distinct value) from jsonb_array_elements_text(p_payload->'customerIds'))
    then raise exception 'Invalid wallet diagnosis request' using errcode='22023';end if;
-  select coalesce(jsonb_agg(jsonb_build_object('customerId',customer_id,'kind',kind,'category',category,'confidence',confidence,'priceUnproven',coalesce(price_unproven,false)) order by opened_at desc), '[]'::jsonb)
+  select coalesce(jsonb_agg(jsonb_build_object('customerId',customer_id,'kind',kind,'category',category,'confidence',confidence,'priceUnproven',coalesce(price_unproven,false),'divisionName',division_label) order by opened_at desc), '[]'::jsonb)
    into rows_data from (
-    select distinct on(o.customer_id) o.customer_id,o.kind,c.category,c.confidence,c.price_unproven,o.opened_at
+    select distinct on(o.customer_id) o.customer_id,o.kind,c.category,c.confidence,c.price_unproven,d.name division_label,o.opened_at
     from private.stockflow_commercial_opportunities o left join private.stockflow_commercial_opportunity_closures cl on cl.opportunity_id=o.id
     left join lateral (select category,confidence,(category='price' and source='our_view') price_unproven from private.stockflow_commercial_constraints where opportunity_id=o.id order by recorded_at desc,id desc limit 1) c on true
+    left join private.stockflow_wallet_divisions d on d.id=o.division_id
     where cl.opportunity_id is null and o.customer_id in (select value::uuid from jsonb_array_elements_text(p_payload->'customerIds'))
     order by o.customer_id,(c.category is not null and c.category<>'unknown') desc,o.opened_at desc,o.id desc
    ) latest;
@@ -159,10 +162,11 @@ begin
  elsif p_action='get_account_opportunities' then
   customer:=(p_payload->>'customerId')::uuid;
   if not exists(select 1 from private.stockflow_customers where id=customer) then raise exception 'Customer not found' using errcode='22023';end if;
-  select coalesce(jsonb_agg(jsonb_build_object('id',o.id,'customerId',o.customer_id,'kind',o.kind,'openedReason',o.opened_reason,'openedBy',o.opened_by,'openedAt',o.opened_at,
+  select coalesce(jsonb_agg(jsonb_build_object('id',o.id,'customerId',o.customer_id,'divisionCode',d.code,'divisionName',d.name,'kind',o.kind,'openedReason',o.opened_reason,'openedBy',o.opened_by,'openedAt',o.opened_at,
    'closure',case when cl.opportunity_id is null then null else jsonb_build_object('outcome',cl.outcome,'reason',cl.reason,'closedBy',cl.closed_by,'closedAt',cl.closed_at) end,
    'constraint',cur.item,'history',hist.items) order by (cl.opportunity_id is null) desc,o.opened_at desc,o.id desc),'[]'::jsonb)
   into result from private.stockflow_commercial_opportunities o left join private.stockflow_commercial_opportunity_closures cl on cl.opportunity_id=o.id
+  left join private.stockflow_wallet_divisions d on d.id=o.division_id
   left join lateral(select private.stockflow_constraint_json(c.id) item
    from private.stockflow_commercial_constraints c where c.opportunity_id=o.id order by c.recorded_at desc,c.id desc limit 1) cur on true
   left join lateral(select coalesce(jsonb_agg(private.stockflow_constraint_json(c.id) order by c.recorded_at desc,c.id desc),'[]'::jsonb) items
@@ -191,13 +195,19 @@ begin
  replay:=private.begin_stockflow_command(actor,p_action,command_key,p_payload);if replay is not null then return replay;end if;
  if p_action='open_opportunity' then
   customer:=(p_payload->>'customerId')::uuid;
-  perform pg_advisory_xact_lock(hashtextextended('opportunity:'||customer||':'||coalesce(p_payload->>'kind',''),0));
   if coalesce(p_payload->>'kind','') not in ('capture','defend','recover') or length(btrim(coalesce(p_payload->>'reason',''))) not between 3 and 500 then raise exception 'Invalid opportunity' using errcode='22023';end if;
-  if exists(select 1 from private.stockflow_commercial_opportunities o left join private.stockflow_commercial_opportunity_closures cl on cl.opportunity_id=o.id where o.customer_id=customer and o.kind=p_payload->>'kind' and cl.opportunity_id is null) then raise exception 'Open opportunity already exists' using errcode='PT409';end if;
+  if p_payload ? 'divisionCode' and jsonb_typeof(p_payload->'divisionCode') not in ('string','null') then raise exception 'Invalid division' using errcode='22023';end if;
+  v_division_code:=p_payload->>'divisionCode';v_division:=null;v_division_label:=null;
+  if v_division_code is not null then
+   select id,name into v_division,v_division_label from private.stockflow_wallet_divisions where code=v_division_code and active;
+   if v_division is null then raise exception 'Unknown or inactive division' using errcode='22023';end if;
+  end if;
+  perform pg_advisory_xact_lock(hashtextextended('opportunity:'||customer||':'||(p_payload->>'kind')||':'||coalesce(v_division::text,'all'),0));
+  if exists(select 1 from private.stockflow_commercial_opportunities o left join private.stockflow_commercial_opportunity_closures cl on cl.opportunity_id=o.id where o.customer_id=customer and o.kind=p_payload->>'kind' and o.division_id is not distinct from v_division and cl.opportunity_id is null) then raise exception 'Open opportunity already exists' using errcode='PT409';end if;
   if not exists(select 1 from private.stockflow_customers where id=customer) then raise exception 'Customer not found' using errcode='22023';end if;
-  insert into private.stockflow_commercial_opportunities(customer_id,kind,opened_reason,opened_by) values(customer,p_payload->>'kind',btrim(p_payload->>'reason'),actor)
+  insert into private.stockflow_commercial_opportunities(customer_id,division_id,kind,opened_reason,opened_by) values(customer,v_division,p_payload->>'kind',btrim(p_payload->>'reason'),actor)
    returning id into entity;
-  result:=jsonb_build_object('id',entity,'customerId',customer,'kind',p_payload->>'kind','openedReason',btrim(p_payload->>'reason'),'openedBy',actor,'openedAt',clock_timestamp(),'closure',null,'constraint',null,'history','[]'::jsonb);
+  result:=jsonb_build_object('id',entity,'customerId',customer,'divisionCode',v_division_code,'divisionName',v_division_label,'kind',p_payload->>'kind','openedReason',btrim(p_payload->>'reason'),'openedBy',actor,'openedAt',clock_timestamp(),'closure',null,'constraint',null,'history','[]'::jsonb);
  elsif p_action='record_constraint' then
   opportunity:=(p_payload->>'opportunityId')::uuid;
   perform pg_advisory_xact_lock(hashtextextended('opportunity-constraint:'||opportunity,0));

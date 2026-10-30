@@ -14,7 +14,7 @@ const row = { customerId: a, name: 'Example Diagnostic Laboratory', city: 'Bidar
 const second = { ...row, customerId: b, name: 'Not diagnosed lab' };
 const none = { ...row, customerId: c, name: 'No estimate lab', walletPaise: null, sharePermille: null, confidence: null, asOf: null };
 const current = { id: snapshotId, monthlyWalletPaise: 10000000, method: 'customer_stated' as const, source: 'Discussion', confidence: 'high' as const, asOf: row.asOf, note: 'Estimate', loweredReason: null, enteredBy: 'manager@example.test', enteredAt: '2026-10-01T00:00:00Z', verifiedBy: null, divisions: [{ code: 'BIOCHEM', name: 'Biochemistry', monthlyWalletPaise: 4000000 }], unallocatedPaise: 6000000 };
-const diagnosed: WalletOpportunity = { id: opportunityId, customerId: a, kind: 'capture', openedReason: 'Tender price pressure', openedBy: 'manager@example.test', openedAt: '2026-10-01T00:00:00Z', closure: null, constraint: { id: constraintId, category: 'price', evidence: 'Competitor quote', confidence: 'low', source: 'our_view', sourcePerson: null, observedOn: '2026-10-02', facts: { competitor: 'Acme Diagnostics', product: 'Glucose kit', competitorPricePaise: 120000, ourPricePaise: 140000 }, priceUnproven: true, gapPermille: 143, recordedBy: 'manager@example.test', recordedAt: '2026-10-02T00:00:00Z' }, history: [] };
+const diagnosed: WalletOpportunity = { id: opportunityId, customerId: a, kind: 'capture', divisionCode: null, divisionName: null, openedReason: 'Tender price pressure', openedBy: 'manager@example.test', openedAt: '2026-10-01T00:00:00Z', closure: null, constraint: { id: constraintId, category: 'price', evidence: 'Competitor quote', confidence: 'low', source: 'our_view', sourcePerson: null, observedOn: '2026-10-02', facts: { competitor: 'Acme Diagnostics', product: 'Glucose kit', competitorPricePaise: 120000, ourPricePaise: 140000 }, priceUnproven: true, gapPermille: 143, recordedBy: 'manager@example.test', recordedAt: '2026-10-02T00:00:00Z' }, history: [] };
 type Options = { diagnosisFailure?: '500' | 'shape'; conflict?: boolean; networkFailure?: boolean; zeroSignals?: boolean };
 async function fixture(page: Page, options: Options = {}) {
   const posts: Array<{ action: string; payload: Record<string, unknown> }> = [];
@@ -28,7 +28,7 @@ async function fixture(page: Page, options: Options = {}) {
       const body = route.request().postDataJSON() as { action: string; payload: Record<string, unknown> }; posts.push(body);
       if (options.networkFailure && body.action === 'record_constraint' && !attemptedNetworkFailure) { attemptedNetworkFailure = true; return route.abort('failed'); }
       if (options.conflict && !attemptedConflict) { attemptedConflict = true; return route.fulfill({ status: 409, json: { error: 'PT409' } }); }
-      if (body.action === 'open_opportunity') opportunities = [...opportunities, { ...diagnosed, id: opportunityId, customerId: String(body.payload.customerId), kind: String(body.payload.kind) as WalletOpportunity['kind'], openedReason: String(body.payload.reason), constraint: null, history: [] }];
+      if (body.action === 'open_opportunity') opportunities = [...opportunities, { ...diagnosed, id: opportunityId, customerId: String(body.payload.customerId), kind: String(body.payload.kind) as WalletOpportunity['kind'], divisionCode: body.payload.divisionCode as string | null, divisionName: body.payload.divisionCode === 'BIOCHEM' ? 'Biochemistry' : null, openedReason: String(body.payload.reason), constraint: null, history: [] }];
       if (body.action === 'record_constraint') opportunities = opportunities.map(item => item.id === body.payload.opportunityId ? { ...item, constraint: { ...diagnosed.constraint!, id: constraintId, category: String(body.payload.category) as 'price', evidence: String(body.payload.evidence), source: String(body.payload.source) as 'document', sourcePerson: body.payload.sourcePerson as string | null, observedOn: String(body.payload.observedOn), facts: body.payload.facts as NonNullable<WalletOpportunity['constraint']>['facts'], confidence: body.payload.source === 'document' ? 'high' : body.payload.source === 'customer_stated' ? 'medium' : 'low', priceUnproven: body.payload.source === 'our_view', recordedBy: 'manager@example.test', recordedAt: '2026-10-02T00:00:00Z' }, history: [] } : item);
       if (body.action === 'close_opportunity') opportunities = opportunities.map(item => item.id === body.payload.opportunityId ? { ...item, closure: { outcome: String(body.payload.outcome) as 'lost', reason: String(body.payload.reason), closedBy: 'manager@example.test', closedAt: '2026-10-03T00:00:00Z' } } : item);
       return route.fulfill({ json: { ok: true } });
@@ -68,6 +68,8 @@ for (const width of [375, 1280]) test.describe(`Wallet diagnosis at ${width}px`,
     await expect(noEstimate).toContainText('No estimate');
     await expect(noEstimate).not.toContainText('Not diagnosed');
     await expect(page.getByText(/2 of 3 Focus accounts not diagnosed/)).toBeVisible();
+    await openAccount(page);
+    await expect(page.getByText('Capture opportunity · Whole lab · Tender price pressure', { exact: true })).toBeVisible();
     expect(await page.evaluate(() => document.documentElement.scrollWidth <= document.documentElement.clientWidth)).toBe(true);
   });
   test('starts diagnosis, records a constraint, and closes it with category evidence hints', async ({ page }) => {
@@ -77,10 +79,12 @@ for (const width of [375, 1280]) test.describe(`Wallet diagnosis at ${width}px`,
     await page.getByRole('button', { name: /Not diagnosed lab/ }).click();
     const diagnosis = page.getByRole('region', { name: "Why we're not winning" });
     await diagnosis.getByRole('button', { name: 'Start diagnosis' }).click();
+    await diagnosis.getByLabel('Division').selectOption('BIOCHEM');
     await diagnosis.getByLabel('Reason').fill('Customer has a new tender');
     await diagnosis.getByRole('button', { name: 'Save', exact: true }).click();
     await expect.poll(() => posts.length).toBe(1);
-    expect(posts[0]).toMatchObject({ action: 'open_opportunity', payload: { customerId: b, kind: 'capture', reason: 'Customer has a new tender' } });
+    expect(posts[0]).toMatchObject({ action: 'open_opportunity', payload: { customerId: b, kind: 'capture', divisionCode: 'BIOCHEM', reason: 'Customer has a new tender' } });
+    await expect(diagnosis.getByText('Capture opportunity · Biochemistry · Customer has a new tender', { exact: true })).toBeVisible();
     await diagnosis.getByRole('button', { name: 'Update reason' }).click();
     await expect(diagnosis.getByText('Not diagnosed yet', { exact: true })).toBeVisible();
     await diagnosis.getByLabel('Category').selectOption('price');

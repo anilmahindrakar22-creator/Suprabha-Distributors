@@ -17,11 +17,11 @@ export type ConstraintFacts =
   | { category: 'unknown'; nextQuestion: string; askBy: string };
 export type WalletConstraint = { id: string; category: ConstraintCategory; evidence: string; confidence: ConstraintConfidence; recordedBy: string; recordedAt: string; source: EvidenceSource; sourcePerson: string | null; observedOn: string; facts: Omit<ConstraintFacts, 'category'>; contactName?: string | null; priceUnproven: boolean; gapPermille: number | null };
 export type WalletOpportunity = {
-  id: string; customerId: string; kind: OpportunityKind; openedReason: string; openedBy: string; openedAt: string;
+  id: string; customerId: string; kind: OpportunityKind; divisionCode: string | null; divisionName: string | null; openedReason: string; openedBy: string; openedAt: string;
   closure: { outcome: OpportunityOutcome; reason: string; closedBy: string; closedAt: string } | null;
   constraint: WalletConstraint | null; history: WalletConstraint[];
 };
-export type WalletDiagnosisRow = { customerId: string; kind: OpportunityKind; category: ConstraintCategory | null; confidence: ConstraintConfidence | null; priceUnproven: boolean };
+export type WalletDiagnosisRow = { customerId: string; kind: OpportunityKind; divisionCode: string | null; divisionName: string | null; category: ConstraintCategory | null; confidence: ConstraintConfidence | null; priceUnproven: boolean };
 export type WalletDiagnoses = { rows: WalletDiagnosisRow[]; undiagnosedFocusCount: number | null; focusCount: number | null; focusWithoutDecisionMaker?: number | null };
 export type WalletSignals = { priceExceptions90d: number; deliveryProblems90d: number; deliveryProblemsOpen: number; serviceTicketsOpen: number; serviceTickets90d: number; ourInstallations: number; lastVisitOn: string | null; powerAlerts?: string[]; decisionMakerLastMetOn?: string | null };
 type FactsWithoutCategory = Omit<ConstraintFacts, 'category'>;
@@ -29,7 +29,7 @@ export type WalletDiagnosisCommand =
   | { action: 'get_wallet_diagnoses'; payload: { customerIds: string[] } }
   | { action: 'get_account_opportunities'; payload: { customerId: string } }
   | { action: 'get_account_signals'; payload: { customerId: string } }
-  | { action: 'open_opportunity'; payload: { requestId: string; customerId: string; kind: OpportunityKind; reason: string } }
+  | { action: 'open_opportunity'; payload: { requestId: string; customerId: string; kind: OpportunityKind; divisionCode: string | null; reason: string } }
   | { action: 'record_constraint'; payload: { requestId: string; opportunityId: string; category: ConstraintCategory; facts: FactsWithoutCategory; evidence: string; source: EvidenceSource; sourcePerson: string | null; observedOn: string; expectedCurrentConstraintId: string | null } }
   | { action: 'close_opportunity'; payload: { requestId: string; opportunityId: string; outcome: OpportunityOutcome; reason: string } };
 
@@ -84,7 +84,7 @@ export function validateWalletDiagnosisCommand(input: unknown): WalletDiagnosisC
       if (!exactKeys(p, ['customerId']) || typeof p.customerId !== 'string' || !uuid.test(p.customerId)) return fail();
       return { action: input.action, payload: { customerId: p.customerId } };
     case 'open_opportunity':
-      if (!exactKeys(p, ['requestId','customerId','kind','reason']) || typeof p.requestId !== 'string' || !uuid.test(p.requestId) || typeof p.customerId !== 'string' || !uuid.test(p.customerId) || !kinds.includes(p.kind as OpportunityKind) || !text(p.reason, 3, 500)) return fail();
+      if (!exactKeys(p, ['requestId','customerId','kind','divisionCode','reason']) || typeof p.requestId !== 'string' || !uuid.test(p.requestId) || typeof p.customerId !== 'string' || !uuid.test(p.customerId) || !kinds.includes(p.kind as OpportunityKind) || !(p.divisionCode === null || text(p.divisionCode, 1, 100)) || !text(p.reason, 3, 500)) return fail();
       return { action: input.action, payload: p as unknown as Extract<WalletDiagnosisCommand, { action: 'open_opportunity' }>['payload'] };
     case 'record_constraint': if (!validRecordPayload(p)) return fail(); return { action: input.action, payload: p as unknown as Extract<WalletDiagnosisCommand, { action: 'record_constraint' }>['payload'] };
     case 'close_opportunity':

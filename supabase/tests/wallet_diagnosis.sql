@@ -11,6 +11,7 @@ insert into private.stockflow_customers(id,name,tally_key,created_by_email) valu
  ('b2500000-0000-4000-8000-000000000002','Diagnosis Two','diagnosis-2','test'),
  ('b2500000-0000-4000-8000-000000000003','Diagnosis Three','diagnosis-3','test'),
  ('b2500000-0000-4000-8000-000000000004','Diagnosis Four','diagnosis-4','test'),
+ ('b2c00000-0000-4000-8000-000000000011','Division Diagnosis Lab','division-diagnosis-lab','test'),
  ('b2900000-0000-4000-8000-000000000005','Diagnosis Five','diagnosis-5','test'),
  ('b2900000-0000-4000-8000-000000000004','Diagnosis Other','diagnosis-other-4','test');
 insert into private.stockflow_economic_customer_identities(company_id,source_id,customer_id,verified_by) values
@@ -37,7 +38,8 @@ do $checks$
 declare result_data jsonb; first_id uuid; second_id uuid; third_id uuid; first_constraint uuid; newer_constraint uuid; row_value jsonb;
  denied_flag boolean; actor_role text; action_name text; table_name text; row_count_before bigint; audit_count_before bigint;
  fixture_company text; fixture_month date; fixture_net bigint; fixture_start date; fixture_end date;
- fixture_focus bigint; fixture_focus_members bigint; diag_four_data jsonb; signal_order uuid; signal_order_old uuid; signal_install uuid;
+ fixture_focus bigint; fixture_focus_members bigint; diag_four_data jsonb; d11_result jsonb; d11_rows jsonb; d11_row jsonb;
+ signal_order uuid; signal_order_old uuid; signal_install uuid;
  signal_customer uuid:='b2500000-0000-4000-8000-000000000001'; signal_other uuid:='b2500000-0000-4000-8000-000000000003'; signal_data jsonb;
  signal_line uuid; signal_decision uuid; signal_policy uuid; signal_price_order uuid;
  fact_data jsonb; source_value text;
@@ -156,6 +158,28 @@ begin
  diag_four_data:=pg_temp.diagnosis_call('get_wallet_diagnoses','{"customerIds":["b2500000-0000-4000-8000-000000000004"]}');
  if diag_four_data#>>'{rows,0,kind}'<>'defend' or diag_four_data#>>'{rows,0,category}'<>'price'
   then raise exception 'D8b diagnosed opportunity must outrank newer undiagnosed opportunity: %',diag_four_data;end if;
+ -- D11 opportunities are unique within a division; whole-lab scope is separate.
+ d11_result:=pg_temp.diagnosis_call('open_opportunity',jsonb_build_object('requestId','wallet-diagnosis-d11-immuno','customerId','b2c00000-0000-4000-8000-000000000011',
+  'kind','capture','reason','Capture Immunoassay','divisionCode','IMMUNO'));
+ if d11_result->>'divisionCode'<>'IMMUNO' or d11_result->>'divisionName'<>'Immunoassay' then raise exception 'D11 Immunoassay division JSON failed: %',d11_result;end if;
+ d11_result:=pg_temp.diagnosis_call('open_opportunity',jsonb_build_object('requestId','wallet-diagnosis-d11-haem','customerId','b2c00000-0000-4000-8000-000000000011',
+  'kind','capture','reason','Capture Haematology','divisionCode','HAEM'));
+ if d11_result->>'divisionCode'<>'HAEM' or d11_result->>'divisionName'<>'Haematology' then raise exception 'D11 Haematology division JSON failed: %',d11_result;end if;
+ perform pg_temp.diagnosis_error('open_opportunity',jsonb_build_object('requestId','wallet-diagnosis-d11-duplicate-immuno','customerId','b2c00000-0000-4000-8000-000000000011',
+  'kind','capture','reason','Duplicate Immunoassay','divisionCode','IMMUNO'),'PT409');
+ d11_result:=pg_temp.diagnosis_call('open_opportunity',jsonb_build_object('requestId','wallet-diagnosis-d11-whole-lab','customerId','b2c00000-0000-4000-8000-000000000011',
+  'kind','capture','reason','Capture whole lab'));
+ if d11_result->'divisionCode' is distinct from 'null'::jsonb or d11_result->'divisionName' is distinct from 'null'::jsonb then raise exception 'D11 whole-lab scope JSON failed: %',d11_result;end if;
+ perform pg_temp.diagnosis_error('open_opportunity',jsonb_build_object('requestId','wallet-diagnosis-d11-unknown-division','customerId','b2c00000-0000-4000-8000-000000000011',
+  'kind','defend','reason','Unknown division','divisionCode','NO_SUCH_DIVISION'),'22023');
+ d11_rows:=pg_temp.diagnosis_call('get_account_opportunities','{"customerId":"b2c00000-0000-4000-8000-000000000011"}');
+ if jsonb_array_length(d11_rows)<>3 then raise exception 'D11 expected three opportunities: %',d11_rows;end if;
+ for d11_row in select value from jsonb_array_elements(d11_rows) loop
+  if not (d11_row ? 'divisionCode') or not (d11_row ? 'divisionName') then raise exception 'D11 opportunity JSON lacks division fields: %',d11_row;end if;
+ end loop;
+ d11_result:=pg_temp.diagnosis_call('get_wallet_diagnoses','{"customerIds":["b2c00000-0000-4000-8000-000000000011"]}');
+ if jsonb_array_length(d11_result->'rows')<>1 or not (d11_result->'rows'->0 ? 'divisionName')
+  or d11_result#>'{rows,0,divisionName}' is distinct from 'null'::jsonb then raise exception 'D11 diagnosis row division name failed: %',d11_result;end if;
  -- E1 every category accepts its exact structured facts; representative shape errors are 22023.
  -- P5 relationship facts accept a same-customer current contact and reject cross-customer or removed contacts.
  result_data:=pg_temp.diagnosis_account_call('create_territory',jsonb_build_object('idempotencyKey','wallet-p5-territory-0001','name','Wallet Diagnosis P5 Territory'));

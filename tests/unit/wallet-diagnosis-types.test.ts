@@ -13,6 +13,12 @@ const samples: Array<[string, Record<string, unknown>]> = [
   ['clinical', { issue: 'Validation concern' }], ['contract_tender', { holder: 'District lab', endsOn: today }], ['competitor_lock_in', { competitor: 'Acme', endsOn: today }], ['unknown', { nextQuestion: 'Who supplies reagents?', askBy: today }],
 ];
 describe('validateWalletDiagnosisCommand', () => {
+  it('accepts whole-lab and valid division opportunity scopes, and rejects invalid division codes', () => {
+    const wholeLab = { action: 'open_opportunity', payload: { requestId: '22222222-2222-4222-8222-222222222222', customerId, kind: 'capture', divisionCode: null, reason: 'New tender opportunity' } };
+    expect(validateWalletDiagnosisCommand(wholeLab).action).toBe('open_opportunity');
+    expect(validateWalletDiagnosisCommand({ ...wholeLab, payload: { ...wholeLab.payload, divisionCode: 'BIOCHEM' } }).action).toBe('open_opportunity');
+    for (const divisionCode of ['', 'x'.repeat(101)]) expect(() => validateWalletDiagnosisCommand({ ...wholeLab, payload: { ...wholeLab.payload, divisionCode } })).toThrow('Invalid wallet diagnosis request');
+  });
   it.each(samples)('accepts valid %s facts and exact record payload', (category, facts) => {
     const result = validateWalletDiagnosisCommand({ action: 'record_constraint', payload: { ...base, category, facts } });
     expect(result.action).toBe('record_constraint');
