@@ -2,7 +2,9 @@
 
 import { lazy, Suspense, useEffect, useMemo, useRef, useState } from 'react';
 import { desktopPopupState, disableDesktopPopups, enableDesktopPopups, showWorkPopup, type DesktopPopupState } from '@/lib/desktop-popups';
-import { Boxes, Building2, CloudDownload, Ellipsis, Inbox, ShoppingCart, Tags, TrendingUp, TriangleAlert, Users, Wrench } from 'lucide-react';
+import { Boxes, Building2, CloudDownload, Ellipsis, Inbox, LayoutDashboard, ShoppingCart, Tags, TrendingUp, TriangleAlert, Users, Wrench } from 'lucide-react';
+import { TodayWorkspace, type TodayQueue } from './today-workspace';
+import type { TodayTarget } from '@/lib/today';
 import { NotificationBell } from './notification-bell';
 import { BellIcon } from './order-list';
 import { startWorkNotifications, workQueuesForRoles, type WorkItem, type WorkNotificationState } from '@/lib/work-notifications';
@@ -24,8 +26,8 @@ const PricingWorkspace = lazy(() => import('./pricing-workspace').then((module) 
 const RequestsWorkspace = lazy(() => import('./requests-workspace').then((module) => ({ default: module.RequestsWorkspace })));
 const AccountsWorkspace = lazy(() => import('./accounts-workspace').then((module) => ({ default: module.AccountsWorkspace })));
 
-type Surface = 'stock' | 'orders' | 'requests' | 'accounts' | 'pricing' | 'economics' | 'service' | 'users';
-const surfaceIcons = { stock: Boxes, orders: ShoppingCart, requests: Inbox, accounts: Building2, pricing: Tags, economics: TrendingUp, service: Wrench, users: Users };
+type Surface = 'today' | 'stock' | 'orders' | 'requests' | 'accounts' | 'pricing' | 'economics' | 'service' | 'users';
+const surfaceIcons = { today: LayoutDashboard, stock: Boxes, orders: ShoppingCart, requests: Inbox, accounts: Building2, pricing: Tags, economics: TrendingUp, service: Wrench, users: Users };
 function SurfaceIcon({ surface, size }: { surface: Surface; size: number }) {
   const Icon = surfaceIcons[surface];
   return <Icon size={size} aria-hidden="true" className="shrink-0" />;
@@ -44,8 +46,10 @@ function SectionLoading() {
 export function StockFlowFrame({ actorEmail, actorRole, actorRoles, staffAuth = false, staffEmailActionsEnabled = false }: { actorEmail: string; actorRole: string; actorRoles?: StockFlowRole[]; staffAuth?: boolean; staffEmailActionsEnabled?: boolean }) {
   const roles = actorRoles ?? [actorRole as StockFlowRole];
   const rolesKey = roles.join(',');
-  const [surface, setSurface] = useState<Surface>('stock');
-  const [accountsOpen, setAccountsOpen] = useState<{ view: 'my-actions' | undefined; nonce: number }>({ view: undefined, nonce: 0 });
+  const canSeeToday = hasAnyStockFlowRole(roles, ['administrator', 'management']);
+  const [surface, setSurface] = useState<Surface>(() => canSeeToday ? 'today' : 'stock');
+  const [accountsOpen, setAccountsOpen] = useState<{ view?: 'my-actions' | 'wallet'; customerId?: string; walletView?: 'actions_due'; nonce: number }>({ nonce: 0 });
+  const [todayOpenError, setTodayOpenError] = useState('');
   // Billing-only staff open Orders on the Bill queue; everyone else on Active.
   const homeOrderFilter = hasAnyStockFlowRole(roles, ['billing']) && !hasAnyStockFlowRole(roles, ['administrator', 'management', 'operations', 'sales', 'warehouse', 'accounts']) ? 'billing' : 'open';
   const [orderFilter, setOrderFilter] = useState(homeOrderFilter);
@@ -265,9 +269,39 @@ export function StockFlowFrame({ actorEmail, actorRole, actorRoles, staffAuth = 
     setSurface('orders');
   }
 
+  async function openTodayTarget(target: TodayTarget) {
+    setTodayOpenError('');
+    if (target.kind === 'stock') { setSurface('requests'); return; }
+    if (target.kind === 'lab') {
+      setAccountsOpen(current => ({ view: 'wallet', customerId: target.customerId, nonce: current.nonce + 1 }));
+      setSurface('accounts');
+      return;
+    }
+    try {
+      // The Today contract guarantees an ID only; resolve the number with an access-checked read.
+      let orderNumber = target.orderNumber;
+      if (!orderNumber) {
+        const response = await fetch(`/api/pricing?orderId=${encodeURIComponent(target.orderId)}`, { cache: 'no-store', signal: AbortSignal.timeout(15_000) });
+        if (!response.ok) throw new Error('Order could not open');
+        const order: unknown = await response.json();
+        if (!order || typeof order !== 'object' || !('orderId' in order) || order.orderId !== target.orderId || !('orderNumber' in order) || typeof order.orderNumber !== 'string' || !order.orderNumber.trim()) throw new Error('Order could not open');
+        orderNumber = order.orderNumber;
+      }
+      setSurface('orders');
+      openOrder({ orderId: target.orderId, orderNumber });
+    } catch { setTodayOpenError('Order could not open. Try again.'); }
+  }
+  function showTodayQueue(queue: TodayQueue) {
+    if (queue === 'stock') setSurface('requests');
+    else if (queue === 'grow') {
+      setAccountsOpen(current => ({ view: 'wallet', walletView: 'actions_due', nonce: current.nonce + 1 }));
+      setSurface('accounts');
+    } else openQueue(queue === 'price' ? 'prices_to_approve' : 'attention');
+  }
+
   function openSurface(item: Surface) {
     setMoreOpen(false);
-    if (item === 'accounts') setAccountsOpen((current) => ({ ...current, view: undefined }));
+    if (item === 'accounts') setAccountsOpen((current) => ({ nonce: current.nonce + 1 }));
     if (item === 'orders' && surface !== 'orders') {
       setOrderFilter(homeOrderFilter);
       setOrderView((current) => ({ query: '', nonce: current.nonce + 1 }));
@@ -275,7 +309,8 @@ export function StockFlowFrame({ actorEmail, actorRole, actorRoles, staffAuth = 
     setSurface(item);
   }
   const surfaces: Surface[] = ['stock', 'orders', 'requests', ...(hasAnyStockFlowRole(roles, ['administrator', 'management', 'sales', 'operations']) ? ['accounts' as const] : []), ...(hasAnyStockFlowRole(roles, ['administrator', 'management', 'accounts']) ? ['pricing' as const, 'economics' as const] : []), ...(hasAnyStockFlowRole(roles, ['administrator', 'operations', 'sales', 'management']) ? ['service' as const] : []), ...(hasAnyStockFlowRole(roles, ['administrator']) ? ['users' as const] : [])];
-  const phoneMain: Surface[] = ['stock', 'orders', 'requests'];
+  if (canSeeToday) surfaces.unshift('today');
+  const phoneMain: Surface[] = canSeeToday ? ['today', 'stock', 'orders', 'requests'] : ['stock', 'orders', 'requests'];
   const phoneMore = surfaces.filter((item) => !phoneMain.includes(item));
   // Phone push: dormant until the server reports it is enabled (docs/PUSH-NOTIFICATIONS.md).
   const [pushConfig, setPushConfig] = useState<PushConfig>({ enabled: false, publicKey: '' });
@@ -383,8 +418,11 @@ export function StockFlowFrame({ actorEmail, actorRole, actorRoles, staffAuth = 
       </header>
       {deviceNotice ? <output className="flex shrink-0 items-center justify-between gap-3 border-b border-sf-warning-line bg-sf-warning-soft px-4 py-2 text-xs font-semibold text-sf-warning sm:px-6"><span className="inline-flex items-center gap-1"><TriangleAlert size={16} aria-hidden="true" className="shrink-0" />{deviceNotice}</span><button type="button" onClick={() => setDeviceNotice('')} className="min-h-8 shrink-0 rounded-lg px-3 font-bold hover:bg-sf-warning-line">Dismiss</button></output> : null}
       {roleChangeMessage ? <output aria-live="polite" className="fixed inset-x-0 top-0 z-50 flex min-h-14 max-w-full items-center justify-between gap-2 border-b border-sf-warning-line bg-white px-3 py-1 text-sm shadow sm:px-6"><span className="min-w-0 flex-1">{roleChangeMessage}</span><button type="button" onClick={() => window.location.reload()} className="min-h-11 shrink-0 rounded-lg bg-sf-ink px-4 font-bold text-white">Reload</button><button type="button" onClick={() => setRoleChangeMessage('')} className="min-h-11 shrink-0 rounded-lg px-2 text-sf-muted">Later</button></output> : null}
+      {surface === 'today' && todayOpenError ? <p role="alert" className="px-4 text-sm text-sf-danger">{todayOpenError}</p> : null}
       <section className="min-h-0 flex-1 overflow-hidden">
-        {readyEmail !== actorEmail ? <SectionLoading /> : surface === 'stock' ? (
+        {readyEmail !== actorEmail ? <SectionLoading /> : surface === 'today' && canSeeToday ? (
+          <TodayWorkspace onOpen={target => void openTodayTarget(target)} onShowAll={showTodayQueue} />
+        ) : surface === 'stock' ? (
           <iframe
             title="Suprabha stock dashboard"
             src="/stockflow.html"
@@ -397,7 +435,7 @@ export function StockFlowFrame({ actorEmail, actorRole, actorRoles, staffAuth = 
         ) : surface === 'requests' ? (
           <Suspense fallback={<SectionLoading />}><RequestsWorkspace roles={roles} onOpenOrder={(orderId, orderNumber) => openOrder({ orderId, orderNumber })} /></Suspense>
         ) : surface === 'accounts' && hasAnyStockFlowRole(roles, ['administrator', 'management', 'sales', 'operations']) ? (
-          <Suspense fallback={<SectionLoading />}><AccountsWorkspace key={accountsOpen.nonce} defaultMode={hasAnyStockFlowRole(roles, ['administrator', 'management']) ? 'all' : 'mine'} initialView={accountsOpen.view} /></Suspense>
+          <Suspense fallback={<SectionLoading />}><AccountsWorkspace key={accountsOpen.nonce} defaultMode={hasAnyStockFlowRole(roles, ['administrator', 'management']) ? 'all' : 'mine'} initialView={accountsOpen.view} initialCustomerId={accountsOpen.customerId} initialWalletView={accountsOpen.walletView} /></Suspense>
         ) : surface === 'pricing' ? (
           <Suspense fallback={<SectionLoading />}><PricingWorkspace actorEmail={actorEmail} actorRole={actorRole} actorRoles={roles} /></Suspense>
         ) : surface === 'economics' ? (

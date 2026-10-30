@@ -1186,6 +1186,13 @@
       "remoteVersion": null,
       "remoteSha256": null,
       "status": "not_deployed"
+    },
+    {
+      "localFile": "20261102110000_today_decisions.sql",
+      "localSha256": "1a8f719fc948a51e590ab09879ecde090d012f190248e8567e428d73521c78b7",
+      "remoteVersion": null,
+      "remoteSha256": null,
+      "status": "not_deployed"
     }
   ],
   "liveCheck": {

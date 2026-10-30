@@ -31,6 +31,8 @@ for (const width of [320, 375, 768, 1280]) {
     expect((box?.x ?? 0) + (box?.width ?? 0)).toBeLessThanOrEqual(width);
     await expect(page.getByRole('button', { name: 'Sign out staff@example.test', exact: true })).toBeInViewport();
     expect(await page.evaluate(() => document.documentElement.scrollWidth <= innerWidth && document.documentElement.scrollHeight <= innerHeight)).toBe(true);
+    // Administrators land on Today since the 15 Nov train; open Stock explicitly.
+    await page.getByRole('navigation', { name: 'Application sections' }).getByRole('button', { name: /^stock$/i }).click();
     const frame = page.frameLocator('iframe');
     await expect(frame.getByRole('heading', { name: 'Stock & reorder', exact: true })).toBeVisible();
     await expect(frame.getByLabel('Find an item', { exact: true })).toBeInViewport();

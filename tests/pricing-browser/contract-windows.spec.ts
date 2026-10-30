@@ -65,7 +65,8 @@ for (const width of [375, 1280]) test.describe(`Deadlines without a plan at ${wi
     await fixture(page);
     const button = page.getByRole('button', { name: /Ended Tender Lab/ });
     await expect(button).toContainText('Tender: Tender Holder');
-    await expect(button.getByText('Ended 10 days ago', { exact: true })).toHaveClass(/text-sf-danger/);
+    await expect(button.getByText('Ended 10 days ago', { exact: true })).toBeVisible();
+    await expect(button.getByRole('img').locator('[aria-hidden="true"]')).toHaveClass(/bg-sf-danger/);
     await expect(button.getByText('No action planned', { exact: true })).toBeVisible();
   });
   for (const [daysLeft, label] of [[6, 'Ask by 5 Nov 2026 · 6 days left'], [1, 'Ask by 5 Nov 2026 · 1 day left'], [0, 'Ask by 5 Nov 2026 · today'], [-1, 'Ask-by passed 1 day ago'], [-3, 'Ask-by passed 3 days ago']] as const) test(`unknown row shows its question and ask-by wording with ${daysLeft} days left`, async ({ page }) => {
@@ -77,8 +78,8 @@ for (const width of [375, 1280]) test.describe(`Deadlines without a plan at ${wi
     await expect(button.getByText('No action planned', { exact: true })).toHaveClass(/text-sf-muted/);
     const deadline = button.getByText(label, { exact: true });
     await expect(deadline).toBeVisible();
-    if (daysLeft < 0) await expect(deadline).toHaveClass(/text-sf-danger/);
-    else await expect(deadline).not.toHaveClass(/text-sf-danger/);
+    if (daysLeft < 0) await expect(button.getByRole('img').locator('[aria-hidden="true"]')).toHaveClass(/bg-sf-danger/);
+    else await expect(button.getByRole('img').locator('[aria-hidden="true"]')).not.toHaveClass(/bg-sf-danger/);
     expect(await page.evaluate(() => document.documentElement.scrollWidth <= innerWidth)).toBe(true);
     await button.click();
     await expect(page.getByRole('dialog', { name: row.name, exact: true })).toBeVisible();

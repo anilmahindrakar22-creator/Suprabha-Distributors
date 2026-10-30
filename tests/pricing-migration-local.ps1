@@ -137,7 +137,7 @@ try {
   # Register migrations must follow the latest purchase-order migration in both plans.
   $registerNames = @('20261030090000_instrument_register.sql','20261030091000_instrument_register_read.sql')
   $planNames = @($migrationPlan | Select-Object -ExpandProperty Name)
-  $salesNames = @('20261030091000_instrument_register_read.sql','20261030100000_economic_rebuild_containment.sql','20261030101000_sales_coverage.sql','20261030110000_economics_candidate_rebuild.sql','20261030130000_wallet_v2.sql','20261031090000_wallet_diagnosis.sql','20261031120000_wallet_actions.sql','20261031130000_wallet_my_actions.sql','20261031140000_power_map_enhancement.sql','20261031150000_power_map_influence.sql','20261102090000_po_tally_receipts.sql','20261102100000_contract_windows.sql')
+  $salesNames = @('20261030091000_instrument_register_read.sql','20261030100000_economic_rebuild_containment.sql','20261030101000_sales_coverage.sql','20261030110000_economics_candidate_rebuild.sql','20261030130000_wallet_v2.sql','20261031090000_wallet_diagnosis.sql','20261031120000_wallet_actions.sql','20261031130000_wallet_my_actions.sql','20261031140000_power_map_enhancement.sql','20261031150000_power_map_influence.sql','20261102090000_po_tally_receipts.sql','20261102100000_contract_windows.sql','20261102110000_today_decisions.sql')
   for ($salesIndex = 1; $salesIndex -lt $salesNames.Count; $salesIndex++) {
     if ([array]::IndexOf($planNames,$salesNames[$salesIndex]) -le [array]::IndexOf($planNames,$salesNames[$salesIndex-1])) { throw 'Full sales replay order is invalid' }
   }
@@ -320,6 +320,7 @@ end$$;
   Invoke-DatabaseCommand $psqlProgram @('-U',$databaseUser,'-X','-q','-v','ON_ERROR_STOP=1','-d',$database,'-f',(Join-Path $repository 'supabase/tests/po_tally_receipts.sql'))
   Invoke-DatabaseCommand $psqlProgram @('-U',$databaseUser,'-X','-q','-v','ON_ERROR_STOP=1','-d',$database,'-f',(Join-Path $repository 'supabase/tests/po_tally_receipts_concurrency.sql'))
   Invoke-DatabaseCommand $psqlProgram @('-U',$databaseUser,'-X','-q','-v','ON_ERROR_STOP=1','-d',$database,'-f',(Join-Path $repository 'supabase/tests/contract_windows.sql'))
+  Invoke-DatabaseCommand $psqlProgram @('-U',$databaseUser,'-X','-q','-v','ON_ERROR_STOP=1','-d',$database,'-f',(Join-Path $repository 'supabase/tests/today_decisions.sql'))
   Invoke-DatabaseCommand $psqlProgram @('-U',$databaseUser,'-X','-q','-v','ON_ERROR_STOP=1','-d',$database,'-f',(Join-Path $repository 'supabase/tests/economics_candidate_rebuild.sql'))
   Write-Output 'PASS: rebuild containment, sales coverage and exact control reconciliation'
   Invoke-DatabaseCommand $psqlProgram @('-U',$databaseUser,'-X','-q','-v','ON_ERROR_STOP=1','-d',$database,'-f',(Join-Path $repository 'supabase/tests/mapped_instrument_cost_scope.sql'))

@@ -1,6 +1,8 @@
 'use client';
 
 import Link from 'next/link';
+import { CountdownBar, MeterBar, StatusChip, ToneIcon } from '@/components/ui/glance';
+import { commercialIcons, constraintIcons } from '@/lib/glance-icons';
 import { useEffect, useRef, useState, type ReactNode } from 'react';
 import type { WalletAccount, WalletCommand, WalletPolicy, WalletRow, WalletSnapshot, WalletView, WalletWorkspace as Workspace } from '@/lib/wallet-types';
 import { formatPaise, permilleLabel, rupeesToPaise } from '@/lib/wallet-format';
@@ -56,9 +58,9 @@ function ContractWindowRows({ onOpen }: { onOpen: (customerId: string) => void }
     {windows && windows.total > 0 ? <section aria-label="Deadlines without a plan" className="min-w-0 space-y-3">
       <h3 className="font-bold">Deadlines without a plan ({windows.total})</h3>
       <ul className="space-y-3">{windows.rows.map(row => <li key={row.opportunityId}><button className="min-h-11 w-full min-w-0 space-y-1 rounded-xl border border-sf-line-soft bg-white p-4 text-left" onClick={() => onOpen(row.customerId)}>
-        <span className="block font-bold">{row.customerName}{row.town ? ` · ${row.town}` : ''}</span>
+        <span className="flex items-center gap-2"><ToneIcon icon={row.category === 'unknown' ? commercialIcons.open_question : row.category === 'competitor_lock_in' ? commercialIcons.lock_in : commercialIcons.tender} tone={row.daysLeft < 0 ? 'danger' : 'info'} /><span className="min-w-0 font-bold">{row.customerName}{row.town ? ` · ${row.town}` : ''}</span></span>
         <span className="block text-sm">{row.category === 'unknown' ? 'Open question' : row.category === 'competitor_lock_in' ? 'Competitor lock-in' : 'Tender'}: {row.party}</span>
-        <span className={`block text-sm${row.daysLeft < 0 ? ' text-sf-danger' : ''}`}>{windowLabel(row)}</span>
+        <CountdownBar daysLeft={row.daysLeft} horizonDays={row.category === 'unknown' ? 14 : 120} label={windowLabel(row)} />
         <span className="block text-xs text-sf-muted">No action planned</span>
       </button></li>)}</ul>
       {windows.rows.length < windows.total ? <button className={button} disabled={loading} onClick={() => { setLoading(true); setPage(n => n + 1); }}>Load more</button> : null}
@@ -76,10 +78,13 @@ function Sheet({ title, children, onClose, locked = false }: { title: string; ch
 }
 
 function Figures({ row, certified, walletShareTargetBps }: { row: WalletRow; certified: boolean; walletShareTargetBps: number }) {
-  if (row.walletPaise === null) return <p className="text-sm text-sf-muted">No estimate</p>;
-  return <div className="space-y-1 text-sm">
-    <p>Wallet {formatPaise(row.walletPaise)}/mo{certified ? <> · Sales {row.salesPaise === null ? '…' : formatPaise(row.salesPaise)}/mo{row.sharePermille !== null ? <> · {permilleLabel(row.sharePermille)} share</> : null}</> : null}</p>
-    {certified ? <div className="flex items-center gap-3">{row.sharePermille !== null ? <div aria-label={`Wallet share ${permilleLabel(row.sharePermille)}`} className="relative h-1 w-24 max-w-full shrink-0 rounded bg-sf-line-soft"><div className="h-1 rounded bg-sf-brand" style={{ width: `${Math.max(0, Math.min(100, row.sharePermille / 10))}%` }} /><svg aria-label={`Target ${permilleLabel(walletShareTargetBps / 10)}`} className="absolute -top-1 h-3 w-px -translate-x-1/2 text-sf-body" style={{ left: `${walletShareTargetBps / 100}%` }} viewBox="0 0 1 12"><path d="M0.5 0V12" stroke="currentColor" /></svg></div> : null}<span>Gap {row.captureGapPaise === null ? '…' : formatPaise(row.captureGapPaise)}/mo to target</span></div> : null}
+  const share = certified && row.sharePermille !== null ? row.sharePermille / 1000 : null;
+  const target = 0.8;
+  return <div className="space-y-2 text-sm">
+    {row.walletPaise === null ? <p className="text-sm text-sf-muted">No estimate</p> : <p>Wallet {formatPaise(row.walletPaise)}/mo{certified ? <> · Sales {row.salesPaise === null ? '…' : formatPaise(row.salesPaise)}/mo{row.sharePermille !== null ? <> · {permilleLabel(row.sharePermille)} share</> : null}</> : null}</p>}
+    <MeterBar value={share} target={target} tone={share !== null && share >= target ? 'success' : share !== null && share >= target / 2 ? 'warning' : 'danger'} label={share === null ? 'Wallet share' : `Wallet share ${permilleLabel(row.sharePermille!)}`} />
+    <span className="text-xs text-sf-muted">Target {permilleLabel(walletShareTargetBps / 10)}</span>
+    {certified && row.walletPaise !== null ? <p className={(row.captureGapPaise ?? 0) > 0 ? 'text-sf-danger' : ''}>Gap {row.captureGapPaise === null ? '…' : formatPaise(row.captureGapPaise)}/mo to target</p> : null}
   </div>;
 }
 
@@ -166,9 +171,10 @@ function PolicyForm({ policy, onSaved, onConflict, onForbidden, onLock }: { poli
   </fieldset>{write.error ? <p role="alert" className="text-sm text-sf-danger">{write.error}</p> : null}{write.uncertain ? <button type="button" className={primary} disabled={write.busy} onClick={write.retry}>Retry same save</button> : <button className={primary} disabled={write.busy}>Save targets</button>}</form>;
 }
 
-export function WalletWorkspace({ onBack, onReviewLinks }: { onBack: () => void; onReviewLinks: () => void }) {
+export function WalletWorkspace({ onBack, onReviewLinks, initialCustomerId, initialView }: { onBack: () => void; onReviewLinks: () => void; initialCustomerId?: string; initialView?: 'actions_due' }) {
   const [workspace, setWorkspace] = useState<Workspace | null>(null);
   const [view, setView] = useState<WalletView | 'actions_due' | null>(null);
+  const initialViewOpened = useRef(false);
   const [page, setPage] = useState(1);
   const [query, setQuery] = useState('');
   const [search, setSearch] = useState('');
@@ -176,7 +182,7 @@ export function WalletWorkspace({ onBack, onReviewLinks }: { onBack: () => void;
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState('');
   const [forbidden, setForbidden] = useState(false);
-  const [customerId, setCustomerId] = useState<string | null>(null);
+  const [customerId, setCustomerId] = useState<string | null>(initialCustomerId ?? null);
   const [account, setAccount] = useState<WalletAccount | null>(null);
   const [accountError, setAccountError] = useState('');
   const [accountRevision, setAccountRevision] = useState(0);
@@ -207,9 +213,13 @@ export function WalletWorkspace({ onBack, onReviewLinks }: { onBack: () => void;
       if (!data.coverage.certified && (view === 'focus' || view === 'below_sales')) { setView('all'); setPage(1); return; }
       if (data.rows.length === 0) { setDiagnoses(null); setUndiagnosedFocusCount(null); setFocusCount(null); }
       setWorkspace(data); setLoading(false);
+      if (!initialViewOpened.current && initialView) {
+        initialViewOpened.current = true;
+        setView(initialView);
+      }
     }).catch(failure => { if (!controller.signal.aborted) { setError(message(failure)); setLoading(false); if (failure instanceof WalletError && failure.status === 403) setForbidden(true); } });
     return () => controller.abort();
-  }, [view, page, search, revision, forbidden]);
+  }, [view, page, search, revision, forbidden, initialCustomerId, initialView]);
   useEffect(() => {
     if (!workspace || forbidden) return;
     if (workspace.rows.length === 0) return;
@@ -243,7 +253,7 @@ export function WalletWorkspace({ onBack, onReviewLinks }: { onBack: () => void;
       {notice && !customerId && !targets ? <p className="text-sm text-sf-body">{notice}</p> : null}
       {workspace ? <>
         <div className={`${card} space-y-2`}>
-          {workspace.coverage.certified ? <><p className="font-bold">Focus band: {counted(workspace.summary.focusCount, 'account', 'accounts', 'holds', 'hold')} {permilleLabel(workspace.policy.focusBandBps / 10)} of the capture gap · {formatPaise(workspace.summary.focusGapPaise ?? 0, true)}/month</p>{undiagnosedFocusCount !== null && undiagnosedFocusCount > 0 ? <p className="text-sm text-sf-muted">{undiagnosedFocusCount} of {focusCount} Focus accounts not diagnosed</p> : null}{focusWithoutDecisionMaker !== null && focusWithoutDecisionMaker > 0 ? <p className="text-sm text-sf-muted">{focusWithoutDecisionMaker} of {focusCount} Focus accounts have no known decision maker</p> : null}<p className="text-sm text-sf-muted">Ranked by gap to the {permilleLabel(workspace.policy.walletShareTargetBps / 10)} Wallet-share target · based on {workspace.summary.estimatedAccounts} of {workspace.summary.accountsWithSales} accounts with an estimate · From Tally, {workspace.coverage.windowLabel}</p></> : <><p>Sales figures appear once Tally coverage is certified ({workspace.coverage.windowLabel})</p><Link className="inline-flex min-h-11 items-center text-sm text-sf-muted underline" href="/?view=instrument-economics">See Sales coverage</Link></>}
+          {workspace.coverage.certified ? <><p className="flex flex-wrap items-baseline gap-x-4 gap-y-1 text-3xl font-bold tabular-nums"><span>{counted(workspace.summary.focusCount, 'account', 'accounts')}</span><span className="text-sf-danger">{formatPaise(workspace.summary.focusGapPaise ?? 0, true)}/month</span></p><p className="font-bold">Focus band: {counted(workspace.summary.focusCount, 'account', 'accounts', 'holds', 'hold')} {permilleLabel(workspace.policy.focusBandBps / 10)} of the capture gap · {formatPaise(workspace.summary.focusGapPaise ?? 0, true)}/month</p><MeterBar value={workspace.policy.focusBandBps / 10000} tone="info" label="Capture gap in Focus band" />{undiagnosedFocusCount !== null && undiagnosedFocusCount > 0 ? <p className="text-sm text-sf-muted">{undiagnosedFocusCount} of {focusCount} Focus accounts not diagnosed</p> : null}{focusWithoutDecisionMaker !== null && focusWithoutDecisionMaker > 0 ? <p className="text-sm text-sf-muted">{focusWithoutDecisionMaker} of {focusCount} Focus accounts have no known decision maker</p> : null}<p className="text-sm text-sf-muted">Ranked by gap to the {permilleLabel(workspace.policy.walletShareTargetBps / 10)} Wallet-share target · based on {workspace.summary.estimatedAccounts} of {workspace.summary.accountsWithSales} accounts with an estimate · From Tally, {workspace.coverage.windowLabel}</p></> : <><p>Sales figures appear once Tally coverage is certified ({workspace.coverage.windowLabel})</p><Link className="inline-flex min-h-11 items-center text-sm text-sf-muted underline" href="/?view=instrument-economics">See Sales coverage</Link></>}
         </div>
         {workspace.coverage.certified && (workspace.summary.unlinkedLedgers ?? 0) > 0 ? <p className="text-sm text-sf-muted">Not linked to a customer: {formatPaise(workspace.summary.unlinkedSalesPaise ?? 0)}/month across {workspace.summary.unlinkedLedgers} Tally ledgers · <button className="min-h-11 underline" onClick={onReviewLinks}>Review links</button></p> : null}
         <div className="flex flex-wrap gap-2" aria-label="Wallet views">{views.map(([key, label]) => <button key={key} className={`${button} ${view === key ? 'bg-sf-brand text-white' : 'bg-white'}`} aria-pressed={view === key} disabled={key !== 'actions_due' && !workspace.coverage.certified && (key === 'focus' || key === 'below_sales')} onClick={() => { setView(key); setPage(1); }}>{label}</button>)}</div>
@@ -253,7 +263,7 @@ export function WalletWorkspace({ onBack, onReviewLinks }: { onBack: () => void;
           const diagnosis = diagnoses?.find(item => item.customerId === row.customerId);
           const walletGapSuggestion = workspace.coverage.certified && row.inFocusBand === true && diagnoses !== null && !diagnosis;
           return <li key={row.customerId}><div className={`${card} space-y-2`}>
-            <button className="min-h-11 w-full space-y-2 text-left disabled:opacity-50" disabled={loading || query !== search} onClick={() => { setNotice(''); setEditing(false); setWalletGapStart(false); setCustomerId(row.customerId); }}><p className="font-bold">{row.name} <span className="font-normal text-sf-muted">{row.city}</span></p><Figures row={row} certified={workspace.coverage.certified} walletShareTargetBps={workspace.policy.walletShareTargetBps} />{row.walletPaise !== null && diagnoses && !walletGapSuggestion ? <span className="inline-flex rounded-full bg-sf-soft-0 px-2 py-1 text-xs">{diagnosis?.category && diagnosis.category !== 'unknown' ? `Why: ${constraintLabels[diagnosis.category]}${diagnosis.priceUnproven ? ' (not proven)' : ''}` : 'Not diagnosed'}</span> : null}<div className="flex flex-wrap gap-x-3 gap-y-1 text-xs text-sf-muted">{row.confidence ? <span className="inline-flex items-center gap-1"><span aria-hidden="true" className={`size-2 rounded-full ${row.confidence === 'high' ? 'bg-sf-success' : row.confidence === 'medium' ? 'bg-sf-warning' : 'bg-sf-muted'}`} />{row.confidence[0].toUpperCase() + row.confidence.slice(1)}</span> : null}{row.asOf ? <span>As of {dateLabel(row.asOf)}</span> : null}{row.walletPaise !== null && !row.verified ? <span>Not verified</span> : null}{row.stale ? <span>Stale</span> : null}{workspace.coverage.certified && row.belowSales ? <span>Below sales</span> : null}</div></button>
+            <button className="min-h-11 w-full space-y-2 text-left disabled:opacity-50" disabled={loading || query !== search} onClick={() => { setNotice(''); setEditing(false); setWalletGapStart(false); setCustomerId(row.customerId); }}><p className="font-bold">{row.name} <span className="font-normal text-sf-muted">{row.city}</span></p><Figures row={row} certified={workspace.coverage.certified} walletShareTargetBps={workspace.policy.walletShareTargetBps} />{diagnosis ? <StatusChip icon={constraintIcons[diagnosis.category ?? 'unknown']} tone={diagnosis.priceUnproven ? 'danger' : 'info'}>{diagnosis.category && diagnosis.category !== 'unknown' ? `Why: ${constraintLabels[diagnosis.category]}${diagnosis.priceUnproven ? ' (not proven)' : ''}` : 'Not diagnosed'}</StatusChip> : row.walletPaise !== null && diagnoses && !walletGapSuggestion ? <span className="inline-flex rounded-full bg-sf-soft-0 px-2 py-1 text-xs">Not diagnosed</span> : null}<div className="flex flex-wrap gap-x-3 gap-y-1 text-xs text-sf-muted">{row.confidence ? <span className="inline-flex items-center gap-1"><span aria-hidden="true" className={`size-2 rounded-full ${row.confidence === 'high' ? 'bg-sf-success' : row.confidence === 'medium' ? 'bg-sf-warning' : 'bg-sf-muted'}`} />{row.confidence[0].toUpperCase() + row.confidence.slice(1)}</span> : null}{row.asOf ? <span>As of {dateLabel(row.asOf)}</span> : null}{row.walletPaise !== null && !row.verified ? <span>Not verified</span> : null}{row.stale ? <span>Stale</span> : null}{workspace.coverage.certified && row.belowSales ? <span>Below sales</span> : null}</div></button>
             {walletGapSuggestion ? <button className={`${button} min-h-11`} disabled={loading || query !== search} onClick={event => { event.stopPropagation(); setNotice(''); setEditing(false); setWalletGapStart(true); setCustomerId(row.customerId); }}>Start diagnosis</button> : null}
           </div></li>;
         })}</ul>

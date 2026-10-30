@@ -31,6 +31,8 @@ test('phone frame stays pinned while embedded stock views scroll and resize', as
     expect(await page.evaluate(() => window.scrollX)).toBe(0);
   }
 
+  // Administrators land on Today since the 15 Nov train; open Stock explicitly.
+  await appNav.getByRole('button', { name: /^stock$/i }).click();
   await expect(stock.getByRole('heading', { name: 'Stock & reorder', exact: true })).toBeVisible();
   await expectShellPinned();
   await page.evaluate(() => {

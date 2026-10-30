@@ -4,6 +4,8 @@ import { useEffect, useRef, useState } from 'react';
 import { formatPaise, rupeesToPaise } from '@/lib/wallet-format';
 import type { ActionDueRow, ActionOwner, ActionType, WalletAction } from '@/lib/wallet-action-types';
 import { walletActionLabels as labels } from '@/lib/wallet-labels';
+import { ToneIcon } from '@/components/ui/glance';
+import { actionIcons } from '@/lib/glance-icons';
 
 const types = Object.keys(labels) as ActionType[];
 const button = 'min-h-11 rounded-xl border border-sf-line px-3 text-sm font-bold text-sf-body disabled:opacity-50';
@@ -35,7 +37,7 @@ export function WalletActions({ opportunityId, category, priceUnproven, onConfli
 }
 
 export function WalletActionDueRows({ rows, constraintLabels, onOpen }: { rows: ActionDueRow[]; constraintLabels: Record<string, string>; onOpen: (customerId: string) => void }) {
-  return <ul aria-label="Actions due" className="space-y-3">{rows.map(row => <li key={row.actionId}><button className="min-h-11 w-full min-w-0 space-y-1 rounded-xl border border-sf-line-soft bg-white p-4 text-left" onClick={() => onOpen(row.customerId)}><span className="flex flex-wrap justify-between gap-x-3 font-bold"><span>{row.customerName} <span className="font-normal text-sf-muted">{row.city}</span></span><span>{dateLabel(row.dueOn)}{row.overdue ? <span className="ml-2 text-sf-danger">Overdue</span> : null}</span></span><span className="block text-sm">{labels[row.actionType]} · {row.detail}</span><span className="block text-xs text-sf-muted">{row.ownerEmail} · Why: {row.constraintCategory ? constraintLabels[row.constraintCategory] ?? row.constraintCategory : 'Unknown'}{row.expectedMonthlyGainPaise !== null ? ` · +${formatPaise(row.expectedMonthlyGainPaise)}/mo expected` : ''}</span></button></li>)}</ul>;
+  return <ul aria-label="Actions due" className="space-y-3">{rows.map(row => <li key={row.actionId}><button className="min-h-11 w-full min-w-0 space-y-1 rounded-xl border border-sf-line-soft bg-white p-4 text-left" onClick={() => onOpen(row.customerId)}><ToneIcon icon={actionIcons[row.actionType]} tone={row.overdue ? 'danger' : 'info'} /><span className="flex flex-wrap justify-between gap-x-3 font-bold"><span>{row.customerName} <span className="font-normal text-sf-muted">{row.city}</span></span><span>{dateLabel(row.dueOn)}{row.overdue ? <span className="ml-2 text-sf-danger">Overdue</span> : null}</span></span><span className="block text-sm">{labels[row.actionType]} · {row.detail}</span><span className="block text-xs text-sf-muted">{row.ownerEmail} · Why: {row.constraintCategory ? constraintLabels[row.constraintCategory] ?? row.constraintCategory : 'Unknown'}{row.expectedMonthlyGainPaise !== null ? ` · +${formatPaise(row.expectedMonthlyGainPaise)}/mo expected` : ''}</span></button></li>)}</ul>;
 }
 
 function addDays(date: string, days: number) { const value = new Date(`${date}T00:00:00Z`); value.setUTCDate(value.getUTCDate() + days); return value.toISOString().slice(0, 10); }
