@@ -13,6 +13,7 @@ import { prepareDeviceForAccount } from '@/lib/device-account-privacy';
 import { hasAnyStockFlowRole, type StockFlowRole } from '@/lib/user-types';
 import { revokeOfflineVault } from '@/lib/offline-vault-storage';
 import { checkStaffSession, withStaffSessionLock } from '@/lib/staff-session-client';
+import { hasUnsavedInput, sameRoles } from '@/lib/role-refresh';
 
 const loadOrderWorkspace = () => import('./order-workspace').then((module) => ({ default: module.OrderWorkspace }));
 const OrderWorkspace = lazy(loadOrderWorkspace);
@@ -42,36 +43,61 @@ function SectionLoading() {
 
 export function StockFlowFrame({ actorEmail, actorRole, actorRoles, staffAuth = false, staffEmailActionsEnabled = false }: { actorEmail: string; actorRole: string; actorRoles?: StockFlowRole[]; staffAuth?: boolean; staffEmailActionsEnabled?: boolean }) {
   const roles = actorRoles ?? [actorRole as StockFlowRole];
+  const rolesKey = roles.join(',');
   const [surface, setSurface] = useState<Surface>('stock');
   // Billing-only staff open Orders on the Bill queue; everyone else on Active.
   const homeOrderFilter = hasAnyStockFlowRole(roles, ['billing']) && !hasAnyStockFlowRole(roles, ['administrator', 'management', 'operations', 'sales', 'warehouse', 'accounts']) ? 'billing' : 'open';
   const [orderFilter, setOrderFilter] = useState(homeOrderFilter);
   const [deviceNotice, setDeviceNotice] = useState('');
+  const [roleChangeMessage, setRoleChangeMessage] = useState('');
   const [readyEmail, setReadyEmail] = useState('');
   const signOutInFlight = useRef(false);
   const [signingOut, setSigningOut] = useState(false);
   useEffect(() => {
-    if (!staffAuth) return;
     let stopped = false;
     let running = false;
     let timer: ReturnType<typeof setTimeout> | undefined;
     let lastCheck = 0;
+    let roleCheckAt = 0;
+    let consecutiveRoleDenials = 0;
+    async function checkRoles() {
+      if (document.hidden) return;
+      if (Date.now() - roleCheckAt < 30000) return;
+      roleCheckAt = Date.now();
+      try {
+        const response = await fetch('/api/me', { cache: 'no-store', signal: AbortSignal.timeout(15000) });
+        if (stopped) return;
+        if (response.status === 403) {
+          consecutiveRoleDenials += 1;
+          if (consecutiveRoleDenials >= 2 && (document.hidden || !hasUnsavedInput(document))) window.location.reload();
+          else setRoleChangeMessage('Your access has changed. Reload to continue.');
+          return;
+        }
+        consecutiveRoleDenials = 0;
+        if (!response.ok) return;
+        const current = await response.json() as { roles?: unknown };
+        if (!Array.isArray(current.roles) || !current.roles.every((role): role is string => typeof role === 'string') || sameRoles(current.roles, rolesKey.split(','))) return;
+        if (document.hidden && !hasUnsavedInput(document)) window.location.reload();
+        else setRoleChangeMessage('Your access has changed. Reload to update.');
+      } catch { /* Session role checks do not sign users out or interrupt work. */ }
+    }
     async function check(renew = false) {
       if (stopped || running || document.visibilityState === 'hidden' || !navigator.onLine) return;
       running = true;
       lastCheck = Date.now();
       if (timer) clearTimeout(timer);
       try {
-        const delay = await checkStaffSession(renew);
+        const delay = staffAuth ? await checkStaffSession(renew) : null;
         if (stopped) return;
-        if (delay === null) { window.location.assign('/staff-signin'); return; }
-        timer = setTimeout(() => { void check(true); }, delay * 1000);
+        if (staffAuth && delay === null) { window.location.assign('/staff-signin'); return; }
+        await checkRoles();
+        timer = setTimeout(() => { void check(staffAuth); }, staffAuth ? delay! * 1000 : 300000);
       } catch {
-        if (!stopped) setDeviceNotice('Sign-in connection interrupted. Reconnect to verify your session; saved drafts remain unchanged.');
+        if (staffAuth && !stopped) setDeviceNotice('Sign-in connection interrupted. Reconnect to verify your session; saved drafts remain unchanged.');
         // No automatic retry loop. A foreground/reconnection event can retry.
       } finally { running = false; }
     }
-    const wake = () => { if (Date.now() - lastCheck >= 30000) void check(); };
+    const wake = () => { if (document.visibilityState === 'visible' && Date.now() - lastCheck >= 30000) void check(); };
     void check();
     document.addEventListener('visibilitychange', wake);
     window.addEventListener('online', wake);
@@ -81,7 +107,7 @@ export function StockFlowFrame({ actorEmail, actorRole, actorRoles, staffAuth = 
       document.removeEventListener('visibilitychange', wake);
       window.removeEventListener('online', wake);
     };
-  }, [staffAuth]);
+  }, [staffAuth, rolesKey]);
   async function staffSignOut() {
     if (signOutInFlight.current) return;
     signOutInFlight.current = true;
@@ -175,7 +201,6 @@ export function StockFlowFrame({ actorEmail, actorRole, actorRoles, staffAuth = 
   const workService = useRef<ReturnType<typeof startWorkNotifications> | null>(null);
   const [orderView, setOrderView] = useState<{ query: string; focus?: { orderId: string; orderNumber: string }; nonce: number }>({ query: '', nonce: 0 });
   const [moreOpen, setMoreOpen] = useState(false);
-  const rolesKey = roles.join(',');
   // Viewers have no hand-offs; they get no checker and no bell.
   const notifiable = workQueuesForRoles(roles).length > 0;
   useEffect(() => {
@@ -350,6 +375,7 @@ export function StockFlowFrame({ actorEmail, actorRole, actorRoles, staffAuth = 
         </div>
       </header>
       {deviceNotice ? <output className="flex shrink-0 items-center justify-between gap-3 border-b border-sf-warning-line bg-sf-warning-soft px-4 py-2 text-xs font-semibold text-sf-warning sm:px-6"><span className="inline-flex items-center gap-1"><TriangleAlert size={16} aria-hidden="true" className="shrink-0" />{deviceNotice}</span><button type="button" onClick={() => setDeviceNotice('')} className="min-h-8 shrink-0 rounded-lg px-3 font-bold hover:bg-sf-warning-line">Dismiss</button></output> : null}
+      {roleChangeMessage ? <output aria-live="polite" className="fixed inset-x-0 top-0 z-50 flex min-h-14 max-w-full items-center justify-between gap-2 border-b border-sf-warning-line bg-white px-3 py-1 text-sm shadow sm:px-6"><span className="min-w-0 flex-1">{roleChangeMessage}</span><button type="button" onClick={() => window.location.reload()} className="min-h-11 shrink-0 rounded-lg bg-sf-ink px-4 font-bold text-white">Reload</button><button type="button" onClick={() => setRoleChangeMessage('')} className="min-h-11 shrink-0 rounded-lg px-2 text-sf-muted">Later</button></output> : null}
       <section className="min-h-0 flex-1 overflow-hidden">
         {readyEmail !== actorEmail ? <SectionLoading /> : surface === 'stock' ? (
           <iframe

@@ -11,6 +11,7 @@ insert into private.stockflow_customers(id,name,tally_key,created_by_email) valu
  ('b2500000-0000-4000-8000-000000000002','Diagnosis Two','diagnosis-2','test'),
  ('b2500000-0000-4000-8000-000000000003','Diagnosis Three','diagnosis-3','test'),
  ('b2500000-0000-4000-8000-000000000004','Diagnosis Four','diagnosis-4','test'),
+ ('b2d00000-0000-4000-8000-000000000013','Outcome Diagnosis Lab','outcome-diagnosis-lab','test'),
  ('b2c00000-0000-4000-8000-000000000011','Division Diagnosis Lab','division-diagnosis-lab','test'),
  ('b2900000-0000-4000-8000-000000000005','Diagnosis Five','diagnosis-5','test'),
  ('b2900000-0000-4000-8000-000000000004','Diagnosis Other','diagnosis-other-4','test');
@@ -19,6 +20,7 @@ insert into private.stockflow_economic_customer_identities(company_id,source_id,
  ('diagnosis-test','diagnosis-2','b2500000-0000-4000-8000-000000000002','test'),
  ('diagnosis-test','diagnosis-3','b2500000-0000-4000-8000-000000000003','test'),
  ('diagnosis-test','diagnosis-4','b2500000-0000-4000-8000-000000000004','test'),
+ ('diagnosis-test','outcome-diagnosis-lab','b2d00000-0000-4000-8000-000000000013','test'),
  ('diagnosis-test','diagnosis-5','b2900000-0000-4000-8000-000000000005','test');
 insert into private.stockflow_wallet_divisions(code,name,sort_order,active) values('DIAGTEST','Diagnosis Test Division',100,true)
 on conflict(code) do update set active=true;
@@ -40,11 +42,30 @@ declare result_data jsonb; first_id uuid; second_id uuid; third_id uuid; first_c
  fixture_company text; fixture_month date; fixture_net bigint; fixture_start date; fixture_end date;
  fixture_focus bigint; fixture_focus_members bigint; diag_four_data jsonb; d11_result jsonb; d11_rows jsonb; d11_row jsonb;
  v_d12_result jsonb; v_d12_rows jsonb; v_d12_opportunity jsonb;
+ v_d13_open jsonb; v_d13_action jsonb; v_d13_outcomes jsonb; v_d13_row jsonb; v_d13_action_id uuid;
+ v_d13_initial_id uuid; v_d13_last_id uuid; v_d13_open_id uuid; v_d13_index integer; v_d13_kind text;
  signal_order uuid; signal_order_old uuid; signal_install uuid;
  signal_customer uuid:='b2500000-0000-4000-8000-000000000001'; signal_other uuid:='b2500000-0000-4000-8000-000000000003'; signal_data jsonb;
  signal_line uuid; signal_decision uuid; signal_policy uuid; signal_price_order uuid;
  fact_data jsonb; source_value text;
 begin
+ -- D13 uncertified opportunity outcomes return no sales measure.
+ v_d13_open:=pg_temp.diagnosis_call('open_opportunity',jsonb_build_object('requestId','wallet-diagnosis-d13-initial-open','customerId','b2d00000-0000-4000-8000-000000000013',
+  'kind','recover','reason','Outcome measurement fixture'));
+ v_d13_initial_id:=(v_d13_open->>'id')::uuid;
+ v_d13_action:=public.stockflow_action_gateway('diagnosis-test-key','diagnosis-manager@test.local','create_action',jsonb_build_object(
+  'requestId','wallet-diagnosis-d13-action-open','opportunityId',v_d13_initial_id,'actionType','visit','detail','Visit outcome fixture',
+  'ownerEmail','diagnosis-manager@test.local','dueOn',(now() at time zone 'Asia/Kolkata')::date,'expectedMonthlyGainPaise',null));
+ v_d13_action_id:=(v_d13_action->>'id')::uuid;
+ perform public.stockflow_action_gateway('diagnosis-test-key','diagnosis-manager@test.local','close_action',jsonb_build_object(
+  'requestId','wallet-diagnosis-d13-action-close','actionId',v_d13_action_id,'result','done','note','Visit completed'));
+ perform pg_temp.diagnosis_call('close_opportunity',jsonb_build_object('requestId','wallet-diagnosis-d13-initial-close','opportunityId',v_d13_initial_id,
+  'outcome','won','reason','Outcome fixture won'));
+ v_d13_outcomes:=pg_temp.diagnosis_call('get_opportunity_outcomes',jsonb_build_object('customerId','b2d00000-0000-4000-8000-000000000013'));
+ select value into v_d13_row from jsonb_array_elements(v_d13_outcomes) where value->>'opportunityId'=v_d13_initial_id::text;
+ if v_d13_row is null or v_d13_row->>'measurable'<>'false' or v_d13_row->'salesBeforePaise' is distinct from 'null'::jsonb
+  or v_d13_row->'salesNowPaise' is distinct from 'null'::jsonb or v_d13_row->>'notMeasurableReason' is null then
+  raise exception 'D13 uncertified sales outcome failed: %',v_d13_outcomes;end if;
  -- D12 wallet-gap provenance is rejected before coverage is certified; invalid origins are always rejected.
  perform pg_temp.diagnosis_error('open_opportunity','{"requestId":"wallet-diagnosis-d12-uncertified","customerId":"b2500000-0000-4000-8000-000000000001","kind":"capture","reason":"Uncertified wallet gap","origin":"wallet_gap"}','22023');
  perform pg_temp.diagnosis_error('open_opportunity','{"requestId":"wallet-diagnosis-d12-invalid-origin","customerId":"b2500000-0000-4000-8000-000000000001","kind":"capture","reason":"Invalid opportunity origin","origin":"suggested"}','22023');
@@ -84,7 +105,7 @@ begin
  end loop;
  -- D5 every excluded role is denied on all five actions.
  foreach actor_role in array array['sales','operations','warehouse','billing','accounts','viewer'] loop
-  foreach action_name in array array['get_wallet_diagnoses','get_account_opportunities','get_account_signals','open_opportunity','record_constraint','close_opportunity'] loop
+ foreach action_name in array array['get_wallet_diagnoses','get_account_opportunities','get_opportunity_outcomes','get_account_signals','open_opportunity','record_constraint','close_opportunity'] loop
    denied_flag:=false;
    begin perform public.stockflow_opportunity_gateway('diagnosis-test-key','diagnosis-'||actor_role||'@test.local',action_name,'{}');
    exception when sqlstate 'PT403' then denied_flag:=true;end;
@@ -123,6 +144,33 @@ begin
  -- Reconciliation for each month uses dynamic IST months and company-specific control totals.
  result_data:=private.stockflow_wallet_read((now() at time zone 'Asia/Kolkata')::date);
  if result_data#>>'{coverage,certified}'<>'true' then raise exception 'D7 fixture not certified: %',result_data#>'{coverage}';end if;
+ -- D13 certified measure uses the same complete-month window for an opportunity opened today.
+ v_d13_outcomes:=pg_temp.diagnosis_call('get_opportunity_outcomes',jsonb_build_object('customerId','b2d00000-0000-4000-8000-000000000013'));
+ select value into v_d13_row from jsonb_array_elements(v_d13_outcomes) where value->>'opportunityId'=v_d13_initial_id::text;
+ if v_d13_row is null or v_d13_row->>'measurable'<>'true' or v_d13_row->'salesBeforePaise' is distinct from v_d13_row->'salesNowPaise'
+  or v_d13_row->>'changePaise'<>'0' or v_d13_row->>'lastActionType'<>'visit' or v_d13_row->>'lastActionResult'<>'done'
+  or v_d13_row->>'outcome'<>'won' or v_d13_row->>'notMeasurableReason' is distinct from null then
+  raise exception 'D13 certified sales/action outcome failed: %',v_d13_row;end if;
+ -- D13 returns only the newest ten closed rows and excludes open opportunities.
+ for v_d13_index in 1..10 loop
+  v_d13_kind:=case v_d13_index%3 when 1 then 'capture' when 2 then 'defend' else 'recover' end;
+  v_d13_open:=pg_temp.diagnosis_call('open_opportunity',jsonb_build_object('requestId','wallet-diagnosis-d13-limit-open-'||lpad(v_d13_index::text,2,'0'),
+   'customerId','b2d00000-0000-4000-8000-000000000013','kind',v_d13_kind,'reason','Recent outcome fixture '||v_d13_index));
+  v_d13_last_id:=(v_d13_open->>'id')::uuid;
+  perform pg_temp.diagnosis_call('close_opportunity',jsonb_build_object('requestId','wallet-diagnosis-d13-limit-close-'||lpad(v_d13_index::text,2,'0'),
+   'opportunityId',v_d13_last_id,'outcome',case when v_d13_index%2=0 then 'lost' else 'dropped' end,'reason','Recent outcome closed'));
+ end loop;
+ v_d13_open:=pg_temp.diagnosis_call('open_opportunity',jsonb_build_object('requestId','wallet-diagnosis-d13-open-excluded','customerId','b2d00000-0000-4000-8000-000000000013',
+  'kind','capture','reason','Open opportunity excluded'));
+ v_d13_open_id:=(v_d13_open->>'id')::uuid;
+ v_d13_outcomes:=pg_temp.diagnosis_call('get_opportunity_outcomes',jsonb_build_object('customerId','b2d00000-0000-4000-8000-000000000013'));
+ if jsonb_array_length(v_d13_outcomes)<>10 or v_d13_outcomes->0->>'opportunityId'<>v_d13_last_id::text
+  or exists(select 1 from jsonb_array_elements(v_d13_outcomes) as outcome_rows(item) where outcome_rows.item->>'opportunityId' in (v_d13_open_id::text,v_d13_initial_id::text) or outcome_rows.item->>'outcome' is null) then
+  raise exception 'D13 newest-ten/closed-only outcomes failed: %',v_d13_outcomes;end if;
+ denied_flag:=false;
+ begin perform public.stockflow_opportunity_gateway('diagnosis-test-key','diagnosis-sales@test.local','get_opportunity_outcomes',jsonb_build_object('customerId','b2d00000-0000-4000-8000-000000000013'));
+ exception when sqlstate 'PT403' then denied_flag:=true;end;
+ if not denied_flag then raise exception 'D13 outcome role authorization failed';end if;
  perform pg_temp.diagnosis_call('record_constraint',('{"requestId":"wallet-diagnosis-d7-diagnosed","opportunityId":"'||third_id||'","category":"price","evidence":"Competitor quote at lower price","source":"our_view","sourcePerson":null,"observedOn":"'||(now() at time zone 'Asia/Kolkata')::date||'","facts":{"competitor":"Acme Lab","product":"Glucose kit","competitorPricePaise":120000,"ourPricePaise":140000},"expectedCurrentConstraintId":null}')::jsonb);
  result_data:=pg_temp.diagnosis_call('open_opportunity','{"requestId":"wallet-diagnosis-d8-latest-open","customerId":"b2500000-0000-4000-8000-000000000001","kind":"recover","reason":"Recover account"}');
  perform pg_temp.diagnosis_call('record_constraint',('{"requestId":"wallet-diagnosis-d8-constraint-one","opportunityId":"'||(result_data->>'id')||'","category":"portfolio","evidence":"Assay panel is incomplete","source":"customer_stated","sourcePerson":"Lab manager","observedOn":"'||(now() at time zone 'Asia/Kolkata')::date||'","facts":{"product":"Thyroid panel","division":"BIOCHEM"},"expectedCurrentConstraintId":null}')::jsonb);
@@ -137,7 +185,8 @@ begin
   and (fixture_rows.item->>'inFocusBand')::boolean;
  if fixture_focus_members<>3 or result_data->>'focusCount'<>fixture_focus::text or result_data->>'undiagnosedFocusCount'<>(fixture_focus-1)::text
   or exists(select 1 from private.stockflow_commercial_opportunities opportunity_row where opportunity_row.customer_id not in
-   ('b2500000-0000-4000-8000-000000000001','b2500000-0000-4000-8000-000000000002','b2500000-0000-4000-8000-000000000003','b2500000-0000-4000-8000-000000000004'))
+   ('b2500000-0000-4000-8000-000000000001','b2500000-0000-4000-8000-000000000002','b2500000-0000-4000-8000-000000000003','b2500000-0000-4000-8000-000000000004',
+    'b2d00000-0000-4000-8000-000000000013','b2c00000-0000-4000-8000-000000000011','b2900000-0000-4000-8000-000000000005','b2900000-0000-4000-8000-000000000004'))
   then raise exception 'D7 Focus counts failed: %',result_data;end if;
  -- D12 wallet_gap succeeds only for a certified current Focus account.
  v_d12_result:=pg_temp.diagnosis_call('open_opportunity',jsonb_build_object('requestId','wallet-diagnosis-d12-focus','customerId','b2500000-0000-4000-8000-000000000003',

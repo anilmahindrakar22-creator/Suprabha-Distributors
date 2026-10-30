@@ -8,14 +8,20 @@ PostgreSQL 17 portable can fail while recycling WAL files on Windows, logging re
 
 ## One-time owner setup
 
-From the repository root, create a limited logon task using the absolute path to `tests\start-test-postgres.cmd` in the command:
+The visible console can cause PostgreSQL to log `terminated by exception 0xC000013A` when it is closed; a closed console window stops the database. The VBScript launcher starts the batch file with no window, so there is no console window to close.
 
-```powershell
-schtasks /create /tn StockFlowTestPostgres /sc onlogon /rl limited /tr "\"C:\Users\Admin\Documents\Codex\2026-08-30\pl\stockflow-classes\tests\start-test-postgres.cmd\""
-schtasks /run /tn StockFlowTestPostgres
+In an admin Command Prompt, update the existing task:
+
+```cmd
+schtasks /change /tn StockFlowTestPostgres /tr "wscript.exe \"C:\Users\Admin\Documents\Codex\2026-08-30\pl\stockflow-classes\tests\start-test-postgres.vbs\""
 ```
 
-This needs no admin rights and makes the server independent of any tool shell.
+For a fresh install, create and run the logon task with the full command:
+
+```cmd
+schtasks /create /tn StockFlowTestPostgres /sc onlogon /rl limited /tr "wscript.exe \"C:\Users\Admin\Documents\Codex\2026-08-30\pl\stockflow-classes\tests\start-test-postgres.vbs\""
+schtasks /run /tn StockFlowTestPostgres
+```
 
 ## Daily use
 

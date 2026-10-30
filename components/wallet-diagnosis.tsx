@@ -7,6 +7,7 @@ import { walletConstraintLabels as labels } from '@/lib/wallet-labels';
 import { walletPowerAlertLabels } from '@/lib/wallet-labels';
 import type { AppContact, AccountsResponse } from '@/lib/account-types';
 import { WalletActions } from '@/components/wallet-actions';
+import { WalletOutcomes } from '@/components/wallet-outcomes';
 
 const button = 'min-h-11 rounded-xl border border-sf-line px-3 text-sm font-bold text-sf-body disabled:opacity-50';
 const primary = 'min-h-11 rounded-xl bg-sf-brand px-4 text-sm font-bold text-white disabled:opacity-50';
@@ -87,7 +88,7 @@ export function WalletDiagnosis({ customerId, customerName, divisions, initialSt
         <label className="block">Note<textarea className={input} name="evidence" required minLength={3} maxLength={1000} /></label>
       </> : <><label className="block">Outcome<select disabled={busy || uncertain} className={input} name="outcome"><option value="won">Won</option><option value="lost">Lost</option><option value="dropped">Dropped</option></select></label><label className="block">Reason<textarea disabled={busy || uncertain} className={input} name="reason" required minLength={3} maxLength={500} /></label></>}
       {error ? <p role="alert" className="text-sm text-sf-danger">{error}</p> : null}{uncertain ? <button type="button" className={primary} disabled={busy} onClick={() => pending.current && void save(pending.current)}>Retry same save</button> : <button className={primary} disabled={busy || (mode === 'record' && (!category || !source))}>{busy ? 'Saving…' : 'Save'}</button>}<button type="button" className={button} disabled={busy} onClick={cancel}>Cancel</button>
-    </form> : null}</section>;
+    </form> : null}<WalletOutcomes customerId={customerId} count={items === null ? null : items.filter(item => item.closure !== null).length} /></section>;
 }
 function minDate() { const d = new Date(`${todayIST()}T00:00:00Z`); d.setUTCFullYear(d.getUTCFullYear() - 2); return d.toISOString().slice(0, 10); }
 function formatConstraint(category: ConstraintCategory, facts: Record<string, unknown>, gap: number | null) { if (category === 'price') return `${String(facts.competitor)}, ${String(facts.product)}: ${formatPaise(Number(facts.competitorPricePaise))} vs our ${formatPaise(Number(facts.ourPricePaise))}${gap === null ? '' : ` (${permilleLabel(gap)} higher)`}`; return Object.values(facts).map(String).join(', '); }

@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { validateWalletDiagnosisCommand } from '@/lib/wallet-diagnosis-types';
+import { isOpportunityOutcomeResponse, validateWalletDiagnosisCommand } from '@/lib/wallet-diagnosis-types';
 const customerId = '11111111-1111-4111-8111-111111111111';
 const requestId = '22222222-2222-4222-8222-222222222222';
 const opportunityId = '33333333-3333-4333-8333-333333333333';
@@ -13,6 +13,11 @@ const samples: Array<[string, Record<string, unknown>]> = [
   ['clinical', { issue: 'Validation concern' }], ['contract_tender', { holder: 'District lab', endsOn: today }], ['competitor_lock_in', { competitor: 'Acme', endsOn: today }], ['unknown', { nextQuestion: 'Who supplies reagents?', askBy: today }],
 ];
 describe('validateWalletDiagnosisCommand', () => {
+  it('accepts the opportunity outcomes read and tolerant outcome response shapes', () => {
+    expect(validateWalletDiagnosisCommand({ action: 'get_opportunity_outcomes', payload: { customerId } })).toEqual({ action: 'get_opportunity_outcomes', payload: { customerId } });
+    expect(isOpportunityOutcomeResponse([{ opportunityId, kind: 'capture', outcome: 'won', extra: true }, {}])).toBe(true);
+    expect(isOpportunityOutcomeResponse([{ opportunityId: 4 }])).toBe(false);
+  });
   it('accepts whole-lab and valid division opportunity scopes, and rejects invalid division codes', () => {
     const wholeLab = { action: 'open_opportunity', payload: { requestId: '22222222-2222-4222-8222-222222222222', customerId, kind: 'capture', divisionCode: null, reason: 'New tender opportunity' } };
     expect(validateWalletDiagnosisCommand(wholeLab).action).toBe('open_opportunity');

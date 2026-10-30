@@ -8,6 +8,7 @@ const c = '88111111-1111-4111-8111-111111111111';
 const d = '88111111-2222-4222-8222-222222222222';
 const opportunityId = '99111111-1111-4111-8111-111111111111';
 const undiagnosedOpportunityId = '99333333-3333-4333-8333-333333333333';
+const pastOpportunityIds = ['99444444-4444-4444-8444-444444444441', '99444444-4444-4444-8444-444444444442', '99444444-4444-4444-8444-444444444443'];
 const constraintId = '99222222-2222-4222-8222-222222222222';
 const snapshotId = '88222222-2222-4222-8222-222222222222';
 const policy = { version: 1, walletShareTargetBps: 8000, focusBandBps: 8000, staleAfterMonths: 6, note: 'Policy', enteredBy: 'manager@example.test', enteredAt: '2026-10-30T00:00:00Z' };
@@ -18,10 +19,17 @@ const none = { ...row, customerId: c, name: 'No estimate lab', walletPaise: null
 const current = { id: snapshotId, monthlyWalletPaise: 10000000, method: 'customer_stated' as const, source: 'Discussion', confidence: 'high' as const, asOf: row.asOf, note: 'Estimate', loweredReason: null, enteredBy: 'manager@example.test', enteredAt: '2026-10-01T00:00:00Z', verifiedBy: null, divisions: [{ code: 'BIOCHEM', name: 'Biochemistry', monthlyWalletPaise: 4000000 }], unallocatedPaise: 6000000 };
 const diagnosed: WalletOpportunity = { id: opportunityId, customerId: a, kind: 'capture', divisionCode: null, divisionName: null, origin: 'manual', openedReason: 'Tender price pressure', openedBy: 'manager@example.test', openedAt: '2026-10-01T00:00:00Z', closure: null, constraint: { id: constraintId, category: 'price', evidence: 'Competitor quote', confidence: 'low', source: 'our_view', sourcePerson: null, observedOn: '2026-10-02', facts: { competitor: 'Acme Diagnostics', product: 'Glucose kit', competitorPricePaise: 120000, ourPricePaise: 140000 }, priceUnproven: true, gapPermille: 143, recordedBy: 'manager@example.test', recordedAt: '2026-10-02T00:00:00Z' }, history: [] };
 const openUndiagnosed: WalletOpportunity = { ...diagnosed, id: undiagnosedOpportunityId, customerId: d, kind: 'defend', openedReason: 'Needs a diagnosis', constraint: null, history: [] };
-type Options = { diagnosisFailure?: '500' | 'shape'; conflict?: boolean; networkFailure?: boolean; zeroSignals?: boolean; certified?: boolean };
+const pastOutcomeRows = [
+  { opportunityId: pastOpportunityIds[0], kind: 'capture', divisionName: 'Biochemistry', outcome: 'won', closedReason: 'Won after tender', closedAt: '2026-10-30T00:00:00Z', lastActionType: 'visit', lastActionResult: 'done', salesBeforePaise: 200000, salesNowPaise: 250000, changePaise: 50000, changePermille: 250, measurable: true, notMeasurableReason: null },
+  { opportunityId: pastOpportunityIds[1], kind: 'defend', divisionName: null, outcome: 'lost', closedReason: 'Lost on price', closedAt: '2026-10-29T00:00:00Z', lastActionType: null, lastActionResult: null, salesBeforePaise: 200000, salesNowPaise: 150000, changePaise: -50000, changePermille: -250, measurable: true, notMeasurableReason: null },
+  { opportunityId: pastOpportunityIds[2], kind: 'recover', divisionName: 'Biochemistry', outcome: 'dropped', closedReason: 'No response', closedAt: '2026-10-28T00:00:00Z', lastActionType: null, lastActionResult: null, salesBeforePaise: null, salesNowPaise: null, changePaise: null, changePermille: null, measurable: false, notMeasurableReason: 'Coverage not certified' },
+];
+const pastOpportunityRows: WalletOpportunity[] = pastOutcomeRows.map((item, index) => ({ ...diagnosed, id: pastOpportunityIds[index], closure: { outcome: item.outcome as 'won' | 'lost' | 'dropped', reason: item.closedReason, closedBy: 'manager@example.test', closedAt: item.closedAt } }));
+type Options = { diagnosisFailure?: '500' | 'shape'; conflict?: boolean; networkFailure?: boolean; zeroSignals?: boolean; certified?: boolean; pastOutcomes?: boolean };
 async function fixture(page: Page, options: Options = {}) {
   const posts: Array<{ action: string; payload: Record<string, unknown> }> = [];
-  let opportunities: WalletOpportunity[] = [diagnosed, openUndiagnosed];
+  const outcomeReads: string[] = [];
+  let opportunities: WalletOpportunity[] = [diagnosed, openUndiagnosed, ...(options.pastOutcomes ? pastOpportunityRows : [])];
   let attemptedConflict = false;
   let attemptedNetworkFailure = false;
   await page.route('**/api/accounts**', route => { const url = new URL(route.request().url()); return route.fulfill({ json: { accounts: url.searchParams.get('search') ? [{ id: a, name: 'Example Diagnostic Laboratory', appContacts: [{ id: '66111111-2222-4222-8222-111111111111', name: 'Dr Rao' }] }] : [], page: { page: 1, pageSize: 50, total: 0 }, owners: [], territories: [], canAssign: true, canEraseContacts: false, canSeePowerMap: false, actorEmail: 'manager@example.test', today: '2026-10-30', classPolicy: { aMinPaise: '20000000', bMinPaise: '7500000' } } }); });
@@ -45,6 +53,7 @@ async function fixture(page: Page, options: Options = {}) {
       if (options.diagnosisFailure) return route.fulfill({ status: 500, json: { error: 'offline' } });
       return route.fulfill({ json: options.zeroSignals ? { priceExceptions90d: 0, deliveryProblems90d: 0, deliveryProblemsOpen: 0, serviceTicketsOpen: 0, serviceTickets90d: 0, ourInstallations: 0, lastVisitOn: null, powerAlerts: [] } : { priceExceptions90d: 1, deliveryProblems90d: 2, deliveryProblemsOpen: 1, serviceTicketsOpen: 1, serviceTickets90d: 3, ourInstallations: 4, lastVisitOn: '2026-10-20', powerAlerts: ['influential_unknown', 'no_influential_supporter'], decisionMakerLastMetOn: null } });
     }
+    if (url.searchParams.get('action') === 'get_opportunity_outcomes') { outcomeReads.push(url.searchParams.get('customerId') ?? ''); return route.fulfill({ json: options.pastOutcomes ? pastOutcomeRows : [] }); }
     return route.fulfill({ json: opportunities.filter(item => item.customerId === url.searchParams.get('customerId')) });
   });
   await page.route('**/api/wallet/actions?**', route => route.fulfill({ json: route.request().url().includes('get_actions_due') ? { page: 1, pageSize: 50, total: 0, overdueCount: 0, rows: [] } : [] }));
@@ -58,7 +67,7 @@ async function fixture(page: Page, options: Options = {}) {
   });
   await page.goto('/?view=accounts');
   await page.getByRole('button', { name: 'Wallet', exact: true }).click();
-  return { posts };
+  return { posts, outcomeReads };
 }
 async function openAccount(page: Page) { await page.getByRole('button', { name: /Example Diagnostic Laboratory/ }).click(); return page.getByRole('dialog'); }
 
@@ -79,6 +88,30 @@ for (const width of [375, 1280]) test.describe(`Wallet diagnosis at ${width}px`,
     await expect(page.getByText(/2 of 3 Focus accounts not diagnosed/)).toBeVisible();
     await openAccount(page);
     await expect(page.getByText('Capture opportunity · Whole lab · Tender price pressure', { exact: true })).toBeVisible();
+    expect(await page.evaluate(() => document.documentElement.scrollWidth <= document.documentElement.clientWidth)).toBe(true);
+  });
+  test('past opportunities stay hidden when the account has no closed opportunities', async ({ page }) => {
+    const { outcomeReads } = await fixture(page);
+    await openAccount(page);
+    await expect(page.getByRole('button', { name: /Past opportunities/ })).toHaveCount(0);
+    expect(outcomeReads).toEqual([]);
+  });
+  test('past opportunities load on open and show sales changes and measurement notes', async ({ page }) => {
+    const { outcomeReads } = await fixture(page, { pastOutcomes: true });
+    await openAccount(page);
+    const toggle = page.getByRole('button', { name: 'Past opportunities (3)', exact: true });
+    await expect(toggle).toBeVisible();
+    expect(outcomeReads).toEqual([]);
+    await toggle.click();
+    await expect.poll(() => outcomeReads.length).toBe(1);
+    await expect(page.getByText('Capture · Biochemistry · Won · 30 Oct 2026', { exact: true })).toBeVisible();
+    await expect(page.getByText('Reason: Won after tender · Last action: Visit (Done)', { exact: true })).toBeVisible();
+    const up = page.getByText('Sales/month ₹2,000 → ₹2,500 (+25%) · whole-lab sales', { exact: true });
+    await expect(up).toHaveClass(/text-sf-success/);
+    await expect(page.getByText('Defend · Whole lab · Lost · 29 Oct 2026', { exact: true })).toBeVisible();
+    const down = page.getByText('Sales/month ₹2,000 → ₹1,500 (−25%)', { exact: true });
+    await expect(down).toHaveClass(/text-sf-danger/);
+    await expect(page.getByText('Not measurable yet: Coverage not certified · whole-lab sales', { exact: true })).toBeVisible();
     expect(await page.evaluate(() => document.documentElement.scrollWidth <= document.documentElement.clientWidth)).toBe(true);
   });
   test('wallet gap suggestion appears only for certified Focus rows without an opportunity', async ({ page }) => {

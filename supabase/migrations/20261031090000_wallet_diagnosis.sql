@@ -129,6 +129,7 @@ declare actor text:=lower(btrim(p_actor_email)); roles text[]; secret_hash text;
  wallet_data jsonb; rows_data jsonb; focus_count bigint; undiagnosed_count bigint; row_item jsonb; item jsonb;
  coverage_data jsonb;
  fact_data jsonb; source_value text; source_person_value text; observed_date date; signals jsonb;
+ v_now_account jsonb; v_outcome_rows jsonb;
 begin
  select secret_sha256 into secret_hash from private.stockflow_gateway_config where name='orders';
  if secret_hash is null or encode(extensions.digest(coalesce(p_gateway_key,''),'sha256'),'hex')<>secret_hash then raise exception 'Unauthorized gateway' using errcode='42501';end if;
@@ -174,6 +175,48 @@ begin
   left join lateral(select coalesce(jsonb_agg(private.stockflow_constraint_json(c.id) order by c.recorded_at desc,c.id desc),'[]'::jsonb) items
    from private.stockflow_commercial_constraints c where c.opportunity_id=o.id) hist on true where o.customer_id=customer;
   return result;
+ elsif p_action='get_opportunity_outcomes' then
+  if coalesce(p_payload->>'customerId','') !~* '^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$' then raise exception 'Invalid customer id' using errcode='22023';end if;
+  customer:=(p_payload->>'customerId')::uuid;
+  if not exists(select 1 from private.stockflow_customers customer_row where customer_row.id=customer) then raise exception 'Customer not found' using errcode='22023';end if;
+  v_now_account:=private.stockflow_wallet_account_read(today,customer);
+  with closed_rows as materialized (
+   select o.id,o.kind,o.division_id,o.origin,o.opened_at,o.opened_reason,cl.outcome,cl.reason closed_reason,cl.closed_by,cl.closed_at
+   from private.stockflow_commercial_opportunities o
+   join private.stockflow_commercial_opportunity_closures cl on cl.opportunity_id=o.id
+   where o.customer_id=customer
+   order by cl.closed_at desc,o.id desc limit 10
+  ), before_dates as materialized (
+   select distinct closed_rows.opened_at::date opened_date from closed_rows
+  ), before_reads as materialized (
+   select before_dates.opened_date,private.stockflow_wallet_account_read(before_dates.opened_date,customer) account_data
+   from before_dates
+  )
+  select coalesce(jsonb_agg(jsonb_build_object(
+   'opportunityId',closed_rows.id,'kind',closed_rows.kind,'divisionName',division_row.name,'origin',closed_rows.origin,
+   'openedAt',closed_rows.opened_at,'openedReason',closed_rows.opened_reason,'outcome',closed_rows.outcome,
+   'closedReason',closed_rows.closed_reason,'closedBy',closed_rows.closed_by,'closedAt',closed_rows.closed_at,
+   'lastConstraintCategory',constraint_row.category,'lastActionType',action_row.action_type,'lastActionResult',action_result.result,
+   'salesBeforePaise',case when before_reads.account_data#>>'{coverage,certified}'='true' then (before_reads.account_data#>>'{row,salesPaise}')::bigint end,
+   'salesNowPaise',case when v_now_account#>>'{coverage,certified}'='true' then (v_now_account#>>'{row,salesPaise}')::bigint end,
+   'changePaise',case when before_reads.account_data#>>'{coverage,certified}'='true' and v_now_account#>>'{coverage,certified}'='true'
+    then (v_now_account#>>'{row,salesPaise}')::bigint-(before_reads.account_data#>>'{row,salesPaise}')::bigint end,
+   'changePermille',case when before_reads.account_data#>>'{coverage,certified}'='true' and v_now_account#>>'{coverage,certified}'='true'
+    and (before_reads.account_data#>>'{row,salesPaise}')::numeric<>0 then round(
+     ((v_now_account#>>'{row,salesPaise}')::numeric-(before_reads.account_data#>>'{row,salesPaise}')::numeric)*1000/
+      (before_reads.account_data#>>'{row,salesPaise}')::numeric) end,
+   'measurable',before_reads.account_data#>>'{coverage,certified}'='true' and v_now_account#>>'{coverage,certified}'='true',
+   'notMeasurableReason',case when before_reads.account_data#>>'{coverage,certified}'='true' and v_now_account#>>'{coverage,certified}'='true' then null else 'Not measurable yet' end
+  ) order by closed_rows.closed_at desc,closed_rows.id desc),'[]'::jsonb)
+  into v_outcome_rows from closed_rows
+  join before_reads on before_reads.opened_date=closed_rows.opened_at::date
+  left join private.stockflow_wallet_divisions division_row on division_row.id=closed_rows.division_id
+  left join lateral(select constraint_item.category from private.stockflow_commercial_constraints constraint_item
+   where constraint_item.opportunity_id=closed_rows.id order by constraint_item.recorded_at desc,constraint_item.id desc limit 1) constraint_row on true
+  left join lateral(select action_item.id,action_item.action_type from private.stockflow_commercial_actions action_item
+   where action_item.opportunity_id=closed_rows.id order by action_item.created_at desc,action_item.id desc limit 1) action_row on true
+  left join private.stockflow_commercial_action_results action_result on action_result.action_id=action_row.id;
+  return v_outcome_rows;
  elsif p_action='get_account_signals' then
   if coalesce(p_payload->>'customerId','') !~* '^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$' then raise exception 'Invalid customer id' using errcode='22023';end if;
   customer:=(p_payload->>'customerId')::uuid;

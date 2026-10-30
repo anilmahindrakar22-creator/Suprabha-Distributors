@@ -1,5 +1,11 @@
 export type OpportunityKind = 'capture' | 'defend' | 'recover';
 export type OpportunityOutcome = 'won' | 'lost' | 'dropped';
+export type OpportunityOutcomeRow = {
+  opportunityId?: string; kind?: OpportunityKind; divisionName?: string | null; origin?: 'manual' | 'wallet_gap'; openedAt?: string; openedReason?: string;
+  outcome?: OpportunityOutcome; closedReason?: string; closedBy?: string; closedAt?: string; lastConstraintCategory?: ConstraintCategory | null;
+  lastActionType?: string | null; lastActionResult?: 'done' | 'dropped' | null; salesBeforePaise?: number | null; salesNowPaise?: number | null;
+  changePaise?: number | null; changePermille?: number | null; measurable?: boolean; notMeasurableReason?: string | null;
+};
 export type ConstraintCategory = 'price' | 'portfolio' | 'instrument' | 'service' | 'relationship' | 'credit' | 'availability' | 'clinical' | 'contract_tender' | 'competitor_lock_in' | 'unknown';
 export type ConstraintConfidence = 'high' | 'medium' | 'low';
 export type EvidenceSource = 'document' | 'customer_stated' | 'our_view';
@@ -29,6 +35,7 @@ export type WalletDiagnosisCommand =
   | { action: 'get_wallet_diagnoses'; payload: { customerIds: string[] } }
   | { action: 'get_account_opportunities'; payload: { customerId: string } }
   | { action: 'get_account_signals'; payload: { customerId: string } }
+  | { action: 'get_opportunity_outcomes'; payload: { customerId: string } }
   | { action: 'open_opportunity'; payload: { requestId: string; customerId: string; kind: OpportunityKind; divisionCode: string | null; origin?: 'manual' | 'wallet_gap'; reason: string } }
   | { action: 'record_constraint'; payload: { requestId: string; opportunityId: string; category: ConstraintCategory; facts: FactsWithoutCategory; evidence: string; source: EvidenceSource; sourcePerson: string | null; observedOn: string; expectedCurrentConstraintId: string | null } }
   | { action: 'close_opportunity'; payload: { requestId: string; opportunityId: string; outcome: OpportunityOutcome; reason: string } };
@@ -45,6 +52,30 @@ const isoDate = (v: unknown): v is string => typeof v === 'string' && /^\d{4}-\d
 const todayIST = () => new Intl.DateTimeFormat('en-CA', { timeZone: 'Asia/Kolkata', year: 'numeric', month: '2-digit', day: '2-digit' }).format(new Date());
 const exactKeys = (value: Record<string, unknown>, keys: string[]) => Object.keys(value).length === keys.length && keys.every(key => Object.hasOwn(value, key));
 const textFact = (v: unknown) => text(v, 2, 200);
+export function isOpportunityOutcomeResponse(value: unknown): value is OpportunityOutcomeRow[] {
+  if (!Array.isArray(value)) return false;
+  const optional = (record: Record<string, unknown>, key: string, check: (item: unknown) => boolean) => !Object.hasOwn(record, key) || check(record[key]);
+  return value.every(item => object(item)
+    && optional(item, 'opportunityId', value => typeof value === 'string')
+    && optional(item, 'kind', value => kinds.includes(value as OpportunityKind))
+    && optional(item, 'divisionName', value => value === null || typeof value === 'string')
+    && optional(item, 'origin', value => value === 'manual' || value === 'wallet_gap')
+    && optional(item, 'openedAt', value => typeof value === 'string')
+    && optional(item, 'openedReason', value => typeof value === 'string')
+    && optional(item, 'outcome', value => outcomes.includes(value as OpportunityOutcome))
+    && optional(item, 'closedReason', value => typeof value === 'string')
+    && optional(item, 'closedBy', value => typeof value === 'string')
+    && optional(item, 'closedAt', value => typeof value === 'string')
+    && optional(item, 'lastConstraintCategory', value => value === null || categories.includes(value as ConstraintCategory))
+    && optional(item, 'lastActionType', value => value === null || typeof value === 'string')
+    && optional(item, 'lastActionResult', value => value === null || value === 'done' || value === 'dropped')
+    && optional(item, 'salesBeforePaise', value => value === null || Number.isSafeInteger(value))
+    && optional(item, 'salesNowPaise', value => value === null || Number.isSafeInteger(value))
+    && optional(item, 'changePaise', value => value === null || Number.isSafeInteger(value))
+    && optional(item, 'changePermille', value => value === null || Number.isSafeInteger(value))
+    && optional(item, 'measurable', value => typeof value === 'boolean')
+    && optional(item, 'notMeasurableReason', value => value === null || typeof value === 'string'));
+}
 function validFacts(category: ConstraintCategory, facts: unknown): facts is FactsWithoutCategory {
   if (!object(facts)) return false;
   const date = todayIST();
@@ -80,7 +111,7 @@ export function validateWalletDiagnosisCommand(input: unknown): WalletDiagnosisC
     case 'get_wallet_diagnoses':
       if (!exactKeys(p, ['customerIds']) || !Array.isArray(p.customerIds) || p.customerIds.length > 50 || !p.customerIds.every(id => typeof id === 'string' && uuid.test(id)) || new Set(p.customerIds).size !== p.customerIds.length) return fail();
       return { action: input.action, payload: { customerIds: p.customerIds as string[] } };
-    case 'get_account_opportunities': case 'get_account_signals':
+    case 'get_account_opportunities': case 'get_account_signals': case 'get_opportunity_outcomes':
       if (!exactKeys(p, ['customerId']) || typeof p.customerId !== 'string' || !uuid.test(p.customerId)) return fail();
       return { action: input.action, payload: { customerId: p.customerId } };
     case 'open_opportunity':

@@ -36,6 +36,7 @@ export type GatewayAction =
   | 'get_wallet_diagnoses'
   | 'get_account_opportunities'
   | 'get_account_signals'
+  | 'get_opportunity_outcomes'
   | 'open_opportunity'
   | 'record_constraint'
   | 'close_opportunity'
