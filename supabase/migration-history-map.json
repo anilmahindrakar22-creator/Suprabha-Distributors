@@ -1172,6 +1172,13 @@
       "remoteVersion": null,
       "remoteSha256": null,
       "status": "not_deployed"
+    },
+    {
+      "localFile": "20261102090000_po_tally_receipts.sql",
+      "localSha256": "cc0537f5e08cc7941b96b2b975835453fe3bb2dc15c38da98d0367e5203a1888",
+      "remoteVersion": null,
+      "remoteSha256": null,
+      "status": "not_deployed"
     }
   ],
   "liveCheck": {

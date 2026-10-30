@@ -8,6 +8,18 @@ const record = (v: unknown): v is Record<string, unknown> => !!v && typeof v ===
 const exact = (v: Record<string, unknown>, keys: string[]) => Object.keys(v).every((k) => keys.includes(k));
 const text = (v: unknown, max: number, min = 1) => typeof v === 'string' && v.trim().length >= min && v.trim().length <= max;
 const qty = (v: unknown, positive = false) => typeof v === 'number' && Number.isFinite(v) && v >= (positive ? Number.MIN_VALUE : 0) && v <= 1_000_000;
+export function parsePurchaseOrderTallyQuery(params: URLSearchParams): { action: 'get_tally_receipts' | 'get_tally_receipt_counts'; payload: Record<string, unknown> } | null {
+  if (params.size !== 1) return null;
+  const ids = params.getAll('tallyReceiptCounts');
+  if (ids.length === 1) {
+    const values = ids[0].split(',');
+    if (values.length < 1 || values.length > 20 || !values.every(isUuid)) return null;
+    return { action: 'get_tally_receipt_counts', payload: { ids: values } };
+  }
+  const receiptIds = params.getAll('tallyReceipts');
+  if (receiptIds.length !== 1 || !isUuid(receiptIds[0])) return null;
+  return { action: 'get_tally_receipts', payload: { id: receiptIds[0] } };
+}
 function distinctLines(value: unknown, kind: 'create' | 'receive') {
   if (!Array.isArray(value) || value.length < 1 || value.length > 100) return false;
   const seen = new Set<string>();
@@ -24,6 +36,15 @@ export function validatePurchaseOrderCommand(value: unknown): { action: string; 
   const { action, payload } = value;
   if (action === 'create_purchase_orders') {
     if (!exact(payload, ['idempotencyKey', 'lines']) || !isUuid(payload.idempotencyKey) || !distinctLines(payload.lines, 'create')) return null;
+  } else if (action === 'receive_from_tally') {
+    if (!exact(payload, ['id', 'idempotencyKey', 'expectedVersion', 'links']) || !isUuid(payload.id) || !isUuid(payload.idempotencyKey) || !Number.isInteger(payload.expectedVersion) || (payload.expectedVersion as number) < 1 || (payload.expectedVersion as number) > 2_147_483_647 || !Array.isArray(payload.links) || payload.links.length < 1 || payload.links.length > 100) return null;
+    const seen = new Set<string>();
+    for (const link of payload.links) {
+      if (!record(link) || !exact(link, ['itemKey', 'sourceId', 'lineKey']) || !text(link.itemKey, 240) || !text(link.sourceId, 240) || !text(link.lineKey, 240)) return null;
+      const tuple = JSON.stringify([link.itemKey, link.sourceId, link.lineKey]);
+      if (seen.has(tuple)) return null;
+      seen.add(tuple);
+    }
   } else if (action === 'mark_purchase_order_shared' || action === 'receive_purchase_order' || action === 'cancel_purchase_order') {
     const keys = action === 'mark_purchase_order_shared' ? ['id', 'idempotencyKey', 'expectedVersion'] : action === 'receive_purchase_order' ? ['id', 'idempotencyKey', 'expectedVersion', 'lines'] : ['id', 'idempotencyKey', 'expectedVersion', 'reason'];
     if (!exact(payload, keys) || !isUuid(payload.id) || !isUuid(payload.idempotencyKey) || !Number.isInteger(payload.expectedVersion) || (payload.expectedVersion as number) < 1 || (payload.expectedVersion as number) > 2_147_483_647) return null;

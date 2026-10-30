@@ -1,7 +1,7 @@
 import { getChatGPTUser } from '@/app/chatgpt-auth';
 import { callOrderGateway, OrderGatewayError } from '@/lib/order-gateway';
 import type { GatewayAction } from '@/lib/order-gateway';
-import { validatePurchaseOrderCommand } from '@/lib/purchase-orders';
+import { parsePurchaseOrderTallyQuery, validatePurchaseOrderCommand } from '@/lib/purchase-orders';
 import { BoundedJsonRequestError, readBoundedJsonRequest } from '@/lib/bounded-json-request';
 
 const headers = { 'cache-control': 'private, no-store' };
@@ -11,7 +11,14 @@ export async function GET(request: Request) {
     const user = await getChatGPTUser();
     if (!user) return failure('Sign in required', 401);
     const params = new URL(request.url).searchParams;
-    if ([...params.keys()].some((key) => !['page', 'status', 'supplierOptions'].includes(key))) return failure('Invalid purchase order query', 400);
+    if ([...params.keys()].some((key) => !['page', 'status', 'supplierOptions', 'tallyReceipts', 'tallyReceiptCounts'].includes(key))) return failure('Invalid purchase order query', 400);
+    const tallyReceipts = params.get('tallyReceipts');
+    const tallyReceiptCounts = params.get('tallyReceiptCounts');
+    if (tallyReceipts !== null || tallyReceiptCounts !== null) {
+      const query = parsePurchaseOrderTallyQuery(params);
+      if (!query) return failure('Invalid Tally receipts query', 400);
+      return Response.json(await callOrderGateway(user.email, query.action, query.payload), { headers });
+    }
     const pageRaw = params.get('page');
     const page = pageRaw === null ? 1 : Number(pageRaw);
     if (!Number.isInteger(page) || page < 1 || page > 4000 || params.getAll('page').length > 1) return failure('Invalid purchase order page', 400);

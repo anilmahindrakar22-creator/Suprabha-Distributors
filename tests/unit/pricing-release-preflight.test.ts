@@ -15,7 +15,7 @@ describe('read-only pricing release preflight', () => {
     expect(result.pending.indexOf('20261031130000_wallet_my_actions.sql')).toBeGreaterThan(result.pending.indexOf('20261031120000_wallet_actions.sql'));
     expect(result.pending.indexOf('20261031140000_power_map_enhancement.sql')).toBeGreaterThan(result.pending.indexOf('20261031130000_wallet_my_actions.sql'));
     expect(result.pending.indexOf('20261031150000_power_map_influence.sql')).toBeGreaterThan(result.pending.indexOf('20261031140000_power_map_enhancement.sql'));
-    expect(result.sqlTests).toEqual(['supabase/tests/sales_coverage.sql', 'supabase/tests/wallet_v2.sql', 'supabase/tests/wallet_v2_concurrency.sql', 'supabase/tests/wallet_diagnosis.sql', 'supabase/tests/wallet_diagnosis_concurrency.sql', 'supabase/tests/wallet_actions.sql', 'supabase/tests/wallet_actions_concurrency.sql', 'supabase/tests/wallet_my_actions.sql', 'supabase/tests/power_map_enhancement.sql', 'supabase/tests/power_map_influence.sql']);
+    expect(result.sqlTests).toEqual(['supabase/tests/sales_coverage.sql', 'supabase/tests/wallet_v2.sql', 'supabase/tests/wallet_v2_concurrency.sql', 'supabase/tests/wallet_diagnosis.sql', 'supabase/tests/wallet_diagnosis_concurrency.sql', 'supabase/tests/wallet_actions.sql', 'supabase/tests/wallet_actions_concurrency.sql', 'supabase/tests/wallet_my_actions.sql', 'supabase/tests/power_map_enhancement.sql', 'supabase/tests/power_map_influence.sql', 'supabase/tests/po_tally_receipts.sql', 'supabase/tests/po_tally_receipts_concurrency.sql']);
     const runner = readFileSync(new URL('../pricing-migration-local.ps1', import.meta.url), 'utf8');
     expect(runner).toContain("'20261030110000_economics_candidate_rebuild.sql','20261030130000_wallet_v2.sql','20261031090000_wallet_diagnosis.sql','20261031120000_wallet_actions.sql','20261031130000_wallet_my_actions.sql','20261031140000_power_map_enhancement.sql','20261031150000_power_map_influence.sql'");
     let previous = -1;
@@ -146,6 +146,19 @@ describe('read-only pricing release preflight', () => {
     expect(fixture.trimEnd()).toMatch(/rollback;$/);
     expect(readFileSync(new URL('../pricing-migration-local.ps1', import.meta.url), 'utf8')).toContain('supabase/tests/supplier_purchase_orders.sql');
   });
+  it('registers PO Tally receipts after purchase orders and runs the race after acceptance', () => {
+    const result = pricingReleasePreflight(original, source);
+    const name = '20261102090000_po_tally_receipts.sql';
+    expect(result.pending.indexOf(name)).toBeGreaterThan(result.pending.indexOf('20261029100000_supplier_purchase_orders.sql'));
+    expect(source.get(name)).toContain('stockflow_po_receipt_gateway');
+    const runner = readFileSync(new URL('../pricing-migration-local.ps1', import.meta.url), 'utf8');
+    expect(runner).toContain("'20261031150000_power_map_influence.sql','20261102090000_po_tally_receipts.sql'");
+    expect([...runner].every(character => character.charCodeAt(0) < 128)).toBe(true);
+    const main = 'supabase/tests/po_tally_receipts.sql';
+    const race = 'supabase/tests/po_tally_receipts_concurrency.sql';
+    expect(result.sqlTests.indexOf(race)).toBe(result.sqlTests.indexOf(main) + 1);
+    expect(runner.indexOf(race)).toBeGreaterThan(runner.indexOf(main));
+  });
   it('keeps to-order fixtures on real gateways with constrained literals', () => {
     const fixture = readFileSync(new URL('../../supabase/tests/to_order_list.sql', import.meta.url), 'utf8');
     expect(fixture).not.toMatch(/(?:insert\s+into|update)\s+private\.stockflow_(?:orders|order_lines|order_events|order_pricing_decisions|billing_snapshots)\b/i);
@@ -260,6 +273,7 @@ describe('read-only pricing release preflight', () => {
       '20261031130000_wallet_my_actions.sql',
       '20261031140000_power_map_enhancement.sql',
       '20261031150000_power_map_influence.sql',
+      '20261102090000_po_tally_receipts.sql',
     ]);
     expect(result.deployed.at(-1)?.localFile).toBe('20261026150000_rate_check_units.sql');
     expect(result.deployed).toHaveLength(147);
@@ -291,6 +305,7 @@ describe('read-only pricing release preflight', () => {
       '20261031130000_wallet_my_actions.sql',
       '20261031140000_power_map_enhancement.sql',
       '20261031150000_power_map_influence.sql',
+      '20261102090000_po_tally_receipts.sql',
     ]);
   });
   it('rejects changed SQL including changes inside literals', () => {
