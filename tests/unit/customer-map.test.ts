@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { formatBoundingBox, mapColours, parseCustomerSheet, parseMapPins, parseNotOnMap, toneMeanings } from '../../lib/customer-map';
+import { customerMapDayDifference, formatActionDue, formatBoundingBox, formatCustomerDate, formatLastVisit, mapColours, parseCustomerSheet, parseMapPins, parseNotOnMap, toneMeanings } from '../../lib/customer-map';
 
 const pin = { customerId: '66111111-1111-4111-8111-111111111111', name: 'Example Lab', lat: 17.3, lng: 76.8, tone: 'red', focus: true, openOrders: 2 };
 const pins = { coverage: { placed: 1, total: 2 }, pins: [pin], notOnMapCount: 1 };
@@ -47,6 +47,39 @@ describe('customer map parsers', () => {
   it.each([{ tiles: { walletPaise: '100' } }, { sharePermille: -1 }, { tiles: { lastVisit: { visitedOn: '2026-02-30' } } }, { openWork: [{ ...order, date: 'yesterday' }] }, { instruments: { rows: [{ kind: 'ours', model: 'A', payback: 'invented' }], moreCount: 0 } }, { contacts: { total: 1, champions: 2 } }, { actions: { call: 'javascript:alert(1)' } }])('rejects malformed sheet fields %#', change => { expect(() => parseCustomerSheet({ ...empty, ...change })).toThrow(); });
 });
 describe('customer map helpers', () => {
+  const now = new Date('2026-10-30T06:00:00Z');
+  it('formats dates in India, adding only a different year', () => {
+    expect(formatCustomerDate('2026-10-29', now)).toBe('29 Oct');
+    expect(formatCustomerDate('2025-10-29', now)).toBe('29 Oct 2025');
+    expect(formatCustomerDate('2027-01-01', now)).toBe('1 Jan 2027');
+    expect(formatCustomerDate('2026-10-29T20:00:00Z', now)).toBe('30 Oct');
+    const indiaNewYear = new Date('2026-12-31T20:00:00Z');
+    expect(formatCustomerDate('2027-01-01', indiaNewYear)).toBe('1 Jan');
+    expect(formatCustomerDate('2026-12-31', indiaNewYear)).toBe('31 Dec 2026');
+  });
+  it('compares calendar days across Indian midnight and leap days', () => {
+    expect(customerMapDayDifference('2026-10-30', new Date('2026-10-29T18:29:59Z'))).toBe(1);
+    expect(customerMapDayDifference('2026-10-30', new Date('2026-10-29T18:30:00Z'))).toBe(0);
+    expect(customerMapDayDifference('2026-12-31', new Date('2026-12-31T20:00:00Z'))).toBe(-1);
+    expect(customerMapDayDifference('2024-02-28', new Date('2024-03-01T06:00:00Z'))).toBe(-2);
+  });
+  it('formats last visits as today, elapsed days or Never', () => {
+    expect(formatLastVisit(null, now)).toBe('Never');
+    expect(formatLastVisit('2026-10-30', now)).toBe('today');
+    expect(formatLastVisit('2026-10-29', now)).toBe('1 d ago');
+    expect(formatLastVisit('2026-10-18', now)).toBe('12 d ago');
+    expect(formatLastVisit('2026-11-01', now)).toBe('1 Nov');
+  });
+  it('formats action due dates as upcoming, today or late', () => {
+    expect(formatActionDue('2026-11-01', now)).toBe('in 2 d');
+    expect(formatActionDue('2026-10-30', now)).toBe('today');
+    expect(formatActionDue('2026-10-27', now)).toBe('3 d late');
+  });
+  it('rejects invalid display dates', () => {
+    expect(() => formatCustomerDate('2026-02-30', now)).toThrow();
+    expect(() => formatActionDue('not a date', now)).toThrow();
+    expect(() => formatLastVisit('not a date', now)).toThrow();
+  });
   it('maps every tone to its fixed colour and a textual meaning', () => {
     expect(mapColours).toEqual({ red: '#E24B4A', amber: '#EF9F27', green: '#1D9E75', grey: '#6b777b' });
     for (const tone of Object.keys(mapColours) as (keyof typeof mapColours)[]) expect(toneMeanings[tone].length).toBeGreaterThan(5);

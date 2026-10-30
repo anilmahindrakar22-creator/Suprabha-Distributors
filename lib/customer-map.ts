@@ -4,6 +4,31 @@ import { constraintIcons } from '@/lib/glance-icons';
 export const mapColours = { red: '#E24B4A', amber: '#EF9F27', green: '#1D9E75', grey: '#6b777b' } as const;
 export type MapTone = keyof typeof mapColours;
 export const toneMeanings: Record<MapTone, string> = { red: 'Overdue action or stuck order', amber: 'Needs a plan, diagnosis or decider', green: 'Share on target', grey: 'No data yet' };
+
+const calendarDay = new Intl.DateTimeFormat('en-CA', { timeZone: 'Asia/Kolkata', year: 'numeric', month: '2-digit', day: '2-digit' });
+const calendarYear = new Intl.DateTimeFormat('en-IN', { timeZone: 'Asia/Kolkata', year: 'numeric' });
+function customerDate(value: string): Date {
+  const result = new Date(/^\d{4}-\d{2}-\d{2}$/.test(value) ? `${date(value)}T00:00:00+05:30` : value);
+  if (!Number.isFinite(result.getTime())) throw new Error('Invalid customer date');
+  return result;
+}
+export function formatCustomerDate(value: string, now = new Date()): string {
+  const parsed = customerDate(value);
+  return new Intl.DateTimeFormat('en-IN', { timeZone: 'Asia/Kolkata', day: 'numeric', month: 'short', ...(calendarYear.format(parsed) === calendarYear.format(now) ? {} : { year: 'numeric' }) }).format(parsed);
+}
+/** Compare calendar dates in India, including around midnight and year changes. */
+export function customerMapDayDifference(value: string, now = new Date()): number {
+  return (Date.parse(calendarDay.format(customerDate(value))) - Date.parse(calendarDay.format(now))) / 86_400_000;
+}
+export function formatLastVisit(value: string | null, now = new Date()): string {
+  if (value === null) return 'Never';
+  const days = customerMapDayDifference(value, now);
+  return days === 0 ? 'today' : days < 0 ? `${-days} d ago` : formatCustomerDate(value, now);
+}
+export function formatActionDue(value: string, now = new Date()): string {
+  const days = customerMapDayDifference(value, now);
+  return days === 0 ? 'today' : days < 0 ? `${-days} d late` : `in ${days} d`;
+}
 export type MapPin = { customerId: string; name: string; lat: number; lng: number; tone: MapTone; focus: boolean; openOrders: number };
 export type MapPins = { coverage: { placed: number; total: number }; pins: MapPin[]; notOnMapCount: number };
 export type UnplacedCustomers = { page: number; pageSize: number; total: number; rows: { customerId: string; name: string; city: string | null }[] };
