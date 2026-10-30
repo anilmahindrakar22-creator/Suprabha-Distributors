@@ -217,3 +217,51 @@ Actions and EV cards; the Action Center; outcomes; scoring snapshots; any price 
   - it's absent for a row with an opportunity, and when not certified;
   - tapping opens the form, and the POST carries `origin: 'wallet_gap'`;
   - no horizontal scroll at 375.
+
+## 10. Outcomes: did it work? (30 Oct, ADR-0008 §9 learning loop, first step)
+**Decision it drives:** which kinds of action actually moved a lab's purchases. A record only; nothing is acted on automatically.
+
+**Measure:** the lab's **sales per month** (the Wallet V2 definition, certified Tally sales), compared over two windows:
+- **before:** the 3 complete months before the opportunity was **opened**, from `private.stockflow_wallet_account_read(opened_at::date, customer)`;
+- **now:** the latest 3 complete months, from `private.stockflow_wallet_account_read(today IST, customer)`.
+
+Each value is used **only if** its read reports `coverage.certified = true`; otherwise null, with the reason "Not measurable yet".
+- **Change:** `changePaise = now − before`; `changePermille = round(change*1000/before)` half-up, null when `before = 0`.
+- The measure is at **lab level** even for division-scoped opportunities. Sales aren't mapped to divisions yet, and the screen says so.
+- **Always computed on read, never stored**, so it improves automatically as coverage becomes certified.
+
+**SQL:** edit `20261031090000_wallet_diagnosis.sql` in place (not deployed), and refresh its hash.
+- New read action **`get_opportunity_outcomes {customerId}`** in `public.stockflow_opportunity_gateway`. Roles: administrator and management.
+- It returns up to the **10 most recently closed** opportunities of the lab, each with:
+  - `opportunityId`, `kind`, `divisionName`, `origin`, `openedAt`, `openedReason`;
+  - `outcome`, `closedReason`, `closedBy`, `closedAt`;
+  - `lastConstraintCategory`;
+  - `lastActionType` and `lastActionResult` (from the latest action and its result, if any);
+  - `salesBeforePaise`, `salesNowPaise`, `changePaise`, `changePermille`;
+  - `measurable` (boolean), `notMeasurableReason` (text or null).
+- **Performance:** compute the **now** read once per call, and the **before** read once per distinct `opened_at::date`. At most 11 calls.
+- Never use `jsonb_object_length`. plpgsql variables are prefixed `v_`.
+
+**Contract:** `lib/wallet-diagnosis-types.ts` adds the `OpportunityOutcome` type and the `get_opportunity_outcomes` command. Response checks tolerate missing or extra keys.
+
+**Wiring:** add the action to the `GatewayAction` union, the Edge `actions` and `readActions`, the routing to `stockflow_opportunity_gateway`, and the diagnosis route's GET.
+
+**Screen** (declutter rule), in the account sheet's "Why we're not winning" section:
+- a quiet toggle **`Past opportunities (n)`**, hidden when n = 0, and loaded only when opened;
+- each item:
+  - line 1: `{Kind} · {Division or Whole lab} · {Won|Lost|Dropped} · {d Mon yyyy}`;
+  - line 2: `Reason: {closedReason}`, plus ` · Last action: {label} ({Done|Dropped})` when present;
+  - line 3, when measurable: `Sales/month ₹X → ₹Y ({+/-Z%})` (green when up, red when down, neutral when unchanged or no %); otherwise the muted `Not measurable yet: {reason}`. For a division scope, append the muted ` · whole-lab sales`.
+
+**Acceptance:**
+- **D13 (SQL):**
+  - not certified: the closed fixture opportunity returns `measurable=false`, null sales and a reason;
+  - certified: reuse the D7 certification approach, which certifies only the current window. So the **before** window, which ends before the opening date, uses the opening date of a fixture opened **today** and therefore shares the same window. Assert that `salesBeforePaise = salesNowPaise`, `changePaise = 0` and `measurable=true`. A hand-built two-window case isn't required in this slice.
+  - order and limit: the newest 10 closed only, with open opportunities excluded;
+  - PT403 for the other roles.
+- **Browser:**
+  - the toggle is hidden at 0;
+  - measurable up and down cases with the colours;
+  - "Not measurable yet";
+  - the division note;
+  - no horizontal scroll at 375.
