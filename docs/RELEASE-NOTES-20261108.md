@@ -37,6 +37,7 @@
 
 **Sales / Operations**
 - **My actions** (Accounts): your open actions only, with "Meet: A → B → Decider". **Mark done** asks for the visit outcome on a Visit and records the visit automatically. **Drop** asks for a short note.
+- **Bell:** overdue actions show under "Also needs attention" as **My actions overdue (n)**. Tapping it opens My actions.
 
 **Everyone**
 - After your role changes, you'll see a bar asking you to reload. Nothing is lost by tapping it.
