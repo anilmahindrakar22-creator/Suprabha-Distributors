@@ -124,7 +124,7 @@ It is shown as a graph plus a list view.
 
 **Context:** `cba7f67` links Power Maps to "CRM opportunity records"; the spec defines `wallet_opportunity`. Two entities would duplicate the master.
 
-**Decision (proposed):** a single `opportunity` entity in Commercial Intelligence, with type capture/defend/recover. Stakeholder relevance, constraints, actions and outcomes reference it.
+**Decision:** a single `opportunity` entity in Commercial Intelligence, with type capture/defend/recover. Stakeholder relevance, constraints, actions and outcomes reference it.
 
 **Refined 30 Oct 2026 (Claude, after building train 2026-11-06; accepted by the owner 30 Oct 2026):**
 - **Scope:** an opportunity belongs to one customer and **optionally one wallet division**. Null means the whole lab, so a lab can carry separate opportunities, such as capture Immunoassay and capture Haematology. **At most one open opportunity per (customer, type, division)**.
@@ -142,6 +142,69 @@ It is shown as a graph plus a list view.
   - `…_constraints`;
   - `…_actions`;
   - `…_action_results`.
+
+**Specification (binding for every slice that touches opportunities):**
+
+1. **Identity and meaning.**
+   - **Capture:** win wallet we don't hold.
+   - **Defend:** protect wallet we hold that is at risk.
+   - **Recover:** win back wallet we held and lost.
+   - An opportunity is a **commercial intent at one lab**, optionally narrowed to one wallet division. It is not a sales order, quote or price. It never creates, changes or approves an order, price, credit limit, stock or Tally record.
+
+2. **Invariants** (enforced in SQL, with tests):
+   - **I-1:** at most one open opportunity per (customer, type, division-or-whole-lab), under the advisory lock `opportunity:{customer}:{type}:{division|all}`.
+   - **I-2:** at most one open action per opportunity, under the lock `opportunity-action:{opportunity}`.
+   - **I-3:** an opportunity can't close while an action is open. The closure trigger takes the same lock as I-2, so a concurrent create and close can't both succeed.
+   - **I-4:** a constraint or action can be added only to an **open** opportunity.
+   - **I-5:** a `price_review` action needs a current `price` constraint whose source is a document or a named person at the lab; never "our view" alone.
+   - **I-6:** all five tables are append-only (`no_delete` and `immutable` triggers). A change is a new row: a new constraint supersedes, an end or close row ends. The only permitted update is privacy erasure that nulls free text, by trigger.
+   - **I-7:** every write is idempotent (`begin_/finish_stockflow_command`, keys of at least 16 characters; a replay returns the original result; a changed payload under the same key gives 22023) and audited in `private.stockflow_economic_audit`.
+   - **I-8:** reads that depend on sales figures fail closed. Counts that need certified Tally coverage (such as the undiagnosed Focus count and Focus without a decision maker) are **null** when coverage isn't certified, never zero.
+
+3. **State model.**
+   - **States:**
+     - **open** (no closure row);
+     - **closed** (a closure row with outcome won, lost or dropped and a reason).
+   - **Derived states, not stored:**
+     - **diagnosed:** open, with a current constraint that isn't `unknown`;
+     - **planned:** open, with an open action;
+     - **overdue:** an open action whose due date is before today (IST).
+   - **Reopening:** a closed opportunity never reopens. Open a new one for the same scope; the history stays on the old one.
+   - The richer lifecycle in the Suprabha 80 plan (QUALIFIED, APPROVED, OUTCOME_DUE, MEASURED and so on) is added only when a slice needs it, as **new append-only event rows**, never as an editable status column.
+
+4. **Authority and visibility.**
+   | Who | Can |
+   | --- | --- |
+   | Administrator, management | Open and close opportunities, record constraints, create and close actions, see wallet figures, Power Maps and the Actions due list |
+   | Action owner (active member; sales or operations) | See **only their own** open actions: lab, action, due date, reason category and the route names. Close them with a result, and record the visit when it's a Visit |
+   | Everyone else | Nothing (PT403, or 42501 for inactive members) |
+   - Owners never see wallet estimates, sales, share, gap, expected gain, constraint facts and evidence, or prices.
+   - Operations never sees purchase rates (unchanged).
+
+5. **What may reference an opportunity:** constraints, actions, Power Map stakeholder relevance (future), outcome measurements (future), and pricing-review links (future).
+   - **Pricing-review links are reference-only:** an approved price change still goes entirely through the Pricing Engine and its approvals, and the opportunity only records the link.
+   - **Nothing may reference an opportunity to bypass** pricing, credit, stock, Tally, audit or ACID controls.
+
+6. **Provenance and confidence.**
+   - The opportunity records `opened_by`, `opened_at` and `opened_reason`.
+   - Confidence lives on the **constraint**, derived from its evidence source: document = High, a named person at the lab = Medium, our view = Low.
+   - When the system starts suggesting opportunities, add `origin` (`manual`, `wallet_gap`, `defend_signal`) and the policy version that produced the suggestion. A suggestion stays a suggestion until a person opens it.
+
+7. **Privacy (D-07).** Opportunities hold business facts only. A cited contact is referenced by id. Erasing a contact nulls the free-text evidence that refers to them (by trigger), and the audit rows remain.
+
+8. **Read models and performance.**
+   - All lists are paginated (50 rows) and scoped by role.
+   - Per-page reads batch by customer ids (at most 50).
+   - Wallet-dependent reads reuse `private.stockflow_wallet_read`; they never duplicate it.
+   - No read model caches figures across companies or roles.
+
+9. **Closing outcomes and learning (future, trigger-based).**
+   - When a lab has certified coverage for the window before opening and the window after closing, record the share before and after on the closure, and whether the action's expected gain materialised. This is reported, never automatically acted on.
+   - A failed price concession must surface for review, not persist silently (Suprabha 80 principle 8).
+
+10. **Change control.**
+    - Any new opportunity type, state, outcome or referencing table updates this ADR first.
+    - Every new invariant ships with a real-database test, and a race test where two writers can collide.
 
 ## ADR-0009: Prospects are Customer-domain accounts
 **Status:** Proposed.
