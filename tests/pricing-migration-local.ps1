@@ -56,17 +56,30 @@ try {
     ) | Where-Object { $_ -and (Test-Path (Join-Path $_ 'PG_VERSION')) }
     $postgresData = $dataCandidates | Select-Object -First 1
     if (-not $postgresData) { throw 'A PostgreSQL server is not running and no initialized portable data directory was found. Set STOCKFLOW_POSTGRES_DATA.' }
+    & $pgCtlProgram -D $postgresData status *> $null
+    $serverRunning = $LASTEXITCODE -eq 0
+    if (-not $serverRunning) {
     if ($IsWindows) {
       # pg_ctl's detached server inherits native pipeline handles on Windows.
       # Wait for pg_ctl itself, not an output pipe kept open by postgres.
-      $startArguments = @('-D', ('"' + $postgresData + '"'), '-l', ('"' + (Join-Path $work 'postgres.log') + '"'), '-w', 'start')
+      $startArguments = @('-D', ('"' + $postgresData + '"'), '-l', ('"' + (Join-Path $work 'postgres.log') + '"'), '-w', '-t', '600', 'start')
       $starter = Start-Process -FilePath $pgCtlProgram -ArgumentList $startArguments -WindowStyle Hidden -PassThru
-      if (-not $starter.WaitForExit(30000)) { throw 'PostgreSQL startup timed out after 30 seconds' }
+      if (-not $starter.WaitForExit(600000)) { throw 'PostgreSQL startup timed out after 600 seconds' }
       if ($starter.ExitCode -ne 0) { throw "PostgreSQL startup failed with exit code $($starter.ExitCode)" }
     } else {
-      Invoke-DatabaseCommand $pgCtlProgram @('-D',$postgresData,'-l',(Join-Path $work 'postgres.log'),'-w','start')
+      Invoke-DatabaseCommand $pgCtlProgram @('-D',$postgresData,'-l',(Join-Path $work 'postgres.log'),'-w','-t','600','start')
     }
-    $serverStartedByScript = $true
+      $serverStartedByScript = $true
+    }
+    $readyDeadline = [DateTime]::UtcNow.AddSeconds(600)
+    $waitingMessagePrinted = $false
+    while ($true) {
+      & $pgIsReadyProgram -q
+      if ($LASTEXITCODE -eq 0) { break }
+      if (-not $waitingMessagePrinted) { Write-Output 'Waiting for PostgreSQL recovery...'; $waitingMessagePrinted = $true }
+      if ([DateTime]::UtcNow -ge $readyDeadline) { throw 'PostgreSQL was still not ready after 600 seconds.' }
+      Start-Sleep -Seconds 5
+    }
   }
   Copy-Item (Join-Path $migrationSource '*.sql') -Destination $work
 
