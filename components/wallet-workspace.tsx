@@ -8,6 +8,7 @@ import { WalletDiagnosis } from '@/components/wallet-diagnosis';
 import type { ConstraintCategory, WalletDiagnoses, WalletDiagnosisRow } from '@/lib/wallet-diagnosis-types';
 import type { ActionsDue } from '@/lib/wallet-action-types';
 import { WalletActionDueRows, counted } from '@/components/wallet-actions';
+import { WalletQuickEntry } from '@/components/wallet-quick-entry';
 
 const button = 'min-h-11 rounded-xl border border-sf-line px-3 text-sm font-bold text-sf-body disabled:opacity-50';
 const primary = 'min-h-11 rounded-xl bg-sf-brand px-4 text-sm font-bold text-white disabled:opacity-50';
@@ -155,6 +156,7 @@ export function WalletWorkspace({ onBack, onReviewLinks }: { onBack: () => void;
   const [focusWithoutDecisionMaker, setFocusWithoutDecisionMaker] = useState<number | null>(null);
   const [actionsDue, setActionsDue] = useState<ActionsDue | null>(null);
   const [walletGapStart, setWalletGapStart] = useState(false);
+  const [quickEntry, setQuickEntry] = useState(false);
   useEffect(() => { const timer = setTimeout(() => { setSearch(query); setPage(1); }, 300); return () => clearTimeout(timer); }, [query]);
   useEffect(() => {
     if (forbidden) return;
@@ -199,8 +201,9 @@ export function WalletWorkspace({ onBack, onReviewLinks }: { onBack: () => void;
   const reloadAccount = async () => { setEditing(false); setAccountRevision(n => n + 1); setRevision(n => n + 1); };
   const conflict = async () => { setNotice('Someone else updated this estimate. Reloaded.'); await reloadAccount(); };
   const deny = () => setForbidden(true);
+  if (quickEntry && !forbidden) return <WalletQuickEntry onBack={() => setQuickEntry(false)} onForbidden={deny} />;
   return <section aria-label="Wallet" className="min-w-0 space-y-4 [overflow-wrap:anywhere]">
-    <header className="flex flex-wrap items-center gap-3"><button className={button} onClick={onBack}>Back to Accounts</button><h2 className="text-xl font-bold text-sf-strong">Wallet</h2>{!forbidden && workspace ? <button className={button} onClick={() => { setNotice(''); setTargets(true); }}>Targets</button> : null}</header>
+    <header className="flex flex-wrap items-center gap-3"><button className={button} onClick={onBack}>Back to Accounts</button><h2 className="text-xl font-bold text-sf-strong">Wallet</h2>{!forbidden && workspace ? <><button className={button} onClick={() => { setNotice(''); setTargets(true); }}>Targets</button><button className="min-h-11 text-sm text-sf-muted underline" onClick={() => setQuickEntry(true)}>Quick entry</button></> : null}</header>
     {forbidden ? <p>Wallet is for management</p> : <>
       {notice && !customerId && !targets ? <p className="text-sm text-sf-body">{notice}</p> : null}
       {workspace ? <>
