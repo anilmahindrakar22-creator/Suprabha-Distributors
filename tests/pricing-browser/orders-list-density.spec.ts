@@ -145,17 +145,17 @@ test('sales does not see the price approval chip', async ({ page }) => {
   await expect(page.getByRole('button', { name: /Prices to approve/ })).toHaveCount(0);
 });
 
-test('phone list fits compact orders below the pipeline and opens one order full screen', async ({ page, isMobile }) => {
+test('phone list fits about ten orders on one screen and opens one order full screen', async ({ page, isMobile }) => {
   test.skip(!isMobile, 'phone layout');
   await mockOrders(page);
   await page.goto('/?view=orders-workspace');
   const rows = page.getByRole('button', { name: /^SF-LIST-/ });
   await expect(rows.first()).toBeVisible();
   const firstTop = (await rows.first().boundingBox())?.y ?? 999;
-  expect(firstTop).toBeLessThan(400);
+  expect(firstTop).toBeLessThan(260);
   const height = page.viewportSize()?.height ?? 0;
   const visible = await rows.evaluateAll((elements, viewport) => elements.filter((element) => element.getBoundingClientRect().bottom <= viewport).length, height);
-  expect(visible).toBeGreaterThanOrEqual(6);
+  expect(visible).toBeGreaterThanOrEqual(8);
   for (const row of await rows.all()) expect((await row.boundingBox())?.height ?? 0).toBeLessThan(76);
   const firstDate = rows.first().locator('time');
   await expect(firstDate).toHaveAttribute('datetime', pending[0].createdAt);

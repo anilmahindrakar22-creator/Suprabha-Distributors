@@ -29,9 +29,7 @@ import { recordOrderClientTiming } from '@/lib/order-client-timing';
 import { PRICE_CHANGE_ROLES, type OrderPricingWorkspace, type PricingLineResolution } from '@/lib/pricing-types';
 import { PricingOptions } from './pricing-options';
 import { ProductRequest } from './product-request';
-import { BackIcon, ChevronDownIcon, CompactOrderRow, OrderFlagBadge, OrderProgress, OrderStageChips, OrderStageIcon, orderStageStyle, snapshotTimeLabel, type StageFilter } from './order-list';
-import { StageStrip, StatusChip, type GlanceStage } from './ui/glance';
-import { stageIcons } from '@/lib/glance-icons';
+import { BackIcon, ChevronDownIcon, CompactOrderRow, OrderFlagBadge, OrderProgress, OrderStageChips, orderStageStyle, snapshotTimeLabel, type StageFilter } from './order-list';
 import { deliveredTodayOrders, groupOrdersForList } from '@/lib/order-list-groups';
 import { readJsonBody } from '@/lib/http-json';
 import { orderDateLabel, orderDateTime } from '@/lib/order-date';
@@ -656,13 +654,6 @@ export function OrderWorkspace({ actorEmail, initialStatus = 'open', initialQuer
   }
 
   const operations = data?.operations || {};
-  const pipelineStages: (GlanceStage & { filter?: string })[] = [
-    { key: 'confirm', icon: stageIcons.confirm, label: 'Confirm', count: operations.awaitingConfirmation ?? 0, tone: 'confirm', filter: 'awaiting_confirmation' },
-    { key: 'stock', icon: stageIcons.waiting_for_stock, label: 'Waiting for stock', count: operations.awaitingStock ?? 0, tone: 'warning' },
-    { key: 'pack', icon: stageIcons.pack, label: 'Pack', count: (operations.readyForPicking ?? 0) + (operations.packed ?? 0), tone: 'pack', filter: 'picking' },
-    { key: 'bill', icon: stageIcons.bill, label: 'Bill', count: operations.awaitingTallyBilling ?? 0, tone: 'bill', filter: 'billing' },
-    { key: 'dispatch', icon: stageIcons.dispatch, label: 'Dispatched today', count: operations.dispatchedToday ?? 0, tone: 'success' },
-  ];
   const staleText = data?.snapshot.fetchedAt || 'No Tally snapshot';
   const actorRoles = data?.actor.roles ?? data?.actor.role;
   const approvalCount = status === 'open' && hasAnyStockFlowRole(actorRoles, ['administrator', 'management']) ? loadedOrders.filter((order) => order.pricingState === 'approval_required').length : 0;
@@ -828,14 +819,6 @@ export function OrderWorkspace({ actorEmail, initialStatus = 'open', initialQuer
         {error ? <p role="alert" className="mt-4 rounded-xl border border-sf-danger-line bg-sf-danger-soft px-4 py-3 text-sm text-sf-danger">{error}</p> : null}
         {focusNotice ? <p role="alert" className="mt-4 flex flex-wrap items-center justify-between gap-2 rounded-xl border border-sf-danger-line bg-sf-danger-soft px-4 py-3 text-sm text-sf-danger"><span>{focusNotice}</span><button type="button" onClick={() => setFocusNotice('')} className="min-h-9 shrink-0 rounded-lg border border-sf-danger-line bg-white px-3 text-xs font-bold">Dismiss</button></p> : null}
 
-        {data ? <section aria-label="Order pipeline" className="mt-3 rounded-2xl border border-sf-line-soft bg-white p-2">
-          <div className="grid min-w-0 grid-cols-5 gap-2 max-[360px]:grid-cols-3">
-            {pipelineStages.map((stage) => stage.filter ? <button key={stage.key} type="button" aria-pressed={activeStage === stage.filter} onClick={() => showQueue(stage.filter!)} className="min-h-11 min-w-11 rounded-xl py-1 hover:bg-sf-soft focus-visible:ring-2 focus-visible:ring-sf-accent aria-pressed:bg-sf-soft">
-              <StageStrip stages={[stage]} />
-            </button> : <div key={stage.key} className="min-w-0 py-1"><StageStrip stages={[stage]} /></div>)}
-          </div>
-          {(operations.urgentExceptions ?? 0) > 0 ? <div className="mt-2"><StatusChip icon={stageIcons.stuck} tone="danger" count={operations.urgentExceptions}>Stuck over 24 h</StatusChip></div> : null}
-        </section> : null}
 
         <section className="mt-3 overflow-hidden rounded-2xl border border-sf-line-soft bg-white shadow-[0_1px_3px_rgba(9,47,54,0.06)]">
           <div className="flex items-center justify-between gap-3 border-b border-sf-line-soft px-4 py-2">
@@ -867,7 +850,6 @@ export function OrderWorkspace({ actorEmail, initialStatus = 'open', initialQuer
                   const stage = orderStageStyle(order.status);
                   return <button id={`desktop-order-${order.id}`} key={order.id} type="button" aria-label={`${order.orderNumber}, ${order.customerName}, ${orderStage(order.status)}`} aria-current={selected ? 'true' : undefined} title={`${order.assignedToEmail ? `Owner: ${order.assignedToEmail}` : 'Unassigned'} · Next: ${nextAction}`} onClick={() => setSelectedOrderId(order.id)} onKeyDown={(event) => { if (['ArrowUp', 'ArrowDown', 'Home', 'End'].includes(event.key)) { event.preventDefault(); navigateDesktopQueue(event.key); } }} className={`relative block w-full border-b border-sf-soft-2 flex min-h-11 items-center py-1.5 pl-5 pr-3 text-left outline-none hover:bg-white focus-visible:bg-white focus-visible:ring-2 focus-visible:ring-inset focus-visible:ring-sf-accent-bright aria-current:bg-white aria-current:shadow-[inset_3px_0_0_#092f36] ${['delivered', 'cancelled'].includes(order.status) ? 'opacity-70' : ''}`}>
                     <span aria-hidden="true" className={`absolute inset-y-2 left-2 w-1 rounded-full ${stage.bar}`} />
-                    <span className="mr-2 shrink-0 self-center"><OrderStageIcon status={order.status} /></span>
                     <span className="flex min-w-0 flex-1 flex-col gap-0.5">
                       <span className="flex min-w-0 items-baseline gap-2"><strong className="min-w-0 flex-1 truncate text-sm text-sf-ink">{order.customerName}</strong>{newOrderIds?.has(order.id) ? <span className="shrink-0 rounded-full bg-sf-ink px-1.5 py-0.5 text-[9px] font-black uppercase text-white">New</span> : null}<time dateTime={order.createdAt} title={`Ordered ${orderDateTime(order.createdAt)}`} className="shrink-0 text-[11px] font-semibold tabular-nums text-sf-subtle">{orderDateLabel(order.createdAt)}</time></span>
                       <span className="flex min-w-0 items-center gap-1.5"><span className={`shrink-0 rounded-full px-2 py-0.5 text-[10px] font-extrabold ${stage.chip}`}>{stage.label}</span><OrderFlagBadge order={order} /><span className="min-w-0 truncate text-[11px] tabular-nums text-sf-subtle">{order.orderNumber}</span>{nextAction === 'View order' ? null : <span className="ml-auto shrink-0 pl-1 text-right text-[11px] font-bold text-sf-accent">{nextAction}</span>}</span>

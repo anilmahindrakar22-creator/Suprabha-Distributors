@@ -6,16 +6,6 @@ import type { OrderSummary } from '@/lib/order-types';
 import { orderStage } from '@/lib/order-types';
 import { orderDateLabel, orderDateTime } from '@/lib/order-date';
 import { orderListFlag, orderProgressModel, orderStageKey, type StageKey } from '@/lib/order-list-groups';
-import { stageIcons } from '@/lib/glance-icons';
-import { ToneIcon, type Tone } from './ui/glance';
-
-export function OrderStageIcon({ status }: { status: string }) {
-  if (status === 'partially_reserved') return <ToneIcon icon={stageIcons.waiting_for_stock} tone="warning" size="sm" />;
-  const stage = orderStageKey(status);
-  const tones: Record<StageKey, Tone> = { confirm: 'confirm', pack: 'pack', bill: 'bill', dispatch: 'info', done: 'success', cancelled: 'neutral', other: 'neutral' };
-  const icon = stage === 'done' ? stageIcons.delivered : stage === 'cancelled' || stage === 'other' ? TriangleAlert : stageIcons[stage];
-  return <ToneIcon icon={icon} tone={tones[stage]} size="sm" />;
-}
 
 // One colour per stage, used everywhere on the Orders screens. Red is reserved for problems.
 export const stageStyles: Record<StageKey, { bar: string; chip: string; label: string }> = {
@@ -81,7 +71,6 @@ export function CompactOrderRow({ order, onOpen, selected = false, isNew = false
       className={`group relative flex min-h-15 w-full items-stretch gap-3 border-b border-sf-soft-2 bg-white py-2.5 pl-4 pr-3 text-left outline-none transition hover:bg-sf-soft focus-visible:bg-sf-accent-soft focus-visible:ring-2 focus-visible:ring-inset focus-visible:ring-sf-accent-bright aria-current:bg-sf-accent-soft ${finished ? 'opacity-70' : ''}`}
     >
       <span aria-hidden="true" className={`absolute inset-y-2 left-1.5 w-1 rounded-full ${style.bar}`} />
-      <span className="self-center"><OrderStageIcon status={order.status} /></span>
       <span className="min-w-0 flex-1">
         <span className="flex items-baseline justify-between gap-2">
           <strong className="truncate text-[15px] font-bold text-sf-ink">{order.customerName}</strong>

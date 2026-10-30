@@ -1,8 +1,8 @@
 import {
-  ArrowRight, CircleCheck, CircleHelp, CircleSlash, ClipboardList, CreditCard,
+  ArrowRight, CircleCheck, CircleHelp, CircleSlash, ClipboardCheck, ClipboardList, CreditCard,
   Crown, FileBadge, FileSearch, FlaskConical, Footprints, Handshake, IndianRupee,
   LayoutGrid, Lock, Microscope, Package, PackagePlus, PackageSearch, PackageX,
-  PhoneCall, Presentation, ReceiptText, Stethoscope, Target, TrendingDown,
+  Presentation, ReceiptText, Stethoscope, Target, TrendingDown,
   TriangleAlert, Truck, User, Wallet, Wrench, type LucideIcon,
 } from 'lucide-react';
 import type { ActionType } from '@/lib/wallet-action-types';
@@ -10,7 +10,7 @@ import type { ConstraintCategory } from '@/lib/wallet-diagnosis-types';
 
 export type OrderStage = 'confirm' | 'waiting_for_stock' | 'pack' | 'bill' | 'dispatch' | 'delivered' | 'stuck';
 export const stageIcons: Record<OrderStage, LucideIcon> = {
-  confirm: PhoneCall, waiting_for_stock: PackageSearch, pack: Package,
+  confirm: ClipboardCheck, waiting_for_stock: PackageSearch, pack: Package,
   bill: ReceiptText, dispatch: Truck, delivered: CircleCheck, stuck: TriangleAlert,
 };
 

@@ -2,7 +2,7 @@
 
 import { useEffect, useRef, useState } from 'react';
 import { Footprints, IndianRupee, Lock, Package, TriangleAlert, type LucideIcon } from 'lucide-react';
-import { ToneIcon, StatusChip, type Tone } from './ui/glance';
+import { ToneIcon, type Tone } from './ui/glance';
 import { actionIcons, commercialIcons } from '@/lib/glance-icons';
 import { parseToday, todayValueLabel, type Today, type TodayDecision, type TodayTarget } from '@/lib/today';
 
@@ -57,24 +57,23 @@ export function TodayWorkspace({ onOpen, onShowAll }: { onOpen: (target: TodayTa
   }, []);
   if (failed) return <div role="alert" className="flex items-center gap-3 p-4 text-sm text-sf-muted">Today could not load <button type="button" className="min-h-11 rounded-xl border border-sf-line px-4 font-semibold text-sf-ink" onClick={() => retry.current()}>Retry</button></div>;
   return <div className="h-full overflow-y-auto">
-    <div className="mx-auto max-w-7xl space-y-5 p-4 sm:p-6">
+    <div className="mx-auto max-w-7xl space-y-3 p-4 sm:p-6">
       <h1 className="text-2xl font-bold text-sf-ink">Today</h1>
-      {!data ? <p className="text-sm text-sf-muted">Loading Today…</p> : <div className="grid min-w-0 gap-6 lg:grid-cols-2">
+      {!data ? <p className="text-sm text-sf-muted">Loading Today…</p> : <div className="grid min-w-0 gap-4 lg:grid-cols-2">
         {(['unblock', 'grow'] as const).map(key => {
           const lane = data[key], isGrow = key === 'grow';
-          const queues: TodayQueue[] = isGrow ? ['grow'] : Array.from(new Set(lane.rows.map(row => row.type === 'approve_price' ? 'price' as const : row.type === 'stock_covers' ? 'stock' as const : 'stuck' as const)));
-          return <section key={key} aria-label={isGrow ? 'Grow' : 'Unblock today'} className="min-w-0 space-y-3">
-            <div className="flex flex-wrap items-center justify-between gap-2">
-              <h2 className="flex items-center gap-2 text-lg font-bold text-sf-ink">{isGrow ? 'Grow' : 'Unblock today'} <StatusChip icon={isGrow ? commercialIcons.lab : Package} tone="info" count={lane.total}>{isGrow ? 'Labs' : 'Decisions'}</StatusChip></h2>
-              <div className="flex flex-wrap gap-x-3">{(queues.length ? queues : [isGrow ? 'grow' as const : 'price' as const]).map(queue => <button key={queue} type="button" aria-label={`Show all ${lane.total} ${queue === 'grow' ? 'growth decisions' : queue === 'price' ? 'price approvals' : queue === 'stock' ? 'stock decisions' : 'stuck orders'}`} className="min-h-11 text-sm text-sf-body underline" onClick={() => onShowAll(queue)}>Show all {lane.total}{queues.length > 1 ? ` · ${queue === 'price' ? 'Price approvals' : queue === 'stock' ? 'Stock' : 'Stuck'}` : ''}</button>)}</div>
+          return <section key={key} aria-label={isGrow ? 'Grow' : 'Unblock today'} className="min-w-0 space-y-2">
+            <div className="flex min-h-11 flex-wrap items-center justify-between gap-x-2">
+              <h2 className="text-[15px] font-semibold text-sf-ink">{isGrow ? 'Grow' : 'Unblock today'} · {lane.total}</h2>
+              {lane.total > lane.rows.length && <button type="button" className="min-h-11 text-xs text-sf-ink underline" onClick={() => onShowAll(isGrow ? 'grow' : 'stuck')}>{isGrow ? 'See all in Wallet' : 'See all in Orders'}</button>}
             </div>
-            {lane.rows.length === 0 ? <p className="text-sm text-sf-muted">{isGrow ? data.coverageCertified === false ? 'Growth decisions need wallet estimates and certified Tally sales' : 'No growth decisions yet' : 'Nothing to unblock'}</p> : lane.rows.map((row, index) => <article key={`${row.type}:${index}`} className="min-w-0 rounded-2xl border border-sf-line bg-white p-4">
-              <div className="flex items-start gap-3">
-                <ToneIcon {...appearance(row)} />
-                <div className="min-w-0 flex-1"><h3 className="break-words text-sm font-bold text-sf-ink">{row.title}</h3><p className="mt-1 break-words text-xs text-sf-muted">{row.subtitle}</p></div>
-                <span className={`max-w-[45%] break-words text-right text-sm font-semibold tabular-nums ${todayValueLabel(row) === '₹ ?' ? 'text-sf-muted' : 'text-sf-ink'}`}>{todayValueLabel(row)}</span>
+            {lane.rows.length === 0 ? <p className="text-sm text-sf-muted">{isGrow ? data.coverageCertified === false ? 'Growth decisions need wallet estimates and certified Tally sales' : 'No growth decisions yet' : 'Nothing to unblock'}</p> : lane.rows.map((row, index) => <article key={`${row.type}:${index}`} className="flex min-w-0 items-center gap-2 rounded-2xl border border-sf-line bg-white p-2">
+              <ToneIcon {...appearance(row)} size="sm" />
+              <div className="min-w-0 flex-1"><h3 className="line-clamp-2 break-words text-sm font-semibold leading-5 text-sf-ink">{row.title}</h3><p className="truncate text-xs text-sf-muted" title={row.subtitle}>{row.subtitle}</p></div>
+              <div className="flex shrink-0 flex-col items-end gap-0.5">
+                <span className={`whitespace-nowrap text-right text-[15px] font-semibold leading-5 tabular-nums ${todayValueLabel(row) === '₹ ?' ? 'text-sf-muted' : 'text-sf-ink'}`}>{todayValueLabel(row)}</span>
+                <button type="button" className="min-h-11 min-w-[72px] rounded-xl border border-sf-line px-3 text-xs font-semibold text-sf-ink" onClick={() => onOpen(row.target)}>{buttons[row.type]}</button>
               </div>
-              <div className="mt-3 flex justify-end"><button type="button" className="min-h-11 rounded-xl bg-sf-ink px-4 text-sm font-bold text-white" onClick={() => onOpen(row.target)}>{buttons[row.type]}</button></div>
             </article>)}
           </section>;
         })}

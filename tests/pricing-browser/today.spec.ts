@@ -55,7 +55,7 @@ async function mockWallet(page: Page) {
 
 for (const width of [375, 1280]) {
   test.describe(`Today at ${width}px`, () => {
-    test.beforeEach(async ({ page }) => { await page.setViewportSize({ width, height: 800 }); });
+    test.beforeEach(async ({ page }) => { await page.setViewportSize({ width, height: 812 }); });
 
     test('administrator lands on Today with two lanes, approximate and unknown values, and no overflow', async ({ page }) => {
       await mockFrame(page);
@@ -63,6 +63,8 @@ for (const width of [375, 1280]) {
       await expect(page.getByRole('heading', { name: 'Today', exact: true })).toBeVisible();
       const unblock = page.getByRole('region', { name: 'Unblock today' });
       const grow = page.getByRole('region', { name: 'Grow', exact: true });
+      await expect(unblock.getByRole('heading', { name: 'Unblock today · 7', exact: true })).toBeVisible();
+      await expect(grow.getByRole('heading', { name: 'Grow · 3', exact: true })).toBeVisible();
       await expect(unblock.getByText('≈ ₹48k', { exact: true })).toBeVisible();
       await expect(unblock.getByText('₹ ?', { exact: true })).toBeVisible();
       await expect(grow.getByText('₹60k/mo gap', { exact: true })).toBeVisible();
@@ -73,7 +75,53 @@ for (const width of [375, 1280]) {
       if (width < 1024) expect(b!.y).toBeGreaterThan(a!.y);
       else expect(b!.x).toBeGreaterThan(a!.x);
       for (const button of await unblock.getByRole('button').all()) expect((await button.boundingBox())!.height).toBeGreaterThanOrEqual(44);
+      const cards = unblock.getByRole('article').or(grow.getByRole('article'));
+      await expect(cards).toHaveCount(6);
+      await expect(cards.locator('.bg-sf-ink')).toHaveCount(0);
+      for (const button of await cards.getByRole('button').all()) {
+        const box = (await button.boundingBox())!;
+        expect(box.height).toBeGreaterThanOrEqual(44);
+        expect(box.width).toBeGreaterThanOrEqual(72);
+        await expect(button).toHaveClass(/\bborder-sf-line\b/);
+        await expect(button).toHaveClass(/\btext-sf-ink\b/);
+      }
+      if (width === 375) {
+        const visibleCards = await cards.evaluateAll(elements => elements.filter(element => {
+          const top = element.getBoundingClientRect().top;
+          return top >= 0 && top < 812;
+        }).length);
+        expect(visibleCards).toBeGreaterThanOrEqual(5);
+        for (const card of await cards.all()) expect((await card.boundingBox())!.height).toBeLessThanOrEqual(88);
+      }
       expect(await page.evaluate(() => document.documentElement.scrollWidth <= innerWidth && [...document.querySelectorAll('article')].every(card => card.scrollWidth <= card.clientWidth))).toBe(true);
+    });
+
+    for (const total of [0, 3, 7]) {
+      test(`each lane has one See all link only with overflow (total ${total})`, async ({ page }) => {
+        await mockFrame(page, () => {
+          const data = fixture();
+          return { ...data, unblock: { total, rows: total === 0 ? [] : data.unblock.rows }, grow: { total, rows: total === 0 ? [] : data.grow.rows } };
+        });
+        await page.goto('/?view=frame&role=administrator&roles=administrator');
+        const unblock = page.getByRole('region', { name: 'Unblock today' });
+        const grow = page.getByRole('region', { name: 'Grow', exact: true });
+        await expect(unblock).toBeVisible();
+        await expect(grow).toBeVisible();
+        await expect(unblock.getByRole('button', { name: /^See all/ })).toHaveCount(total > 3 ? 1 : 0);
+        await expect(grow.getByRole('button', { name: /^See all/ })).toHaveCount(total > 3 ? 1 : 0);
+        if (total > 3) {
+          await expect(unblock.getByRole('button', { name: 'See all in Orders', exact: true })).toBeVisible();
+          await expect(grow.getByRole('button', { name: 'See all in Wallet', exact: true })).toBeVisible();
+        }
+      });
+    }
+
+    test('Unblock See all opens the Orders attention filter', async ({ page }) => {
+      await mockFrame(page);
+      await page.goto('/?view=frame&role=administrator&roles=administrator');
+      await page.getByRole('button', { name: 'See all in Orders', exact: true }).click();
+      await expect(page.getByRole('heading', { name: 'Orders needing attention', exact: true })).toBeVisible();
+      await expect(page.getByRole('button', { name: /^orders/i })).toHaveAttribute('aria-pressed', 'true');
     });
 
     test('sales does not see Today', async ({ page }) => {
@@ -111,11 +159,11 @@ for (const width of [375, 1280]) {
       await expect(page.getByRole('dialog', { name: 'Target lab outside the first page' })).toBeVisible();
     });
 
-    test('Grow Show all opens Wallet Actions due', async ({ page }) => {
-      await mockFrame(page);
+    test('Grow See all opens Wallet Actions due', async ({ page }) => {
+      await mockFrame(page, () => { const data = fixture(); return { ...data, grow: { ...data.grow, total: 7 } }; });
       await mockWallet(page);
       await page.goto('/?view=frame&role=administrator&roles=administrator');
-      await page.getByRole('button', { name: 'Show all 3 growth decisions', exact: true }).click();
+      await page.getByRole('button', { name: 'See all in Wallet', exact: true }).click();
       await expect(page.getByRole('button', { name: 'Actions due', exact: true })).toHaveAttribute('aria-pressed', 'true');
       await expect(page.getByText('No actions due.', { exact: true })).toBeVisible();
     });

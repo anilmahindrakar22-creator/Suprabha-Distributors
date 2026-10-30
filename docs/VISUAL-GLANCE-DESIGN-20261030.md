@@ -18,6 +18,8 @@
 4. **Unknown stays visibly unknown.** A bar with no data is an empty, dashed outline labelled "Awaiting Tally", never a zero bar. This is the fail-closed rule, applied to visuals.
 5. **Accessible.** Icons are `aria-hidden`, and the word next to them carries the meaning. Bars expose `role="meter"` (or `img` with `aria-label`) with the value in words. Text sizes stay as they are, and nothing is smaller than 12px.
 6. **Phone first.** Everything works at 375px with no horizontal scroll, and tap targets are at least 44px.
+7. **Type size.** Numbers inside chips and cards are 15–16px; only one hero figure per screen may be larger, at 20px at most. Labels are 12px; icons are 26–32px circles.
+8. **Don't add visuals to screens that already work at a glance; operational lists (Orders) stay as they are.**
 
 ## 2. Shared primitives (`components/ui/glance.tsx`)
 | Component | Props | Look |
@@ -32,7 +34,7 @@ Tones resolve to the existing `sf-*` tokens; add soft variants only where they'r
 
 ## 3. Icon vocabulary (lucide)
 - **Order stages:**
-  - confirm `PhoneCall`;
+  - confirm `ClipboardCheck`;
   - waiting for stock `PackageSearch`;
   - pick/pack `Package`;
   - bill `ReceiptText`;
@@ -77,7 +79,7 @@ Tones resolve to the existing `sf-*` tokens; add soft variants only where they'r
 
 ## 4. Screen rollout (each is its own package and browser-checked)
 - **V1:** the primitives and the icon map (`lib/glance-icons.ts`), with unit tests.
-- **V2, Orders:** turn the operations summary counts into a `StageStrip` (confirm, waiting for stock, pack, bill, dispatched today) with a stuck chip. Order cards get a `ToneIcon` for the stage.
+- **V2, Orders:** Withdrawn 30 Oct: the owner prefers the existing Orders list.
 - **V3, Wallet:**
   - each lab row gets a `MeterBar` (share with the 80% target tick; a dashed track when uncertified) and a gap figure in danger;
   - the current constraint shows as an icon chip;
