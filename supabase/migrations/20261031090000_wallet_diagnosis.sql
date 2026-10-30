@@ -4,6 +4,8 @@ create table private.stockflow_commercial_opportunities (
  id uuid primary key default extensions.gen_random_uuid(),
  customer_id uuid not null references private.stockflow_customers(id),
  division_id uuid references private.stockflow_wallet_divisions(id),
+ origin text not null default 'manual',
+ constraint stockflow_commercial_opportunities_origin_rule check(origin in ('manual','wallet_gap')),
  kind text not null check(kind in ('capture','defend','recover')),
  opened_reason text not null check(length(btrim(opened_reason)) between 3 and 500),
  opened_by text not null, opened_at timestamptz not null default clock_timestamp()
@@ -122,7 +124,7 @@ end$$;
 create function public.stockflow_opportunity_gateway(p_gateway_key text,p_actor_email text,p_action text,p_payload jsonb default '{}'::jsonb)
 returns jsonb language plpgsql security definer set search_path=pg_catalog,public,private,extensions as $$
 declare actor text:=lower(btrim(p_actor_email)); roles text[]; secret_hash text; command_key text; replay jsonb; result jsonb;
- customer uuid; opportunity uuid; entity uuid; current_constraint uuid; v_division uuid; v_division_code text; v_division_label text;
+ customer uuid; opportunity uuid; entity uuid; current_constraint uuid; v_division uuid; v_division_code text; v_division_label text; v_origin text;
  today date:=(now() at time zone 'Asia/Kolkata')::date;
  wallet_data jsonb; rows_data jsonb; focus_count bigint; undiagnosed_count bigint; row_item jsonb; item jsonb;
  coverage_data jsonb;
@@ -162,7 +164,7 @@ begin
  elsif p_action='get_account_opportunities' then
   customer:=(p_payload->>'customerId')::uuid;
   if not exists(select 1 from private.stockflow_customers where id=customer) then raise exception 'Customer not found' using errcode='22023';end if;
-  select coalesce(jsonb_agg(jsonb_build_object('id',o.id,'customerId',o.customer_id,'divisionCode',d.code,'divisionName',d.name,'kind',o.kind,'openedReason',o.opened_reason,'openedBy',o.opened_by,'openedAt',o.opened_at,
+  select coalesce(jsonb_agg(jsonb_build_object('id',o.id,'customerId',o.customer_id,'divisionCode',d.code,'divisionName',d.name,'origin',o.origin,'kind',o.kind,'openedReason',o.opened_reason,'openedBy',o.opened_by,'openedAt',o.opened_at,
    'closure',case when cl.opportunity_id is null then null else jsonb_build_object('outcome',cl.outcome,'reason',cl.reason,'closedBy',cl.closed_by,'closedAt',cl.closed_at) end,
    'constraint',cur.item,'history',hist.items) order by (cl.opportunity_id is null) desc,o.opened_at desc,o.id desc),'[]'::jsonb)
   into result from private.stockflow_commercial_opportunities o left join private.stockflow_commercial_opportunity_closures cl on cl.opportunity_id=o.id
@@ -196,6 +198,15 @@ begin
  if p_action='open_opportunity' then
   customer:=(p_payload->>'customerId')::uuid;
   if coalesce(p_payload->>'kind','') not in ('capture','defend','recover') or length(btrim(coalesce(p_payload->>'reason',''))) not between 3 and 500 then raise exception 'Invalid opportunity' using errcode='22023';end if;
+  if p_payload ? 'origin' and (jsonb_typeof(p_payload->'origin') is distinct from 'string' or p_payload->>'origin' not in ('manual','wallet_gap')) then raise exception 'Invalid opportunity origin' using errcode='22023';end if;
+  v_origin:=coalesce(p_payload->>'origin','manual');
+  if v_origin='wallet_gap' then
+   wallet_data:=private.stockflow_wallet_read(today);
+   if wallet_data#>>'{coverage,certified}' is distinct from 'true' or not exists(
+    select 1 from jsonb_array_elements(wallet_data->'rows') as focus_entries(item)
+    where focus_entries.item->>'customerId'=customer::text and (focus_entries.item->>'inFocusBand')::boolean is true)
+   then raise exception 'Not a current Focus account' using errcode='22023';end if;
+  end if;
   if p_payload ? 'divisionCode' and jsonb_typeof(p_payload->'divisionCode') not in ('string','null') then raise exception 'Invalid division' using errcode='22023';end if;
   v_division_code:=p_payload->>'divisionCode';v_division:=null;v_division_label:=null;
   if v_division_code is not null then
@@ -205,9 +216,9 @@ begin
   perform pg_advisory_xact_lock(hashtextextended('opportunity:'||customer||':'||(p_payload->>'kind')||':'||coalesce(v_division::text,'all'),0));
   if exists(select 1 from private.stockflow_commercial_opportunities o left join private.stockflow_commercial_opportunity_closures cl on cl.opportunity_id=o.id where o.customer_id=customer and o.kind=p_payload->>'kind' and o.division_id is not distinct from v_division and cl.opportunity_id is null) then raise exception 'Open opportunity already exists' using errcode='PT409';end if;
   if not exists(select 1 from private.stockflow_customers where id=customer) then raise exception 'Customer not found' using errcode='22023';end if;
-  insert into private.stockflow_commercial_opportunities(customer_id,division_id,kind,opened_reason,opened_by) values(customer,v_division,p_payload->>'kind',btrim(p_payload->>'reason'),actor)
+  insert into private.stockflow_commercial_opportunities(customer_id,division_id,origin,kind,opened_reason,opened_by) values(customer,v_division,v_origin,p_payload->>'kind',btrim(p_payload->>'reason'),actor)
    returning id into entity;
-  result:=jsonb_build_object('id',entity,'customerId',customer,'divisionCode',v_division_code,'divisionName',v_division_label,'kind',p_payload->>'kind','openedReason',btrim(p_payload->>'reason'),'openedBy',actor,'openedAt',clock_timestamp(),'closure',null,'constraint',null,'history','[]'::jsonb);
+  result:=jsonb_build_object('id',entity,'customerId',customer,'divisionCode',v_division_code,'divisionName',v_division_label,'origin',v_origin,'kind',p_payload->>'kind','openedReason',btrim(p_payload->>'reason'),'openedBy',actor,'openedAt',clock_timestamp(),'closure',null,'constraint',null,'history','[]'::jsonb);
  elsif p_action='record_constraint' then
   opportunity:=(p_payload->>'opportunityId')::uuid;
   perform pg_advisory_xact_lock(hashtextextended('opportunity-constraint:'||opportunity,0));

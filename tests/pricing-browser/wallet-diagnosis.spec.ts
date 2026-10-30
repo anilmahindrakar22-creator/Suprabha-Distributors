@@ -5,20 +5,23 @@ import type { WalletOpportunity } from '../../lib/wallet-diagnosis-types';
 const a = '66111111-1111-4111-8111-111111111111';
 const b = '77111111-1111-4111-8111-111111111111';
 const c = '88111111-1111-4111-8111-111111111111';
+const d = '88111111-2222-4222-8222-222222222222';
 const opportunityId = '99111111-1111-4111-8111-111111111111';
+const undiagnosedOpportunityId = '99333333-3333-4333-8333-333333333333';
 const constraintId = '99222222-2222-4222-8222-222222222222';
 const snapshotId = '88222222-2222-4222-8222-222222222222';
 const policy = { version: 1, walletShareTargetBps: 8000, focusBandBps: 8000, staleAfterMonths: 6, note: 'Policy', enteredBy: 'manager@example.test', enteredAt: '2026-10-30T00:00:00Z' };
 const coverage = { certified: true, windowFrom: '2026-07-01', windowTo: '2026-09-30', windowLabel: 'Jul–Sep 2026', reason: null };
 const row = { customerId: a, name: 'Example Diagnostic Laboratory', city: 'Bidar', walletPaise: 10000000, salesPaise: 2000000, sharePermille: 200, untappedPaise: 8000000, captureGapPaise: 6000000, confidence: 'high' as const, asOf: '2026-10-01', verified: false, stale: false, belowSales: false, inFocusBand: true };
 const second = { ...row, customerId: b, name: 'Not diagnosed lab' };
-const none = { ...row, customerId: c, name: 'No estimate lab', walletPaise: null, sharePermille: null, confidence: null, asOf: null };
+const none = { ...row, customerId: c, name: 'No estimate lab', walletPaise: null, sharePermille: null, confidence: null, asOf: null, inFocusBand: false };
 const current = { id: snapshotId, monthlyWalletPaise: 10000000, method: 'customer_stated' as const, source: 'Discussion', confidence: 'high' as const, asOf: row.asOf, note: 'Estimate', loweredReason: null, enteredBy: 'manager@example.test', enteredAt: '2026-10-01T00:00:00Z', verifiedBy: null, divisions: [{ code: 'BIOCHEM', name: 'Biochemistry', monthlyWalletPaise: 4000000 }], unallocatedPaise: 6000000 };
-const diagnosed: WalletOpportunity = { id: opportunityId, customerId: a, kind: 'capture', divisionCode: null, divisionName: null, openedReason: 'Tender price pressure', openedBy: 'manager@example.test', openedAt: '2026-10-01T00:00:00Z', closure: null, constraint: { id: constraintId, category: 'price', evidence: 'Competitor quote', confidence: 'low', source: 'our_view', sourcePerson: null, observedOn: '2026-10-02', facts: { competitor: 'Acme Diagnostics', product: 'Glucose kit', competitorPricePaise: 120000, ourPricePaise: 140000 }, priceUnproven: true, gapPermille: 143, recordedBy: 'manager@example.test', recordedAt: '2026-10-02T00:00:00Z' }, history: [] };
-type Options = { diagnosisFailure?: '500' | 'shape'; conflict?: boolean; networkFailure?: boolean; zeroSignals?: boolean };
+const diagnosed: WalletOpportunity = { id: opportunityId, customerId: a, kind: 'capture', divisionCode: null, divisionName: null, origin: 'manual', openedReason: 'Tender price pressure', openedBy: 'manager@example.test', openedAt: '2026-10-01T00:00:00Z', closure: null, constraint: { id: constraintId, category: 'price', evidence: 'Competitor quote', confidence: 'low', source: 'our_view', sourcePerson: null, observedOn: '2026-10-02', facts: { competitor: 'Acme Diagnostics', product: 'Glucose kit', competitorPricePaise: 120000, ourPricePaise: 140000 }, priceUnproven: true, gapPermille: 143, recordedBy: 'manager@example.test', recordedAt: '2026-10-02T00:00:00Z' }, history: [] };
+const openUndiagnosed: WalletOpportunity = { ...diagnosed, id: undiagnosedOpportunityId, customerId: d, kind: 'defend', openedReason: 'Needs a diagnosis', constraint: null, history: [] };
+type Options = { diagnosisFailure?: '500' | 'shape'; conflict?: boolean; networkFailure?: boolean; zeroSignals?: boolean; certified?: boolean };
 async function fixture(page: Page, options: Options = {}) {
   const posts: Array<{ action: string; payload: Record<string, unknown> }> = [];
-  let opportunities: WalletOpportunity[] = [diagnosed];
+  let opportunities: WalletOpportunity[] = [diagnosed, openUndiagnosed];
   let attemptedConflict = false;
   let attemptedNetworkFailure = false;
   await page.route('**/api/accounts**', route => { const url = new URL(route.request().url()); return route.fulfill({ json: { accounts: url.searchParams.get('search') ? [{ id: a, name: 'Example Diagnostic Laboratory', appContacts: [{ id: '66111111-2222-4222-8222-111111111111', name: 'Dr Rao' }] }] : [], page: { page: 1, pageSize: 50, total: 0 }, owners: [], territories: [], canAssign: true, canEraseContacts: false, canSeePowerMap: false, actorEmail: 'manager@example.test', today: '2026-10-30', classPolicy: { aMinPaise: '20000000', bMinPaise: '7500000' } } }); });
@@ -28,7 +31,7 @@ async function fixture(page: Page, options: Options = {}) {
       const body = route.request().postDataJSON() as { action: string; payload: Record<string, unknown> }; posts.push(body);
       if (options.networkFailure && body.action === 'record_constraint' && !attemptedNetworkFailure) { attemptedNetworkFailure = true; return route.abort('failed'); }
       if (options.conflict && !attemptedConflict) { attemptedConflict = true; return route.fulfill({ status: 409, json: { error: 'PT409' } }); }
-      if (body.action === 'open_opportunity') opportunities = [...opportunities, { ...diagnosed, id: opportunityId, customerId: String(body.payload.customerId), kind: String(body.payload.kind) as WalletOpportunity['kind'], divisionCode: body.payload.divisionCode as string | null, divisionName: body.payload.divisionCode === 'BIOCHEM' ? 'Biochemistry' : null, openedReason: String(body.payload.reason), constraint: null, history: [] }];
+      if (body.action === 'open_opportunity') opportunities = [...opportunities, { ...diagnosed, id: opportunityId, customerId: String(body.payload.customerId), kind: String(body.payload.kind) as WalletOpportunity['kind'], divisionCode: body.payload.divisionCode as string | null, divisionName: body.payload.divisionCode === 'BIOCHEM' ? 'Biochemistry' : null, origin: body.payload.origin === 'wallet_gap' ? 'wallet_gap' : 'manual', openedReason: String(body.payload.reason), constraint: null, history: [] }];
       if (body.action === 'record_constraint') opportunities = opportunities.map(item => item.id === body.payload.opportunityId ? { ...item, constraint: { ...diagnosed.constraint!, id: constraintId, category: String(body.payload.category) as 'price', evidence: String(body.payload.evidence), source: String(body.payload.source) as 'document', sourcePerson: body.payload.sourcePerson as string | null, observedOn: String(body.payload.observedOn), facts: body.payload.facts as NonNullable<WalletOpportunity['constraint']>['facts'], confidence: body.payload.source === 'document' ? 'high' : body.payload.source === 'customer_stated' ? 'medium' : 'low', priceUnproven: body.payload.source === 'our_view', recordedBy: 'manager@example.test', recordedAt: '2026-10-02T00:00:00Z' }, history: [] } : item);
       if (body.action === 'close_opportunity') opportunities = opportunities.map(item => item.id === body.payload.opportunityId ? { ...item, closure: { outcome: String(body.payload.outcome) as 'lost', reason: String(body.payload.reason), closedBy: 'manager@example.test', closedAt: '2026-10-03T00:00:00Z' } } : item);
       return route.fulfill({ json: { ok: true } });
@@ -36,7 +39,7 @@ async function fixture(page: Page, options: Options = {}) {
     if (url.searchParams.get('action') === 'get_wallet_diagnoses') {
       if (options.diagnosisFailure === '500') return route.fulfill({ status: 500, json: { error: 'offline' } });
       if (options.diagnosisFailure === 'shape') return route.fulfill({ json: { rows: 'wrong', undiagnosedFocusCount: 2, focusCount: 3 } });
-      return route.fulfill({ json: { rows: [{ customerId: a, kind: 'capture', category: 'price', confidence: 'low', priceUnproven: true }], undiagnosedFocusCount: 2, focusCount: 3 } });
+      return route.fulfill({ json: { rows: [{ customerId: a, kind: 'capture', category: 'price', confidence: 'low', priceUnproven: true }, { customerId: d, kind: 'defend', category: null, confidence: null, priceUnproven: false }], undiagnosedFocusCount: 2, focusCount: 3 } });
     }
     if (url.searchParams.get('action') === 'get_account_signals') {
       if (options.diagnosisFailure) return route.fulfill({ status: 500, json: { error: 'offline' } });
@@ -48,8 +51,9 @@ async function fixture(page: Page, options: Options = {}) {
   await page.route('**/api/wallet/actions', route => route.fulfill({ json: { ok: true } }));
   await page.route('**/api/wallet?**', async route => {
     const url = new URL(route.request().url());
-    if (url.searchParams.get('action') === 'get_wallet_account') return route.fulfill({ json: { policy, coverage, row, current, history: [current], divisions: [{ code: 'BIOCHEM', name: 'Biochemistry' }] } satisfies WalletAccount });
-    const workspace: WalletWorkspace = { policy, coverage, view: (url.searchParams.get('view') ?? 'all') as WalletWorkspace['view'], page: 1, pageSize: 50, total: 3, rows: [row, second, none], summary: { focusCount: 3, focusGapPaise: 1000000, estimatedAccounts: 3, accountsWithSales: 3, unlinkedSalesPaise: 0, unlinkedLedgers: 0 } };
+    const currentCoverage = { ...coverage, certified: options.certified !== false };
+    if (url.searchParams.get('action') === 'get_wallet_account') return route.fulfill({ json: { policy, coverage: currentCoverage, row, current, history: [current], divisions: [{ code: 'BIOCHEM', name: 'Biochemistry' }] } satisfies WalletAccount });
+    const workspace: WalletWorkspace = { policy, coverage: currentCoverage, view: (url.searchParams.get('view') ?? 'all') as WalletWorkspace['view'], page: 1, pageSize: 50, total: 4, rows: [row, second, { ...row, customerId: d, name: 'Open but undiagnosed lab' }, none], summary: { focusCount: options.certified === false ? null : 3, focusGapPaise: 1000000, estimatedAccounts: 3, accountsWithSales: 3, unlinkedSalesPaise: 0, unlinkedLedgers: 0 } };
     return route.fulfill({ json: workspace });
   });
   await page.goto('/?view=accounts');
@@ -63,13 +67,43 @@ for (const width of [375, 1280]) test.describe(`Wallet diagnosis at ${width}px`,
   test('renders diagnosis chips and the certified header count without horizontal scroll', async ({ page }) => {
     await fixture(page);
     await expect(page.getByText('Why: Price (not proven)', { exact: true })).toBeVisible();
-    await expect(page.getByText('Not diagnosed', { exact: true })).toBeVisible();
+    const noOpportunityRow = page.getByRole('listitem').filter({ hasText: 'Not diagnosed lab' });
+    await expect(noOpportunityRow.getByRole('button', { name: 'Start diagnosis', exact: true })).toBeVisible();
+    await expect(noOpportunityRow.getByText('Not diagnosed', { exact: true })).toHaveCount(0);
+    const openUndiagnosedRow = page.getByRole('listitem').filter({ hasText: 'Open but undiagnosed lab' });
+    await expect(openUndiagnosedRow.getByText('Not diagnosed', { exact: true })).toBeVisible();
+    await expect(openUndiagnosedRow.getByRole('button', { name: 'Start diagnosis', exact: true })).toHaveCount(0);
     const noEstimate = page.getByRole('button', { name: /No estimate lab/ });
     await expect(noEstimate).toContainText('No estimate');
     await expect(noEstimate).not.toContainText('Not diagnosed');
     await expect(page.getByText(/2 of 3 Focus accounts not diagnosed/)).toBeVisible();
     await openAccount(page);
     await expect(page.getByText('Capture opportunity · Whole lab · Tender price pressure', { exact: true })).toBeVisible();
+    expect(await page.evaluate(() => document.documentElement.scrollWidth <= document.documentElement.clientWidth)).toBe(true);
+  });
+  test('wallet gap suggestion appears only for certified Focus rows without an opportunity', async ({ page }) => {
+    await fixture(page);
+    const diagnosedRow = page.getByRole('listitem').filter({ hasText: 'Example Diagnostic Laboratory' });
+    const undiagnosedRow = page.getByRole('listitem').filter({ hasText: 'Not diagnosed lab' });
+    await expect(diagnosedRow.getByRole('button', { name: 'Start diagnosis', exact: true })).toHaveCount(0);
+    await expect(undiagnosedRow.getByRole('button', { name: 'Start diagnosis', exact: true })).toBeVisible();
+  });
+  test('wallet gap suggestion is absent when coverage is not certified', async ({ page }) => {
+    await fixture(page, { certified: false });
+    await expect(page.getByRole('list', { name: 'Wallet accounts' }).getByRole('button', { name: 'Start diagnosis', exact: true })).toHaveCount(0);
+  });
+  test('wallet gap suggestion opens the focused Capture form and records provenance', async ({ page }) => {
+    const { posts } = await fixture(page);
+    const undiagnosedRow = page.getByRole('listitem').filter({ hasText: 'Not diagnosed lab' });
+    await undiagnosedRow.getByRole('button', { name: 'Start diagnosis', exact: true }).click();
+    const sheet = page.getByRole('dialog');
+    await expect(sheet.getByLabel('Kind')).toHaveValue('capture');
+    await expect(sheet.getByLabel('Division')).toHaveValue('');
+    await expect(sheet.getByLabel('Reason')).toBeFocused();
+    await sheet.getByLabel('Reason').fill('Wallet gap follow-up');
+    await sheet.getByRole('button', { name: 'Save', exact: true }).click();
+    await expect.poll(() => posts.length).toBe(1);
+    expect(posts[0]).toMatchObject({ action: 'open_opportunity', payload: { customerId: b, kind: 'capture', divisionCode: null, origin: 'wallet_gap', reason: 'Wallet gap follow-up' } });
     expect(await page.evaluate(() => document.documentElement.scrollWidth <= document.documentElement.clientWidth)).toBe(true);
   });
   test('starts diagnosis, records a constraint, and closes it with category evidence hints', async ({ page }) => {
@@ -79,13 +113,15 @@ for (const width of [375, 1280]) test.describe(`Wallet diagnosis at ${width}px`,
     await page.getByRole('button', { name: /Not diagnosed lab/ }).click();
     const diagnosis = page.getByRole('region', { name: "Why we're not winning" });
     await diagnosis.getByRole('button', { name: 'Start diagnosis' }).click();
+    await expect(diagnosis.getByRole('button', { name: 'Start diagnosis', exact: true })).toHaveCount(0);
     await diagnosis.getByLabel('Division').selectOption('BIOCHEM');
     await diagnosis.getByLabel('Reason').fill('Customer has a new tender');
     await diagnosis.getByRole('button', { name: 'Save', exact: true }).click();
     await expect.poll(() => posts.length).toBe(1);
-    expect(posts[0]).toMatchObject({ action: 'open_opportunity', payload: { customerId: b, kind: 'capture', divisionCode: 'BIOCHEM', reason: 'Customer has a new tender' } });
+    expect(posts[0]).toMatchObject({ action: 'open_opportunity', payload: { customerId: b, kind: 'capture', divisionCode: 'BIOCHEM', origin: 'manual', reason: 'Customer has a new tender' } });
     await expect(diagnosis.getByText('Capture opportunity · Biochemistry · Customer has a new tender', { exact: true })).toBeVisible();
     await diagnosis.getByRole('button', { name: 'Update reason' }).click();
+    await expect(diagnosis.getByRole('button', { name: 'Update reason', exact: true })).toHaveCount(0);
     await expect(diagnosis.getByText('Not diagnosed yet', { exact: true })).toBeVisible();
     await diagnosis.getByLabel('Category').selectOption('price');
     await diagnosis.getByLabel('Competitor', { exact: true }).fill('Acme Diagnostics');
@@ -96,6 +132,7 @@ for (const width of [375, 1280]) test.describe(`Wallet diagnosis at ${width}px`,
     await diagnosis.getByLabel('Note').fill('Competitor quote for product X');
     await diagnosis.getByRole('button', { name: 'Save', exact: true }).click();
     await expect.poll(() => posts.length).toBe(2);
+    await expect(diagnosis.getByRole('button', { name: 'Update reason', exact: true })).toBeVisible();
     expect(posts[1]).toMatchObject({ action: 'record_constraint', payload: { opportunityId, category: 'price', facts: { competitor: 'Acme Diagnostics', product: 'Glucose kit', competitorPricePaise: 120000, ourPricePaise: 140000 }, evidence: 'Competitor quote for product X', source: 'document', sourcePerson: null, expectedCurrentConstraintId: null } });
     await expect(diagnosis.getByText(/Price · High confidence \(document\) ·/)).toBeVisible();
     await diagnosis.getByRole('button', { name: 'Update reason' }).click();
@@ -103,6 +140,7 @@ for (const width of [375, 1280]) test.describe(`Wallet diagnosis at ${width}px`,
     await expect(diagnosis.getByText('What we need to find out')).toBeVisible();
     await expect(diagnosis.getByText(/Which analysers do you run in each department/)).toBeVisible();
     await diagnosis.getByRole('button', { name: 'Cancel' }).click();
+    await expect(diagnosis.getByRole('button', { name: 'Update reason', exact: true })).toBeVisible();
     await diagnosis.getByRole('button', { name: 'Close opportunity', exact: true }).click();
     await diagnosis.getByLabel('Outcome').selectOption('lost');
     await diagnosis.getByLabel('Reason').fill('Lost the tender');

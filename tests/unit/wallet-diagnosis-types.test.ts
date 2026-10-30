@@ -19,6 +19,12 @@ describe('validateWalletDiagnosisCommand', () => {
     expect(validateWalletDiagnosisCommand({ ...wholeLab, payload: { ...wholeLab.payload, divisionCode: 'BIOCHEM' } }).action).toBe('open_opportunity');
     for (const divisionCode of ['', 'x'.repeat(101)]) expect(() => validateWalletDiagnosisCommand({ ...wholeLab, payload: { ...wholeLab.payload, divisionCode } })).toThrow('Invalid wallet diagnosis request');
   });
+  it('accepts manual and wallet_gap origins and rejects other origins', () => {
+    const command = { action: 'open_opportunity', payload: { requestId: '22222222-2222-4222-8222-222222222222', customerId, kind: 'capture', divisionCode: null, reason: 'New tender opportunity' } };
+    expect(validateWalletDiagnosisCommand(command).action).toBe('open_opportunity');
+    for (const origin of ['manual', 'wallet_gap'] as const) expect(validateWalletDiagnosisCommand({ ...command, payload: { ...command.payload, origin } }).action).toBe('open_opportunity');
+    expect(() => validateWalletDiagnosisCommand({ ...command, payload: { ...command.payload, origin: 'suggested' } })).toThrow('Invalid wallet diagnosis request');
+  });
   it.each(samples)('accepts valid %s facts and exact record payload', (category, facts) => {
     const result = validateWalletDiagnosisCommand({ action: 'record_constraint', payload: { ...base, category, facts } });
     expect(result.action).toBe('record_constraint');

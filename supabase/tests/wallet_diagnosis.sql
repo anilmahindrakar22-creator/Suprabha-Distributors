@@ -39,13 +39,18 @@ declare result_data jsonb; first_id uuid; second_id uuid; third_id uuid; first_c
  denied_flag boolean; actor_role text; action_name text; table_name text; row_count_before bigint; audit_count_before bigint;
  fixture_company text; fixture_month date; fixture_net bigint; fixture_start date; fixture_end date;
  fixture_focus bigint; fixture_focus_members bigint; diag_four_data jsonb; d11_result jsonb; d11_rows jsonb; d11_row jsonb;
+ v_d12_result jsonb; v_d12_rows jsonb; v_d12_opportunity jsonb;
  signal_order uuid; signal_order_old uuid; signal_install uuid;
  signal_customer uuid:='b2500000-0000-4000-8000-000000000001'; signal_other uuid:='b2500000-0000-4000-8000-000000000003'; signal_data jsonb;
  signal_line uuid; signal_decision uuid; signal_policy uuid; signal_price_order uuid;
  fact_data jsonb; source_value text;
 begin
+ -- D12 wallet-gap provenance is rejected before coverage is certified; invalid origins are always rejected.
+ perform pg_temp.diagnosis_error('open_opportunity','{"requestId":"wallet-diagnosis-d12-uncertified","customerId":"b2500000-0000-4000-8000-000000000001","kind":"capture","reason":"Uncertified wallet gap","origin":"wallet_gap"}','22023');
+ perform pg_temp.diagnosis_error('open_opportunity','{"requestId":"wallet-diagnosis-d12-invalid-origin","customerId":"b2500000-0000-4000-8000-000000000001","kind":"capture","reason":"Invalid opportunity origin","origin":"suggested"}','22023');
  -- D2 open conflict, other-kind success and reopening after closure.
  result_data:=pg_temp.diagnosis_call('open_opportunity','{"requestId":"wallet-diagnosis-d2-open-a","customerId":"b2500000-0000-4000-8000-000000000001","kind":"capture","reason":"Capture account"}');
+ if result_data->>'origin'<>'manual' then raise exception 'Omitted origin must default to manual: %',result_data;end if;
  first_id:=(result_data->>'id')::uuid;
  perform pg_temp.diagnosis_error('open_opportunity','{"requestId":"wallet-diagnosis-d2-conflict","customerId":"b2500000-0000-4000-8000-000000000001","kind":"capture","reason":"Second attempt"}','PT409');
  result_data:=pg_temp.diagnosis_call('open_opportunity','{"requestId":"wallet-diagnosis-d2-defend","customerId":"b2500000-0000-4000-8000-000000000001","kind":"defend","reason":"Defend account"}');
@@ -134,6 +139,21 @@ begin
   or exists(select 1 from private.stockflow_commercial_opportunities opportunity_row where opportunity_row.customer_id not in
    ('b2500000-0000-4000-8000-000000000001','b2500000-0000-4000-8000-000000000002','b2500000-0000-4000-8000-000000000003','b2500000-0000-4000-8000-000000000004'))
   then raise exception 'D7 Focus counts failed: %',result_data;end if;
+ -- D12 wallet_gap succeeds only for a certified current Focus account.
+ v_d12_result:=pg_temp.diagnosis_call('open_opportunity',jsonb_build_object('requestId','wallet-diagnosis-d12-focus','customerId','b2500000-0000-4000-8000-000000000003',
+  'kind','defend','reason','Wallet gap diagnosis','origin','wallet_gap'));
+ if v_d12_result->>'origin'<>'wallet_gap' or
+  (select array_agg(response_key order by response_key) from jsonb_object_keys(v_d12_result) as response_keys(response_key)) is distinct from
+   array['closure','constraint','customerId','divisionCode','divisionName','history','id','kind','openedAt','openedBy','openedReason','origin']::text[] then
+  raise exception 'D12 wallet-gap opportunity JSON or key set failed: %',v_d12_result;end if;
+ perform pg_temp.diagnosis_error('open_opportunity',jsonb_build_object('requestId','wallet-diagnosis-d12-not-focus','customerId','b2500000-0000-4000-8000-000000000004',
+  'kind','capture','reason','Not a Focus account','origin','wallet_gap'),'22023');
+ v_d12_rows:=pg_temp.diagnosis_call('get_account_opportunities','{"customerId":"b2500000-0000-4000-8000-000000000003"}');
+ select value into v_d12_opportunity from jsonb_array_elements(v_d12_rows) where value->>'origin'='wallet_gap';
+ if v_d12_opportunity is null or
+  (select array_agg(response_key order by response_key) from jsonb_object_keys(v_d12_opportunity) as response_keys(response_key)) is distinct from
+   array['closure','constraint','customerId','divisionCode','divisionName','history','id','kind','openedAt','openedBy','openedReason','origin']::text[] then
+  raise exception 'D12 account opportunity JSON or key set failed: %',v_d12_rows;end if;
  -- P3 coverage counts all Focus rows without a decision maker; the fixtures are checked separately.
  if result_data->>'focusWithoutDecisionMaker' is distinct from
    (select count(*)::text from jsonb_array_elements(private.stockflow_wallet_read((now() at time zone 'Asia/Kolkata')::date)->'rows') as power_fixture_row(item)
@@ -161,10 +181,10 @@ begin
  -- D11 opportunities are unique within a division; whole-lab scope is separate.
  d11_result:=pg_temp.diagnosis_call('open_opportunity',jsonb_build_object('requestId','wallet-diagnosis-d11-immuno','customerId','b2c00000-0000-4000-8000-000000000011',
   'kind','capture','reason','Capture Immunoassay','divisionCode','IMMUNO'));
- if d11_result->>'divisionCode'<>'IMMUNO' or d11_result->>'divisionName'<>'Immunoassay' then raise exception 'D11 Immunoassay division JSON failed: %',d11_result;end if;
+ if d11_result->>'divisionCode'<>'IMMUNO' or d11_result->>'divisionName'<>'Immunoassay' or d11_result->>'origin'<>'manual' then raise exception 'D11 Immunoassay division JSON failed: %',d11_result;end if;
  d11_result:=pg_temp.diagnosis_call('open_opportunity',jsonb_build_object('requestId','wallet-diagnosis-d11-haem','customerId','b2c00000-0000-4000-8000-000000000011',
   'kind','capture','reason','Capture Haematology','divisionCode','HAEM'));
- if d11_result->>'divisionCode'<>'HAEM' or d11_result->>'divisionName'<>'Haematology' then raise exception 'D11 Haematology division JSON failed: %',d11_result;end if;
+ if d11_result->>'divisionCode'<>'HAEM' or d11_result->>'divisionName'<>'Haematology' or d11_result->>'origin'<>'manual' then raise exception 'D11 Haematology division JSON failed: %',d11_result;end if;
  perform pg_temp.diagnosis_error('open_opportunity',jsonb_build_object('requestId','wallet-diagnosis-d11-duplicate-immuno','customerId','b2c00000-0000-4000-8000-000000000011',
   'kind','capture','reason','Duplicate Immunoassay','divisionCode','IMMUNO'),'PT409');
  d11_result:=pg_temp.diagnosis_call('open_opportunity',jsonb_build_object('requestId','wallet-diagnosis-d11-whole-lab','customerId','b2c00000-0000-4000-8000-000000000011',
@@ -175,7 +195,7 @@ begin
  d11_rows:=pg_temp.diagnosis_call('get_account_opportunities','{"customerId":"b2c00000-0000-4000-8000-000000000011"}');
  if jsonb_array_length(d11_rows)<>3 then raise exception 'D11 expected three opportunities: %',d11_rows;end if;
  for d11_row in select value from jsonb_array_elements(d11_rows) loop
-  if not (d11_row ? 'divisionCode') or not (d11_row ? 'divisionName') then raise exception 'D11 opportunity JSON lacks division fields: %',d11_row;end if;
+  if not (d11_row ? 'divisionCode') or not (d11_row ? 'divisionName') or not (d11_row ? 'origin') or d11_row->>'origin'<>'manual' then raise exception 'D11 opportunity JSON lacks division/origin fields: %',d11_row;end if;
  end loop;
  d11_result:=pg_temp.diagnosis_call('get_wallet_diagnoses','{"customerIds":["b2c00000-0000-4000-8000-000000000011"]}');
  if jsonb_array_length(d11_result->'rows')<>1 or not (d11_result->'rows'->0 ? 'divisionName')
