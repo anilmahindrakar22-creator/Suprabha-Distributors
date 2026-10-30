@@ -48,7 +48,11 @@
 
 ## For the integration chat (release owner)
 - **Branch:** `claude/train-20261106`.
-- **Migrations, in order:** `20261030130000_wallet_v2`, `20261031090000_wallet_diagnosis`, `20261031120000_wallet_actions`, `20261031130000_wallet_my_actions`, `20261031140000_power_map_enhancement`, `20261031150000_power_map_influence`. All are additive; one widens the Power Map role and alert checks.
+- **Migrations, in order: 11, all `not_deployed`.**
+  - **Economics and coverage:** `20261030090000_instrument_register`, `20261030091000_instrument_register_read`, `20261030100000_economic_rebuild_containment`, `20261030101000_sales_coverage`, `20261030110000_economics_candidate_rebuild`.
+  - **Market:** `20261030130000_wallet_v2`, `20261031090000_wallet_diagnosis`, `20261031120000_wallet_actions`, `20261031130000_wallet_my_actions`, `20261031140000_power_map_enhancement`, `20261031150000_power_map_influence`.
+  - The Market migrations are additive; one widens the Power Map role and alert checks.
+  - For what the economics migrations change, see their own handover entries (instrument register, rebuild containment, sales coverage, candidate rebuild).
 - **Gate:** full replay (timestamp and deployment order), full pricing-browser suite, stock e2e, unit, `test:connector` (needs pwsh 7), and the phone walkthrough per role.
 - **Deploy-day check:** run `supabase/scripts/pilot-verification.sql` (read-only; see `docs/PILOT-VERIFICATION.md`).
 - **Evidence so far:** see the handover entries of 29–30 Oct.
