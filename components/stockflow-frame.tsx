@@ -90,8 +90,8 @@ export function StockFlowFrame({ actorEmail, actorRole, actorRoles, staffAuth = 
         const delay = staffAuth ? await checkStaffSession(renew) : null;
         if (stopped) return;
         if (staffAuth && delay === null) { window.location.assign('/staff-signin'); return; }
-        await checkRoles();
         timer = setTimeout(() => { void check(staffAuth); }, staffAuth ? delay! * 1000 : 300000);
+        void checkRoles();
       } catch {
         if (staffAuth && !stopped) setDeviceNotice('Sign-in connection interrupted. Reconnect to verify your session; saved drafts remain unchanged.');
         // No automatic retry loop. A foreground/reconnection event can retry.
