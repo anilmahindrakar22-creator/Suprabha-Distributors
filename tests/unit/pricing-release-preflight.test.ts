@@ -15,7 +15,8 @@ describe('read-only pricing release preflight', () => {
     expect(result.pending.indexOf('20261031130000_wallet_my_actions.sql')).toBeGreaterThan(result.pending.indexOf('20261031120000_wallet_actions.sql'));
     expect(result.pending.indexOf('20261031140000_power_map_enhancement.sql')).toBeGreaterThan(result.pending.indexOf('20261031130000_wallet_my_actions.sql'));
     expect(result.pending.indexOf('20261031150000_power_map_influence.sql')).toBeGreaterThan(result.pending.indexOf('20261031140000_power_map_enhancement.sql'));
-    expect(result.sqlTests).toEqual(['supabase/tests/sales_coverage.sql', 'supabase/tests/wallet_v2.sql', 'supabase/tests/wallet_v2_concurrency.sql', 'supabase/tests/wallet_diagnosis.sql', 'supabase/tests/wallet_diagnosis_concurrency.sql', 'supabase/tests/wallet_actions.sql', 'supabase/tests/wallet_actions_concurrency.sql', 'supabase/tests/wallet_my_actions.sql', 'supabase/tests/power_map_enhancement.sql', 'supabase/tests/power_map_influence.sql', 'supabase/tests/po_tally_receipts.sql', 'supabase/tests/po_tally_receipts_concurrency.sql', 'supabase/tests/contract_windows.sql', 'supabase/tests/today_decisions.sql', 'supabase/tests/customer_map.sql', 'supabase/tests/customer_city_pin.sql']);
+    expect(result.sqlTests).toEqual(['supabase/tests/sales_coverage.sql', 'supabase/tests/wallet_v2.sql', 'supabase/tests/wallet_v2_concurrency.sql', 'supabase/tests/wallet_diagnosis.sql', 'supabase/tests/wallet_diagnosis_concurrency.sql', 'supabase/tests/wallet_actions.sql', 'supabase/tests/wallet_actions_concurrency.sql', 'supabase/tests/wallet_my_actions.sql', 'supabase/tests/power_map_enhancement.sql', 'supabase/tests/power_map_influence.sql', 'supabase/tests/po_tally_receipts.sql', 'supabase/tests/po_tally_receipts_concurrency.sql', 'supabase/tests/contract_windows.sql', 'supabase/tests/today_decisions.sql', 'supabase/tests/customer_map.sql', 'supabase/tests/customer_city_pin.sql', 'supabase/tests/pin_centroids.sql']);
+    expect(result.pending.indexOf('20261102140000_pin_centroids.sql')).toBeGreaterThan(result.pending.indexOf('20261102130000_customer_city_pin.sql'));
     const runner = readFileSync(new URL('../pricing-migration-local.ps1', import.meta.url), 'utf8');
     expect(runner).toContain("'20261030110000_economics_candidate_rebuild.sql','20261030130000_wallet_v2.sql','20261031090000_wallet_diagnosis.sql','20261031120000_wallet_actions.sql','20261031130000_wallet_my_actions.sql','20261031140000_power_map_enhancement.sql','20261031150000_power_map_influence.sql'");
     let previous = -1;
@@ -353,6 +354,7 @@ describe('read-only pricing release preflight', () => {
       '20261102110000_today_decisions.sql',
       '20261102120000_customer_map.sql',
       '20261102130000_customer_city_pin.sql',
+      '20261102140000_pin_centroids.sql',
     ]);
     expect(result.deployed.at(-1)?.localFile).toBe('20261026150000_rate_check_units.sql');
     expect(result.deployed).toHaveLength(147);
@@ -389,6 +391,7 @@ describe('read-only pricing release preflight', () => {
       '20261102110000_today_decisions.sql',
       '20261102120000_customer_map.sql',
       '20261102130000_customer_city_pin.sql',
+      '20261102140000_pin_centroids.sql',
     ]);
   });
   it('rejects changed SQL including changes inside literals', () => {

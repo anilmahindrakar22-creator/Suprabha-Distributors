@@ -9,6 +9,7 @@ const pricingReleaseFiles = new Set([
   '20261102110000_today_decisions.sql',
   '20261102120000_customer_map.sql',
   '20261102130000_customer_city_pin.sql',
+  '20261102140000_pin_centroids.sql',
   '20261102090000_po_tally_receipts.sql',
   '20261031140000_power_map_enhancement.sql',
   '20261030090000_instrument_register.sql',
@@ -131,6 +132,7 @@ export const pricingReleaseSqlTests = [
   'supabase/tests/today_decisions.sql',
   'supabase/tests/customer_map.sql',
   'supabase/tests/customer_city_pin.sql',
+  'supabase/tests/pin_centroids.sql',
 ];
 
 export function pricingReleasePreflight(evidence, files) {

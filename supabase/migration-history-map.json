@@ -1207,6 +1207,13 @@
       "remoteVersion": null,
       "remoteSha256": null,
       "status": "not_deployed"
+    },
+    {
+      "localFile": "20261102140000_pin_centroids.sql",
+      "localSha256": "f7049940e0df0c68742f89a620a8cd43a69f634f0cd2f8591dbe716ed0c88ea1",
+      "remoteVersion": null,
+      "remoteSha256": null,
+      "status": "not_deployed"
     }
   ],
   "liveCheck": {
