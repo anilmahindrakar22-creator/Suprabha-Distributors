@@ -27,6 +27,26 @@ function Get-EconomicXmlText($Node, [string]$Path) {
     if ($null -eq $selected) { return '' }
     return $selected.InnerText.Trim()
 }
+function ConvertTo-TallyCustomerRecord($Ledger) {
+    $name = ([string]$Ledger.GetAttribute('NAME')).Trim()
+    $phone = ([string]$Ledger.LEDGERMOBILE.'#text').Trim()
+    if (-not $phone) { $phone = ([string]$Ledger.LEDGERPHONE.'#text').Trim() }
+    $addressLines = @($Ledger.SelectNodes('./ADDRESS.LIST/ADDRESS') | ForEach-Object { $_.InnerText.Trim() } | Where-Object { $_ })
+    $city = if ($addressLines.Count) { $addressLines[$addressLines.Count - 1] } else { '' }
+    $balanceText = ([string]$Ledger.CLOSINGBALANCE.'#text').Trim()
+    $guid = Get-EconomicXmlText $Ledger './GUID'
+    return [ordered]@{
+        tallyKey = $name
+        name = $name
+        phone = if ($phone) { $phone } else { $null }
+        city = if ($city) { $city } else { $null }
+        state = ([string]$Ledger.STATENAME.'#text').Trim()
+        pinCode = ([string]$Ledger.PINCODE.'#text').Trim()
+        tallyBalance = if ($balanceText) { Get-Number $balanceText } else { $null }
+        active = $true
+        guid = if ($guid) { $guid } else { $null }
+    }
+}
 function Convert-EconomicAmount([string]$Value) {
     $text = $Value.Trim() -replace ',', ''
     if ($text -notmatch '^-?\d+(?:\.\d{1,2})?$') { throw 'Economic amount is not exact decimal currency.' }

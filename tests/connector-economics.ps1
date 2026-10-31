@@ -1,6 +1,19 @@
 $ErrorActionPreference='Stop'
 . (Join-Path $PSScriptRoot '../desktop-connector/economics.ps1')
 function Assert-Economic($Condition,[string]$Message){if(-not $Condition){throw $Message}}
+# Match dashboard's numeric conversion without starting the dashboard.
+function Get-Number([string]$Text) {
+    if ($Text -match '-?[0-9,]+(?:\.[0-9]+)?') { return [double]($matches[0] -replace ',', '') }
+    return 0
+}
+[xml]$customerRecordXml='<ENVELOPE><LEDGER NAME=" Customer Rename "><GUID> abc-123 </GUID><LEDGERMOBILE TYPE="String"> 9876543210 </LEDGERMOBILE><LEDGERPHONE TYPE="String"> 12345678 </LEDGERPHONE><ADDRESS.LIST><ADDRESS>Street</ADDRESS><ADDRESS> Pune </ADDRESS></ADDRESS.LIST><STATENAME TYPE="String"> Maharashtra </STATENAME><PINCODE TYPE="String"> 411001 </PINCODE><CLOSINGBALANCE TYPE="Amount">1,234.50</CLOSINGBALANCE></LEDGER></ENVELOPE>'
+$customerRecord=ConvertTo-TallyCustomerRecord ($customerRecordXml.SelectSingleNode('//LEDGER'))
+$customerMaster=Get-EconomicMasterIndex $customerRecordXml 'LEDGER'
+Assert-Economic ([string]::Equals($customerRecord.guid,'abc-123',[StringComparison]::Ordinal) -and [string]::Equals($customerRecord.guid,$customerMaster['Customer Rename'].guid,[StringComparison]::Ordinal)) 'Customer GUID differs from economic master GUID'
+Assert-Economic ($customerRecord.tallyKey -eq 'Customer Rename' -and $customerRecord.name -eq 'Customer Rename' -and $customerRecord.phone -eq '9876543210' -and $customerRecord.city -eq 'Pune' -and $customerRecord.state -eq 'Maharashtra' -and $customerRecord.pinCode -eq '411001' -and $customerRecord.tallyBalance -eq 1234.50 -and $customerRecord.active) 'Customer conversion changed existing fields'
+Assert-Economic (($customerRecord.Keys -join ',') -eq 'tallyKey,name,phone,city,state,pinCode,tallyBalance,active,guid') 'Customer field order changed'
+$customerRecordXml.SelectSingleNode('//LEDGER').RemoveChild($customerRecordXml.SelectSingleNode('//GUID')) | Out-Null
+Assert-Economic ($null -eq (ConvertTo-TallyCustomerRecord ($customerRecordXml.SelectSingleNode('//LEDGER'))).guid) 'Missing customer GUID must be null'
 $tallyXml=ConvertFrom-TallyEconomicXml '<ENVELOPE><UDF:PRIVATEFIELD>Value&#4;</UDF:PRIVATEFIELD><COLLECTION /></ENVELOPE>'
 Assert-Economic ($tallyXml.DocumentElement.FirstChild.InnerText -eq ('Value'+[char]4)) 'Tally character-reference value was silently stripped'
 Assert-Economic ($tallyXml.DocumentElement.FirstChild.NamespaceURI -eq 'TallyUDF') 'Undeclared Tally UDF prefix was not parsed'

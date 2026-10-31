@@ -115,8 +115,10 @@ describe('Tally invoice reconciliation connector', () => {
   });
 
   it('reuses the customer-master request for read-only ledger balances', () => {
-    expect(connector).toContain('PinCode,ClosingBalance');
-    expect(connector).toContain('tallyBalance = if ($balanceText) { Get-Number $balanceText }');
+    expect(connector).toContain('<FETCH>Name,GUID,MailingName,LedgerPhone,LedgerMobile,Address,StateName,PinCode,ClosingBalance</FETCH>');
+    expect(connector).toContain('ConvertTo-TallyCustomerRecord $ledger');
+    const economics = readFileSync(new URL('../../desktop-connector/economics.ps1', import.meta.url), 'utf8');
+    expect(economics).toContain('tallyBalance = if ($balanceText) { Get-Number $balanceText }');
     expect(connector.match(/DashboardCustomerLedgers/g)?.length).toBeGreaterThan(1);
   });
 });

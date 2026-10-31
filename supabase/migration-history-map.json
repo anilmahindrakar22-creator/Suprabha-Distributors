@@ -1228,6 +1228,13 @@
       "remoteVersion": null,
       "remoteSha256": null,
       "status": "not_deployed"
+    },
+    {
+      "localFile": "20261102170000_customer_rename_by_guid.sql",
+      "localSha256": "d6c3bb00c266c46822dbd0c8b26ec4e641edef157a1dac4c2639e10a07d4a2a0",
+      "remoteVersion": null,
+      "remoteSha256": null,
+      "status": "not_deployed"
     }
   ],
   "liveCheck": {

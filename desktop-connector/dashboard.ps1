@@ -262,7 +262,7 @@ function Get-TallyCustomers {
         return @($script:lastCustomerData.customers)
     }
     $script:nextCustomerRead = (Get-Date).AddMinutes($CustomerSyncMinutes)
-    $ledgerXml = '<ENVELOPE><HEADER><VERSION>1</VERSION><TALLYREQUEST>Export</TALLYREQUEST><TYPE>COLLECTION</TYPE><ID>DashboardCustomerLedgers</ID></HEADER><BODY><DESC><STATICVARIABLES><SVEXPORTFORMAT>$$SysName:XML</SVEXPORTFORMAT><SVCURRENTCOMPANY>SUPRABHA DISTRIBUTORS</SVCURRENTCOMPANY></STATICVARIABLES><TDL><TDLMESSAGE><COLLECTION NAME="DashboardCustomerLedgers"><TYPE>Ledger</TYPE><CHILDOF>Sundry Debtors</CHILDOF><BELONGSTO>Yes</BELONGSTO><FETCH>Name,MailingName,LedgerPhone,LedgerMobile,Address,StateName,PinCode,ClosingBalance</FETCH></COLLECTION></TDLMESSAGE></TDL></DESC></BODY></ENVELOPE>'
+    $ledgerXml = '<ENVELOPE><HEADER><VERSION>1</VERSION><TALLYREQUEST>Export</TALLYREQUEST><TYPE>COLLECTION</TYPE><ID>DashboardCustomerLedgers</ID></HEADER><BODY><DESC><STATICVARIABLES><SVEXPORTFORMAT>$$SysName:XML</SVEXPORTFORMAT><SVCURRENTCOMPANY>SUPRABHA DISTRIBUTORS</SVCURRENTCOMPANY></STATICVARIABLES><TDL><TDLMESSAGE><COLLECTION NAME="DashboardCustomerLedgers"><TYPE>Ledger</TYPE><CHILDOF>Sundry Debtors</CHILDOF><BELONGSTO>Yes</BELONGSTO><FETCH>Name,GUID,MailingName,LedgerPhone,LedgerMobile,Address,StateName,PinCode,ClosingBalance</FETCH></COLLECTION></TDLMESSAGE></TDL></DESC></BODY></ENVELOPE>'
     try {
         [xml]$ledgerDoc = Invoke-Tally $ledgerXml
         if ($ledgerDoc.SelectSingleNode('//LINEERROR') -or -not $ledgerDoc.SelectSingleNode('//COLLECTION')) {
@@ -271,21 +271,7 @@ function Get-TallyCustomers {
         $customers = @(foreach ($ledger in $ledgerDoc.SelectNodes('//LEDGER')) {
             $name = ([string]$ledger.GetAttribute('NAME')).Trim()
             if (-not $name) { continue }
-            $phone = ([string]$ledger.LEDGERMOBILE.'#text').Trim()
-            if (-not $phone) { $phone = ([string]$ledger.LEDGERPHONE.'#text').Trim() }
-            $addressLines = @($ledger.SelectNodes('./ADDRESS.LIST/ADDRESS') | ForEach-Object { $_.InnerText.Trim() } | Where-Object { $_ })
-            $city = if ($addressLines.Count) { $addressLines[$addressLines.Count - 1] } else { '' }
-            $balanceText = ([string]$ledger.CLOSINGBALANCE.'#text').Trim()
-            [ordered]@{
-                tallyKey = $name
-                name = $name
-                phone = if ($phone) { $phone } else { $null }
-                city = if ($city) { $city } else { $null }
-                state = ([string]$ledger.STATENAME.'#text').Trim()
-                pinCode = ([string]$ledger.PINCODE.'#text').Trim()
-                tallyBalance = if ($balanceText) { Get-Number $balanceText } else { $null }
-                active = $true
-            }
+            ConvertTo-TallyCustomerRecord $ledger
         })
         $customers = @($customers | Sort-Object name)
         if (-not $customers.Count) { throw 'Customer export was empty; retaining the last successful customer directory.' }
