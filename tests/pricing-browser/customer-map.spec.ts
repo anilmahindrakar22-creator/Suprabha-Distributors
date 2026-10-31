@@ -1,5 +1,17 @@
 import { expect, test, type Page } from '@playwright/test';
 import { orderBootstrap } from '../fixtures/api-builders';
+import type * as Leaflet from 'leaflet';
+
+type MapWindow = Window & typeof globalThis & { placementMap: Leaflet.Map };
+async function captureMap(page: Page) {
+  await page.addInitScript(() => {
+    // Leaflet publishes its namespace before CustomerMap creates the instance.
+    Object.defineProperty(window, 'L', { configurable: true, set(value: typeof Leaflet) {
+      Object.defineProperty(window, 'L', { configurable: true, writable: true, value });
+      value.Map.addInitHook(function (this: Leaflet.Map) { (window as MapWindow).placementMap = this; });
+    } });
+  });
+}
 
 const customerId = '66111111-1111-4111-8111-111111111111';
 const name = 'Example Diagnostic Laboratory';
@@ -40,7 +52,7 @@ async function fixture(page: Page, options: { frame?: boolean; sales?: boolean; 
   });
   await page.route('**/api/customer-map**', route => {
     const url = new URL(route.request().url()); reads.push(url);
-    if (url.searchParams.has('customer')) return route.fulfill({ json: { ...(options.empty ? base : fullSheet(options.sales)), ...(options.dueOn ? { tiles: { ...fullSheet(options.sales).tiles, nextActionDue: options.dueOn } } : {}), ...(options.contacts ? { contacts: options.contacts } : {}), ...(options.located || saved ? { location: { precision: 'pin', lat: 17.3, lng: 76.8, version: saved ? 3 : 2 } } : options.approximate ? { location: { approximate: { pinCode: '585102' } } } : {}) } });
+    if (url.searchParams.has('customer')) return route.fulfill({ json: { ...(options.empty ? base : fullSheet(options.sales)), ...(options.dueOn ? { tiles: { ...fullSheet(options.sales).tiles, nextActionDue: options.dueOn } } : {}), ...(options.contacts ? { contacts: options.contacts } : {}), ...(options.located || saved ? { location: { precision: 'pin', lat: saved ? Number(posts.at(-1)?.latitude) : 17.3, lng: saved ? Number(posts.at(-1)?.longitude) : 76.8, version: saved ? 3 : 2 } } : options.approximate ? { location: { approximate: { pinCode: '585102' } } } : {}) } });
     if (url.searchParams.has('pin')) return route.fulfill({ json: { page: Number(url.searchParams.get('page')), pageSize: 20, total: 77, rows: Array.from({ length: Number(url.searchParams.get('page')) === 4 ? 17 : 20 }, (_, i) => ({ customerId: i === 0 ? customerId : `pin-lab-${i}`, name: i === 0 ? url.searchParams.get('q') ? 'PIN search match Lab' : name : `PIN Lab ${i}`, city: 'Kalaburagi', tone: 'red' })) } });
     if (url.searchParams.has('notOnMap')) return route.fulfill({ json: { page: Number(url.searchParams.get('page')), pageSize: 20, total: 21, rows: [{ customerId, name: url.searchParams.get('q') ? 'Search match Lab' : name, city: 'Bidar' }] } });
     return route.fulfill({ json: { coverage: { placed: 4, approx: 96, total: 121 }, pins: mapPins, approxGroups, notOnMapCount: 21, freshness: { calculatedAt: '2026-10-30T05:12:00Z', certified: !options.uncertified, ...(options.sales ? {} : { walletAsOf: '2026-10-12' }) } } });
@@ -149,6 +161,10 @@ for (const width of [375, 1280]) test.describe(`Customer map at ${width}px`, () 
     await fixture(page);
     await expect(page.locator('.customer-map-group')).toHaveCount(1);
     await expect(page.getByRole('button', { name: groupLabel, exact: true })).toHaveCount(0);
+    const filters = page.getByLabel('Map filters', { exact: true });
+    const pressedBackground = await filters.locator('button[aria-pressed="true"]').evaluate(el => getComputedStyle(el).backgroundColor);
+    const unpressedBackground = await filters.getByRole('button', { name: 'Orders', exact: true }).evaluate(el => getComputedStyle(el).backgroundColor);
+    expect(pressedBackground).not.toBe(unpressedBackground);
     await page.getByRole('button', { name: 'Actions', exact: true }).click();
     await expect(page.locator('.customer-map-group')).toHaveCount(1);
     await expect(page.getByRole('button', { name: groupLabel, exact: true })).toBeVisible();
@@ -167,7 +183,7 @@ for (const width of [375, 1280]) test.describe(`Customer map at ${width}px`, () 
       // Measure the original header with its original fixture at the same available width.
       const heights = await header.evaluate(el => {
         const original = el.cloneNode(false) as HTMLElement;
-        original.className = 'flex flex-wrap items-center gap-2 rounded-xl bg-[#1b2124] p-3';
+        original.className = 'flex flex-wrap items-center gap-2 rounded-xl border border-sf-line-soft bg-white p-3';
         const back = el.querySelector('button')!.cloneNode(true);
         const heading = el.querySelector('h3')!.cloneNode(true);
         const coverage = document.createElement('span'); coverage.className = 'text-base tabular-nums'; coverage.textContent = '4 of 25 placed';
@@ -270,7 +286,21 @@ for (const width of [375, 1280]) test.describe(`Customer map at ${width}px`, () 
     await page.getByRole('button', { name: 'Orders', exact: true }).click();
     await expect(page.locator('.customer-map-marker')).toHaveCount(1); expect(reads.length).toBe(count);
     await expect(legend).toBeVisible();
-    expect(await page.locator('.leaflet-tile-pane').evaluate(el => (el as HTMLElement).style.filter)).toBe('invert(0.9) hue-rotate(180deg) brightness(0.85) saturate(0.6)');
+    expect(await page.locator('.leaflet-tile-pane').evaluate(el => getComputedStyle(el).filter)).toBe('none');
+  });
+  test('light map has unfiltered tiles, a white sheet and readable Held back by text', async ({ page }) => {
+    await fixture(page);
+    await expect(page.locator('.leaflet-tile-pane')).toHaveCSS('filter', 'none');
+    const sheet = await openSheet(page);
+    await expect(sheet).toHaveCSS('background-color', 'rgb(255, 255, 255)');
+    const contrast = await sheet.getByText('Held back by: Price (not proven)', { exact: true }).evaluate(el => {
+      const channels = getComputedStyle(el).color.match(/[\d.]+/g)!.slice(0, 3).map(Number);
+      const linear = channels.map(channel => { const s = channel / 255; return s <= 0.04045 ? s / 12.92 : ((s + 0.055) / 1.055) ** 2.4; });
+      const luminance = 0.2126 * linear[0] + 0.7152 * linear[1] + 0.0722 * linear[2];
+      return 1.05 / (luminance + 0.05);
+    });
+    expect(contrast).toBeGreaterThanOrEqual(4.5);
+    expect(await page.evaluate(() => document.documentElement.scrollWidth <= innerWidth)).toBe(true);
   });
   test('pin tap opens every sheet section in order and the sheet scrolls without horizontal overflow', async ({ page }) => {
     await fixture(page); const sheet = await openSheet(page);
@@ -353,15 +383,79 @@ for (const width of [375, 1280]) test.describe(`Customer map at ${width}px`, () 
     await expect(sheet.getByText('Location permission denied. You can add a pin manually.', { exact: true })).toHaveCount(1);
     await expect(sheet.getByRole('alert')).toHaveCount(0); expect(posts).toHaveLength(0);
   });
-  test('Move pin keeps the existing version when confirming a new position', async ({ page }) => {
-    await geolocation(page, 'success'); const { posts } = await fixture(page, { located: true }); const sheet = await openSheet(page);
+  test('Move pin opens at the exact pin and keeps its version when saving', async ({ page }) => {
+    await captureMap(page); const { posts } = await fixture(page, { located: true }); const sheet = await openSheet(page);
     await expect(sheet.getByRole('button', { name: 'Pin here', exact: true })).toHaveCount(0);
     await sheet.getByRole('button', { name: 'Move pin…', exact: true }).click();
-    await sheet.getByRole('button', { name: 'Pin here', exact: true }).click();
-    await expect(sheet.getByRole('group', { name: 'Pin options' })).toBeVisible();
-    await sheet.getByRole('button', { name: 'Use my location', exact: true }).click();
-    await sheet.getByRole('button', { name: 'Confirm pin', exact: true }).click();
+    const mode = page.getByRole('region', { name: 'Place on map', exact: true });
+    await expect(sheet).not.toBeVisible();
+    await expect(mode.getByLabel('Map centre')).toHaveText('17.30000, 76.80000');
+    expect(await page.evaluate(() => (window as MapWindow).placementMap.getZoom())).toBe(17);
+    await mode.getByRole('button', { name: 'Save here', exact: true }).click();
     await expect.poll(() => posts[0]?.expectedVersion).toBe(2);
+    await expect(sheet).toBeVisible();
+    await expect(sheet.getByText('Pin saved.', { exact: true })).toBeVisible();
+  });
+  test('Place on map starts at the PIN centre, pans and saves the new centre without overflow', async ({ page }) => {
+    await captureMap(page); const { posts, reads } = await fixture(page, { approximate: true, townOnly: true }); const sheet = await openSheet(page);
+    await sheet.locator('footer').getByRole('button', { name: 'Pin here', exact: true }).click();
+    await sheet.getByRole('button', { name: 'Place on map', exact: true }).click();
+    const mode = page.getByRole('region', { name: 'Place on map', exact: true });
+    await expect(sheet).not.toBeVisible();
+    await expect(mode.getByText(`Place ${name}`, { exact: true })).toBeVisible();
+    await expect(mode.getByLabel('Map centre')).toHaveText(`${approxGroups[0].lat.toFixed(5)}, ${approxGroups[0].lng.toFixed(5)}`);
+    expect(await page.evaluate(() => (window as MapWindow).placementMap.getZoom())).toBe(15);
+    const crosshair = page.getByTestId('placement-crosshair');
+    const geometry = await crosshair.evaluate(el => {
+      const cross = el.getBoundingClientRect(), map = el.parentElement!.querySelector('.leaflet-container')!.getBoundingClientRect();
+      return { dx: Math.abs(cross.x + cross.width / 2 - map.x - map.width / 2), dy: Math.abs(cross.y + cross.height / 2 - map.y - map.height / 2), size: cross.width, events: getComputedStyle(el).pointerEvents };
+    });
+    expect(geometry.dx).toBeLessThan(1); expect(geometry.dy).toBeLessThan(1); expect(geometry.size).toBeGreaterThanOrEqual(24); expect(geometry.events).toBe('none');
+    const mapElement = page.getByLabel('Customer locations', { exact: true });
+    await mapElement.scrollIntoViewIfNeeded();
+    const bounds = (await mapElement.boundingBox())!;
+    await page.mouse.move(bounds.x + bounds.width / 2 + 40, bounds.y + bounds.height / 2);
+    await page.mouse.down();
+    await page.mouse.move(bounds.x + bounds.width / 2 - 40, bounds.y + bounds.height / 2, { steps: 8 });
+    await page.mouse.up();
+    // The fixture freezes Date for the visit labels; stop inertia at the dragged centre.
+    await page.evaluate(() => (window as MapWindow).placementMap.stop());
+    await expect(mode.getByLabel('Map centre')).not.toHaveText('17.10000, 76.60000');
+    const centre = await page.evaluate(() => { const p = (window as MapWindow).placementMap.getCenter(); return { lat: p.lat, lng: p.lng }; });
+    await expect(mode.getByLabel('Map centre')).toHaveText(`${centre.lat.toFixed(5)}, ${centre.lng.toFixed(5)}`);
+    expect(await mode.evaluate(el => el.scrollWidth <= el.clientWidth)).toBe(true);
+    expect(await page.evaluate(() => document.documentElement.scrollWidth <= innerWidth)).toBe(true);
+    const before = reads.filter(url => url.searchParams.has('bbox')).length;
+    await mode.getByRole('button', { name: 'Save here', exact: true }).click();
+    await expect.poll(() => posts.length).toBe(1);
+    expect(posts[0]).toMatchObject({ action: 'set_location', customerId, expectedVersion: 5, latitude: centre.lat.toFixed(6), longitude: centre.lng.toFixed(6), precision: 'pin', source: 'manual_pin' });
+    await expect(sheet).toBeVisible();
+    await expect(sheet.getByRole('button', { name: 'Move pin…', exact: true })).toBeVisible();
+    await expect(sheet.getByText('Pin saved.', { exact: true })).toBeVisible();
+    await expect.poll(() => reads.filter(url => url.searchParams.has('bbox')).length).toBeGreaterThan(before);
+    await expect(mode).toHaveCount(0);
+  });
+  for (const cancel of ['Cancel', 'Escape']) test(`Place on map ${cancel} posts nothing and reopens the sheet`, async ({ page }) => {
+    const { posts } = await fixture(page, { approximate: true }); const sheet = await openSheet(page);
+    await sheet.locator('footer').getByRole('button', { name: 'Pin here', exact: true }).click();
+    await sheet.getByRole('button', { name: 'Place on map', exact: true }).click();
+    const mode = page.getByRole('region', { name: 'Place on map', exact: true });
+    await expect(mode).toBeVisible();
+    if (cancel === 'Escape') await page.keyboard.press('Escape'); else await mode.getByRole('button', { name: 'Cancel', exact: true }).click();
+    await expect(sheet).toBeVisible(); await expect(mode).toHaveCount(0); expect(posts).toHaveLength(0);
+  });
+  test('Place on map rejects an outside centre without posting or leaving the mode', async ({ page }) => {
+    await captureMap(page); const { posts } = await fixture(page, { approximate: true }); const sheet = await openSheet(page);
+    await sheet.locator('footer').getByRole('button', { name: 'Pin here', exact: true }).click();
+    await sheet.getByRole('button', { name: 'Place on map', exact: true }).click();
+    // Bypass Leaflet's navigation bounds to exercise the save guard itself.
+    await page.evaluate(() => { const map = (window as MapWindow).placementMap; map.setMaxBounds([]); map.setView([12.9, 77.6], 15, { animate: false }); });
+    const mode = page.getByRole('region', { name: 'Place on map', exact: true });
+    await expect(mode.getByLabel('Map centre')).toHaveText('12.90000, 77.60000');
+    await mode.getByRole('button', { name: 'Save here', exact: true }).click();
+    await expect(mode.getByRole('alert')).toContainText('This pin is outside the five-district market area');
+    expect(posts).toHaveLength(0); await expect(mode).toBeVisible(); await expect(sheet).not.toBeVisible();
+    expect(await page.evaluate(() => document.documentElement.scrollWidth <= innerWidth)).toBe(true);
   });
   test('Pin here upgrades a town-only location using its Accounts version', async ({ page }) => {
     await geolocation(page, 'success'); const { posts } = await fixture(page, { townOnly: true }); const sheet = await openSheet(page);
@@ -375,7 +469,7 @@ for (const width of [375, 1280]) test.describe(`Customer map at ${width}px`, () 
     await fixture(page, { sales: true, dueOn }); const sheet = await openSheet(page);
     const value = sheet.getByText('Next action due', { exact: true }).locator('..').locator('p').first();
     await expect(value).toHaveText(dueOn === '2026-10-30' ? 'today' : '3 d late');
-    if (dueOn === '2026-10-27') await expect(value).toHaveClass(/text-\[#E24B4A\]/);
+    if (dueOn === '2026-10-27') await expect(value).toHaveClass(/text-sf-danger/);
   });
   for (const total of [1, 2]) test(`contact summary uses ${total === 1 ? 'singular' : 'plural'} wording`, async ({ page }) => {
     await fixture(page, { contacts: { total, champions: total } }); const sheet = await openSheet(page);
