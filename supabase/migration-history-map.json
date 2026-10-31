@@ -1256,6 +1256,13 @@
       "remoteVersion": null,
       "remoteSha256": null,
       "status": "not_deployed"
+    },
+    {
+      "localFile": "20261102192000_instrument_rental_registration.sql",
+      "localSha256": "94708068584885dec2e17c6bd0369a6b2fa9008e580992c9fb8e2ba6a7c28a87",
+      "remoteVersion": null,
+      "remoteSha256": null,
+      "status": "not_deployed"
     }
   ],
   "liveCheck": {

@@ -31,7 +31,7 @@ export type EconomicException = { sourceId: string; productId: string; date: str
 export type LeakageCase = LeakageClassification & { evaluation?: { generationId?: string; expectationId?: string; observationId?: string | null; evaluatedAt?: string; evidenceTier?: string; status?: string; expectedUnits?: string; actualUnits?: string; shortfallUnits?: string; windowFrom?: string; windowTo?: string }; id: string; targetId: string; title: string; reason: string; status: 'detected' | 'qualified' | 'in_progress' | 'recovered' | 'partially_recovered' | 'no_recovery' | 'dismissed'; owner: string; dueDate: string | null; action: string; outcome: string; version: number; potentialRevenuePaise: string | null; potentialGpPaise: string | null; recoveredRevenuePaise: string; recoveredGpPaise: string | null; recoveryReviewRequired?: boolean };
 export type LeakageOpportunity = { expectedRevenuePaise?: string | null; actualRevenuePaise?: string | null; expectedGpPaise?: string | null; actualGpPaise?: string | null; revenueVariancePaise?: string | null; gpVariancePaise?: string | null; financialVarianceStatus?: string; attributionComplete?: boolean; targetId: string; productId: string; windowFrom: string; windowTo: string; expectedUnits: string; actualUnits: string; shortfallUnits: string; potentialRevenuePaise: string | null; potentialGpPaise: string | null; evidenceTier: string; status: string; observationId?: string | null; evidenceReference?: string | null; actualConsumptionUnits?: string | null; externalSupplyUnits?: string | null };
 export type EconomicsWorkspaceData = {
-  /** summary: cards only; detail: tabs, with sourceLines limited to purchases and instrument customers' sales; full: everything. */
+  /** summary: cards only; detail: purchases, equipment sales and instrument customers' sales; full: everything. */
   readView?: 'summary' | 'detail' | 'full';
   todoCount?: number;
   actorEmail: string;
@@ -51,13 +51,13 @@ export type EconomicsWorkspaceData = {
   allocations?: { id: string; companyId: string; customerSourceId: string; siteId: string; productId: string; effectiveFrom: string; effectiveTo: string | null; reason: string; shares: { targetId: string; basisPoints: number }[] }[];
   observations?: Record<string, unknown>[];
   groupMemberships?: { id: string; groupId: string; placementId: string; effectiveFrom: string; effectiveTo: string | null }[];
-  sourceLines?: { id: string; companyId: string; voucherId: string; voucherNumber?: string | null; revision: string; lineKey: string; date: string; kind: 'sale' | 'purchase' | 'purchase_return' | 'credit' | 'return'; customerSourceId: string | null; productId: string; productName?: string; quantity: string; unit: string; netSalesPaise: string; batchId: string | null }[];
+  sourceLines?: { id: string; companyId: string; voucherId: string; voucherNumber?: string | null; revision: string; lineKey: string; date: string; kind: 'sale' | 'purchase' | 'purchase_return' | 'credit' | 'return'; customerSourceId: string | null; productId: string; productName?: string; quantity: string; unit: string; netSalesPaise: string; batchId: string | null; partyName?: string | null; usedByInstrument?: boolean }[];
   ledger?: Record<string, unknown>[];
   expectationHistory?: Record<string, unknown>[];
   targets: EconomicTarget[]; mappings: EconomicMapping[]; exceptions: EconomicException[];
   leakage: LeakageOpportunity[]; cases: LeakageCase[];
   installations: { id: string; name: string; serialNumber: string; customerName: string; instrumentId?: string | null; modelId?: string | null; movedFrom?: string | null }[];
-  customers: { id: string; name: string }[];
+  customers: { id: string; name: string; city?: string | null; tallyIdentities?: { companyId: string; customerSourceId: string }[] }[];
   canManage: boolean; canApprove: boolean; canAct: boolean;
   generation: string | null; lastRebuiltAt: string | null; sourceImportedAt: string | null;
   sourceLineCount: number; unattributedPaise: string; reportingFrom: string; reportingTo: string;

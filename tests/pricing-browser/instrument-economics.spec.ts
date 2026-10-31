@@ -39,6 +39,7 @@ test('instrument sale date drives lifetime labels and simple group and item mapp
   await page.goto('/?view=instrument-economics');
   await expect(page.getByText('Reagent sales since 23 Jul 2026', { exact: true })).toBeVisible();
   await page.getByRole('navigation', { name: 'Economics sections' }).getByRole('button', { name: 'Set up', exact: true }).click();
+  await page.getByText('Advanced (corrections)', { exact: true }).click();
   await page.getByText('Add a Tally item group', { exact: true }).click();
   const groupForm = page.locator('form').filter({ has: page.getByRole('region', { name: 'Item group mapping identity' }) });
   await groupForm.getByLabel('Instrument placement', { exact: true }).selectOption(sold.id);
@@ -175,6 +176,7 @@ test('proposal review shows net investment and the placement-start baseline befo
   await page.goto('/?view=instrument-economics');
   // Approval is step 2 of the simple Set up flow.
   await page.getByRole('navigation', { name: 'Economics sections' }).getByRole('button', { name: 'Set up', exact: true }).click();
+  await page.getByText('Advanced (corrections)', { exact: true }).click();
   await expect(page.getByRole('region', { name: 'Step 2: Investment and approval' })).toBeVisible();
   const proposal = page.getByRole('region', { name: 'Placement approval preview' });
   await expect(proposal.getByText('₹5,50,000.00', { exact: true })).toBeVisible();
@@ -1179,6 +1181,16 @@ test('simple view sends missing Tally purchases to To do and shows the three set
   await expect(problems.getByText("The party ledger on this invoice wasn't found in Tally's customer list.", { exact: true })).toBeVisible();
   await expect(problems).not.toContainText('no_verified_compatible_placement');
   await page.getByRole('navigation', { name: 'Economics sections' }).getByRole('button', { name: 'Set up', exact: true }).click();
+  const instrumentRegion = page.getByRole('region', { name: 'Add an instrument' });
+  const advancedSummary = page.getByText('Advanced (corrections)', { exact: true });
+  await expect(instrumentRegion).toBeVisible();
+  await expect(advancedSummary).toBeVisible();
+  const instrumentBox = await instrumentRegion.boundingBox();
+  const advancedBox = await advancedSummary.boundingBox();
+  expect(instrumentBox).not.toBeNull();
+  expect(advancedBox).not.toBeNull();
+  expect(instrumentBox!.y).toBeLessThan(advancedBox!.y);
+  await advancedSummary.click();
   for (const step of ['Step 1: Choose the instrument', 'Step 2: Investment and approval', 'Step 3: Choose reagent items']) await expect(page.getByRole('region', { name: step })).toBeVisible();
   await expect(page.getByLabel('Action', { exact: true })).toHaveCount(0);
   expect(await page.evaluate(() => document.documentElement.scrollWidth <= innerWidth)).toBe(true);

@@ -17,6 +17,7 @@ import { capitalBeyondManagementReview, capitalPreviewPaise, MappingOptions, His
 import { filterEconomicTargets, InstrumentEconomicsPortfolioFilters, type InstrumentEconomicsPortfolioFilterValues as EconomicPortfolioFilters } from '@/components/instrument-economics-portfolio-filters';
 import { readJsonBody } from '@/lib/http-json';
 import { SalesCoverageCard } from '@/components/sales-coverage-card';
+import { InstrumentAdd, type InstrumentAddCommand } from '@/components/instrument-add';
 
 type EconomicsWorkspaceData = BaseEconomicsWorkspaceData & { canAdministrator?: boolean };
 
@@ -231,7 +232,7 @@ function InvestmentRecovery({ target }: { target: EconomicTarget }) {
 }
 
 const approvalLabel: Record<EconomicTarget['approval'], string> = { approved: 'Approved', proposed: 'Proposed', rejected: 'Rejected' };
-export function EconomicTargetCard({ target, selected, pooledInName, expanded, onToggle, children, lifetime, period, onReviewCosts }: { target: EconomicTarget; selected?: boolean; pooledInName?: string; expanded?: boolean; onToggle?: () => void; children?: ReactNode; lifetime?: ReagentLifetime; period?: string; onReviewCosts?: () => void }) {
+export function EconomicTargetCard({ target, selected, pooledInName, expanded, onToggle, children, lifetime, period, onReviewCosts, reagentAction }: { target: EconomicTarget; selected?: boolean; pooledInName?: string; expanded?: boolean; onToggle?: () => void; children?: ReactNode; lifetime?: ReagentLifetime; period?: string; onReviewCosts?: () => void; reagentAction?: ReactNode }) {
   const missingCost = target.approval === 'proposed' ? 0 : lifetime?.missingCostLines ?? target.missingCostLines;
   return <article className={`rounded-2xl border bg-white p-4 shadow-sm sm:p-5 ${selected ? 'border-sf-accent ring-2 ring-sf-accent/20' : 'border-sf-line-soft'}`}>
      <div className="flex flex-wrap items-start justify-between gap-3"><div className="min-w-0"><p className="text-xs font-semibold text-sf-muted">{target.customerName}{target.kind === 'group' ? ' · group' : ''}</p><h3 className="mt-1 break-words text-lg font-extrabold text-sf-ink">{target.name}</h3>{target.kind === 'placement' && target.instrumentSerialNumber ? <p className="mt-1 text-xs text-sf-muted">Instrument SN {target.instrumentSerialNumber} · placed here since {displayDate(target.effectiveFrom)}{target.instrumentMovedFrom ? ` · previously at ${target.instrumentMovedFrom}` : ''}</p> : null}<p className="mt-1 text-xs text-sf-muted">Since {displayDate(target.effectiveFrom)}{target.effectiveTo ? ` to ${displayDate(target.effectiveTo)}` : ''} · {approvalLabel[target.approval]}</p></div><EconomicHealthBadge health={target.health} /></div>
@@ -242,6 +243,7 @@ export function EconomicTargetCard({ target, selected, pooledInName, expanded, o
     {target.approval === 'proposed' ? <p className="mt-3 rounded-xl bg-sf-info-soft p-3 text-sm text-sf-info inline-flex items-center gap-1"><Info size={14} aria-hidden="true" className="shrink-0" />Waiting for approval in Set up. Reagent sales are counted after approval.</p> : null}
     <InvestmentRecovery target={target} />
     <ReagentSummary target={target} lifetime={lifetime} period={period} />
+    {reagentAction}
     {onToggle ? <button type="button" onClick={onToggle} aria-expanded={expanded} className="mt-4 inline-flex min-h-10 items-center gap-1 rounded-lg border border-sf-line px-3 text-sm font-bold text-sf-brand">{expanded ? <>Hide sales &amp; items</> : <>Sales &amp; items</>}</button> : null}{expanded ? <div className="mt-4 space-y-4">{children}</div> : null}
   </article>;
 }
@@ -403,7 +405,7 @@ function ExpectationProductRows({ data }: { data: EconomicsWorkspaceData }) {
 }
 
 type SubmitCommand = (event: SubmitEvent<HTMLFormElement>, action: EconomicAction) => Promise<void>;
-export function CommandForm({ action, data, disabled, busy, onSubmit, label, simpleMapping = false }: { action: EconomicAction; data: EconomicsWorkspaceData; disabled: boolean; busy: boolean; onSubmit: SubmitCommand; label?: string; simpleMapping?: boolean }) {
+export function CommandForm({ action, data, disabled, busy, onSubmit, label, simpleMapping = false, defaultTargetId = '' }: { action: EconomicAction; data: EconomicsWorkspaceData; disabled: boolean; busy: boolean; onSubmit: SubmitCommand; label?: string; simpleMapping?: boolean; defaultTargetId?: string }) {
   const targets = data.targets;
   const [installationId, setInstallationId] = useState('');
   const [typedModelId, setTypedModelId] = useState('');
@@ -416,12 +418,12 @@ export function CommandForm({ action, data, disabled, busy, onSubmit, label, sim
   const amountPaise = capitalPreviewPaise(capitalAmount);
   const capitalBeyondReview = action === 'record_capital' && capitalKind === 'capital' && capitalBeyondManagementReview(capitalTarget, amountPaise, data.policy.reviewMonths);
   const capitalBlocked = capitalBeyondReview && !data.canAdministrator;
-  const [mappingTargetId, setMappingTargetId] = useState('');
+  const [mappingTargetId, setMappingTargetId] = useState(defaultTargetId);
   const mappingTarget = targets.find(row => row.id === mappingTargetId);
   const mappingFrom = mappingTarget?.salesFrom;
   return <form onChange={event => { const input = event.target; if (!(input instanceof HTMLInputElement || input instanceof HTMLSelectElement)) return; if (action === 'create_target' && input.name === 'installationId') setInstallationId(input.value); if (input.name === 'targetId') setCapitalTargetId(input.value); if (input.name === 'amountPaise') setCapitalAmount(input.value); if (input.name === 'kind') setCapitalKind(input.value); }} onSubmit={event => { if (capitalBlocked || acquisitionBlocked) { event.preventDefault(); return; } void onSubmit(event, action); }} className="mt-4 grid gap-3 sm:grid-cols-2"><fieldset disabled={disabled} className="contents">
-    {action === 'set_mapping' ? <EconomicMappingIdentityFields key={data.generation} data={data} simpleOnly={simpleMapping} onTargetChange={setMappingTargetId} /> : null}
-    {action === 'set_item_group_mapping' ? <ItemGroupMappingFields key={data.generation} data={data} onTargetChange={setMappingTargetId} /> : null}
+    {action === 'set_mapping' ? <EconomicMappingIdentityFields key={data.generation} data={data} simpleOnly={simpleMapping} onTargetChange={setMappingTargetId} defaultTargetId={defaultTargetId} /> : null}
+    {action === 'set_item_group_mapping' ? <ItemGroupMappingFields key={data.generation} data={data} onTargetChange={setMappingTargetId} defaultTargetId={defaultTargetId} /> : null}
     {action === 'link_instrument_billing' ? <InstrumentBillingFields data={data} /> : null}
     {action === 'review_acquisition' ? <AcquisitionReviewFields items={data.acquisitionReviewItems ?? []} targets={targets} groupMemberships={data.groupMemberships} canAdministrator={!!data.canAdministrator} reviewMonths={data.policy.reviewMonths} onBlockedChange={setAcquisitionBlocked} /> : null}
     {action === 'register_historical_instrument' ? <HistoricalInstrumentFields lines={data.sourceLines ?? []} /> : null}
@@ -622,10 +624,17 @@ export function AccountsDocumentReview({ data }: { data: EconomicsWorkspaceData 
 function SetupStep({ number, title, body, children }: { number: number; title: string; body: string; children: ReactNode }) {
   return <section aria-label={`Step ${number}: ${title}`} className="rounded-2xl border border-sf-line-soft bg-white p-4 sm:p-6"><h2 className="text-lg font-extrabold"><span className="mr-2 inline-flex size-7 items-center justify-center rounded-full bg-sf-brand text-sm text-white">{number}</span>{title}</h2><p className="mt-1 text-sm text-sf-muted">{body}</p>{children}</section>;
 }
-function SetupSteps({ data, disabled, busy, onSubmit }: { data: EconomicsWorkspaceData; disabled: boolean; busy: boolean; onSubmit: SubmitCommand }) {
+function PlacementReagents({ target, data, disabled, onSubmit, onOpen }: { target: EconomicTarget; data: EconomicsWorkspaceData; disabled: boolean; onSubmit: SubmitCommand; onOpen: () => Promise<boolean> }) {
+  const [open, setOpen] = useState(false);
+  return data.canManage ? <div className="mt-3"><button type="button" disabled={disabled} className="min-h-11 rounded-lg border border-sf-line px-3 text-sm font-bold" onClick={async () => { if (open) setOpen(false); else if (await onOpen()) setOpen(true); }}>Add reagents</button>{open ? <><CommandForm action="set_item_group_mapping" data={data} disabled={disabled} busy={disabled} onSubmit={onSubmit} defaultTargetId={target.id} label="Add item group" /><details><summary className="min-h-11 cursor-pointer py-3">Add a single item</summary><CommandForm action="set_mapping" data={data} disabled={disabled} busy={disabled} onSubmit={onSubmit} defaultTargetId={target.id} simpleMapping label="Add item" /></details></> : null}</div> : null;
+}
+
+function SetupSteps({ data, disabled, busy, onSubmit, runCommand, onRefresh, onAdvancedOpen }: { data: EconomicsWorkspaceData; disabled: boolean; busy: boolean; onSubmit: SubmitCommand; runCommand: InstrumentAddCommand; onRefresh: () => Promise<unknown>; onAdvancedOpen: () => Promise<void> }) {
   const proposed = data.targets.filter(row => row.approval === 'proposed');
   if (!data.canManage) return <Empty title="Administrator access required" body="Your role can view instrument economics but cannot set up instruments." />;
   return <div className="space-y-4">
+    <InstrumentAdd data={data} disabled={disabled} runCommand={runCommand} onApprove={event => void onSubmit(event, 'approve_target')} onRefresh={onRefresh} />
+    <details onToggle={event => { if (event.currentTarget.open) void onAdvancedOpen(); }} className="rounded-xl border border-sf-line-soft p-4"><summary className="min-h-11 cursor-pointer font-bold">Advanced (corrections)</summary>
     <SetupStep number={1} title="Choose the instrument" body="Instruments delivered through Orders are already listed; go to step 2. For an instrument installed earlier, register it from its Tally invoice.">
       <details className="mt-3 rounded-xl bg-sf-soft p-3"><summary className="-m-3 list-item cursor-pointer p-3 text-sm font-bold">Register an existing instrument</summary><CommandForm action="register_historical_instrument" data={data} disabled={disabled} busy={busy} onSubmit={onSubmit} /></details>
     </SetupStep>
@@ -638,6 +647,7 @@ function SetupSteps({ data, disabled, busy, onSubmit }: { data: EconomicsWorkspa
       <details className="mt-3 rounded-xl bg-sf-soft p-3"><summary className="-m-3 list-item cursor-pointer p-3 text-sm font-bold">Add a Tally item group</summary><CommandForm action="set_item_group_mapping" data={data} disabled={disabled} busy={busy} onSubmit={onSubmit} label="Add item group" /></details>
       <details className="mt-3 rounded-xl bg-sf-soft p-3"><summary className="-m-3 list-item cursor-pointer p-3 text-sm font-bold">Add a single item</summary><CommandForm action="set_mapping" data={data} disabled={disabled} busy={busy} onSubmit={onSubmit} label="Add item" simpleMapping /></details>
     </SetupStep>
+    </details>
   </div>;
 }
 
@@ -726,7 +736,7 @@ export function InstrumentEconomicsWorkspace({ embedded = false }: { embedded?: 
   }
   async function openTab(name: Tab) {
     if (loading) return;
-    const needed = name === 'Set up' || (name === 'Advanced' && advancedTab === 'All actions') ? 'full' : name === 'Instruments' ? null : 'detail';
+    const needed = name === 'Advanced' && advancedTab === 'All actions' ? 'full' : name === 'Instruments' ? null : 'detail';
     if (needed && !await ensureView(needed)) return;
     setTab(name);
   }
@@ -758,8 +768,8 @@ export function InstrumentEconomicsWorkspace({ embedded = false }: { embedded?: 
         setError(body.error || 'Financial access is no longer available. Sign in with the original account and refresh.');
         return;
       }
-      let body: { error?: string; autoApproved?: { paybackMonths?: number | string; attractiveMonths?: number } };
-      try { body = await response.json() as { error?: string; autoApproved?: { paybackMonths?: number | string; attractiveMonths?: number } }; }
+      let body: { entityId?: string; error?: string; autoApproved?: { paybackMonths?: number | string; attractiveMonths?: number } };
+      try { body = await response.json() as typeof body; }
       catch { pendingCommand.current = commandToSend; setUnresolved(true); setError('The server response could not be read, so the result is unknown. Retry the saved command with the same request key.'); return; }
       if (!response.ok) {
         const transient = response.status === 429 || response.status >= 500;
@@ -769,10 +779,18 @@ export function InstrumentEconomicsWorkspace({ embedded = false }: { embedded?: 
       }
       clearEconomicRecoveryReference(window.sessionStorage); recoveryReference.current = null;
       pendingCommand.current = null; setHasSavedPayload(false); retryKey.current = null; setSavedCommandActor(null); setUnresolved(false); setNotice(economicCommandNotice(body)); if (commandToSend.form?.isConnected) commandToSend.form.reset(); await load();
+      return body;
     } catch (cause) {
       pendingCommand.current = commandToSend; setUnresolved(true); setError(`${cause instanceof Error ? cause.message : 'Network error'} The result is unknown. Retry the saved command with the same request key.`);
     } finally { busyRef.current = false; setBusy(false); }
   }
+  const runInstrumentCommand: InstrumentAddCommand = async (action, payload, key) => {
+    if (!data?.actorEmail || busyRef.current || (recoveryReference.current && recoveryReference.current.key !== key)) return null;
+    const next = pendingCommand.current?.key === key ? pendingCommand.current : { action, payload: { ...payload, expectedActorEmail: data.actorEmail }, key, form: null };
+    if (next.payload.expectedActorEmail !== data.actorEmail) return null;
+    pendingCommand.current = next; setSavedCommandActor(data.actorEmail);
+    return await sendCommand(next) ?? null;
+  };
   async function recoverCommand(closeUnresolved: boolean) {
     const reference = recoveryReference.current;
     if (!reference || busyRef.current || reference.actorEmail !== data?.actorEmail) return;
@@ -864,10 +882,10 @@ export function InstrumentEconomicsWorkspace({ embedded = false }: { embedded?: 
     {data && tab === 'Instruments' ? <SalesCoverageCard key={data.actorEmail} roles={data.canAdministrator ? ['administrator'] : data.canManage ? ['management'] : ['accounts']} /> : null}
     {loading && data ? <output className="block text-sm text-sf-muted">Loading economics details…</output> : null}
     {loading && !data ? <div className="rounded-2xl bg-white p-8 text-sm text-sf-muted">Loading economics data…</div> : null}
-    {data && tab === 'Instruments' ? <>{data.targets.length > 2 ? <InstrumentEconomicsPortfolioFilters filters={portfolioFilters} onChange={setPortfolioFilters} total={data.targets.length} matching={visibleTargets.length} /> : null}<section aria-label="Economic targets" className="grid gap-4 xl:grid-cols-2">{visibleTargets.length ? visibleTargets.map(target => <EconomicTargetCard key={target.id} target={target} pooledInName={data.targets.find(row => row.id === target.pooledIn)?.name} selected={expanded?.id === target.id} expanded={expanded?.id === target.id} onToggle={() => void toggleTarget(target.id)} lifetime={target.reagentLifetime ?? (data.attributionLines ? reagentLifetime(target.id, data.attributionLines) : undefined)} period={reportingPeriodLabel(data.reportingFrom, data.reportingTo)} onReviewCosts={() => void openTab('To do')}>{target.kind === 'placement' && !target.pooledIn ? <InstrumentItems key={`${target.id}:${data.generation}`} target={target} data={data} disabled={unresolved || busy} onSubmit={submit} /> : null}<ReagentSalesList target={target} data={data} /></EconomicTargetCard>) : <Empty title={data.targets.length ? "No matching instruments" : "No instruments yet"} body={data.targets.length ? "Change the search, status or type filters to see more instruments." : "Add an instrument in Set up."} />}</section></> : null}
+    {data && tab === 'Instruments' ? <>{data.targets.length > 2 ? <InstrumentEconomicsPortfolioFilters filters={portfolioFilters} onChange={setPortfolioFilters} total={data.targets.length} matching={visibleTargets.length} /> : null}<section aria-label="Economic targets" className="grid gap-4 xl:grid-cols-2">{visibleTargets.length ? visibleTargets.map(target => <EconomicTargetCard key={target.id} target={target} reagentAction={target.kind === 'placement' ? <PlacementReagents onOpen={() => ensureView('detail')} target={target} data={data} disabled={unresolved || busy} onSubmit={submit} /> : null} pooledInName={data.targets.find(row => row.id === target.pooledIn)?.name} selected={expanded?.id === target.id} expanded={expanded?.id === target.id} onToggle={() => void toggleTarget(target.id)} lifetime={target.reagentLifetime ?? (data.attributionLines ? reagentLifetime(target.id, data.attributionLines) : undefined)} period={reportingPeriodLabel(data.reportingFrom, data.reportingTo)} onReviewCosts={() => void openTab('To do')}>{target.kind === 'placement' && !target.pooledIn ? <InstrumentItems key={`${target.id}:${data.generation}`} target={target} data={data} disabled={unresolved || busy} onSubmit={submit} /> : null}<ReagentSalesList target={target} data={data} /></EconomicTargetCard>) : <Empty title={data.targets.length ? "No matching instruments" : "No instruments yet"} body={data.targets.length ? "Change the search, status or type filters to see more instruments." : "Add an instrument in Set up."} />}</section></> : null}
     {data && tab === 'To do' ? <TodoPanel data={data} onAccountsReview={() => void openTab('Accounts review')} /> : null}
     {data && tab === 'Accounts review' ? <div className="space-y-3"><button type="button" onClick={() => void openTab('To do')} className="min-h-11 rounded-xl border border-sf-line bg-white px-4 text-sm font-bold text-sf-brand">Back to instrument tasks</button><AccountsDocumentReview data={data} /></div> : null}
-    {data && tab === 'Set up' ? <SetupSteps data={data} disabled={unresolved || busy} busy={busy} onSubmit={submit} /> : null}
+    {data && tab === 'Set up' ? <SetupSteps data={data} disabled={unresolved || busy} busy={busy} onSubmit={submit} runCommand={runInstrumentCommand} onRefresh={load} onAdvancedOpen={loadAllSourceLines} /> : null}
     {data && tab === 'Advanced' && data.canManage ? <nav aria-label="Advanced sections" className="-mx-1 flex gap-2 overflow-x-auto px-1 pb-0.5 [scrollbar-width:none]">{advancedTabs.map(name => <button key={name} type="button" onClick={() => void openAdvancedTab(name)} aria-current={advancedTab === name ? 'page' : undefined} className={`shrink-0 whitespace-nowrap min-h-10 rounded-lg border px-3 text-sm font-bold ${advancedTab === name ? 'border-sf-brand bg-sf-brand text-white' : 'border-sf-line bg-white text-sf-body'}`}>{name}</button>)}</nav> : null}
     {data && tab === 'Advanced' && data.canManage && advancedTab === 'All actions' ? <div className="grid gap-4 xl:grid-cols-[minmax(0,1fr)_minmax(18rem,.75fr)]"><details id="economic-setup" open={command === 'verify_cost' || !data.targets.some(row => row.approval === 'proposed')} className="scroll-mt-4 self-start rounded-2xl border border-sf-line-soft bg-white p-4 sm:p-6"><summary className="min-h-10 cursor-pointer py-2 font-extrabold"><h2 className="inline text-lg font-extrabold">All actions</h2></summary><p className="mt-1 text-sm text-sf-muted">Add a versioned target, source mapping, expectation, usage observation, group, allocation, cost evidence or capital entry.</p>{data.canManage ? <><label className="mt-4 grid gap-1.5 text-xs font-semibold text-sf-body">Action<select aria-label="Action" value={command} disabled={unresolved || busy} onChange={event => setCommand(event.target.value as EconomicAction)} className="min-h-10 rounded-lg border border-sf-line bg-white px-3 text-sm"><EconomicActionOptions data={data} /></select></label>{command === 'record_capital' ? <p className="mt-3 rounded-lg bg-sf-soft p-3 text-xs leading-5 text-sf-muted">Record actual capital or eligible contributions dated today or earlier. Capital increases on approved placements use the original approved expected GP and current payback limits; payback beyond the review band requires explicit administrator approval.</p> : null}{command === 'record_observation' ? <p className="mt-3 rounded-lg bg-sf-soft p-3 text-xs leading-5 text-sf-muted">Expected supply = tests ÷ tests per unit + QC units + closing stock − opening stock − net transfers. External supply is recorded as separate evidence and is not subtracted from the sales opportunity.</p> : null}{command === 'close_group_membership' ? <p className="mt-3 rounded-lg bg-sf-warning-soft p-3 text-xs leading-5 text-sf-warning inline-flex items-center gap-1"><TriangleAlert size={14} aria-hidden="true" className="shrink-0" />Closing membership also closes the member’s logical economic placement on this date; its physical installation remains active. Create a new dated placement and review residual capital before regrouping or moving the instrument.</p> : null}<CommandForm key={command} action={command} data={data} disabled={unresolved || busy} busy={busy} onSubmit={submit} /></> : <Empty title="Management access required" body="Your role can view verified economics but cannot change target setup." />}</details><section className="rounded-2xl border border-sf-line-soft bg-white p-4 sm:p-6"><h2 className="text-lg font-extrabold">Proposed targets</h2>{data.targets.filter(row => row.approval === 'proposed').length ? data.targets.filter(row => row.approval === 'proposed').map(row => <ProposedTargetReview key={`${row.id}:${data.generation}`} target={row} data={data} disabled={unresolved || busy} onSubmit={event => void submit(event, 'approve_target')} />) : <p className="mt-3 text-sm text-sf-muted">No proposed targets.</p>}</section></div> : null}
     {data && tab === 'Advanced' && data.canManage && advancedTab === 'Exceptions' ? <section className="overflow-hidden rounded-2xl border border-sf-line-soft bg-white"><div className="p-4 sm:p-6"><h2 className="text-lg font-extrabold">Attribution and cost exceptions</h2><p className="mt-1 text-sm text-sf-muted">Unattributed sales remain outside target revenue. Missing cost evidence leaves attributed revenue visible while GP stays unavailable; reviewed FOC rows can carry negative known GP. Connector import errors are shown as source evidence and may affect the completeness of this reporting generation.</p></div>{data.exceptions.length ? <div className="overflow-x-auto"><table className="w-full min-w-[680px] text-left text-sm"><thead className="bg-sf-soft text-xs text-sf-muted"><tr><th className="p-3">Source</th><th className="p-3">Product</th><th className="p-3">Date</th><th className="p-3">Sales</th><th className="p-3">Status</th><th className="p-3">Reason</th></tr></thead><tbody>{data.exceptions.map((row, i) => <tr key={`${row.sourceId}-${i}`} className="border-t border-sf-soft"><td className="p-3">{row.sourceId}</td><td className="p-3">{row.productId}</td><td className="p-3">{row.date}</td><td className="p-3">{money(row.netSalesPaise)}</td><td className="p-3">{row.status}</td><td className="p-3">{row.reason}</td></tr>)}</tbody></table></div> : <Empty title="No current exceptions" body="The current workspace has no unresolved attribution or cost exception rows." />}</section> : null}

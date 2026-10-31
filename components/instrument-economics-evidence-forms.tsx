@@ -41,9 +41,9 @@ export function HistoricalInstrumentFields({ lines }: { lines: NonNullable<Econo
   </section>;
 }
 
-export function EconomicMappingIdentityFields({ data, simpleOnly = false, onTargetChange }: { data: EconomicsWorkspaceData; simpleOnly?: boolean; onTargetChange?: (id: string) => void }) {
+export function EconomicMappingIdentityFields({ data, simpleOnly = false, onTargetChange, defaultTargetId = '' }: { data: EconomicsWorkspaceData; simpleOnly?: boolean; onTargetChange?: (id: string) => void; defaultTargetId?: string }) {
   const [advanced, setAdvanced] = useState(false);
-  const [targetId, setTargetId] = useState('');
+  const [targetId, setTargetId] = useState(defaultTargetId);
   const [productId, setProductId] = useState('');
   const placements = data.targets.filter(row => row.kind === 'placement');
   const target = placements.find(row => row.id === targetId);
@@ -107,8 +107,8 @@ function AdvancedMappingIdentityFields({ data }: { data: EconomicsWorkspaceData 
   </section>;
 }
 
-export function ItemGroupMappingFields({ data, onTargetChange }: { data: EconomicsWorkspaceData; onTargetChange?: (id: string) => void }) {
-  const [targetId, setTargetId] = useState('');
+export function ItemGroupMappingFields({ data, onTargetChange, defaultTargetId = '' }: { data: EconomicsWorkspaceData; onTargetChange?: (id: string) => void; defaultTargetId?: string }) {
+  const [targetId, setTargetId] = useState(defaultTargetId);
   const [groupId, setGroupId] = useState('');
   const placements = data.targets.filter(target => target.kind === 'placement');
   const target = placements.find(row => row.id === targetId);
