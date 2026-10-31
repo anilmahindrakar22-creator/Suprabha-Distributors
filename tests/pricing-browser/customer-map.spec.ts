@@ -102,18 +102,111 @@ async function mockOrderCapture(page: Page, includeLab = true) {
   await page.route('**/api/orders?customers=1', route => route.fulfill({ json: { customerVersion: 'test-v1', customers } }));
   return { draftCustomer, reads };
 }
-async function geolocation(page: Page, mode: 'success' | 'outside' | 'denied') {
+async function geolocation(page: Page, mode: 'success' | 'outside' | 'denied' | 'weak' | 'timeout') {
   await page.addInitScript(mode => {
+    Object.assign(window, { gpsReads: 0, gpsWatches: 0 });
     Object.defineProperty(navigator, 'geolocation', { configurable: true, value: { getCurrentPosition(success: PositionCallback, failure: PositionErrorCallback, options: PositionOptions) {
+      (window as unknown as { gpsReads: number }).gpsReads++;
       (window as unknown as { gpsOptions: PositionOptions }).gpsOptions = options;
       if (mode === 'denied') failure({ code: 1, message: 'Denied', PERMISSION_DENIED: 1, POSITION_UNAVAILABLE: 2, TIMEOUT: 3 });
-      else success({ coords: { latitude: mode === 'outside' ? 12.9 : 17.3, longitude: mode === 'outside' ? 77.6 : 76.8, accuracy: 14, altitude: null, altitudeAccuracy: null, heading: null, speed: null, toJSON: () => ({}) }, timestamp: Date.now(), toJSON: () => ({}) });
-    } } });
+      else if (mode === 'timeout') failure({ code: 3, message: 'Timeout', PERMISSION_DENIED: 1, POSITION_UNAVAILABLE: 2, TIMEOUT: 3 });
+      else success({ coords: { latitude: mode === 'outside' ? 12.9 : 17.3, longitude: mode === 'outside' ? 77.6 : 76.8, accuracy: mode === 'weak' ? 300 : 14, altitude: null, altitudeAccuracy: null, heading: null, speed: null, toJSON: () => ({}) }, timestamp: Date.now(), toJSON: () => ({}) });
+    }, watchPosition() { (window as unknown as { gpsWatches: number }).gpsWatches++; throw new Error('Continuous tracking is forbidden'); } } });
   }, mode);
+}
+
+const verifiedCheckin = { checkinId: '77111111-1111-4111-8111-111111111111', checkedInAt: '2026-10-30T05:12:00Z', verified: true, distanceM: 40, hasPin: true };
+async function checkinFixture(page: Page, options: { sales?: boolean; result?: typeof verifiedCheckin | { checkinId: string; checkedInAt: string; verified: boolean; distanceM: null; hasPin: boolean }; networkFailure?: boolean; outside?: boolean; hold?: Promise<void> } = {}) {
+  const state = await fixture(page, { sales: options.sales });
+  await page.route('**/api/accounts**', async route => {
+    if (route.request().method() !== 'POST' || route.request().postDataJSON().action !== 'check_in') return route.fallback();
+    state.posts.push(route.request().postDataJSON());
+    if (options.networkFailure && state.posts.length === 1) return route.abort('failed');
+    if (options.hold) await options.hold;
+    if (options.outside) return route.fulfill({ status: 400, json: { code: '22023', error: 'This check-in is outside the market area.' } });
+    return route.fulfill({ json: options.result ?? verifiedCheckin });
+  });
+  return state;
 }
 
 for (const width of [375, 1280]) test.describe(`Customer map at ${width}px`, () => {
   test.use({ viewport: { width, height: 812 } });
+  test.afterEach(async ({ page }) => {
+    expect(await page.evaluate(() => (window as unknown as { gpsWatches?: number }).gpsWatches ?? 0)).toBe(0);
+  });
+  test('check-in verified posts the exact reading, shows green copy without coordinates and annotates Save done', async ({ page }) => {
+    await geolocation(page, 'success'); const { posts } = await checkinFixture(page, { sales: true }); const sheet = await openSheet(page);
+    await sheet.getByRole('button', { name: 'Check in', exact: true }).click();
+    const line = sheet.getByText('Checked in · 40 m from lab ✓', { exact: true });
+    await expect(line).toHaveClass(/text-sf-success/);
+    expect(posts).toHaveLength(1);
+    expect(posts[0]).toEqual({ action: 'check_in', customerId, latitude: 17.3, longitude: 76.8, accuracyM: 14, requestId: expect.stringMatching(/^[0-9a-f-]{36}$/) });
+    expect(await page.evaluate(() => (window as unknown as { gpsOptions: PositionOptions }).gpsOptions)).toEqual({ enableHighAccuracy: true, timeout: 10000, maximumAge: 0 });
+    await expect(sheet).not.toContainText('17.3'); await expect(sheet).not.toContainText('76.8');
+    await sheet.getByRole('button', { name: 'Done', exact: true }).click();
+    await expect(sheet.getByText('Checked in 10:42 ✓', { exact: true })).toBeAttached();
+    await expect(sheet.getByRole('button', { name: 'Save done', exact: true })).toBeAttached();
+  });
+  for (const weak of [false, true]) test(`check-in not verified shows ${weak ? 'weak GPS' : 'far distance'} in amber`, async ({ page }) => {
+    await geolocation(page, weak ? 'weak' : 'success'); await checkinFixture(page, { result: { ...verifiedCheckin, verified: false, distanceM: 1200 } }); const sheet = await openSheet(page);
+    await sheet.getByRole('button', { name: 'Check in', exact: true }).click();
+    await expect(sheet.getByText(weak ? 'Checked in · GPS too weak (±300 m)' : 'Checked in · 1.2 km from the lab pin', { exact: true })).toHaveClass(/text-sf-warm/);
+  });
+  test('check-in without a pin reuses the same reading in the existing confirmed location write', async ({ page }) => {
+    await geolocation(page, 'success'); const { posts } = await checkinFixture(page, { result: { ...verifiedCheckin, verified: false, distanceM: null, hasPin: false } }); const sheet = await openSheet(page);
+    await sheet.getByRole('button', { name: 'Check in', exact: true }).click();
+    await expect(sheet.getByText('Checked in · lab not pinned yet', { exact: true })).toBeVisible();
+    await sheet.getByRole('button', { name: 'Pin lab here too?', exact: true }).click();
+    expect(posts).toHaveLength(1);
+    await sheet.getByRole('button', { name: 'Confirm pin', exact: true }).click();
+    await expect.poll(() => posts.length).toBe(2);
+    expect(posts[1]).toMatchObject({ action: 'set_location', customerId, expectedVersion: null, precision: 'pin', source: 'manual_pin', latitude: '17.300000', longitude: '76.800000' });
+    expect(await page.evaluate(() => (window as unknown as { gpsReads: number }).gpsReads)).toBe(1);
+  });
+  for (const mode of ['denied', 'timeout'] as const) test(`check-in ${mode} shows one muted line and posts nothing`, async ({ page }) => {
+    await geolocation(page, mode); const { posts } = await checkinFixture(page); const sheet = await openSheet(page);
+    await sheet.getByRole('button', { name: 'Check in', exact: true }).click();
+    const line = sheet.getByText(mode === 'denied' ? 'Location permission denied. You can add a pin manually.' : 'Location could not be found. Try again.', { exact: true });
+    await expect(line).toHaveCount(1); await expect(line).toHaveClass(/text-sf-muted/); expect(posts).toHaveLength(0);
+  });
+  test('check-in double tap while busy posts once', async ({ page }) => {
+    await geolocation(page, 'success'); let release!: () => void; const hold = new Promise<void>(resolve => { release = resolve; });
+    const { posts } = await checkinFixture(page, { hold }); const sheet = await openSheet(page);
+    await sheet.getByRole('button', { name: 'Check in', exact: true }).evaluate(el => { (el as HTMLButtonElement).click(); (el as HTMLButtonElement).click(); });
+    try { await expect(sheet.getByRole('button', { name: 'Checking in…', exact: true })).toBeDisabled(); await expect.poll(() => posts.length).toBe(1); } finally { release(); }
+    await expect(sheet.getByText('Checked in · 40 m from lab ✓', { exact: true })).toBeVisible(); expect(posts).toHaveLength(1);
+  });
+  test('check-in retry after network failure reuses requestId and the single GPS reading', async ({ page }) => {
+    await geolocation(page, 'success'); const { posts } = await checkinFixture(page, { networkFailure: true }); const sheet = await openSheet(page);
+    await sheet.getByRole('button', { name: 'Check in', exact: true }).click();
+    await expect(sheet.getByText('Check-in could not be confirmed. Try again.', { exact: true })).toBeVisible();
+    await sheet.getByRole('button', { name: 'Check in', exact: true }).click();
+    await expect(sheet.getByText('Checked in · 40 m from lab ✓', { exact: true })).toBeVisible();
+    expect(posts).toHaveLength(2); expect(posts[1]).toEqual(posts[0]);
+    expect(await page.evaluate(() => (window as unknown as { gpsReads: number }).gpsReads)).toBe(1);
+  });
+  test('check-in outside area displays the server 22023 message', async ({ page }) => {
+    await geolocation(page, 'outside'); await checkinFixture(page, { outside: true }); const sheet = await openSheet(page);
+    await sheet.getByRole('button', { name: 'Check in', exact: true }).click();
+    await expect(sheet.getByText('This check-in is outside the market area.', { exact: true })).toBeVisible();
+  });
+  test('check-in verified Last visit fixture shows an accessible green tick', async ({ page }) => {
+    await fixture(page);
+    await page.route('**/api/customer-map?customer=*', route => route.fulfill({ json: { ...fullSheet(), tiles: { ...fullSheet().tiles, lastVisit: { visitedOn: '2026-10-29', checkin: verifiedCheckin } } } }));
+    const sheet = await openSheet(page);
+    await expect(sheet.getByLabel('verified check-in', { exact: true })).toHaveClass(/text-sf-success/);
+    await expect(sheet.getByLabel('verified check-in', { exact: true }).locator('..')).toHaveText('1 d ago ✓');
+  });
+  test('check-in action bar keeps Call, Check in, Pin here and Order in one row without overflow', async ({ page }) => {
+    await fixture(page); const sheet = await openSheet(page);
+    const actions = sheet.locator('footer > div:last-child > *');
+    await expect(actions).toHaveText(['Call', 'Check in', 'Pin here', 'Order']);
+    const boxes = await actions.evaluateAll(elements => elements.map(el => { const b = el.getBoundingClientRect(); return { top: b.top, width: b.width, height: b.height, font: getComputedStyle(el).fontSize, fits: el.scrollWidth <= el.clientWidth }; }));
+    expect(new Set(boxes.map(b => b.top)).size).toBe(1);
+    for (const box of boxes) { expect(box.width).toBeGreaterThanOrEqual(44); expect(box.height).toBeGreaterThanOrEqual(44); expect(box.font).toBe('12px'); expect(box.fits).toBe(true); }
+    expect(await sheet.evaluate(el => el.scrollWidth <= el.clientWidth)).toBe(true);
+    expect(await page.evaluate(() => document.documentElement.scrollWidth <= innerWidth)).toBe(true);
+  });
   test('PIN groups render dashed circles, counts, accessible labels and the existing order badge', async ({ page }) => {
     await fixture(page);
     await page.getByRole('button', { name: 'Wallet', exact: true }).click();

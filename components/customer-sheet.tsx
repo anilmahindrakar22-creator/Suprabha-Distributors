@@ -1,16 +1,19 @@
 'use client';
 
 import { useEffect, useRef, useState, type ReactNode } from 'react';
-import { Crown, MapPin, Phone, User, Wallet, ClipboardList, Microscope, Lock } from 'lucide-react';
+import { Crown, MapPin, MapPinCheck, Phone, User, Wallet, ClipboardList, Microscope, Lock } from 'lucide-react';
 import { MeterBar, StatusChip, ToneIcon } from '@/components/ui/glance';
 import { constraintIcons } from '@/lib/glance-icons';
 import { orderStageStyle } from '@/components/order-list';
 import { isInsideMarketArea, MARKET_AREA } from '@/lib/account-types';
 import { formatPaise } from '@/lib/wallet-format';
+import { checkinMessage, parseCheckinResult, parseSheetCheckin } from '@/lib/checkin';
+import type { CheckinResult, VisitCheckin } from '@/lib/account-types';
 import { customerMapDayDifference, formatActionDue, formatCustomerDate, formatLastVisit, parseCustomerSheet, readCustomerMap, type CustomerSheetData, type SheetOrder } from '@/lib/customer-map';
 
 const button = 'inline-flex min-h-11 items-center justify-center gap-2 rounded-xl border border-sf-line px-3 text-xs font-bold text-sf-ink disabled:opacity-50';
 const input = 'min-h-11 w-full rounded-xl border border-sf-line bg-sf-soft-0 px-3 text-base';
+const actionButton = `${button} min-w-0 flex-1 flex-col gap-0.5 px-1 py-1 whitespace-nowrap`;
 function Section({ title, children }: { title: string; children: ReactNode }) { return <section aria-label={title} className="space-y-2"><h4 className="text-xs text-sf-muted">{title}</h4>{children}</section>; }
 function Tile({ label, value, danger }: { label: string; value: ReactNode; danger?: boolean }) { return <div className="min-w-0 rounded-xl bg-sf-soft-0 p-3"><p className={`break-words text-base tabular-nums ${danger ? 'text-sf-danger' : ''}`}>{value}</p><p className="text-xs text-sf-muted">{label}</p></div>; }
 export type MapPlacement = { name: string; location: CustomerSheetData['location']; save: (lat: number, lng: number) => Promise<string | null> };
@@ -19,6 +22,12 @@ export type CustomerSheetProps = { customerId: string; financial: boolean; onClo
 export function CustomerSheet({ customerId, financial, onClose, onOpenOrder, onPlan, onOrder, onContacts, onLocationSaved, placing = false, onPlaceOnMap }: CustomerSheetProps) {
   const dialog = useRef<HTMLDialogElement>(null);
   const [data, setData] = useState<CustomerSheetData | null>(null);
+  const [lastCheckin, setLastCheckin] = useState<VisitCheckin | null>(null);
+  type Reading = { lat: number; lng: number; accuracy: number };
+  const [checkin, setCheckin] = useState<{ result: CheckinResult; reading: Reading } | null>(null);
+  const [checking, setChecking] = useState(false);
+  const [checkinNotice, setCheckinNotice] = useState('');
+  const checkinPending = useRef<{ requestId: string; reading: Reading } | null>(null);
   const [error, setError] = useState(''); const [notice, setNotice] = useState(''); const [busy, setBusy] = useState(false);
   const [gps, setGps] = useState<{ lat: number; lng: number; accuracy: number } | null>(null);
   const [manual, setManual] = useState(false); const [pinText, setPinText] = useState('');
@@ -37,12 +46,39 @@ export function CustomerSheet({ customerId, financial, onClose, onOpenOrder, onP
   }, []);
   useEffect(() => {
     const controller = new AbortController();
-    void readCustomerMap(`/api/customer-map?customer=${encodeURIComponent(customerId)}`, parseCustomerSheet, controller.signal).then(value => {
+    void readCustomerMap(`/api/customer-map?customer=${encodeURIComponent(customerId)}`, raw => ({ ...parseCustomerSheet(raw), checkin: parseSheetCheckin(raw) }), controller.signal).then(value => {
       if (value.customerId !== customerId) throw new Error('Unexpected customer');
-      if (!controller.signal.aborted) { setData(value); setError(''); }
+      if (!controller.signal.aborted) { setData(value); setLastCheckin(value.checkin); setError(''); }
     }).catch(() => { if (!controller.signal.aborted) setError('Customer details could not load. Try again.'); });
     return () => controller.abort();
   }, [customerId, revision]);
+  async function checkIn() {
+    if (flight.current || busy) return;
+    flight.current = true; setBusy(true); setChecking(true); setCheckinNotice('');
+    try {
+      if (!checkinPending.current) {
+        const requestId = crypto.randomUUID();
+        if (!navigator.geolocation) { setCheckinNotice('Location is unavailable on this device.'); return; }
+        const position = await new Promise<GeolocationPosition>((resolve, reject) => navigator.geolocation.getCurrentPosition(resolve, reject, { enableHighAccuracy: true, timeout: 10000, maximumAge: 0 }));
+        if (!alive.current) return;
+        checkinPending.current = { requestId, reading: { lat: position.coords.latitude, lng: position.coords.longitude, accuracy: position.coords.accuracy } };
+      }
+      const { requestId, reading } = checkinPending.current;
+      const response = await fetch('/api/accounts', { method: 'POST', headers: { 'content-type': 'application/json' }, body: JSON.stringify({ action: 'check_in', customerId, latitude: reading.lat, longitude: reading.lng, accuracyM: Math.round(reading.accuracy), requestId }) });
+      if (!alive.current) return;
+      if (!response.ok) {
+        const failure = await response.json().catch(() => null) as { error?: string; message?: string } | null;
+        if (response.status >= 400 && response.status < 500 && response.status !== 408 && response.status !== 429) checkinPending.current = null;
+        throw new Error(failure?.message || failure?.error || 'Check-in could not be confirmed. Try again.');
+      }
+      const result = parseCheckinResult(await response.json());
+      if (alive.current) { setCheckin({ result, reading }); checkinPending.current = null; }
+    } catch (failure) {
+      if (!alive.current) return;
+      const code = failure && typeof failure === 'object' && 'code' in failure ? failure.code : null;
+      setCheckinNotice(code === 1 ? 'Location permission denied. You can add a pin manually.' : code === 2 || code === 3 ? 'Location could not be found. Try again.' : failure instanceof Error && !(failure instanceof TypeError) ? failure.message : 'Check-in could not be confirmed. Try again.');
+    } finally { flight.current = false; if (alive.current) { setBusy(false); setChecking(false); } }
+  }
   function locate() {
     setNotice(''); setError(''); setGps(null);
     if (!navigator.geolocation) { setNotice('Location is unavailable on this device.'); return; }
@@ -114,11 +150,12 @@ export function CustomerSheet({ customerId, financial, onClose, onOpenOrder, onP
           <header className="space-y-2"><h3 className="text-xl font-semibold">{data.name}</h3><p className="text-sf-muted">{[data.city, data.owner ? `Owner: ${data.owner}` : null, data.accountClass ? `Class ${data.accountClass}` : null].filter(Boolean).join(' · ')}</p>
             {financial && share !== undefined ? <><StatusChip icon={Wallet} tone={shareTone}><span className="text-base">{share === null ? 'Share unknown' : `${share / 10}% share`}</span></StatusChip><MeterBar value={share === null ? null : share / 1000} target={0.8} tone={shareTone} label="Wallet share" /></> : null}
           </header>
+          {checkinNotice ? <output className="block text-xs text-sf-muted">{checkinNotice}</output> : checkin ? <div className="text-xs"><output className={`block ${checkin.result.verified ? 'text-sf-success' : 'text-sf-warm'}`}>{checkinMessage(checkin.result, checkin.reading.accuracy)}</output>{!checkin.result.hasPin ? <button className={button} disabled={busy} onClick={() => { setPinChooser(false); setManual(false); setGps(checkin.reading); }}>Pin lab here too?</button> : null}</div> : null}
           {data.location?.approximate ? <p className="text-xs text-sf-muted">Approx location · PIN {data.location.approximate.pinCode} · <button className="min-h-11 underline" disabled={busy} aria-expanded={pinChooser} onClick={() => setPinChooser(value => !value)}>Pin here</button> to place exactly</p> : null}
           {data.constraint ? <div className="flex items-center gap-2 text-sf-warm"><ToneIcon icon={constraintIcons[data.constraint.category]} tone="warning" size="sm" /><p>Held back by: {data.constraint.label}{data.constraint.category === 'price' && !data.constraint.proven && !data.constraint.label.includes('(not proven)') ? ' (not proven)' : ''}</p></div> : null}
           <div aria-label="Customer figures" className="grid grid-cols-2 gap-2">
             {financial ? <>{data.walletPaise != null ? <Tile label="Wallet / month" value={formatPaise(data.walletPaise)} /> : null}{data.salesPaise != null ? <Tile label="Sales / month" value={formatPaise(data.salesPaise)} /> : null}{data.gapPaise != null ? <Tile label="Gap / month" value={formatPaise(data.gapPaise)} danger /> : null}</> : data.openOrders !== null ? <Tile label="Open orders" value={data.openOrders} /> : null}
-            <Tile label="Last visit" value={formatLastVisit(data.lastVisit)} />
+            <Tile label="Last visit" value={<>{formatLastVisit(data.lastVisit)}{lastCheckin?.verified ? <span className="text-sf-success" aria-label="verified check-in"> ✓</span> : null}</>} />
             {!financial ? <>{data.nextActionDue ? <Tile label="Next action due" value={formatActionDue(data.nextActionDue)} danger={customerMapDayDifference(data.nextActionDue) < 0} /> : null}{data.overdue !== null ? <Tile label="Overdue" value={data.overdue} danger={data.overdue > 0} /> : null}</> : null}
           </div>
           {financial && data.wallet?.confidence && data.wallet.asOf && (data.walletPaise != null || data.salesPaise != null || data.gapPaise != null) ? <p className="text-xs text-sf-muted">Estimate · {data.wallet.confidence} confidence · {new Intl.DateTimeFormat('en-IN', { timeZone: 'Asia/Kolkata', day: 'numeric', month: 'short' }).format(new Date(`${data.wallet.asOf}T00:00:00+05:30`))}</p> : null}
@@ -127,7 +164,7 @@ export function CustomerSheet({ customerId, financial, onClose, onOpenOrder, onP
               event.preventDefault(); if (flight.current) return; flight.current = true; setBusy(true); setError('');
               const form = new FormData(event.currentTarget);
               try { const response = await fetch('/api/my-actions', { method: 'POST', headers: { 'content-type': 'application/json' }, body: JSON.stringify({ action: 'close_my_action', payload: { requestId: crypto.randomUUID(), actionId: data.nextAction!.actionId, result: 'done', note: form.get('note'), visit: data.nextAction!.type === 'visit' ? { outcome: form.get('outcome'), nextVisitOn: null } : null } }) }); if (!response.ok) throw new Error('Action could not be saved.'); setCompleting(false); setRevision(n => n + 1); } catch { setError('Action could not be saved. Check its status before retrying.'); } finally { flight.current = false; setBusy(false); }
-            }}><label className="block">Result note<textarea name="note" required minLength={3} maxLength={500} className={input} /></label>{data.nextAction.type === 'visit' ? <label className="block">Visit outcome<select name="outcome" className={input}><option value="met">Met</option><option value="not_available">Not available</option><option value="order_taken">Order taken</option><option value="issue_raised">Issue raised</option><option value="other">Other</option></select></label> : null}<button className={button} disabled={busy}>Save done</button></form> : null}
+            }}><label className="block">Result note<textarea name="note" required minLength={3} maxLength={500} className={input} /></label>{data.nextAction.type === 'visit' ? <label className="block">Visit outcome<select name="outcome" className={input}><option value="met">Met</option><option value="not_available">Not available</option><option value="order_taken">Order taken</option><option value="issue_raised">Issue raised</option><option value="other">Other</option></select></label> : null}{checkin && customerMapDayDifference(checkin.result.checkedInAt) === 0 ? <p className="text-xs text-sf-muted">Checked in {new Intl.DateTimeFormat('en-GB', { timeZone: 'Asia/Kolkata', hour: '2-digit', minute: '2-digit' }).format(new Date(checkin.result.checkedInAt))}{checkin.result.verified ? ' ✓' : ''}</p> : null}<button className={button} disabled={busy}>Save done</button></form> : null}
           </Section> : null}
           <Section title="Decision maker">{data.decider ? <div className="flex flex-wrap items-center gap-2"><ToneIcon icon={Crown} tone="info" size="sm" /><span className="text-base">{data.decider.name}</span>{data.decider.role ? <span>{data.decider.role}</span> : null}<StatusChip icon={User} tone={data.decider.stance === 'supportive' ? 'success' : data.decider.stance === 'opposed' ? 'danger' : 'warning'}>{data.decider.stance}</StatusChip></div> : <button className={`${button} text-sf-warm`} onClick={() => onContacts(customerId, data.name)}>No decider known · Add contact</button>}
             {data.route.length ? <p className="flex flex-wrap items-center gap-1">Reach via {data.route.map((person, i) => <span key={`${person.name}-${i}`}>{i ? ' → ' : ''}<StatusChip icon={person.decider ? Crown : User} tone={person.champion ? 'success' : 'info'}>{person.decider ? <strong>{person.name}</strong> : person.name}{person.champion ? ' · Champion' : ''}</StatusChip></span>)}</p> : null}
@@ -146,7 +183,7 @@ export function CustomerSheet({ customerId, financial, onClose, onOpenOrder, onP
           <button className={button} disabled={busy} onClick={() => { setPinChooser(false); setGps(null); setManual(true); }}>Paste a map link or enter coordinates</button>
           {onPlaceOnMap ? <button className={button} disabled={busy} onClick={placeOnMap}>Place on map</button> : null}
         </fieldset> : null}
-        <div className="flex gap-2">{data.phone ? <a className={`${button} flex-1`} href={`tel:${data.phone.replace(/[^+\d]/g, '')}`}><Phone size={16} aria-hidden="true" />Call</a> : null}{data.location?.precision === 'pin' && !moving ? <button className={`${button} flex-1`} disabled={busy} onClick={() => onPlaceOnMap ? placeOnMap() : setMoving(true)}>Move pin…</button> : <button className={`${button} flex-1`} disabled={busy} aria-expanded={pinChooser} onClick={() => setPinChooser(value => !value)}><MapPin size={16} aria-hidden="true" />{busy ? 'Locating…' : 'Pin here'}</button>}<button className={`${button} flex-1`} disabled={!onOrder || busy} onClick={() => onOrder?.(customerId)}>Order</button></div>
+        <div className="flex gap-2">{data.phone ? <a className={actionButton} href={`tel:${data.phone.replace(/[^+\d]/g, '')}`}><Phone size={16} aria-hidden="true" />Call</a> : null}<button className={actionButton} disabled={busy} onClick={() => void checkIn()}><MapPinCheck size={16} aria-hidden="true" />{checking ? 'Checking in…' : 'Check in'}</button>{data.location?.precision === 'pin' && !moving ? <button className={actionButton} disabled={busy} onClick={() => onPlaceOnMap ? placeOnMap() : setMoving(true)}>Move pin…</button> : <button className={actionButton} disabled={busy} aria-expanded={pinChooser} onClick={() => setPinChooser(value => !value)}><MapPin size={16} aria-hidden="true" />Pin here</button>}<button className={actionButton} disabled={!onOrder || busy} onClick={() => onOrder?.(customerId)}>Order</button></div>
       </footer> : null}
     </div>
   </dialog>;
