@@ -108,6 +108,16 @@ for (const width of [375, 1280]) test.describe(`Wallet at ${width}px`, () => {
     await expect(form.getByLabel('Tests per day (approx)', { exact: true })).toHaveValue('80');
     await expect(form.getByLabel('Total (₹/month)', { exact: true })).toHaveValue('');
   });
+  test('visit test volume validation waits for an invalid price', async ({ page }) => {
+    await fixture(page, { labSize: { testsPerDay: 80, basis: 'lab_said', reportedBy: 'Ravi', reportedOn: '2026-11-03' } });
+    const form = await openForm(page);
+    await form.getByRole('combobox', { name: /^Method/ }).selectOption('test_volume');
+    await expect(form.getByLabel('Tests per day (approx)', { exact: true })).toHaveValue('80');
+    const error = form.getByText('Enter valid tests, working days and price per test.', { exact: true });
+    await expect(error).toHaveCount(0);
+    await form.getByLabel('Average ₹ per test').fill('0');
+    await expect(error).toBeVisible();
+  });
   test('Use applies the lab-stated monthly spend as the customer-stated total', async ({ page }) => {
     await fixture(page, { labSize: { testsPerDay: 80, basis: 'lab_said', reportedBy: 'Ravi', reportedOn: '2026-11-03', statedMonthlySpendPaise: 5000000, spendReportedOn: '2026-11-03' } });
     const form = await openForm(page);

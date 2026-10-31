@@ -131,6 +131,7 @@ function EstimateForm({ account, onSaved, onConflict, onForbidden, onLock }: { a
   const [tests, setTests] = useState(account.current?.testVolume ? String(account.current.testVolume.testsPerDay) : '');
   const [days, setDays] = useState(String(account.current?.testVolume?.workingDaysPerMonth ?? 26));
   const [price, setPrice] = useState(account.current?.testVolume ? rupees(account.current.testVolume.paisePerTest) : '');
+  const [submitted, setSubmitted] = useState(false);
   const [split, setSplit] = useState(false);
   const [parts, setParts] = useState<Record<string, string>>({});
   const write = useWrite(onSaved, onConflict, onForbidden);
@@ -146,7 +147,7 @@ function EstimateForm({ account, onSaved, onConflict, onForbidden, onLock }: { a
   }, [method, account.labSize, locked]);
   useEffect(() => { onLock(locked); return () => onLock(false); }, [locked, onLock]);
   return <form aria-label="Update estimate" className="space-y-3" onSubmit={event => {
-    event.preventDefault(); if (amount === null || invalidSplit) return;
+    event.preventDefault(); setSubmitted(true); if (amount === null || invalidSplit) return;
     const data = new FormData(event.currentTarget);
     void write.save({ action: 'record_wallet_snapshot', payload: { requestId: crypto.randomUUID(), customerId: account.row.customerId, monthlyWalletPaise: amount, method, ...(method === 'test_volume' ? { testVolume: { testsPerDay: Number(tests), workingDaysPerMonth: Number(days), paisePerTest: paisePerTest! } } : {}), source: field(data, 'source').trim(), confidence: data.get('confidence') as WalletSnapshot['confidence'], asOf: field(data, 'asOf'), note: field(data, 'note').trim(), loweredReason: lower ? field(data, 'reason').trim() : null, divisions: split ? allocations as { code: string; monthlyWalletPaise: number }[] : [], expectedCurrentSnapshotId: account.current?.id ?? null } });
   }}>
@@ -161,7 +162,7 @@ function EstimateForm({ account, onSaved, onConflict, onForbidden, onLock }: { a
       </> : null}
       <label className="block">Total (₹/month)<input className={input} required inputMode="decimal" readOnly={method === 'test_volume'} value={method === 'test_volume' ? amount === null ? '' : rupees(amount) : total} onChange={event => setTotal(event.target.value)} /></label>
       {method === 'test_volume' && amount !== null ? <p className="text-sm text-sf-muted">≈ {formatPaise(amount)} / month ({Number(tests)} × {Number(days)} × {formatPaise(paisePerTest!)})</p> : null}
-      {amount === null && (method === 'test_volume' ? tests || price : total) ? <p className="text-sm text-sf-danger">{method === 'test_volume' ? 'Enter valid tests, working days and price per test.' : 'Enter rupees with up to 2 decimals.'}</p> : null}
+      {amount === null && (method === 'test_volume' ? Boolean(price) || submitted : Boolean(total)) ? <p className="text-sm text-sf-danger">{method === 'test_volume' ? 'Enter valid tests, working days and price per test.' : 'Enter rupees with up to 2 decimals.'}</p> : null}
       <details className="text-sm text-sf-muted"><summary>How to estimate</summary><ol className="space-y-2">
         <li>Ask the lab what it spends a month on reagents (Customer stated).</li>
         <li>Ask how many tests a day it runs, or judge from samples, staff and the analyser, then use Test volume.</li>

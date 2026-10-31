@@ -44,7 +44,8 @@ begin
   old_text:=$old$'batchId',l.batch_id)) from private.stockflow_economic_source_lines l$old$;
   new_text:=$new$'batchId',l.batch_id,
    'partyName',coalesce(nullif(v.evidence->>'partyName',''),nullif(v.evidence->>'supplierName',''),nullif(v.evidence->>'customerName',''),
-    (select m.name from private.stockflow_economic_ledger_masters m join private.stockflow_economic_ledger_generations g on g.company_id=m.company_id and g.catalog_version=m.source_version where g.company_id=v.company_id and m.guid=v.customer_source_id order by g.observed_at desc limit 1)),
+    case when v.customer_source_id is not null and v.kind='sale' and l.quantity=1 and l.net_sales_paise>=5000000 then
+     (select m.name from private.stockflow_economic_ledger_masters m join private.stockflow_economic_ledger_generations g on g.company_id=m.company_id and g.catalog_version=m.source_version where g.company_id=v.company_id and m.guid=v.customer_source_id order by g.observed_at desc limit 1) end),
    'usedByInstrument',exists(select 1 from private.stockflow_equipment_installations i where i.historical_sale_line_id=l.id or i.tally_key=v.company_id||':'||v.source_id||':'||l.line_key)
     or exists(select 1 from private.stockflow_economic_acquisition_links a where a.company_id=v.company_id and a.source_id=v.source_id and a.line_key=l.line_key)
     or exists(select 1 from private.stockflow_economic_instrument_billings b where b.company_id=v.company_id and b.source_id=v.source_id and b.line_key=l.line_key)

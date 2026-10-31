@@ -1259,7 +1259,7 @@
     },
     {
       "localFile": "20261102192000_instrument_rental_registration.sql",
-      "localSha256": "94708068584885dec2e17c6bd0369a6b2fa9008e580992c9fb8e2ba6a7c28a87",
+      "localSha256": "62825941d1cf1a6b4b9d48c6ed54ab58449ad31ed31e85216b8d9a90eb4c40e6",
       "remoteVersion": null,
       "remoteSha256": null,
       "status": "not_deployed"
