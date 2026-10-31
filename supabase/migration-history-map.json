@@ -1235,6 +1235,13 @@
       "remoteVersion": null,
       "remoteSha256": null,
       "status": "not_deployed"
+    },
+    {
+      "localFile": "20261102180000_customer_auto_link.sql",
+      "localSha256": "b0a041df0da6f8c4810ea59fcb545d70827cb7d80a422e3beed14019b3b5491b",
+      "remoteVersion": null,
+      "remoteSha256": null,
+      "status": "not_deployed"
     }
   ],
   "liveCheck": {
