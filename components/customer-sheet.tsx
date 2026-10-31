@@ -59,9 +59,9 @@ export function CustomerSheet({ customerId, financial, onClose, onOpenOrder, onP
     flight.current = true; setBusy(true); setError('');
     try {
       let expectedVersion = data.location?.version ?? null;
-      // The map gateway omits town-only locations. Obtain their existing write
-      // version from Accounts before upgrading one to a pin, retaining it on retry.
-      if (!data.location) {
+      // Town-only and approximate locations omit the write version. Obtain it
+      // from Accounts before upgrading to a pin, retaining it on retry.
+      if (!data.location || data.location.approximate) {
         if (pending.current) expectedVersion = (JSON.parse(pending.current.fingerprint) as { expectedVersion: number | null }).expectedVersion;
         else {
           let page = 1;
@@ -103,12 +103,14 @@ export function CustomerSheet({ customerId, financial, onClose, onOpenOrder, onP
           <header className="space-y-2"><h3 className="text-xl font-semibold">{data.name}</h3><p className="text-white/60">{[data.city, data.owner ? `Owner: ${data.owner}` : null, data.accountClass ? `Class ${data.accountClass}` : null].filter(Boolean).join(' · ')}</p>
             {financial && share !== undefined ? <><StatusChip icon={Wallet} tone={shareTone}><span className="text-base">{share === null ? 'Share unknown' : `${share / 10}% share`}</span></StatusChip><MeterBar value={share === null ? null : share / 1000} target={0.8} tone={shareTone} label="Wallet share" /></> : null}
           </header>
+          {data.location?.approximate ? <p className="text-xs text-white/60">Approx location · PIN {data.location.approximate.pinCode} · <button className="min-h-11 underline" disabled={busy} aria-expanded={pinChooser} onClick={() => setPinChooser(value => !value)}>Pin here</button> to place exactly</p> : null}
           {data.constraint ? <div className="flex items-center gap-2 text-[#EF9F27]"><ToneIcon icon={constraintIcons[data.constraint.category]} tone="warning" size="sm" /><p>Held back by: {data.constraint.label}{data.constraint.category === 'price' && !data.constraint.proven && !data.constraint.label.includes('(not proven)') ? ' (not proven)' : ''}</p></div> : null}
           <div aria-label="Customer figures" className="grid grid-cols-2 gap-2">
             {financial ? <>{data.walletPaise != null ? <Tile label="Wallet / month" value={formatPaise(data.walletPaise)} /> : null}{data.salesPaise != null ? <Tile label="Sales / month" value={formatPaise(data.salesPaise)} /> : null}{data.gapPaise != null ? <Tile label="Gap / month" value={formatPaise(data.gapPaise)} danger /> : null}</> : data.openOrders !== null ? <Tile label="Open orders" value={data.openOrders} /> : null}
             <Tile label="Last visit" value={formatLastVisit(data.lastVisit)} />
             {!financial ? <>{data.nextActionDue ? <Tile label="Next action due" value={formatActionDue(data.nextActionDue)} danger={customerMapDayDifference(data.nextActionDue) < 0} /> : null}{data.overdue !== null ? <Tile label="Overdue" value={data.overdue} danger={data.overdue > 0} /> : null}</> : null}
           </div>
+          {financial && data.wallet?.confidence && data.wallet.asOf && (data.walletPaise != null || data.salesPaise != null || data.gapPaise != null) ? <p className="text-xs text-white/60">Estimate · {data.wallet.confidence} confidence · {new Intl.DateTimeFormat('en-IN', { timeZone: 'Asia/Kolkata', day: 'numeric', month: 'short' }).format(new Date(`${data.wallet.asOf}T00:00:00+05:30`))}</p> : null}
           {data.nextAction ? <Section title="Next action"><p className="text-base">{data.nextAction.detail}</p><p>Due {formatCustomerDate(data.nextAction.dueOn)}</p>{financial ? <button className={button} onClick={() => onPlan(customerId)}>Plan</button> : data.nextAction.owned ? <button className={button} onClick={() => setCompleting(true)}>Done</button> : null}
             {completing ? <form className="space-y-2" onSubmit={async event => {
               event.preventDefault(); if (flight.current) return; flight.current = true; setBusy(true); setError('');

@@ -8,9 +8,15 @@ const tones = ['red', 'amber', 'green', 'grey'] as const;
 const meanings = ['Overdue action or stuck order', 'Needs a plan, diagnosis or decider', 'Share on target', 'No data yet'];
 const ids = tones.map((_, i) => `66111111-1111-4111-8111-11111111111${i + 1}`);
 const mapPins = tones.map((tone, index) => ({ customerId: ids[index], name: index === 0 ? name : `${tone} Lab`, lat: 17.3 + index * 0.12, lng: 76.8 + index * 0.12, tone, focus: index === 0, openOrders: index === 0 ? 2 : 0 }));
+const approxGroups = [
+  { pinCode: '585102', lat: 17.1, lng: 76.6, count: 77, tone: 'red', openOrders: 3 },
+  { pinCode: '585103', lat: 17.6, lng: 76.6, count: 10, tone: 'green', openOrders: 0 },
+  { pinCode: '585104', lat: 17.9, lng: 76.6, count: 9, tone: 'grey', openOrders: 0 },
+];
+const groupLabel = `PIN 585102, approx, 77 labs, ${meanings[0]}`;
 const base = { customerId, name, town: 'Bidar', owner: { email: 'manager@example.test' }, class: 'A', decisionMaker: { label: 'No decider known', canAddContact: true }, actions: { pin: 'place', orderCustomerId: customerId, call: 'tel:+919876543210' } };
 function fullSheet(sales = false) {
-  return { ...base, ...(sales ? {} : { sharePermille: 200, certified: true }),
+  return { ...base, ...(sales ? {} : { sharePermille: 200, certified: true, wallet: { confidence: 'medium', asOf: '2026-10-12' } }),
     tiles: { ...(sales ? { openOrders: 2, nextActionDue: '2026-11-01', overdue: 1 } : { walletPaise: 10000000, salesPaise: 2000000, gapPaise: 6000000 }), lastVisit: { visitedOn: '2026-10-29', outcome: 'met' } },
     heldBackBy: { category: 'price', label: 'Price (not proven)', priceUnproven: true },
     nextAction: { id: '99111111-1111-4111-8111-111111111111', actionType: 'visit', detail: 'Discuss the quote', dueOn: '2026-11-01', canPlan: !sales, canDone: sales },
@@ -21,7 +27,7 @@ function fullSheet(sales = false) {
     recentOrders: [{ orderId: '88111111-1111-4111-8111-111111111113', number: 'SF-099', stage: 'delivered', date: '2026-10-28T00:00:00Z', ...(sales ? {} : { valuePaise: 150000 }) }], contacts: { total: 3, champions: 1 },
   };
 }
-async function fixture(page: Page, options: { frame?: boolean; sales?: boolean; empty?: boolean; located?: boolean; townOnly?: boolean; dueOn?: string; contacts?: { total: number; champions: number } } = {}) {
+async function fixture(page: Page, options: { frame?: boolean; sales?: boolean; empty?: boolean; located?: boolean; approximate?: boolean; uncertified?: boolean; townOnly?: boolean; dueOn?: string; contacts?: { total: number; champions: number } } = {}) {
   const posts: Record<string, unknown>[] = []; const reads: URL[] = [];
   let saved = false;
   await page.clock.setFixedTime(new Date('2026-10-30T06:00:00Z'));
@@ -34,9 +40,10 @@ async function fixture(page: Page, options: { frame?: boolean; sales?: boolean; 
   });
   await page.route('**/api/customer-map**', route => {
     const url = new URL(route.request().url()); reads.push(url);
-    if (url.searchParams.has('customer')) return route.fulfill({ json: { ...(options.empty ? base : fullSheet(options.sales)), ...(options.dueOn ? { tiles: { ...fullSheet(options.sales).tiles, nextActionDue: options.dueOn } } : {}), ...(options.contacts ? { contacts: options.contacts } : {}), ...(options.located || saved ? { location: { precision: 'pin', lat: 17.3, lng: 76.8, version: saved ? 3 : 2 } } : {}) } });
+    if (url.searchParams.has('customer')) return route.fulfill({ json: { ...(options.empty ? base : fullSheet(options.sales)), ...(options.dueOn ? { tiles: { ...fullSheet(options.sales).tiles, nextActionDue: options.dueOn } } : {}), ...(options.contacts ? { contacts: options.contacts } : {}), ...(options.located || saved ? { location: { precision: 'pin', lat: 17.3, lng: 76.8, version: saved ? 3 : 2 } } : options.approximate ? { location: { approximate: { pinCode: '585102' } } } : {}) } });
+    if (url.searchParams.has('pin')) return route.fulfill({ json: { page: Number(url.searchParams.get('page')), pageSize: 20, total: 77, rows: Array.from({ length: Number(url.searchParams.get('page')) === 4 ? 17 : 20 }, (_, i) => ({ customerId: i === 0 ? customerId : `pin-lab-${i}`, name: i === 0 ? url.searchParams.get('q') ? 'PIN search match Lab' : name : `PIN Lab ${i}`, city: 'Kalaburagi', tone: 'red' })) } });
     if (url.searchParams.has('notOnMap')) return route.fulfill({ json: { page: Number(url.searchParams.get('page')), pageSize: 20, total: 21, rows: [{ customerId, name: url.searchParams.get('q') ? 'Search match Lab' : name, city: 'Bidar' }] } });
-    return route.fulfill({ json: { coverage: { placed: 4, total: 25 }, pins: mapPins, notOnMapCount: 21 } });
+    return route.fulfill({ json: { coverage: { placed: 4, approx: 96, total: 121 }, pins: mapPins, approxGroups, notOnMapCount: 21, freshness: { calculatedAt: '2026-10-30T05:12:00Z', certified: !options.uncertified, ...(options.sales ? {} : { walletAsOf: '2026-10-12' }) } } });
   });
   if (options.frame) {
     // Same frame startup mocks as today.spec.ts.
@@ -53,7 +60,7 @@ async function fixture(page: Page, options: { frame?: boolean; sales?: boolean; 
     await page.goto('/?view=accounts');
   }
   await page.getByRole('button', { name: 'Map', exact: true }).click();
-  await expect(page.getByText('4 of 25 placed', { exact: true })).toBeVisible();
+  await expect(page.getByLabel('Map coverage', { exact: true })).toHaveText('4 placed·96 approx·21 not on map');
   return { posts, reads };
 }
 async function openSheet(page: Page) {
@@ -95,6 +102,114 @@ async function geolocation(page: Page, mode: 'success' | 'outside' | 'denied') {
 
 for (const width of [375, 1280]) test.describe(`Customer map at ${width}px`, () => {
   test.use({ viewport: { width, height: 812 } });
+  test('PIN groups render dashed circles, counts, accessible labels and the existing order badge', async ({ page }) => {
+    await fixture(page);
+    await page.getByRole('button', { name: 'Wallet', exact: true }).click();
+    for (const group of approxGroups) {
+      const label = `PIN ${group.pinCode}, approx, ${group.count} labs, ${meanings[tones.indexOf(group.tone as typeof tones[number])]}`;
+      const marker = page.getByRole('button', { name: label, exact: true });
+      await expect(marker).toBeVisible();
+      await expect(marker).toHaveAttribute('aria-label', label);
+      await expect(marker).toHaveAttribute('title', label);
+      await expect(marker.locator(':scope > span > span').nth(1)).toHaveText(String(group.count));
+      const circle = marker.locator(':scope > span > span').first();
+      expect(await circle.evaluate(el => ({ width: (el as HTMLElement).style.width, border: (el as HTMLElement).style.borderStyle, radius: (el as HTMLElement).style.borderRadius, font: getComputedStyle(el.nextElementSibling!).fontSize }))).toEqual({ width: group.count >= 50 ? '40px' : group.count >= 10 ? '34px' : '28px', border: 'dashed', radius: '50%', font: '12px' });
+    }
+    await expect(page.getByRole('button', { name: groupLabel, exact: true }).locator(':scope > span > span').last()).toHaveText('3');
+    await expect(page.getByText('Approx (PIN centre)', { exact: true })).toBeVisible();
+    await expect(page.locator('.leaflet-control-attribution')).toContainText('PIN locations: India Post via data.gov.in (GODL-India)');
+    expect(await page.evaluate(() => document.documentElement.scrollWidth <= innerWidth)).toBe(true);
+  });
+  test('PIN list searches, requests page 2, opens the approximate sheet and reuses the Pin here chooser', async ({ page }) => {
+    const { reads } = await fixture(page, { approximate: true });
+    await page.getByRole('button', { name: 'Wallet', exact: true }).click();
+    await page.getByRole('button', { name: groupLabel, exact: true }).click();
+    const list = page.getByRole('region', { name: 'PIN 585102 · approx · 77 labs', exact: true });
+    await expect(list.getByRole('heading', { name: 'PIN 585102 · approx · 77 labs' })).toBeVisible();
+    await expect(list.getByRole('listitem')).toHaveCount(20);
+    expect(reads.filter(url => url.searchParams.has('pin')).at(-1)?.search).toBe('?pin=585102&page=1&q=');
+    await list.getByLabel('Search PIN customers').fill('Bidar & Lab');
+    await expect.poll(() => reads.filter(url => url.searchParams.has('pin')).at(-1)?.search).toBe('?pin=585102&page=1&q=Bidar+%26+Lab');
+    await expect(list.getByRole('button', { name: /^PIN search match Lab · Kalaburagi/ })).toBeVisible();
+    await list.getByRole('button', { name: 'Next', exact: true }).click();
+    await expect.poll(() => reads.filter(url => url.searchParams.has('pin')).at(-1)?.search).toBe('?pin=585102&page=2&q=Bidar+%26+Lab');
+    await list.getByRole('button', { name: /^PIN search match Lab · Kalaburagi/ }).click();
+    const sheet = page.getByRole('dialog', { name: 'Customer details' });
+    await expect(sheet.getByRole('heading', { name, exact: true })).toBeVisible();
+    const approx = sheet.getByText('Approx location · PIN 585102 ·', { exact: false });
+    await expect(approx).toHaveText('Approx location · PIN 585102 · Pin here to place exactly');
+    await approx.getByRole('button', { name: 'Pin here', exact: true }).click();
+    await expect(sheet.getByRole('group', { name: 'Pin options' })).toBeVisible();
+    await expect(sheet.getByRole('button', { name: 'Use my location', exact: true })).toBeVisible();
+    await expect(sheet.getByRole('button', { name: 'Paste a map link or enter coordinates', exact: true })).toBeVisible();
+    expect(await sheet.evaluate(el => el.scrollWidth <= el.clientWidth)).toBe(true);
+    expect(await page.evaluate(() => document.documentElement.scrollWidth <= innerWidth)).toBe(true);
+  });
+  test('tone chips filter PIN groups without inventing member counts for Orders', async ({ page }) => {
+    await fixture(page);
+    await expect(page.locator('.customer-map-group')).toHaveCount(1);
+    await expect(page.getByRole('button', { name: groupLabel, exact: true })).toHaveCount(0);
+    await page.getByRole('button', { name: 'Actions', exact: true }).click();
+    await expect(page.locator('.customer-map-group')).toHaveCount(1);
+    await expect(page.getByRole('button', { name: groupLabel, exact: true })).toBeVisible();
+    await page.getByRole('button', { name: 'No data', exact: true }).click();
+    await expect(page.locator('.customer-map-group')).toHaveCount(1);
+    await expect(page.getByRole('button', { name: groupLabel, exact: true })).toHaveCount(0);
+    await page.getByRole('button', { name: 'Orders', exact: true }).click();
+    await expect(page.locator('.customer-map-group')).toHaveCount(3);
+    await expect(page.getByRole('button', { name: groupLabel, exact: true }).locator(':scope > span > span').nth(1)).toHaveText('77');
+  });
+  test('coverage and admin freshness fit within the previous phone header plus one line', async ({ page }) => {
+    await fixture(page);
+    await expect(page.getByLabel('Map freshness', { exact: true })).toHaveText('Updated 10:42 · Wallet as of 12 Oct');
+    const header = page.getByRole('region', { name: 'Customer map', exact: true }).locator(':scope > header');
+    if (width === 375) {
+      // Measure the original header with its original fixture at the same available width.
+      const heights = await header.evaluate(el => {
+        const original = el.cloneNode(false) as HTMLElement;
+        original.className = 'flex flex-wrap items-center gap-2 rounded-xl bg-[#1b2124] p-3';
+        const back = el.querySelector('button')!.cloneNode(true);
+        const heading = el.querySelector('h3')!.cloneNode(true);
+        const coverage = document.createElement('span'); coverage.className = 'text-base tabular-nums'; coverage.textContent = '4 of 25 placed';
+        const unplaced = document.createElement('button'); unplaced.className = (back as HTMLElement).className; unplaced.textContent = 'Not on map (21)';
+        for (const child of [back, heading, coverage, unplaced, el.querySelector('[aria-label="Map filters"]')!.cloneNode(true)]) original.appendChild(child);
+        el.parentElement!.appendChild(original);
+        const result = { current: el.getBoundingClientRect().height, previous: original.getBoundingClientRect().height };
+        original.remove(); return result;
+      });
+      expect(heights.current).toBeLessThanOrEqual(heights.previous + 16);
+    }
+    const freshness = page.getByLabel('Map freshness', { exact: true });
+    expect(await freshness.evaluate(el => el.getBoundingClientRect().height)).toBe(16);
+    expect(await page.evaluate(() => document.documentElement.scrollWidth <= innerWidth)).toBe(true);
+    await page.getByRole('button', { name: '21 not on map', exact: true }).click();
+    await expect(page.getByRole('region', { name: 'Not on map', exact: true })).toBeVisible();
+    const sheet = await openSheet(page);
+    await expect(page.getByRole('region', { name: 'Not on map', exact: true })).toHaveCount(0);
+    await expect(sheet.getByText('Estimate · medium confidence · 12 Oct', { exact: true })).toBeVisible();
+  });
+  test('uncertified map freshness says Wallet not certified', async ({ page }) => {
+    await fixture(page, { uncertified: true });
+    await expect(page.getByLabel('Map freshness', { exact: true })).toHaveText('Updated 10:42 · Wallet not certified');
+  });
+  test('sales freshness shows only Updated and the sheet omits wallet estimate metadata', async ({ page }) => {
+    await fixture(page, { sales: true, approximate: true });
+    await expect(page.getByLabel('Map freshness', { exact: true })).toHaveText('Updated 10:42');
+    await expect(page.getByRole('region', { name: 'Customer map', exact: true }).locator(':scope > header')).not.toContainText(/wallet/i);
+    const sheet = await openSheet(page);
+    await expect(sheet).not.toContainText(/Estimate|confidence|Wallet as of|Wallet not certified/i);
+    await expect(sheet.getByText('Approx location · PIN 585102 ·', { exact: false })).toBeVisible();
+  });
+  test('approximate Pin here preserves the Accounts town version when placing exactly', async ({ page }) => {
+    await geolocation(page, 'success');
+    const { posts } = await fixture(page, { approximate: true, townOnly: true }); const sheet = await openSheet(page);
+    await sheet.getByText('Approx location · PIN 585102 ·', { exact: false }).getByRole('button', { name: 'Pin here', exact: true }).click();
+    await sheet.getByRole('button', { name: 'Use my location', exact: true }).click();
+    await sheet.getByRole('button', { name: 'Confirm pin', exact: true }).click();
+    await expect.poll(() => posts[0]?.expectedVersion).toBe(5);
+    await expect(sheet.getByText('Approx location · PIN 585102 ·', { exact: false })).toHaveCount(0);
+    await expect(sheet.getByRole('button', { name: 'Move pin…', exact: true })).toBeVisible();
+  });
   test('Order preselects the lab', async ({ page }) => {
     const { reads } = await mockOrderCapture(page);
     await fixture(page, { frame: true }); const sheet = await openSheet(page);
@@ -286,7 +401,7 @@ for (const width of [375, 1280]) test.describe(`Customer map at ${width}px`, () 
   });
   test('Not on map searches, paginates and opens the customer sheet', async ({ page }) => {
     const { reads } = await fixture(page);
-    await page.getByRole('button', { name: 'Not on map (21)', exact: true }).click();
+    await page.getByRole('button', { name: '21 not on map', exact: true }).click();
     const list = page.getByRole('region', { name: 'Not on map', exact: true });
     await list.getByRole('button', { name: 'Next', exact: true }).click();
     await expect.poll(() => reads.filter(url => url.searchParams.has('notOnMap')).at(-1)?.searchParams.get('page')).toBe('2');
