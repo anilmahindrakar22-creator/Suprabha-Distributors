@@ -142,6 +142,13 @@ begin
   or (v_data#>>'{coverage,total}')::bigint<>(v_before#>>'{coverage,total}')::bigint+33
   or (v_data#>>'{coverage,placed}')::bigint<>(v_before#>>'{coverage,placed}')::bigint+9
   or (v_data->>'notOnMapCount')::bigint<>(v_before->>'notOnMapCount')::bigint+24 then raise exception 'M1 bounds or coverage';end if;
+ perform pg_temp.cmap_read('get_map_pins','{"south":15.4,"west":75.0,"north":18.6,"east":77.9}');
+ raise notice 'PASS M1 bbox: exact MARKET_AREA (15.4, 75.0, 18.6, 77.9) accepted';
+ perform pg_temp.cmap_read('get_map_pins','{"south":14,"west":74,"north":18,"east":78}');
+ raise notice 'PASS M1 bbox: exactly 4 degrees in both dimensions accepted';
+ perform pg_temp.cmap_error('get_map_pins','{"south":14,"west":75,"north":18.01,"east":77}','22023');
+ perform pg_temp.cmap_error('get_map_pins','{"south":16,"west":74,"north":18,"east":78.01}','22023');
+ raise notice 'PASS M1 bbox: 4.01-degree latitude and longitude boxes rejected with 22023';
  v_data:=pg_temp.cmap_read('get_not_on_map','{"page":1,"query":"CMAP-READ Lab"}');
  v_other:=pg_temp.cmap_read('get_not_on_map','{"page":2,"query":"CMAP-READ Lab"}');
  if v_data->>'total'<>'24' or jsonb_array_length(v_data->'rows')<>20 or jsonb_array_length(v_other->'rows')<>4
@@ -257,7 +264,7 @@ begin
 
  -- M4: gateway validation, membership and least-privilege grants.
  for v_bad in select value from jsonb_array_elements('[{},null,[],{"south":"16","west":76,"north":18,"east":78},
-  {"south":16,"west":76,"north":20,"east":78},{"south":16,"west":76,"north":18,"east":80},
+   {"south":16,"west":76,"north":20.01,"east":78},{"south":16,"west":76,"north":18,"east":80.01},
   {"south":18,"west":76,"north":16,"east":78},{"south":16,"west":78,"north":18,"east":76},
   {"south":91,"west":76,"north":92,"east":78},{"south":16,"west":181,"north":18,"east":182},
   {"south":16,"west":76,"north":18,"east":78,"extra":true}]'::jsonb) loop

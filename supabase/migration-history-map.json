@@ -1217,7 +1217,7 @@
     },
     {
       "localFile": "20261102150000_pin_placement_gateway.sql",
-      "localSha256": "189d330e1d2ee253865fa0c3a422c20289f39c24e5442c055346bbc2f29b909a",
+      "localSha256": "a0ead62b47d4fb1f746303cdb7ff46ebc6dd692b354d28957efc7afa085bf4ee",
       "remoteVersion": null,
       "remoteSha256": null,
       "status": "not_deployed"

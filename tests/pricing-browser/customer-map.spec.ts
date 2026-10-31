@@ -131,6 +131,19 @@ async function checkinFixture(page: Page, options: { sales?: boolean; result?: t
 
 for (const width of [375, 1280]) test.describe(`Customer map at ${width}px`, () => {
   test.use({ viewport: { width, height: 812 } });
+  test('initial load requests a bbox within 4° without a Zoom in message', async ({ page }) => {
+    const { reads } = await fixture(page);
+    const first = reads.find(url => url.pathname === '/api/customer-map' && url.searchParams.has('bbox'));
+    expect(first, 'initial map load must request customer pins').toBeDefined();
+    const bbox = first!.searchParams.get('bbox')!.split(',').map(Number);
+    expect(bbox).toHaveLength(4);
+    const [south, west, north, east] = bbox;
+    expect(north - south).toBeGreaterThan(0);
+    expect(north - south).toBeLessThanOrEqual(4);
+    expect(east - west).toBeGreaterThan(0);
+    expect(east - west).toBeLessThanOrEqual(4);
+    await expect(page.getByText(/Zoom in to load customers/)).toHaveCount(0);
+  });
   test.afterEach(async ({ page }) => {
     expect(await page.evaluate(() => (window as unknown as { gpsWatches?: number }).gpsWatches ?? 0)).toBe(0);
   });

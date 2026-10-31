@@ -167,7 +167,7 @@ begin
   v_south:=(p_payload->>'south')::numeric;v_west:=(p_payload->>'west')::numeric;
   v_north:=(p_payload->>'north')::numeric;v_east:=(p_payload->>'east')::numeric;
   if v_south not between -90 and 90 or v_north not between -90 and 90 or v_west not between -180 and 180 or v_east not between -180 and 180
-   or v_north<=v_south or v_east<=v_west or v_north-v_south>3 or v_east-v_west>3 then
+   or v_north<=v_south or v_east<=v_west or v_north-v_south>4 or v_east-v_west>4 then
    raise exception 'Invalid bounding box' using errcode='22023';end if;
   v_wallet:=private.stockflow_wallet_read(v_today);
   v_deadlines:=private.stockflow_customer_map_deadlines(p_gateway_key,v_actor,v_financial,v_today);

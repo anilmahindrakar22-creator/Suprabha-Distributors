@@ -101,3 +101,8 @@ D-06 affects tile hosting if self-hosting is chosen.
 
 ### Colours for sales and operations: kept (Claude recommendation, 31 Oct; owner may override)
 Sales and operations see marker **colours** that are partly wallet-derived (green means share ≥ 80%; a larger marker means a Focus lab), but never figures (`CUSTOMER-MAP-DESIGN` §82). Kept: the colours drive where staff act, and no figures are sent. The tone function keeps this switchable in one place if it is ever tightened.
+
+### Build differences from the design docs (recorded 31 Oct; not fixed)
+- **No default filter chip.** `CUSTOMER-MAP` §2 says Wallet is the administrator default. The build opens with no chip selected, so every pin shows, and a tapped chip shows as filled.
+- **Group counts don't narrow under a filter.** `PIN-PLACEMENT` §5 says they should. Groups carry no per-member data, so a group is hidden or shown by its aggregate tone, and its count stays the full PIN count.
+- **The map box limit was raised from 3° to 4°** so the whole market area (3.2° × 2.9°) loads in the default view.

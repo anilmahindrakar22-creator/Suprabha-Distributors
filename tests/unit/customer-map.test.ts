@@ -1,4 +1,5 @@
 import { describe, expect, it, vi } from 'vitest';
+import { MARKET_AREA } from '../../lib/account-types';
 import { customerMapDayDifference, formatActionDue, formatBoundingBox, formatCustomerDate, formatLastVisit, mapColours, parseCustomerSheet, parseMapPins, parseNotOnMap, parsePinLabs, toneMeanings } from '../../lib/customer-map';
 
 const pin = { customerId: '66111111-1111-4111-8111-111111111111', name: 'Example Lab', lat: 17.3, lng: 76.8, tone: 'red', focus: true, openOrders: 2 };
@@ -144,5 +145,12 @@ describe('customer map helpers', () => {
     for (const tone of Object.keys(mapColours) as (keyof typeof mapColours)[]) expect(toneMeanings[tone].length).toBeGreaterThan(5);
   });
   it('formats south, west, north, east to six decimal places', () => { expect(formatBoundingBox({ south: 16.1, west: 75.1234567, north: 18.6, east: 77.9 })).toBe('16.100000,75.123457,18.600000,77.900000'); });
-  it.each([{ south: NaN, west: 75, north: 18, east: 77 }, { south: 16, west: 75, north: 16, east: 77 }, { south: 16, west: 78, north: 18, east: 77 }, { south: -91, west: 75, north: -89, east: 77 }, { south: 14, west: 75, north: 18, east: 77 }, { south: 16, west: 74, north: 18, east: 78 }])('rejects invalid or oversized bounds %#', bounds => { expect(() => formatBoundingBox(bounds)).toThrow(); });
+  it('accepts and formats the exact MARKET_AREA on initial load', () => {
+    expect(formatBoundingBox({ south: MARKET_AREA.minLatitude, west: MARKET_AREA.minLongitude, north: MARKET_AREA.maxLatitude, east: MARKET_AREA.maxLongitude }))
+      .toBe('15.400000,75.000000,18.600000,77.900000');
+  });
+  it('accepts a box exactly 4° across in both dimensions', () => {
+    expect(formatBoundingBox({ south: 14, west: 74, north: 18, east: 78 })).toBe('14.000000,74.000000,18.000000,78.000000');
+  });
+  it.each([{ south: NaN, west: 75, north: 18, east: 77 }, { south: 16, west: 75, north: 16, east: 77 }, { south: 16, west: 78, north: 18, east: 77 }, { south: -91, west: 75, north: -89, east: 77 }, { south: 14, west: 75, north: 18.01, east: 77 }, { south: 16, west: 74, north: 18, east: 78.01 }])('rejects invalid or oversized bounds %#', bounds => { expect(() => formatBoundingBox(bounds)).toThrow(); });
 });

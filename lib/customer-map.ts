@@ -148,7 +148,7 @@ export function parseCustomerSheet(value: unknown): CustomerSheetData {
 export type MapBounds = { south: number; west: number; north: number; east: number };
 export function formatBoundingBox(bounds: MapBounds): string {
   const south = coordinate(bounds.south, 90), north = coordinate(bounds.north, 90), west = coordinate(bounds.west, 180), east = coordinate(bounds.east, 180);
-  if (south >= north || west >= east || north - south > 3 || east - west > 3) throw new Error('Zoom in to load customers (at most 3° across).');
+  if (south >= north || west >= east || north - south > 4 || east - west > 4) throw new Error('Zoom in to load customers (at most 4° across).');
   return [south, west, north, east].map(n => n.toFixed(6)).join(',');
 }
 export async function readCustomerMap<T>(url: string, parse: (value: unknown) => T, signal?: AbortSignal): Promise<T> {
