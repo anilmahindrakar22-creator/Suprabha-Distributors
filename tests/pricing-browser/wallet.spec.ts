@@ -8,7 +8,7 @@ const policy = { version: 1, walletShareTargetBps: 8000, focusBandBps: 8000, sta
 const coverage = { certified: true, windowFrom: '2026-07-01', windowTo: '2026-09-30', windowLabel: 'Jul–Sep 2026', reason: null };
 const row = { customerId, name: 'Example Diagnostic Laboratory', city: 'Bidar', walletPaise: 10000000, salesPaise: 2000000, sharePermille: 200, untappedPaise: 8000000, captureGapPaise: 6000000, confidence: 'high' as const, asOf: '2026-10-01', verified: false, stale: false, belowSales: false, inFocusBand: true };
 const current = { id: snapshotId, monthlyWalletPaise: row.walletPaise, testVolume: null, method: 'customer_stated' as const, source: 'Customer discussion', confidence: 'high' as const, asOf: row.asOf, note: 'Initial estimate', loweredReason: null, enteredBy: 'manager@example.test', enteredAt: '2026-10-01T00:00:00Z', verifiedBy: null, divisions: [{ code: 'BIOCHEM', name: 'Biochemistry', monthlyWalletPaise: 4000000 }], unallocatedPaise: 6000000 };
-type Options = { certified?: boolean; canAssign?: boolean; failure?: 'conflict' | 'network' | 'forbidden'; };
+type Options = { certified?: boolean; canAssign?: boolean; failure?: 'conflict' | 'network' | 'forbidden'; labSize?: { testsPerDay: number; basis: 'lab_said' | 'observed'; reportedBy: string; reportedOn: string; statedMonthlySpendPaise?: number; spendReportedOn?: string } | null };
 
 async function fixture(page: Page, options: Options = {}) {
   const posts: WalletCommand[] = [];
@@ -40,7 +40,7 @@ async function fixture(page: Page, options: Options = {}) {
     const updated = saved && latest?.action === 'record_wallet_snapshot' ? { ...row, walletPaise: latest.payload.monthlyWalletPaise } : row;
     const visibleRow = certified ? updated : { ...updated, salesPaise: null, sharePermille: null, captureGapPaise: null, untappedPaise: null, inFocusBand: null };
     if (url.searchParams.get('action') === 'get_wallet_account') {
-      const account: WalletAccount = { policy, coverage: { ...coverage, certified }, row: visibleRow, current: { ...current, ...(saved && latest?.action === 'record_wallet_snapshot' ? { method: latest.payload.method, testVolume: latest.payload.testVolume ?? null } : {}), monthlyWalletPaise: updated.walletPaise }, history: [current], divisions: [{ code: 'BIOCHEM', name: 'Biochemistry' }, { code: 'HAEM', name: 'Haematology' }] };
+      const account: WalletAccount = { policy, coverage: { ...coverage, certified }, row: visibleRow, current: { ...current, ...(saved && latest?.action === 'record_wallet_snapshot' ? { method: latest.payload.method, testVolume: latest.payload.testVolume ?? null } : {}), monthlyWalletPaise: updated.walletPaise }, history: [current], divisions: [{ code: 'BIOCHEM', name: 'Biochemistry' }, { code: 'HAEM', name: 'Haematology' }], labSize: options.labSize ? { ...options.labSize, statedMonthlySpendPaise: options.labSize.statedMonthlySpendPaise ?? null } : null };
       return route.fulfill({ json: account });
     }
     const workspace: WalletWorkspace = { policy: { ...policy, version }, coverage: { ...coverage, certified }, view: url.searchParams.get('view') as WalletWorkspace['view'], page: Number(url.searchParams.get('page')), pageSize: 50, total: 51, rows: [visibleRow, { ...visibleRow, customerId: '77111111-1111-4111-8111-111111111111', name: 'No estimate lab', walletPaise: null, sharePermille: null, confidence: null, asOf: null }], summary: { focusCount: certified ? 8 : null, focusGapPaise: certified ? 42000000 : null, estimatedAccounts: 9, accountsWithSales: certified ? 112 : null, unlinkedSalesPaise: certified ? 1234500 : null, unlinkedLedgers: certified ? 3 : null } };
@@ -99,6 +99,22 @@ for (const width of [375, 1280]) test.describe(`Wallet at ${width}px`, () => {
     await form.getByRole('button', { name: 'Save estimate', exact: true }).click();
     await expect.poll(() => posts.length).toBe(1);
     expect(posts[0].payload).not.toHaveProperty('testVolume');
+  });
+  test('visit test volume prefills tests/day without filling a total', async ({ page }) => {
+    await fixture(page, { labSize: { testsPerDay: 80, basis: 'lab_said', reportedBy: 'Ravi', reportedOn: '2026-11-03' } });
+    const form = await openForm(page);
+    await expect(form.getByText('From visit: about 80 tests/day · Ravi · 3 Nov', { exact: true })).toBeVisible();
+    await form.getByRole('combobox', { name: /^Method/ }).selectOption('test_volume');
+    await expect(form.getByLabel('Tests per day (approx)', { exact: true })).toHaveValue('80');
+    await expect(form.getByLabel('Total (₹/month)', { exact: true })).toHaveValue('');
+  });
+  test('Use applies the lab-stated monthly spend as the customer-stated total', async ({ page }) => {
+    await fixture(page, { labSize: { testsPerDay: 80, basis: 'lab_said', reportedBy: 'Ravi', reportedOn: '2026-11-03', statedMonthlySpendPaise: 5000000, spendReportedOn: '2026-11-03' } });
+    const form = await openForm(page);
+    await expect(form.getByText('Lab said ₹50,000/month', { exact: false })).toBeVisible();
+    await form.getByRole('button', { name: 'Use', exact: true }).click();
+    await expect(form.getByRole('combobox', { name: /^Method/ })).toHaveValue('customer_stated');
+    await expect(form.getByLabel('Total (₹/month)', { exact: true })).toHaveValue('50000.00');
   });
   test('certified header, account figures, and no horizontal overflow', async ({ page }, testInfo) => {
     await fixture(page);

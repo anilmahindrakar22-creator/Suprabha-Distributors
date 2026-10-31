@@ -6,7 +6,7 @@ import { MeterBar, StatusChip, ToneIcon } from '@/components/ui/glance';
 import { constraintIcons } from '@/lib/glance-icons';
 import { orderStageStyle } from '@/components/order-list';
 import { isInsideMarketArea, MARKET_AREA } from '@/lib/account-types';
-import { formatPaise } from '@/lib/wallet-format';
+import { formatPaise, rupeesToPaise } from '@/lib/wallet-format';
 import { checkinMessage, parseCheckinResult, parseSheetCheckin } from '@/lib/checkin';
 import type { CheckinResult, VisitCheckin } from '@/lib/account-types';
 import { customerMapDayDifference, formatActionDue, formatCustomerDate, formatLastVisit, parseCustomerSheet, readCustomerMap, type CustomerSheetData, type SheetOrder } from '@/lib/customer-map';
@@ -36,6 +36,8 @@ export function CustomerSheet({ customerId, financial, onClose, onOpenOrder, onP
   const [moving, setMoving] = useState(false); const [completing, setCompleting] = useState(false);
   const [revision, setRevision] = useState(0);
   const pending = useRef<{ fingerprint: string; idempotencyKey: string } | null>(null);
+  const labPending = useRef<{ fingerprint: string; idempotencyKey: string } | null>(null);
+  const [editingLab, setEditingLab] = useState(false);
   const flight = useRef(false); const alive = useRef(true);
   useEffect(() => { if (manual) manualInput.current?.focus(); }, [manual]);
   useEffect(() => { if (placing) dialog.current?.close(); else dialog.current?.showModal(); }, [placing]);
@@ -170,6 +172,41 @@ export function CustomerSheet({ customerId, financial, onClose, onOpenOrder, onP
             {data.route.length ? <p className="flex flex-wrap items-center gap-1">Reach via {data.route.map((person, i) => <span key={`${person.name}-${i}`}>{i ? ' → ' : ''}<StatusChip icon={person.decider ? Crown : User} tone={person.champion ? 'success' : 'info'}>{person.decider ? <strong>{person.name}</strong> : person.name}{person.champion ? ' · Champion' : ''}</StatusChip></span>)}</p> : null}
           </Section>
 {data.instruments.ours.length + data.instruments.theirs.length > 0 ? <Section title="Instruments">{(['ours', 'theirs'] as const).map(kind => data.instruments[kind].length ? <div key={kind} className="space-y-2"><p>{kind === 'ours' ? 'Ours' : 'Theirs'}</p>{data.instruments[kind].slice(0, 3).map((item, index) => <div key={index} className="space-y-1 rounded-xl bg-sf-soft-0 p-3"><div className="flex items-center gap-2"><ToneIcon icon={Microscope} tone="info" size="sm" /><span className="text-base">{item.name}</span></div>{item.placedOn ? <p>Placed {formatCustomerDate(item.placedOn)}</p> : null}{item.serial ? <p>Serial {item.serial}</p> : null}{financial && item.payback ? <StatusChip icon={Wallet} tone={item.payback === 'paying_back' ? 'success' : item.payback === 'behind' ? 'danger' : 'neutral'}>{item.payback === 'paying_back' ? 'Paying back' : item.payback === 'behind' ? 'Behind' : 'Awaiting data'}</StatusChip> : null}{item.closedSystem ? <p>Closed system</p> : null}{item.lockInDays != null ? <StatusChip icon={Lock} tone={item.lockInDays < 0 ? 'danger' : 'warning'}><span className="text-base">{item.lockInDays < 0 ? `Ended ${Math.abs(item.lockInDays)} days ago` : `${item.lockInDays} days left`}</span></StatusChip> : null}</div>)}{data.instruments[kind].length > 3 ? <p>+{data.instruments[kind].length - 3} more</p> : null}</div> : null)}{data.instruments.moreCount > 0 ? <p>+{data.instruments.moreCount} more</p> : null}</Section> : null}
+          <Section title="Lab size">
+            {data.labSize ? <><p className="text-base">About {data.labSize.testsPerDay} tests/day · {data.labSize.basis === 'lab_said' ? 'Lab said' : 'My estimate'} · {formatCustomerDate(data.labSize.reportedOn)}</p>{financial && data.labSize.statedMonthlySpendPaise != null ? <p className="text-sf-muted">Lab said {formatPaise(data.labSize.statedMonthlySpendPaise)}/month · {formatCustomerDate(data.labSize.spendReportedOn!)}</p> : null}</> : null}
+            {!editingLab ? <button className="min-h-11 text-sf-muted underline" disabled={busy} onClick={() => setEditingLab(true)}>{data.labSize ? 'Update tests/day' : 'Add tests/day'}</button> : <>
+              <p className="text-sf-muted">Ask: how many tests a day? What do you spend on reagents a month?</p>
+              <form aria-label="Lab size" className="min-w-0 space-y-2" onSubmit={async event => {
+                event.preventDefault(); if (flight.current) return;
+                const form = new FormData(event.currentTarget);
+                const spendText = String(form.get('spend') ?? '').trim();
+                const spend = spendText ? rupeesToPaise(spendText) : null;
+                const tests = Number(form.get('testsPerDay'));
+                const note = String(form.get('note') ?? '').trim();
+                if (!Number.isInteger(tests) || tests < 1 || tests > 100000 || (spendText && spend === null) || (note && note.length < 3)) { setError('Enter valid tests, spend and a note of at least 3 characters, if provided.'); return; }
+                const body = { action: 'record_lab_size', customerId, testsPerDay: tests, basis: String(form.get('basis')), statedMonthlySpendPaise: spend, note: note || null };
+                const fingerprint = JSON.stringify(body);
+                if (labPending.current?.fingerprint !== fingerprint) labPending.current = { fingerprint, idempotencyKey: crypto.randomUUID() };
+                flight.current = true; setBusy(true); setError('');
+                try {
+                  const response = await fetch('/api/accounts', { method: 'POST', headers: { 'content-type': 'application/json' }, body: JSON.stringify({ ...body, idempotencyKey: labPending.current.idempotencyKey }) });
+                  if (!response.ok) { if (response.status < 500 && response.status !== 408 && response.status !== 429) labPending.current = null; throw new Error('Lab size save could not be confirmed. Retry the same save.'); }
+                  const result = await response.json() as { ok?: boolean; reportId?: string };
+                  if (result.ok !== true || !result.reportId) throw new Error('Lab size save could not be confirmed. Retry the same save.');
+                  labPending.current = null; setEditingLab(false); setRevision(n => n + 1);
+                } catch (failure) { setError(failure instanceof Error ? failure.message : 'Lab size save could not be confirmed. Retry the same save.'); }
+                finally { flight.current = false; if (alive.current) setBusy(false); }
+              }}>
+                <fieldset disabled={busy} className="min-w-0 space-y-2">
+                  <label className="block">Tests per day<input name="testsPerDay" className={`${input} min-w-0`} required type="number" min="1" max="100000" step="1" inputMode="numeric" defaultValue={data.labSize?.testsPerDay} /></label>
+                  <fieldset><legend>How do you know?</legend><div className="flex flex-wrap gap-4"><label className="flex min-h-11 items-center gap-2"><input type="radio" name="basis" value="lab_said" defaultChecked={!data.labSize || data.labSize.basis === 'lab_said'} />Lab said</label><label className="flex min-h-11 items-center gap-2"><input type="radio" name="basis" value="observed" defaultChecked={data.labSize?.basis === 'observed'} />My estimate</label></div></fieldset>
+                  <label className="block">Lab&apos;s monthly reagent spend (₹)<input name="spend" aria-label="Lab's monthly reagent spend (₹)" className={`${input} min-w-0`} inputMode="decimal" /><span className="text-sf-muted">only if they tell you</span></label>
+                  <label className="block">Note<textarea name="note" className={`${input} min-w-0`} maxLength={500} /></label>
+                  <button className="min-h-11 rounded-xl bg-sf-brand px-4 text-sm font-bold text-white disabled:opacity-50" disabled={busy}>Save</button>
+                </fieldset>
+              </form>
+            </>}
+          </Section>
           {data.openWork.length ? <Section title="Open work">{orders(data.openWork)}</Section> : null}
           {data.recentOrders.length ? <Section title="Recent orders">{orders(data.recentOrders)}</Section> : null}
           {data.contacts.count > 0 ? <Section title="Contacts"><button className={button} onClick={() => onContacts(customerId, data.name)}>{data.contacts.count} {data.contacts.count === 1 ? 'contact' : 'contacts'} · {data.contacts.champions} {data.contacts.champions === 1 ? 'champion' : 'champions'}</button></Section> : null}

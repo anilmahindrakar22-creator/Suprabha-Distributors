@@ -28,6 +28,7 @@ export type GatewayAction =
   | 'assign_account'
   | 'set_location'
   | 'check_in'
+  | 'record_lab_size'
   | 'log_visit'
   | 'set_class_policy'
   | 'get_instrument_economics'

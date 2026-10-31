@@ -1,4 +1,5 @@
 import { calculateTestVolume } from '@/lib/wallet-test-volume';
+import type { LabSize } from '@/lib/customer-map';
 
 export type WalletTestVolume = { testsPerDay: number; workingDaysPerMonth: number; paisePerTest: number };
 export type WalletMethod = 'customer_stated' | 'test_volume' | 'manager_estimate';
@@ -18,7 +19,7 @@ export type WalletWorkspace = {
   summary: { focusCount: number | null; focusGapPaise: number | null; estimatedAccounts: number; accountsWithSales: number | null; unlinkedSalesPaise: number | null; unlinkedLedgers: number | null };
 };
 export type WalletSnapshot = { id: string; monthlyWalletPaise: number; testVolume: WalletTestVolume | null; method: WalletMethod; source: string; confidence: WalletConfidence; asOf: string; note: string; loweredReason: string | null; enteredBy: string; enteredAt: string; verifiedBy: string | null; divisions: Array<{ code: string; name: string; monthlyWalletPaise: number }>; unallocatedPaise: number };
-export type WalletAccount = { policy: WalletPolicy; coverage: WalletCoverage; row: WalletRow; current: WalletSnapshot | null; history: WalletSnapshot[]; divisions: Array<{ code: string; name: string }> };
+export type WalletAccount = { policy: WalletPolicy; coverage: WalletCoverage; row: WalletRow; current: WalletSnapshot | null; history: WalletSnapshot[]; divisions: Array<{ code: string; name: string }>; labSize?: (Omit<LabSize, 'statedMonthlySpendPaise'> & { statedMonthlySpendPaise: number | null }) | null };
 export type WalletCommand =
   | { action: 'get_wallet_workspace'; payload: { view: WalletView; page: number; search: string } }
   | { action: 'get_wallet_account'; payload: { customerId: string } }
@@ -34,6 +35,35 @@ const object = (value: unknown): value is Record<string, unknown> => !!value && 
 const text = (value: unknown, min: number, max: number) => typeof value === 'string' && value.length >= min && value.length <= max;
 const integer = (value: unknown, min: number, max: number) => Number.isInteger(value) && (value as number) >= min && (value as number) <= max;
 const fail = (): never => { throw new Error('Invalid wallet request'); };
+
+function validIsoDate(value: unknown): value is string {
+  return typeof value === 'string' && date.test(value) && Number.isFinite(Date.parse(value))
+    && new Date(value).toISOString().slice(0, 10) === value;
+}
+
+/** Validate the wallet account response and its management-only lab size. */
+export function parseWalletAccount(input: unknown): WalletAccount {
+  if (!object(input)) return fail();
+  if (input.labSize === undefined) return input as unknown as WalletAccount;
+  if (input.labSize === null) return { ...input, labSize: null } as unknown as WalletAccount;
+  if (!object(input.labSize)) return fail();
+  const report = input.labSize;
+  if (!integer(report.testsPerDay, 1, 100000) || !['lab_said', 'observed'].includes(report.basis as string)
+    || !text(report.reportedBy, 1, 254) || !validIsoDate(report.reportedOn)
+    || !Object.prototype.hasOwnProperty.call(report, 'statedMonthlySpendPaise')
+    || (report.statedMonthlySpendPaise !== null && !validIsoDate(report.spendReportedOn))
+    || (report.spendReportedOn !== undefined && !validIsoDate(report.spendReportedOn))
+    || !(report.statedMonthlySpendPaise === null || integer(report.statedMonthlySpendPaise, 0, 9e15))) return fail();
+  const labSize = {
+    testsPerDay: report.testsPerDay as number,
+    basis: report.basis as LabSize['basis'],
+    reportedBy: report.reportedBy as string,
+    reportedOn: report.reportedOn,
+    statedMonthlySpendPaise: report.statedMonthlySpendPaise as number | null,
+    ...(report.spendReportedOn === undefined ? {} : { spendReportedOn: report.spendReportedOn as string }),
+  };
+  return { ...input, labSize } as unknown as WalletAccount;
+}
 
 export function validateWalletCommand(input: unknown): WalletCommand {
   if (!object(input) || !object(input.payload) || typeof input.action !== 'string') return fail();

@@ -5,8 +5,10 @@ import { CountdownBar, MeterBar, StatusChip, ToneIcon } from '@/components/ui/gl
 import { commercialIcons, constraintIcons } from '@/lib/glance-icons';
 import { useEffect, useRef, useState, type ReactNode } from 'react';
 import type { WalletAccount, WalletCommand, WalletPolicy, WalletRow, WalletSnapshot, WalletView, WalletWorkspace as Workspace } from '@/lib/wallet-types';
+import { parseWalletAccount } from '@/lib/wallet-types';
 import { formatPaise, permilleLabel, rupeesToPaise } from '@/lib/wallet-format';
 import { calculateTestVolume } from '@/lib/wallet-test-volume';
+import { formatCustomerDate } from '@/lib/customer-map';
 import { WalletDiagnosis } from '@/components/wallet-diagnosis';
 import type { ConstraintCategory, WalletDiagnoses, WalletDiagnosisRow } from '@/lib/wallet-diagnosis-types';
 import type { ActionsDue } from '@/lib/wallet-action-types';
@@ -139,6 +141,9 @@ function EstimateForm({ account, onSaved, onConflict, onForbidden, onLock }: { a
   const allocated = allocations.reduce((sum, d) => sum + bigint(d.monthlyWalletPaise ?? 0), bigint(0));
   const invalidSplit = split && (allocations.some(d => d.monthlyWalletPaise === null) || allocated > bigint(amount ?? 0));
   const locked = write.busy || write.uncertain;
+  useEffect(() => {
+    if (method === 'test_volume' && account.labSize && !locked) setTests(value => value || String(account.labSize!.testsPerDay));
+  }, [method, account.labSize, locked]);
   useEffect(() => { onLock(locked); return () => onLock(false); }, [locked, onLock]);
   return <form aria-label="Update estimate" className="space-y-3" onSubmit={event => {
     event.preventDefault(); if (amount === null || invalidSplit) return;
@@ -146,6 +151,8 @@ function EstimateForm({ account, onSaved, onConflict, onForbidden, onLock }: { a
     void write.save({ action: 'record_wallet_snapshot', payload: { requestId: crypto.randomUUID(), customerId: account.row.customerId, monthlyWalletPaise: amount, method, ...(method === 'test_volume' ? { testVolume: { testsPerDay: Number(tests), workingDaysPerMonth: Number(days), paisePerTest: paisePerTest! } } : {}), source: field(data, 'source').trim(), confidence: data.get('confidence') as WalletSnapshot['confidence'], asOf: field(data, 'asOf'), note: field(data, 'note').trim(), loweredReason: lower ? field(data, 'reason').trim() : null, divisions: split ? allocations as { code: string; monthlyWalletPaise: number }[] : [], expectedCurrentSnapshotId: account.current?.id ?? null } });
   }}>
     <fieldset disabled={locked} className="min-w-0 space-y-3">
+      {account.labSize ? <p className="text-sm text-sf-muted">From visit: about {account.labSize.testsPerDay} tests/day · {account.labSize.reportedBy} · {formatCustomerDate(account.labSize.reportedOn)}</p> : null}
+      {account.labSize?.statedMonthlySpendPaise != null ? <p className="text-sm text-sf-muted">Lab said {formatPaise(account.labSize.statedMonthlySpendPaise)}/month · {formatCustomerDate(account.labSize.spendReportedOn!)} · <button type="button" className="min-h-11 underline" onClick={() => { setMethod('customer_stated'); setTotal(rupees(account.labSize!.statedMonthlySpendPaise!)); }}>Use</button></p> : null}
       <label className="block">Method<select className={input} name="method" value={method} onChange={event => setMethod(event.target.value as WalletSnapshot['method'])}><option value="customer_stated">Customer stated</option><option value="test_volume">Test volume</option><option value="manager_estimate">Manager estimate</option></select></label>
       {method === 'test_volume' ? <>
         <label className="block">Tests per day (approx)<input className={input} type="number" min="1" max="100000" step="1" required value={tests} onChange={event => setTests(event.target.value)} /></label>
@@ -255,7 +262,7 @@ export function WalletWorkspace({ onBack, onReviewLinks, initialCustomerId, init
     if (!customerId || forbidden) return;
     const controller = new AbortController();
     queueMicrotask(() => { if (!controller.signal.aborted) { setAccount(null); setAccountError(''); } });
-    void request<WalletAccount>(`/api/wallet?${new URLSearchParams({ action: 'get_wallet_account', customerId })}`, { signal: controller.signal }).then(data => { if (!controller.signal.aborted) setAccount(data); }).catch(failure => { if (!controller.signal.aborted) { setAccountError(message(failure)); if (failure instanceof WalletError && failure.status === 403) setForbidden(true); } });
+    void request<unknown>(`/api/wallet?${new URLSearchParams({ action: 'get_wallet_account', customerId })}`, { signal: controller.signal }).then(parseWalletAccount).then(data => { if (!controller.signal.aborted) setAccount(data); }).catch(failure => { if (!controller.signal.aborted) { setAccountError(message(failure)); if (failure instanceof WalletError && failure.status === 403) setForbidden(true); } });
     return () => controller.abort();
   }, [customerId, accountRevision, forbidden]);
   const refresh = async () => { setRevision(n => n + 1); };

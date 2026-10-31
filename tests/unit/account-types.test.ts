@@ -88,6 +88,24 @@ describe('account class policy command', () => {
   });
 });
 describe('account command parser', () => {
+  describe('lab size reports', () => {
+    const report = { action: 'record_lab_size', customerId, testsPerDay: 80, basis: 'lab_said', statedMonthlySpendPaise: 5000000, note: ' Monthly estimate ', idempotencyKey };
+    it('parses a bounded report and normalizes an optional note', () => {
+      expect(parseAccountCommand(report)).toEqual({ action: 'record_lab_size', payload: {
+        customerId, testsPerDay: 80, basis: 'lab_said', statedMonthlySpendPaise: 5000000, note: 'Monthly estimate', idempotencyKey,
+      } });
+      expect(parseAccountCommand({ ...report, basis: 'observed', statedMonthlySpendPaise: null, note: undefined })?.payload)
+        .toMatchObject({ basis: 'observed', statedMonthlySpendPaise: null, note: null });
+      expect(parseAccountCommand({ ...report, statedMonthlySpendPaise: undefined })?.payload).toMatchObject({ statedMonthlySpendPaise: null });
+      expect(parseAccountCommand({ ...report, testsPerDay: 100000, statedMonthlySpendPaise: 9e15 })).not.toBeNull();
+    });
+    it.each([
+      { testsPerDay: 0 }, { testsPerDay: 100001 }, { testsPerDay: 1.5 }, { testsPerDay: '80' },
+      { basis: 'estimated' }, { statedMonthlySpendPaise: -1 }, { statedMonthlySpendPaise: 9e15 + 1 },
+      { statedMonthlySpendPaise: 1.5 }, { statedMonthlySpendPaise: '5000000' },
+      { note: ' x ' }, { note: 'x'.repeat(501) }, { note: 12 }, { customerId: 'bad' }, { idempotencyKey: 'short' },
+    ])('rejects malformed report %#', override => expect(parseAccountCommand({ ...report, ...override })).toBeNull());
+  });
   it('accepts and trims territory names', () => {
     expect(parseAccountCommand({ action: 'create_territory', name: ' South ', idempotencyKey })).toEqual({ action: 'create_territory', payload: { name: 'South', idempotencyKey } });
   });

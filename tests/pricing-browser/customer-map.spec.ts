@@ -39,32 +39,40 @@ function fullSheet(sales = false) {
     recentOrders: [{ orderId: '88111111-1111-4111-8111-111111111113', number: 'SF-099', stage: 'delivered', date: '2026-10-28T00:00:00Z', ...(sales ? {} : { valuePaise: 150000 }) }], contacts: { total: 3, champions: 1 },
   };
 }
-async function fixture(page: Page, options: { frame?: boolean; sales?: boolean; empty?: boolean; located?: boolean; approximate?: boolean; uncertified?: boolean; townOnly?: boolean; dueOn?: string; contacts?: { total: number; champions: number } } = {}) {
+async function fixture(page: Page, options: { frame?: boolean; sales?: boolean; empty?: boolean; located?: boolean; approximate?: boolean; uncertified?: boolean; townOnly?: boolean; dueOn?: string; contacts?: { total: number; champions: number }; labSize?: { testsPerDay: number; basis: 'lab_said' | 'observed'; reportedBy: string; reportedOn: string; statedMonthlySpendPaise?: number; spendReportedOn?: string } } = {}) {
   const posts: Record<string, unknown>[] = []; const reads: URL[] = [];
-  let saved = false;
+  let saved = false; let labSizeSaved = false;
   await page.clock.setFixedTime(new Date('2026-10-30T06:00:00Z'));
   await page.route('https://tile.openstreetmap.org/**', route => route.fulfill({ contentType: 'image/png', body: transparentPng }));
   // Same Accounts bootstrap as wallet.spec.ts, with the role-shaped capabilities.
   await page.route('**/api/accounts**', route => {
-    if (route.request().method() === 'POST') { posts.push(route.request().postDataJSON()); saved = true; return route.fulfill({ json: { ok: true } }); }
+    if (route.request().method() === 'POST') {
+      const body = route.request().postDataJSON(); posts.push(body);
+      if (body.action === 'record_lab_size') {
+        labSizeSaved = true;
+        return route.fulfill({ json: { ok: true, reportId: '19200000-0000-4000-8000-000000000002' } });
+      }
+      saved = true; return route.fulfill({ json: { ok: true } });
+    }
     if (options.townOnly && new URL(route.request().url()).searchParams.get('search') === name) return route.fulfill({ json: { accounts: [{ id: customerId, location: { precision: 'town', version: 5 } }], page: { page: 1, pageSize: 50, total: 1 } } });
     return route.fulfill({ json: { accounts: [], page: { page: 1, pageSize: 50, total: 0 }, owners: [], territories: [], canAssign: !options.sales, canSeeMyActions: !!options.sales, canEraseContacts: false, canSeePowerMap: false, actorEmail: options.sales ? 'sales@example.test' : 'manager@example.test', today: '2026-10-30', classPolicy: { aMinPaise: '20000000', bMinPaise: '7500000' } } });
   });
   await page.route('**/api/customer-map**', route => {
     const url = new URL(route.request().url()); reads.push(url);
-    if (url.searchParams.has('customer')) return route.fulfill({ json: { ...(options.empty ? base : fullSheet(options.sales)), ...(options.dueOn ? { tiles: { ...fullSheet(options.sales).tiles, nextActionDue: options.dueOn } } : {}), ...(options.contacts ? { contacts: options.contacts } : {}), ...(options.located || saved ? { location: { precision: 'pin', lat: saved ? Number(posts.at(-1)?.latitude) : 17.3, lng: saved ? Number(posts.at(-1)?.longitude) : 76.8, version: saved ? 3 : 2 } } : options.approximate ? { location: { approximate: { pinCode: '585102' } } } : {}) } });
+    if (url.searchParams.has('customer')) return route.fulfill({ json: { ...(options.empty ? base : fullSheet(options.sales)), ...(labSizeSaved ? { labSize: { testsPerDay: 80, basis: 'lab_said', reportedBy: options.sales ? 'sales@example.test' : 'manager@example.test', reportedOn: new Date().toISOString().slice(0, 10), ...(options.sales ? {} : { statedMonthlySpendPaise: 5000000, spendReportedOn: new Date().toISOString().slice(0, 10) }) } } : options.labSize ? { labSize: options.labSize } : {}), ...(options.dueOn ? { tiles: { ...fullSheet(options.sales).tiles, nextActionDue: options.dueOn } } : {}), ...(options.contacts ? { contacts: options.contacts } : {}), ...(options.located || saved ? { location: { precision: 'pin', lat: saved ? Number(posts.at(-1)?.latitude) : 17.3, lng: saved ? Number(posts.at(-1)?.longitude) : 76.8, version: saved ? 3 : 2 } } : options.approximate ? { location: { approximate: { pinCode: '585102' } } } : {}) } });
     if (url.searchParams.has('pin')) return route.fulfill({ json: { page: Number(url.searchParams.get('page')), pageSize: 20, total: 77, rows: Array.from({ length: Number(url.searchParams.get('page')) === 4 ? 17 : 20 }, (_, i) => ({ customerId: i === 0 ? customerId : `pin-lab-${i}`, name: i === 0 ? url.searchParams.get('q') ? 'PIN search match Lab' : name : `PIN Lab ${i}`, city: 'Kalaburagi', tone: 'red' })) } });
     if (url.searchParams.has('notOnMap')) return route.fulfill({ json: { page: Number(url.searchParams.get('page')), pageSize: 20, total: 21, rows: [{ customerId, name: url.searchParams.get('q') ? 'Search match Lab' : name, city: 'Bidar' }] } });
     return route.fulfill({ json: { coverage: { placed: 4, approx: 96, total: 121 }, pins: mapPins, approxGroups, notOnMapCount: 21, freshness: { calculatedAt: '2026-10-30T05:12:00Z', certified: !options.uncertified, ...(options.sales ? {} : { walletAsOf: '2026-10-12' }) } } });
   });
   if (options.frame) {
     // Same frame startup mocks as today.spec.ts.
-    await page.route('**/api/me', route => route.fulfill({ json: { roles: ['administrator'] } }));
+    await page.route('**/api/me', route => route.fulfill({ json: { roles: options.sales ? ['sales'] : ['administrator'] } }));
     await page.route('**/api/push-subscription**', route => route.fulfill({ json: { enabled: false, publicKey: '' } }));
     await page.route('**/api/wallet?**', route => route.fulfill({ json: { coverage: { certified: true } } }));
     await page.route('**/api/my-actions?**', route => route.fulfill({ json: { page: 1, pageSize: 50, total: 0, overdueCount: 0, rows: [] } }));
     await page.route('**/api/today**', route => route.fulfill({ json: { policyVersion: 'today-v1', generatedAt: '2026-10-30T06:00:00Z', coverageCertified: true, unblock: { total: 0, rows: [] }, grow: { total: 0, rows: [] } } }));
-    await page.goto('/?view=frame&role=administrator');
+    const role = options.sales ? 'sales' : 'administrator';
+    await page.goto(`/?view=frame&role=${role}&roles=${role}`);
     const accounts = page.getByRole('button', { name: /^accounts$/i });
     if (!await accounts.isVisible()) await page.getByRole('button', { name: 'More', exact: true }).click();
     await accounts.click();
@@ -449,6 +457,41 @@ for (const width of [375, 1280]) test.describe(`Customer map at ${width}px`, () 
     await expect(sheet.getByRole('meter')).toHaveCount(0);
     await expect(sheet.getByRole('button', { name: 'No decider known · Add contact' })).toBeVisible();
     await expect(sheet.getByText('Last visit', { exact: true }).locator('..')).toContainText('Never');
+  });
+  test('sheet shows the empty lab-size action and saves a report with an idempotency key', async ({ page }) => {
+    const { posts } = await fixture(page, { frame: true }); const sheet = await openSheet(page);
+    const labSize = sheet.getByRole('region', { name: 'Lab size', exact: true });
+    await expect(labSize.getByRole('button', { name: 'Add tests/day', exact: true })).toBeVisible();
+    await labSize.getByRole('button', { name: 'Add tests/day', exact: true }).click();
+    const form = labSize.getByRole('form', { name: 'Lab size' });
+    await expect(labSize.getByText('Ask: how many tests a day? What do you spend on reagents a month?', { exact: true })).toBeVisible();
+    await form.getByLabel('Tests per day', { exact: true }).fill('80');
+    await form.getByRole('radio', { name: 'Lab said', exact: true }).check();
+    await form.getByLabel("Lab's monthly reagent spend (₹)", { exact: true }).fill('50000');
+    await form.getByLabel('Note', { exact: true }).fill('Lab manager estimate');
+    await form.getByRole('button', { name: 'Save', exact: true }).click();
+    await expect.poll(() => posts.length).toBe(1);
+    expect(posts[0]).toMatchObject({ action: 'record_lab_size', customerId, testsPerDay: 80, basis: 'lab_said', statedMonthlySpendPaise: 5000000, note: 'Lab manager estimate' });
+    expect(posts[0].idempotencyKey).toMatch(/^[0-9a-f-]{36}$/);
+    await expect(labSize).toContainText('About 80 tests/day · Lab said');
+    await expect(labSize.getByRole('form', { name: 'Lab size' })).toHaveCount(0);
+  });
+  test('sales sheet shows tests/day without showing the lab-stated spend', async ({ page }) => {
+    await fixture(page, { frame: true, sales: true, labSize: { testsPerDay: 80, basis: 'lab_said', reportedBy: 'sales@example.test', reportedOn: '2026-10-30', statedMonthlySpendPaise: 5000000, spendReportedOn: '2026-10-30' } });
+    const sheet = await openSheet(page);
+    const labSize = sheet.getByRole('region', { name: 'Lab size', exact: true });
+    await expect(labSize).toContainText('80 tests/day');
+    await expect(labSize).not.toContainText('₹50,000');
+    await expect(labSize).not.toContainText('5000000');
+  });
+  test('lab-size form fits a 375px sheet without horizontal scrolling', async ({ page }) => {
+    await page.setViewportSize({ width: 375, height: 812 });
+    await fixture(page, { frame: true });
+    const sheet = await openSheet(page);
+    const labSize = sheet.getByRole('region', { name: 'Lab size', exact: true });
+    await labSize.getByRole('button', { name: 'Add tests/day', exact: true }).click();
+    expect(await page.evaluate(() => document.documentElement.scrollWidth <= innerWidth)).toBe(true);
+    expect(await sheet.evaluate(el => el.scrollWidth <= el.clientWidth)).toBe(true);
   });
   test('sales sheet has operational tiles and no rupee, share, wallet or payback text', async ({ page }) => {
     await fixture(page, { sales: true });

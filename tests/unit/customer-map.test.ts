@@ -35,6 +35,20 @@ describe('PIN list API', () => {
 });
 
 describe('customer map parsers', () => {
+  it('parses the latest lab size and includes the optional financial amount only when returned', () => {
+    const report = { testsPerDay: 80, basis: 'lab_said', reportedBy: 'Ravi', reportedOn: '2026-11-01' };
+    expect(parseCustomerSheet({ ...empty, labSize: report }).labSize).toEqual(report);
+    expect(() => parseCustomerSheet({ ...empty, labSize: { ...report, statedMonthlySpendPaise: 5000000 } })).toThrow();
+    expect(parseCustomerSheet({ ...empty, labSize: { ...report, statedMonthlySpendPaise: null } }).labSize)
+      .toEqual({ ...report, statedMonthlySpendPaise: null });
+    expect(parseCustomerSheet({ ...empty, labSize: { ...report, statedMonthlySpendPaise: 5000000, spendReportedOn: '2026-11-03' } }).labSize)
+      .toEqual({ ...report, statedMonthlySpendPaise: 5000000, spendReportedOn: '2026-11-03' });
+    expect(parseCustomerSheet({ ...empty, labSize: null }).labSize).toBeNull();
+    for (const change of [{ testsPerDay: 0 }, { testsPerDay: 100001 }, { testsPerDay: 1.5 }, { basis: 'estimated' },
+      { reportedBy: '' }, { reportedOn: 'today' }, { spendReportedOn: 'today' }, { spendReportedOn: undefined, statedMonthlySpendPaise: 5000000 }, { statedMonthlySpendPaise: -1 }, { statedMonthlySpendPaise: 1.5 }]) {
+      expect(() => parseCustomerSheet({ ...empty, labSize: { ...report, ...change } })).toThrow();
+    }
+  });
   it('parses pins and discards extra keys', () => {
     expect(parseMapPins({ ...pins, extra: true, pins: [{ ...pin, extra: true }] })).toEqual(pins);
   });

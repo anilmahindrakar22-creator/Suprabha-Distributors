@@ -1,9 +1,28 @@
 import { describe, expect, it } from 'vitest';
-import { validateWalletCommand } from '@/lib/wallet-types';
+import { parseWalletAccount, validateWalletCommand } from '@/lib/wallet-types';
 
 const customerId = '11111111-1111-4111-8111-111111111111';
 const requestId = '22222222-2222-4222-8222-222222222222';
 const snapshot = { action: 'record_wallet_snapshot', payload: { requestId, customerId, monthlyWalletPaise: 1000, method: 'customer_stated', source: 'Customer call', confidence: 'high', asOf: '2026-10-29', note: 'Reviewed estimate', loweredReason: null, divisions: [{ code: 'BIOCHEM', monthlyWalletPaise: 500 }], expectedCurrentSnapshotId: null } };
+const walletAccount = { policy: {}, coverage: {}, row: {}, current: null, history: [], divisions: [] };
+const labSize = { testsPerDay: 80, basis: 'lab_said', reportedBy: 'Ravi', reportedOn: '2026-11-01', statedMonthlySpendPaise: 5000000, spendReportedOn: '2026-11-03' };
+describe('parseWalletAccount', () => {
+  it('preserves wallet fields and parses a nullable financial lab size', () => {
+    expect(parseWalletAccount({ ...walletAccount, labSize: { ...labSize, extra: true } })).toEqual({ ...walletAccount, labSize });
+    expect(parseWalletAccount({ ...walletAccount, labSize: { ...labSize, statedMonthlySpendPaise: null } }).labSize)
+      .toEqual({ ...labSize, statedMonthlySpendPaise: null });
+    expect(parseWalletAccount({ ...walletAccount, labSize: null }).labSize).toBeNull();
+    expect(parseWalletAccount(walletAccount)).toEqual(walletAccount);
+  });
+  it.each([
+    { testsPerDay: 0 }, { testsPerDay: 100001 }, { testsPerDay: 2.5 }, { basis: 'estimate' },
+    { reportedBy: '' }, { reportedOn: '2026-02-30' }, { reportedOn: '2026-11-01T00:00:00Z' },
+    { statedMonthlySpendPaise: undefined }, { statedMonthlySpendPaise: -1 }, { statedMonthlySpendPaise: 9e15 + 1 },
+    { statedMonthlySpendPaise: 1.5 }, { statedMonthlySpendPaise: '5000000' }, { spendReportedOn: 'today' }, { spendReportedOn: undefined },
+  ])('rejects invalid wallet lab size %#', change => {
+    expect(() => parseWalletAccount({ ...walletAccount, labSize: { ...labSize, ...change } })).toThrow('Invalid wallet request');
+  });
+});
 describe('validateWalletCommand', () => {
   it('validates test volume, ranges, method and matching total', () => {
     const testVolume = { testsPerDay: 80, workingDaysPerMonth: 26, paisePerTest: 2500 };

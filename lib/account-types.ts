@@ -64,6 +64,7 @@ type CommandBase = { idempotencyKey: string };
 type ContactFields = { name: string; businessRole: string | null; phone: string | null; email: string | null };
 export type AccountCommand =
   | { action: 'check_in'; payload: CheckinPayload }
+  | { action: 'record_lab_size'; payload: CommandBase & { customerId: string; testsPerDay: number; basis: 'lab_said' | 'observed'; statedMonthlySpendPaise: number | null; note: string | null } }
   | { action: 'create_customer'; payload: CommandBase & { name: string; city: string | null; phone: string | null } }
   | { action: 'record_style_observation'; payload: CommandBase & { contactId: string; visitId: string; a: StyleRatings; r: StyleRatings; cues?: StyleCue[] } }
   | { action: 'set_style_override'; payload: CommandBase & { contactId: string; style: SocialStyle | null; reason: string } }
@@ -193,6 +194,15 @@ export function parseAccountCommand(body: unknown): AccountCommand | null {
       return { action: p.action, payload: { ...base, precision: 'town', town: p.town.trim(), source: 'town' } };
     }
     return null;
+  }
+  if (p.action === 'record_lab_size') {
+    if (!Number.isInteger(p.testsPerDay) || (p.testsPerDay as number) < 1 || (p.testsPerDay as number) > 100000
+      || (p.basis !== 'lab_said' && p.basis !== 'observed')
+      || !(p.statedMonthlySpendPaise === undefined || p.statedMonthlySpendPaise === null || (typeof p.statedMonthlySpendPaise === 'number'
+        && Number.isSafeInteger(p.statedMonthlySpendPaise) && p.statedMonthlySpendPaise >= 0 && p.statedMonthlySpendPaise <= 9e15))
+      || !(p.note === undefined || p.note === null || (typeof p.note === 'string' && p.note.trim().length >= 3 && p.note.trim().length <= 500))) return null;
+    return { action: p.action, payload: { customerId, testsPerDay: p.testsPerDay as number, basis: p.basis,
+      statedMonthlySpendPaise: typeof p.statedMonthlySpendPaise === 'number' ? p.statedMonthlySpendPaise : null, note: typeof p.note === 'string' ? p.note.trim() : null, idempotencyKey } };
   }
   if (p.action === 'log_visit') {
     if (p.metContactIds !== undefined && (!Array.isArray(p.metContactIds) || p.metContactIds.length > 10
