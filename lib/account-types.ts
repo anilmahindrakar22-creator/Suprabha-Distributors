@@ -21,6 +21,9 @@ export type ContactStyle = {
 };
 export type StyleObservation = { observer: string; recordedAt: string; a: StyleRatings; r: StyleRatings; cues: StyleCue[] };
 export type LogVisitResult = { ok: true; customerId: string; visitId: string };
+export type VisitCheckin = { verified: boolean; distanceM: number | null; checkedInAt: string; latitude?: string; longitude?: string };
+export type CheckinPayload = { customerId: string; latitude: number | string; longitude: number | string; accuracyM: number; requestId: string };
+export type CheckinResult = { checkinId: string; checkedInAt: string; verified: boolean; distanceM: number | null; hasPin: boolean };
 export const powerAlerts = ['no_decision_maker', 'decision_maker_not_met', 'influential_blocker', 'influential_unknown', 'no_influential_supporter'] as const;
 export type PowerAlert = typeof powerAlerts[number];
 export const decisionRoles = ['decision_maker', 'champion', 'influencer', 'technical_evaluator', 'user', 'gatekeeper', 'coach', 'unknown'] as const;
@@ -42,7 +45,7 @@ export type AccountRow = {
   class: { state: AccountClassState; monthlyPaise: string | null; window: { from: string; to: string }; policyId?: string };
   owner: { email: string; territoryId: string; territoryName: string; since: string; version: number } | null;
   location: { precision: 'pin' | 'town'; latitude: string | null; longitude: string | null; town: string | null; verifiedBy: string; verifiedAt: string; version: number } | null;
-  lastVisit: { id: string; visitedOn: string; outcome: VisitOutcome; visitedBy: string; note: string | null; metContacts: { id: string; name: string }[] } | null;
+  lastVisit: { id: string; visitedOn: string; outcome: VisitOutcome; visitedBy: string; note: string | null; metContacts: { id: string; name: string }[]; checkin?: VisitCheckin | null } | null;
   nextVisitOn: string | null; lastOrderOn: string | null;
 };
 export type AccountsResponse = {
@@ -60,6 +63,7 @@ export function withAccountContacts<T extends { accounts: (Omit<AccountRow, 'app
 type CommandBase = { idempotencyKey: string };
 type ContactFields = { name: string; businessRole: string | null; phone: string | null; email: string | null };
 export type AccountCommand =
+  | { action: 'check_in'; payload: CheckinPayload }
   | { action: 'create_customer'; payload: CommandBase & { name: string; city: string | null; phone: string | null } }
   | { action: 'record_style_observation'; payload: CommandBase & { contactId: string; visitId: string; a: StyleRatings; r: StyleRatings; cues?: StyleCue[] } }
   | { action: 'set_style_override'; payload: CommandBase & { contactId: string; style: SocialStyle | null; reason: string } }
@@ -98,6 +102,11 @@ function validDate(value: unknown): value is string {
 export function parseAccountCommand(body: unknown): AccountCommand | null {
   if (!body || typeof body !== 'object' || Array.isArray(body)) return null;
   const p = body as Record<string, unknown>;
+  if (p.action === 'check_in') {
+    const { action: _action, ...payload } = p;
+    const parsed = parseCheckinPayload(payload);
+    return parsed ? { action: 'check_in', payload: parsed } : null;
+  }
   if (typeof p.idempotencyKey !== 'string' || p.idempotencyKey.trim().length < 16 || p.idempotencyKey.length > 200) return null;
   const idempotencyKey = p.idempotencyKey;
   if (p.action === 'create_customer') {
@@ -197,6 +206,21 @@ export function parseAccountCommand(body: unknown): AccountCommand | null {
       ...(p.nextVisitOn === undefined ? {} : { nextVisitOn: p.nextVisitOn as string | null }) } };
   }
   return null;
+}
+
+/** Exact GPS write contract; verification and distance belong to the server. */
+export function parseCheckinPayload(body: unknown): CheckinPayload | null {
+  if (!body || typeof body !== 'object' || Array.isArray(body)) return null;
+  const p = body as Record<string, unknown>;
+  const keys = ['customerId', 'latitude', 'longitude', 'accuracyM', 'requestId'];
+  if (Object.keys(p).length !== keys.length || Object.keys(p).some(key => !keys.includes(key))
+    || typeof p.customerId !== 'string' || !accountUuidPattern.test(p.customerId)
+    || typeof p.requestId !== 'string' || p.requestId.trim() !== p.requestId || p.requestId.length < 1 || p.requestId.length > 200
+    || typeof p.accuracyM !== 'number' || !Number.isInteger(p.accuracyM) || p.accuracyM < 1 || p.accuracyM > 5000) return null;
+  const coordinate = (value: unknown) => (typeof value === 'number' && Number.isFinite(value))
+    || (typeof value === 'string' && /^-?[0-9]{1,3}(\.[0-9]+)?$/.test(value));
+  if (!coordinate(p.latitude) || !coordinate(p.longitude) || !isInsideMarketArea(Number(p.latitude), Number(p.longitude))) return null;
+  return { customerId: p.customerId, latitude: p.latitude as number | string, longitude: p.longitude as number | string, accuracyM: p.accuracyM, requestId: p.requestId };
 }
 
 export function parseLocationInput(text: string): { ok: true; latitude: string; longitude: string; source: 'manual_pin' | 'pasted_link' } | { ok: false; error: string } {

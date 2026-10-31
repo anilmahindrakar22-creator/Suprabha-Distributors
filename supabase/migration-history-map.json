@@ -1221,6 +1221,13 @@
       "remoteVersion": null,
       "remoteSha256": null,
       "status": "not_deployed"
+    },
+    {
+      "localFile": "20261102160000_visit_checkins.sql",
+      "localSha256": "8917ec255d50be95c023cc29d4a73c1c66eb9145e4967a6bb18bb755e8fc52a6",
+      "remoteVersion": null,
+      "remoteSha256": null,
+      "status": "not_deployed"
     }
   ],
   "liveCheck": {

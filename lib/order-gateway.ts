@@ -27,6 +27,7 @@ export type GatewayAction =
   | 'create_territory'
   | 'assign_account'
   | 'set_location'
+  | 'check_in'
   | 'log_visit'
   | 'set_class_policy'
   | 'get_instrument_economics'
