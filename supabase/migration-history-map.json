@@ -1200,6 +1200,13 @@
       "remoteVersion": null,
       "remoteSha256": null,
       "status": "not_deployed"
+    },
+    {
+      "localFile": "20261102130000_customer_city_pin.sql",
+      "localSha256": "713106b1b43089f58a14271544a5093d0882a93e0aac7fe16a4c161fdc542c40",
+      "remoteVersion": null,
+      "remoteSha256": null,
+      "status": "not_deployed"
     }
   ],
   "liveCheck": {
