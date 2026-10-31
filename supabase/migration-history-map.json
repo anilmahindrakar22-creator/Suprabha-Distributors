@@ -1214,6 +1214,13 @@
       "remoteVersion": null,
       "remoteSha256": null,
       "status": "not_deployed"
+    },
+    {
+      "localFile": "20261102150000_pin_placement_gateway.sql",
+      "localSha256": "189d330e1d2ee253865fa0c3a422c20289f39c24e5442c055346bbc2f29b909a",
+      "remoteVersion": null,
+      "remoteSha256": null,
+      "status": "not_deployed"
     }
   ],
   "liveCheck": {

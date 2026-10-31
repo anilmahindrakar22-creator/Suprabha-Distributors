@@ -38,7 +38,7 @@ actions.push('get_actions_due', 'get_opportunity_actions', 'get_action_owners', 
 actions.push('get_my_actions', 'close_my_action');
 actions.push('get_contract_windows', 'get_today');
 const powerMapActions = ['get_power_map', 'set_influence', 'end_influence'];
-const customerMapActions = ['get_map_pins', 'get_not_on_map', 'get_customer_sheet'];
+const customerMapActions = ['get_map_pins', 'get_not_on_map', 'get_pin_labs', 'get_customer_sheet'];
 actions.push(...customerMapActions);
 customerMapActions.forEach(action => readActions.add(action));
 actions.push(...powerMapActions);

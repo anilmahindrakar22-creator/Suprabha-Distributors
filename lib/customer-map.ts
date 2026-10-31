@@ -30,13 +30,16 @@ export function formatActionDue(value: string, now = new Date()): string {
   return days === 0 ? 'today' : days < 0 ? `${-days} d late` : `in ${days} d`;
 }
 export type MapPin = { customerId: string; name: string; lat: number; lng: number; tone: MapTone; focus: boolean; openOrders: number };
-export type MapPins = { coverage: { placed: number; total: number }; pins: MapPin[]; notOnMapCount: number };
+export type ApproxGroup = { pinCode: string; lat: number; lng: number; count: number; tone: MapTone; openOrders: number };
+export type MapPins = { coverage: { placed: number; approx: number; total: number }; pins: MapPin[]; approxGroups: ApproxGroup[]; notOnMapCount: number; freshness: { calculatedAt: string; certified: boolean; walletAsOf?: string | null } };
 export type UnplacedCustomers = { page: number; pageSize: number; total: number; rows: { customerId: string; name: string; city: string | null }[] };
+export type PinLabs = Omit<UnplacedCustomers, 'rows'> & { rows: (UnplacedCustomers['rows'][number] & { tone: MapTone })[] };
 export type SheetOrder = { orderId: string; orderNumber: string; stage: string; date: string; amountPaise?: number | null; priceApproval?: boolean };
 export type SheetInstrument = { name: string; placedOn: string | null; serial: string | null; payback?: 'paying_back' | 'behind' | 'awaiting_data' | null; closedSystem?: boolean; lockInDays?: number | null };
 export type CustomerSheetData = {
   customerId: string; name: string; city: string | null; owner: string | null; accountClass: 'A' | 'B' | null; phone: string | null;
-  location: { lat: number | null; lng: number | null; version: number; precision: 'pin' | 'town' } | null;
+  location: { lat?: number | null; lng?: number | null; version?: number; precision?: 'pin' | 'town'; approximate?: { pinCode: string } } | null;
+  wallet?: { confidence: 'high' | 'medium' | 'low' | null; asOf: string | null };
   sharePermille?: number | null; walletPaise?: number | null; salesPaise?: number | null; gapPaise?: number | null;
   constraint: { category: ConstraintCategory; label: string; proven: boolean } | null;
   openOrders: number | null; lastVisit: string | null; nextActionDue: string | null; overdue: number | null;
@@ -60,21 +63,35 @@ function array<T>(value: unknown, parse: (v: unknown) => T): T[] { if (!Array.is
 function choice<T extends string>(value: unknown, choices: readonly T[]): T { if (!choices.includes(value as T)) throw new Error('Invalid customer map status'); return value as T; }
 function coordinate(value: unknown, limit: number): number { const n = number(value); if (Math.abs(n) > limit) throw new Error('Invalid coordinate'); return n; }
 function date(value: unknown): string { const s = string(value); if (!/^\d{4}-\d{2}-\d{2}$/.test(s) || !Number.isFinite(Date.parse(s)) || new Date(s).toISOString().slice(0, 10) !== s) throw new Error('Invalid date'); return s; }
+function timestamp(value: unknown): string {
+  const s = string(value);
+  if (!/^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}(?:\.\d+)?(?:Z|[+-]\d{2}:\d{2})$/.test(s) || !Number.isFinite(Date.parse(s))) throw new Error('Invalid timestamp');
+  date(s.slice(0, 10));
+  return s;
+}
+function pinCode(value: unknown): string { const s = string(value); if (!/^[1-9][0-9]{5}$/.test(s)) throw new Error('Invalid PIN'); return s; }
 function financial(row: Record<string, unknown>, keys: string[]) {
   return Object.fromEntries(keys.filter(key => row[key] !== undefined).map(key => [key, nullable(row[key], count)]));
 }
 export function parseMapPins(value: unknown): MapPins {
-  const v = object(value), c = object(v.coverage);
-  const result = { coverage: { placed: count(c.placed), total: count(c.total) }, notOnMapCount: count(v.notOnMapCount), pins: array(v.pins, item => {
+  const v = object(value), c = object(v.coverage), f = object(v.freshness);
+  const result = { coverage: { placed: count(c.placed), approx: count(c.approx), total: count(c.total) }, notOnMapCount: count(v.notOnMapCount),
+    freshness: { calculatedAt: timestamp(f.calculatedAt), certified: boolean(f.certified), ...(f.walletAsOf === undefined ? {} : { walletAsOf: nullable(f.walletAsOf, date) }) },
+    approxGroups: array(v.approxGroups, item => { const g = object(item); const members = count(g.count); if (!members) throw new Error('Invalid group count'); return { pinCode: pinCode(g.pinCode), lat: coordinate(g.lat, 90), lng: coordinate(g.lng, 180), count: members, tone: choice(g.tone, Object.keys(mapColours) as MapTone[]), openOrders: count(g.openOrders) }; }), pins: array(v.pins, item => {
     const p = object(item); return { customerId: string(p.customerId), name: string(p.name), lat: coordinate(p.lat, 90), lng: coordinate(p.lng, 180), tone: choice(p.tone, Object.keys(mapColours) as MapTone[]), focus: boolean(p.focus), openOrders: count(p.openOrders) };
   }) };
-  if (result.pins.length > 500 || result.coverage.placed > result.coverage.total) throw new Error('Invalid coverage');
+  if (result.pins.length > 500 || result.approxGroups.length > 500 || result.coverage.placed + result.coverage.approx + result.notOnMapCount !== result.coverage.total) throw new Error('Invalid coverage');
   return result;
 }
 export function parseNotOnMap(value: unknown): UnplacedCustomers {
   const v = object(value); const result = { page: count(v.page), pageSize: count(v.pageSize), total: count(v.total), rows: array(v.rows, item => { const r = object(item); return { customerId: string(r.customerId), name: string(r.name), city: nullable(r.city, string) }; }) };
   if (result.page < 1 || result.pageSize !== 20 || result.rows.length > 20) throw new Error('Invalid unplaced page');
   return result;
+}
+export function parsePinLabs(value: unknown): PinLabs {
+  const page = parseNotOnMap(value);
+  if (page.page > 4000 || page.rows.length > page.total) throw new Error('Invalid PIN page');
+  return { ...page, rows: array(object(value).rows, item => { const r = object(item); return { customerId: string(r.customerId), name: string(r.name), city: nullable(r.city, string), tone: choice(r.tone, Object.keys(mapColours) as MapTone[]) }; }) };
 }
 function optional<T>(value: unknown, parse: (v: unknown) => T): T | null { return value === undefined || value === null ? null : parse(value); }
 function order(value: unknown): SheetOrder {
@@ -108,7 +125,12 @@ export function parseCustomerSheet(value: unknown): CustomerSheetData {
   else { string(decider.label); boolean(decider.canAddContact); }
   const result: CustomerSheetData = {
     customerId: string(v.customerId), name: string(v.name), city: nullable(v.town, string), owner: optional(v.owner, n => string(object(n).email)), accountClass: optional(v.class, n => choice(n, ['A', 'B'])), phone: call?.slice(4) ?? null,
-    location: optional(v.location, n => { const p = object(n); return { lat: coordinate(p.lat, 90), lng: coordinate(p.lng, 180), version: count(p.version), precision: choice(p.precision, ['pin'] as const) }; }),
+    location: optional(v.location, n => {
+      const p = object(n);
+      if (p.approximate !== undefined) return { approximate: { pinCode: pinCode(object(p.approximate).pinCode) } };
+      return { lat: coordinate(p.lat, 90), lng: coordinate(p.lng, 180), version: count(p.version), precision: choice(p.precision, ['pin'] as const) };
+    }),
+    ...(v.wallet === undefined ? {} : { wallet: (() => { const w = object(v.wallet); return { confidence: nullable(w.confidence, n => choice(n, ['high', 'medium', 'low'] as const)), asOf: nullable(w.asOf, date) }; })() }),
     ...financial(tiles, ['walletPaise', 'salesPaise', 'gapPaise']),
     ...(share === undefined ? {} : { sharePermille: v.certified === false ? null : share }),
     constraint: optional(v.heldBackBy, n => { const r = object(n); return { category: choice(r.category, Object.keys(constraintIcons) as ConstraintCategory[]), label: string(r.label), proven: !boolean(r.priceUnproven) }; }),

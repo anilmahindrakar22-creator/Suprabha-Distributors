@@ -18,12 +18,15 @@ function command(params: URLSearchParams): [GatewayAction, Record<string, unknow
       || south >= north || west >= east || north - south > 3 || east - west > 3) throw invalid();
     return ['get_map_pins', { south, west, north, east }];
   }
-  if (params.get('notOnMap') === '1' && params.has('page') && keys.every(key => ['notOnMap', 'page', 'q'].includes(key))) {
+  const pinCode = params.get('pin');
+  const pinList = pinCode !== null && /^[1-9][0-9]{5}$/.test(pinCode) && keys.every(key => ['pin', 'page', 'q'].includes(key));
+  const unplacedList = params.get('notOnMap') === '1' && keys.every(key => ['notOnMap', 'page', 'q'].includes(key));
+  if ((pinList || unplacedList) && params.has('page')) {
     const rawPage = params.get('page')!;
     const page = Number(rawPage);
     const query = params.get('q');
     if (!/^[1-9]\d*$/.test(rawPage) || !Number.isSafeInteger(page) || page > 4000 || (query !== null && query.length > 120)) throw invalid();
-    return ['get_not_on_map', { page, ...(query !== null ? { query } : {}) }];
+    return [pinList ? 'get_pin_labs' : 'get_not_on_map', { ...(pinList ? { pinCode } : {}), page, ...(query !== null ? { query } : {}) }];
   }
   if (keys.length === 1 && params.has('customer')) {
     const customerId = params.get('customer')!;

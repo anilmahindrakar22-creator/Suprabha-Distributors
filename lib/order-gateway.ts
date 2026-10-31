@@ -48,6 +48,7 @@ export type GatewayAction =
   | 'get_today'
   | 'get_map_pins'
   | 'get_not_on_map'
+  | 'get_pin_labs'
   | 'get_customer_sheet'
   | 'get_opportunity_actions'
   | 'get_action_owners'

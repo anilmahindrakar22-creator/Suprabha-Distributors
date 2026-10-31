@@ -1,10 +1,37 @@
-import { describe, expect, it } from 'vitest';
-import { customerMapDayDifference, formatActionDue, formatBoundingBox, formatCustomerDate, formatLastVisit, mapColours, parseCustomerSheet, parseMapPins, parseNotOnMap, toneMeanings } from '../../lib/customer-map';
+import { describe, expect, it, vi } from 'vitest';
+import { customerMapDayDifference, formatActionDue, formatBoundingBox, formatCustomerDate, formatLastVisit, mapColours, parseCustomerSheet, parseMapPins, parseNotOnMap, parsePinLabs, toneMeanings } from '../../lib/customer-map';
 
 const pin = { customerId: '66111111-1111-4111-8111-111111111111', name: 'Example Lab', lat: 17.3, lng: 76.8, tone: 'red', focus: true, openOrders: 2 };
-const pins = { coverage: { placed: 1, total: 2 }, pins: [pin], notOnMapCount: 1 };
+const group = { pinCode: '599901', lat: 17.3, lng: 76.8, count: 2, tone: 'red', openOrders: 3 };
+const freshness = { calculatedAt: '2026-10-31T12:00:00+00:00', certified: true };
+const pins = { coverage: { placed: 1, approx: 2, total: 4 }, pins: [pin], approxGroups: [group], notOnMapCount: 1, freshness };
 const empty = { customerId: pin.customerId, name: pin.name, town: null, decisionMaker: { label: 'No decider known', canAddContact: true }, actions: { pin: 'place', orderCustomerId: pin.customerId } };
 const order = { orderId: 'order-1', number: 'SF-1', stage: 'packed', date: '2026-10-30T20:00:00Z', valuePaise: 120000, kind: 'price', approximate: true };
+
+const api = vi.hoisted(() => ({ gateway: vi.fn() }));
+vi.mock('@/app/chatgpt-auth', () => ({ getChatGPTUser: async () => ({ email: 'pin@example.test' }) }));
+vi.mock('@/lib/stockflow-session', () => ({ getStockFlowSession: async () => ({ email: 'pin@example.test', roles: ['sales'] }) }));
+vi.mock('@/lib/order-gateway', async original => ({ ...await original<typeof import('@/lib/order-gateway')>(), callOrderGateway: api.gateway }));
+import { GET } from '@/app/api/customer-map/route';
+
+describe('PIN list API', () => {
+  it.each(['?pin=599901&page=1', '?pin=599901&page=2&q=Lab', '?pin=599901&page=4000&q='])('routes %s with no caching', async query => {
+    api.gateway.mockReset().mockResolvedValue({ rows: [] });
+    const response = await GET(new Request('http://localhost/api/customer-map' + query));
+    expect(response.status).toBe(200);
+    expect(response.headers.get('cache-control')).toBe('private, no-store');
+    const params = new URLSearchParams(query);
+    expect(api.gateway).toHaveBeenCalledWith('pin@example.test', 'get_pin_labs', { pinCode: '599901', page: Number(params.get('page')), ...(params.has('q') ? { query: params.get('q') } : {}) });
+  });
+  it.each(['?pin=099901&page=1', '?pin=59990&page=1', '?pin=599901', '?pin=599901&page=0', '?pin=599901&page=1.5',
+    '?pin=599901&page=4001', '?pin=599901&page=1&page=2', '?pin=599901&page=1&q=a&q=b',
+    '?pin=599901&page=1&notOnMap=1', '?pin=599901&page=1&extra=1', '?pin=599901&pin=599902&page=1',
+    '?pin=599901&page=1&q=' + 'a'.repeat(121)])('rejects %s before gateway access', async query => {
+    api.gateway.mockReset();
+    expect((await GET(new Request('http://localhost/api/customer-map' + query))).status).toBe(400);
+    expect(api.gateway).not.toHaveBeenCalled();
+  });
+});
 
 describe('customer map parsers', () => {
   it('parses pins and discards extra keys', () => {
@@ -15,6 +42,38 @@ describe('customer map parsers', () => {
     const list = { page: 2, pageSize: 20, total: 21, rows: [{ customerId: pin.customerId, name: pin.name, city: null }] };
     expect(parseNotOnMap({ ...list, extra: 'allowed' })).toEqual(list);
     for (const change of [{ page: 0 }, { pageSize: 50 }, { total: '21' }, { rows: [{ ...list.rows[0], city: 123 }] }]) expect(() => parseNotOnMap({ ...list, ...change })).toThrow();
+  });
+  it('strictly parses groups, coverage and freshness while discarding extra keys', () => {
+    expect(parseMapPins({ ...pins, approxGroups: [{ ...group, walletPaise: 123 }], freshness: { ...freshness, walletAsOf: '2026-10-30', extra: 1 } }))
+      .toEqual({ ...pins, freshness: { ...freshness, walletAsOf: '2026-10-30' } });
+    expect(parseMapPins(pins).freshness).not.toHaveProperty('walletAsOf');
+    expect(parseMapPins({ ...pins, freshness: { ...freshness, walletAsOf: null } }).freshness.walletAsOf).toBeNull();
+    for (const change of [{ approxGroups: undefined }, { approxGroups: Array(501).fill(group) }, { coverage: { placed: 1, total: 4 } },
+      { coverage: { placed: 1, approx: 3, total: 4 } }, { freshness: undefined }, { freshness: { ...freshness, calculatedAt: 'today' } },
+      { freshness: { ...freshness, calculatedAt: '2026-02-30T12:00:00Z' } }, { freshness: { ...freshness, certified: 1 } },
+      { freshness: { ...freshness, walletAsOf: '2026-02-30' } }]) expect(() => parseMapPins({ ...pins, ...change })).toThrow();
+    for (const change of [{ pinCode: '099901' }, { pinCode: 599901 }, { lat: 91 }, { lng: NaN }, { count: 0 }, { count: 1.5 }, { openOrders: -1 }, { tone: 'blue' }])
+      expect(() => parseMapPins({ ...pins, approxGroups: [{ ...group, ...change }] })).toThrow();
+  });
+  it('parses PIN rows with mandatory tones and no extra financial fields', () => {
+    const row = { customerId: pin.customerId, name: pin.name, city: null, tone: 'grey' };
+    const list = { page: 1, pageSize: 20, total: 1, rows: [row] };
+    expect(parsePinLabs({ ...list, extra: true, rows: [{ ...row, walletPaise: 100 }] })).toEqual(list);
+    for (const change of [{ page: 4001 }, { page: 0 }, { pageSize: 21 }, { total: -1 }, { rows: Array(21).fill(row) },
+      { rows: [{ ...row, tone: undefined }] }, { rows: [{ ...row, tone: 'blue' }] }, { rows: [{ ...row, city: 2 }] }])
+      expect(() => parsePinLabs({ ...list, ...change })).toThrow();
+  });
+  it('parses approximate sheets without coordinates and financial wallet provenance only when supplied', () => {
+    const value = parseCustomerSheet({ ...empty, location: { approximate: { pinCode: '599901', extra: true } } });
+    expect(value.location?.approximate).toEqual({ pinCode: '599901' });
+    expect(value.location).toEqual({ approximate: { pinCode: '599901' } });
+    expect(value).not.toHaveProperty('wallet');
+    expect(parseCustomerSheet({ ...empty, wallet: { confidence: 'medium', asOf: '2026-10-30', extra: true } }).wallet)
+      .toEqual({ confidence: 'medium', asOf: '2026-10-30' });
+    expect(parseCustomerSheet({ ...empty, wallet: { confidence: null, asOf: null } }).wallet).toEqual({ confidence: null, asOf: null });
+    for (const change of [{ location: { approximate: { pinCode: 'bad' } } }, { location: { approximate: {} } },
+      { wallet: { confidence: 'certain', asOf: '2026-10-30' } }, { wallet: { confidence: 'high', asOf: '2026-02-30' } },
+      { wallet: { confidence: 'high' } }]) expect(() => parseCustomerSheet({ ...empty, ...change })).toThrow();
   });
   it('accepts omitted financial keys and empty sections from the gateway', () => {
     const parsed = parseCustomerSheet(empty);
