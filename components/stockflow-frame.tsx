@@ -51,9 +51,10 @@ export function StockFlowFrame({ actorEmail, actorRole, actorRoles, staffAuth = 
   const [surface, setSurface] = useState<Surface>(() => canSeeToday ? 'today' : 'stock');
   const [accountsOpen, setAccountsOpen] = useState<{ view?: 'my-actions' | 'wallet' | 'map'; customerId?: string; walletView?: 'actions_due'; nonce: number }>({ nonce: 0 });
   const [newOrderData, setNewOrderData] = useState<import('@/lib/order-types').OrderBootstrap | null>(null);
+  const [newOrderCustomerId, setNewOrderCustomerId] = useState<string | undefined>();
   const [captureError, setCaptureError] = useState('');
   const openingCapture = useRef(false);
-  async function openMapOrder(_customerId: string) {
+  async function openMapOrder(customerId: string) {
     if (openingCapture.current) return;
     openingCapture.current = true; setCaptureError('');
     try {
@@ -63,6 +64,7 @@ export function StockFlowFrame({ actorEmail, actorRole, actorRoles, staffAuth = 
         data.snapshot.catalog.length ? Promise.resolve(null) : loadOrderCatalog(actorEmail, data.snapshot.catalogVersion || data.snapshot.fetchedAt),
         data.customers.length ? Promise.resolve(null) : loadOrderCustomers(actorEmail, data.customerVersion || ''),
       ]);
+      setNewOrderCustomerId(customerId);
       setNewOrderData({ ...data, customers: customers?.customers ?? data.customers, snapshot: { ...data.snapshot, catalog: catalog?.catalog ?? data.snapshot.catalog } });
     } catch { setCaptureError('Order capture could not open. Try again.'); }
     finally { openingCapture.current = false; }
@@ -474,7 +476,7 @@ export function StockFlowFrame({ actorEmail, actorRole, actorRoles, staffAuth = 
         </output>
       ) : null}
       {captureError ? <p role="alert" className="p-3 text-sm text-sf-danger">{captureError}</p> : null}
-      {newOrderData ? <Suspense fallback={<SectionLoading />}><NewOrderCapture data={newOrderData} templateOrder={null} onClose={() => setNewOrderData(null)} onCreated={() => { setNewOrderData(null); workService.current?.reconcile(); }} onViewCustomer={() => { setNewOrderData(null); setSurface('accounts'); }} /></Suspense> : null}
+      {newOrderData ? <Suspense fallback={<SectionLoading />}><NewOrderCapture data={newOrderData} initialCustomerId={newOrderCustomerId} templateOrder={null} onClose={() => { setNewOrderData(null); setNewOrderCustomerId(undefined); }} onCreated={() => { setNewOrderData(null); setNewOrderCustomerId(undefined); workService.current?.reconcile(); }} onViewCustomer={() => { setNewOrderData(null); setNewOrderCustomerId(undefined); setSurface('accounts'); }} /></Suspense> : null}
       <nav aria-label="Application sections" className="relative flex shrink-0 border-t border-sf-line-soft bg-white sm:hidden">
         {phoneMain.map((item) => (
           <button key={item} type="button" aria-label={item} onClick={() => openSurface(item)} onPointerDown={item === 'orders' ? warmOrders : undefined} aria-pressed={surface === item} aria-describedby={item === 'orders' && waitingCount ? 'orders-new-work-phone' : undefined} className={`flex min-h-14 flex-1 flex-col items-center justify-center gap-0.5 text-xs font-bold capitalize ${surface === item ? 'text-sf-brand' : 'text-sf-muted'}`}>

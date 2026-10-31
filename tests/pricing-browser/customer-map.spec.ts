@@ -1,4 +1,5 @@
 import { expect, test, type Page } from '@playwright/test';
+import { orderBootstrap } from '../fixtures/api-builders';
 
 const customerId = '66111111-1111-4111-8111-111111111111';
 const name = 'Example Diagnostic Laboratory';
@@ -20,7 +21,7 @@ function fullSheet(sales = false) {
     recentOrders: [{ orderId: '88111111-1111-4111-8111-111111111113', number: 'SF-099', stage: 'delivered', date: '2026-10-28T00:00:00Z', ...(sales ? {} : { valuePaise: 150000 }) }], contacts: { total: 3, champions: 1 },
   };
 }
-async function fixture(page: Page, options: { sales?: boolean; empty?: boolean; located?: boolean; townOnly?: boolean; dueOn?: string; contacts?: { total: number; champions: number } } = {}) {
+async function fixture(page: Page, options: { frame?: boolean; sales?: boolean; empty?: boolean; located?: boolean; townOnly?: boolean; dueOn?: string; contacts?: { total: number; champions: number } } = {}) {
   const posts: Record<string, unknown>[] = []; const reads: URL[] = [];
   let saved = false;
   await page.clock.setFixedTime(new Date('2026-10-30T06:00:00Z'));
@@ -37,7 +38,20 @@ async function fixture(page: Page, options: { sales?: boolean; empty?: boolean; 
     if (url.searchParams.has('notOnMap')) return route.fulfill({ json: { page: Number(url.searchParams.get('page')), pageSize: 20, total: 21, rows: [{ customerId, name: url.searchParams.get('q') ? 'Search match Lab' : name, city: 'Bidar' }] } });
     return route.fulfill({ json: { coverage: { placed: 4, total: 25 }, pins: mapPins, notOnMapCount: 21 } });
   });
-  await page.goto('/?view=accounts');
+  if (options.frame) {
+    // Same frame startup mocks as today.spec.ts.
+    await page.route('**/api/me', route => route.fulfill({ json: { roles: ['administrator'] } }));
+    await page.route('**/api/push-subscription**', route => route.fulfill({ json: { enabled: false, publicKey: '' } }));
+    await page.route('**/api/wallet?**', route => route.fulfill({ json: { coverage: { certified: true } } }));
+    await page.route('**/api/my-actions?**', route => route.fulfill({ json: { page: 1, pageSize: 50, total: 0, overdueCount: 0, rows: [] } }));
+    await page.route('**/api/today**', route => route.fulfill({ json: { policyVersion: 'today-v1', generatedAt: '2026-10-30T06:00:00Z', coverageCertified: true, unblock: { total: 0, rows: [] }, grow: { total: 0, rows: [] } } }));
+    await page.goto('/?view=frame&role=administrator');
+    const accounts = page.getByRole('button', { name: /^accounts$/i });
+    if (!await accounts.isVisible()) await page.getByRole('button', { name: 'More', exact: true }).click();
+    await accounts.click();
+  } else {
+    await page.goto('/?view=accounts');
+  }
   await page.getByRole('button', { name: 'Map', exact: true }).click();
   await expect(page.getByText('4 of 25 placed', { exact: true })).toBeVisible();
   return { posts, reads };
@@ -47,6 +61,27 @@ async function openSheet(page: Page) {
   const sheet = page.getByRole('dialog', { name: 'Customer details' });
   await expect(sheet.getByRole('heading', { name, exact: true })).toBeVisible();
   return sheet;
+}
+async function mockOrderCapture(page: Page, includeLab = true) {
+  const draftCustomer = { id: '66111111-1111-4111-8111-111111111119', name: 'Draft Laboratory', phone: '9876543219', city: 'Kalaburagi', tallyKey: 'DRAFT' };
+  const customers = [draftCustomer, ...(includeLab ? [{ id: customerId, name, phone: '9876543210', city: 'Bidar', tallyKey: 'LAB' }] : [])];
+  // Bootstrap and separate masters follow order-opening.spec.ts.
+  const list = orderBootstrap({
+    actor: { email: 'manager@example.test', role: 'management' },
+    snapshot: { company: 'TEST', fetchedAt: '2026-10-30T00:00:00Z', catalogVersion: 'test-v1', catalog: [] },
+    customers: [], customerVersion: 'test-v1', orders: [], operations: {},
+    pagination: { page: 1, pageCount: 1, pageSize: 20, total: 0 },
+  });
+  const reads: URL[] = [];
+  await page.route('**/api/orders**', route => {
+    const url = new URL(route.request().url()); reads.push(url);
+    if (url.searchParams.get('summary') === '1') return route.fulfill({ json: { operations: {} } });
+    if (url.searchParams.has('recentProductsFor')) return route.fulfill({ json: { customerId: url.searchParams.get('recentProductsFor'), products: [] } });
+    return route.fulfill({ json: list });
+  });
+  await page.route('**/api/orders?catalog=1', route => route.fulfill({ json: { catalogVersion: 'test-v1', catalog: [{ tallyKey: 'GLUCOSE', item: 'Glucose', group: 'Diasys', baseUnit: 'Nos', closing: 10, active: true }] } }));
+  await page.route('**/api/orders?customers=1', route => route.fulfill({ json: { customerVersion: 'test-v1', customers } }));
+  return { draftCustomer, reads };
 }
 async function geolocation(page: Page, mode: 'success' | 'outside' | 'denied') {
   await page.addInitScript(mode => {
@@ -60,6 +95,50 @@ async function geolocation(page: Page, mode: 'success' | 'outside' | 'denied') {
 
 for (const width of [375, 1280]) test.describe(`Customer map at ${width}px`, () => {
   test.use({ viewport: { width, height: 812 } });
+  test('Order preselects the lab', async ({ page }) => {
+    const { reads } = await mockOrderCapture(page);
+    await fixture(page, { frame: true }); const sheet = await openSheet(page);
+    await sheet.getByRole('button', { name: 'Order', exact: true }).click();
+    const dialog = page.getByRole('dialog', { name: 'New order', exact: true });
+    await expect(dialog).toBeVisible();
+    await expect(dialog.getByRole('combobox', { name: 'Name', exact: true })).toHaveValue(name);
+    await dialog.getByText('Contact details', { exact: false }).click();
+    await expect(dialog.getByLabel('Phone', { exact: true })).toHaveValue('9876543210');
+    await expect(dialog.getByLabel('City', { exact: true })).toHaveValue('Bidar');
+    await expect.poll(() => reads.some(url => url.searchParams.get('recentProductsFor') === customerId)).toBe(true);
+    await expect.poll(() => reads.some(url => url.searchParams.get('query') === `customer:${name}`)).toBe(true);
+  });
+  test('Draft wins over the map lab', async ({ page }) => {
+    const { draftCustomer, reads } = await mockOrderCapture(page);
+    await page.addInitScript(customer => {
+      const actor = 'manager@example.test';
+      localStorage.setItem(`stockflow:order-draft:v1:${actor}`, JSON.stringify({
+        schemaVersion: 1, actorEmail: actor, state: 'draft', updatedAt: '2026-10-30T06:00:00Z',
+        command: { action: 'create_order', payload: { idempotencyKey: '11111111-1111-4111-8111-111111111111', customerId: customer.id, customerName: customer.name, customerPhone: customer.phone, customerCity: customer.city, source: 'phone', priority: 'normal', notes: 'Keep this draft', lines: [{ tallyKey: 'GLUCOSE', quantity: 3 }] } },
+      }));
+    }, draftCustomer);
+    await fixture(page, { frame: true }); const sheet = await openSheet(page);
+    await sheet.getByRole('button', { name: 'Order', exact: true }).click();
+    const dialog = page.getByRole('dialog', { name: 'New order', exact: true });
+    await expect(dialog).toBeVisible();
+    await expect(dialog.getByRole('combobox', { name: 'Name', exact: true })).toHaveValue(draftCustomer.name);
+    await expect(dialog.getByRole('spinbutton', { name: /^Quantity for Glucose in / })).toHaveValue('3');
+    await expect.poll(() => reads.some(url => url.searchParams.get('recentProductsFor') === draftCustomer.id)).toBe(true);
+    expect(reads.some(url => url.searchParams.get('recentProductsFor') === customerId)).toBe(false);
+    await expect(dialog.getByText("This lab isn't in the order list yet. Pick the customer.", { exact: true })).toHaveCount(0);
+  });
+  test('Lab not in directory opens empty capture with a muted hint', async ({ page }) => {
+    await mockOrderCapture(page, false);
+    await fixture(page, { frame: true }); const sheet = await openSheet(page);
+    await sheet.getByRole('button', { name: 'Order', exact: true }).click();
+    const dialog = page.getByRole('dialog', { name: 'New order', exact: true });
+    await expect(dialog).toBeVisible();
+    await expect(dialog.getByRole('combobox', { name: 'Name', exact: true })).toHaveValue('');
+    const hint = dialog.getByText("This lab isn't in the order list yet. Pick the customer.", { exact: true });
+    await expect(hint).toBeVisible();
+    await expect(hint).toHaveClass(/text-sf-muted/);
+    await expect(dialog.getByRole('alert')).toHaveCount(0);
+  });
   test('pins show tones, focus size, order badge, attribution and an always-visible legend', async ({ page }) => {
     const { reads } = await fixture(page);
     await page.getByRole('button', { name: 'Wallet', exact: true }).click();

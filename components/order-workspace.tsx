@@ -1750,8 +1750,10 @@ function AssignmentControl({ order, onSave }: { order: OrderSummary; onSave: (or
   return <details onToggle={(event) => { if (event.currentTarget.open) void loadUsers(); }} className="mt-3 max-w-xl rounded-xl border border-sf-line-soft bg-sf-soft-0 px-3 py-2 text-xs"><summary className="cursor-pointer font-bold text-sf-muted">{order.assignedToEmail ? 'Change owner' : 'Assign owner'}</summary><div className="mt-2 flex flex-col gap-2 sm:flex-row"><label className="flex-1 font-bold text-sf-muted">Approved user<select value={value} disabled={loadState !== 'loaded'} onChange={(event) => setValue(event.target.value)} className="mt-1 min-h-10 w-full rounded-lg border border-sf-line bg-white px-3 font-normal text-sf-strong"><option value="">Unassigned</option>{order.assignedToEmail && !users.some((user) => user.email === order.assignedToEmail) ? <option value={order.assignedToEmail}>{order.assignedToEmail}</option> : null}{users.map((user) => <option key={user.email} value={user.email}>{user.email} · {user.role}</option>)}</select></label><div className="flex items-end"><button type="button" disabled={busy || loadState !== 'loaded' || value === (order.assignedToEmail || '')} onClick={async () => { setBusy(true); try { await onSave(order, value || undefined); } finally { setBusy(false); } }} className="min-h-10 rounded-lg bg-sf-ink px-4 font-bold text-white disabled:opacity-50">{busy ? 'Saving…' : 'Save'}</button></div></div>{loadState === 'loading' ? <p className="mt-2 text-sf-subtle">Loading approved users…</p> : loadState === 'error' ? <button type="button" onClick={() => { setLoadState('idle'); void loadUsers(); }} className="mt-2 font-bold text-sf-danger">Could not load users · Retry</button> : <p className="mt-2 text-sf-subtle">Only active StockFlow users are shown.</p>}</details>;
 }
 
-export function HydratedNewOrderPanel({ data, templateOrder, onClose, onCreated, onViewCustomer }: { data: OrderBootstrap; templateOrder: OrderSummary | null; onClose: () => void; onCreated: (number: string, command?: CreatedOrderCommand, result?: CreatedOrderResult) => void; onViewCustomer: (customerName: string) => void }) {
+export function HydratedNewOrderPanel({ data, templateOrder, initialCustomerId, onClose, onCreated, onViewCustomer }: { data: OrderBootstrap; templateOrder: OrderSummary | null; initialCustomerId?: string; onClose: () => void; onCreated: (number: string, command?: CreatedOrderCommand, result?: CreatedOrderResult) => void; onViewCustomer: (customerName: string) => void }) {
   const [initialDraft] = useState(() => readOfflineOrderDraft(localStorage, data.actor.email));
+  // Saved work takes precedence over the customer requested by the map.
+  const [initialCustomer] = useState(() => initialDraft || templateOrder ? undefined : data.customers.find(customer => customer.id === initialCustomerId));
   const initialPayload = initialDraft?.command.payload;
   const templatePayload = templateOrder ? repeatOrderTemplate(templateOrder) : undefined;
   const [customerName, setCustomerName] = useState(initialPayload?.customerName || templatePayload?.customerName || '');
@@ -2004,6 +2006,15 @@ export function HydratedNewOrderPanel({ data, templateOrder, onClose, onCreated,
     productInputRef.current?.focus();
   }
 
+  const selectInitialCustomer = useEffectEvent(() => {
+    if (initialCustomer) chooseCustomer(initialCustomer);
+  });
+  useEffect(() => {
+    if (!initialCustomer) return;
+    const timer = window.setTimeout(() => selectInitialCustomer(), 0);
+    return () => window.clearTimeout(timer);
+  }, [initialCustomer]);
+
   function addProduct(item: CatalogItem, quantity = 1) {
     if (!Number.isInteger(quantity) || quantity < 1 || quantity > 1000000) return;
     setLines((current) => current.length >= 50 || current.some((line) => line.tallyKey === item.tallyKey) ? current : [...current, { tallyKey: item.tallyKey, item, quantity }]);
@@ -2170,6 +2181,7 @@ export function HydratedNewOrderPanel({ data, templateOrder, onClose, onCreated,
                     className="mt-2 min-h-11 w-full rounded-xl border border-sf-line px-3 font-normal outline-none focus:border-sf-mint"
                     placeholder="Type a Tally ledger name"
                   />
+                  {!initialDraft && !templateOrder && initialCustomerId && !initialCustomer ? <p className="mt-2 text-xs font-normal text-sf-muted">This lab isn&apos;t in the order list yet. Pick the customer.</p> : null}
                   {customerSuggestionsOpen && customerMatches.length > 0 ? (
                     <ul id="customer-suggestions" aria-label="Matching Tally customer ledgers" className="absolute left-0 right-0 top-full z-20 mt-1 max-h-64 overflow-y-auto rounded-xl border border-sf-line bg-white py-1 shadow-xl">
                       {customerMatches.map((customer, index) => (
