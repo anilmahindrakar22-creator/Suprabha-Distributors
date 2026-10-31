@@ -99,5 +99,5 @@ D-06 affects tile hosting if self-hosting is chosen.
 - **Limits:** the 500-pin and 500-group limits have no `truncated` flag yet.
 - **CSP:** the spec assumes one. Production currently sends no Content-Security-Policy header, so tiles load. This is a security-hardening item for the integration owner, outside this package.
 
-### Owner decision (31 Oct): keep colours for sales and operations
+### Colours for sales and operations: kept (Claude recommendation, 31 Oct; owner may override)
 Sales and operations see marker **colours** that are partly wallet-derived (green means share ≥ 80%; a larger marker means a Focus lab), but never figures (`CUSTOMER-MAP-DESIGN` §82). Kept: the colours drive where staff act, and no figures are sent. The tone function keeps this switchable in one place if it is ever tightened.
