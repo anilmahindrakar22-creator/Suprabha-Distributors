@@ -4,7 +4,7 @@ import { useEffect, useMemo, useRef, useState } from 'react';
 import type { SubmitEvent } from 'react';
 import type { WalletAccount, WalletConfidence, WalletMethod, WalletSnapshot, WalletWorkspace } from '@/lib/wallet-types';
 import { formatPaise, rupeesToPaise } from '@/lib/wallet-format';
-import { buildRowCommand, needsReason, type QuickEntryShared } from '@/lib/wallet-quick-entry';
+import { buildRowCommand, needsReason, quickEntryAmount, type QuickEntryShared } from '@/lib/wallet-quick-entry';
 
 const input = 'min-h-11 w-full min-w-0 rounded-xl border border-sf-line bg-sf-soft-0 px-3 text-sm text-sf-body';
 const button = 'min-h-11 rounded-xl border border-sf-line px-3 text-sm font-bold text-sf-body disabled:opacity-50';
@@ -32,6 +32,8 @@ export function WalletQuickEntry({ onBack, onForbidden }: { onBack: () => void; 
   const [sharedExpanded, setSharedExpanded] = useState(false);
   const [moreOptions, setMoreOptions] = useState(false);
   const [method, setMethod] = useState<WalletMethod>('manager_estimate');
+  const [workingDays, setWorkingDays] = useState('26');
+  const [pricePerTest, setPricePerTest] = useState('');
   const [confidence, setConfidence] = useState<WalletConfidence>('medium');
   const [asOf, setAsOf] = useState(todayIST);
   const [note, setNote] = useState('Quick entry');
@@ -41,7 +43,7 @@ export function WalletQuickEntry({ onBack, onForbidden }: { onBack: () => void; 
   const busy = useRef(false);
   const [saving, setSaving] = useState(false);
   const hasValues = Object.values(rows).some(row => !!row.value.trim());
-  const shared: QuickEntryShared = useMemo(() => ({ source, method, confidence, asOf, note }), [source, method, confidence, asOf, note]);
+  const shared: QuickEntryShared = useMemo(() => ({ source, method, confidence, asOf, note, workingDaysPerMonth: Number(workingDays), paisePerTest: rupeesToPaise(pricePerTest) }), [source, method, confidence, asOf, note, workingDays, pricePerTest]);
   const methodLabel = { customer_stated: 'Customer stated', test_volume: 'Test volume', manager_estimate: 'Manager estimate' }[method];
   const dateLabel = asOf ? new Intl.DateTimeFormat('en-GB', { day: 'numeric', month: 'short', timeZone: 'Asia/Kolkata' }).format(new Date(`${asOf}T00:00:00Z`)) : '';
 
@@ -56,6 +58,13 @@ export function WalletQuickEntry({ onBack, onForbidden }: { onBack: () => void; 
 
   function update(id: string, change: Partial<RowState>) {
     setRows(previous => ({ ...previous, [id]: { ...(previous[id] ?? { value: '', reason: '', status: '', requestId: null, command: null, busy: false, current: undefined }), ...change } }));
+  }
+
+  function changeMethod(nextMethod: WalletMethod) {
+    if (nextMethod !== method) {
+      setRows(previous => Object.fromEntries(Object.entries(previous).map(([id, row]) => [id, row.busy || row.command ? row : { ...row, value: '', reason: '', status: '', requestId: null }])));
+    }
+    setMethod(nextMethod);
   }
 
   async function saveRows(event: SubmitEvent<HTMLFormElement>) {
@@ -105,7 +114,11 @@ export function WalletQuickEntry({ onBack, onForbidden }: { onBack: () => void; 
         <label className="block text-sm">Source<input className={input} required minLength={3} maxLength={500} value={source} onChange={event => setSource(event.target.value)} placeholder="Owner estimate, Oct 2026" /></label>
         {!source ? <button type="button" className="min-h-11 text-sm text-sf-muted underline" onClick={() => setMoreOptions(value => !value)}>{moreOptions ? 'Fewer options' : 'More options'}</button> : null}
         {(source || moreOptions || sharedExpanded) ? <div className="grid min-w-0 gap-3 sm:grid-cols-2 lg:grid-cols-4">
-          <label className="block text-sm">Method<select className={input} value={method} onChange={event => setMethod(event.target.value as WalletMethod)}><option value="customer_stated">Customer stated</option><option value="test_volume">Test volume</option><option value="manager_estimate">Manager estimate</option></select></label>
+          <label className="block text-sm">Method<select className={input} value={method} onChange={event => changeMethod(event.target.value as WalletMethod)}><option value="customer_stated">Customer stated</option><option value="test_volume">Test volume</option><option value="manager_estimate">Manager estimate</option></select></label>
+          {method === 'test_volume' ? <>
+            <label className="block text-sm">Working days<input className={input} type="number" min="1" max="31" step="1" required value={workingDays} onChange={event => setWorkingDays(event.target.value)} /></label>
+            <label className="block text-sm">Average ₹ per test<input className={input} type="number" min="0.01" max="1000000" step="0.01" inputMode="decimal" required value={pricePerTest} onChange={event => setPricePerTest(event.target.value)} /></label>
+          </> : null}
           <label className="block text-sm">Confidence<select className={input} value={confidence} onChange={event => setConfidence(event.target.value as WalletConfidence)}><option value="high">High</option><option value="medium">Medium</option><option value="low">Low</option></select></label>
           <label className="block text-sm">As of<input className={input} type="date" required max={todayIST()} value={asOf} onChange={event => setAsOf(event.target.value)} /></label>
           <label className="block text-sm">Note<input className={input} required minLength={3} maxLength={500} value={note} onChange={event => setNote(event.target.value)} /></label>
@@ -116,11 +129,12 @@ export function WalletQuickEntry({ onBack, onForbidden }: { onBack: () => void; 
       <ul className="space-y-3" aria-busy={loading}>
         {currentRows.map(row => {
           const state = rows[row.customerId] ?? { value: '', reason: '', status: '', requestId: null, command: null, busy: false, current: undefined };
-          const amount = rupeesToPaise(state.value);
+          const amount = quickEntryAmount(shared, state.value);
           const lower = needsReason(state.current?.monthlyWalletPaise ?? row.walletPaise, amount);
           return <li key={row.customerId} className="min-w-0 rounded-xl border border-sf-line-soft bg-white p-3"><div className="grid min-w-0 gap-2 sm:grid-cols-[minmax(0,1fr)_9rem] sm:items-center">
             <div className="min-w-0"><p className="truncate"><span className="font-semibold">{row.name}</span><span className="text-sf-muted"> · {row.city || 'City unavailable'}</span></p><p className="text-sm text-sf-muted">{row.walletPaise === null ? 'No estimate' : `Now ${formatPaise(row.walletPaise)}/mo`}</p></div>
-            <div className="min-w-0 space-y-2"><label className="block text-xs text-sf-muted">₹ / month<input className={input} inputMode="decimal" value={state.value} onChange={event => update(row.customerId, { value: event.target.value, status: '', command: null, requestId: null })} /></label>
+            <div className="min-w-0 space-y-2"><label className="block text-xs text-sf-muted">{method === 'test_volume' ? 'Tests/day' : '₹ / month'}<input className={input} type={method === 'test_volume' ? 'number' : 'text'} min={method === 'test_volume' ? 1 : undefined} max={method === 'test_volume' ? 100000 : undefined} step={method === 'test_volume' ? 1 : undefined} inputMode={method === 'test_volume' ? 'numeric' : 'decimal'} value={state.value} onChange={event => update(row.customerId, { value: event.target.value, status: '', command: null, requestId: null })} /></label>
+              {method === 'test_volume' && amount !== null ? <p className="text-xs text-sf-muted">≈ {formatPaise(amount)}/month</p> : null}
               {lower ? <label className="block text-sm">Reason for lowering<input className={input} required minLength={3} maxLength={500} value={state.reason} onChange={event => update(row.customerId, { reason: event.target.value, command: null })} /></label> : null}
               {state.status ? <output className="block text-sm text-sf-body">{state.status}</output> : null}
             </div>

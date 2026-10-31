@@ -6,6 +6,7 @@ import { commercialIcons, constraintIcons } from '@/lib/glance-icons';
 import { useEffect, useRef, useState, type ReactNode } from 'react';
 import type { WalletAccount, WalletCommand, WalletPolicy, WalletRow, WalletSnapshot, WalletView, WalletWorkspace as Workspace } from '@/lib/wallet-types';
 import { formatPaise, permilleLabel, rupeesToPaise } from '@/lib/wallet-format';
+import { calculateTestVolume } from '@/lib/wallet-test-volume';
 import { WalletDiagnosis } from '@/components/wallet-diagnosis';
 import type { ConstraintCategory, WalletDiagnoses, WalletDiagnosisRow } from '@/lib/wallet-diagnosis-types';
 import type { ActionsDue } from '@/lib/wallet-action-types';
@@ -90,7 +91,7 @@ function Figures({ row, certified, walletShareTargetBps }: { row: WalletRow; cer
 
 function SnapshotDetails({ snapshot }: { snapshot: WalletSnapshot }) {
   const methods = { customer_stated: 'Customer stated', test_volume: 'Test volume', manager_estimate: 'Manager estimate' };
-  return <div className="space-y-2 text-sm"><p>{formatPaise(snapshot.monthlyWalletPaise)}/month · {dateLabel(snapshot.asOf)} · {snapshot.confidence[0].toUpperCase() + snapshot.confidence.slice(1)}</p><p>{methods[snapshot.method]} · {snapshot.source}</p><p>{snapshot.note}</p>{snapshot.loweredReason ? <p>Lowered: {snapshot.loweredReason}</p> : null}<p className="text-sf-muted">Entered by {snapshot.enteredBy} · {snapshot.verifiedBy ? `Verified by ${snapshot.verifiedBy}` : 'Not verified'}</p></div>;
+  return <div className="space-y-2 text-sm"><p>{formatPaise(snapshot.monthlyWalletPaise)}/month · {dateLabel(snapshot.asOf)} · {snapshot.confidence[0].toUpperCase() + snapshot.confidence.slice(1)}</p><p>{methods[snapshot.method]} · {snapshot.source}</p>{snapshot.testVolume ? <p className="text-sf-muted">{snapshot.testVolume.testsPerDay} tests/day × {snapshot.testVolume.workingDaysPerMonth} days × {formatPaise(snapshot.testVolume.paisePerTest)}</p> : null}<p>{snapshot.note}</p>{snapshot.loweredReason ? <p>Lowered: {snapshot.loweredReason}</p> : null}<p className="text-sf-muted">Entered by {snapshot.enteredBy} · {snapshot.verifiedBy ? `Verified by ${snapshot.verifiedBy}` : 'Not verified'}</p></div>;
 }
 
 // An uncertain write keeps both its payload and requestId; edits stay locked until resolved.
@@ -124,10 +125,15 @@ function useWrite(onSaved: () => Promise<void>, onConflict: () => Promise<void>,
 
 function EstimateForm({ account, onSaved, onConflict, onForbidden, onLock }: { account: WalletAccount; onSaved: () => Promise<void>; onConflict: () => Promise<void>; onForbidden: () => void; onLock: (locked: boolean) => void }) {
   const [total, setTotal] = useState(account.current ? rupees(account.current.monthlyWalletPaise) : '');
+  const [method, setMethod] = useState<WalletSnapshot['method']>(account.current?.method ?? 'manager_estimate');
+  const [tests, setTests] = useState(account.current?.testVolume ? String(account.current.testVolume.testsPerDay) : '');
+  const [days, setDays] = useState(String(account.current?.testVolume?.workingDaysPerMonth ?? 26));
+  const [price, setPrice] = useState(account.current?.testVolume ? rupees(account.current.testVolume.paisePerTest) : '');
   const [split, setSplit] = useState(false);
   const [parts, setParts] = useState<Record<string, string>>({});
   const write = useWrite(onSaved, onConflict, onForbidden);
-  const amount = rupeesToPaise(total);
+  const paisePerTest = rupeesToPaise(price);
+  const amount = method === 'test_volume' ? calculateTestVolume(Number(tests), Number(days), paisePerTest ?? NaN) : rupeesToPaise(total);
   const lower = amount !== null && account.current !== null && amount < account.current.monthlyWalletPaise;
   const allocations = account.divisions.filter(d => parts[d.code]?.trim()).map(d => ({ code: d.code, monthlyWalletPaise: rupeesToPaise(parts[d.code]) }));
   const allocated = allocations.reduce((sum, d) => sum + bigint(d.monthlyWalletPaise ?? 0), bigint(0));
@@ -137,12 +143,23 @@ function EstimateForm({ account, onSaved, onConflict, onForbidden, onLock }: { a
   return <form aria-label="Update estimate" className="space-y-3" onSubmit={event => {
     event.preventDefault(); if (amount === null || invalidSplit) return;
     const data = new FormData(event.currentTarget);
-    void write.save({ action: 'record_wallet_snapshot', payload: { requestId: crypto.randomUUID(), customerId: account.row.customerId, monthlyWalletPaise: amount, method: data.get('method') as WalletSnapshot['method'], source: field(data, 'source').trim(), confidence: data.get('confidence') as WalletSnapshot['confidence'], asOf: field(data, 'asOf'), note: field(data, 'note').trim(), loweredReason: lower ? field(data, 'reason').trim() : null, divisions: split ? allocations as { code: string; monthlyWalletPaise: number }[] : [], expectedCurrentSnapshotId: account.current?.id ?? null } });
+    void write.save({ action: 'record_wallet_snapshot', payload: { requestId: crypto.randomUUID(), customerId: account.row.customerId, monthlyWalletPaise: amount, method, ...(method === 'test_volume' ? { testVolume: { testsPerDay: Number(tests), workingDaysPerMonth: Number(days), paisePerTest: paisePerTest! } } : {}), source: field(data, 'source').trim(), confidence: data.get('confidence') as WalletSnapshot['confidence'], asOf: field(data, 'asOf'), note: field(data, 'note').trim(), loweredReason: lower ? field(data, 'reason').trim() : null, divisions: split ? allocations as { code: string; monthlyWalletPaise: number }[] : [], expectedCurrentSnapshotId: account.current?.id ?? null } });
   }}>
     <fieldset disabled={locked} className="min-w-0 space-y-3">
-      <label className="block">Total (₹/month)<input className={input} required inputMode="decimal" value={total} onChange={event => setTotal(event.target.value)} /></label>
-      {total && amount === null ? <p className="text-sm text-sf-danger">Enter rupees with up to 2 decimals.</p> : null}
-      <label className="block">Method<select className={input} name="method" defaultValue={account.current?.method ?? 'manager_estimate'}><option value="customer_stated">Customer stated</option><option value="test_volume">Test volume</option><option value="manager_estimate">Manager estimate</option></select></label>
+      <label className="block">Method<select className={input} name="method" value={method} onChange={event => setMethod(event.target.value as WalletSnapshot['method'])}><option value="customer_stated">Customer stated</option><option value="test_volume">Test volume</option><option value="manager_estimate">Manager estimate</option></select></label>
+      {method === 'test_volume' ? <>
+        <label className="block">Tests per day (approx)<input className={input} type="number" min="1" max="100000" step="1" required value={tests} onChange={event => setTests(event.target.value)} /></label>
+        <label className="block">Working days a month<input className={input} type="number" min="1" max="31" step="1" required value={days} onChange={event => setDays(event.target.value)} /></label>
+        <label className="block">Average ₹ per test<input className={input} type="number" min="0.01" max="1000000" step="0.01" inputMode="decimal" required value={price} onChange={event => setPrice(event.target.value)} /></label>
+      </> : null}
+      <label className="block">Total (₹/month)<input className={input} required inputMode="decimal" readOnly={method === 'test_volume'} value={method === 'test_volume' ? amount === null ? '' : rupees(amount) : total} onChange={event => setTotal(event.target.value)} /></label>
+      {method === 'test_volume' && amount !== null ? <p className="text-sm text-sf-muted">≈ {formatPaise(amount)} / month ({Number(tests)} × {Number(days)} × {formatPaise(paisePerTest!)})</p> : null}
+      {amount === null && (method === 'test_volume' ? tests || price : total) ? <p className="text-sm text-sf-danger">{method === 'test_volume' ? 'Enter valid tests, working days and price per test.' : 'Enter rupees with up to 2 decimals.'}</p> : null}
+      <details className="text-sm text-sf-muted"><summary>How to estimate</summary><ol className="space-y-2">
+        <li>Ask the lab what it spends a month on reagents (Customer stated).</li>
+        <li>Ask how many tests a day it runs, or judge from samples, staff and the analyser, then use Test volume.</li>
+        <li>Your own judgement of its size (Manager estimate). Improve it at the next visit.</li>
+      </ol><p>If our sales are above the estimate, the estimate is too low.</p></details>
       <label className="block">Source<input className={input} name="source" required minLength={3} maxLength={500} /></label>
       <label className="block">Confidence<select className={input} name="confidence" defaultValue={account.current?.confidence ?? 'medium'}><option value="high">High</option><option value="medium">Medium</option><option value="low">Low</option></select></label>
       <label className="block">As-of<input className={input} name="asOf" type="date" required defaultValue={todayIST()} max={todayIST()} /></label>

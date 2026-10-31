@@ -15,7 +15,7 @@ describe('wallet API', () => {
     mocks.gateway.mockResolvedValueOnce({ rows: [] });
     const read = await GET(new Request('http://localhost/api/wallet?action=get_wallet_workspace&view=all&page=2&search=abc'));
     expect(await read.json()).toEqual({ rows: [] }); expect(mocks.gateway).toHaveBeenLastCalledWith('staff@example.com', 'get_wallet_workspace', { view: 'all', page: 2, search: 'abc' });
-    const payload = { requestId, customerId: id, monthlyWalletPaise: 100, method: 'test_volume', source: 'Customer data', confidence: 'medium', asOf: '2026-10-29', note: 'Reviewed estimate', loweredReason: null, divisions: [], expectedCurrentSnapshotId: null };
+    const payload = { requestId, customerId: id, monthlyWalletPaise: 100, method: 'test_volume', testVolume: { testsPerDay: 1, workingDaysPerMonth: 1, paisePerTest: 100 }, source: 'Customer data', confidence: 'medium', asOf: '2026-10-29', note: 'Reviewed estimate', loweredReason: null, divisions: [], expectedCurrentSnapshotId: null };
     const write = await POST(post({ action: 'record_wallet_snapshot', payload })); expect(await write.json()).toEqual({ ok: true, snapshotId: id });
   });
   it.each([['PT403', 403], ['PT409', 409]] as const)('maps gateway %s', async (code, status) => {

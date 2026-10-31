@@ -7,7 +7,7 @@ const snapshotId = '88222222-2222-4222-8222-222222222222';
 const policy = { version: 1, walletShareTargetBps: 8000, focusBandBps: 8000, staleAfterMonths: 6, note: 'Initial policy', enteredBy: 'manager@example.test', enteredAt: '2026-10-30T00:00:00Z' };
 const coverage = { certified: true, windowFrom: '2026-07-01', windowTo: '2026-09-30', windowLabel: 'Jul–Sep 2026', reason: null };
 const row = { customerId, name: 'Example Diagnostic Laboratory', city: 'Bidar', walletPaise: 10000000, salesPaise: 2000000, sharePermille: 200, untappedPaise: 8000000, captureGapPaise: 6000000, confidence: 'high' as const, asOf: '2026-10-01', verified: false, stale: false, belowSales: false, inFocusBand: true };
-const current = { id: snapshotId, monthlyWalletPaise: row.walletPaise, method: 'customer_stated' as const, source: 'Customer discussion', confidence: 'high' as const, asOf: row.asOf, note: 'Initial estimate', loweredReason: null, enteredBy: 'manager@example.test', enteredAt: '2026-10-01T00:00:00Z', verifiedBy: null, divisions: [{ code: 'BIOCHEM', name: 'Biochemistry', monthlyWalletPaise: 4000000 }], unallocatedPaise: 6000000 };
+const current = { id: snapshotId, monthlyWalletPaise: row.walletPaise, testVolume: null, method: 'customer_stated' as const, source: 'Customer discussion', confidence: 'high' as const, asOf: row.asOf, note: 'Initial estimate', loweredReason: null, enteredBy: 'manager@example.test', enteredAt: '2026-10-01T00:00:00Z', verifiedBy: null, divisions: [{ code: 'BIOCHEM', name: 'Biochemistry', monthlyWalletPaise: 4000000 }], unallocatedPaise: 6000000 };
 type Options = { certified?: boolean; canAssign?: boolean; failure?: 'conflict' | 'network' | 'forbidden'; };
 
 async function fixture(page: Page, options: Options = {}) {
@@ -17,7 +17,7 @@ async function fixture(page: Page, options: Options = {}) {
   let saved = false;
   let version = 1;
   await page.route('**/api/accounts**', route => route.fulfill({ json: { accounts: [], page: { page: 1, pageSize: 50, total: 0 }, owners: [], territories: [], canAssign: options.canAssign !== false, canEraseContacts: false, canSeePowerMap: false, actorEmail: 'manager@example.test', today: '2026-10-30', classPolicy: { aMinPaise: '20000000', bMinPaise: '7500000' } } }));
-  await page.route('**/api/wallet**', async route => {
+  for (const pattern of ['**/api/wallet?**', '**/api/wallet', '**/api/wallet/**']) await page.route(pattern, async route => {
     const url = new URL(route.request().url());
     if (url.pathname === '/api/wallet/actions') return route.fulfill({ json: route.request().method() === 'GET' ? (url.searchParams.get('action') === 'get_actions_due' ? { page: 1, pageSize: 50, total: 0, overdueCount: 0, rows: [] } : []) : { ok: true } });
     if (url.pathname === '/api/wallet/diagnosis' && route.request().method() === 'GET') {
@@ -40,7 +40,7 @@ async function fixture(page: Page, options: Options = {}) {
     const updated = saved && latest?.action === 'record_wallet_snapshot' ? { ...row, walletPaise: latest.payload.monthlyWalletPaise } : row;
     const visibleRow = certified ? updated : { ...updated, salesPaise: null, sharePermille: null, captureGapPaise: null, untappedPaise: null, inFocusBand: null };
     if (url.searchParams.get('action') === 'get_wallet_account') {
-      const account: WalletAccount = { policy, coverage: { ...coverage, certified }, row: visibleRow, current: { ...current, monthlyWalletPaise: updated.walletPaise }, history: [current], divisions: [{ code: 'BIOCHEM', name: 'Biochemistry' }, { code: 'HAEM', name: 'Haematology' }] };
+      const account: WalletAccount = { policy, coverage: { ...coverage, certified }, row: visibleRow, current: { ...current, ...(saved && latest?.action === 'record_wallet_snapshot' ? { method: latest.payload.method, testVolume: latest.payload.testVolume ?? null } : {}), monthlyWalletPaise: updated.walletPaise }, history: [current], divisions: [{ code: 'BIOCHEM', name: 'Biochemistry' }, { code: 'HAEM', name: 'Haematology' }] };
       return route.fulfill({ json: account });
     }
     const workspace: WalletWorkspace = { policy: { ...policy, version }, coverage: { ...coverage, certified }, view: url.searchParams.get('view') as WalletWorkspace['view'], page: Number(url.searchParams.get('page')), pageSize: 50, total: 51, rows: [visibleRow, { ...visibleRow, customerId: '77111111-1111-4111-8111-111111111111', name: 'No estimate lab', walletPaise: null, sharePermille: null, confidence: null, asOf: null }], summary: { focusCount: certified ? 8 : null, focusGapPaise: certified ? 42000000 : null, estimatedAccounts: 9, accountsWithSales: certified ? 112 : null, unlinkedSalesPaise: certified ? 1234500 : null, unlinkedLedgers: certified ? 3 : null } };
@@ -65,6 +65,41 @@ async function openForm(page: Page) {
 
 for (const width of [375, 1280]) test.describe(`Wallet at ${width}px`, () => {
   test.use({ viewport: { width, height: 812 } });
+  test('test volume calculates and posts inputs, with collapsed guidance', async ({ page }) => {
+    const { posts } = await fixture(page);
+    const form = await openForm(page);
+    await expect(form.locator('details')).not.toHaveAttribute('open', '');
+    await expect(form.getByText('How to estimate', { exact: true })).toBeVisible();
+    await form.getByRole('combobox', { name: /^Method/ }).selectOption('test_volume');
+    await form.getByLabel('Tests per day (approx)', { exact: true }).fill('80');
+    await expect(form.getByLabel('Working days a month')).toHaveValue('26');
+    await form.getByLabel('Average ₹ per test').fill('25');
+    await expect(form.getByLabel('Total (₹/month)', { exact: true })).toHaveAttribute('readonly', '');
+    await expect(form.getByLabel('Total (₹/month)', { exact: true })).toHaveValue('52000.00');
+    await expect(form.getByText('≈ ₹52,000 / month (80 × 26 × ₹25)', { exact: true })).toBeVisible();
+    await form.getByLabel('Why is the estimate lower?').fill('Volume reviewed');
+    expect(await page.evaluate(() => document.documentElement.scrollWidth <= innerWidth)).toBe(true);
+    await form.getByRole('button', { name: 'Save estimate', exact: true }).click();
+    await expect.poll(() => posts.length).toBe(1);
+    expect(posts[0]).toMatchObject({ action: 'record_wallet_snapshot', payload: { method: 'test_volume', monthlyWalletPaise: 5200000, testVolume: { testsPerDay: 80, workingDaysPerMonth: 26, paisePerTest: 2500 } } });
+    await expect(page.getByRole('dialog').getByText('80 tests/day × 26 days × ₹25', { exact: true })).toBeVisible();
+  });
+  test('switching from test volume restores manual total and omits inputs', async ({ page }) => {
+    const { posts } = await fixture(page);
+    const form = await openForm(page);
+    await form.getByRole('combobox', { name: /^Method/ }).selectOption('test_volume');
+    await form.getByLabel('Tests per day (approx)').fill('80');
+    await form.getByLabel('Average ₹ per test').fill('25');
+    await form.getByRole('combobox', { name: /^Method/ }).selectOption('manager_estimate');
+    await expect(form.getByLabel('Tests per day (approx)')).toHaveCount(0);
+    await expect(form.getByLabel('Working days a month')).toHaveCount(0);
+    await expect(form.getByLabel('Average ₹ per test')).toHaveCount(0);
+    await expect(form.getByLabel('Total (₹/month)', { exact: true })).toBeEditable();
+    await form.getByLabel('Total (₹/month)', { exact: true }).fill('120000');
+    await form.getByRole('button', { name: 'Save estimate', exact: true }).click();
+    await expect.poll(() => posts.length).toBe(1);
+    expect(posts[0].payload).not.toHaveProperty('testVolume');
+  });
   test('certified header, account figures, and no horizontal overflow', async ({ page }, testInfo) => {
     await fixture(page);
     await expect(page.getByText('Focus band: 8 accounts hold 80% of the capture gap · ₹4.2 L/month', { exact: true })).toBeVisible();

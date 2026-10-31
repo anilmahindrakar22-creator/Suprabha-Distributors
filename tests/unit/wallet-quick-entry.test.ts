@@ -1,11 +1,32 @@
 import { describe, expect, it } from 'vitest';
 import { buildRowCommand, needsReason } from '@/lib/wallet-quick-entry';
 import type { WalletRow } from '@/lib/wallet-types';
+import { calculateTestVolume } from '@/lib/wallet-test-volume';
 
 const row: WalletRow = { customerId: 'customer-id', name: 'Lab', city: 'Bidar', walletPaise: 1000000, salesPaise: null, sharePermille: null, untappedPaise: null, captureGapPaise: null, confidence: 'medium', asOf: '2026-10-30', verified: false, stale: false, belowSales: false, inFocusBand: null };
 const shared = { source: ' Owner estimate, Oct 2026 ', method: 'manager_estimate' as const, confidence: 'medium' as const, asOf: '2026-10-30', note: ' Quick entry ' };
 
 describe('wallet quick entry command helpers', () => {
+  it('calculates integer paise with bounded integer inputs', () => {
+    expect(calculateTestVolume(80, 26, 2500)).toBe(5200000);
+    expect(calculateTestVolume(1, 1, 1)).toBe(1);
+    expect(calculateTestVolume(100000, 31, 100000000)).toBe(310000000000000);
+    for (const bad of [0, -1, 1.5, NaN, Infinity]) {
+      expect(calculateTestVolume(bad, 26, 2500)).toBeNull();
+      expect(calculateTestVolume(80, bad, 2500)).toBeNull();
+      expect(calculateTestVolume(80, 26, bad)).toBeNull();
+    }
+    expect(calculateTestVolume(100001, 26, 2500)).toBeNull();
+    expect(calculateTestVolume(80, 32, 2500)).toBeNull();
+    expect(calculateTestVolume(80, 26, 100000001)).toBeNull();
+  });
+  it('builds volume totals and uses them for lowering', () => {
+    const volume = { ...shared, method: 'test_volume' as const, workingDaysPerMonth: 26, paisePerTest: 2500 };
+    expect(buildRowCommand(volume, row, '80', '', 'request-id').payload).toMatchObject({ monthlyWalletPaise: 5200000, testVolume: { testsPerDay: 80, workingDaysPerMonth: 26, paisePerTest: 2500 }, loweredReason: null });
+    expect(buildRowCommand(volume, row, '1', ' Less volume ', 'request-id').payload.loweredReason).toBe('Less volume');
+    expect(() => buildRowCommand(volume, row, '1.5', '', 'request-id')).toThrow();
+    expect(buildRowCommand(shared, row, '80', '', 'request-id').payload).not.toHaveProperty('testVolume');
+  });
   it('converts rupees to paise and supplies the exact snapshot command defaults', () => {
     expect(buildRowCommand(shared, row, '12345.67', '', 'request-id')).toEqual({
       action: 'record_wallet_snapshot',

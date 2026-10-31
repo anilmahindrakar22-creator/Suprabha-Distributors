@@ -1,3 +1,6 @@
+import { calculateTestVolume } from '@/lib/wallet-test-volume';
+
+export type WalletTestVolume = { testsPerDay: number; workingDaysPerMonth: number; paisePerTest: number };
 export type WalletMethod = 'customer_stated' | 'test_volume' | 'manager_estimate';
 export type WalletConfidence = 'high' | 'medium' | 'low';
 export type WalletView = 'focus' | 'all' | 'no_estimate' | 'stale' | 'below_sales';
@@ -14,12 +17,12 @@ export type WalletWorkspace = {
   policy: WalletPolicy; coverage: WalletCoverage; view: WalletView; page: number; pageSize: 50; total: number; rows: WalletRow[];
   summary: { focusCount: number | null; focusGapPaise: number | null; estimatedAccounts: number; accountsWithSales: number | null; unlinkedSalesPaise: number | null; unlinkedLedgers: number | null };
 };
-export type WalletSnapshot = { id: string; monthlyWalletPaise: number; method: WalletMethod; source: string; confidence: WalletConfidence; asOf: string; note: string; loweredReason: string | null; enteredBy: string; enteredAt: string; verifiedBy: string | null; divisions: Array<{ code: string; name: string; monthlyWalletPaise: number }>; unallocatedPaise: number };
+export type WalletSnapshot = { id: string; monthlyWalletPaise: number; testVolume: WalletTestVolume | null; method: WalletMethod; source: string; confidence: WalletConfidence; asOf: string; note: string; loweredReason: string | null; enteredBy: string; enteredAt: string; verifiedBy: string | null; divisions: Array<{ code: string; name: string; monthlyWalletPaise: number }>; unallocatedPaise: number };
 export type WalletAccount = { policy: WalletPolicy; coverage: WalletCoverage; row: WalletRow; current: WalletSnapshot | null; history: WalletSnapshot[]; divisions: Array<{ code: string; name: string }> };
 export type WalletCommand =
   | { action: 'get_wallet_workspace'; payload: { view: WalletView; page: number; search: string } }
   | { action: 'get_wallet_account'; payload: { customerId: string } }
-  | { action: 'record_wallet_snapshot'; payload: { requestId: string; customerId: string; monthlyWalletPaise: number; method: WalletMethod; source: string; confidence: WalletConfidence; asOf: string; note: string; loweredReason: string | null; divisions: Array<{ code: string; monthlyWalletPaise: number }>; expectedCurrentSnapshotId: string | null } }
+  | { action: 'record_wallet_snapshot'; payload: { requestId: string; customerId: string; monthlyWalletPaise: number; testVolume?: WalletTestVolume | null; method: WalletMethod; source: string; confidence: WalletConfidence; asOf: string; note: string; loweredReason: string | null; divisions: Array<{ code: string; monthlyWalletPaise: number }>; expectedCurrentSnapshotId: string | null } }
   | { action: 'set_wallet_policy'; payload: { requestId: string; walletShareTargetBps: number; focusBandBps: number; staleAfterMonths: number; note: string; expectedVersion: number } };
 
 const views: WalletView[] = ['focus', 'all', 'no_estimate', 'stale', 'below_sales'];
@@ -43,6 +46,12 @@ export function validateWalletCommand(input: unknown): WalletCommand {
       if (typeof p.customerId !== 'string' || !uuid.test(p.customerId)) return fail();
       return { action: input.action, payload: { customerId: p.customerId } };
     case 'record_wallet_snapshot': {
+      const tv = p.testVolume;
+      if (p.method === 'test_volume') {
+        if (!object(tv) || !integer(tv.testsPerDay, 1, 100000) || !integer(tv.workingDaysPerMonth, 1, 31)
+          || !integer(tv.paisePerTest, 1, 100000000)
+          || calculateTestVolume(tv.testsPerDay as number, tv.workingDaysPerMonth as number, tv.paisePerTest as number) !== p.monthlyWalletPaise) return fail();
+      } else if (tv !== undefined && tv !== null) return fail();
       if (typeof p.requestId !== 'string' || !uuid.test(p.requestId) || typeof p.customerId !== 'string' || !uuid.test(p.customerId)
         || !integer(p.monthlyWalletPaise, 0, 9e15) || !methods.includes(p.method as WalletMethod) || !text(p.source, 3, 500)
         || !confidences.includes(p.confidence as WalletConfidence) || typeof p.asOf !== 'string' || !date.test(p.asOf)

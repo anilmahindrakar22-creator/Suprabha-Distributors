@@ -5,6 +5,17 @@ const customerId = '11111111-1111-4111-8111-111111111111';
 const requestId = '22222222-2222-4222-8222-222222222222';
 const snapshot = { action: 'record_wallet_snapshot', payload: { requestId, customerId, monthlyWalletPaise: 1000, method: 'customer_stated', source: 'Customer call', confidence: 'high', asOf: '2026-10-29', note: 'Reviewed estimate', loweredReason: null, divisions: [{ code: 'BIOCHEM', monthlyWalletPaise: 500 }], expectedCurrentSnapshotId: null } };
 describe('validateWalletCommand', () => {
+  it('validates test volume, ranges, method and matching total', () => {
+    const testVolume = { testsPerDay: 80, workingDaysPerMonth: 26, paisePerTest: 2500 };
+    const command = { ...snapshot, payload: { ...snapshot.payload, method: 'test_volume', monthlyWalletPaise: 5200000, testVolume } };
+    expect(validateWalletCommand(command)).toEqual(command);
+    for (const value of [undefined, null, [], {}, { ...testVolume, testsPerDay: 0 }, { ...testVolume, testsPerDay: 100001 }, { ...testVolume, workingDaysPerMonth: 32 }, { ...testVolume, paisePerTest: 100000001 }, { ...testVolume, paisePerTest: 1.5 }, { ...testVolume, testsPerDay: '80' }]) {
+      expect(() => validateWalletCommand({ ...command, payload: { ...command.payload, testVolume: value } })).toThrow('Invalid wallet request');
+    }
+    expect(() => validateWalletCommand({ ...command, payload: { ...command.payload, monthlyWalletPaise: 1 } })).toThrow();
+    expect(() => validateWalletCommand({ ...snapshot, payload: { ...snapshot.payload, testVolume } })).toThrow();
+    expect(validateWalletCommand({ ...snapshot, payload: { ...snapshot.payload, testVolume: null } })).toBeTruthy();
+  });
   it('accepts valid examples of all four commands', () => {
     expect(validateWalletCommand({ action: 'get_wallet_workspace', payload: { view: 'focus', page: 1, search: '' } }).action).toBe('get_wallet_workspace');
     expect(validateWalletCommand({ action: 'get_wallet_account', payload: { customerId } }).action).toBe('get_wallet_account');

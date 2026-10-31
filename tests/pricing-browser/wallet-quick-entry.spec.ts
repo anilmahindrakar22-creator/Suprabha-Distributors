@@ -9,7 +9,7 @@ const workspace = (view: string) => ({ policy, coverage, view, page: 1, pageSize
 async function setup(page: Page, opts: { sales?: boolean; failure?: 'conflict' | 'network' } = {}) {
   const reads: string[] = []; const posts: Array<{ action: string; payload: Record<string, unknown> }> = []; let failRow = opts.failure ? (opts.failure === 'conflict' ? 2 : 1) : -1; let failOnce = true;
   await page.route('**/api/accounts**', route => route.fulfill({ json: { accounts: [], page: { page: 1, pageSize: 50, total: 0 }, owners: [], territories: [], canAssign: true, canEraseContacts: false, canSeePowerMap: false, actorEmail: 'manager@example.test', today: '2026-10-30', classPolicy: { aMinPaise: '20000000', bMinPaise: '7500000' } } }));
-  await page.route('**/api/wallet**', async route => {
+  for (const pattern of ['**/api/wallet?**', '**/api/wallet', '**/api/wallet/**']) await page.route(pattern, async route => {
     const url = new URL(route.request().url());
     if (route.request().method() === 'GET') {
       reads.push(url.href);
@@ -93,4 +93,48 @@ test('not visible to sales', async ({ page }) => {
 test('375 px layout has no horizontal scroll', async ({ page }) => {
   await page.setViewportSize({ width: 375, height: 812 }); await setup(page);
   expect(await page.evaluate(() => document.documentElement.scrollWidth <= innerWidth)).toBe(true);
+});
+
+test('test volume shares days and price and posts three calculated totals at 375 px', async ({ page }) => {
+  await page.setViewportSize({ width: 375, height: 812 });
+  const { posts } = await setup(page);
+  await page.getByLabel('Source').fill('Lab visits');
+  await page.getByRole('button', { name: 'Change', exact: true }).click();
+  await page.getByRole('combobox', { name: /^Method/ }).selectOption('test_volume');
+  await expect(page.getByLabel('Working days', { exact: true })).toHaveValue('26');
+  await page.getByLabel('Average ₹ per test').fill('25');
+  for (const [i, tests] of ['80', '40', '20'].entries()) await page.getByLabel('Tests/day', { exact: true }).nth(i).fill(tests);
+  await expect(page.getByText('≈ ₹52,000/month', { exact: true })).toBeVisible();
+  expect(await page.evaluate(() => document.documentElement.scrollWidth <= innerWidth)).toBe(true);
+  await page.getByRole('button', { name: 'Save entered rows (3)' }).click();
+  await expect.poll(() => posts.length).toBe(3);
+  expect(posts.map(p => p.payload.monthlyWalletPaise)).toEqual([5200000, 2600000, 1300000]);
+  expect(posts.map(p => p.payload.testVolume)).toEqual([80, 40, 20].map(testsPerDay => ({ testsPerDay, workingDaysPerMonth: 26, paisePerTest: 2500 })));
+});
+
+test('test volume lowering uses calculated spend and switching method omits volume', async ({ page }) => {
+  const { posts } = await setup(page);
+  await page.getByLabel('Source').fill('Lab visits');
+  await page.getByRole('button', { name: 'Change', exact: true }).click();
+  await page.getByRole('combobox', { name: /^Method/ }).selectOption('test_volume');
+  await page.getByLabel('Average ₹ per test').fill('25');
+  await page.getByLabel('Tests/day', { exact: true }).first().fill('1');
+  await expect(page.getByLabel('Reason for lowering')).toBeVisible();
+  await page.getByLabel('Tests/day', { exact: true }).first().fill('80');
+  await expect(page.getByLabel('Reason for lowering')).toHaveCount(0);
+  await page.getByRole('combobox', { name: /^Method/ }).selectOption('manager_estimate');
+  await expect(page.getByLabel('Working days', { exact: true })).toHaveCount(0);
+  await page.getByLabel('₹ / month', { exact: true }).first().fill('12000');
+  await page.getByRole('button', { name: 'Save entered rows (1)' }).click();
+  await expect.poll(() => posts.length).toBe(1);
+  expect(posts[0].payload).not.toHaveProperty('testVolume');
+});
+
+test('switching to test volume clears typed monthly amounts', async ({ page }) => {
+  await setup(page);
+  await page.getByLabel('Source').fill('Lab visits');
+  await page.getByRole('button', { name: 'Change', exact: true }).click();
+  await page.getByLabel('₹ / month', { exact: true }).first().fill('50000');
+  await page.getByRole('combobox', { name: /^Method/ }).selectOption('test_volume');
+  await expect(page.getByLabel('Tests/day', { exact: true }).first()).toHaveValue('');
 });
