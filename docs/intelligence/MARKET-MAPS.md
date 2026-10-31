@@ -67,3 +67,37 @@
 
 ## 7. Open decisions
 D-06 affects tile hosting if self-hosting is chosen.
+
+## 8. Conformance review of the v1 build (Claude with advisor second opinion, 31 Oct 2026)
+**Status update.** The "parked on `market-w1`" note above is out of date. On train `claude/train-20261113`:
+- pins (`stockflow_customer_locations`) are used live;
+- the map and lab sheet are built (`CUSTOMER-MAP-DESIGN-20261030.md`);
+- PIN aggregates are designed (`PIN-PLACEMENT-DESIGN-20261031.md`);
+- Place on map and check-in are designed (`MAP-PLACE-AND-CHECKIN-DESIGN-20261031.md`).
+
+### Matches the spec
+- **No invented pins.** Town and PIN levels are labelled aggregates (§2, MAP-FR-10), and missing geography stays visible as "Not on map" (MAP-FR-09).
+- **Coordinates come only from Customer geography,** written through the existing location command (MAP-FR-04/05, ADR-0004).
+- **Order and Plan** go through normal domain commands (MAP-FR-11).
+- **Financial fields** are role-shaped server-side, and the gateway checks roles.
+- **Lab visibility matches Accounts:** the Accounts gateway also allows `scope=all` for sales.
+- **Aggregates drill down** to the exact account rows (MAP-FR-08, PIN list).
+
+### Fixed in the PIN gateway package
+- **Freshness (MAP-FR-09, §6):**
+  - the map returns `calculatedAt`, plus the wallet `asOf` and certified flag;
+  - the sheet passes wallet `confidence` and `asOf` for financial roles.
+
+  The UI shows them in the PIN UI package.
+
+### Recorded v1 deviations (not built yet, by the owner's "Dont over optimise")
+- **MAP-FR-01/02:** the chips (Wallet, Actions, Orders, No data) filter pins and don't switch modes. OPPORTUNITY mode is not built, and Orders is an extra filter.
+- **MAP-FR-03:** no territory, salesperson or division filters on the map yet; Accounts has them.
+- **§6, list and map parity:** the map chips and the Accounts list filters differ.
+- **MAP-FR-07:** a pin opens the lab sheet. It links to Accounts (Contacts) and Wallet (Plan), but it isn't the Accounts record itself.
+- **§4:** there's no stored geographic read model with a watermark. The gateway computes live, which is acceptable at 463 labs now that freshness is returned. Revisit if latency exceeds the budget.
+- **Limits:** the 500-pin and 500-group limits have no `truncated` flag yet.
+- **CSP:** the spec assumes one. Production currently sends no Content-Security-Policy header, so tiles load. This is a security-hardening item for the integration owner, outside this package.
+
+### Owner decision pending
+Sales and operations see marker **colours** that are partly wallet-derived (green means share ≥ 80%; a larger marker means a Focus lab), but never figures (`CUSTOMER-MAP-DESIGN` §82). The tone function keeps this switchable in one place.
