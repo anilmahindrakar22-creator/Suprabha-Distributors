@@ -1270,6 +1270,13 @@
       "remoteVersion": null,
       "remoteSha256": null,
       "status": "not_deployed"
+    },
+    {
+      "localFile": "20261116100000_brand_mapping.sql",
+      "localSha256": "6368f476e4dbca396c8dc719c631165e9e2cdecadbbedd382738fa31ec48e15f",
+      "remoteVersion": null,
+      "remoteSha256": null,
+      "status": "not_deployed"
     }
   ],
   "liveCheck": {
