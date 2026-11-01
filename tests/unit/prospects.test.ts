@@ -1,5 +1,6 @@
 import { describe, expect, it } from 'vitest';
-import { parseProspects } from '@/lib/prospects';
+import { parseProspects, prospectAreaLine, unmappedWarningPercent } from '@/lib/prospects';
+import type { ProspectArea } from '@/lib/prospects';
 
 const brand = { code: 'ACME', name: 'Acme', areas: ['HAEM', 'IMMUNO'] };
 const customerId = '19300000-0000-4000-8000-000000000001';
@@ -8,6 +9,32 @@ const row = { customerId, name: 'Central Lab', city: null, reportedOn: '2026-11-
     { area: 'IMMUNO', name: 'Immunoassay', status: 'sends_out', min: null, max: null, exact: false }],
   volume: 1, hasOurMachine: true, brandSalesPaise: -1200 };
 const payload = { brand, brands: [brand], rows: [row], total: 1, page: 1, mappedShare: { unmappedSalesPaise: 300, totalSalesPaise: -900 } };
+
+describe('prospect display helpers', () => {
+  it('joins band, exact, sends-out and not-done areas without losing Unicode', () => {
+    const areas: ProspectArea[] = [
+      { area: 'IMMUNO', name: 'Hormones', status: 'in_house', min: 15, max: 30, exact: false },
+      { area: 'HAEM', name: 'Haematology', status: 'in_house', min: 35, max: 35, exact: true },
+      { area: 'URINE', name: 'Urine', status: 'sends_out', min: null, max: null, exact: false },
+      { area: 'COAG', name: 'Coagulation', status: 'not_done', min: null, max: null, exact: false },
+    ];
+    expect(prospectAreaLine(areas)).toBe('Hormones 15–30/day · Haematology 35/day · Urine sends out · Coagulation not done');
+    expect(prospectAreaLine([{ ...areas[0], min: 61, max: null }])).toBe('Hormones 61+/day');
+    expect(prospectAreaLine([])).toBe('');
+  });
+
+  it('warns at exactly ten percent, using the unrounded share', () => {
+    expect(unmappedWarningPercent({ unmappedSalesPaise: 100, totalSalesPaise: 1000 })).toBe(10);
+    expect(unmappedWarningPercent({ unmappedSalesPaise: 99, totalSalesPaise: 1000 })).toBeNull();
+    expect(unmappedWarningPercent({ unmappedSalesPaise: 185, totalSalesPaise: 1000 })).toBe(19);
+  });
+
+  it('does not warn without positive total sales or a financial share', () => {
+    expect(unmappedWarningPercent(null)).toBeNull();
+    expect(unmappedWarningPercent({ unmappedSalesPaise: 100, totalSalesPaise: 0 })).toBeNull();
+    expect(unmappedWarningPercent({ unmappedSalesPaise: 100, totalSalesPaise: -1000 })).toBeNull();
+  });
+});
 
 describe('parseProspects', () => {
   it('parses financial rows and preserves the selected brand area order', () => {

@@ -1,4 +1,4 @@
-import { labAreaCodes, type LabFit } from './lab-mix';
+import { bandLabel, labAreaCodes, type LabFit } from './lab-mix';
 
 export type ProspectBrand = { code: string; name: string; areas: typeof labAreaCodes[number][] };
 export type ProspectArea = { area: typeof labAreaCodes[number]; name: string; status: 'in_house' | 'sends_out' | 'not_done'; min: number | null; max: number | null; exact: boolean };
@@ -13,6 +13,18 @@ export type Prospects = {
   brand: ProspectBrand; brands: ProspectBrand[]; rows: ProspectRow[]; total: number; page: number;
   mappedShare: { unmappedSalesPaise: number; totalSalesPaise: number } | null;
 };
+
+export function prospectAreaLine(areas: ProspectArea[]): string {
+  return areas.map(row => `${row.name} ${row.status === 'in_house'
+    ? `${row.exact ? row.min : bandLabel(row.min!, row.max)}/day`
+    : row.status === 'sends_out' ? 'sends out' : 'not done'}`).join(' · ');
+}
+
+/** Compare the actual share before rounding its display value. */
+export function unmappedWarningPercent(share: Prospects['mappedShare']): number | null {
+  return share && share.totalSalesPaise > 0 && share.unmappedSalesPaise / share.totalSalesPaise >= 0.1
+    ? Math.round(100 * share.unmappedSalesPaise / share.totalSalesPaise) : null;
+}
 
 function invalid(): never { throw new Error('Invalid prospects'); }
 function obj(value: unknown, required: string[], optional: string[] = []): Record<string, unknown> {
