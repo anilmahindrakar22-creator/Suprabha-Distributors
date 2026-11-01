@@ -1265,6 +1265,13 @@
       "status": "not_deployed"
     },
     {
+      "localFile": "20261102193000_pin_move_management_only.sql",
+      "localSha256": "da7b9272e780350a6b6407b97049c794c9b2c29ca4209c20cef05daa37c80b0a",
+      "remoteVersion": null,
+      "remoteSha256": null,
+      "status": "not_deployed"
+    },
+    {
       "localFile": "20261116090000_lab_mix_reports.sql",
       "localSha256": "13fa224924ca3bd7c17069e98187ff74588985ef8a8858d8f6c13db5331e121a",
       "remoteVersion": null,

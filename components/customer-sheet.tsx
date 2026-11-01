@@ -36,6 +36,7 @@ export function CustomerSheet({ customerId, financial, prospect, onClose, onOpen
   const [pinChooser, setPinChooser] = useState(false);
   const manualInput = useRef<HTMLInputElement>(null);
   const [moving, setMoving] = useState(false); const [completing, setCompleting] = useState(false);
+  const canPlacePin = financial || data?.location?.precision !== 'pin';
   const [revision, setRevision] = useState(0);
   const pending = useRef<{ fingerprint: string; idempotencyKey: string } | null>(null);
   const labPending = useRef<{ fingerprint: string; idempotencyKey: string } | null>(null);
@@ -98,6 +99,7 @@ export function CustomerSheet({ customerId, financial, prospect, onClose, onOpen
   }
   async function savePin(lat: number, lng: number, source: 'manual_pin' | 'pasted_link' = 'manual_pin') {
     if (!data || flight.current) return 'Pin save is unavailable. Try again.';
+    if (!canPlacePin) { const message = 'Only management can move a pin.'; setError(message); return message; }
     if (!isInsideMarketArea(lat, lng)) { const message = `This pin is outside the five-district market area (${MARKET_AREA.name}). Check the link before saving.`; setError(message); return message; }
     flight.current = true; setBusy(true); setError('');
     try {
@@ -124,6 +126,7 @@ export function CustomerSheet({ customerId, financial, prospect, onClose, onOpen
       if (pending.current?.fingerprint !== fingerprint) pending.current = { fingerprint, idempotencyKey: crypto.randomUUID() };
       const response = await fetch('/api/accounts', { method: 'POST', headers: { 'content-type': 'application/json' }, body: JSON.stringify({ ...body, idempotencyKey: pending.current.idempotencyKey }) });
       if (response.status === 409) { pending.current = null; setRevision(n => n + 1); throw new Error('Someone else moved this pin. Details reloaded; check before saving again.'); }
+      if (response.status === 403) { pending.current = null; throw new Error('Only management can move a pin.'); }
       if (!response.ok) { if (response.status < 500 && response.status !== 408 && response.status !== 429) pending.current = null; throw new Error('Pin save could not be confirmed. Retry the same position.'); }
       pending.current = null; setGps(null); setManual(false); setMoving(false); setNotice('Pin saved.'); setRevision(n => n + 1); onLocationSaved();
       return null;
@@ -131,7 +134,7 @@ export function CustomerSheet({ customerId, financial, prospect, onClose, onOpen
     finally { flight.current = false; setBusy(false); }
   }
   function placeOnMap() {
-    if (!data || !onPlaceOnMap) return;
+    if (!data || !onPlaceOnMap || !canPlacePin) return;
     setPinChooser(false); setGps(null); setManual(false); setError(''); setNotice('');
     // Resolve savePin from the mounted sheet at save time, including after a 409 reload.
     onPlaceOnMap({ name: data.name, location: data.location, save: (lat, lng) => saveCurrent.current(lat, lng) });
@@ -176,7 +179,7 @@ export function CustomerSheet({ customerId, financial, prospect, onClose, onOpen
           <header className="space-y-2"><h3 className="text-xl font-semibold">{data.name}</h3><p className="text-sf-muted">{[data.city, data.owner ? `Owner: ${data.owner}` : null, data.accountClass ? `Class ${data.accountClass}` : null].filter(Boolean).join(' · ')}</p>
             {financial && share !== undefined ? <><StatusChip icon={Wallet} tone={shareTone}><span className="text-base">{share === null ? 'Share unknown' : `${share / 10}% share`}</span></StatusChip><MeterBar value={share === null ? null : share / 1000} target={0.8} tone={shareTone} label="Wallet share" /></> : null}
           </header>
-          {checkinNotice ? <output className="block text-xs text-sf-muted">{checkinNotice}</output> : checkin ? <div className="text-xs"><output className={`block ${checkin.result.verified ? 'text-sf-success' : 'text-sf-warm'}`}>{checkinMessage(checkin.result, checkin.reading.accuracy)}</output>{!checkin.result.hasPin ? <button className={button} disabled={busy} onClick={() => { setPinChooser(false); setManual(false); setGps(checkin.reading); }}>Pin lab here too?</button> : null}</div> : null}
+          {checkinNotice ? <output className="block text-xs text-sf-muted">{checkinNotice}</output> : checkin ? <div className="text-xs"><output className={`block ${checkin.result.verified ? 'text-sf-success' : 'text-sf-warm'}`}>{checkinMessage(checkin.result, checkin.reading.accuracy)}</output>{!checkin.result.hasPin && canPlacePin ? <button className={button} disabled={busy} onClick={() => { setPinChooser(false); setManual(false); setGps(checkin.reading); }}>Pin lab here too?</button> : null}</div> : null}
           {data.location?.approximate ? <p className="text-xs text-sf-muted">Approx location · PIN {data.location.approximate.pinCode} · <button className="min-h-11 underline" disabled={busy} aria-expanded={pinChooser} onClick={() => setPinChooser(value => !value)}>Pin here</button> to place exactly</p> : null}
           {data.constraint ? <div className="flex items-center gap-2 text-sf-warm"><ToneIcon icon={constraintIcons[data.constraint.category]} tone="warning" size="sm" /><p>Held back by: {data.constraint.label}{data.constraint.category === 'price' && !data.constraint.proven && !data.constraint.label.includes('(not proven)') ? ' (not proven)' : ''}</p></div> : null}
           <div aria-label="Customer figures" className="grid grid-cols-2 gap-2">
@@ -204,15 +207,13 @@ export function CustomerSheet({ customerId, financial, prospect, onClose, onOpen
               <form aria-label="Lab size" className="min-w-0 space-y-2" onSubmit={async event => {
                 event.preventDefault(); if (flight.current) return;
                 const form = new FormData(event.currentTarget);
-                const spendValue = form.get('spend');
-                const spendText = (typeof spendValue === 'string' ? spendValue : '').trim();
+                const fieldText = (name: string) => { const value = form.get(name); return typeof value === 'string' ? value : ''; };
+                const spendText = fieldText('spend').trim();
                 const spend = spendText ? rupeesToPaise(spendText) : null;
                 const tests = Number(form.get('testsPerDay'));
-                const noteValue = form.get('note');
-                const note = (typeof noteValue === 'string' ? noteValue : '').trim();
+                const note = fieldText('note').trim();
                 if (!Number.isInteger(tests) || tests < 1 || tests > 100000 || (spendText && spend === null) || (note && note.length < 3)) { setError('Enter valid tests, spend and a note of at least 3 characters, if provided.'); return; }
-                const basisValue = form.get('basis');
-                const body = { action: 'record_lab_size', customerId, testsPerDay: tests, basis: typeof basisValue === 'string' ? basisValue : '', statedMonthlySpendPaise: spend, note: note || null };
+                const body = { action: 'record_lab_size', customerId, testsPerDay: tests, basis: fieldText('basis'), statedMonthlySpendPaise: spend, note: note || null };
                 const fingerprint = JSON.stringify(body);
                 if (labPending.current?.fingerprint !== fingerprint) labPending.current = { fingerprint, idempotencyKey: crypto.randomUUID() };
                 flight.current = true; setBusy(true); setError('');
@@ -239,17 +240,17 @@ export function CustomerSheet({ customerId, financial, prospect, onClose, onOpen
           {data.recentOrders.length ? <Section title="Recent orders">{orders(data.recentOrders)}</Section> : null}
           {data.contacts.count > 0 ? <Section title="Contacts"><button className={button} onClick={() => onContacts(customerId, data.name)}>{data.contacts.count} {data.contacts.count === 1 ? 'contact' : 'contacts'} · {data.contacts.champions} {data.contacts.champions === 1 ? 'champion' : 'champions'}</button></Section> : null}
           {financial && prospect ? <ProspectOpportunity customerId={customerId} brandName={prospect.brandName} reason={prospect.reason} /> : null}
-          {gps ? <section aria-label="Confirm pin" className="space-y-2 rounded-xl bg-sf-soft-0 p-3"><p className="text-base">±{Math.round(gps.accuracy)} m</p><p>Save this position for {data.name}?</p><button className={button} disabled={busy} onClick={() => void savePin(gps.lat, gps.lng)}>Confirm pin</button><button className={button} disabled={busy} onClick={() => setGps(null)}>Cancel pin</button></section> : null}
-          {manual ? <form aria-label="Manual pin" className="space-y-2" onSubmit={async event => { event.preventDefault(); const { parseLocationInput } = await import('@/lib/account-types'); const parsed = parseLocationInput(pinText); if (!parsed.ok) { setError('Paste a Google Maps link or latitude, longitude.'); return; } void savePin(Number(parsed.latitude), Number(parsed.longitude), parsed.source); }}><label>Google Maps link or lat, long<input ref={manualInput} className={input} value={pinText} onChange={event => setPinText(event.target.value)} /></label><button className={button} disabled={busy}>Save manual pin</button></form> : null}
+          {gps && canPlacePin ? <section aria-label="Confirm pin" className="space-y-2 rounded-xl bg-sf-soft-0 p-3"><p className="text-base">±{Math.round(gps.accuracy)} m</p><p>Save this position for {data.name}?</p><button className={button} disabled={busy} onClick={() => void savePin(gps.lat, gps.lng)}>Confirm pin</button><button className={button} disabled={busy} onClick={() => setGps(null)}>Cancel pin</button></section> : null}
+          {manual && canPlacePin ? <form aria-label="Manual pin" className="space-y-2" onSubmit={async event => { event.preventDefault(); const { parseLocationInput } = await import('@/lib/account-types'); const parsed = parseLocationInput(pinText); if (!parsed.ok) { setError('Paste a Google Maps link or latitude, longitude.'); return; } void savePin(Number(parsed.latitude), Number(parsed.longitude), parsed.source); }}><label>Google Maps link or lat, long<input ref={manualInput} className={input} value={pinText} onChange={event => setPinText(event.target.value)} /></label><button className={button} disabled={busy}>Save manual pin</button></form> : null}
         </>}
       </div>
       {data ? <footer className="relative shrink-0 border-t border-sf-line-soft bg-white p-3 pb-[max(12px,env(safe-area-inset-bottom))]">
-        {pinChooser ? <fieldset aria-label="Pin options" className="absolute bottom-full left-3 right-3 mb-2 grid min-w-0 gap-2 rounded-xl border border-sf-line bg-white p-2 shadow-xl">
+        {pinChooser && canPlacePin ? <fieldset aria-label="Pin options" className="absolute bottom-full left-3 right-3 mb-2 grid min-w-0 gap-2 rounded-xl border border-sf-line bg-white p-2 shadow-xl">
           <button className={button} disabled={busy} onClick={() => { setPinChooser(false); setManual(false); locate(); }}>Use my location</button>
           <button className={button} disabled={busy} onClick={() => { setPinChooser(false); setGps(null); setManual(true); }}>Paste a map link or enter coordinates</button>
           {onPlaceOnMap ? <button className={button} disabled={busy} onClick={placeOnMap}>Place on map</button> : null}
         </fieldset> : null}
-        <div className="flex gap-2">{data.phone ? <a className={actionButton} href={`tel:${data.phone.replace(/[^+\d]/g, '')}`}><Phone size={16} aria-hidden="true" />Call</a> : null}<button className={actionButton} disabled={busy} onClick={() => void checkIn()}><MapPinCheck size={16} aria-hidden="true" />{checking ? 'Checking in…' : 'Check in'}</button>{data.location?.precision === 'pin' && !moving ? <button className={actionButton} disabled={busy} onClick={() => onPlaceOnMap ? placeOnMap() : setMoving(true)}>Move pin…</button> : <button className={actionButton} disabled={busy} aria-expanded={pinChooser} onClick={() => setPinChooser(value => !value)}><MapPin size={16} aria-hidden="true" />Pin here</button>}<button className={actionButton} disabled={!onOrder || busy} onClick={() => onOrder?.(customerId)}>Order</button></div>
+        <div className="flex gap-2">{data.phone ? <a className={actionButton} href={`tel:${data.phone.replace(/[^+\d]/g, '')}`}><Phone size={16} aria-hidden="true" />Call</a> : null}<button className={actionButton} disabled={busy} onClick={() => void checkIn()}><MapPinCheck size={16} aria-hidden="true" />{checking ? 'Checking in…' : 'Check in'}</button>{data.location?.precision === 'pin' && !financial ? null : data.location?.precision === 'pin' && !moving ? <button className={actionButton} disabled={busy} onClick={() => onPlaceOnMap ? placeOnMap() : setMoving(true)}>Move pin…</button> : <button className={actionButton} disabled={busy} aria-expanded={pinChooser} onClick={() => setPinChooser(value => !value)}><MapPin size={16} aria-hidden="true" />Pin here</button>}<button className={actionButton} disabled={!onOrder || busy} onClick={() => onOrder?.(customerId)}>Order</button></div>
       </footer> : null}
     </div>
   </dialog>;

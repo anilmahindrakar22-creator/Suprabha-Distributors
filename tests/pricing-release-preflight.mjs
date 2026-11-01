@@ -17,6 +17,7 @@ const pricingReleaseFiles = new Set([
   '20261102190000_wallet_test_volume.sql',
   '20261102191000_lab_size_reports.sql',
   '20261102192000_instrument_rental_registration.sql',
+  '20261102193000_pin_move_management_only.sql',
   '20261116090000_lab_mix_reports.sql',
   '20261116100000_brand_mapping.sql',
   '20261116110000_brand_prospects.sql',
