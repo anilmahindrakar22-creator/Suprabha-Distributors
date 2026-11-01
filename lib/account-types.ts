@@ -1,3 +1,5 @@
+import { parseLabMixInput, type LabMixInput } from '@/lib/lab-mix';
+
 // D-19 (owner, 14 Oct 2026); bounding box with margin; used only to warn
 export const MARKET_AREA = { name: 'Kalaburagi, Bidar, Raichur, Yadgir, Bijapur', minLatitude: 15.4, maxLatitude: 18.6, minLongitude: 75.0, maxLongitude: 77.9 } as const;
 
@@ -64,6 +66,9 @@ type CommandBase = { idempotencyKey: string };
 type ContactFields = { name: string; businessRole: string | null; phone: string | null; email: string | null };
 export type AccountCommand =
   | { action: 'check_in'; payload: CheckinPayload }
+  | { action: 'record_lab_mix'; payload: CommandBase & LabMixInput }
+  | { action: 'confirm_lab_mix'; payload: CommandBase & { customerId: string; previousReportId: string } }
+  | { action: 'set_lab_mix_policy'; payload: CommandBase & { expectedVersion: number; cliaCutoffPerDay: number; packWastePerDay: number; staleAfterDays: number } }
   | { action: 'record_lab_size'; payload: CommandBase & { customerId: string; testsPerDay: number; basis: 'lab_said' | 'observed'; statedMonthlySpendPaise: number | null; note: string | null } }
   | { action: 'create_customer'; payload: CommandBase & { name: string; city: string | null; phone: string | null } }
   | { action: 'record_style_observation'; payload: CommandBase & { contactId: string; visitId: string; a: StyleRatings; r: StyleRatings; cues?: StyleCue[] } }
@@ -110,6 +115,25 @@ export function parseAccountCommand(body: unknown): AccountCommand | null {
   }
   if (typeof p.idempotencyKey !== 'string' || p.idempotencyKey.trim().length < 16 || p.idempotencyKey.length > 200) return null;
   const idempotencyKey = p.idempotencyKey;
+  if (p.action === 'record_lab_mix') {
+    const { action: _action, idempotencyKey: _key, ...payload } = p;
+    try { return { action: p.action, payload: { ...parseLabMixInput(payload), idempotencyKey } }; }
+    catch { return null; }
+  }
+  if (p.action === 'confirm_lab_mix') {
+    if (Object.keys(p).some(key => !['action', 'idempotencyKey', 'customerId', 'previousReportId'].includes(key))
+      || typeof p.customerId !== 'string' || !accountUuidPattern.test(p.customerId)
+      || typeof p.previousReportId !== 'string' || !accountUuidPattern.test(p.previousReportId)) return null;
+    return { action: p.action, payload: { customerId: p.customerId, previousReportId: p.previousReportId, idempotencyKey } };
+  }
+  if (p.action === 'set_lab_mix_policy') {
+    if (Object.keys(p).some(key => !['action', 'idempotencyKey', 'expectedVersion', 'cliaCutoffPerDay', 'packWastePerDay', 'staleAfterDays'].includes(key))) return null;
+    for (const [key, min, max] of [['expectedVersion', 1, 2147483647], ['cliaCutoffPerDay', 1, 1000], ['packWastePerDay', 1, 1000], ['staleAfterDays', 7, 730]] as const) {
+      if (typeof p[key] !== 'number' || !Number.isInteger(p[key]) || p[key] < min || p[key] > max) return null;
+    }
+    return { action: p.action, payload: { expectedVersion: p.expectedVersion as number, cliaCutoffPerDay: p.cliaCutoffPerDay as number,
+      packWastePerDay: p.packWastePerDay as number, staleAfterDays: p.staleAfterDays as number, idempotencyKey } };
+  }
   if (p.action === 'create_customer') {
     if (Object.keys(p).some(key => !['action', 'name', 'city', 'phone', 'idempotencyKey'].includes(key))
       || typeof p.name !== 'string' || p.name.trim().length < 2 || p.name.trim().length > 160) return null;

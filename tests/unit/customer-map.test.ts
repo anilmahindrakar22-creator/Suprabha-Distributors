@@ -35,6 +35,21 @@ describe('PIN list API', () => {
 });
 
 describe('customer map parsers', () => {
+  it('parses optional lab mix data and fails malformed fields', () => {
+    const mix = { reportId: pin.customerId, reportedBy: 'Sales', reportedOn: '2026-11-01', stale: false,
+      areas: [{ area: 'IMMUNO', name: 'Immuno', status: 'not_done', min: null, max: null, exact: false }],
+      busiest: null, panels: [], fit: 'none', packWasteRisk: null, policyVersion: 1 };
+    const mixOptions = { areas: [], tests: [], panels: [], busiestBands: [{ min: 1, max: 3 }, { min: 4, max: 8 }, { min: 9, max: null }],
+      policy: { version: 1, cliaCutoffPerDay: 15, packWastePerDay: 4, staleAfterDays: 90 } };
+    expect(parseCustomerSheet({ ...empty, labMix: mix, labMixOptions: mixOptions })).toMatchObject({ labMix: mix, labMixOptions: mixOptions });
+    expect(parseCustomerSheet(empty)).not.toHaveProperty('labMix');
+    expect(parseCustomerSheet(empty)).not.toHaveProperty('labMixOptions');
+    expect(parseCustomerSheet({ ...empty, labMix: null }).labMix).toBeNull();
+    for (const change of [{ labMix: {} }, { labMix: { ...mix, extra: true } }, { labMixOptions: null },
+      { labMixOptions: { ...mixOptions, policy: { ...mixOptions.policy, cliaCutoffPerDay: 0 } } }]) {
+      expect(() => parseCustomerSheet({ ...empty, ...change })).toThrow();
+    }
+  });
   it('parses the latest lab size and includes the optional financial amount only when returned', () => {
     const report = { testsPerDay: 80, basis: 'lab_said', reportedBy: 'Ravi', reportedOn: '2026-11-01' };
     expect(parseCustomerSheet({ ...empty, labSize: report }).labSize).toEqual(report);

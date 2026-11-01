@@ -88,6 +88,32 @@ describe('account class policy command', () => {
   });
 });
 describe('account command parser', () => {
+  describe('lab mix commands', () => {
+    const area = { area: 'IMMUNO', status: 'in_house', exact: 15 };
+    const report = { action: 'record_lab_mix', customerId, idempotencyKey, areas: [area] };
+    it('routes reports, confirmations and policy updates with strict payloads', () => {
+      expect(parseAccountCommand(report)).toEqual({ action: 'record_lab_mix', payload: { customerId, idempotencyKey, areas: [area] } });
+      expect(parseAccountCommand({ action: 'confirm_lab_mix', customerId, previousReportId: customerId, idempotencyKey }))
+        .toEqual({ action: 'confirm_lab_mix', payload: { customerId, previousReportId: customerId, idempotencyKey } });
+      expect(parseAccountCommand({ action: 'set_lab_mix_policy', expectedVersion: 1, cliaCutoffPerDay: 20, packWastePerDay: 4, staleAfterDays: 90, idempotencyKey })?.payload)
+        .toEqual({ expectedVersion: 1, cliaCutoffPerDay: 20, packWastePerDay: 4, staleAfterDays: 90, idempotencyKey });
+    });
+    it.each([{ areas: [] }, { areas: [area, area] }, { areas: [{ ...area, area: 'UNKNOWN' }] },
+      { areas: [{ area: 'IMMUNO', status: 'in_house', min: 10, max: 20 }] }, { areas: [{ ...area, exact: 1.5 }] },
+      { areas: [{ ...area, status: 'sends_out' }] }, { areas: [{ ...area, min: 15, max: 30 }] },
+      { areas: null, busiest: { test: 'TSH', exact: 3 } }, { busiest: { test: 'UNKNOWN', exact: 3 } },
+      { busiest: { test: 'TSH', min: 1, max: 8 } }, { panels: [{ panel: 'CULTURE', status: 'in_house' }] },
+      { extra: true }, { labSize: { testsPerDay: 0, basis: 'lab_said' } }, { labSize: { testsPerDay: 80, basis: 'lab_said', extra: true } },
+      { idempotencyKey: 'short' }, { customerId: 'bad' },
+    ])('rejects malformed report %#', override => expect(parseAccountCommand({ ...report, ...override })).toBeNull());
+    it('rejects missing or extra confirmation and policy fields', () => {
+      const confirmation = { action: 'confirm_lab_mix', customerId, previousReportId: customerId, idempotencyKey };
+      for (const change of [{ previousReportId: undefined }, { previousReportId: 'bad' }, { extra: true }]) expect(parseAccountCommand({ ...confirmation, ...change })).toBeNull();
+      const policy = { action: 'set_lab_mix_policy', expectedVersion: 1, cliaCutoffPerDay: 20, packWastePerDay: 4, staleAfterDays: 90, idempotencyKey };
+      for (const change of [{ expectedVersion: 0 }, { expectedVersion: '1' }, { cliaCutoffPerDay: 1001 }, { packWastePerDay: 0 },
+        { staleAfterDays: 731 }, { staleAfterDays: 6 }, { staleAfterDays: 7.5 }, { extra: true }, { customerId }]) expect(parseAccountCommand({ ...policy, ...change })).toBeNull();
+    });
+  });
   describe('lab size reports', () => {
     const report = { action: 'record_lab_size', customerId, testsPerDay: 80, basis: 'lab_said', statedMonthlySpendPaise: 5000000, note: ' Monthly estimate ', idempotencyKey };
     it('parses a bounded report and normalizes an optional note', () => {
