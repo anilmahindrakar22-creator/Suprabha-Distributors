@@ -33,6 +33,16 @@ function command(params: URLSearchParams): [GatewayAction, Record<string, unknow
     if (!/^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(customerId)) throw invalid();
     return ['get_customer_sheet', { customerId }];
   }
+  if (params.has('prospects') && keys.every(key => ['prospects', 'page', 'fit'].includes(key)) && params.has('page')) {
+    const brand = params.get('prospects')!;
+    const rawPage = params.get('page')!;
+    const page = Number(rawPage);
+    const fit = params.get('fit');
+    if (!/^[A-Z][A-Z0-9_]{1,39}$/.test(brand) || !/^[1-9]\d*$/.test(rawPage)
+      || !Number.isSafeInteger(page) || page > 4000
+      || (fit !== null && !['vidas', 'clia', 'none', 'check', 'unknown'].includes(fit))) throw invalid();
+    return ['get_prospects', { brand, page, ...(fit !== null ? { fit } : {}) }];
+  }
   throw invalid();
 }
 

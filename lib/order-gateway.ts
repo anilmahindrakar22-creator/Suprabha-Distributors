@@ -55,6 +55,7 @@ export type GatewayAction =
   | 'get_not_on_map'
   | 'get_pin_labs'
   | 'get_customer_sheet'
+  | 'get_prospects'
   | 'get_brand_mapping'
   | 'set_group_brand'
   | 'set_item_brand'

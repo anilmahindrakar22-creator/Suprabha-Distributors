@@ -31,6 +31,7 @@ describe('Customer map Edge routing', () => {
     ['get_map_pins', { south: 16, west: 76, north: 18, east: 78 }],
     ['get_not_on_map', { page: 2, query: 'Lab' }],
     ['get_customer_sheet', { customerId: '12345678-1234-1234-1234-123456789abc' }],
+    ['get_prospects', { brand: 'ACME', page: 2, fit: 'clia' }],
   ])('routes %s as a read to the customer map gateway', async (action, payload) => {
     const admission = vi.spyOn(RequestGate.prototype, 'begin');
     try {

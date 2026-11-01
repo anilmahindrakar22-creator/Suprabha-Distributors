@@ -42,6 +42,8 @@ describe('Customer map route', () => {
     ['?notOnMap=1&page=4000&q=Lab', 'get_not_on_map', { page: 4000, query: 'Lab' }],
     ['?notOnMap=1&page=2&q=', 'get_not_on_map', { page: 2, query: '' }],
     [`?customer=${customerId}`, 'get_customer_sheet', { customerId }],
+    ['?prospects=ACME&page=2&fit=clia', 'get_prospects', { brand: 'ACME', page: 2, fit: 'clia' }],
+    ['?prospects=BRAND_2&page=1', 'get_prospects', { brand: 'BRAND_2', page: 1 }],
     ['?bbox=-90,-180,-87,-177', 'get_map_pins', { south: -90, west: -180, north: -87, east: -177 }],
   ])('routes %s', async (query, action, payload) => {
     expect((await GET(request(query as string))).status).toBe(200);
@@ -60,6 +62,10 @@ describe('Customer map route', () => {
     '?notOnMap=1&page=1&page=2', '?notOnMap=1&page=1&q=a&q=b', `?notOnMap=1&page=1&q=${'a'.repeat(121)}`,
     `?notOnMap=1&page=1&customer=${customerId}`, '?customer=bad', '?customer=', `?customer=${customerId}&page=1`,
     `?customer=${customerId}&customer=${customerId}`,
+    '?prospects=ACME', '?prospects=acme&page=1', '?prospects=A&page=1', '?prospects=ACME&page=0',
+    '?prospects=ACME&page=4001', '?prospects=ACME&page=1.5', '?prospects=ACME&page=01',
+    '?prospects=ACME&page=1&fit=bad', '?prospects=ACME&page=1&fit=clia&fit=vidas',
+    '?prospects=ACME&page=1&other=1', '?prospects=ACME&page=1&notOnMap=1',
   ])('rejects invalid query %s without gateway access', async query => {
     const response = await GET(request(query));
     expect(response.status).toBe(400);

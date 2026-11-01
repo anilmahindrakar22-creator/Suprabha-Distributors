@@ -1277,6 +1277,13 @@
       "remoteVersion": null,
       "remoteSha256": null,
       "status": "not_deployed"
+    },
+    {
+      "localFile": "20261116110000_brand_prospects.sql",
+      "localSha256": "a976cce845a068637c044fdd02da9ff1934afd097dee4e599c2e7124ba95a79f",
+      "remoteVersion": null,
+      "remoteSha256": null,
+      "status": "not_deployed"
     }
   ],
   "liveCheck": {
