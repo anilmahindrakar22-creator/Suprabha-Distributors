@@ -422,7 +422,7 @@ for (const width of [375, 1280]) test.describe(`Customer map at ${width}px`, () 
     await expect(sheet.getByText('20% share', { exact: true })).toBeVisible();
     await expect(sheet.getByText('Held back by: Price (not proven)', { exact: true })).toBeVisible();
     for (const label of ['Wallet / month', 'Sales / month', 'Gap / month', 'Last visit']) await expect(sheet.getByText(label, { exact: true })).toBeVisible();
-    expect(await sheet.locator('section[aria-label]').evaluateAll(elements => elements.map(el => el.getAttribute('aria-label')))).toEqual(['Next action', 'Decision maker', 'Instruments', 'Open work', 'Recent orders', 'Contacts']);
+    expect(await sheet.locator('section[aria-label]').evaluateAll(elements => elements.map(el => el.getAttribute('aria-label')))).toEqual(['Next action', 'Decision maker', 'Instruments', 'Lab size', 'Open work', 'Recent orders', 'Contacts']);
     await expect(sheet.getByText('Asha · Champion', { exact: true })).toBeAttached();
     await expect(sheet.getByText('Paying back', { exact: true })).toBeAttached();
     await expect(sheet.getByText('Closed system', { exact: true })).toBeAttached();
