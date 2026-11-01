@@ -77,6 +77,8 @@ test('Inactive remembered brand falls back to BIOMERIEUX', async ({ page }) => {
   // Rare recovery path: one repeat read of the fallback brand is acceptable; OLDBRAND is asked only once.
   await expect.poll(() => requests.slice(0, 2).map(request => request.search)).toEqual(['?prospects=OLDBRAND&page=1', '?prospects=BIOMERIEUX&page=1']);
   expect(requests.filter(request => request.searchParams.get('prospects') === 'OLDBRAND')).toHaveLength(1);
+  await page.waitForTimeout(500);
+  expect(requests.length).toBeLessThanOrEqual(3);
   await expect.poll(() => page.evaluate(() => localStorage.getItem('sf-prospects-brand'))).toBe('BIOMERIEUX');
 });
 
