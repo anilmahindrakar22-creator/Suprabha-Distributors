@@ -88,9 +88,10 @@ begin
  definition:=replace(pg_get_functiondef('public.stockflow_customer_map_gateway(text,text,text,jsonb)'::regprocedure),chr(13),'');
  old_text:=$old$ if v_count>0 then v_result:=v_result||jsonb_build_object('instruments',jsonb_build_object('rows',v_instruments,'moreCount',greatest(v_count-3,0)));end if;$old$;
  new_text:=old_text||$new$
- if private.stockflow_lab_size_read(v_customer,v_financial) is not null then
+ if v_roles && array['administrator','management','sales'] and private.stockflow_lab_size_read(v_customer,v_financial) is not null then
   v_result:=v_result||jsonb_build_object('labSize',private.stockflow_lab_size_read(v_customer,v_financial));
- end if;$new$;
+ end if;
+ v_result:=v_result||jsonb_build_object('labAccess',coalesce(v_roles && array['administrator','management','sales'],false));$new$;
  if (length(definition)-length(replace(definition,old_text,'')))/length(old_text)<>1 then raise exception 'Unexpected customer sheet instruments anchor';end if;
  definition:=replace(definition,old_text,new_text);
  execute definition;

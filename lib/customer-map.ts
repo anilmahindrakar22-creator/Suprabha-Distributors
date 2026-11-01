@@ -52,6 +52,7 @@ export type CustomerSheetData = {
   labSize?: LabSize | null;
   labMix?: LabMix | null;
   labMixOptions?: LabMixOptions;
+  labAccess: boolean;
   openWork: SheetOrder[]; recentOrders: SheetOrder[]; contacts: { count: number; champions: number };
 };
 
@@ -146,6 +147,7 @@ export function parseCustomerSheet(value: unknown): CustomerSheetData {
     instruments: { ours: rows.filter(r => r.kind === 'ours').map(r => r.item), theirs: rows.filter(r => r.kind === 'theirs').map(r => r.item), moreCount: instruments ? count(instruments.moreCount) : 0 },
     ...(v.labMix === undefined ? {} : { labMix: nullable(v.labMix, parseLabMix) }),
     ...(v.labMixOptions === undefined ? {} : { labMixOptions: parseLabMixOptions(v.labMixOptions) }),
+    labAccess: v.labAccess === undefined ? false : boolean(v.labAccess),
     ...(v.labSize === undefined ? {} : { labSize: nullable(v.labSize, n => {
       const report = object(n), testsPerDay = count(report.testsPerDay);
       if (testsPerDay < 1 || testsPerDay > 100000) throw new Error('Invalid lab size');

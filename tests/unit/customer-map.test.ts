@@ -50,6 +50,14 @@ describe('customer map parsers', () => {
       expect(() => parseCustomerSheet({ ...empty, ...change })).toThrow();
     }
   });
+  it('defaults missing lab access to false and accepts only boolean flags', () => {
+    expect(parseCustomerSheet(empty).labAccess).toBe(false);
+    expect(parseCustomerSheet({ ...empty, labAccess: false }).labAccess).toBe(false);
+    expect(parseCustomerSheet({ ...empty, labAccess: true }).labAccess).toBe(true);
+    for (const labAccess of [null, 0, 1, 'false', 'true', {}, []]) {
+      expect(() => parseCustomerSheet({ ...empty, labAccess })).toThrow();
+    }
+  });
   it('parses the latest lab size and includes the optional financial amount only when returned', () => {
     const report = { testsPerDay: 80, basis: 'lab_said', reportedBy: 'Ravi', reportedOn: '2026-11-01' };
     expect(parseCustomerSheet({ ...empty, labSize: report }).labSize).toEqual(report);
