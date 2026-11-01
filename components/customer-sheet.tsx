@@ -4,6 +4,7 @@ import { useEffect, useRef, useState, type ReactNode } from 'react';
 import { Crown, MapPin, MapPinCheck, Phone, User, Wallet, ClipboardList, Microscope, Lock } from 'lucide-react';
 import { MeterBar, StatusChip, ToneIcon } from '@/components/ui/glance';
 import { constraintIcons } from '@/lib/glance-icons';
+import { LabMixSection } from '@/components/lab-mix-section';
 import { orderStageStyle } from '@/components/order-list';
 import { isInsideMarketArea, MARKET_AREA } from '@/lib/account-types';
 import { formatPaise, rupeesToPaise } from '@/lib/wallet-format';
@@ -37,6 +38,7 @@ export function CustomerSheet({ customerId, financial, onClose, onOpenOrder, onP
   const [revision, setRevision] = useState(0);
   const pending = useRef<{ fingerprint: string; idempotencyKey: string } | null>(null);
   const labPending = useRef<{ fingerprint: string; idempotencyKey: string } | null>(null);
+  const mixPending = useRef<{ fingerprint: string; idempotencyKey: string } | null>(null);
   const [editingLab, setEditingLab] = useState(false);
   const flight = useRef(false); const alive = useRef(true);
   useEffect(() => { if (manual) manualInput.current?.focus(); }, [manual]);
@@ -143,6 +145,27 @@ export function CustomerSheet({ customerId, financial, onClose, onOpenOrder, onP
     </button>;
   }); }
   const share = data?.sharePermille; const shareTone = share != null && share >= 800 ? 'success' : share != null && share >= 400 ? 'warning' : 'danger';
+  async function saveLabMix(body: Record<string, unknown>) {
+    if (flight.current) return false;
+    const fingerprint = JSON.stringify(body);
+    if (mixPending.current?.fingerprint !== fingerprint) mixPending.current = { fingerprint, idempotencyKey: crypto.randomUUID() };
+    flight.current = true; setBusy(true); setError(''); setNotice('');
+    try {
+      const response = await fetch('/api/accounts', { method: 'POST', headers: { 'content-type': 'application/json' }, body: JSON.stringify({ ...body, idempotencyKey: mixPending.current.idempotencyKey }) });
+      if (response.status === 409) {
+        mixPending.current = null; setRevision(n => n + 1);
+        if (body.action === 'confirm_lab_mix') { setNotice('Test mix changed. Reloaded.'); return false; }
+      }
+      if (!response.ok) {
+        if (response.status >= 400 && response.status < 500 && response.status !== 408 && response.status !== 429) mixPending.current = null;
+        throw new Error('Test mix save could not be confirmed. Retry the same save.');
+      }
+      const result = await response.json() as { ok?: boolean; reportId?: string };
+      if (result.ok !== true || !result.reportId) throw new Error('Test mix save could not be confirmed. Retry the same save.');
+      mixPending.current = null; setRevision(n => n + 1); return true;
+    } catch { setError('Test mix save could not be confirmed. Retry the same save.'); return false; }
+    finally { flight.current = false; if (alive.current) setBusy(false); }
+  }
   return <dialog ref={dialog} aria-label="Customer details" onCancel={event => { event.preventDefault(); if (!busy) onClose(); }} className="fixed inset-x-0 bottom-0 top-auto z-[1000] m-0 mx-auto h-[88dvh] max-h-[88dvh] w-full max-w-xl overflow-hidden rounded-t-2xl border border-sf-line bg-white shadow-xl p-0 text-sf-ink backdrop:bg-black/50 [overflow-wrap:anywhere]">
     <div className="flex h-full min-h-0 flex-col">
       <div className="flex shrink-0 justify-end border-b border-sf-line-soft px-4"><button className={button} disabled={busy} onClick={onClose}>Close</button></div>
@@ -172,6 +195,7 @@ export function CustomerSheet({ customerId, financial, onClose, onOpenOrder, onP
             {data.route.length ? <p className="flex flex-wrap items-center gap-1">Reach via {data.route.map((person, i) => <span key={`${person.name}-${i}`}>{i ? ' → ' : ''}<StatusChip icon={person.decider ? Crown : User} tone={person.champion ? 'success' : 'info'}>{person.decider ? <strong>{person.name}</strong> : person.name}{person.champion ? ' · Champion' : ''}</StatusChip></span>)}</p> : null}
           </Section>
 {data.instruments.ours.length + data.instruments.theirs.length > 0 ? <Section title="Instruments">{(['ours', 'theirs'] as const).map(kind => data.instruments[kind].length ? <div key={kind} className="space-y-2"><p>{kind === 'ours' ? 'Ours' : 'Theirs'}</p>{data.instruments[kind].slice(0, 3).map((item, index) => <div key={index} className="space-y-1 rounded-xl bg-sf-soft-0 p-3"><div className="flex items-center gap-2"><ToneIcon icon={Microscope} tone="info" size="sm" /><span className="text-base">{item.name}</span></div>{item.placedOn ? <p>Placed {formatCustomerDate(item.placedOn)}</p> : null}{item.serial ? <p>Serial {item.serial}</p> : null}{financial && item.payback ? <StatusChip icon={Wallet} tone={item.payback === 'paying_back' ? 'success' : item.payback === 'behind' ? 'danger' : 'neutral'}>{item.payback === 'paying_back' ? 'Paying back' : item.payback === 'behind' ? 'Behind' : 'Awaiting data'}</StatusChip> : null}{item.closedSystem ? <p>Closed system</p> : null}{item.lockInDays != null ? <StatusChip icon={Lock} tone={item.lockInDays < 0 ? 'danger' : 'warning'}><span className="text-base">{item.lockInDays < 0 ? `Ended ${Math.abs(item.lockInDays)} days ago` : `${item.lockInDays} days left`}</span></StatusChip> : null}</div>)}{data.instruments[kind].length > 3 ? <p>+{data.instruments[kind].length - 3} more</p> : null}</div> : null)}{data.instruments.moreCount > 0 ? <p>+{data.instruments.moreCount} more</p> : null}</Section> : null}
+          {data.labMixOptions ? <LabMixSection customerId={customerId} labMix={data.labMix} options={data.labMixOptions} disabled={busy} runCommand={saveLabMix} /> : null}
           {data.labAccess ? <Section title="Lab size">
             {data.labSize ? <><p className="text-base">About {data.labSize.testsPerDay} tests/day · {data.labSize.basis === 'lab_said' ? 'Lab said' : 'My estimate'} · {formatCustomerDate(data.labSize.reportedOn)}</p>{financial && data.labSize.statedMonthlySpendPaise != null ? <p className="text-sf-muted">Lab said {formatPaise(data.labSize.statedMonthlySpendPaise)}/month · {formatCustomerDate(data.labSize.spendReportedOn!)}</p> : null}</> : null}
             {!editingLab ? <button className="min-h-11 text-sf-muted underline" disabled={busy} onClick={() => setEditingLab(true)}>{data.labSize ? 'Update tests/day' : 'Add tests/day'}</button> : <>

@@ -1,4 +1,5 @@
 import { describe, expect, it } from 'vitest';
+import { buildLabMixPayload, type LabMixFormState } from '@/components/lab-mix-section';
 import { bandLabel, labAreaCodes, labPanelCodes, labTestCodes, parseLabMix, parseLabMixInput, parseLabMixOptions } from '@/lib/lab-mix';
 
 const immuno = [{ min: 1, max: 14 }, { min: 15, max: 30 }, { min: 31, max: 60 }, { min: 61, max: null }];
@@ -15,6 +16,35 @@ const options = {
   tests: labTestCodes.map(code => ({ code, name: code })), panels: labPanelCodes.map(code => ({ code, name: code })),
   busiestBands, policy: { version: 1, cliaCutoffPerDay: 15, packWastePerDay: 4, staleAfterDays: 90 },
 };
+
+describe('buildLabMixPayload', () => {
+  const state = (): LabMixFormState => ({ areas: {}, busiest: null, panels: {} });
+  it('includes bands and omits cleared and unknown areas', () => {
+    expect(buildLabMixPayload({ ...state(), areas: { HAEM: { area: 'HAEM', status: 'in_house', min: 21, max: 50 }, URINE: null } })).toEqual({
+      areas: [{ area: 'HAEM', status: 'in_house', min: 21, max: 50 }], busiest: null, panels: [],
+    });
+  });
+  it('uses exact counts without band fields and includes busiest exact counts', () => {
+    expect(buildLabMixPayload({ ...state(), areas: { IMMUNO: { area: 'IMMUNO', status: 'in_house', exact: 35 } }, busiest: { test: 'TSH', exact: 6 } })).toEqual({
+      areas: [{ area: 'IMMUNO', status: 'in_house', exact: 35 }], busiest: { test: 'TSH', exact: 6 }, panels: [],
+    });
+  });
+  it('keeps busiest bands only with in-house IMMUNO', () => {
+    const busiest = { test: 'TSH', min: 4, max: 8 } as const;
+    expect(buildLabMixPayload({ ...state(), areas: { IMMUNO: { area: 'IMMUNO', status: 'in_house', min: 15, max: 30 } }, busiest }).busiest).toEqual(busiest);
+    for (const row of [null, { area: 'IMMUNO', status: 'sends_out' }, { area: 'IMMUNO', status: 'not_done' }] as const) {
+      expect(buildLabMixPayload({ ...state(), areas: { IMMUNO: row }, busiest }).busiest).toBeNull();
+    }
+    expect(buildLabMixPayload({ ...state(), busiest }).busiest).toBeNull();
+  });
+  it('includes set panels and statuses and omits cleared panels', () => {
+    expect(buildLabMixPayload({ ...state(), areas: { URINE: { area: 'URINE', status: 'sends_out' } }, panels: {
+      FERTILITY: { panel: 'FERTILITY', status: 'sent_out' }, CARDIAC: { panel: 'CARDIAC', status: 'in_house' }, TUMOUR: { panel: 'TUMOUR', status: 'not_offered' }, OTHER: null,
+    } })).toEqual({ areas: [{ area: 'URINE', status: 'sends_out' }], busiest: null, panels: [
+      { panel: 'FERTILITY', status: 'sent_out' }, { panel: 'CARDIAC', status: 'in_house' }, { panel: 'TUMOUR', status: 'not_offered' },
+    ] });
+  });
+});
 
 describe('lab mix read parser', () => {
   it('accepts reports, exact counts and open bands', () => {
