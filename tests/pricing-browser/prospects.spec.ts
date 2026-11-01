@@ -4,8 +4,9 @@ const customerId = '66111111-1111-4111-8111-111111111111';
 const otherId = '66111111-1111-4111-8111-111111111112';
 const brands = [{ code: 'BIOMERIEUX', name: 'bioMérieux', areas: ['IMMUNO', 'CULTURE'] }, { code: 'SYSMEX', name: 'Sysmex', areas: ['HAEM'] }];
 
-async function fixture(page: Page, role = 'sales') {
+async function fixture(page: Page, role = 'sales', diagnosisStatus: number | number[] = 200) {
   const requests: URL[] = [];
+  const opportunityPosts: unknown[] = [];
   const financial = role === 'management';
   await page.route('**/api/accounts**', route => route.fulfill({ json: {
     accounts: [], page: { page: 1, pageSize: 50, total: 0 }, owners: [], territories: [], canAssign: financial,
@@ -32,6 +33,15 @@ async function fixture(page: Page, role = 'sales') {
     } });
   });
   await page.route('**/api/me', route => route.fulfill({ json: { roles: [role] } }));
+  let diagnosisRequestCount = 0;
+  await page.route('**/api/wallet/diagnosis', async route => {
+    if (route.request().method() === 'POST') opportunityPosts.push(route.request().postDataJSON());
+    const status = Array.isArray(diagnosisStatus)
+      ? diagnosisStatus[Math.min(diagnosisRequestCount, diagnosisStatus.length - 1)]
+      : diagnosisStatus;
+    diagnosisRequestCount += 1;
+    await route.fulfill({ status, json: status === 200 ? { id: 'opp-1' } : { error: 'fixture' } });
+  });
   await page.route('**/api/push-subscription**', route => route.fulfill({ json: { enabled: false, publicKey: '' } }));
   await page.route('**/api/wallet?**', route => route.fulfill({ json: { coverage: { certified: true } } }));
   await page.route('**/api/my-actions?**', route => route.fulfill({ json: { page: 1, pageSize: 50, total: 0, overdueCount: 0, rows: [] } }));
@@ -44,7 +54,7 @@ async function fixture(page: Page, role = 'sales') {
     await page.getByRole('button', { name: 'Prospects', exact: true }).click();
     await expect(page.getByRole('list', { name: 'Prospect labs' })).toBeVisible();
   }
-  return { requests, section: page.getByRole('region', { name: 'Prospects', exact: true }) };
+  return { requests, opportunityPosts, section: page.getByRole('region', { name: 'Prospects', exact: true }) };
 }
 
 test('Operations has no Prospects button', async ({ page }) => {
@@ -107,6 +117,49 @@ test('A prospect row opens the CustomerSheet', async ({ page }) => {
   const { section } = await fixture(page);
   await section.getByRole('button', { name: /Central Lab/ }).click();
   await expect(page.getByRole('dialog', { name: 'Customer details' }).getByRole('heading', { name: 'Central Lab', exact: true })).toBeVisible();
+});
+
+test('Management can open a prospect opportunity', async ({ page }) => {
+  const { section, opportunityPosts } = await fixture(page, 'management');
+  await section.getByRole('button', { name: /Central Lab/ }).click();
+  const dialog = page.getByRole('dialog', { name: 'Customer details' });
+  await dialog.getByRole('button', { name: 'Open opportunity', exact: true }).click();
+  await expect.poll(() => opportunityPosts.length).toBe(1);
+  const post = opportunityPosts[0] as { action: string; payload: { customerId: string; kind: string; origin: string; divisionCode: null; reason: string } };
+  expect(post.action).toBe('open_opportunity');
+  expect(post.payload).toMatchObject({ customerId, kind: 'capture', origin: 'manual', divisionCode: null });
+  expect(post.payload.reason).toMatch(/^Prospect for bioM.rieux: /);
+  await expect(dialog.getByRole('status')).toHaveText('Opportunity opened. Follow it up in Wallet.');
+  await expect(dialog.getByRole('button', { name: 'Open opportunity', exact: true })).toHaveCount(0);
+});
+
+test('Management can retry opening a prospect opportunity with the same request ID', async ({ page }) => {
+  const { section, opportunityPosts } = await fixture(page, 'management', [503, 200]);
+  await section.getByRole('button', { name: /Central Lab/ }).click();
+  const dialog = page.getByRole('dialog', { name: 'Customer details' });
+  const openButton = dialog.getByRole('button', { name: 'Open opportunity', exact: true });
+  await openButton.click();
+  await expect(dialog.getByRole('status')).toHaveText('Could not open. Try again.');
+  await openButton.click();
+  await expect(dialog.getByRole('status')).toHaveText('Opportunity opened. Follow it up in Wallet.');
+  expect(opportunityPosts).toHaveLength(2);
+  const firstPost = opportunityPosts[0] as { payload: { requestId: string } };
+  const secondPost = opportunityPosts[1] as { payload: { requestId: string } };
+  expect(secondPost.payload.requestId).toBe(firstPost.payload.requestId);
+});
+
+test('Management sees the existing opportunity response', async ({ page }) => {
+  const { section } = await fixture(page, 'management', 409);
+  await section.getByRole('button', { name: /Central Lab/ }).click();
+  const dialog = page.getByRole('dialog', { name: 'Customer details' });
+  await dialog.getByRole('button', { name: 'Open opportunity', exact: true }).click();
+  await expect(dialog.getByRole('status')).toHaveText('This lab already has an open opportunity in Wallet.');
+});
+
+test('Sales cannot open a prospect opportunity', async ({ page }) => {
+  const { section } = await fixture(page, 'sales');
+  await section.getByRole('button', { name: /Central Lab/ }).click();
+  await expect(page.getByRole('dialog', { name: 'Customer details' }).getByRole('button', { name: 'Open opportunity', exact: true })).toHaveCount(0);
 });
 
 test('Phone prospects has no horizontal scroll at 375 by 812', async ({ page }) => {

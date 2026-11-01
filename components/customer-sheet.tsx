@@ -8,6 +8,7 @@ import { LabMixSection } from '@/components/lab-mix-section';
 import { orderStageStyle } from '@/components/order-list';
 import { isInsideMarketArea, MARKET_AREA } from '@/lib/account-types';
 import { formatPaise, rupeesToPaise } from '@/lib/wallet-format';
+import { ProspectOpportunity } from './prospect-opportunity';
 import { checkinMessage, parseCheckinResult, parseSheetCheckin } from '@/lib/checkin';
 import type { CheckinResult, VisitCheckin } from '@/lib/account-types';
 import { customerMapDayDifference, formatActionDue, formatCustomerDate, formatLastVisit, parseCustomerSheet, readCustomerMap, type CustomerSheetData, type SheetOrder } from '@/lib/customer-map';
@@ -18,9 +19,9 @@ const actionButton = `${button} min-w-0 flex-1 flex-col gap-0.5 px-1 py-1 whites
 function Section({ title, children }: { title: string; children: ReactNode }) { return <section aria-label={title} className="space-y-2"><h4 className="text-xs text-sf-muted">{title}</h4>{children}</section>; }
 function Tile({ label, value, danger }: { label: string; value: ReactNode; danger?: boolean }) { return <div className="min-w-0 rounded-xl bg-sf-soft-0 p-3"><p className={`break-words text-base tabular-nums ${danger ? 'text-sf-danger' : ''}`}>{value}</p><p className="text-xs text-sf-muted">{label}</p></div>; }
 export type MapPlacement = { name: string; location: CustomerSheetData['location']; save: (lat: number, lng: number) => Promise<string | null> };
-export type CustomerSheetProps = { customerId: string; financial: boolean; onClose: () => void; onOpenOrder?: (order: { orderId: string; orderNumber: string }) => void; onPlan: (id: string) => void; onOrder?: (id: string) => void; onContacts: (id: string, name: string) => void; onLocationSaved: () => void; placing?: boolean; onPlaceOnMap?: (placement: MapPlacement) => void };
+export type CustomerSheetProps = { customerId: string; financial: boolean; prospect?: { brandName: string; reason: string }; onClose: () => void; onOpenOrder?: (order: { orderId: string; orderNumber: string }) => void; onPlan: (id: string) => void; onOrder?: (id: string) => void; onContacts: (id: string, name: string) => void; onLocationSaved: () => void; placing?: boolean; onPlaceOnMap?: (placement: MapPlacement) => void };
 
-export function CustomerSheet({ customerId, financial, onClose, onOpenOrder, onPlan, onOrder, onContacts, onLocationSaved, placing = false, onPlaceOnMap }: CustomerSheetProps) {
+export function CustomerSheet({ customerId, financial, prospect, onClose, onOpenOrder, onPlan, onOrder, onContacts, onLocationSaved, placing = false, onPlaceOnMap }: CustomerSheetProps) {
   const dialog = useRef<HTMLDialogElement>(null);
   const [data, setData] = useState<CustomerSheetData | null>(null);
   const [lastCheckin, setLastCheckin] = useState<VisitCheckin | null>(null);
@@ -203,12 +204,15 @@ export function CustomerSheet({ customerId, financial, onClose, onOpenOrder, onP
               <form aria-label="Lab size" className="min-w-0 space-y-2" onSubmit={async event => {
                 event.preventDefault(); if (flight.current) return;
                 const form = new FormData(event.currentTarget);
-                const spendText = String(form.get('spend') ?? '').trim();
+                const spendValue = form.get('spend');
+                const spendText = (typeof spendValue === 'string' ? spendValue : '').trim();
                 const spend = spendText ? rupeesToPaise(spendText) : null;
                 const tests = Number(form.get('testsPerDay'));
-                const note = String(form.get('note') ?? '').trim();
+                const noteValue = form.get('note');
+                const note = (typeof noteValue === 'string' ? noteValue : '').trim();
                 if (!Number.isInteger(tests) || tests < 1 || tests > 100000 || (spendText && spend === null) || (note && note.length < 3)) { setError('Enter valid tests, spend and a note of at least 3 characters, if provided.'); return; }
-                const body = { action: 'record_lab_size', customerId, testsPerDay: tests, basis: String(form.get('basis')), statedMonthlySpendPaise: spend, note: note || null };
+                const basisValue = form.get('basis');
+                const body = { action: 'record_lab_size', customerId, testsPerDay: tests, basis: typeof basisValue === 'string' ? basisValue : '', statedMonthlySpendPaise: spend, note: note || null };
                 const fingerprint = JSON.stringify(body);
                 if (labPending.current?.fingerprint !== fingerprint) labPending.current = { fingerprint, idempotencyKey: crypto.randomUUID() };
                 flight.current = true; setBusy(true); setError('');
@@ -234,6 +238,7 @@ export function CustomerSheet({ customerId, financial, onClose, onOpenOrder, onP
           {data.openWork.length ? <Section title="Open work">{orders(data.openWork)}</Section> : null}
           {data.recentOrders.length ? <Section title="Recent orders">{orders(data.recentOrders)}</Section> : null}
           {data.contacts.count > 0 ? <Section title="Contacts"><button className={button} onClick={() => onContacts(customerId, data.name)}>{data.contacts.count} {data.contacts.count === 1 ? 'contact' : 'contacts'} · {data.contacts.champions} {data.contacts.champions === 1 ? 'champion' : 'champions'}</button></Section> : null}
+          {financial && prospect ? <ProspectOpportunity customerId={customerId} brandName={prospect.brandName} reason={prospect.reason} /> : null}
           {gps ? <section aria-label="Confirm pin" className="space-y-2 rounded-xl bg-sf-soft-0 p-3"><p className="text-base">±{Math.round(gps.accuracy)} m</p><p>Save this position for {data.name}?</p><button className={button} disabled={busy} onClick={() => void savePin(gps.lat, gps.lng)}>Confirm pin</button><button className={button} disabled={busy} onClick={() => setGps(null)}>Cancel pin</button></section> : null}
           {manual ? <form aria-label="Manual pin" className="space-y-2" onSubmit={async event => { event.preventDefault(); const { parseLocationInput } = await import('@/lib/account-types'); const parsed = parseLocationInput(pinText); if (!parsed.ok) { setError('Paste a Google Maps link or latitude, longitude.'); return; } void savePin(Number(parsed.latitude), Number(parsed.longitude), parsed.source); }}><label>Google Maps link or lat, long<input ref={manualInput} className={input} value={pinText} onChange={event => setPinText(event.target.value)} /></label><button className={button} disabled={busy}>Save manual pin</button></form> : null}
         </>}
