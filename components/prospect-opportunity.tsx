@@ -29,7 +29,7 @@ export function ProspectOpportunity({ customerId, brandName, reason }: { custome
   }
 
   return <section aria-label="Prospect opportunity" className="space-y-2">
-    <p className="text-sm">{brandName} prospect</p>
+    <h4 className="text-xs text-sf-muted">{brandName} prospect</h4>
     {status && status !== 'Could not open. Try again.' ? <output className="text-sm text-sf-muted">{status}</output> : <><button type="button" className={button} disabled={busy} onClick={() => void openOpportunity()}>Open opportunity</button>{status ? <output className="text-sm text-sf-muted">{status}</output> : null}</>}
   </section>;
 }
