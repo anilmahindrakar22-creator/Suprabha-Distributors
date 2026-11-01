@@ -26,7 +26,7 @@ const approxGroups = [
   { pinCode: '585104', lat: 17.9, lng: 76.6, count: 9, tone: 'grey', openOrders: 0 },
 ];
 const groupLabel = `PIN 585102, approx, 77 labs, ${meanings[0]}`;
-const base = { customerId, name, town: 'Bidar', owner: { email: 'manager@example.test' }, class: 'A', decisionMaker: { label: 'No decider known', canAddContact: true }, actions: { pin: 'place', orderCustomerId: customerId, call: 'tel:+919876543210' } };
+const base = { customerId, name, labAccess: true, town: 'Bidar', owner: { email: 'manager@example.test' }, class: 'A', decisionMaker: { label: 'No decider known', canAddContact: true }, actions: { pin: 'place', orderCustomerId: customerId, call: 'tel:+919876543210' } };
 function fullSheet(sales = false) {
   return { ...base, ...(sales ? {} : { sharePermille: 200, certified: true, wallet: { confidence: 'medium', asOf: '2026-10-12' } }),
     tiles: { ...(sales ? { openOrders: 2, nextActionDue: '2026-11-01', overdue: 1 } : { walletPaise: 10000000, salesPaise: 2000000, gapPaise: 6000000 }), lastVisit: { visitedOn: '2026-10-29', outcome: 'met' } },
@@ -39,7 +39,7 @@ function fullSheet(sales = false) {
     recentOrders: [{ orderId: '88111111-1111-4111-8111-111111111113', number: 'SF-099', stage: 'delivered', date: '2026-10-28T00:00:00Z', ...(sales ? {} : { valuePaise: 150000 }) }], contacts: { total: 3, champions: 1 },
   };
 }
-async function fixture(page: Page, options: { frame?: boolean; sales?: boolean; empty?: boolean; located?: boolean; approximate?: boolean; uncertified?: boolean; townOnly?: boolean; dueOn?: string; contacts?: { total: number; champions: number }; labSize?: { testsPerDay: number; basis: 'lab_said' | 'observed'; reportedBy: string; reportedOn: string; statedMonthlySpendPaise?: number; spendReportedOn?: string } } = {}) {
+async function fixture(page: Page, options: { labAccess?: boolean; frame?: boolean; sales?: boolean; empty?: boolean; located?: boolean; approximate?: boolean; uncertified?: boolean; townOnly?: boolean; dueOn?: string; contacts?: { total: number; champions: number }; labSize?: { testsPerDay: number; basis: 'lab_said' | 'observed'; reportedBy: string; reportedOn: string; statedMonthlySpendPaise?: number; spendReportedOn?: string } } = {}) {
   const posts: Record<string, unknown>[] = []; const reads: URL[] = [];
   let saved = false; let labSizeSaved = false;
   await page.clock.setFixedTime(new Date('2026-10-30T06:00:00Z'));
@@ -59,6 +59,7 @@ async function fixture(page: Page, options: { frame?: boolean; sales?: boolean; 
   });
   await page.route('**/api/customer-map**', route => {
     const url = new URL(route.request().url()); reads.push(url);
+    if (url.searchParams.has('customer') && options.labAccess === false) return route.fulfill({ json: { ...base, labAccess: false } });
     if (url.searchParams.has('customer')) return route.fulfill({ json: { ...(options.empty ? base : fullSheet(options.sales)), ...(labSizeSaved ? { labSize: { testsPerDay: 80, basis: 'lab_said', reportedBy: options.sales ? 'sales@example.test' : 'manager@example.test', reportedOn: new Date().toISOString().slice(0, 10), ...(options.sales ? {} : { statedMonthlySpendPaise: 5000000, spendReportedOn: new Date().toISOString().slice(0, 10) }) } } : options.labSize ? { labSize: options.labSize } : {}), ...(options.dueOn ? { tiles: { ...fullSheet(options.sales).tiles, nextActionDue: options.dueOn } } : {}), ...(options.contacts ? { contacts: options.contacts } : {}), ...(options.located || saved ? { location: { precision: 'pin', lat: saved ? Number(posts.at(-1)?.latitude) : 17.3, lng: saved ? Number(posts.at(-1)?.longitude) : 76.8, version: saved ? 3 : 2 } } : options.approximate ? { location: { approximate: { pinCode: '585102' } } } : {}) } });
     if (url.searchParams.has('pin')) return route.fulfill({ json: { page: Number(url.searchParams.get('page')), pageSize: 20, total: 77, rows: Array.from({ length: Number(url.searchParams.get('page')) === 4 ? 17 : 20 }, (_, i) => ({ customerId: i === 0 ? customerId : `pin-lab-${i}`, name: i === 0 ? url.searchParams.get('q') ? 'PIN search match Lab' : name : `PIN Lab ${i}`, city: 'Kalaburagi', tone: 'red' })) } });
     if (url.searchParams.has('notOnMap')) return route.fulfill({ json: { page: Number(url.searchParams.get('page')), pageSize: 20, total: 21, rows: [{ customerId, name: url.searchParams.get('q') ? 'Search match Lab' : name, city: 'Bidar' }] } });
@@ -457,6 +458,11 @@ for (const width of [375, 1280]) test.describe(`Customer map at ${width}px`, () 
     await expect(sheet.getByRole('meter')).toHaveCount(0);
     await expect(sheet.getByRole('button', { name: 'No decider known · Add contact' })).toBeVisible();
     await expect(sheet.getByText('Last visit', { exact: true }).locator('..')).toContainText('Never');
+  });
+  test('sheet without lab access hides the section and tests/day action', async ({ page }) => {
+    await fixture(page, { labAccess: false }); const sheet = await openSheet(page);
+    await expect(sheet.getByRole('region', { name: 'Lab size', exact: true })).toHaveCount(0);
+    await expect(sheet.getByText('tests/day', { exact: false })).toHaveCount(0);
   });
   test('sheet shows the empty lab-size action and saves a report with an idempotency key', async ({ page }) => {
     const { posts } = await fixture(page, { frame: true }); const sheet = await openSheet(page);

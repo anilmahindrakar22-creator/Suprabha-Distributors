@@ -48,7 +48,7 @@ export type CustomerSheetData = {
   decider: { name: string; role: string | null; stance: 'supportive' | 'neutral' | 'unknown' | 'opposed' } | null;
   route: { name: string; champion: boolean; decider: boolean }[];
   instruments: { ours: SheetInstrument[]; theirs: SheetInstrument[]; moreCount: number };
-  labSize?: LabSize | null;
+  labAccess: boolean; labSize?: LabSize | null;
   openWork: SheetOrder[]; recentOrders: SheetOrder[]; contacts: { count: number; champions: number };
 };
 
@@ -141,6 +141,7 @@ export function parseCustomerSheet(value: unknown): CustomerSheetData {
     decider: hasDecider ? { name: string(decider.name), role: optional(decider.businessRole, string), stance: choice(decider.stance, ['supporter', 'neutral', 'unknown', 'sceptical', 'blocker']) === 'supporter' ? 'supportive' : decider.stance === 'blocker' || decider.stance === 'sceptical' ? 'opposed' : decider.stance as 'neutral' | 'unknown' } : null,
     route: v.route === undefined || v.route === null ? [] : array(object(v.route).steps, n => { const r = object(n); const role = string(r.decisionRole); return { name: string(r.name), champion: role === 'champion', decider: role === 'decision_maker' }; }),
     instruments: { ours: rows.filter(r => r.kind === 'ours').map(r => r.item), theirs: rows.filter(r => r.kind === 'theirs').map(r => r.item), moreCount: instruments ? count(instruments.moreCount) : 0 },
+    labAccess: v.labAccess === undefined ? false : boolean(v.labAccess),
     ...(v.labSize === undefined ? {} : { labSize: nullable(v.labSize, n => {
       const report = object(n), testsPerDay = count(report.testsPerDay);
       if (testsPerDay < 1 || testsPerDay > 100000) throw new Error('Invalid lab size');

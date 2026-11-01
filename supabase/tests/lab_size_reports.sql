@@ -84,5 +84,10 @@ begin
   and not (pg_temp.ls_sheet('sales')->'labSize' ? 'statedMonthlySpendPaise')
   and not (pg_temp.ls_sheet('sales')->'labSize' ? 'spendReportedOn'),'LS8 spend retention');
  raise notice 'PASS LS8 management retains prior spend/date with latest volume; sales sees no spend';
+ perform pg_temp.ls_assert(not (pg_temp.ls_sheet('operations') ? 'labSize')
+  and pg_temp.ls_sheet('operations')->'labAccess'='false'::jsonb
+  and pg_temp.ls_sheet('sales') ? 'labSize'
+  and pg_temp.ls_sheet('sales')->'labAccess'='true'::jsonb,'LS9 sheet lab access');
+ raise notice 'PASS LS9 operations sheet hides labSize and denies labAccess; sales sheet includes both';
 end $checks$;
 rollback;
