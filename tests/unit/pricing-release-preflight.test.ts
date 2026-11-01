@@ -9,6 +9,19 @@ const original = JSON.parse(readFileSync(new URL('../../supabase/migration-histo
 const source = new Map(readdirSync(fileURLToPath(directory)).filter((name) => name.endsWith('.sql')).map((name) => [name, readFileSync(new URL(name, directory), 'utf8')]));
 
 describe('read-only pricing release preflight', () => {
+  it('registers the management-only pin patch after rental registration', () => {
+    const result = pricingReleasePreflight(original, source);
+    const name = '20261102193000_pin_move_management_only.sql';
+    expect(result.pending.indexOf(name)).toBe(result.pending.indexOf('20261102192000_instrument_rental_registration.sql') + 1);
+    expect(original.migrations.find((entry: { localFile: string }) => entry.localFile === name)?.status).toBe('not_deployed');
+    const migration = source.get(name)!;
+    expect(migration).toContain("pg_get_functiondef('public.stockflow_accounts_gateway(text,text,text,jsonb)'::regprocedure),chr(13),'')");
+    expect(migration.match(/\/length\(old_text\)<>1/g)).toHaveLength(1);
+    expect(migration).toContain("if v_location.precision='pin' and not (v_roles && array['administrator','management']::text[]) then raise exception 'Only management can move a pin' using errcode='PT403'; end if;");
+    const runner = readFileSync(new URL('../pricing-migration-local.ps1', import.meta.url), 'utf8');
+    expect(runner).toContain("'20261102192000_instrument_rental_registration.sql','20261102193000_pin_move_management_only.sql'");
+    expect(runner).toContain('supabase/tests/pin_move_management_only.sql');
+  });
   it('registers lab size after test volume and checks live-function anchors', () => {
     const result = pricingReleasePreflight(original, source);
     const name = '20261102191000_lab_size_reports.sql';
@@ -449,6 +462,7 @@ describe('read-only pricing release preflight', () => {
       '20261102190000_wallet_test_volume.sql',
       '20261102191000_lab_size_reports.sql',
       '20261102192000_instrument_rental_registration.sql',
+      '20261102193000_pin_move_management_only.sql',
     ]);
     expect(result.deployed.at(-1)?.localFile).toBe('20261026150000_rate_check_units.sql');
     expect(result.deployed).toHaveLength(147);
@@ -493,6 +507,7 @@ describe('read-only pricing release preflight', () => {
       '20261102190000_wallet_test_volume.sql',
       '20261102191000_lab_size_reports.sql',
       '20261102192000_instrument_rental_registration.sql',
+      '20261102193000_pin_move_management_only.sql',
     ]);
   });
   it('rejects changed SQL including changes inside literals', () => {

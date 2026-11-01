@@ -116,13 +116,13 @@ begin
   v_replay:=public.stockflow_accounts_gateway('accounts-test-key','accounts-sales@example.test','set_location',v_payload);
   if v_result is distinct from v_replay or v_result->'location'->>'version'<>'1'
     or (select count(*) from private.stockflow_customer_location_events where customer_id=v_overdue)<>1 then raise exception 'Location placement/replay failed'; end if;
-  v_result:=public.stockflow_accounts_gateway('accounts-test-key','accounts-ops@example.test','set_location',
+  v_result:=public.stockflow_accounts_gateway('accounts-test-key','accounts-manager@example.test','set_location',
     jsonb_build_object('customerId',v_overdue,'precision','town','town','Mysuru','source','town','expectedVersion',1,'idempotencyKey','accounts-location-town-001'));
   if v_result->'location'->>'version'<>'2' or v_result->'location'->>'town'<>'Mysuru'
     or v_result->'location'->'latitude'<>'null'::jsonb
     or not exists(select 1 from private.stockflow_customer_location_events where customer_id=v_overdue and event_type='moved'
       and old_values->>'precision'='pin' and new_values->>'precision'='town'
-      and actor_email='accounts-ops@example.test' and request_id='accounts-location-town-001') then raise exception 'Town update/audit failed'; end if;
+      and actor_email='accounts-manager@example.test' and request_id='accounts-location-town-001') then raise exception 'Town update/audit failed'; end if;
   begin
     perform public.stockflow_accounts_gateway('accounts-test-key','accounts-sales@example.test','set_location',v_payload||
       '{"expectedVersion":1,"idempotencyKey":"accounts-location-stale-001"}');
@@ -188,7 +188,7 @@ begin
   if v_read->>'today'<>v_today::text or v_read->'page'<>'{"page":1,"pageSize":50,"total":3}'::jsonb
     or v_read->'accounts'->0->>'lastOrderOn'<>v_today::text or v_read->'accounts'->0->>'nextVisitOn'<>(v_today-1)::text
     or v_read->'accounts'->0->'lastVisit'->>'visitedBy'<>'accounts-sales@example.test'
-    or v_read->'accounts'->0->'location'->>'verifiedBy'<>'accounts-ops@example.test'
+    or v_read->'accounts'->0->'location'->>'verifiedBy'<>'accounts-manager@example.test'
     or v_read->'accounts'->1->'lastVisit'<>'null'::jsonb or v_read->'accounts'->1->'lastOrderOn'<>'null'::jsonb then
     raise exception 'Coverage shape, latest visit or business date incorrect'; end if;
   if not exists(select 1 from jsonb_array_elements(v_read->'owners') v_owner where v_owner->>'email'='accounts-sales@example.test' and v_owner->'name'='null'::jsonb)

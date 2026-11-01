@@ -45,6 +45,7 @@ export function CustomerMap({ financial, onBack, initialCustomerId, onPlan, onOr
   function openList(source: 'unplaced' | ApproxGroup) { setListSource(source); setQuery(''); setPage(1); setList(null); setListError(''); }
   const listTitle = listSource && listSource !== 'unplaced' ? `PIN ${listSource.pinCode} · approx · ${listSource.count} labs` : 'Not on map';
   function startPlacement(next: MapPlacement) {
+    if (next.location?.precision === 'pin' && !financial) return;
     const instance = map.current; if (!instance) return;
     const location = next.location;
     const start = location?.precision === 'pin' && location.lat != null && location.lng != null ? location : pins?.approxGroups.find(group => group.pinCode === location?.approximate?.pinCode);

@@ -538,6 +538,13 @@ for (const width of [375, 1280]) test.describe(`Customer map at ${width}px`, () 
     await expect(sheet.getByText('Location permission denied. You can add a pin manually.', { exact: true })).toHaveCount(1);
     await expect(sheet.getByRole('alert')).toHaveCount(0); expect(posts).toHaveLength(0);
   });
+  test('sales cannot move or re-place a pinned lab from its sheet', async ({ page }) => {
+    await fixture(page, { sales: true, located: true }); const sheet = await openSheet(page);
+    await expect(sheet.getByRole('button', { name: /^Move pin/ })).toHaveCount(0);
+    await expect(sheet.getByRole('button', { name: 'Pin here', exact: true })).toHaveCount(0);
+    await expect(sheet.getByRole('button', { name: 'Check in', exact: true })).toBeVisible();
+    await expect(sheet.getByRole('button', { name: 'Order', exact: true })).toBeVisible();
+  });
   test('Move pin opens at the exact pin and keeps its version when saving', async ({ page }) => {
     await captureMap(page); const { posts } = await fixture(page, { located: true }); const sheet = await openSheet(page);
     await expect(sheet.getByRole('button', { name: 'Pin here', exact: true })).toHaveCount(0);
