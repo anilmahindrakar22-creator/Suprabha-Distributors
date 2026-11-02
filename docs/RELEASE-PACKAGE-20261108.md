@@ -7,7 +7,7 @@ This document replaces the separate RELEASE TARGET lists for train 1 (`claude/tr
 **Read only this file plus the scripts it names.**
 
 ## 1. What ships
-- **Branch** `claude/train-20261120` @ `GATE_SHA`.
+- **Branch** `claude/train-20261120` @ `ccc050c`.
   - It contains train 2 head `f4a76a8`, base `feature/phase3-order-exceptions` (`9afdbda`), and every merged `codex/*` release branch. All were checked with `git merge-base --is-ancestor`.
   - Remote branches not merged into it are superseded `claude/*` feature branches (re-delivered through `codex/*` releases), parked work (`result-pruning-parked`, `market-w1`, `frequent-products`), old docs branches, and dependabot bumps. None is included.
 - **Production today**, read-only on 3 Nov:
@@ -41,7 +41,7 @@ This document replaces the separate RELEASE TARGET lists for train 1 (`claude/tr
 ## 3. Production steps, in order
 1. **Database:** apply the 37 migrations below **in filename order, one at a time**. Each is its own transaction, so a failure leaves a known applied prefix. **Stop at the first failure** and report it; do not hand-edit.
    - **Acceptance only:** `20261028090000_to_order_list` is already there (remote `20261028132839`). Skip it on acceptance only.
-2. **Edge function:** deploy `stockflow-orders` from this branch. The diff from v34 is `git diff f7f8453 GATE_SHA -- supabase/functions/stockflow-orders`, which is additive: new purchase, challan, wallet, map, Today, lab, brand and verify actions. Leave `stockflow-sync` and `stockflow-push` alone.
+2. **Edge function:** deploy `stockflow-orders` from this branch. The diff from v34 is `git diff f7f8453 ccc050c -- supabase/functions/stockflow-orders`, which is additive: new purchase, challan, wallet, map, Today, lab, brand and verify actions. Leave `stockflow-sync` and `stockflow-push` alone.
 3. **App (Worker):**
    - deploy `build:staff:production`;
    - the service-worker cache goes from v15 to v16;
