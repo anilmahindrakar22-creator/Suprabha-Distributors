@@ -7,10 +7,12 @@
 **Status:** PARTIALLY IMPLEMENTED.
 - Migrations: `20261001061531_customer_demand_requirements`, `20261001070000_requirement_waiting_orders`, `20261001073000_reported_stock_increase_alerts`.
 - UI: `components/procurement-requirements.tsx`.
-- PO/GRN references are not built. Consolidation and arrival-matching depth is unverified.
+- Supplier purchase orders: `20261029100000_supplier_purchase_orders`, UI `components/purchase-orders-panel.tsx`.
+- Tally receipts for POs: `20261102090000_po_tally_receipts`. Matching Tally purchases are suggested and a person confirms. Tally is read-only, and the receipt only references the Tally voucher.
+- Still unverified: consolidation and arrival-matching depth for demand requirements.
 
 **Sources:** spec §31 (demand-driven replenishment); owner brief §Phase 1; ADR-0001.
-**Last verified:** 13 Oct 2026.
+**Last verified:** 2 Nov 2026.
 
 ## Approved decisions
 - **Inputs:** a fresh Tally snapshot decides shortage. Advisory stock is never treated as available.
