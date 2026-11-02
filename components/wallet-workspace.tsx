@@ -148,7 +148,9 @@ function EstimateForm({ account, onSaved, onConflict, onForbidden, onLock }: { a
   const invalidSplit = split && (allocations.some(d => d.monthlyWalletPaise === null) || allocated > bigint(amount ?? 0));
   const locked = write.busy || write.uncertain;
   useEffect(() => {
-    if (method === 'test_volume' && account.labSize && !locked) setTests(value => value || String(account.labSize!.testsPerDay));
+    if (method === 'test_volume' && account.labSize && !locked) {
+      setTests(value => value || String(account.labSize!.testsPerDay));
+    }
   }, [method, account.labSize, locked]);
   useEffect(() => { onLock(locked); return () => onLock(false); }, [locked, onLock]);
   return <form aria-label="Update estimate" className="space-y-3" onSubmit={event => {
@@ -157,14 +159,14 @@ function EstimateForm({ account, onSaved, onConflict, onForbidden, onLock }: { a
     void write.save({ action: 'record_wallet_snapshot', payload: { requestId: crypto.randomUUID(), customerId: account.row.customerId, monthlyWalletPaise: amount, method, ...(method === 'test_volume' ? { testVolume: { testsPerDay: Number(tests), workingDaysPerMonth: Number(days), paisePerTest: paisePerTest!, ...(showSpecial ? { specialTestsPerMonth: Number(specialTests), paisePerSpecialTest: paisePerSpecialTest! } : {}) } } : {}), source: field(data, 'source').trim(), confidence: data.get('confidence') as WalletSnapshot['confidence'], asOf: field(data, 'asOf'), note: field(data, 'note').trim(), loweredReason: lower ? field(data, 'reason').trim() : null, divisions: split ? allocations as { code: string; monthlyWalletPaise: number }[] : [], expectedCurrentSnapshotId: account.current?.id ?? null } });
   }}>
     <fieldset disabled={locked} className="min-w-0 space-y-3">
-      {account.labSize ? <p className="text-sm text-sf-muted">From visit: about {account.labSize.testsPerDay} tests/day · {account.labSize.reportedBy} · {formatCustomerDate(account.labSize.reportedOn)}</p> : null}
+      {account.labSize ? <p className="text-sm text-sf-muted">From visit: about {account.labSize.testsPerDay} tests/day{account.labSize.specialTestsPerMonth != null ? ` + ${account.labSize.specialTestsPerMonth} special/month` : ''} · {account.labSize.reportedBy} · {formatCustomerDate(account.labSize.reportedOn)}</p> : null}
       {account.labSize?.statedMonthlySpendPaise != null ? <p className="text-sm text-sf-muted">Lab said {formatPaise(account.labSize.statedMonthlySpendPaise)}/month · {formatCustomerDate(account.labSize.spendReportedOn!)} · <button type="button" className="min-h-11 underline" onClick={() => { setMethod('customer_stated'); setTotal(rupees(account.labSize!.statedMonthlySpendPaise!)); }}>Use</button></p> : null}
       <label className="block">Method<select className={input} name="method" value={method} onChange={event => setMethod(event.target.value as WalletSnapshot['method'])}><option value="customer_stated">Customer stated</option><option value="test_volume">Test volume</option><option value="manager_estimate">Manager estimate</option></select></label>
       {method === 'test_volume' ? <>
         <label className="block">Tests per day (approx)<input className={input} type="number" min="1" max="100000" step="1" required value={tests} onChange={event => setTests(event.target.value)} /></label>
         <label className="block">Working days a month<input className={input} type="number" min="1" max="31" step="1" required value={days} onChange={event => setDays(event.target.value)} /></label>
         <label className="block">Average ₹ per test<input className={input} type="number" min="0.01" max="1000000" step="0.01" inputMode="decimal" required value={price} onChange={event => setPrice(event.target.value)} /></label>
-        {!showSpecial ? <button type="button" className="min-h-11 text-sm text-sf-muted underline" onClick={() => setShowSpecial(true)}>+ Special tests</button> : <>
+        {!showSpecial ? <button type="button" className="min-h-11 text-sm text-sf-muted underline" onClick={() => { setSpecialTests(value => value || (account.labSize?.specialTestsPerMonth != null ? String(account.labSize.specialTestsPerMonth) : '')); setShowSpecial(true); }}>+ Special tests</button> : <>
           <label className="block">Special tests a month (approx)<input className={input} type="number" min="1" max="1000000" step="1" required value={specialTests} onChange={event => setSpecialTests(event.target.value)} /></label>
           <label className="block">Average ₹ per special test<input className={input} type="number" min="0.01" max="1000000" step="0.01" inputMode="decimal" required value={specialPrice} onChange={event => setSpecialPrice(event.target.value)} /></label>
           <button type="button" className="min-h-11 text-sm text-sf-muted underline" onClick={() => { setShowSpecial(false); setSpecialTests(''); setSpecialPrice(''); }}>Remove</button>

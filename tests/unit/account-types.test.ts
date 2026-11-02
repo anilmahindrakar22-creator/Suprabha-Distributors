@@ -116,6 +116,15 @@ describe('account command parser', () => {
   });
   describe('lab size reports', () => {
     const report = { action: 'record_lab_size', customerId, testsPerDay: 80, basis: 'lab_said', statedMonthlySpendPaise: 5000000, note: ' Monthly estimate ', idempotencyKey };
+    it('validates optional specials and preserves omission and null', () => {
+      expect(parseAccountCommand(report)?.payload).not.toHaveProperty('specialTestsPerMonth');
+      for (const specialTestsPerMonth of [null, 1, 100, 1000000]) {
+        expect(parseAccountCommand({ ...report, specialTestsPerMonth })?.payload).toHaveProperty('specialTestsPerMonth', specialTestsPerMonth);
+      }
+      for (const specialTestsPerMonth of [0, 1000001, 1.5, '100']) {
+        expect(parseAccountCommand({ ...report, specialTestsPerMonth })).toBeNull();
+      }
+    });
     it('parses a bounded report and normalizes an optional note', () => {
       expect(parseAccountCommand(report)).toEqual({ action: 'record_lab_size', payload: {
         customerId, testsPerDay: 80, basis: 'lab_said', statedMonthlySpendPaise: 5000000, note: 'Monthly estimate', idempotencyKey,

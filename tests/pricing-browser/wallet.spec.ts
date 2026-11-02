@@ -8,7 +8,7 @@ const policy = { version: 1, walletShareTargetBps: 8000, focusBandBps: 8000, sta
 const coverage = { certified: true, windowFrom: '2026-07-01', windowTo: '2026-09-30', windowLabel: 'Jul–Sep 2026', reason: null };
 const row = { customerId, name: 'Example Diagnostic Laboratory', city: 'Bidar', walletPaise: 10000000, salesPaise: 2000000, sharePermille: 200, untappedPaise: 8000000, captureGapPaise: 6000000, confidence: 'high' as const, asOf: '2026-10-01', verified: false, stale: false, belowSales: false, inFocusBand: true };
 const current = { id: snapshotId, monthlyWalletPaise: row.walletPaise, testVolume: null, method: 'customer_stated' as const, source: 'Customer discussion', confidence: 'high' as const, asOf: row.asOf, note: 'Initial estimate', loweredReason: null, enteredBy: 'manager@example.test', enteredAt: '2026-10-01T00:00:00Z', verifiedBy: null, divisions: [{ code: 'BIOCHEM', name: 'Biochemistry', monthlyWalletPaise: 4000000 }], unallocatedPaise: 6000000 };
-type Options = { certified?: boolean; canAssign?: boolean; failure?: 'conflict' | 'network' | 'forbidden'; labSize?: { testsPerDay: number; basis: 'lab_said' | 'observed'; reportedBy: string; reportedOn: string; statedMonthlySpendPaise?: number; spendReportedOn?: string } | null };
+type Options = { certified?: boolean; canAssign?: boolean; failure?: 'conflict' | 'network' | 'forbidden'; labSize?: { testsPerDay: number; specialTestsPerMonth?: number; basis: 'lab_said' | 'observed'; reportedBy: string; reportedOn: string; statedMonthlySpendPaise?: number; spendReportedOn?: string } | null };
 
 async function fixture(page: Page, options: Options = {}) {
   const posts: WalletCommand[] = [];
@@ -140,6 +140,17 @@ for (const width of [375, 1280]) test.describe(`Wallet at ${width}px`, () => {
     await expect(form.getByText('From visit: about 80 tests/day · Ravi · 3 Nov', { exact: true })).toBeVisible();
     await form.getByRole('combobox', { name: /^Method/ }).selectOption('test_volume');
     await expect(form.getByLabel('Tests per day (approx)', { exact: true })).toHaveValue('80');
+    await expect(form.getByLabel('Total (₹/month)', { exact: true })).toHaveValue('');
+  });
+  test('visit special volume is shown and prefills count without a price or total', async ({ page }) => {
+    await fixture(page, { labSize: { testsPerDay: 80, specialTestsPerMonth: 100, basis: 'lab_said', reportedBy: 'Ravi', reportedOn: '2026-11-03' } });
+    const form = await openForm(page);
+    await expect(form.getByText(/From visit: about 80 tests\/day \+ 100 special\/month/)).toBeVisible();
+    await form.getByRole('combobox', { name: /^Method/ }).selectOption('test_volume');
+    await form.getByRole('button', { name: '+ Special tests', exact: true }).click();
+    await expect(form.getByLabel('Tests per day (approx)', { exact: true })).toHaveValue('80');
+    await expect(form.getByLabel('Special tests a month (approx)', { exact: true })).toHaveValue('100');
+    await expect(form.getByLabel('Average ₹ per special test', { exact: true })).toHaveValue('');
     await expect(form.getByLabel('Total (₹/month)', { exact: true })).toHaveValue('');
   });
   test('visit test volume validation waits for an invalid price', async ({ page }) => {

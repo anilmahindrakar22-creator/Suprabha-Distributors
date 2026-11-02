@@ -1,5 +1,6 @@
 import { describe, expect, it, vi } from 'vitest';
 import { MARKET_AREA } from '../../lib/account-types';
+import { parseWalletAccount } from '../../lib/wallet-types';
 import { customerMapDayDifference, formatActionDue, formatBoundingBox, formatCustomerDate, formatLastVisit, mapColours, parseCustomerSheet, parseMapPins, parseNotOnMap, parsePinLabs, toneMeanings } from '../../lib/customer-map';
 
 const pin = { customerId: '66111111-1111-4111-8111-111111111111', name: 'Example Lab', lat: 17.3, lng: 76.8, tone: 'red', focus: true, openOrders: 2 };
@@ -61,6 +62,16 @@ describe('customer map parsers', () => {
   it('parses the latest lab size and includes the optional financial amount only when returned', () => {
     const report = { testsPerDay: 80, basis: 'lab_said', reportedBy: 'Ravi', reportedOn: '2026-11-01' };
     expect(parseCustomerSheet({ ...empty, labSize: report }).labSize).toEqual(report);
+    for (const specialTestsPerMonth of [1, 100, 1000000]) {
+      expect(parseCustomerSheet({ ...empty, labSize: { ...report, specialTestsPerMonth } }).labSize)
+        .toEqual({ ...report, specialTestsPerMonth });
+      expect(parseWalletAccount({ labSize: { ...report, specialTestsPerMonth, statedMonthlySpendPaise: null } }).labSize)
+        .toEqual({ ...report, specialTestsPerMonth, statedMonthlySpendPaise: null });
+    }
+    for (const specialTestsPerMonth of [0, 1000001, 1.5, '100', null]) {
+      expect(() => parseCustomerSheet({ ...empty, labSize: { ...report, specialTestsPerMonth } })).toThrow();
+      expect(() => parseWalletAccount({ labSize: { ...report, specialTestsPerMonth, statedMonthlySpendPaise: null } })).toThrow();
+    }
     expect(() => parseCustomerSheet({ ...empty, labSize: { ...report, statedMonthlySpendPaise: 5000000 } })).toThrow();
     expect(parseCustomerSheet({ ...empty, labSize: { ...report, statedMonthlySpendPaise: null } }).labSize)
       .toEqual({ ...report, statedMonthlySpendPaise: null });

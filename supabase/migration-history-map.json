@@ -1305,6 +1305,13 @@
       "remoteVersion": null,
       "remoteSha256": null,
       "status": "not_deployed"
+    },
+    {
+      "localFile": "20261116140000_lab_size_specials.sql",
+      "localSha256": "05a135e9536a09e51b3e7b2e3dc54545322c07d51d69ad4465ef5ad5ba5f32b9",
+      "remoteVersion": null,
+      "remoteSha256": null,
+      "status": "not_deployed"
     }
   ],
   "liveCheck": {

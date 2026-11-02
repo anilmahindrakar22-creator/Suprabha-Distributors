@@ -49,6 +49,7 @@ export function parseWalletAccount(input: unknown): WalletAccount {
   if (!object(input.labSize)) return fail();
   const report = input.labSize;
   if (!integer(report.testsPerDay, 1, 100000) || !['lab_said', 'observed'].includes(report.basis as string)
+    || (report.specialTestsPerMonth !== undefined && !integer(report.specialTestsPerMonth, 1, 1000000))
     || !text(report.reportedBy, 1, 254) || !validIsoDate(report.reportedOn)
     || !Object.prototype.hasOwnProperty.call(report, 'statedMonthlySpendPaise')
     || (report.statedMonthlySpendPaise !== null && !validIsoDate(report.spendReportedOn))
@@ -56,6 +57,7 @@ export function parseWalletAccount(input: unknown): WalletAccount {
     || !(report.statedMonthlySpendPaise === null || integer(report.statedMonthlySpendPaise, 0, 9e15))) return fail();
   const labSize = {
     testsPerDay: report.testsPerDay as number,
+    ...(report.specialTestsPerMonth === undefined ? {} : { specialTestsPerMonth: report.specialTestsPerMonth as number }),
     basis: report.basis as LabSize['basis'],
     reportedBy: report.reportedBy as string,
     reportedOn: report.reportedOn,

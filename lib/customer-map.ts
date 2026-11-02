@@ -37,7 +37,7 @@ export type UnplacedCustomers = { page: number; pageSize: number; total: number;
 export type PinLabs = Omit<UnplacedCustomers, 'rows'> & { rows: (UnplacedCustomers['rows'][number] & { tone: MapTone })[] };
 export type SheetOrder = { orderId: string; orderNumber: string; stage: string; date: string; amountPaise?: number | null; priceApproval?: boolean };
 export type SheetInstrument = { name: string; placedOn: string | null; serial: string | null; payback?: 'paying_back' | 'behind' | 'awaiting_data' | null; closedSystem?: boolean; lockInDays?: number | null };
-export type LabSize = { testsPerDay: number; basis: 'lab_said' | 'observed'; reportedBy: string; reportedOn: string; statedMonthlySpendPaise?: number | null; spendReportedOn?: string };
+export type LabSize = { testsPerDay: number; specialTestsPerMonth?: number; basis: 'lab_said' | 'observed'; reportedBy: string; reportedOn: string; statedMonthlySpendPaise?: number | null; spendReportedOn?: string };
 export type CustomerSheetData = {
   customerId: string; name: string; city: string | null; owner: string | null; accountClass: 'A' | 'B' | null; phone: string | null;
   location: { lat?: number | null; lng?: number | null; version?: number; precision?: 'pin' | 'town'; approximate?: { pinCode: string } } | null;
@@ -151,8 +151,11 @@ export function parseCustomerSheet(value: unknown): CustomerSheetData {
     ...(v.labSize === undefined ? {} : { labSize: nullable(v.labSize, n => {
       const report = object(n), testsPerDay = count(report.testsPerDay);
       if (testsPerDay < 1 || testsPerDay > 100000) throw new Error('Invalid lab size');
+      const specialTestsPerMonth = report.specialTestsPerMonth === undefined ? undefined : count(report.specialTestsPerMonth);
+      if (specialTestsPerMonth !== undefined && (specialTestsPerMonth < 1 || specialTestsPerMonth > 1000000)) throw new Error('Invalid lab size');
       if (report.statedMonthlySpendPaise !== undefined && report.statedMonthlySpendPaise !== null && report.spendReportedOn === undefined) throw new Error('Invalid lab size');
       return { testsPerDay, basis: choice(report.basis, ['lab_said', 'observed'] as const), reportedBy: string(report.reportedBy), reportedOn: date(report.reportedOn),
+        ...(specialTestsPerMonth === undefined ? {} : { specialTestsPerMonth }),
         ...financial(report, ['statedMonthlySpendPaise']), ...(report.spendReportedOn === undefined ? {} : { spendReportedOn: date(report.spendReportedOn) }) } as LabSize;
     }) }),
     openWork: v.openWork === undefined ? [] : array(v.openWork, order), recentOrders: v.recentOrders === undefined ? [] : array(v.recentOrders, order), contacts: contacts ? { count: count(contacts.total), champions: count(contacts.champions) } : { count: 0, champions: 0 },
