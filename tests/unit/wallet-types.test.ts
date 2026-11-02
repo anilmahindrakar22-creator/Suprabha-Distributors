@@ -48,6 +48,17 @@ describe('validateWalletCommand', () => {
     expect(validateWalletCommand(snapshot).action).toBe('record_wallet_snapshot');
     expect(validateWalletCommand({ action: 'set_wallet_policy', payload: { requestId, walletShareTargetBps: 8000, focusBandBps: 8000, staleAfterMonths: 6, note: 'Policy review', expectedVersion: 1 } }).action).toBe('set_wallet_policy');
   });
+  it('validates wallet snapshot verification and trims its note', () => {
+    const command = { action: 'verify_wallet_snapshot', payload: { requestId, snapshotId: customerId, note: '  Checked against source  ' } };
+    expect(validateWalletCommand(command)).toEqual({ ...command, payload: { ...command.payload, note: 'Checked against source' } });
+    for (const payload of [
+      { ...command.payload, requestId: 'bad' },
+      { ...command.payload, snapshotId: 'bad' },
+      { ...command.payload, note: '  ' },
+      { ...command.payload, note: undefined },
+      { ...command.payload, note: 'x'.repeat(501) },
+    ]) expect(() => validateWalletCommand({ ...command, payload })).toThrow('Invalid wallet request');
+  });
   const invalidInputs: unknown[] = [
     [{ action: 'get_wallet_workspace', payload: { view: 'bad', page: 1, search: '' } }, 'view'],
     [{ action: 'get_wallet_workspace', payload: { view: 'all', page: 0, search: '' } }, 'page'],

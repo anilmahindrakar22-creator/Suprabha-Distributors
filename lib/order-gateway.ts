@@ -40,6 +40,7 @@ export type GatewayAction =
   | 'get_wallet_workspace'
   | 'get_wallet_account'
   | 'record_wallet_snapshot'
+  | 'verify_wallet_snapshot'
   | 'set_wallet_policy'
   | 'get_wallet_diagnoses'
   | 'get_account_opportunities'

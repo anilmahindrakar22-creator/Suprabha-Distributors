@@ -18,12 +18,13 @@ export type WalletWorkspace = {
   policy: WalletPolicy; coverage: WalletCoverage; view: WalletView; page: number; pageSize: 50; total: number; rows: WalletRow[];
   summary: { focusCount: number | null; focusGapPaise: number | null; estimatedAccounts: number; accountsWithSales: number | null; unlinkedSalesPaise: number | null; unlinkedLedgers: number | null };
 };
-export type WalletSnapshot = { id: string; monthlyWalletPaise: number; testVolume: WalletTestVolume | null; method: WalletMethod; source: string; confidence: WalletConfidence; asOf: string; note: string; loweredReason: string | null; enteredBy: string; enteredAt: string; verifiedBy: string | null; divisions: Array<{ code: string; name: string; monthlyWalletPaise: number }>; unallocatedPaise: number };
+export type WalletSnapshot = { id: string; monthlyWalletPaise: number; testVolume: WalletTestVolume | null; method: WalletMethod; source: string; confidence: WalletConfidence; asOf: string; note: string; loweredReason: string | null; enteredBy: string; enteredAt: string; verifiedBy: string | null; verifiedAt?: string | null; verificationNote?: string | null; divisions: Array<{ code: string; name: string; monthlyWalletPaise: number }>; unallocatedPaise: number };
 export type WalletAccount = { policy: WalletPolicy; coverage: WalletCoverage; row: WalletRow; current: WalletSnapshot | null; history: WalletSnapshot[]; divisions: Array<{ code: string; name: string }>; labSize?: (Omit<LabSize, 'statedMonthlySpendPaise'> & { statedMonthlySpendPaise: number | null }) | null };
 export type WalletCommand =
   | { action: 'get_wallet_workspace'; payload: { view: WalletView; page: number; search: string } }
   | { action: 'get_wallet_account'; payload: { customerId: string } }
   | { action: 'record_wallet_snapshot'; payload: { requestId: string; customerId: string; monthlyWalletPaise: number; testVolume?: WalletTestVolume | null; method: WalletMethod; source: string; confidence: WalletConfidence; asOf: string; note: string; loweredReason: string | null; divisions: Array<{ code: string; monthlyWalletPaise: number }>; expectedCurrentSnapshotId: string | null } }
+  | { action: 'verify_wallet_snapshot'; payload: { requestId: string; snapshotId: string; note: string } }
   | { action: 'set_wallet_policy'; payload: { requestId: string; walletShareTargetBps: number; focusBandBps: number; staleAfterMonths: number; note: string; expectedVersion: number } };
 
 const views: WalletView[] = ['focus', 'all', 'no_estimate', 'stale', 'below_sales'];
@@ -77,6 +78,10 @@ export function validateWalletCommand(input: unknown): WalletCommand {
     case 'get_wallet_account':
       if (typeof p.customerId !== 'string' || !uuid.test(p.customerId)) return fail();
       return { action: input.action, payload: { customerId: p.customerId } };
+    case 'verify_wallet_snapshot':
+      if (typeof p.requestId !== 'string' || !uuid.test(p.requestId) || typeof p.snapshotId !== 'string' || !uuid.test(p.snapshotId)
+        || typeof p.note !== 'string' || p.note.trim().length < 3 || p.note.trim().length > 500) return fail();
+      return { action: input.action, payload: { requestId: p.requestId, snapshotId: p.snapshotId, note: p.note.trim() } };
     case 'record_wallet_snapshot': {
       const tv = p.testVolume;
       if (p.method === 'test_volume') {

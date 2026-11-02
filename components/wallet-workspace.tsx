@@ -29,12 +29,12 @@ const todayIST = () => new Intl.DateTimeFormat('en-CA', { timeZone: 'Asia/Kolkat
 const rupees = (paise: number) => `${Math.trunc(paise / 100)}.${String(paise % 100).padStart(2, '0')}`;
 
 class WalletError extends Error {
-  constructor(message: string, readonly status: number) { super(message); }
+  constructor(message: string, readonly status: number, readonly code?: string) { super(message); }
 }
 async function request<T>(url: string, options?: RequestInit): Promise<T> {
   const response = await fetch(url, { cache: 'no-store', ...options });
-  const body = await response.json() as T & { error?: string };
-  if (!response.ok) throw new WalletError(response.status === 403 ? 'Wallet is for management' : body.error || 'Wallet is temporarily unavailable', response.status);
+  const body = await response.json() as T & { error?: string; code?: string };
+  if (!response.ok) throw new WalletError(response.status === 403 ? 'Wallet is for management' : body.error || 'Wallet is temporarily unavailable', response.status, body.code);
   return body as T;
 }
 function message(error: unknown) { return error instanceof Error ? error.message : 'Wallet is temporarily unavailable'; }
@@ -93,11 +93,12 @@ function Figures({ row, certified, walletShareTargetBps }: { row: WalletRow; cer
 
 function SnapshotDetails({ snapshot }: { snapshot: WalletSnapshot }) {
   const methods = { customer_stated: 'Customer stated', test_volume: 'Test volume', manager_estimate: 'Manager estimate' };
-  return <div className="space-y-2 text-sm"><p>{formatPaise(snapshot.monthlyWalletPaise)}/month · {dateLabel(snapshot.asOf)} · {snapshot.confidence[0].toUpperCase() + snapshot.confidence.slice(1)}</p><p>{methods[snapshot.method]} · {snapshot.source}</p>{snapshot.testVolume ? <p className="text-sf-muted">{snapshot.testVolume.testsPerDay} tests/day × {snapshot.testVolume.workingDaysPerMonth} days × {formatPaise(snapshot.testVolume.paisePerTest)}{snapshot.testVolume.specialTestsPerMonth ? ` + ${snapshot.testVolume.specialTestsPerMonth} special/month × ${formatPaise(snapshot.testVolume.paisePerSpecialTest!)}` : ''}</p> : null}<p>{snapshot.note}</p>{snapshot.loweredReason ? <p>Lowered: {snapshot.loweredReason}</p> : null}<p className="text-sf-muted">Entered by {snapshot.enteredBy} · {snapshot.verifiedBy ? `Verified by ${snapshot.verifiedBy}` : 'Not verified'}</p></div>;
+  const verifiedDate = snapshot.verifiedAt ? new Intl.DateTimeFormat('en-GB', { day: 'numeric', month: 'short', timeZone: 'Asia/Kolkata' }).format(new Date(snapshot.verifiedAt)) : null;
+  return <div className="space-y-2 text-sm"><p>{formatPaise(snapshot.monthlyWalletPaise)}/month · {dateLabel(snapshot.asOf)} · {snapshot.confidence[0].toUpperCase() + snapshot.confidence.slice(1)}</p><p>{methods[snapshot.method]} · {snapshot.source}</p>{snapshot.testVolume ? <p className="text-sf-muted">{snapshot.testVolume.testsPerDay} tests/day × {snapshot.testVolume.workingDaysPerMonth} days × {formatPaise(snapshot.testVolume.paisePerTest)}{snapshot.testVolume.specialTestsPerMonth ? ` + ${snapshot.testVolume.specialTestsPerMonth} special/month × ${formatPaise(snapshot.testVolume.paisePerSpecialTest!)}` : ''}</p> : null}<p>{snapshot.note}</p>{snapshot.loweredReason ? <p>Lowered: {snapshot.loweredReason}</p> : null}<p className="text-sf-muted">Entered by {snapshot.enteredBy} · {snapshot.verifiedBy ? `Verified by ${snapshot.verifiedBy}${verifiedDate ? ` · ${verifiedDate}` : ''}` : 'Not verified'}</p>{snapshot.verifiedBy && snapshot.verificationNote ? <p className="text-sf-muted">{snapshot.verificationNote}</p> : null}</div>;
 }
 
 // An uncertain write keeps both its payload and requestId; edits stay locked until resolved.
-function useWrite(onSaved: () => Promise<void>, onConflict: () => Promise<void>, onForbidden: () => void) {
+function useWrite(onSaved: () => Promise<void>, onConflict: () => Promise<void>, onForbidden: () => void, onRejected?: (error: WalletError) => Promise<void>) {
   const pending = useRef<WalletCommand | null>(null);
   const inFlight = useRef(false);
   const [busy, setBusy] = useState(false);
@@ -116,6 +117,7 @@ function useWrite(onSaved: () => Promise<void>, onConflict: () => Promise<void>,
       if (failure instanceof WalletError && failure.status >= 400 && failure.status < 500) {
         pending.current = null; setUncertain(false);
         if (failure.status === 403) onForbidden();
+        else if (onRejected && (failure.status === 409 || failure.status === 422 || failure.code === '22023')) await onRejected(failure);
         else if (failure.status === 409) await onConflict();
         else setError(message(failure));
       } else { setUncertain(true); setError('Save could not be confirmed. Check the connection and retry the same save.'); }
@@ -123,6 +125,32 @@ function useWrite(onSaved: () => Promise<void>, onConflict: () => Promise<void>,
     if (succeeded) await onSaved();
   }
   return { busy, uncertain, error, save, retry: () => { if (pending.current) void save(pending.current); } };
+}
+
+function VerificationForm({ snapshotId, onSaved, onRejected, onForbidden, onLock }: { snapshotId: string; onSaved: () => Promise<void>; onRejected: (error: WalletError) => Promise<void>; onForbidden: () => void; onLock: (locked: boolean) => void }) {
+  const [opened, setOpened] = useState(false);
+  const write = useWrite(onSaved, async () => {}, onForbidden, onRejected);
+  const locked = write.busy || write.uncertain;
+  useEffect(() => { onLock(locked); return () => onLock(false); }, [locked, onLock]);
+  if (!opened) return <button className={button} onClick={() => setOpened(true)}>Verify estimate</button>;
+  return <form aria-label="Verify estimate" className="space-y-3 text-sm" onSubmit={event => {
+    event.preventDefault();
+    const data = new FormData(event.currentTarget);
+    const note = field(data, 'verificationNote').trim();
+    if (note.length < 3 || note.length > 500) {
+      const control = event.currentTarget.elements.namedItem('verificationNote') as HTMLInputElement;
+      control.setCustomValidity('Enter 3–500 characters describing how you checked.');
+      control.reportValidity();
+      return;
+    }
+    void write.save({ action: 'verify_wallet_snapshot', payload: { requestId: crypto.randomUUID(), snapshotId, note } });
+  }}>
+    <fieldset disabled={locked} className="min-w-0">
+      <label className="block">How did you check?<input className={input} name="verificationNote" required minLength={3} maxLength={500} onChange={event => event.currentTarget.setCustomValidity('')} /></label>
+    </fieldset>
+    {write.error ? <p role="alert" className="text-sm text-sf-danger">{write.error}</p> : null}
+    {write.uncertain ? <button type="button" className={primary} disabled={write.busy} onClick={write.retry}>Retry same save</button> : <button className={primary} disabled={write.busy}>Mark verified</button>}
+  </form>;
 }
 
 function EstimateForm({ account, onSaved, onConflict, onForbidden, onLock }: { account: WalletAccount; onSaved: () => Promise<void>; onConflict: () => Promise<void>; onForbidden: () => void; onLock: (locked: boolean) => void }) {
@@ -312,10 +340,10 @@ export function WalletWorkspace({ onBack, onReviewLinks, initialCustomerId, init
       {loading ? <p className="text-sm text-sf-muted">Loading wallet…</p> : null}{error ? <p className="text-sm text-sf-danger">{error} <button className={button} onClick={() => void refresh()}>Retry</button></p> : null}
       {customerId ? <Sheet title={account?.row.name ?? 'Account wallet'} locked={writeLocked} onClose={() => { setCustomerId(null); setAccount(null); setWalletGapStart(false); }}>
         {notice ? <p className="mb-3 text-sm text-sf-body">{notice}</p> : null}
-        {account ? <div className="space-y-4"><Figures row={account.row} certified={account.coverage.certified} walletShareTargetBps={account.policy.walletShareTargetBps} />{account.current ? <><SnapshotDetails snapshot={account.current} /><table className="w-full table-fixed text-sm"><caption className="mb-2 text-left font-bold">Division wallet / month</caption><tbody>{account.divisions.map(d => <tr key={d.code}><th className="py-2 text-left font-normal">{d.name}</th><td className="py-2 text-right">{formatPaise(account.current!.divisions.find(part => part.code === d.code)?.monthlyWalletPaise ?? 0)}</td></tr>)}<tr><th className="py-2 text-left">Unallocated</th><td className="py-2 text-right">{formatPaise(account.current.unallocatedPaise)}</td></tr></tbody></table></> : <p>No estimate</p>}
+        {account ? <div className="space-y-4"><Figures row={account.row} certified={account.coverage.certified} walletShareTargetBps={account.policy.walletShareTargetBps} />{account.current ? <><SnapshotDetails snapshot={account.current} />{!account.current.verifiedBy && !editing ? <VerificationForm key={account.current.id} snapshotId={account.current.id} onLock={setWriteLocked} onForbidden={deny} onSaved={async () => { setNotice('Estimate verified'); await reloadAccount(); }} onRejected={async failure => { setNotice(message(failure)); await reloadAccount(); }} /> : null}<table className="w-full table-fixed text-sm"><caption className="mb-2 text-left font-bold">Division wallet / month</caption><tbody>{account.divisions.map(d => <tr key={d.code}><th className="py-2 text-left font-normal">{d.name}</th><td className="py-2 text-right">{formatPaise(account.current!.divisions.find(part => part.code === d.code)?.monthlyWalletPaise ?? 0)}</td></tr>)}<tr><th className="py-2 text-left">Unallocated</th><td className="py-2 text-right">{formatPaise(account.current.unallocatedPaise)}</td></tr></tbody></table></> : <p>No estimate</p>}
           <details><summary className="flex min-h-11 cursor-pointer items-center">History ({account.history.length})</summary><ul className="space-y-3">{account.history.map(snapshot => <li key={snapshot.id} className={card}><SnapshotDetails snapshot={snapshot} /></li>)}</ul></details>
           <WalletDiagnosis key={customerId!} customerId={customerId!} customerName={account.row.name} divisions={account.divisions} initialStart={walletGapStart ? { origin: 'wallet_gap' } : undefined} onForbidden={deny} onConflict={async () => { setRevision(n => n + 1); }} />
-          {editing ? <EstimateForm key={account.current?.id ?? 'new'} account={account} onLock={setWriteLocked} onSaved={reloadAccount} onConflict={conflict} onForbidden={deny} /> : <button className={primary} onClick={() => setEditing(true)}>Update estimate</button>}
+          {editing ? <EstimateForm key={account.current?.id ?? 'new'} account={account} onLock={setWriteLocked} onSaved={reloadAccount} onConflict={conflict} onForbidden={deny} /> : <button className={primary} disabled={writeLocked} onClick={() => setEditing(true)}>Update estimate</button>}
         </div> : <p>{accountError || 'Loading account…'}</p>}
       </Sheet> : null}
       {targets && workspace ? <Sheet title="Targets" locked={writeLocked} onClose={() => setTargets(false)}>{notice ? <p className="mb-3 text-sm text-sf-body">{notice}</p> : null}<PolicyForm key={workspace.policy.version} policy={workspace.policy} onLock={setWriteLocked} onForbidden={deny} onSaved={async () => { setTargets(false); await refresh(); }} onConflict={async () => { setNotice('Someone else updated the targets. Reloaded.'); await refresh(); }} /></Sheet> : null}

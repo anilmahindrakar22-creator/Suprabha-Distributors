@@ -8,13 +8,14 @@ const policy = { version: 1, walletShareTargetBps: 8000, focusBandBps: 8000, sta
 const coverage = { certified: true, windowFrom: '2026-07-01', windowTo: '2026-09-30', windowLabel: 'Jul–Sep 2026', reason: null };
 const row = { customerId, name: 'Example Diagnostic Laboratory', city: 'Bidar', walletPaise: 10000000, salesPaise: 2000000, sharePermille: 200, untappedPaise: 8000000, captureGapPaise: 6000000, confidence: 'high' as const, asOf: '2026-10-01', verified: false, stale: false, belowSales: false, inFocusBand: true };
 const current = { id: snapshotId, monthlyWalletPaise: row.walletPaise, testVolume: null, method: 'customer_stated' as const, source: 'Customer discussion', confidence: 'high' as const, asOf: row.asOf, note: 'Initial estimate', loweredReason: null, enteredBy: 'manager@example.test', enteredAt: '2026-10-01T00:00:00Z', verifiedBy: null, divisions: [{ code: 'BIOCHEM', name: 'Biochemistry', monthlyWalletPaise: 4000000 }], unallocatedPaise: 6000000 };
-type Options = { certified?: boolean; canAssign?: boolean; failure?: 'conflict' | 'network' | 'forbidden'; labSize?: { testsPerDay: number; specialTestsPerMonth?: number; basis: 'lab_said' | 'observed'; reportedBy: string; reportedOn: string; statedMonthlySpendPaise?: number; spendReportedOn?: string } | null };
+type Options = { certified?: boolean; canAssign?: boolean; failure?: 'conflict' | 'network' | 'forbidden' | 'self_verification'; labSize?: { testsPerDay: number; specialTestsPerMonth?: number; basis: 'lab_said' | 'observed'; reportedBy: string; reportedOn: string; statedMonthlySpendPaise?: number; spendReportedOn?: string } | null };
 
 async function fixture(page: Page, options: Options = {}) {
   const posts: WalletCommand[] = [];
   const reads: URL[] = [];
   const certified = options.certified !== false;
   let saved = false;
+  let verification: { verifiedBy: string; verifiedAt: string; verificationNote: string } | undefined;
   let version = 1;
   await page.route('**/api/accounts**', route => route.fulfill({ json: { accounts: [], page: { page: 1, pageSize: 50, total: 0 }, owners: [], territories: [], canAssign: options.canAssign !== false, canEraseContacts: false, canSeePowerMap: false, actorEmail: 'manager@example.test', today: '2026-10-30', classPolicy: { aMinPaise: '20000000', bMinPaise: '7500000' } } }));
   for (const pattern of ['**/api/wallet?**', '**/api/wallet', '**/api/wallet/**']) await page.route(pattern, async route => {
@@ -31,16 +32,25 @@ async function fixture(page: Page, options: Options = {}) {
         if (body.action === 'set_wallet_policy') version++;
         return route.fulfill({ status: 409, json: { error: 'PT409' } });
       }
-      if (body.action === 'record_wallet_snapshot') saved = true;
+      if (body.action === 'verify_wallet_snapshot') {
+        if (options.failure === 'self_verification') return route.fulfill({ status: 422, json: { code: '22023', error: 'Someone other than the person who entered it must verify' } });
+        verification = { verifiedBy: 'verifier@example.test', verifiedAt: '2026-11-03T05:00:00Z', verificationNote: body.payload.note };
+      }
+      if (body.action === 'record_wallet_snapshot') { saved = true; verification = undefined; }
       if (body.action === 'set_wallet_policy') version++;
       return route.fulfill({ json: { ok: true, snapshotId, version } });
     }
     reads.push(url);
     const latest = posts.findLast(p => p.action === 'record_wallet_snapshot');
     const updated = saved && latest?.action === 'record_wallet_snapshot' ? { ...row, walletPaise: latest.payload.monthlyWalletPaise } : row;
-    const visibleRow = certified ? updated : { ...updated, salesPaise: null, sharePermille: null, captureGapPaise: null, untappedPaise: null, inFocusBand: null };
+    const verifiedRow = verification ? { ...updated, verified: true } : updated;
+    const visibleRow = certified ? verifiedRow : { ...verifiedRow, salesPaise: null, sharePermille: null, captureGapPaise: null, untappedPaise: null, inFocusBand: null };
     if (url.searchParams.get('action') === 'get_wallet_account') {
       const account: WalletAccount = { policy, coverage: { ...coverage, certified }, row: visibleRow, current: { ...current, ...(saved && latest?.action === 'record_wallet_snapshot' ? { method: latest.payload.method, testVolume: latest.payload.testVolume ?? null } : {}), monthlyWalletPaise: updated.walletPaise }, history: [current], divisions: [{ code: 'BIOCHEM', name: 'Biochemistry' }, { code: 'HAEM', name: 'Haematology' }], labSize: options.labSize ? { ...options.labSize, statedMonthlySpendPaise: options.labSize.statedMonthlySpendPaise ?? null } : null };
+      if (verification) {
+        account.current = { ...account.current!, ...verification };
+        account.history = [{ ...current, ...verification }];
+      }
       return route.fulfill({ json: account });
     }
     const workspace: WalletWorkspace = { policy: { ...policy, version }, coverage: { ...coverage, certified }, view: url.searchParams.get('view') as WalletWorkspace['view'], page: Number(url.searchParams.get('page')), pageSize: 50, total: 51, rows: [visibleRow, { ...visibleRow, customerId: '77111111-1111-4111-8111-111111111111', name: 'No estimate lab', walletPaise: null, sharePermille: null, confidence: null, asOf: null }], summary: { focusCount: certified ? 8 : null, focusGapPaise: certified ? 42000000 : null, estimatedAccounts: 9, accountsWithSales: certified ? 112 : null, unlinkedSalesPaise: certified ? 1234500 : null, unlinkedLedgers: certified ? 3 : null } };
@@ -65,6 +75,36 @@ async function openForm(page: Page) {
 
 for (const width of [375, 1280]) test.describe(`Wallet at ${width}px`, () => {
   test.use({ viewport: { width, height: 812 } });
+  test('verifying an estimate posts the note and shows reloaded verification', async ({ page }) => {
+    const { posts, reads } = await fixture(page);
+    await page.getByRole('button', { name: /Example Diagnostic Laboratory/ }).click();
+    const sheet = page.getByRole('dialog');
+    await sheet.getByRole('button', { name: 'Verify estimate', exact: true }).click();
+    const form = sheet.getByRole('form', { name: 'Verify estimate' });
+    await form.getByLabel('How did you check?', { exact: true }).fill(' Checked invoices with the lab ');
+    await form.getByRole('button', { name: 'Mark verified', exact: true }).click();
+    await expect.poll(() => posts.length).toBe(1);
+    expect(posts[0]).toEqual({ action: 'verify_wallet_snapshot', payload: { requestId: expect.stringMatching(/^[0-9a-f]{8}-[0-9a-f]{4}-4[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/), snapshotId, note: 'Checked invoices with the lab' } });
+    await expect(sheet.getByText('Estimate verified', { exact: true })).toBeVisible();
+    await expect(sheet.getByText('Entered by manager@example.test · Verified by verifier@example.test · 3 Nov', { exact: true }).first()).toBeVisible();
+    await expect(sheet.getByText('Checked invoices with the lab', { exact: true }).first()).toBeVisible();
+    await expect(sheet.getByRole('button', { name: 'Verify estimate', exact: true })).toHaveCount(0);
+    expect(reads.filter(url => url.searchParams.get('action') === 'get_wallet_account')).toHaveLength(2);
+    expect(await page.evaluate(() => document.documentElement.scrollWidth <= innerWidth)).toBe(true);
+    await sheet.getByRole('button', { name: 'Close', exact: true }).click();
+    await expect(page.getByRole('button', { name: /Example Diagnostic Laboratory/ })).not.toContainText('Not verified');
+  });
+  test('self-verification shows the server message and reloads the account', async ({ page }) => {
+    const { reads } = await fixture(page, { failure: 'self_verification' });
+    await page.getByRole('button', { name: /Example Diagnostic Laboratory/ }).click();
+    const sheet = page.getByRole('dialog');
+    await sheet.getByRole('button', { name: 'Verify estimate', exact: true }).click();
+    await sheet.getByLabel('How did you check?', { exact: true }).fill('Checked invoices with the lab');
+    await sheet.getByRole('button', { name: 'Mark verified', exact: true }).click();
+    await expect(sheet.getByText('Someone other than the person who entered it must verify', { exact: true })).toBeVisible();
+    await expect.poll(() => reads.filter(url => url.searchParams.get('action') === 'get_wallet_account').length).toBe(2);
+    await expect(sheet.getByRole('button', { name: 'Verify estimate', exact: true })).toBeVisible();
+  });
   test('test volume calculates and posts inputs, with collapsed guidance', async ({ page }) => {
     const { posts } = await fixture(page);
     const form = await openForm(page);
