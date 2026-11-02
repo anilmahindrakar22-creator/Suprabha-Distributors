@@ -75,6 +75,7 @@ export function ProspectsView({ financial, onBack, onPlan, onOrder, onOpenOrder,
         <span className="block text-sm"><span className="font-semibold">{row.name}</span>{row.city ? <span className="text-sf-muted"> · {row.city}</span> : null}</span>
         <span className="block text-xs">{prospectAreaLine(row.areas)}</span>
         <span className="block text-xs text-sf-muted">{[
+          row.focus ? 'Focus lab' : null,
           row.fit && row.fit !== 'unknown' ? fits[row.fit] : null,
           row.hasOurMachine ? 'Has our machine' : null,
           financial ? typeof row.brandSalesPaise === 'number' && row.brandSalesPaise > 0 ? `Buys ${formatPaise(row.brandSalesPaise)}` : 'Not buying' : row.buysBrand ? 'Buys' : 'Not buying',

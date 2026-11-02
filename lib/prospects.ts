@@ -4,7 +4,7 @@ export type ProspectBrand = { code: string; name: string; areas: typeof labAreaC
 export type ProspectArea = { area: typeof labAreaCodes[number]; name: string; status: 'in_house' | 'sends_out' | 'not_done'; min: number | null; max: number | null; exact: boolean };
 type ProspectRowBase = {
   customerId: string; name: string; city: string | null; reportedOn: string; stale: boolean; fit: LabFit | null;
-  packWasteRisk: boolean | null; areas: ProspectArea[]; volume: number; hasOurMachine: boolean;
+  packWasteRisk: boolean | null; areas: ProspectArea[]; volume: number; hasOurMachine: boolean; focus: boolean;
 };
 export type FinancialProspectRow = ProspectRowBase & { brandSalesPaise: number; buysBrand?: never };
 export type SalesProspectRow = ProspectRowBase & { buysBrand: boolean; brandSalesPaise?: never };
@@ -63,7 +63,7 @@ function parseBrand(value: unknown): ProspectBrand {
   return { code, name: str(b.name), areas: orderedAreas(b.areas) };
 }
 function parseRow(value: unknown, brand: ProspectBrand, mode: 'financial' | 'sales'): ProspectRow {
-  const common = ['customerId', 'name', 'city', 'reportedOn', 'stale', 'fit', 'packWasteRisk', 'areas', 'volume', 'hasOurMachine'];
+  const common = ['customerId', 'name', 'city', 'reportedOn', 'stale', 'fit', 'packWasteRisk', 'areas', 'volume', 'hasOurMachine', 'focus'];
   const v = mode === 'financial' ? obj(value, [...common, 'brandSalesPaise']) : obj(value, [...common, 'buysBrand']);
   if (Object.hasOwn(v, mode === 'financial' ? 'buysBrand' : 'brandSalesPaise')) return invalid();
   const areas = Array.isArray(v.areas) ? v.areas.map(item => {
@@ -101,7 +101,7 @@ function parseRow(value: unknown, brand: ProspectBrand, mode: 'financial' | 'sal
   if (volume !== areas.reduce((sum, a) => sum + (a.status === 'in_house' ? a.min! : 0), 0)) return invalid();
   const base: ProspectRowBase = {
     customerId: uuid(v.customerId), name: str(v.name), city: v.city === null ? null : str(v.city), reportedOn: date(v.reportedOn),
-    stale: bool(v.stale), fit: fit as LabFit | null, packWasteRisk, areas, volume, hasOurMachine: bool(v.hasOurMachine),
+    stale: bool(v.stale), fit: fit as LabFit | null, packWasteRisk, areas, volume, hasOurMachine: bool(v.hasOurMachine), focus: bool(v.focus),
   };
   return mode === 'financial' ? { ...base, brandSalesPaise: money(v.brandSalesPaise) } : { ...base, buysBrand: bool(v.buysBrand) };
 }

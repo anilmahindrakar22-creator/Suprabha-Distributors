@@ -7,7 +7,7 @@ const customerId = '19300000-0000-4000-8000-000000000001';
 const row = { customerId, name: 'Central Lab', city: null, reportedOn: '2026-11-01', stale: false, fit: 'none', packWasteRisk: null,
   areas: [{ area: 'HAEM', name: 'Haematology', status: 'in_house', min: 1, max: 20, exact: false },
     { area: 'IMMUNO', name: 'Immunoassay', status: 'sends_out', min: null, max: null, exact: false }],
-  volume: 1, hasOurMachine: true, brandSalesPaise: -1200 };
+  volume: 1, hasOurMachine: true, focus: true, brandSalesPaise: -1200 };
 const payload = { brand, brands: [brand], rows: [row], total: 1, page: 1, mappedShare: { unmappedSalesPaise: 300, totalSalesPaise: -900 } };
 
 describe('prospect display helpers', () => {
@@ -55,6 +55,8 @@ describe('parseProspects', () => {
 
   it.each([
     ['unknown root key', { ...payload, extra: true }],
+    ['missing focus', { ...payload, rows: [(() => { const { focus: _focus, ...rest } = row; return rest; })()] }],
+    ['non-boolean focus', { ...payload, rows: [{ ...row, focus: 'true' }] }],
     ['mixed row modes', { ...payload, rows: [{ ...row, buysBrand: true }] }],
     ['area outside brand', { ...payload, rows: [{ ...row, areas: [{ ...row.areas[0], area: 'URINE' }] }] }],
     ['wrong volume sum', { ...payload, rows: [{ ...row, volume: 4 }] }],

@@ -24,12 +24,12 @@ async function fixture(page: Page, role = 'sales', diagnosisStatus: number | num
     const row = { customerId, name: 'Central Lab', city: 'Bidar', reportedOn: '2026-07-01', stale: true,
       fit: immuno ? 'clia' : null, packWasteRisk: immuno ? true : null,
       areas: [{ area: immuno ? 'IMMUNO' : 'HAEM', name: immuno ? 'Hormones' : 'Haematology', status: 'in_house', min: immuno ? 15 : 21, max: immuno ? 30 : 50, exact: false }],
-      volume: immuno ? 15 : 21, hasOurMachine: true,
+      volume: immuno ? 15 : 21, hasOurMachine: true, focus: true,
     };
     return route.fulfill({ json: { brand, brands, page: Number(url.searchParams.get('page')), total: 41,
       mappedShare: financial ? { unmappedSalesPaise: 180000, totalSalesPaise: 1000000 } : null,
       rows: [{ ...row, ...(financial ? { brandSalesPaise: 1240000 } : { buysBrand: true }) },
-        { ...row, customerId: otherId, name: 'New Lab', ...(financial ? { brandSalesPaise: 0 } : { buysBrand: false }) }],
+        { ...row, customerId: otherId, name: 'New Lab', focus: false, ...(financial ? { brandSalesPaise: 0 } : { buysBrand: false }) }],
     } });
   });
   await page.route('**/api/me', route => route.fulfill({ json: { roles: [role] } }));
@@ -60,6 +60,13 @@ async function fixture(page: Page, role = 'sales', diagnosisStatus: number | num
 test('Operations has no Prospects button', async ({ page }) => {
   await fixture(page, 'operations');
   await expect(page.getByRole('button', { name: 'Prospects', exact: true })).toHaveCount(0);
+});
+
+test('The first Focus-band prospect shows Focus lab', async ({ page }) => {
+  const { section } = await fixture(page);
+  const rows = section.getByRole('list', { name: 'Prospect labs' }).getByRole('listitem');
+  await expect(rows.nth(0)).toContainText('Focus lab');
+  await expect(rows.nth(1)).not.toContainText('Focus lab');
 });
 
 test('Sales sees brand chips, Buys without amounts, machine text and Re-check chips', async ({ page }) => {

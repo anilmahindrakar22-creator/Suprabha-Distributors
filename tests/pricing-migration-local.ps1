@@ -139,6 +139,7 @@ try {
   $planNames = @($migrationPlan | Select-Object -ExpandProperty Name)
   $salesNames = @('20261030091000_instrument_register_read.sql','20261030100000_economic_rebuild_containment.sql','20261030101000_sales_coverage.sql','20261030110000_economics_candidate_rebuild.sql','20261030130000_wallet_v2.sql','20261031090000_wallet_diagnosis.sql','20261031120000_wallet_actions.sql','20261031130000_wallet_my_actions.sql','20261031140000_power_map_enhancement.sql','20261031150000_power_map_influence.sql','20261102090000_po_tally_receipts.sql','20261102100000_contract_windows.sql','20261102110000_today_decisions.sql','20261102120000_customer_map.sql','20261102130000_customer_city_pin.sql','20261102140000_pin_centroids.sql','20261102150000_pin_placement_gateway.sql','20261102160000_visit_checkins.sql','20261102170000_customer_rename_by_guid.sql','20261102180000_customer_auto_link.sql','20261102190000_wallet_test_volume.sql','20261102191000_lab_size_reports.sql','20261102192000_instrument_rental_registration.sql','20261102193000_pin_move_management_only.sql','20261116090000_lab_mix_reports.sql','20261116100000_brand_mapping.sql','20261116110000_brand_prospects.sql','20261116120000_wallet_special_tests.sql','20261116130000_recover_signal.sql','20261116140000_lab_size_specials.sql')
   $salesNames += '20261116160000_wallet_verification.sql'
+  $salesNames += '20261116170000_prospects_focus_first.sql'
   for ($salesIndex = 1; $salesIndex -lt $salesNames.Count; $salesIndex++) {
     if ([array]::IndexOf($planNames,$salesNames[$salesIndex]) -le [array]::IndexOf($planNames,$salesNames[$salesIndex-1])) { throw 'Full sales replay order is invalid' }
   }
@@ -334,6 +335,7 @@ end$$;
   Invoke-DatabaseCommand $psqlProgram @('-U',$databaseUser,'-X','-q','-v','ON_ERROR_STOP=1','-d',$database,'-f',(Join-Path $repository 'supabase/tests/lab_size_reports.sql'))
   Invoke-DatabaseCommand $psqlProgram @('-U',$databaseUser,'-X','-q','-v','ON_ERROR_STOP=1','-d',$database,'-f',(Join-Path $repository 'supabase/tests/lab_size_specials.sql'))
   Invoke-DatabaseCommand $psqlProgram @('-U',$databaseUser,'-X','-q','-v','ON_ERROR_STOP=1','-d',$database,'-f',(Join-Path $repository 'supabase/tests/wallet_verification.sql'))
+  Invoke-DatabaseCommand $psqlProgram @('-U',$databaseUser,'-X','-q','-v','ON_ERROR_STOP=1','-d',$database,'-f',(Join-Path $repository 'supabase/tests/prospects_focus_first.sql'))
   Write-Output 'PASS: LSS lab size specials LSS1-LSS4'
   Invoke-DatabaseCommand $psqlProgram @('-U',$databaseUser,'-X','-q','-v','ON_ERROR_STOP=1','-d',$database,'-f',(Join-Path $repository 'supabase/tests/lab_mix_reports.sql'))
   Invoke-DatabaseCommand $psqlProgram @('-U',$databaseUser,'-X','-q','-v','ON_ERROR_STOP=1','-d',$database,'-f',(Join-Path $repository 'supabase/tests/brand_mapping.sql'))

@@ -1319,6 +1319,13 @@
       "remoteVersion": null,
       "remoteSha256": null,
       "status": "not_deployed"
+    },
+    {
+      "localFile": "20261116170000_prospects_focus_first.sql",
+      "localSha256": "9ee43ec3fb94e978367c4601cd2ec011661ad4b02cd873122c26f7255f97b0ed",
+      "remoteVersion": null,
+      "remoteSha256": null,
+      "status": "not_deployed"
     }
   ],
   "liveCheck": {
