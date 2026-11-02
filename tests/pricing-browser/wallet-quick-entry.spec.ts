@@ -130,6 +130,22 @@ test('test volume lowering uses calculated spend and switching method omits volu
   expect(posts[0].payload).not.toHaveProperty('testVolume');
 });
 
+test('quick entry remains routine-only when special test volume is introduced', async ({ page }) => {
+  const { posts } = await setup(page);
+  await page.getByLabel('Source').fill('Lab visits');
+  await page.getByRole('button', { name: 'Change', exact: true }).click();
+  await page.getByRole('combobox', { name: /^Method/ }).selectOption('test_volume');
+  await page.getByLabel('Average ₹ per test').fill('25');
+  await page.getByLabel('Tests/day', { exact: true }).first().fill('80');
+  await expect(page.getByRole('button', { name: '+ Special tests', exact: true })).toHaveCount(0);
+  await expect(page.getByLabel('Special tests a month (approx)', { exact: true })).toHaveCount(0);
+  await expect(page.getByLabel('Average ₹ per special test', { exact: true })).toHaveCount(0);
+  await page.getByRole('button', { name: 'Save entered rows (1)' }).click();
+  await expect.poll(() => posts.length).toBe(1);
+  expect(posts[0]).toMatchObject({ action: 'record_wallet_snapshot', payload: { customerId: ids[0], method: 'test_volume', monthlyWalletPaise: 5200000 } });
+  expect(posts[0].payload.testVolume).toEqual({ testsPerDay: 80, workingDaysPerMonth: 26, paisePerTest: 2500 });
+});
+
 test('switching to test volume clears typed monthly amounts', async ({ page }) => {
   await setup(page);
   await page.getByLabel('Source').fill('Lab visits');

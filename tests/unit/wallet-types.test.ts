@@ -35,6 +35,13 @@ describe('validateWalletCommand', () => {
     expect(() => validateWalletCommand({ ...snapshot, payload: { ...snapshot.payload, testVolume } })).toThrow();
     expect(validateWalletCommand({ ...snapshot, payload: { ...snapshot.payload, testVolume: null } })).toBeTruthy();
   });
+  it('validates routine plus paired special test volume', () => {
+    const testVolume = { testsPerDay: 80, workingDaysPerMonth: 26, paisePerTest: 2500, specialTestsPerMonth: 100, paisePerSpecialTest: 30000 };
+    const command = { ...snapshot, payload: { ...snapshot.payload, method: 'test_volume', monthlyWalletPaise: 8200000, testVolume } };
+    expect(validateWalletCommand(command)).toEqual(command);
+    expect(() => validateWalletCommand({ ...command, payload: { ...command.payload, testVolume: { ...testVolume, paisePerSpecialTest: undefined } } })).toThrow();
+    expect(() => validateWalletCommand({ ...command, payload: { ...command.payload, monthlyWalletPaise: 8200001 } })).toThrow();
+  });
   it('accepts valid examples of all four commands', () => {
     expect(validateWalletCommand({ action: 'get_wallet_workspace', payload: { view: 'focus', page: 1, search: '' } }).action).toBe('get_wallet_workspace');
     expect(validateWalletCommand({ action: 'get_wallet_account', payload: { customerId } }).action).toBe('get_wallet_account');

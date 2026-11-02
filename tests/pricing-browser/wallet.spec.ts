@@ -100,6 +100,40 @@ for (const width of [375, 1280]) test.describe(`Wallet at ${width}px`, () => {
     await expect.poll(() => posts.length).toBe(1);
     expect(posts[0].payload).not.toHaveProperty('testVolume');
   });
+  test('special tests add to the monthly total and post all five inputs', async ({ page }) => {
+    const { posts } = await fixture(page);
+    const form = await openForm(page);
+    await form.getByRole('combobox', { name: /^Method/ }).selectOption('test_volume');
+    await form.getByLabel('Tests per day (approx)', { exact: true }).fill('80');
+    await form.getByLabel('Average ₹ per test').fill('25');
+    await form.getByRole('button', { name: '+ Special tests', exact: true }).click();
+    await form.getByLabel('Special tests a month (approx)', { exact: true }).fill('100');
+    await form.getByLabel('Average ₹ per special test', { exact: true }).fill('300');
+    await expect(form.getByText('≈ ₹82,000 / month (80 × 26 × ₹25 + 100 × ₹300)', { exact: true })).toBeVisible();
+    expect(await page.evaluate(() => document.documentElement.scrollWidth <= innerWidth)).toBe(true);
+    await form.getByLabel('Why is the estimate lower?').fill('Volume reviewed');
+    await form.getByRole('button', { name: 'Save estimate', exact: true }).click();
+    await expect.poll(() => posts.length).toBe(1);
+    expect(posts[0]).toMatchObject({ action: 'record_wallet_snapshot', payload: { monthlyWalletPaise: 8200000, testVolume: { testsPerDay: 80, workingDaysPerMonth: 26, paisePerTest: 2500, specialTestsPerMonth: 100, paisePerSpecialTest: 30000 } } });
+  });
+  test('Remove clears special tests and posts routine only', async ({ page }) => {
+    const { posts } = await fixture(page);
+    const form = await openForm(page);
+    await form.getByRole('combobox', { name: /^Method/ }).selectOption('test_volume');
+    await form.getByLabel('Tests per day (approx)', { exact: true }).fill('80');
+    await form.getByLabel('Average ₹ per test').fill('25');
+    await form.getByRole('button', { name: '+ Special tests', exact: true }).click();
+    await form.getByLabel('Special tests a month (approx)', { exact: true }).fill('100');
+    await form.getByLabel('Average ₹ per special test', { exact: true }).fill('300');
+    await form.getByRole('button', { name: 'Remove', exact: true }).click();
+    await expect(form.getByLabel('Special tests a month (approx)')).toHaveCount(0);
+    await expect(form.getByText('≈ ₹52,000 / month (80 × 26 × ₹25)', { exact: true })).toBeVisible();
+    await form.getByLabel('Why is the estimate lower?').fill('Routine tests only');
+    await form.getByRole('button', { name: 'Save estimate', exact: true }).click();
+    await expect.poll(() => posts.length).toBe(1);
+    expect(posts[0]).toMatchObject({ action: 'record_wallet_snapshot', payload: { monthlyWalletPaise: 5200000, testVolume: { testsPerDay: 80, workingDaysPerMonth: 26, paisePerTest: 2500 } } });
+    if (posts[0].action === 'record_wallet_snapshot') expect(posts[0].payload.testVolume).not.toHaveProperty('specialTestsPerMonth');
+  });
   test('visit test volume prefills tests/day without filling a total', async ({ page }) => {
     await fixture(page, { labSize: { testsPerDay: 80, basis: 'lab_said', reportedBy: 'Ravi', reportedOn: '2026-11-03' } });
     const form = await openForm(page);
@@ -113,7 +147,7 @@ for (const width of [375, 1280]) test.describe(`Wallet at ${width}px`, () => {
     const form = await openForm(page);
     await form.getByRole('combobox', { name: /^Method/ }).selectOption('test_volume');
     await expect(form.getByLabel('Tests per day (approx)', { exact: true })).toHaveValue('80');
-    const error = form.getByText('Enter valid tests, working days and price per test.', { exact: true });
+    const error = form.getByText('Enter valid routine and special test counts and prices.', { exact: true });
     await expect(error).toHaveCount(0);
     await form.getByLabel('Average ₹ per test').fill('0');
     await expect(error).toBeVisible();

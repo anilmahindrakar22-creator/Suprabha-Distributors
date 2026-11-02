@@ -23,7 +23,7 @@ begin
   perform pg_temp.tv_command(payload);
   raise exception 'Expected 22023';
  exception when sqlstate '22023' then
-  if sqlerrm <> 'Wallet total must equal tests per day × working days × price per test' then raise;end if;
+  if sqlerrm <> 'Wallet total must equal routine plus special tests × price' then raise;end if;
  end;
  if (select count(*) from private.stockflow_wallet_snapshots)<>before_count then raise exception 'Rejected command left a row';end if;
 end$$;

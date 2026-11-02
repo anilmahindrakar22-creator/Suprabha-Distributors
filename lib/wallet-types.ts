@@ -1,7 +1,7 @@
 import { calculateTestVolume } from '@/lib/wallet-test-volume';
 import type { LabSize } from '@/lib/customer-map';
 
-export type WalletTestVolume = { testsPerDay: number; workingDaysPerMonth: number; paisePerTest: number };
+export type WalletTestVolume = { testsPerDay: number; workingDaysPerMonth: number; paisePerTest: number; specialTestsPerMonth?: number; paisePerSpecialTest?: number };
 export type WalletMethod = 'customer_stated' | 'test_volume' | 'manager_estimate';
 export type WalletConfidence = 'high' | 'medium' | 'low';
 export type WalletView = 'focus' | 'all' | 'no_estimate' | 'stale' | 'below_sales';
@@ -80,7 +80,10 @@ export function validateWalletCommand(input: unknown): WalletCommand {
       if (p.method === 'test_volume') {
         if (!object(tv) || !integer(tv.testsPerDay, 1, 100000) || !integer(tv.workingDaysPerMonth, 1, 31)
           || !integer(tv.paisePerTest, 1, 100000000)
-          || calculateTestVolume(tv.testsPerDay as number, tv.workingDaysPerMonth as number, tv.paisePerTest as number) !== p.monthlyWalletPaise) return fail();
+          || ((tv.specialTestsPerMonth === undefined) !== (tv.paisePerSpecialTest === undefined))
+          || (tv.specialTestsPerMonth !== undefined && (!integer(tv.specialTestsPerMonth, 1, 1000000) || !integer(tv.paisePerSpecialTest, 1, 100000000)))
+          || calculateTestVolume(tv.testsPerDay as number, tv.workingDaysPerMonth as number, tv.paisePerTest as number,
+            tv.specialTestsPerMonth as number | undefined, tv.paisePerSpecialTest as number | undefined) !== p.monthlyWalletPaise) return fail();
       } else if (tv !== undefined && tv !== null) return fail();
       if (typeof p.requestId !== 'string' || !uuid.test(p.requestId) || typeof p.customerId !== 'string' || !uuid.test(p.customerId)
         || !integer(p.monthlyWalletPaise, 0, 9e15) || !methods.includes(p.method as WalletMethod) || !text(p.source, 3, 500)
