@@ -85,7 +85,7 @@ function Figures({ row, certified, walletShareTargetBps }: { row: WalletRow; cer
   const target = 0.8;
   return <div className="space-y-2 text-sm">
     {row.walletPaise === null ? <p className="text-sm text-sf-muted">No estimate</p> : <p>Wallet {formatPaise(row.walletPaise)}/mo{certified ? <> · Sales {row.salesPaise === null ? '…' : formatPaise(row.salesPaise)}/mo{row.sharePermille !== null ? <> · {permilleLabel(row.sharePermille)} share</> : null}</> : null}</p>}
-    <MeterBar value={share} target={target} tone={share !== null && share >= target ? 'success' : share !== null && share >= target / 2 ? 'warning' : 'danger'} label={share === null ? 'Wallet share' : `Wallet share ${permilleLabel(row.sharePermille!)}`} />
+    <MeterBar value={share} target={target} tone={share !== null && share >= target ? 'success' : share !== null && share >= target / 2 ? 'warning' : 'danger'} label="Wallet share" ariaLabel={share !== null ? `Wallet share ${permilleLabel(row.sharePermille!)}` : undefined} />
     <span className="text-xs text-sf-muted">Target {permilleLabel(walletShareTargetBps / 10)}</span>
     {certified && row.walletPaise !== null ? <p className={(row.captureGapPaise ?? 0) > 0 ? 'text-sf-danger' : ''}>Gap {row.captureGapPaise === null ? '…' : formatPaise(row.captureGapPaise)}/mo to target</p> : null}
   </div>;
@@ -156,7 +156,7 @@ function VerificationForm({ snapshotId, onSaved, onRejected, onForbidden, onLock
 function EstimateForm({ account, onSaved, onConflict, onForbidden, onLock }: { account: WalletAccount; onSaved: () => Promise<void>; onConflict: () => Promise<void>; onForbidden: () => void; onLock: (locked: boolean) => void }) {
   const [total, setTotal] = useState(account.current ? rupees(account.current.monthlyWalletPaise) : '');
   const [method, setMethod] = useState<WalletSnapshot['method']>(account.current?.method ?? 'manager_estimate');
-  const [tests, setTests] = useState(account.current?.testVolume ? String(account.current.testVolume.testsPerDay) : '');
+  const [tests, setTests] = useState(account.current?.testVolume ? String(account.current.testVolume.testsPerDay) : account.labSize ? String(account.labSize.testsPerDay) : '');
   const [days, setDays] = useState(String(account.current?.testVolume?.workingDaysPerMonth ?? 26));
   const [price, setPrice] = useState(account.current?.testVolume ? rupees(account.current.testVolume.paisePerTest) : '');
   const [specialTests, setSpecialTests] = useState(account.current?.testVolume?.specialTestsPerMonth ? String(account.current.testVolume.specialTestsPerMonth) : '');
@@ -175,11 +175,6 @@ function EstimateForm({ account, onSaved, onConflict, onForbidden, onLock }: { a
   const allocated = allocations.reduce((sum, d) => sum + bigint(d.monthlyWalletPaise ?? 0), bigint(0));
   const invalidSplit = split && (allocations.some(d => d.monthlyWalletPaise === null) || allocated > bigint(amount ?? 0));
   const locked = write.busy || write.uncertain;
-  useEffect(() => {
-    if (method === 'test_volume' && account.labSize && !locked) {
-      setTests(value => value || String(account.labSize!.testsPerDay));
-    }
-  }, [method, account.labSize, locked]);
   useEffect(() => { onLock(locked); return () => onLock(false); }, [locked, onLock]);
   return <form aria-label="Update estimate" className="space-y-3" onSubmit={event => {
     event.preventDefault(); setSubmitted(true); if (amount === null || invalidSplit) return;

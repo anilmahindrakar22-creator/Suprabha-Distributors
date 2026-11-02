@@ -69,6 +69,7 @@ for (const width of [375, 1280]) test.describe(`Glance Wallet at ${width}px`, ()
       const lab = page.getByRole('list', { name: 'Wallet accounts', exact: true });
       const meter = lab.getByRole('meter', { name: 'Wallet share 20%', exact: true });
       await expect(meter).toHaveAttribute('aria-valuenow', '20');
+      await expect(lab.getByText('Wallet share 20%', { exact: true })).toHaveCount(0);
       await expect(meter.locator('[aria-hidden="true"]').first()).toHaveClass(/bg-sf-danger/);
       await expect(meter.locator('[aria-hidden="true"]').last()).toHaveAttribute('style', /left: 80%/);
       await expect(lab.getByText('Why: Price (not proven)', { exact: true })).toHaveClass(/break-words/);

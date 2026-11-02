@@ -85,7 +85,7 @@ export function centroid(offices) {
   const counts = new Map();
   for (const office of kept) counts.set(office.district, (counts.get(office.district) ?? 0) + 1);
   // Code-point order is deterministic across host locales.
-  const district = [...counts.keys()].sort().sort((a, b) => counts.get(b) - counts.get(a))[0];
+  const district = [...counts.keys()].sort((a, b) => (a < b ? -1 : a > b ? 1 : 0)).sort((a, b) => counts.get(b) - counts.get(a))[0];
   const point = midpoint(kept);
   return { centre: {
     pin_code: kept[0].pin_code,
@@ -103,7 +103,7 @@ export function buildCentroids(rows) {
   }
   const centres = [];
   let outliers = 0;
-  for (const pin of [...groups.keys()].sort()) {
+  for (const pin of [...groups.keys()].sort((a, b) => (a < b ? -1 : a > b ? 1 : 0))) {
     const result = centroid(groups.get(pin));
     outliers += result.outliers;
     if (result.centre) centres.push(result.centre);

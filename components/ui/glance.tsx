@@ -27,8 +27,8 @@ export function ToneIcon({ icon: Icon, tone, size = 'md' }: {
   );
 }
 
-export function MeterBar({ value, target, tone, label }: {
-  value: number | null; target?: number; tone: Tone; label: string;
+export function MeterBar({ value, target, tone, label, ariaLabel }: {
+  value: number | null; target?: number; tone: Tone; label: string; ariaLabel?: string;
 }) {
   const percent = value === null ? undefined : clamp(value) * 100;
   return (
@@ -37,7 +37,7 @@ export function MeterBar({ value, target, tone, label }: {
         <span>{label}</span>
         <span>{percent === undefined ? 'Awaiting Tally' : `${Math.round(percent)}%`}</span>
       </div>
-      <div role="meter" aria-label={value === null ? `${label}: awaiting data` : label}
+      <div role="meter" aria-label={value === null ? `${label}: awaiting data` : (ariaLabel ?? label)}
         aria-valuemin={0} aria-valuemax={100} aria-valuenow={percent}
         className={`relative h-2 rounded-full ${value === null ? 'border border-dashed border-sf-line bg-transparent' : 'bg-sf-soft'}`}>
         {percent !== undefined && <div aria-hidden="true" className={`h-full rounded-full ${tones[tone].fill}`} style={{ width: `${percent}%` }} />}

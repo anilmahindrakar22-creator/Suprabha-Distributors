@@ -13,7 +13,7 @@ It leaves PostgreSQL running because replay does not expose startup ownership.
 All output is saved as UTF-8 to `work/perf/perf-yyyyMMdd-HHmm.txt`.
 
 Synthetic `PERF ` data adds 464 customers (42 empty cities), 169 with sales,
-1,374 sale vouchers and 7,573 lines dated 2025-10-03 through 2026-10-31,
+1,374 sale vouchers and 7,573 lines in the 13 months before the current IST month (Nov 2025–Oct 2026 when run in Nov 2026),
 three administrators and two completed installations. Wallet assumptions:
 150 snapshots across 100 customers (10 with three, 30 with two, 60 with one),
 40 open capture opportunities, 20 lab-size reports, 120 exact pins and 302 town
@@ -21,13 +21,11 @@ locations derived from city. Names are synthetic; fixture rows remain in place
 and add small overhead beyond these counts. The latest map gateway displays
 exact pins and postcode centroids; town-only locations remain approximate data.
 
-Nov 2025-Oct 2026 has complete source coverage and matching synthetic monthly
+The last 12 complete months have complete source coverage and matching synthetic monthly
 controls. Fixture companies also receive matching controls because Wallet checks
 all linked companies. Ten labs fall from 6,000,000 to 3,600,000 paise/month in
-Aug-Oct. Controls exercise certification; they are derived from seeded lines,
-not an independent accounting accuracy test. The harness uses the real current
-IST date and expects November 2026 for these fixed historical windows; outside
-that month its certification/Recover assertion may reject the dataset.
+the last three complete months. Controls exercise certification; they are derived from seeded lines,
+not an independent accounting accuracy test.
 
 Each read has one warm-up and five measured executions. The report shows median
 and maximum server time, including SQL gateway authorization and JSON building,
@@ -68,4 +66,3 @@ No speed claims follow from an unmeasured change.
 - Payloads are at most about 30 KB.
 - The requirement is a useful list in under 2 s warm (REQUIREMENTS §6), so no server read needs optimising now.
 - What this does not measure: HTTP, Edge hop, network and rendering. Production timing of the Today gateway on deploy day (integration chat) is still the real check.
-- **Limitation:** the seed's certification windows are fixed to Nov 2025–Oct 2026. From December 2026 the harness needs its windows moved forward.

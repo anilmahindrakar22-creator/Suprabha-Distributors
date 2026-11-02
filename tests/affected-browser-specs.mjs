@@ -99,7 +99,7 @@ export function harnessViews(root) {
 
 function allSpecs(root) {
   return fs.readdirSync(path.join(root, 'tests/pricing-browser'))
-    .filter(file => file.endsWith('.spec.ts')).map(file => `tests/pricing-browser/${file}`).sort();
+    .filter(file => file.endsWith('.spec.ts')).map(file => `tests/pricing-browser/${file}`).sort((a, b) => (a < b ? -1 : a > b ? 1 : 0));
 }
 
 export function specViews(root) {
@@ -128,7 +128,7 @@ export function specViews(root) {
 export function affectedSpecs({ root, changed }) {
   const all = allSpecs(root);
   const everything = reason => ({ all: true, specs: all, reason });
-  const files = [...new Set(changed.map(file => posix(file).replace(/^\.\//, '')))].sort();
+  const files = [...new Set(changed.map(file => posix(file).replace(/^\.\//, '')))].sort((a, b) => (a < b ? -1 : a > b ? 1 : 0));
   const global = files.find(file => /^(?:tests\/ui\/|public\/|playwright[^/]*\.ts$|app\/globals\.css$|package\.json$|pnpm-lock\.yaml$|vite\.config\.)/.test(file));
   if (global) return everything(`Shared browser input changed: ${global}`);
   try {
@@ -153,7 +153,7 @@ export function affectedSpecs({ root, changed }) {
     const affectedViews = new Set([...reachable].filter(([, seen]) => files.some(file => seen.has(file))).map(([view]) => view));
     const selected = [...specs].filter(([spec, used]) => files.includes(spec)
       || (affectedViews.size > 0 && [...used].some(view => view === '*' || !views.has(view) || affectedViews.has(view))))
-      .map(([spec]) => spec).sort();
+      .map(([spec]) => spec).sort((a, b) => (a < b ? -1 : a > b ? 1 : 0));
     return { all: false, specs: selected, reason: selected.length
       ? `Selected ${selected.length}/${all.length} specs for: ${files.join(', ')}`
       : 'No browser specs affected' };

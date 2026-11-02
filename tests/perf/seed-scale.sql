@@ -3,6 +3,8 @@
 -- seed: the runner always creates a fresh replay. No trigger bypasses.
 begin;
 set local timezone = 'Asia/Kolkata';
+create temporary table perf_anchor on commit drop as
+select date_trunc('month', (now() at time zone 'Asia/Kolkata'))::date as month_start;
 create function pg_temp.perf_id(kind text, n integer) returns uuid
 language sql immutable as $$ select md5('PERF '||kind||' '||n)::uuid $$;
 
@@ -20,19 +22,19 @@ select 'PERF company','PERF LEDGER '||n,pg_temp.perf_id('customer',n),'perf-admi
 from generate_series(1,169) n;
 
 -- First ten labs have one invoice every month, with precisely 40% less net
--- sales in Aug-Oct 2026. The remaining invoices span the other 159 labs.
+-- sales in the last three complete months. The remaining invoices span the other 159 labs.
 create temporary table perf_vouchers on commit drop as
 with distribution as (
  select n,case when n<=130 then (n-1)/13+1 else 11+(n-131)%159 end customer,
  case when n<=130 then (n-1)%13 else ((n-131)/159+(n-131)%159)%13 end month_no
  from generate_series(1,1374) n
 )
-select *,case when n=1 then date '2025-10-03' when n=1374 then date '2026-10-31'
- else (date '2025-10-01'+month_no*interval '1 month')::date+2+(n%25) end business_date,
+select distribution.*,case when n=1 then (month_start-interval '13 months')::date+2 when n=1374 then month_start-1
+ else (month_start-interval '13 months'+month_no*interval '1 month')::date+2+(n%25) end business_date,
  case when n<=703 then 6 else 5 end line_count,
  case when customer<=10 then case when month_no>=10 then 3600000 else 6000000 end
  else 500000+(customer%20)*10000 end::bigint net
-from distribution;
+from distribution cross join perf_anchor;
 insert into private.stockflow_economic_source_vouchers
  (id,company_id,source_id,source_revision,business_date,customer_source_id,kind,evidence)
 select pg_temp.perf_id('voucher',n),'PERF company','PERF SALE '||n,1,business_date,
@@ -51,15 +53,16 @@ from perf_vouchers cross join lateral generate_series(1,line_count) line_no;
 -- Wallet certification is global across linked companies. Certify fixture
 -- companies too, using their actual net totals; never delete fixture evidence.
 do $$
-declare company text; months date[]; m date; imported timestamptz;
+declare company text; months date[]; m date; imported timestamptz; anchor date;
 begin
+ select month_start into anchor from perf_anchor;
  select array_agg(mo::date order by mo) into months
- from generate_series(timestamp '2025-11-01',timestamp '2026-10-01',interval '1 month') mo;
+ from generate_series(anchor-interval '12 months',anchor-interval '1 month',interval '1 month') mo;
  select greatest(clock_timestamp(),coalesce(max(recorded_at),clock_timestamp()))+interval '1 day'
  into imported from private.stockflow_economic_import_exceptions;
  for company in select distinct company_id from private.stockflow_economic_customer_identities loop
   insert into private.stockflow_economic_source_coverage(company_id,window_from,window_to,source_version,imported_at)
-  values(company,'2025-11-01','2026-11-01','PERF certified',imported);
+  values(company,(anchor-interval '12 months')::date,anchor,'PERF certified',imported);
   insert into private.stockflow_sales_control_imports(company_id,source_version,valid_months,imported_at)
   values(company,'PERF certified',months,imported);
   foreach m in array months loop
@@ -128,8 +131,9 @@ begin
 end $$;
 
 do $$
-declare customers bigint; vouchers bigint; lines bigint; snapshots bigint; recover jsonb;
+declare customers bigint; vouchers bigint; lines bigint; snapshots bigint; recover jsonb; anchor date;
 begin
+ select month_start into anchor from perf_anchor;
  select count(*) into customers from private.stockflow_customers where name like 'PERF %';
  select count(*) into vouchers from private.stockflow_economic_source_vouchers where company_id='PERF company';
  select count(*) into lines from private.stockflow_economic_source_lines l join private.stockflow_economic_source_vouchers v on v.id=l.voucher_id where v.company_id='PERF company';
@@ -138,8 +142,8 @@ begin
  then raise exception 'PERF scale mismatch';end if;
  if (select count(*) from private.stockflow_customers where name like 'PERF %' and city='')<>42
  or (select count(distinct customer_source_id) from private.stockflow_economic_source_vouchers where company_id='PERF company')<>169
- or (select min(business_date) from private.stockflow_economic_source_vouchers where company_id='PERF company')<>date '2025-10-03'
- or (select max(business_date) from private.stockflow_economic_source_vouchers where company_id='PERF company')<>date '2026-10-31'
+ or (select min(business_date) from private.stockflow_economic_source_vouchers where company_id='PERF company')<>(anchor-interval '13 months')::date+2
+ or (select max(business_date) from private.stockflow_economic_source_vouchers where company_id='PERF company')<>anchor-1
  or (select count(*) from public.stockflow_members where email like 'perf-admin-%@test.local' and role='administrator')<>3
  or (select count(*) from private.stockflow_equipment_installations where item_name like 'PERF %')<>2
  or (select count(*) from private.stockflow_customer_locations l join private.stockflow_customers c on c.id=l.customer_id where c.name like 'PERF %' and l.precision='pin')<>120
@@ -150,7 +154,7 @@ begin
  recover:=private.stockflow_recover_read(current_date);
  if (select count(*) from jsonb_array_elements(recover->'rows') r where r->>'name' like 'PERF %')<>10
  or private.stockflow_wallet_read(current_date)#>>'{coverage,certified}' is distinct from 'true'
- then raise exception 'PERF needs certified current reads and ten Recover rows (baseline month: November 2026)';end if;
+ then raise exception 'PERF needs certified current reads and ten Recover rows';end if;
  raise notice 'seeded: customers=%, vouchers=%, lines=%, snapshots=%',customers,vouchers,lines,snapshots;
 end $$;
 commit;
