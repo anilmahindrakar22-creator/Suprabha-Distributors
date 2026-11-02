@@ -112,6 +112,22 @@ test('test volume shares days and price and posts three calculated totals at 375
   expect(posts.map(p => p.payload.testVolume)).toEqual([80, 40, 20].map(testsPerDay => ({ testsPerDay, workingDaysPerMonth: 26, paisePerTest: 2500 })));
 });
 
+test('test volume includes optional special tests in the row estimate and payload', async ({ page }) => {
+  const { posts } = await setup(page);
+  await page.getByLabel('Source').fill('Lab visits');
+  await page.getByRole('button', { name: 'Change', exact: true }).click();
+  await page.getByRole('combobox', { name: /^Method/ }).selectOption('test_volume');
+  await page.getByLabel('Average ₹ per test').fill('25');
+  await page.getByLabel('Average ₹ per special test (optional)').fill('300');
+  await page.getByLabel('Tests/day', { exact: true }).first().fill('80');
+  await page.getByLabel('Special/month', { exact: true }).first().fill('100');
+  await expect(page.getByText('≈ ₹82,000/month', { exact: true })).toBeVisible();
+  await page.getByRole('button', { name: 'Save entered rows (1)' }).click();
+  await expect.poll(() => posts.length).toBe(1);
+  expect(posts[0].payload.monthlyWalletPaise).toBe(8200000);
+  expect(posts[0].payload.testVolume).toEqual({ testsPerDay: 80, workingDaysPerMonth: 26, paisePerTest: 2500, specialTestsPerMonth: 100, paisePerSpecialTest: 30000 });
+});
+
 test('test volume lowering uses calculated spend and switching method omits volume', async ({ page }) => {
   const { posts } = await setup(page);
   await page.getByLabel('Source').fill('Lab visits');

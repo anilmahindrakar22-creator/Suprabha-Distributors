@@ -27,6 +27,15 @@ describe('wallet quick entry command helpers', () => {
     expect(() => buildRowCommand(volume, row, '1.5', '', 'request-id')).toThrow();
     expect(buildRowCommand(shared, row, '80', '', 'request-id').payload).not.toHaveProperty('testVolume');
   });
+  it('includes optional special volume only when a special price and count are supplied', () => {
+    const volume = { ...shared, method: 'test_volume' as const, workingDaysPerMonth: 26, paisePerTest: 2500, paisePerSpecialTest: 30000 };
+    expect(buildRowCommand(volume, row, '80', '', 'request-id', '100').payload).toMatchObject({ monthlyWalletPaise: 8200000, testVolume: { testsPerDay: 80, workingDaysPerMonth: 26, paisePerTest: 2500, specialTestsPerMonth: 100, paisePerSpecialTest: 30000 } });
+    const blank = buildRowCommand(volume, row, '80', '', 'request-id', '').payload.testVolume!;
+    expect('specialTestsPerMonth' in blank).toBe(false);
+    const noPrice = buildRowCommand({ ...volume, paisePerSpecialTest: null }, row, '80', '', 'request-id', '100').payload;
+    expect(noPrice.monthlyWalletPaise).toBe(5200000);
+    expect('specialTestsPerMonth' in noPrice.testVolume!).toBe(false);
+  });
   it('converts rupees to paise and supplies the exact snapshot command defaults', () => {
     expect(buildRowCommand(shared, row, '12345.67', '', 'request-id')).toEqual({
       action: 'record_wallet_snapshot',
