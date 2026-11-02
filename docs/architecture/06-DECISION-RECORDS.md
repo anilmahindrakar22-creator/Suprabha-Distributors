@@ -189,6 +189,7 @@ It is shown as a graph plus a list view.
    - The opportunity records `opened_by`, `opened_at` and `opened_reason`.
    - Confidence lives on the **constraint**, derived from its evidence source: document = High, a named person at the lab = Medium, our view = Low.
    - When the system starts suggesting opportunities, add `origin` (`manual`, `wallet_gap`, `defend_signal`) and the policy version that produced the suggestion. A suggestion stays a suggestion until a person opens it.
+   - *Record, 2 Nov 2026:* `defend_signal` is now used by the Recover signal (`20261116130000_recover_signal.sql`, policy `recover-v1`, [design](../RECOVER-SIGNAL-DESIGN-20261030.md)). It applies to kind `recover` only. The server checks the lab is currently signalling, and the opportunity is opened by a person.
 
 7. **Privacy (D-07).** Opportunities hold business facts only. A cited contact is referenced by id. Erasing a contact nulls the free-text evidence that refers to them (by trigger), and the audit rows remain.
 

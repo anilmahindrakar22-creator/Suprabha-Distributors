@@ -1298,6 +1298,13 @@
       "remoteVersion": null,
       "remoteSha256": null,
       "status": "not_deployed"
+    },
+    {
+      "localFile": "20261116130000_recover_signal.sql",
+      "localSha256": "ce3db92841181cae56ac4732ff09b3fc8dc8b5a4a850a03cb43afbefa7220105",
+      "remoteVersion": null,
+      "remoteSha256": null,
+      "status": "not_deployed"
     }
   ],
   "liveCheck": {

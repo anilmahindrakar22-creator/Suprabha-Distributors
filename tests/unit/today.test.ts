@@ -1,11 +1,43 @@
 import { describe, expect, it } from 'vitest';
 import { formatTodayPaise, parseToday, todayValueLabel } from '../../lib/today';
+import { opportunityOriginLabel } from '../../components/wallet-diagnosis';
+
+describe('opportunity origin label', () => {
+  it('labels Recover signals as Sales falling', () => {
+    expect(opportunityOriginLabel('defend_signal')).toBe('Sales falling');
+    expect(opportunityOriginLabel('wallet_gap')).toBe('Wallet gap');
+    expect(opportunityOriginLabel('manual')).toBe('Manual');
+    expect(opportunityOriginLabel(undefined)).toBe('Manual');
+  });
+});
 
 const order = { type: 'approve_price', title: 'Approve Apollo', subtitle: '2 lines · waiting 1 day', valuePaise: 4_800_000, approximate: true, since: '2026-10-29T09:00:00Z', rankReason: 'value_known', target: { kind: 'order', orderId: 'order-1' } };
 const lab = { type: 'diagnose', title: 'Diagnose Care', subtitle: 'No diagnosis', valuePaisePerMonth: 6_000_000, valueKind: 'gap', due: null, rankReason: 'value_known', target: { kind: 'lab', customerId: 'lab-1' } };
+const recover = { type: 'recover', title: 'Care Lab', subtitle: null, baselinePaisePerMonth: 6_000_000, recentPaisePerMonth: 3_900_000, valuePaisePerMonth: 2_100_000, valueKind: 'lost', due: null, rankReason: 'value_known', target: { kind: 'lab', customerId: 'lab-1' } };
 const fixture = () => ({ policyVersion: 'today-v1', generatedAt: '2026-10-30T09:00:00Z', unblock: { total: 10, rows: [order] }, grow: { total: 1, rows: [lab] } });
 
 describe('Today parser', () => {
+  it('parses Recover and its optional certification status, including signed net sales', () => {
+    const source = { ...fixture(), recover: { certified: true, reason: null }, grow: { total: 1, rows: [recover] } };
+    expect(parseToday(source).grow.rows[0]).toEqual(recover);
+    expect(parseToday(source).recover).toEqual({ certified: true, reason: null });
+    expect(todayValueLabel(parseToday(source).grow.rows[0])).toBe('₹21k/mo lost');
+    expect(parseToday({ ...source, grow: { total: 1, rows: [{ ...recover, recentPaisePerMonth: -100, valuePaisePerMonth: 6_000_100 }] } }).grow.rows[0]).toMatchObject({ recentPaisePerMonth: -100 });
+    expect(parseToday({ ...fixture(), recover: { certified: false, reason: 'Recover signals need 9 certified months' } }).recover?.certified).toBe(false);
+    expect(parseToday(fixture()).recover).toBeUndefined();
+  });
+  it.each([
+    { baselinePaisePerMonth: undefined }, { baselinePaisePerMonth: null }, { baselinePaisePerMonth: -1 },
+    { recentPaisePerMonth: null }, { recentPaisePerMonth: '3900000' }, { recentPaisePerMonth: 1.5 },
+    { recentPaisePerMonth: Number.MAX_SAFE_INTEGER + 1 }, { recentPaisePerMonth: Infinity },
+    { valuePaisePerMonth: null }, { valueKind: 'gap' }, { due: '2026-11-01' }, { subtitle: 'unexpected' },
+    { target: { kind: 'order', orderId: 'order-1' } }, { type: 'future_type' },
+  ])('rejects malformed Recover rows %#', change => {
+    expect(() => parseToday({ ...fixture(), grow: { total: 1, rows: [{ ...recover, ...change }] } })).toThrow('Invalid Today response');
+  });
+  it.each([null, [], {}, { certified: 'true', reason: null }, { certified: true }, { certified: false, reason: 9 }])('rejects malformed Recover status %#', recoverStatus => {
+    expect(() => parseToday({ ...fixture(), recover: recoverStatus })).toThrow('Invalid Today response');
+  });
   it('parses required fields and tolerates extra keys at every level', () => {
     const source = fixture();
     const result = parseToday({ ...source, extra: true, unblock: { ...source.unblock, extra: 1, rows: [{ ...order, extra: 2, target: { ...order.target, extra: 3 } }] } });
@@ -46,7 +78,7 @@ describe('Today value labels', () => {
     expect(todayValueLabel({ ...unblock, approximate: false })).toBe('₹48k');
     expect(todayValueLabel({ ...unblock, valuePaise: null })).toBe('₹ ?');
     expect(todayValueLabel(grow)).toBe('₹60k/mo gap');
-    expect(todayValueLabel({ ...grow, type: 'overdue_action', valueKind: 'expected', valuePaisePerMonth: 2_500_000 })).toBe('₹25k/mo expected');
-    expect(todayValueLabel({ ...grow, valuePaisePerMonth: null })).toBe('₹ ?');
+    expect(todayValueLabel({ ...grow, type: 'overdue_action', subtitle: 'Follow-up', valueKind: 'expected', valuePaisePerMonth: 2_500_000 })).toBe('₹25k/mo expected');
+    expect(todayValueLabel({ ...grow, type: 'diagnose', subtitle: 'No diagnosis', valueKind: 'gap', valuePaisePerMonth: null })).toBe('₹ ?');
   });
 });

@@ -20,6 +20,11 @@ const fixture = (): Today => ({
 });
 
 // Same frame order/summary and My actions mocks as work-notifications.spec.ts.
+const recoverFixture = (): Today => ({
+  ...fixture(), recover: { certified: true, reason: null },
+  grow: { total: 1, rows: [{ type: 'recover', title: 'Care Lab', subtitle: null, baselinePaisePerMonth: 12_000_000, recentPaisePerMonth: 8_500_000, valuePaisePerMonth: 3_500_000, valueKind: 'lost', due: null, rankReason: 'value_known', target: { kind: 'lab', customerId } }] },
+});
+
 async function mockFrame(page: Page, today: () => Today = fixture, fail: () => boolean = () => false) {
   const order = orderSummary({ id: orderId, orderNumber: 'SF-26-1001', customerName: 'Apollo Clinic Lab', status: 'awaiting_tally_billing', source: 'phone', createdAt: now, updatedAt: now, pricingState: 'approved', lines: [orderLine({ tallyKey: 'GLU', itemName: 'Glucose', quantity: 2, fulfilledQuantity: 2 })] });
   await page.route('**/api/me', route => route.fulfill({ json: { roles: ['administrator'] } }));
@@ -56,6 +61,74 @@ async function mockWallet(page: Page) {
 for (const width of [375, 1280]) {
   test.describe(`Today at ${width}px`, () => {
     test.beforeEach(async ({ page }) => { await page.setViewportSize({ width, height: 812 }); });
+
+    test('Recover shows falling sales and opens the exact opportunity without overflow', async ({ page }) => {
+      await mockFrame(page, recoverFixture);
+      const posts: unknown[] = [];
+      await page.route('**/api/wallet/diagnosis', route => {
+        expect(route.request().method()).toBe('POST');
+        posts.push(route.request().postDataJSON());
+        return route.fulfill({ status: 200, json: {} });
+      });
+      await page.goto('/?view=frame&role=administrator&roles=administrator');
+      const card = page.getByRole('article').filter({ has: page.getByRole('heading', { name: 'Recover · Care Lab', exact: true }) });
+      await expect(card).toBeVisible();
+      await expect(card.getByText('₹1.2L → ₹85k a month', { exact: true })).toBeVisible();
+      await expect(card.getByText('₹35k/mo lost', { exact: true })).toBeVisible();
+      await expect(card.getByText('₹1.2L → ₹85k a month')).toHaveAttribute('title', '₹1.2L → ₹85k a month');
+      await expect(page.getByText('Recover signals need 9 certified months', { exact: true })).toHaveCount(0);
+      expect(await page.evaluate(() => document.documentElement.scrollWidth <= innerWidth && [...document.querySelectorAll('article')].every(card => card.scrollWidth <= card.clientWidth))).toBe(true);
+      await card.getByRole('button', { name: 'Open Recover', exact: true }).click();
+      await expect(card.getByText('Recover opened. Follow it up in Wallet.', { exact: true })).toBeVisible();
+      await expect(card.getByRole('button', { name: 'Open Recover', exact: true })).toHaveCount(0);
+      expect(posts).toEqual([{ action: 'open_opportunity', payload: { requestId: expect.stringMatching(/^[0-9a-f]{8}-[0-9a-f]{4}-4[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i), customerId, kind: 'recover', divisionCode: null, origin: 'defend_signal', reason: 'Sales down from ₹1.2L to ₹85k a month (recover-v1)' } }]);
+      expect(await page.evaluate(() => document.documentElement.scrollWidth <= innerWidth)).toBe(true);
+    });
+
+    test('Recover retries a 503 with the same requestId and blocks concurrent clicks', async ({ page }) => {
+      await mockFrame(page, recoverFixture);
+      const posts: Array<{ payload: { requestId: string } }> = [];
+      let release: () => void = () => undefined;
+      const firstResponse = new Promise<void>(resolve => { release = resolve; });
+      await page.route('**/api/wallet/diagnosis', async route => {
+        posts.push(route.request().postDataJSON());
+        if (posts.length === 1) { await firstResponse; await route.fulfill({ status: 503, json: {} }); }
+        else await route.fulfill({ status: 200, json: {} });
+      });
+      await page.goto('/?view=frame&role=administrator&roles=administrator');
+      const button = page.getByRole('button', { name: 'Open Recover', exact: true });
+      await button.click();
+      await expect(button).toBeDisabled();
+      await button.evaluate(element => { (element as HTMLButtonElement).click(); });
+      await expect.poll(() => posts.length).toBe(1);
+      release();
+      await expect(page.getByText('Could not open. Try again.', { exact: true })).toBeVisible();
+      await expect(button).toBeEnabled();
+      await button.click();
+      await expect(page.getByText('Recover opened. Follow it up in Wallet.', { exact: true })).toBeVisible();
+      expect(posts).toHaveLength(2);
+      expect(posts[1]).toEqual(posts[0]);
+    });
+
+    for (const [status, message] of [[409, 'This lab already has an open opportunity in Wallet.'], [403, 'Not allowed.'], [400, 'No longer a Recover signal.']] as const) {
+      test(`Recover removes its button after ${status}`, async ({ page }) => {
+        await mockFrame(page, recoverFixture);
+        await page.route('**/api/wallet/diagnosis', route => route.fulfill({ status, json: {} }));
+        await page.goto('/?view=frame&role=administrator&roles=administrator');
+        await page.getByRole('button', { name: 'Open Recover', exact: true }).click();
+        await expect(page.getByText(message, { exact: true })).toBeVisible();
+        await expect(page.getByRole('button', { name: 'Open Recover', exact: true })).toHaveCount(0);
+      });
+    }
+
+    test('uncertified Recover explains the nine month requirement at the bottom of Grow', async ({ page }) => {
+      await mockFrame(page, () => ({ ...fixture(), recover: { certified: false, reason: 'missing_certified_months' } }));
+      await page.goto('/?view=frame&role=administrator&roles=administrator');
+      const grow = page.getByRole('region', { name: 'Grow', exact: true });
+      await expect(grow.getByText('Recover signals need 9 certified months', { exact: true })).toBeVisible();
+      await expect(grow.locator(':scope > :last-child')).toHaveText('Recover signals need 9 certified months');
+      expect(await page.evaluate(() => document.documentElement.scrollWidth <= innerWidth)).toBe(true);
+    });
 
     test('administrator lands on Today with two lanes, approximate and unknown values, and no overflow', async ({ page }) => {
       await mockFrame(page);
