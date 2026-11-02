@@ -467,8 +467,8 @@ for (const width of [375, 1280]) test.describe(`Customer map at ${width}px`, () 
   test('sheet shows the empty lab-size action and saves a report with an idempotency key', async ({ page }) => {
     const { posts } = await fixture(page, { frame: true }); const sheet = await openSheet(page);
     const labSize = sheet.getByRole('region', { name: 'Lab size', exact: true });
-    await expect(labSize.getByRole('button', { name: 'Add tests/day', exact: true })).toBeVisible();
-    await labSize.getByRole('button', { name: 'Add tests/day', exact: true }).click();
+    await expect(labSize.getByRole('button', { name: 'Add lab size', exact: true })).toBeVisible();
+    await labSize.getByRole('button', { name: 'Add lab size', exact: true }).click();
     const form = labSize.getByRole('form', { name: 'Lab size' });
     await expect(labSize.getByText('Ask: how many tests a day? What do you spend on reagents a month?', { exact: true })).toBeVisible();
     await form.getByLabel('Tests per day', { exact: true }).fill('80');
@@ -485,7 +485,7 @@ for (const width of [375, 1280]) test.describe(`Customer map at ${width}px`, () 
   test('lab size records optional special tests and includes them in the summary', async ({ page }) => {
     const { posts } = await fixture(page, { frame: true, sales: true }); const sheet = await openSheet(page);
     const labSize = sheet.getByRole('region', { name: 'Lab size', exact: true });
-    await labSize.getByRole('button', { name: 'Add tests/day', exact: true }).click();
+    await labSize.getByRole('button', { name: 'Add lab size', exact: true }).click();
     const form = labSize.getByRole('form', { name: 'Lab size' });
     await form.getByLabel('Tests per day', { exact: true }).fill('80');
     await form.getByLabel('Special tests a month (approx)', { exact: true }).fill('100');
@@ -508,7 +508,7 @@ for (const width of [375, 1280]) test.describe(`Customer map at ${width}px`, () 
     await fixture(page, { frame: true });
     const sheet = await openSheet(page);
     const labSize = sheet.getByRole('region', { name: 'Lab size', exact: true });
-    await labSize.getByRole('button', { name: 'Add tests/day', exact: true }).click();
+    await labSize.getByRole('button', { name: 'Add lab size', exact: true }).click();
     expect(await page.evaluate(() => document.documentElement.scrollWidth <= innerWidth)).toBe(true);
     expect(await sheet.evaluate(el => el.scrollWidth <= el.clientWidth)).toBe(true);
   });

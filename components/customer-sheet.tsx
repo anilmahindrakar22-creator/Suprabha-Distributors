@@ -202,7 +202,7 @@ export function CustomerSheet({ customerId, financial, prospect, onClose, onOpen
           {data.labMixOptions ? <LabMixSection customerId={customerId} labMix={data.labMix} options={data.labMixOptions} disabled={busy} runCommand={saveLabMix} /> : null}
           {data.labAccess ? <Section title="Lab size">
             {data.labSize ? <><p className="text-base">About {data.labSize.testsPerDay} tests/day{data.labSize.specialTestsPerMonth != null ? ` · ${data.labSize.specialTestsPerMonth} special/month` : ''} · {data.labSize.basis === 'lab_said' ? 'Lab said' : 'My estimate'} · {formatCustomerDate(data.labSize.reportedOn)}</p>{financial && data.labSize.statedMonthlySpendPaise != null ? <p className="text-sf-muted">Lab said {formatPaise(data.labSize.statedMonthlySpendPaise)}/month · {formatCustomerDate(data.labSize.spendReportedOn!)}</p> : null}</> : null}
-            {!editingLab ? <button className="min-h-11 text-sf-muted underline" disabled={busy} onClick={() => setEditingLab(true)}>{data.labSize ? 'Update tests/day' : 'Add tests/day'}</button> : <>
+            {!editingLab ? <button className="min-h-11 text-sf-muted underline" disabled={busy} onClick={() => setEditingLab(true)}>{data.labSize ? 'Update lab size' : 'Add lab size'}</button> : <>
               <p className="text-sf-muted">Ask: how many tests a day? What do you spend on reagents a month?</p>
               <form aria-label="Lab size" className="min-w-0 space-y-2" onSubmit={async event => {
                 event.preventDefault(); if (flight.current) return;

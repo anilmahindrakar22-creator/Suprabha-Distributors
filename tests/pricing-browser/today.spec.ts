@@ -74,7 +74,7 @@ for (const width of [375, 1280]) {
       const card = page.getByRole('article').filter({ has: page.getByRole('heading', { name: 'Recover · Care Lab', exact: true }) });
       await expect(card).toBeVisible();
       await expect(card.getByText('₹1.2L → ₹85k a month', { exact: true })).toBeVisible();
-      await expect(card.getByText('₹35k/mo lost', { exact: true })).toBeVisible();
+      await expect(card.getByText('₹35k/mo less', { exact: true })).toBeVisible();
       await expect(card.getByText('₹1.2L → ₹85k a month')).toHaveAttribute('title', '₹1.2L → ₹85k a month');
       await expect(page.getByText('Recover signals need 9 certified months', { exact: true })).toHaveCount(0);
       expect(await page.evaluate(() => document.documentElement.scrollWidth <= innerWidth && [...document.querySelectorAll('article')].every(card => card.scrollWidth <= card.clientWidth))).toBe(true);

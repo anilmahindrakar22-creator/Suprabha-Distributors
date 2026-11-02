@@ -90,5 +90,5 @@ export function formatTodayPaise(paise: number): string {
 }
 export function todayValueLabel(row: TodayDecision): string {
   if ('valuePaise' in row) return row.valuePaise === null ? '₹ ?' : `${row.approximate ? '≈ ' : ''}${formatTodayPaise(row.valuePaise)}`;
-  return row.valuePaisePerMonth === null ? '₹ ?' : `${formatTodayPaise(row.valuePaisePerMonth)}/mo ${row.valueKind}`;
+  return row.valuePaisePerMonth === null ? '₹ ?' : `${formatTodayPaise(row.valuePaisePerMonth)}/mo ${row.valueKind === 'lost' ? 'less' : row.valueKind}`;
 }

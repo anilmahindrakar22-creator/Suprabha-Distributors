@@ -21,7 +21,7 @@ describe('Today parser', () => {
     const source = { ...fixture(), recover: { certified: true, reason: null }, grow: { total: 1, rows: [recover] } };
     expect(parseToday(source).grow.rows[0]).toEqual(recover);
     expect(parseToday(source).recover).toEqual({ certified: true, reason: null });
-    expect(todayValueLabel(parseToday(source).grow.rows[0])).toBe('₹21k/mo lost');
+    expect(todayValueLabel(parseToday(source).grow.rows[0])).toBe('₹21k/mo less');
     expect(parseToday({ ...source, grow: { total: 1, rows: [{ ...recover, recentPaisePerMonth: -100, valuePaisePerMonth: 6_000_100 }] } }).grow.rows[0]).toMatchObject({ recentPaisePerMonth: -100 });
     expect(parseToday({ ...fixture(), recover: { certified: false, reason: 'Recover signals need 9 certified months' } }).recover?.certified).toBe(false);
     expect(parseToday(fixture()).recover).toBeUndefined();
