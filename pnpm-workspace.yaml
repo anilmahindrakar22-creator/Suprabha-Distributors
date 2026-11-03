@@ -14,5 +14,6 @@ overrides:
   'proxy-addr@>=1.1.0 <2.0.8': 2.0.8
   'postcss-selector-parser@>=7.0.0 <7.1.6': 7.1.6
   'body-parser@>=2.0.0 <2.4.0': 2.4.0
+  'systeminformation@>=5.0.0 <5.33.16': 5.33.16
 patchedDependencies:
   braces@3.0.3: patches/braces@3.0.3.patch
