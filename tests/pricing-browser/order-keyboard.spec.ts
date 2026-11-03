@@ -14,8 +14,11 @@ test('office request review loads on demand and retries the same versioned decis
     }
   });
   await page.goto('/?view=product-requests');
-  expect(reads).toBe(0);
+  // The closed row reads the count once on open; the full review loads again on click.
+  await expect(page.getByRole('button', { name: 'Product requests', exact: true })).toContainText('1 open');
+  expect(reads).toBe(1);
   await page.getByRole('button', { name: 'Product requests', exact: true }).click();
+  await expect.poll(() => reads).toBe(2);
   await expect(page.getByRole('button', { name: 'Resolve request' })).toBeDisabled();
   await page.getByLabel('Review reason for Missing reagent').fill('Added in Tally; awaiting sync');
   await page.getByRole('button', { name: 'Resolve request' }).click();
