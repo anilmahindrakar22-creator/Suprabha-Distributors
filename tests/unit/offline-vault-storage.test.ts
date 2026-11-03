@@ -13,7 +13,8 @@ beforeEach(() => {
   } } });
 });
 afterEach(() => vi.unstubAllGlobals());
-describe('encrypted offline persistence', () => {
+// Real 600k-iteration PBKDF2 per call: allow for a loaded CI machine.
+describe('encrypted offline persistence', { timeout: 30_000 }, () => {
   it('sign-out removes catalogue access but preserves encrypted draft data for online re-preparation', async () => {
     const device = storage();
     const full = { customers: ['Private customer'], drafts: ['pending-key'] };

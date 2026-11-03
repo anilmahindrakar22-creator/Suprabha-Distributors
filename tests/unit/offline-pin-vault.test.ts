@@ -1,7 +1,8 @@
 import { describe, expect, it } from 'vitest';
 import { openOfflineVault, sealOfflineVault } from '../../lib/offline-pin-vault';
 
-describe('offline PIN encryption boundary', () => {
+// Real 600k-iteration PBKDF2 per call: allow for a loaded CI machine.
+describe('offline PIN encryption boundary', { timeout: 30_000 }, () => {
   it('round trips drafts without storing customer details, PIN or key in the envelope', async () => {
     const draft = { actorEmail: 'staff@example.com', customer: 'Private customer', idempotencyKey: 'unchanged-key' };
     const envelope = await sealOfflineVault(draft, '123456');
