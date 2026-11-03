@@ -145,8 +145,9 @@ function Publish-CloudSnapshot([string]$Json) {
             catch { Write-ConnectorHealth "$([datetimeoffset]::Now.ToString('o')) request=cloud_upload_state status=failed" }
         }
         Write-ConnectorHealth "$([datetimeoffset]::Now.ToString('o')) request=cloud_upload durationMs=$($watch.ElapsedMilliseconds) bytes=$payloadBytes consecutiveFailures=$($script:cloudUploadFailures) status=failed failure=$failureCode"
-        $failedUpload = $Json | ConvertFrom-Json
-        if ($failedUpload.economicEvidence.purpose -eq 'sales_coverage') {
+        $failedPurpose = $null
+        try { $failedPurpose = ($Json | ConvertFrom-Json -ErrorAction Stop).economicEvidence.purpose } catch { $failedPurpose = $null }
+        if ($failedPurpose -eq 'sales_coverage') {
             $script:salesCoverageUploadFailures++
             $script:salesCoverageUploadAttemptDate = (Get-SalesCoverageClock).ToString('yyyy-MM-dd')
             if ($script:uploadPayloadBlocked) { Remove-PendingSalesCoverage 'payload_rejected' }
@@ -172,7 +173,8 @@ function Publish-CloudSnapshot([string]$Json) {
         company = $script:uploadState.company; kind = 'cloud_upload_state_v1'
         ackedHash = Get-StableEvidenceVersion $Json; blockedKeyHash = $null; rejectedPayloadHash = $null
     }
-    $uploaded=$Json | ConvertFrom-Json
+    $uploaded=$null
+    try { $uploaded=$Json | ConvertFrom-Json -ErrorAction Stop } catch { $uploaded=$null }
     if($uploaded.economicEvidence.purpose -eq 'sales_coverage' -and $uploaded.salesCoverageDate){
         try{
             $coverageState=@{company=$companyName;lastSalesCoverageDate=[string]$uploaded.salesCoverageDate}

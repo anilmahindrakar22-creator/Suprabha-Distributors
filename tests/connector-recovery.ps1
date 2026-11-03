@@ -104,6 +104,10 @@ if ($parseErrors.Count) { throw 'Connector dashboard has a PowerShell parse erro
 $publishFunction = $dashboardAst.FindAll({ param($node) $node -is [Management.Automation.Language.FunctionDefinitionAst] -and $node.Name -eq 'Publish-CloudSnapshot' }, $true) | Select-Object -First 1
 if (-not $publishFunction) { throw 'Cloud upload function was not found' }
 . ([scriptblock]::Create($publishFunction.Extent.Text))
+$pendingSalesCoverageFunction = $dashboardAst.FindAll({ param($node) $node -is [Management.Automation.Language.FunctionDefinitionAst] -and $node.Name -eq 'Remove-PendingSalesCoverage' }, $true) | Select-Object -First 1
+if (-not $pendingSalesCoverageFunction) { throw 'Pending sales coverage function was not found' }
+. ([scriptblock]::Create($pendingSalesCoverageFunction.Extent.Text))
+$script:pendingUpload = $null
 $script:uploadState = [ordered]@{ company = 'TEST'; kind = 'cloud_upload_state_v1'; ackedHash = $null; blockedKeyHash = $null }
 $script:cloudUploadFailures = 0
 $script:uploadAuthBlocked = $false
