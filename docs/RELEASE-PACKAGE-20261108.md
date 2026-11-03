@@ -11,7 +11,7 @@ This document replaces the separate RELEASE TARGET lists for train 1 (`claude/tr
 **Read only this file plus the scripts it names.**
 
 ## 1. What ships
-- **Branch** `claude/train-20261120` @ `ccc050c`.
+- **Branch** `claude/train-20261120` @ `2ce0d92`. That is the gated code `ccc050c` plus one connector fix on 3 Nov; see §4.
   - It contains train 2 head `f4a76a8`, base `feature/phase3-order-exceptions` (`9afdbda`), and every merged `codex/*` release branch. All were checked with `git merge-base --is-ancestor`.
   - Remote branches not merged into it are superseded `claude/*` feature branches (re-delivered through `codex/*` releases), parked work (`result-pruning-parked`, `market-w1`, `frequent-products`), old docs branches, and dependabot bumps. None is included.
 - **Production today**, read-only on 3 Nov:
@@ -76,6 +76,10 @@ Timestamp `20261116150000` is intentionally unused (shelved Service). Hashes are
 - **Vitest:** 197 files, 2,556 passed.
 - **Playwright** (full pricing-browser suite, phone and desktop): **1,498 passed, 30 skipped, 0 failed** (47.7 min).
 - **tsc 0. `npm run lint` 0.**
+- **Connector gate (3 Nov, pwsh 7, at `2ce0d92`):** `connector-recovery`, `connector-sales-window`, `connector-control-status` and `connector-economics` all exit 0; `stock-sync-health` unit test passes (18).
+  - Found by the integration chat: `test:connector` failed with `ConvertFrom-Json` "Unexpected character … s". Since train 2, `Publish-CloudSnapshot` parsed the payload unguarded on both the failure path and the success path.
+  - The fix (`2ce0d92`) guards both parses, so a failed upload never throws and an accepted upload always saves its receipt. The recovery test now loads the real `Remove-PendingSalesCoverage` helper.
+  - Real payloads are always JSON, so the live connector was never affected. Only `desktop-connector/dashboard.ps1` (3 lines) and `tests/connector-recovery.ps1` changed after `ccc050c`. No SQL, app or Edge code changed, so the database, browser and unit evidence above still applies.
 - **Server reads at production scale:** every read is under about 0.11 s median (`docs/PERFORMANCE-BASELINE-20261102.md`).
 - **Design reviews:** done by Claude per package (phone screenshots), recorded in the handover.
 
