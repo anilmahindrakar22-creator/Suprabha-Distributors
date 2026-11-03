@@ -1,6 +1,10 @@
-# Release package: trains 1–3 together (target Sun 8 Nov 2026)
+# Release package: trains 1–3 together (release today, Tue 3 Nov 2026)
 
 **Owner, 3 Nov 2026:** "Ok let's release all trains. Prepare." Claude prepared this package; the **Codex integration chat releases it**.
+
+**Owner, 3 Nov 2026, later:** "We will release it today." This brings the release forward from Sun 8 Nov to **tonight, Tue 3 Nov, after billing hours**. It is the owner's go-ahead for the production window (precondition 4) and for the production parity run inside the sequence (precondition 5). It does not cover the §7 data steps.
+
+**Production re-checked read-only by Claude on 3 Nov, after this go-ahead:** last migration is still `20261028054756 rate_check_units`; `stockflow-orders` v34, `stockflow-sync` v12, `stockflow-push` v2. Nothing has changed since the drift check.
 
 This document replaces the separate RELEASE TARGET lists for train 1 (`claude/train-20261028`), train 2 (`claude/train-20261113`) and train 3 (`claude/train-20261120`) in `CLAUDE-HANDOVER-INSTRUMENT-ECONOMICS.md`. Where an older note conflicts with this one, this one wins.
 
@@ -22,16 +26,16 @@ This document replaces the separate RELEASE TARGET lists for train 1 (`claude/tr
 - **Excluded:** Service visits, parts, downtime and maintenance schedule. These are deferred by the owner until further notice.
 
 ## 2. Preconditions (all before production)
-1. **Role walkthrough on acceptance**, before the Fri 6 Nov cut, with the full branch deployed there.
+1. **Role walkthrough on acceptance**, today before the production window, with the full branch deployed there. Deploy acceptance first; the owner walks it (about 30–45 min); then production.
    - Follow `docs/ROLE-WALKTHROUGH-ACCEPTANCE.md`. The owner signs in with a spare login; Codex never handles credentials.
    - A FAIL that shows prices or cost to a role that must not see them **stops the release**.
 2. **The integration chat's own gate on the final SHA**, per the train rule:
    - `pnpm test:connector` with pwsh 7, which Claude cannot run;
    - CI.
 3. **Backup** per `docs/BACKUP-RESTORE-RUNBOOK.md`, taken just before the production migrations.
-4. **Owner's final go-ahead** for the production window. This package is not that go-ahead. Run outside billing hours.
+4. **Owner's final go-ahead** for the production window: **given 3 Nov** ("We will release it today"). Run outside billing hours, tonight.
 5. **Economics parity** (train 2 condition): run `supabase/scripts/economics-candidate-parity.sql` (begin, then rollback; it holds the economics lock) after migration `20261030110000`.
-   - Run it on acceptance first. On production it needs the owner's go-ahead, outside billing hours.
+   - Run it on acceptance first. On production it is covered by the 3 Nov release go-ahead; run it outside billing hours.
    - Production has 7,573 lines, inside the 10,000 limit.
    - If parity fails, stop and report. Do not continue with the later migrations.
    - **Why 10,000:** production's current rebuild refuses to run above 10,000 total sales lines (error 54000). Without the containment migration, that failure would also roll back the nightly sales import. Lines grow by about 580 a month, so production reaches 10,000 around mid-March 2027.
