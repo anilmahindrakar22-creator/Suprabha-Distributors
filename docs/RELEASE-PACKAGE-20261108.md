@@ -38,6 +38,8 @@ This document replaces the separate RELEASE TARGET lists for train 1 (`claude/tr
    - Run it on acceptance first. On production it is covered by the 3 Nov release go-ahead; run it outside billing hours.
    - Production has 7,573 lines, inside the 10,000 limit.
    - If parity fails, stop and report. Do not continue with the later migrations.
+   - **Use `supabase/scripts/economics-candidate-parity-result.sql`** when the SQL tool hides notices. It is the same check, but it always ends with an error whose message is the result (`PARITY OK: …` or `PARITY FAILED: …`), and that error rolls everything back. An error starting `PARITY OK` is a pass.
+   - **Acceptance result (Claude, 3 Nov, 20:2x IST):** `PARITY OK: results 851, automatic cost links 104, GP/contribution events 36, summary and full reads`. Checked afterwards: 0 `candidate-parity` runs, and the active run is unchanged (16 Oct). Fully rolled back.
    - **Why 10,000:** production's current rebuild refuses to run above 10,000 total sales lines (error 54000). Without the containment migration, that failure would also roll back the nightly sales import. Lines grow by about 580 a month, so production reaches 10,000 around mid-March 2027.
      - This release replaces that rebuild with the bounded one. Its limit is 10,000 *candidate* lines per rebuild (lines that touch a changed instrument), not total lines, so crossing 10,000 total lines is then harmless.
      - The parity script compares the new rebuild with the old one, and the old one keeps its guard. So parity can only be run while total lines are 10,000 or fewer: **run it in this release, not later.**
