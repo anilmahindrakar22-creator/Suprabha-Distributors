@@ -11,7 +11,7 @@ This document replaces the separate RELEASE TARGET lists for train 1 (`claude/tr
 **Read only this file plus the scripts it names.**
 
 ## 1. What ships
-- **Branch** `claude/train-20261120` @ `2ce0d92`. That is the gated code `ccc050c` plus one connector fix on 3 Nov; see §4.
+- **Branch** `claude/train-20261120` @ `e4195b7`. That is the gated code `ccc050c` plus one connector fix (`2ce0d92`) and one test-only fix (`e4195b7`) on 3 Nov; see §4.
   - It contains train 2 head `f4a76a8`, base `feature/phase3-order-exceptions` (`9afdbda`), and every merged `codex/*` release branch. All were checked with `git merge-base --is-ancestor`.
   - Remote branches not merged into it are superseded `claude/*` feature branches (re-delivered through `codex/*` releases), parked work (`result-pruning-parked`, `market-w1`, `frequent-products`), old docs branches, and dependabot bumps. None is included.
 - **Production today**, read-only on 3 Nov:
@@ -80,6 +80,9 @@ Timestamp `20261116150000` is intentionally unused (shelved Service). Hashes are
   - Found by the integration chat: `test:connector` failed with `ConvertFrom-Json` "Unexpected character … s". Since train 2, `Publish-CloudSnapshot` parsed the payload unguarded on both the failure path and the success path.
   - The fix (`2ce0d92`) guards both parses, so a failed upload never throws and an accepted upload always saves its receipt. The recovery test now loads the real `Remove-PendingSalesCoverage` helper.
   - Real payloads are always JSON, so the live connector was never affected. Only `desktop-connector/dashboard.ps1` (3 lines) and `tests/connector-recovery.ps1` changed after `ccc050c`. No SQL, app or Edge code changed, so the database, browser and unit evidence above still applies.
+- **Browser-suite fixes (3 Nov):**
+  - `order-keyboard.spec.ts:4` failed in the integration run ("Expected 0, Received 1"). Since `855e789`, the Requests page reads the open count once on mount, but the spec still asserted zero reads after load, so it passed only by timing. `e4195b7` changes that test only and passes 20/20 (10 runs per project). No product code changed.
+  - `brand-setup.spec.ts:40` timed out once in the integration run. It passed 36/36 (`--repeat-each 3`) on a fresh server; most likely a reused or stale `:3100` server.
 - **Server reads at production scale:** every read is under about 0.11 s median (`docs/PERFORMANCE-BASELINE-20261102.md`).
 - **Design reviews:** done by Claude per package (phone screenshots), recorded in the handover.
 
