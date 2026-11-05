@@ -176,6 +176,7 @@ export function OrderWorkspace({ actorEmail, initialStatus = 'open', initialQuer
   const [focusNotice, setFocusNotice] = useState('');
   const [notice, setNotice] = useState('');
   const [noticeOrderNumber, setNoticeOrderNumber] = useState('');
+  const [noticeOrderId, setNoticeOrderId] = useState('');
   const [query, setQuery] = useState(focusOrder?.orderNumber || initialQuery);
   const [pendingFocusId, setPendingFocusId] = useState(focusOrder?.orderId || '');
   const [captureDate, setCaptureDate] = useState('');
@@ -196,6 +197,7 @@ export function OrderWorkspace({ actorEmail, initialStatus = 'open', initialQuer
   const desktopControlCenter = useSyncExternalStore(subscribeDesktopControlCenter, desktopControlCenterSnapshot, () => false);
   const workspaceRef = useRef<HTMLDivElement>(null);
   const orderPageRef = useRef<HTMLDialogElement>(null);
+  const reviewTargetRef = useRef<{ id: string; number: string } | null>(null);
   const dataRef = useRef<OrderBootstrap | null>(null);
   const retryingDraftRef = useRef(false);
   const pendingCommandKeysRef = useRef(new Map<string, string>());
@@ -269,6 +271,7 @@ export function OrderWorkspace({ actorEmail, initialStatus = 'open', initialQuer
           setDeviceDraftState(null);
           setNotice(`${result.orderNumber} sent successfully after reconnecting.`);
           setNoticeOrderNumber(result.orderNumber);
+          setNoticeOrderId('');
           await load();
         } else if (result.status === 'needs_attention') {
           setDeviceDraftState('error');
@@ -339,10 +342,22 @@ export function OrderWorkspace({ actorEmail, initialStatus = 'open', initialQuer
           if (requestId !== latestListRequestRef.current) return;
           recordOrderClientTiming('order_list_ms', startedAt);
           setData(result);
+          const target = reviewTargetRef.current;
+          if (target) {
+            reviewTargetRef.current = null;
+            if (target.number === query) {
+              const match = result.orders.find((order) => target.id ? order.id === target.id : order.orderNumber === target.number);
+              if (match) setPendingFocusId(match.id);
+              else { setFocusNotice(`Order ${target.number} is not available to you, or it no longer exists.`); setQuery(''); setStatus(initialStatus); }
+            }
+          }
           setDeviceDraftState(readOfflineOrderDraft(localStorage, result.actor.email)?.state || null);
         })
         .catch((cause: unknown) => {
-          if (!controller.signal.aborted && requestId === latestListRequestRef.current) setError(cause instanceof Error ? cause.message : 'Unable to load orders');
+          if (!controller.signal.aborted && requestId === latestListRequestRef.current) {
+            reviewTargetRef.current = null;
+            setError(cause instanceof Error ? cause.message : 'Unable to load orders');
+          }
         })
         .finally(() => {
           if (!controller.signal.aborted && requestId === latestListRequestRef.current) setLoading(false);
@@ -352,7 +367,7 @@ export function OrderWorkspace({ actorEmail, initialStatus = 'open', initialQuer
       window.clearTimeout(timer);
       controller.abort();
     };
-  }, [actorEmail, captureDate, captureDateTo, page, query, status]);
+  }, [actorEmail, captureDate, captureDateTo, initialStatus, page, query, status]);
 
   // Active = every pending order plus orders delivered today (IST). Older delivered and cancelled orders live in History.
   // Delivered-today rows come from page 1 of History (newest captured first), so an old order delivered today can be missed.
@@ -386,7 +401,7 @@ export function OrderWorkspace({ actorEmail, initialStatus = 'open', initialQuer
   if (pendingFocusId && !loading && data) {
     setPendingFocusId('');
     if (!displayedOrders.some((order) => order.id === pendingFocusId)) {
-      setFocusNotice(`Order ${focusOrder?.orderNumber || ''} is not available to you, or it no longer exists.`);
+      setFocusNotice(`Order ${focusOrder?.orderNumber || noticeOrderNumber} is not available to you, or it no longer exists.`);
       setQuery('');
       setStatus(initialStatus);
     }
@@ -523,6 +538,7 @@ export function OrderWorkspace({ actorEmail, initialStatus = 'open', initialQuer
     setError('');
     setNotice('');
     setNoticeOrderNumber('');
+    setNoticeOrderId('');
     try {
       const result = await readResponse<{ orderId?: string; status?: string; version?: number; exceptionId?: string; installationId?: string }>(
         await fetch('/api/orders', {
@@ -538,6 +554,7 @@ export function OrderWorkspace({ actorEmail, initialStatus = 'open', initialQuer
       if (acknowledgedOrderId) onOrderActed?.(acknowledgedOrderId);
       const acknowledgedOrder = dataRef.current?.orders.find((order) => order.id === acknowledgedOrderId);
       setNoticeOrderNumber(acknowledgedOrder?.orderNumber || '');
+      setNoticeOrderId(acknowledgedOrder?.id || '');
        if (openOrder && dataRef.current) {
          const retained = applyOrderAcknowledgement({ ...dataRef.current, orders: [openOrder] }, prepared.command, result)?.orders[0];
          if (retained) setRetainedOpenOrder(retained);
@@ -690,6 +707,18 @@ export function OrderWorkspace({ actorEmail, initialStatus = 'open', initialQuer
     if (desktopControlCenter) setSelectedOrderId(order.id);
     else setOpenOrderId(order.id);
   }
+  function reviewNoticeOrder() {
+    setFocusNotice('');
+    const matches = (order: OrderSummary) => noticeOrderId ? order.id === noticeOrderId : order.orderNumber === noticeOrderNumber;
+    const loaded = displayedOrders.find(matches);
+    if (loaded) { openOrderDetail(loaded); return; }
+    if (query === noticeOrderNumber && status === 'all' && !captureDate && !captureDateTo && page === 1 && !pricesToApprove && !loading) {
+      setFocusNotice(`Order ${noticeOrderNumber} is not available to you, or it no longer exists.`);
+      return;
+    }
+    reviewTargetRef.current = { id: noticeOrderId, number: noticeOrderNumber };
+    setPricesToApprove(false); setQuery(noticeOrderNumber); setStatus('all'); setCaptureDate(''); setCaptureDateTo(''); setPage(1);
+  }
   const orderRowProps = {
     actorRole: data?.actor.role || '',
     actorRoles: data?.actor.roles,
@@ -815,7 +844,7 @@ export function OrderWorkspace({ actorEmail, initialStatus = 'open', initialQuer
         </div>
         </div>
 
-        {notice ? <div className="mt-4 flex items-center justify-between gap-3 rounded-xl border border-sf-accent-line bg-sf-accent-soft px-4 py-3 text-sm font-semibold text-sf-success"><p>{notice}</p>{noticeOrderNumber ? <button type="button" onClick={() => { setFocusNotice(''); setQuery(noticeOrderNumber); setStatus('all'); setCaptureDate(''); setCaptureDateTo(''); setPage(1); }} className="min-h-9 shrink-0 rounded-lg border border-sf-accent-line bg-white px-3 text-xs font-bold text-sf-accent">Review order</button> : null}</div> : null}
+        {notice ? <div className="mt-4 flex items-center justify-between gap-3 rounded-xl border border-sf-accent-line bg-sf-accent-soft px-4 py-3 text-sm font-semibold text-sf-success"><p>{notice}</p>{noticeOrderNumber ? <button type="button" onClick={reviewNoticeOrder} className="min-h-9 shrink-0 rounded-lg border border-sf-accent-line bg-white px-3 text-xs font-bold text-sf-accent">Review order</button> : null}</div> : null}
         {error ? <p role="alert" className="mt-4 rounded-xl border border-sf-danger-line bg-sf-danger-soft px-4 py-3 text-sm text-sf-danger">{error}</p> : null}
         {focusNotice ? <p role="alert" className="mt-4 flex flex-wrap items-center justify-between gap-2 rounded-xl border border-sf-danger-line bg-sf-danger-soft px-4 py-3 text-sm text-sf-danger"><span>{focusNotice}</span><button type="button" onClick={() => setFocusNotice('')} className="min-h-9 shrink-0 rounded-lg border border-sf-danger-line bg-white px-3 text-xs font-bold">Dismiss</button></p> : null}
 
@@ -921,6 +950,7 @@ export function OrderWorkspace({ actorEmail, initialStatus = 'open', initialQuer
             setCreating(false);
             setNotice(`${number} captured successfully.`);
             setNoticeOrderNumber(number);
+            setNoticeOrderId(result?.orderId || '');
             const current = dataRef.current;
             const canApplyLocally = current && command && result && page === 1 && !query && !captureDate && !captureDateTo && status === 'open';
             const patched = canApplyLocally ? applyCreatedOrderAcknowledgement(current, command, result) : null;
@@ -1357,6 +1387,8 @@ function PricingPanel({ order, actorRole, actorRoles, onChanged, pricing, sheet 
   const [message, setMessage] = useState('');
   const [manualReview, setManualReview] = useState(false);
   const governedRequest = useRef<{ orderId: string; version: number; idempotencyKey: string } | null>(null);
+  const sheetRef = useRef<HTMLElement>(null);
+  const sheetFocused = useRef(false);
   const pricingIsStale = Boolean(workspace && workspace.orderVersion < order.version);
   if (workspace && workspace !== draftWorkspace) {
     setDraftWorkspace(workspace);
@@ -1367,6 +1399,13 @@ function PricingPanel({ order, actorRole, actorRoles, onChanged, pricing, sheet 
     if (!workspace) return;
     governedRequest.current = null;
   }, [workspace]);
+  useEffect(() => {
+    if (!sheet || !workspace || state === 'loading' || pricingIsStale || sheetFocused.current) return;
+    sheetFocused.current = true;
+    const panel = sheetRef.current;
+    panel?.scrollIntoView({ block: 'start' });
+    (panel?.querySelector<HTMLElement>('input[type="number"]:not([disabled])') ?? panel?.querySelector<HTMLElement>('fieldset button:not([disabled])'))?.focus({ preventScroll: true });
+  }, [sheet, workspace, state, pricingIsStale]);
   async function submit() {
     if (!workspace || pricingIsStale || state === 'loading' || state === 'saving') return;
     onSavingChange?.(true);
@@ -1404,12 +1443,14 @@ function PricingPanel({ order, actorRole, actorRoles, onChanged, pricing, sheet 
     } catch (error) { setMessage(error instanceof Error ? error.message : 'Governed pricing could not be applied'); setState('error'); }
   }
   const governedReady = Boolean(workspace?.lines.length) && workspace!.lines.every((line) => line.governed && line.guardrail !== 'PRICE_REVIEW_REQUIRED' && Number(line.proposedRate) > 0);
-  if (sheet) return <section aria-label="Enter price" className="min-w-0 space-y-3">
+  if (sheet) return <section ref={sheetRef} aria-label="Enter price" className="min-w-0 scroll-mt-14 space-y-3">
     <h4 className="font-bold text-sf-body">Enter price</h4>
     {message ? <p role="alert" className="text-sm text-sf-danger">{message}</p> : null}
     <fieldset disabled={pricingIsStale || state === 'loading' || state === 'saving'} className="min-w-0 space-y-3">
       {workspace?.lines.map(line => <PricingLineCard key={line.lineId} line={line} compact={Boolean(line.governed && line.guardrail !== 'PRICE_REVIEW_REQUIRED' && Number(line.proposedRate) > 0)} entry={entries[line.lineId] || { rate: '', reason: '' }} onChange={entry => setEntries(current => ({ ...current, [line.lineId]: entry }))} />)}
-      <button type="button" disabled={!workspace?.lines.length || workspace.lines.some(line => !Number(entries[line.lineId]?.rate) || ((!line.governed || line.guardrail === 'PRICE_REVIEW_REQUIRED') && (entries[line.lineId]?.reason.trim().length || 0) < 3))} onClick={() => void submit()} className="min-h-12 w-full rounded-xl bg-sf-ink px-4 font-bold text-white hover:bg-sf-ink-hover disabled:opacity-50">{state === 'saving' ? 'Saving pricing…' : 'Submit for approval'}</button>
+      <div className="sticky bottom-0 z-10 bg-white pb-1 pt-2">
+        <button type="button" disabled={!workspace?.lines.length || workspace.lines.some(line => !Number(entries[line.lineId]?.rate) || ((!line.governed || line.guardrail === 'PRICE_REVIEW_REQUIRED') && (entries[line.lineId]?.reason.trim().length || 0) < 3))} onClick={() => void submit()} className="min-h-12 w-full rounded-xl bg-sf-ink px-4 font-bold text-white hover:bg-sf-ink-hover disabled:opacity-50">{state === 'saving' ? 'Saving pricing…' : 'Submit for approval'}</button>
+      </div>
     </fieldset>
   </section>;
   return <section className="mt-5 border-t border-sf-line-soft pt-4" aria-label="Price review">

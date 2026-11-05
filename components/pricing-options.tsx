@@ -32,10 +32,15 @@ export function PricingOptions({ line, entry, onChange }: { line: PricingLineRes
       }} className="min-h-11 max-w-full whitespace-normal break-words rounded-lg border border-sf-line px-3 py-2 text-left text-xs font-bold text-sf-body">{text}</button>;
     })}</div>
   </div> : null;
+  const costBasedPrice = line.targetMarginPrice ?? line.suggestion?.amount ?? null;
   if (needsRate) return <div className="mt-3 space-y-3">
     <p className="rounded-lg bg-amber-50 p-3 text-sm text-amber-900">No usable selling price is available for this customer and item. Enter the agreed rate and reason to request approval.</p>
     <p className="text-sm">Current purchase cost: <strong>{format(line.currentCost)}</strong></p>
-    {earlierPriceChips}
+    <p className="text-xs text-sf-muted">{line.cost ? `Cost as of ${new Date(line.cost.effectiveAt).toLocaleDateString('en-GB', { timeZone: 'Asia/Kolkata', day: 'numeric', month: 'short', year: 'numeric' })} · ${line.cost.sourceReference}` : 'No purchase cost on record for this item.'}</p>
+    {costBasedPrice != null
+      ? <button type="button" onClick={() => choose(costBasedPrice, 'Target-margin price from current cost')} className="min-h-11 max-w-full whitespace-normal break-words rounded-lg border border-sf-line px-3 py-2 text-left text-xs font-bold text-sf-body">Use {format(costBasedPrice)} · target margin</button>
+      : <p className="text-xs text-sf-muted">No cost-based price: purchase cost or target margin is unavailable.</p>}
+    {earlierPriceChips ?? <p className="text-xs text-sf-muted">No earlier prices for this customer.</p>}
     <label className="block text-sm font-bold" htmlFor={inputId}>Custom selling rate<input id={inputId} type="number" min="0.01" max="100000000" step="0.01" value={entry.rate} onChange={event => onChange({ ...entry, rate: event.target.value })} className="mt-1 min-h-11 w-full rounded-lg border px-3 font-normal"/></label>
     <label className="block text-sm font-bold">Decision reason<input maxLength={1000} value={entry.reason} onChange={event => onChange({ ...entry, reason: event.target.value })} className="mt-1 min-h-11 w-full rounded-lg border px-3 font-normal"/></label>
     {entry.rate ? <p className="text-xs font-bold">Selected rate: {format(Number(entry.rate))}</p> : null}
