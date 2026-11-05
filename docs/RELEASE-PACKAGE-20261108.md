@@ -11,7 +11,7 @@ This document replaces the separate RELEASE TARGET lists for train 1 (`claude/tr
 **Read only this file plus the scripts it names.**
 
 ## 1. What ships
-- **Branch** `claude/train-20261120` @ `e4195b7`. That is the gated code `ccc050c` plus one connector fix (`2ce0d92`) and one test-only fix (`e4195b7`) on 3 Nov; see §4.
+- **Branch** `claude/train-20261120` @ `c29604b` for code. That is the gated code `ccc050c` plus, on 3 Nov, the connector fix (`2ce0d92`), test-only fixes (`e4195b7`, `8983382`), the systeminformation override (`d483c96`) and the parity variant (`a1ee6df`); and, on 5 Nov, three acceptance UI fixes (`c29604b`). See §4. Later commits on the branch are docs only.
   - It contains train 2 head `f4a76a8`, base `feature/phase3-order-exceptions` (`9afdbda`), and every merged `codex/*` release branch. All were checked with `git merge-base --is-ancestor`.
   - Remote branches not merged into it are superseded `claude/*` feature branches (re-delivered through `codex/*` releases), parked work (`result-pruning-parked`, `market-w1`, `frequent-products`), old docs branches, and dependabot bumps. None is included.
 - **Production today**, read-only on 3 Nov:
@@ -29,6 +29,8 @@ This document replaces the separate RELEASE TARGET lists for train 1 (`claude/tr
 1. **Role walkthrough on acceptance**, today before the production window, with the full branch deployed there. Deploy acceptance first; the owner walks it (about 30–45 min); then production.
    - Follow `docs/ROLE-WALKTHROUGH-ACCEPTANCE.md`. The owner signs in with a spare login; Codex never handles credentials.
    - A FAIL that shows prices or cost to a role that must not see them **stops the release**.
+   - **Result (5 Nov):** all eight roles walked by the owner, and no prohibited money exposure was reported. These screen checks are owner-reported, because browser control timed out; order states are database-verified. Fresh price flow on `SO/26-27/0039`: Accounts ₹250, Management changed to ₹251 and approved. The spare login is back on Accounts only (read-only check, 5 Nov).
+   - **Three findings** (Review order, Enter price focus, price guidance) are fixed in `c29604b`. They still need the owner's quick look on acceptance after the integration chat deploys that commit.
 2. **The integration chat's own gate on the final SHA**, per the train rule:
    - `pnpm test:connector` with pwsh 7, which Claude cannot run;
    - CI.
@@ -85,6 +87,10 @@ Timestamp `20261116150000` is intentionally unused (shelved Service). Hashes are
 - **Browser-suite fixes (3 Nov):**
   - `order-keyboard.spec.ts:4` failed in the integration run ("Expected 0, Received 1"). Since `855e789`, the Requests page reads the open count once on mount, but the spec still asserted zero reads after load, so it passed only by timing. `e4195b7` changes that test only and passes 20/20 (10 runs per project). No product code changed.
   - `brand-setup.spec.ts:40` timed out once in the integration run. It passed 36/36 (`--repeat-each 3`) on a fresh server; most likely a reused or stale `:3100` server.
+- **Acceptance fixes (5 Nov, `c29604b`):** `components/order-workspace.tsx`, `components/pricing-options.tsx`, new `tests/pricing-browser/acceptance-order-price-fixes.spec.ts`. No SQL, Edge, permission or pricing-rule change.
+  - Focused checks by Claude on a fresh server: new spec 12/12 on phone and desktop. Before the one-line lint correction, the order and pricing specs gave 76 passed, 20 skipped, 0 failed. After it, the new spec plus `order-next-step` and `remembered-price` gave 28 passed, 16 skipped, 0 failed. tsc 0, lint 0. Phone design review done by Claude.
+  - The full suites (Vitest, full Playwright, `pnpm run ci`) have **not** been run at `c29604b`. The evidence above them in this section predates it.
+  - A handover note quotes the owner waiving another test run for these fixes. The focused checks were run anyway; the waiver covers pushing only, not deployment.
 - **Server reads at production scale:** every read is under about 0.11 s median (`docs/PERFORMANCE-BASELINE-20261102.md`).
 - **Design reviews:** done by Claude per package (phone screenshots), recorded in the handover.
 
