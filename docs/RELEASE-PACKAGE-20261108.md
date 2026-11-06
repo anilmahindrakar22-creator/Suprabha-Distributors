@@ -35,6 +35,8 @@ This document replaces the separate RELEASE TARGET lists for train 1 (`claude/tr
    - `pnpm test:connector` with pwsh 7, which Claude cannot run;
    - CI.
 3. **Backup** per `docs/BACKUP-RESTORE-RUNBOOK.md`, taken just before the production migrations.
+   - **6 Nov:** full CI passed at `2165fd5` (integration chat). The first restore drill failed because the runbook had no stand-in for the `auth` schema; the dump itself is not at fault. The runbook is corrected and trial-restored by Claude. The fingerprint comparison still has to pass.
+   - The 12:47 IST dump was taken during billing hours. It proves the procedure, but it is **not** the pre-migration backup. Take a fresh export just before the migrations, and restore and compare that one too.
 4. **Owner's final go-ahead** for the production window: the 3 Nov go-ahead ("We will release it today") has **expired**. A new one is needed, naming the night. Run outside billing hours.
 5. **Economics parity** (train 2 condition): run `supabase/scripts/economics-candidate-parity.sql` (begin, then rollback; it holds the economics lock) after migration `20261030110000`.
    - Run it on acceptance first. On production it is covered by the 3 Nov release go-ahead; run it outside billing hours.
@@ -123,7 +125,7 @@ The table and column names were checked against the migrations and production on
 
 ## 8. Rollback
 - **Worker:** the previous production version (139ced3b at the 28 Oct release; confirm the current ID before deploying).
-- **Edge:** `stockflow-orders` v34.
+- **Edge:** `stockflow-orders` v34 code. Production has listed it as v35 since 6 Nov, with the same code hash `cf5592a4…` and no new deploy time, as all four functions moved up one version together. Match rollback by hash.
 - **Connector:** the previous office copies.
   - `recovery.ps1` sha256 `23f7935133b23b77c25b0decf6711a5e59c9b58900866c3c4f51762926018191`;
   - `dashboard.ps1` = git blob at `f7f8453`;
