@@ -1333,6 +1333,13 @@
       "remoteVersion": null,
       "remoteSha256": null,
       "status": "not_deployed"
+    },
+    {
+      "localFile": "20261118090000_control_null_and_source_time.sql",
+      "localSha256": "2d4eb93b18ed4b694b5c1f53896eeb6e3ba858b8f6129903ab89809869730677",
+      "remoteVersion": null,
+      "remoteSha256": null,
+      "status": "not_deployed"
     }
   ],
   "liveCheck": {

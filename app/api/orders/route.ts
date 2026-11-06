@@ -92,7 +92,7 @@ export async function GET(request: Request) {
     }
     if (parameters.get('summary') === '1') {
       return measuredJsonResponse(
-        await callOrderGateway<{ operations: Record<string, number>; operationsDate: string }>(user.email, 'get_order_summary'),
+        await callOrderGateway<{ operations: Record<string, number>; operationsDate: string; sourceUpdatedAt?: string | null }>(user.email, 'get_order_summary'),
         startedAt,
       );
     }
