@@ -3,6 +3,8 @@ import { orderBootstrap, orderLine, orderSummary, pricingWorkspace } from '../fi
 
 const now = '2026-11-06T09:30:00Z'; // Friday 15:00 IST
 const stale = '2026-11-06T06:30:00Z'; // Friday 12:00 IST
+const paused = { state: 'paused', pendingSince: null };
+const pausedMessage = 'Economics update is paused. Figures may be out of date.';
 const orderId = '11111111-1111-4111-8111-111111111111';
 type SummaryRead = { status?: number; body: unknown };
 
@@ -39,7 +41,7 @@ async function openFrame(page: Page, role: 'administrator' | 'sales' = 'administ
   if (role === 'administrator') await expect(page.getByRole('heading', { name: 'Today', exact: true })).toBeVisible();
 }
 
-const notice = (page: Page) => page.getByRole('status').filter({ hasText: /Tally data last reached StockFlow|Stock figures are from/ });
+const notice = (page: Page) => page.getByRole('status').filter({ hasText: /Tally data last reached StockFlow|Stock figures are from|Economics update is/ });
 
 // Both configured browser projects run each explicit phone/desktop viewport.
 for (const width of [375, 1280]) {
@@ -64,6 +66,65 @@ for (const width of [375, 1280]) {
       await openFrame(page, 'sales');
       await expect(notice(page)).toHaveText('Stock figures are from 3 hours ago.');
       await expect(notice(page)).not.toContainText('connector');
+    });
+
+    test('administrator sees only the economics line when data is fresh and economics is paused', async ({ page }) => {
+      await mockFrame(page, 'administrator', () => ({ body: { operations: {}, sourceUpdatedAt: now, economicsStatus: paused } }));
+      await openFrame(page);
+      await expect(notice(page)).toHaveText(pausedMessage);
+      await expect(notice(page)).toHaveClass(/bg-sf-warning-soft/);
+      await expect(notice(page).locator('svg')).toHaveCount(1);
+    });
+
+    test('sales sees no strip when data is fresh and economics is paused', async ({ page }) => {
+      await mockFrame(page, 'sales', () => ({ body: { operations: {}, sourceUpdatedAt: now, economicsStatus: paused } }));
+      await openFrame(page, 'sales');
+      await expect(notice(page)).toHaveCount(0);
+    });
+
+    test('stale data and paused economics share one strip with separate lines and no overflow', async ({ page }) => {
+      await mockFrame(page, 'administrator', () => ({ body: { operations: {}, sourceUpdatedAt: stale, economicsStatus: paused } }));
+      await openFrame(page);
+      await expect(notice(page)).toHaveCount(1);
+      await expect(notice(page).locator('svg')).toHaveCount(1);
+      const lines = notice(page).locator('span.block');
+      await expect(lines).toHaveText(['Tally data last reached StockFlow 3 hours ago. Check the office connector.', pausedMessage]);
+      const first = await lines.nth(0).boundingBox();
+      const second = await lines.nth(1).boundingBox();
+      expect(first).not.toBeNull();
+      expect(second).not.toBeNull();
+      expect(second!.y).toBeGreaterThanOrEqual(first!.y + first!.height);
+      expect(await page.evaluate(() => document.documentElement.scrollWidth <= document.documentElement.clientWidth)).toBe(true);
+      expect(await notice(page).evaluate(element => element.scrollWidth <= element.clientWidth)).toBe(true);
+    });
+
+    test('malformed economics status still accepts a stale timestamp', async ({ page }) => {
+      await mockFrame(page, 'administrator', () => ({ body: { operations: {}, sourceUpdatedAt: stale, economicsStatus: { state: 'paused', pendingSince: 'junk' } } }));
+      await openFrame(page);
+      await expect(notice(page)).toHaveText('Tally data last reached StockFlow 3 hours ago. Check the office connector.');
+    });
+
+    test('failed, missing and malformed economics reads preserve the last good status', async ({ page }) => {
+      let read: SummaryRead = { body: { operations: {}, sourceUpdatedAt: now, economicsStatus: paused } };
+      await mockFrame(page, 'administrator', () => read);
+      await openFrame(page);
+      await expect(notice(page)).toHaveText(pausedMessage);
+      let wakeMinute = 32;
+      for (const next of [
+        { status: 503, body: {} },
+        { body: { operations: {}, sourceUpdatedAt: now } },
+        { body: { operations: {}, sourceUpdatedAt: now, economicsStatus: { state: 'paused', pendingSince: 'junk' } } },
+        { body: { operations: {}, sourceUpdatedAt: now, economicsStatus: null } },
+      ]) {
+        read = next;
+        await page.clock.setFixedTime(new Date(`2026-11-06T09:${wakeMinute}:00Z`));
+        const response = page.waitForResponse(result => new URL(result.url()).searchParams.get('summary') === '1');
+        await page.evaluate(() => document.dispatchEvent(new Event('visibilitychange')));
+        await (await response).finished();
+        if ('economicsStatus' in next.body && next.body.economicsStatus === null) await expect(notice(page)).toHaveCount(0);
+        else await expect(notice(page)).toHaveText(pausedMessage);
+        wakeMinute += 2;
+      }
     });
 
     for (const [name, read] of [

@@ -136,7 +136,7 @@ function Convert-TallyEconomicEvidence([xml]$CompanyDocument,[xml]$LedgerDocumen
     }
     $vouchers = [Collections.Generic.List[object]]::new()
     $seen = @{}
-    foreach ($voucher in $VoucherDocument.SelectNodes('//VOUCHER')) {
+    foreach ($voucher in $VoucherDocument.SelectNodes($script:EconomicVoucherNodes)) {
         $type = Get-EconomicXmlText $voucher './VOUCHERTYPENAME'
         $optional=(Get-EconomicXmlText $voucher './ISOPTIONAL') -eq 'Yes'
         if ($optional) { continue }
@@ -319,6 +319,8 @@ function Get-TallyEconomicCollection([string]$Company,[string]$Name,[string]$Typ
     return '<ENVELOPE><HEADER><VERSION>1</VERSION><TALLYREQUEST>Export</TALLYREQUEST><TYPE>COLLECTION</TYPE><ID>'+ $Name +'</ID></HEADER><BODY><DESC><STATICVARIABLES><SVEXPORTFORMAT>$$SysName:XML</SVEXPORTFORMAT><SVCURRENTCOMPANY>'+ $escaped +'</SVCURRENTCOMPANY><SVFROMDATE TYPE="Date">'+$From.ToString('yyyyMMdd')+'</SVFROMDATE><SVTODATE TYPE="Date">'+$To.AddDays(-1).ToString('yyyyMMdd')+'</SVTODATE></STATICVARIABLES><TDL><TDLMESSAGE><COLLECTION NAME="'+$Name+'"><TYPE>'+$Type+'</TYPE><FETCH>'+$Fetch+'</FETCH>'+$filter+'</COLLECTION>'+$formula+'</TDLMESSAGE></TDL></DESC></BODY></ENVELOPE>'
 }
 $script:EconomicVoucherFetch='GUID,AlterID,Date,VoucherNumber,VoucherTypeName,PartyLedgerName,IsCancelled,IsOptional,AllInventoryEntries.StockItemName,AllInventoryEntries.ActualQty,AllInventoryEntries.BilledQty,AllInventoryEntries.Amount,AllInventoryEntries.BatchAllocations.BatchName,AllLedgerEntries.LedgerName,AllLedgerEntries.Amount,AllLedgerEntries.IsPartyLedger'
+# Tally's CMPINFO summary has a VOUCHER counter that isn't a voucher.
+$script:EconomicVoucherNodes='//VOUCHER[not(ancestor::CMPINFO)]'
 function Read-TallyEconomicEvidence([string]$Company,[int]$HistoryMonths=3,[hashtable]$LedgerRoles=@{},[hashtable]$VoucherRoles=@{},[int]$PurchaseHistoryMonths=0) {
     $from=[datetime]::new((Get-Date).Year,(Get-Date).Month,1).AddMonths(-$HistoryMonths)
     $to=(Get-Date).Date.AddDays(1)
@@ -410,7 +412,7 @@ function Get-TallySalesControlCollection([string]$Company,[datetime]$From,[datet
 }
 function Convert-TallySalesControlMonth([xml]$Document,[datetime]$Month) {
     if($Document.SelectSingleNode('//LINEERROR') -or -not $Document.SelectSingleNode('//COLLECTION')){throw 'Sales control export was unsuccessful.'}
-    $nodes=$Document.SelectNodes('//LEDGER')
+    $nodes=$Document.SelectNodes('//LEDGER[not(ancestor::CMPINFO)]')
     if($nodes.Count -gt 500){throw 'Sales control month exceeds 500 ledgers'}
     $seen=@{}
     $rows=@(foreach($node in $nodes){
@@ -418,8 +420,11 @@ function Convert-TallySalesControlMonth([xml]$Document,[datetime]$Month) {
         if(-not $name){$name=Get-EconomicXmlText $node './NAME'}
         if(-not $id -or -not $name -or $seen.ContainsKey($id)){throw 'Sales control ledger identity is incomplete or duplicated.'}
         $seen[$id]=$true
-        $opening=Convert-EconomicAmount (Get-EconomicXmlText $node './OPENINGBALANCE')
-        $closing=Convert-EconomicAmount (Get-EconomicXmlText $node './CLOSINGBALANCE')
+        $openingText=Get-EconomicXmlText $node './OPENINGBALANCE'
+        $closingText=Get-EconomicXmlText $node './CLOSINGBALANCE'
+        # Tally omits a zero balance; a wrong zero fails closed, because the month then shows as differing from the app.
+        $opening=if($openingText){Convert-EconomicAmount $openingText}else{[long]0}
+        $closing=if($closingText){Convert-EconomicAmount $closingText}else{[long]0}
         # Tally XML represents credit sales balances as positive (debits negative).
         # Preserve that sign: closing minus opening, never Abs, so returns reduce sales.
         [ordered]@{ledgerId=$id;name=$name;openingPaise=$opening;closingPaise=$closing;netPaise=($closing-$opening)}
@@ -438,8 +443,8 @@ function Read-TallySalesCoverage([string]$Company,[hashtable]$LedgerRoles=@{},[h
         $documents[$definition[0]]=$document
     }
     Assert-TallyCompanyIdentity $documents.Company $Company
-    if($documents.Vouchers.SelectNodes('//VOUCHER').Count -gt 1800){throw 'Sales coverage window exceeds 1800 vouchers'}
-    foreach($voucher in $documents.Vouchers.SelectNodes('//VOUCHER')){
+    if($documents.Vouchers.SelectNodes($script:EconomicVoucherNodes).Count -gt 1800){throw 'Sales coverage window exceeds 1800 vouchers'}
+    foreach($voucher in $documents.Vouchers.SelectNodes($script:EconomicVoucherNodes)){
         $date=[datetime]::ParseExact((Get-EconomicXmlText $voucher './DATE'),'yyyyMMdd',[Globalization.CultureInfo]::InvariantCulture)
         if($date -lt $from -or $date -ge $to){throw 'Tally ignored the sales coverage date window.'}
     }

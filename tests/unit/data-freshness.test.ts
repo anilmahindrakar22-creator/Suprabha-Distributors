@@ -1,8 +1,34 @@
 import { describe, expect, it, vi } from 'vitest';
-import { dataFreshness, officeMinutesBetween } from '../../lib/data-freshness';
+import { dataFreshness, economicsNotice, officeMinutesBetween } from '../../lib/data-freshness';
 
 const freshness = (from: string, to: string) => dataFreshness(from, new Date(to));
 const minutes = (from: string, to: string) => officeMinutesBetween(new Date(from), new Date(to));
+
+describe('Economics update notice', () => {
+  const now = new Date('2026-11-08T09:30:00Z'); // Sunday: use real minutes, not office minutes.
+
+  it('reports a paused update', () => {
+    expect(economicsNotice({ state: 'paused', pendingSince: null }, now)).toBe('Economics update is paused. Figures may be out of date.');
+  });
+
+  it('warns at 30 real minutes, but not at 29', () => {
+    expect(economicsNotice({ state: 'ok', pendingSince: '2026-11-08T09:01:00Z' }, now)).toBeNull();
+    expect(economicsNotice({ state: 'ok', pendingSince: '2026-11-08T09:00:00Z' }, now)).toBe('Economics update is waiting. Figures may be out of date.');
+  });
+
+  it('ignores an update without pending work and future pending times', () => {
+    expect(economicsNotice({ state: 'ok', pendingSince: null }, now)).toBeNull();
+    expect(economicsNotice({ state: 'ok', pendingSince: '2026-11-08T09:31:00Z' }, now)).toBeNull();
+  });
+
+  it('ignores absent and malformed statuses, including malformed paused statuses', () => {
+    for (const status of [null, undefined, [], 'paused', {}, { state: 'wrong', pendingSince: null },
+      { state: 'paused' }, { state: 'ok', pendingSince: 'junk' }, { state: 'paused', pendingSince: 'junk' },
+      { state: 'ok', pendingSince: '2026-11-08T09:00:00' }, { state: 'ok', pendingSince: '2026-99-08T09:00:00Z' }]) {
+      expect(economicsNotice(status, now)).toBeNull();
+    }
+  });
+});
 
 describe('Tally data freshness in office time', () => {
   it('starts warning at 45 whole office minutes', () => {

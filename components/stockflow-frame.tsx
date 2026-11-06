@@ -438,7 +438,7 @@ export function StockFlowFrame({ actorEmail, actorRole, actorRoles, staffAuth = 
         </div>
       </header>
       {deviceNotice ? <output className="flex shrink-0 items-center justify-between gap-3 border-b border-sf-warning-line bg-sf-warning-soft px-4 py-2 text-xs font-semibold text-sf-warning sm:px-6"><span className="inline-flex items-center gap-1"><TriangleAlert size={16} aria-hidden="true" className="shrink-0" />{deviceNotice}</span><button type="button" onClick={() => setDeviceNotice('')} className="min-h-8 shrink-0 rounded-lg px-3 font-bold hover:bg-sf-warning-line">Dismiss</button></output> : null}
-      {readyEmail === actorEmail && <DataFreshnessNotice key={actorEmail} canAct={hasAnyStockFlowRole(roles, ['administrator', 'management'])} />}
+      {readyEmail === actorEmail && <DataFreshnessNotice key={actorEmail} canAct={hasAnyStockFlowRole(roles, ['administrator', 'management'])} showEconomics={surfaces.includes('economics')} />}
       {roleChangeMessage ? <output aria-live="polite" className="fixed inset-x-0 top-0 z-50 flex min-h-14 max-w-full items-center justify-between gap-2 border-b border-sf-warning-line bg-white px-3 py-1 text-sm shadow sm:px-6"><span className="min-w-0 flex-1">{roleChangeMessage}</span><button type="button" onClick={() => window.location.reload()} className="min-h-11 shrink-0 rounded-lg bg-sf-ink px-4 font-bold text-white">Reload</button><button type="button" onClick={() => setRoleChangeMessage('')} className="min-h-11 shrink-0 rounded-lg px-2 text-sf-muted">Later</button></output> : null}
       {surface === 'today' && todayOpenError ? <p role="alert" className="px-4 text-sm text-sf-danger">{todayOpenError}</p> : null}
       <section className="min-h-0 flex-1 overflow-hidden">

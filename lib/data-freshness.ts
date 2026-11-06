@@ -4,6 +4,26 @@ const minute = 60_000;
 const day = 24 * 60 * minute;
 const istOffset = 330 * minute;
 
+export function isIsoInstant(value: unknown): value is string {
+  // Date.parse alone guesses dates for junk and accepts machine-local times.
+  return typeof value === 'string' && /^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}(?:\.\d+)?(?:Z|[+-]\d{2}:\d{2})$/.test(value) && Number.isFinite(Date.parse(value));
+}
+
+export function isEconomicsStatus(status: unknown): status is { state: 'ok' | 'paused'; pendingSince: string | null } {
+  return !!status && typeof status === 'object' && !Array.isArray(status) &&
+    'state' in status && (status.state === 'ok' || status.state === 'paused') &&
+    'pendingSince' in status && (status.pendingSince === null || isIsoInstant(status.pendingSince));
+}
+
+export function economicsNotice(status: unknown, now: Date): string | null {
+  if (!isEconomicsStatus(status)) return null;
+  if (status.state === 'paused') return 'Economics update is paused. Figures may be out of date.';
+  if (status.pendingSince !== null && now.getTime() - Date.parse(status.pendingSince) >= 30 * minute) {
+    return 'Economics update is waiting. Figures may be out of date.';
+  }
+  return null;
+}
+
 export function officeMinutesBetween(from: Date, to: Date): number {
   const start = from.getTime(), end = to.getTime();
   if (!Number.isFinite(start) || !Number.isFinite(end) || end <= start) return 0;
@@ -20,9 +40,7 @@ export function officeMinutesBetween(from: Date, to: Date): number {
 }
 
 export function dataFreshness(sourceUpdatedAt: string | null | undefined, now: Date): DataFreshness | null {
-  // Require the ISO instant contract: Date.parse can guess a year for junk such
-  // as "06 Nov, 09:11 PM", or interpret a zone-less value in the machine zone.
-  if (!sourceUpdatedAt || !/^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}(?:\.\d+)?(?:Z|[+-]\d{2}:\d{2})$/.test(sourceUpdatedAt)) return null;
+  if (!isIsoInstant(sourceUpdatedAt)) return null;
   const source = new Date(sourceUpdatedAt);
   const elapsed = now.getTime() - source.getTime();
   if (!Number.isFinite(elapsed) || elapsed < 0) return null;

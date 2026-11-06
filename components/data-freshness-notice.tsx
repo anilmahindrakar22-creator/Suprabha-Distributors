@@ -2,10 +2,11 @@
 
 import { useEffect, useState } from 'react';
 import { TriangleAlert } from 'lucide-react';
-import { dataFreshness } from '@/lib/data-freshness';
+import { dataFreshness, economicsNotice, isEconomicsStatus, isIsoInstant } from '@/lib/data-freshness';
 
-export function DataFreshnessNotice({ canAct }: { canAct: boolean }) {
+export function DataFreshnessNotice({ canAct, showEconomics }: { canAct: boolean; showEconomics: boolean }) {
   const [value, setValue] = useState<string | null | undefined>();
+  const [economicsStatus, setEconomicsStatus] = useState<unknown>();
   const [, setTick] = useState(0);
   useEffect(() => {
     let active = true, running = false, lastLoad: number | null = null;
@@ -23,9 +24,11 @@ export function DataFreshnessNotice({ canAct }: { canAct: boolean }) {
         if (!('operations' in body) || !body.operations || typeof body.operations !== 'object' || Array.isArray(body.operations) ||
           !Object.values(body.operations).every(count => typeof count === 'number' && Number.isFinite(count))) return;
         const source = (body as { sourceUpdatedAt?: unknown }).sourceUpdatedAt;
-        if (source !== undefined && source !== null && (typeof source !== 'string' ||
-          !/^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}(?:\.\d+)?(?:Z|[+-]\d{2}:\d{2})$/.test(source) || !Number.isFinite(Date.parse(source)))) return;
-        if (active) setValue(source as string | null | undefined);
+        const economics = (body as { economicsStatus?: unknown }).economicsStatus;
+        if (active) {
+          if (source === undefined || source === null || isIsoInstant(source)) setValue(source);
+          if (economics === null || isEconomicsStatus(economics)) setEconomicsStatus(economics);
+        }
       } catch { /* Keep the last good value; freshness must never interrupt work. */ }
       finally { running = false; }
     }
@@ -41,16 +44,21 @@ export function DataFreshnessNotice({ canAct }: { canAct: boolean }) {
     };
   }, []);
 
-  const freshness = dataFreshness(value, new Date());
-  if (!freshness) return null;
-  const tone = freshness.level === 'red'
+  const now = new Date();
+  const freshness = dataFreshness(value, now);
+  const economics = showEconomics ? economicsNotice(economicsStatus, now) : null;
+  if (!freshness && !economics) return null;
+  const tone = freshness?.level === 'red'
     ? 'border-sf-danger-line bg-sf-danger-soft text-sf-danger'
     : 'border-sf-warning-line bg-sf-warning-soft text-sf-warning';
   // oxlint-disable-next-line jsx-a11y/no-redundant-roles -- Keep the notice contract's explicit status role.
   return <output role="status" className={`flex shrink-0 items-center gap-2 border-b px-4 py-2 text-xs font-semibold sm:px-6 ${tone}`}>
     <TriangleAlert size={14} aria-hidden="true" className="shrink-0" />
-    <span className="min-w-0 break-words">{canAct
+    <span className="min-w-0 break-words">
+      {freshness && <span className="block">{canAct
       ? `Tally data last reached StockFlow ${freshness.ageLabel} ago. Check the office connector.`
-      : `Stock figures are from ${freshness.ageLabel} ago.`}</span>
+      : `Stock figures are from ${freshness.ageLabel} ago.`}</span>}
+      {economics && <span className="block">{economics}</span>}
+    </span>
   </output>;
 }

@@ -28,6 +28,12 @@ foreach($invalid in @('<!DOCTYPE ENVELOPE [<!ENTITY secret SYSTEM "file:///not-r
 [xml]$vouchers='<ENVELOPE><VOUCHER><GUID>voucher-guid-1</GUID><ALTERID>10</ALTERID><DATE>20260915</DATE><VOUCHERTYPENAME>Sales</VOUCHERTYPENAME><PARTYLEDGERNAME>Customer A</PARTYLEDGERNAME><ALLINVENTORYENTRIES.LIST><STOCKITEMNAME>Reagent A</STOCKITEMNAME><ACTUALQTY>70 pack</ACTUALQTY><AMOUNT>50000.00</AMOUNT></ALLINVENTORYENTRIES.LIST><ALLLEDGERENTRIES.LIST><LEDGERNAME>Customer A</LEDGERNAME><ISPARTYLEDGER>Yes</ISPARTYLEDGER><AMOUNT>-59000.00</AMOUNT></ALLLEDGERENTRIES.LIST><ALLLEDGERENTRIES.LIST><LEDGERNAME>Sales</LEDGERNAME><AMOUNT>50000.00</AMOUNT></ALLLEDGERENTRIES.LIST><ALLLEDGERENTRIES.LIST><LEDGERNAME>GST</LEDGERNAME><AMOUNT>9000.00</AMOUNT></ALLLEDGERENTRIES.LIST></VOUCHER></ENVELOPE>'
 $from=[datetime]'2026-09-01';$to=[datetime]'2026-10-01'
 $result=Convert-TallyEconomicEvidence $company $ledgers $products $vouchers $from $to
+[xml]$vouchersWithCounts='<ENVELOPE><BODY><DATA><CMPINFO><VOUCHER>917</VOUCHER></CMPINFO><COLLECTION>'+$vouchers.ENVELOPE.InnerXml+'</COLLECTION></DATA></BODY></ENVELOPE>'
+foreach($coverageMode in @($false,$true)){
+    $withoutCounts=Convert-TallyEconomicEvidence $company $ledgers $products $vouchers $from $to -SalesCoverage:$coverageMode
+    $withCounts=Convert-TallyEconomicEvidence $company $ledgers $products $vouchersWithCounts $from $to -SalesCoverage:$coverageMode
+    Assert-Economic ($withCounts.vouchers.Count -eq 1 -and ($withCounts.vouchers | ConvertTo-Json -Depth 20 -Compress) -ceq ($withoutCounts.vouchers | ConvertTo-Json -Depth 20 -Compress)) 'CMPINFO counter changed real voucher evidence or was converted'
+}
 $debitLedgers=ConvertFrom-TallyEconomicXml ($ledgers.OuterXml.Replace('</ENVELOPE>','<LEDGER NAME="Purchase"><GUID>purchase-guid-1</GUID><PARENT>Purchase Accounts</PARENT></LEDGER></ENVELOPE>'))
 [xml]$purchaseDebit=$vouchers.OuterXml.Replace('<VOUCHERTYPENAME>Sales</VOUCHERTYPENAME>','<VOUCHERTYPENAME>Debit Note</VOUCHERTYPENAME>').Replace('<LEDGERNAME>Sales</LEDGERNAME>','<LEDGERNAME>Purchase</LEDGERNAME>')
 $nativeDebit=Convert-TallyEconomicEvidence $company $debitLedgers $products $purchaseDebit $from $to
@@ -192,7 +198,7 @@ function Invoke-Tally([string]$Body,[int]$TimeoutSeconds,[string]$MetricName){
         if($date -lt [datetime]::new((Get-Date).Year,(Get-Date).Month,1).AddMonths(-1).ToString('yyyyMMdd')){
             $unrelated=($sale+$purchase).Replace('Reagent A','Unrelated').Replace('sale-'+$date,'unrelated-sale-'+$date).Replace('purchase-'+$date,'unrelated-purchase-'+$date)
         }
-        return '<ENVELOPE>'+$collection+$sale+$purchase+$unrelated+'</ENVELOPE>'
+        return '<ENVELOPE><BODY><DATA><CMPINFO><VOUCHER>917</VOUCHER></CMPINFO><COLLECTION>'+$sale+$purchase+$unrelated+'</COLLECTION></DATA></BODY></ENVELOPE>'
     }
     return '<ENVELOPE>'+$collection+'</ENVELOPE>'
 }
@@ -246,8 +252,29 @@ Write-Output 'PASS: IST coverage window, inclusive Tally end, daily schedule, ca
 $controlLedger='<LEDGER NAME="Sales"><GUID>sales-guid</GUID><OPENINGBALANCE>1000000.00</OPENINGBALANCE><CLOSINGBALANCE>1250000.00</CLOSINGBALANCE></LEDGER>'
 $control=Convert-TallySalesControlMonth ([xml]('<ENVELOPE><COLLECTION>'+$controlLedger+'</COLLECTION></ENVELOPE>')) $window.From
 Assert-Economic ($control.month -eq '2026-07' -and $control.salesLedgers[0].openingPaise -eq 100000000 -and $control.salesLedgers[0].closingPaise -eq 125000000 -and $control.salesLedgers[0].netPaise -eq 25000000) 'Sales movement sign or opening subtraction is incorrect'
+$controlLedgers=(1..3 | ForEach-Object {$controlLedger.Replace('NAME="Sales"','NAME="Sales '+$_+'"').Replace('sales-guid','sales-guid-'+$_)}) -join ''
+$controlExport='<ENVELOPE><BODY><DATA><CMPINFO><LEDGER>4</LEDGER></CMPINFO><COLLECTION>'+$controlLedgers+'</COLLECTION></DATA></BODY></ENVELOPE>'
+$countedControl=Convert-TallySalesControlMonth ([xml]$controlExport) $window.From
+$plainControl=Convert-TallySalesControlMonth ([xml]('<ENVELOPE><COLLECTION>'+$controlLedgers+'</COLLECTION></ENVELOPE>')) $window.From
+Assert-Economic ($countedControl.salesLedgers.Count -eq 3 -and ($countedControl | ConvertTo-Json -Depth 5 -Compress) -ceq ($plainControl | ConvertTo-Json -Depth 5 -Compress)) 'CMPINFO ledger counter changed real sales controls or was converted'
 $reversed=Convert-TallySalesControlMonth ([xml]('<ENVELOPE><COLLECTION>'+$controlLedger.Replace('1250000.00','750000.00')+'</COLLECTION></ENVELOPE>')) $window.From
 Assert-Economic ($reversed.salesLedgers[0].netPaise -eq -25000000) 'Returns were made positive by absolute value'
+foreach($closingElement in @('<CLOSINGBALANCE />','<CLOSINGBALANCE>   </CLOSINGBALANCE>','')){
+    $blankClosingLedger=$controlLedger.Replace('<CLOSINGBALANCE>1250000.00</CLOSINGBALANCE>',$closingElement)
+    $blankClosing=Convert-TallySalesControlMonth ([xml]('<ENVELOPE><COLLECTION>'+$blankClosingLedger+'</COLLECTION></ENVELOPE>')) $window.From
+    Assert-Economic ($blankClosing.salesLedgers[0].openingPaise -eq 100000000 -and $blankClosing.salesLedgers[0].closingPaise -eq 0 -and $blankClosing.salesLedgers[0].netPaise -eq -100000000) 'Empty, whitespace or missing closing balance did not produce zero closing and negative opening movement'
+}
+foreach($openingElement in @('<OPENINGBALANCE />','<OPENINGBALANCE>   </OPENINGBALANCE>','')){
+    $blankOpeningLedger=$controlLedger.Replace('<OPENINGBALANCE>1000000.00</OPENINGBALANCE>',$openingElement)
+    $blankOpening=Convert-TallySalesControlMonth ([xml]('<ENVELOPE><COLLECTION>'+$blankOpeningLedger+'</COLLECTION></ENVELOPE>')) $window.From
+    Assert-Economic ($blankOpening.salesLedgers[0].openingPaise -eq 0 -and $blankOpening.salesLedgers[0].closingPaise -eq 125000000 -and $blankOpening.salesLedgers[0].netPaise -eq 125000000) 'Empty, whitespace or missing opening balance did not produce zero opening and closing movement'
+}
+foreach($balanceAmount in @('1000000.00','1250000.00')){
+    $invalidBalanceLedger=$controlLedger.Replace($balanceAmount,'abc')
+    $rejected=$false;try{Convert-TallySalesControlMonth ([xml]('<ENVELOPE><COLLECTION>'+$invalidBalanceLedger+'</COLLECTION></ENVELOPE>')) $window.From | Out-Null}catch{$rejected=$_.Exception.Message -eq 'Economic amount is not exact decimal currency.'}
+    Assert-Economic $rejected 'Sales control accepted a nonnumeric balance'
+}
+Write-Output 'PASS: blank and missing control balances become zero; nonnumeric balances fail'
 $tooManyLedgers='<ENVELOPE><COLLECTION>'+($controlLedger*501)+'</COLLECTION></ENVELOPE>'
 $rejected=$false;try{Convert-TallySalesControlMonth ([xml]$tooManyLedgers) $window.From | Out-Null}catch{$rejected=$_.Exception.Message -eq 'Sales control month exceeds 500 ledgers'}
 Assert-Economic $rejected 'Sales control bound was not enforced'
@@ -263,20 +290,22 @@ function Invoke-Tally([string]$Body,[int]$TimeoutSeconds,[string]$MetricName){
     $script:tallyRequests.Add($Body)
     $content=''
     if($Body -match '<TYPE>Company</TYPE>'){$content='<COMPANY NAME="SUPRABHA DISTRIBUTORS"><GUID>company-guid-1</GUID></COMPANY>'}
-    elseif($Body -match '<ID>SalesCoverageLedgers</ID>'){$content=$controlLedger}
+    elseif($Body -match '<ID>SalesCoverageLedgers</ID>'){return $controlExport}
     elseif($Body -match '<TYPE>Ledger</TYPE>'){$content=$ledgers.ENVELOPE.InnerXml}
     elseif($Body -match '<TYPE>StockItem</TYPE>'){$content=$products.ENVELOPE.InnerXml}
-    elseif($Body -match '<ID>EconomicVouchers</ID>'){$content=$script:coverageVoucherXml}
+    elseif($Body -match '<ID>EconomicVouchers</ID>'){return '<ENVELOPE><BODY><DATA><CMPINFO><VOUCHER>917</VOUCHER></CMPINFO><COLLECTION>'+$script:coverageVoucherXml+'</COLLECTION></DATA></BODY></ENVELOPE>'}
     return '<ENVELOPE><COLLECTION>'+$content+'</COLLECTION></ENVELOPE>'
 }
 $coverage=Read-TallySalesCoverage 'SUPRABHA DISTRIBUTORS' @{} @{} $coverageNow
 Assert-Economic ($coverage.economicEvidence.purpose -eq 'sales_coverage' -and $coverage.economicEvidence.completeWindow -and $coverage.economicEvidence.vouchers.Count -eq 3) 'Coverage dropped non-economic or cancelled vouchers, or retained an optional voucher'
+Assert-Economic (@($coverage.economicEvidence.vouchers | Where-Object {-not $_.sourceId}).Count -eq 0) 'Coverage converted the CMPINFO voucher counter'
 Assert-Economic (@($coverage.economicEvidence.vouchers | Where-Object sourceId -eq 'optional').Count -eq 0) 'Coverage retained an optional voucher'
 $coverageVersion=[datetimeoffset]::MinValue
 Assert-Economic ([datetimeoffset]::TryParseExact($coverage.economicEvidence.sourceVersion,'o',[Globalization.CultureInfo]::InvariantCulture,[Globalization.DateTimeStyles]::None,[ref]$coverageVersion)) 'Coverage sourceVersion is not an ISO timestamp'
 Assert-Economic (@($coverage.economicEvidence.vouchers | Where-Object {$_.date -lt '2026-07-01' -or $_.date -ge '2026-10-01'}).Count -eq 0) 'Coverage included dates outside its window'
 Assert-Economic (@($coverage.economicEvidence.vouchers | Where-Object cancelled).Count -eq 1 -and @($coverage.economicEvidence.vouchers | Where-Object amountStatus -eq 'unverified').Count -eq 1) 'Coverage lost cancellation or unverified evidence'
 Assert-Economic ($coverage.salesControlTotals.months.Count -eq 3 -and $coverage.salesControlTotals.sourceVersion -eq $coverage.economicEvidence.sourceVersion -and -not $coverage.salesControlTotals.months[0].Contains('customers')) 'Controls lost generation binding or guessed customer controls'
+Assert-Economic (@($coverage.salesControlTotals.months | Where-Object {$_.salesLedgers.Count -ne 3}).Count -eq 0) 'Coverage monthly controls counted the CMPINFO ledger counter'
 $controlRequests=@($script:tallyRequests | Where-Object {$_ -match '<ID>SalesCoverageLedgers</ID>'})
 Assert-Economic ($controlRequests.Count -eq 3 -and $controlRequests[0] -match '<SVFROMDATE TYPE="Date">20260701</SVFROMDATE>' -and $controlRequests[0] -match '<SVTODATE TYPE="Date">20260731</SVTODATE>' -and $controlRequests[0] -match '<CHILDOF>Sales Accounts</CHILDOF><BELONGSTO>Yes</BELONGSTO>') 'Monthly controls did not request the native group and period'
 foreach($badDate in @('20260630','20261001')){
@@ -284,9 +313,18 @@ foreach($badDate in @('20260630','20261001')){
     $rejected=$false;try{Read-TallySalesCoverage 'SUPRABHA DISTRIBUTORS' @{} @{} $coverageNow | Out-Null}catch{$rejected=$_.Exception.Message -eq 'Tally ignored the sales coverage date window.'}
     Assert-Economic $rejected 'Coverage accepted out-of-window source vouchers'
 }
-$script:coverageVoucherXml=$vouchers.ENVELOPE.InnerXml*1801
+foreach($badDate in @('','invalid')){
+    $script:coverageVoucherXml=$vouchers.ENVELOPE.InnerXml.Replace('20260915',$badDate)
+    $rejected=$false;try{Read-TallySalesCoverage 'SUPRABHA DISTRIBUTORS' @{} @{} $coverageNow | Out-Null}catch{$rejected=$_.Exception.InnerException -is [FormatException]}
+    Assert-Economic $rejected 'Coverage accepted a real voucher with an empty or malformed DATE'
+}
+$script:coverageVoucherXml=(1..1800 | ForEach-Object {$vouchers.ENVELOPE.InnerXml.Replace('voucher-guid-1','bounded-'+$_)}) -join ''
+$boundedCoverage=Read-TallySalesCoverage 'SUPRABHA DISTRIBUTORS' @{} @{} $coverageNow
+Assert-Economic ($boundedCoverage.economicEvidence.vouchers.Count -eq 1800 -and @($boundedCoverage.economicEvidence.vouchers | Where-Object amountStatus -eq 'verified').Count -eq 1800) 'Coverage counted CMPINFO toward the 1800 limit or changed real voucher evidence'
+$script:coverageVoucherXml+=$vouchers.ENVELOPE.InnerXml
 $rejected=$false;try{Read-TallySalesCoverage 'SUPRABHA DISTRIBUTORS' @{} @{} $coverageNow | Out-Null}catch{$rejected=$_.Exception.Message -eq 'Sales coverage window exceeds 1800 vouchers'}
 Assert-Economic $rejected 'Coverage truncated or accepted more than 1800 vouchers'
+Write-Output 'PASS: CMPINFO voucher counter excluded from conversion, coverage and 1800 limit; real empty or malformed dates fail'
 Write-Output 'PASS: ISO coverage version bound to controls; optional vouchers skipped; accounting-only and cancelled vouchers retained; bounds and dates'
 
 # Extract only the real transport function; never start the dashboard or contact Tally.
