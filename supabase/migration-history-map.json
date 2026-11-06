@@ -1326,6 +1326,13 @@
       "remoteVersion": null,
       "remoteSha256": null,
       "status": "not_deployed"
+    },
+    {
+      "localFile": "20261117090000_supplier_prices_safe_delete.sql",
+      "localSha256": "abe526879d911dfcafbb7330bc756244691dea1af634f47ad6432061b7a080ef",
+      "remoteVersion": null,
+      "remoteSha256": null,
+      "status": "not_deployed"
     }
   ],
   "liveCheck": {

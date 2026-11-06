@@ -96,6 +96,13 @@ Timestamp `20261116150000` is intentionally unused (shelved Service). Hashes are
 - **Server reads at production scale:** every read is under about 0.11 s median (`docs/PERFORMANCE-BASELINE-20261102.md`).
 - **Design reviews:** done by Claude per package (phone screenshots), recorded in the handover.
 
+## 4a. Production follow-up, 6 Nov 2026
+The 37 migrations, Edge, Worker and connector are live. The connector upload then failed, so the data is still from 31 Oct.
+- **Older problem:** uploads had failed since 1 Nov on the save's 20 s limit. `ANALYZE` on production cleared the timeout.
+- **Release bug:** the upload then failed with `DELETE requires a WHERE clause`. API sessions load `safeupdate`; `20261029100000_supplier_purchase_orders` added a bare delete. Local Postgres doesn't load `safeupdate`, and acceptance receives no connector uploads, so nothing caught it.
+- **Fix:** one more migration, `20261117090000_supplier_prices_safe_delete`: `where true` on that delete, and `stockflow_sync_snapshot` limit 20 s to 24 s (Edge aborts at 25 s). Apply it to acceptance, then production. No Edge, Worker or connector change.
+- **Evidence (Claude, local):** real pending payload on the 12:57 production dump plus all 38 migrations saved in 3.5 s. Deployment-order rehearsal exit 0. Preflight 40/40. `safeupdate` can't be loaded locally, so one real upload on production is the only proof of the delete fix.
+
 ## 5. Smoke checks (at most 6, production, after step 4)
 1. **Orders:** urgent and high orders come first, and the Recent chip works. Requests → To order lists items; after the connector's first upload, items show a lowest supplier.
 2. **Today** opens for an administrator. Record the server time of `get_today`; the local baseline is 105 ms.

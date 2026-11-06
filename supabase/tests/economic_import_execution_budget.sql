@@ -32,7 +32,7 @@ begin
   or not has_function_privilege('service_role','public.stockflow_sync_snapshot(jsonb)','EXECUTE') then
   raise exception 'Snapshot RPC access expanded';end if;
  if not exists(select 1 from pg_proc where oid='public.stockflow_sync_snapshot(jsonb)'::regprocedure and not prosecdef
-  and proconfig@>array['statement_timeout=20s','search_path=pg_catalog, public']) then raise exception 'Snapshot budget/safe invoker metadata missing';end if;
+  and proconfig@>array['statement_timeout=24s','search_path=pg_catalog, public']) then raise exception 'Snapshot budget/safe invoker metadata missing';end if;
  if not exists(select 1 from pg_proc where oid='public.stockflow_economics_gateway(text,text,text,jsonb)'::regprocedure
   and proconfig@>array['statement_timeout=20s']) then raise exception 'Economics command budget missing';end if;
  if (select count(*) from private.stockflow_economic_runs)<>(select runs+1 from execution_budget_before) then raise exception 'First import did not publish exactly once';end if;
