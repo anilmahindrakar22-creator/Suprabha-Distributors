@@ -30,12 +30,12 @@ This document replaces the separate RELEASE TARGET lists for train 1 (`claude/tr
    - Follow `docs/ROLE-WALKTHROUGH-ACCEPTANCE.md`. The owner signs in with a spare login; Codex never handles credentials.
    - A FAIL that shows prices or cost to a role that must not see them **stops the release**.
    - **Result (5 Nov):** all eight roles walked by the owner, and no prohibited money exposure was reported. These screen checks are owner-reported, because browser control timed out; order states are database-verified. Fresh price flow on `SO/26-27/0039`: Accounts ₹250, Management changed to ₹251 and approved. The spare login is back on Accounts only (read-only check, 5 Nov).
-   - **Three findings** (Review order, Enter price focus, price guidance) are fixed in `c29604b`. They still need the owner's quick look on acceptance after the integration chat deploys that commit.
+   - **Three findings** (Review order, Enter price focus, price guidance) are fixed in `c29604b`. Deployed to acceptance on 5 Nov (Worker `66d5db35-d33e-4167-9375-99ade46b486f`). **The owner checked all three there on 6 Nov** (owner-reported). Precondition 1 is met.
 2. **The integration chat's own gate on the final SHA**, per the train rule:
    - `pnpm test:connector` with pwsh 7, which Claude cannot run;
    - CI.
 3. **Backup** per `docs/BACKUP-RESTORE-RUNBOOK.md`, taken just before the production migrations.
-4. **Owner's final go-ahead** for the production window: **given 3 Nov** ("We will release it today"). Run outside billing hours, tonight.
+4. **Owner's final go-ahead** for the production window: the 3 Nov go-ahead ("We will release it today") has **expired**. A new one is needed, naming the night. Run outside billing hours.
 5. **Economics parity** (train 2 condition): run `supabase/scripts/economics-candidate-parity.sql` (begin, then rollback; it holds the economics lock) after migration `20261030110000`.
    - Run it on acceptance first. On production it is covered by the 3 Nov release go-ahead; run it outside billing hours.
    - Production has 7,573 lines, inside the 10,000 limit.
