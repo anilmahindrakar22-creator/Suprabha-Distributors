@@ -37,7 +37,7 @@ begin
   perform pg_temp.control_source_assert(result ? 'operations' and result ? 'orderRevision',
    'Existing order summary keys missing for '||actor);
   perform pg_temp.control_source_assert((select array_agg(key order by key) from jsonb_object_keys(result) key)
-   =array['operations','operationsDate','orderRevision','sourceUpdatedAt'],
+   =array['economicsStatus','operations','operationsDate','orderRevision','sourceUpdatedAt'],
    'Unexpected order summary keys for '||actor);
  end loop;
 end $test$;

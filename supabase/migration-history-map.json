@@ -1340,6 +1340,13 @@
       "remoteVersion": null,
       "remoteSha256": null,
       "status": "not_deployed"
+    },
+    {
+      "localFile": "20261118100000_deferred_economic_rebuild.sql",
+      "localSha256": "81af92ac5d1e80a30b4a50a9f638a2f3e2a5311a6da1f99556103c48dc5058b2",
+      "remoteVersion": null,
+      "remoteSha256": null,
+      "status": "not_deployed"
     }
   ],
   "liveCheck": {
