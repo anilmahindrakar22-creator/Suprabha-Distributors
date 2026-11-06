@@ -39,7 +39,7 @@ function fullSheet(sales = false) {
     recentOrders: [{ orderId: '88111111-1111-4111-8111-111111111113', number: 'SF-099', stage: 'delivered', date: '2026-10-28T00:00:00Z', ...(sales ? {} : { valuePaise: 150000 }) }], contacts: { total: 3, champions: 1 },
   };
 }
-async function fixture(page: Page, options: { labAccess?: boolean; frame?: boolean; sales?: boolean; empty?: boolean; located?: boolean; approximate?: boolean; uncertified?: boolean; townOnly?: boolean; dueOn?: string; contacts?: { total: number; champions: number }; labSize?: { testsPerDay: number; specialTestsPerMonth?: number; basis: 'lab_said' | 'observed'; reportedBy: string; reportedOn: string; statedMonthlySpendPaise?: number; spendReportedOn?: string } } = {}) {
+async function fixture(page: Page, options: { labAccess?: boolean; frame?: boolean; sales?: boolean; empty?: boolean; located?: boolean; approximate?: boolean; uncertified?: boolean; townOnly?: boolean; groupsOnly?: typeof approxGroups; dueOn?: string; contacts?: { total: number; champions: number }; labSize?: { testsPerDay: number; specialTestsPerMonth?: number; basis: 'lab_said' | 'observed'; reportedBy: string; reportedOn: string; statedMonthlySpendPaise?: number; spendReportedOn?: string } } = {}) {
   const posts: Record<string, unknown>[] = []; const reads: URL[] = [];
   let saved = false; let labSizeSaved = false;
   await page.clock.setFixedTime(new Date('2026-10-30T06:00:00Z'));
@@ -63,7 +63,7 @@ async function fixture(page: Page, options: { labAccess?: boolean; frame?: boole
     if (url.searchParams.has('customer')) return route.fulfill({ json: { ...(options.empty ? base : fullSheet(options.sales)), ...(labSizeSaved ? { labSize: { testsPerDay: 80, ...(posts.findLast(post => post.action === 'record_lab_size')?.specialTestsPerMonth !== undefined ? { specialTestsPerMonth: posts.findLast(post => post.action === 'record_lab_size')!.specialTestsPerMonth } : {}), basis: 'lab_said', reportedBy: options.sales ? 'sales@example.test' : 'manager@example.test', reportedOn: new Date().toISOString().slice(0, 10), ...(options.sales ? {} : { statedMonthlySpendPaise: 5000000, spendReportedOn: new Date().toISOString().slice(0, 10) }) } } : options.labSize ? { labSize: options.labSize } : {}), ...(options.dueOn ? { tiles: { ...fullSheet(options.sales).tiles, nextActionDue: options.dueOn } } : {}), ...(options.contacts ? { contacts: options.contacts } : {}), ...(options.located || saved ? { location: { precision: 'pin', lat: saved ? Number(posts.at(-1)?.latitude) : 17.3, lng: saved ? Number(posts.at(-1)?.longitude) : 76.8, version: saved ? 3 : 2 } } : options.approximate ? { location: { approximate: { pinCode: '585102' } } } : {}) } });
     if (url.searchParams.has('pin')) return route.fulfill({ json: { page: Number(url.searchParams.get('page')), pageSize: 20, total: 77, rows: Array.from({ length: Number(url.searchParams.get('page')) === 4 ? 17 : 20 }, (_, i) => ({ customerId: i === 0 ? customerId : `pin-lab-${i}`, name: i === 0 ? url.searchParams.get('q') ? 'PIN search match Lab' : name : `PIN Lab ${i}`, city: 'Kalaburagi', tone: 'red' })) } });
     if (url.searchParams.has('notOnMap')) return route.fulfill({ json: { page: Number(url.searchParams.get('page')), pageSize: 20, total: 21, rows: [{ customerId, name: url.searchParams.get('q') ? 'Search match Lab' : name, city: 'Bidar' }] } });
-    return route.fulfill({ json: { coverage: { placed: 4, approx: 96, total: 121 }, pins: mapPins, approxGroups, notOnMapCount: 21, freshness: { calculatedAt: '2026-10-30T05:12:00Z', certified: !options.uncertified, ...(options.sales ? {} : { walletAsOf: '2026-10-12' }) } } });
+    return route.fulfill({ json: { coverage: { placed: 4, approx: 96, total: 121 }, pins: options.groupsOnly ? [] : mapPins, approxGroups: options.groupsOnly ?? approxGroups, notOnMapCount: 21, freshness: { calculatedAt: '2026-10-30T05:12:00Z', certified: !options.uncertified, ...(options.sales ? {} : { walletAsOf: '2026-10-12' }) } } });
   });
   if (options.frame) {
     // Same frame startup mocks as today.spec.ts.
@@ -231,7 +231,6 @@ for (const width of [375, 1280]) test.describe(`Customer map at ${width}px`, () 
   });
   test('PIN groups render dashed circles, counts, accessible labels and the existing order badge', async ({ page }) => {
     await fixture(page);
-    await page.getByRole('button', { name: 'Wallet', exact: true }).click();
     for (const group of approxGroups) {
       const label = `PIN ${group.pinCode}, approx, ${group.count} labs, ${meanings[tones.indexOf(group.tone as typeof tones[number])]}`;
       const marker = page.getByRole('button', { name: label, exact: true });
@@ -249,7 +248,6 @@ for (const width of [375, 1280]) test.describe(`Customer map at ${width}px`, () 
   });
   test('PIN list searches, requests page 2, opens the approximate sheet and reuses the Pin here chooser', async ({ page }) => {
     const { reads } = await fixture(page, { approximate: true });
-    await page.getByRole('button', { name: 'Wallet', exact: true }).click();
     await page.getByRole('button', { name: groupLabel, exact: true }).click();
     const list = page.getByRole('region', { name: 'PIN 585102 · approx · 77 labs', exact: true });
     await expect(list.getByRole('heading', { name: 'PIN 585102 · approx · 77 labs' })).toBeVisible();
@@ -272,8 +270,27 @@ for (const width of [375, 1280]) test.describe(`Customer map at ${width}px`, () 
     expect(await sheet.evaluate(el => el.scrollWidth <= el.clientWidth)).toBe(true);
     expect(await page.evaluate(() => document.documentElement.scrollWidth <= innerWidth)).toBe(true);
   });
+  test('financial map opens with amber and red groups and recovers from an empty Wallet filter', async ({ page }) => {
+    const groups = [approxGroups[0], { ...approxGroups[1], tone: 'amber', count: 19 }];
+    await fixture(page, { groupsOnly: groups });
+    const filters = page.getByLabel('Map filters', { exact: true });
+    const markers = page.locator('.customer-map-group');
+    const status = page.getByRole('status').filter({ hasText: 'No labs in Wallet on this part of the map.' });
+    await expect(filters.locator('button[aria-pressed="true"]')).toHaveCount(0);
+    await expect(markers).toHaveCount(groups.length);
+    for (const marker of await markers.all()) await expect(marker).toBeVisible();
+    await filters.getByRole('button', { name: 'Wallet', exact: true }).click();
+    await expect(page.locator('.customer-map-marker, .customer-map-group')).toHaveCount(0);
+    await expect(status).toBeVisible();
+    await status.getByRole('button', { name: 'Show all', exact: true }).click();
+    await expect(markers).toHaveCount(groups.length);
+    for (const marker of await markers.all()) await expect(marker).toBeVisible();
+    await expect(status).toHaveCount(0);
+    await expect(filters.locator('button[aria-pressed="true"]')).toHaveCount(0);
+  });
   test('tone chips filter PIN groups without inventing member counts for Orders', async ({ page }) => {
     await fixture(page);
+    await page.getByRole('button', { name: 'Wallet', exact: true }).click();
     await expect(page.locator('.customer-map-group')).toHaveCount(1);
     await expect(page.getByRole('button', { name: groupLabel, exact: true })).toHaveCount(0);
     const filters = page.getByLabel('Map filters', { exact: true });
@@ -387,7 +404,6 @@ for (const width of [375, 1280]) test.describe(`Customer map at ${width}px`, () 
   });
   test('pins show tones, focus size, order badge, attribution and an always-visible legend', async ({ page }) => {
     const { reads } = await fixture(page);
-    await page.getByRole('button', { name: 'Wallet', exact: true }).click();
     const legend = page.getByRole('complementary', { name: 'Map legend' });
     for (let i = 0; i < tones.length; i++) {
       const marker = page.getByRole('button', { name: `${mapPins[i].name}, ${meanings[i]}`, exact: true });
@@ -397,6 +413,7 @@ for (const width of [375, 1280]) test.describe(`Customer map at ${width}px`, () 
     await expect(focus).toContainText('2');
     expect(await focus.evaluate(el => el.querySelector('span')?.style.width)).toBe('44px');
     await expect(page.getByRole('link', { name: 'OpenStreetMap contributors' })).toBeVisible();
+    await page.waitForTimeout(500); // Let the map's 300 ms debounced read finish before counting.
     const count = reads.length;
     await page.getByRole('button', { name: 'Orders', exact: true }).click();
     await expect(page.locator('.customer-map-marker')).toHaveCount(1); expect(reads.length).toBe(count);
