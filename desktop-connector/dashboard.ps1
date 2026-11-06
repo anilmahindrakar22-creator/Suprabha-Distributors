@@ -18,6 +18,8 @@ $customerPath = Join-Path $stateDirectory 'customer-master-v1.json'
 $catalogPath = Join-Path $stateDirectory 'catalog-master-v1.json'
 $uploadStatePath = Join-Path $stateDirectory 'cloud-upload-state-v1.json'
 $salesCoverageStatePath = Join-Path $stateDirectory 'sales-coverage-state-v1.json'
+$salesCoverageBackfillPath = Join-Path $stateDirectory 'sales-coverage-backfill-v1.json'
+$script:pendingBackfillEntry = $null
 $script:salesCoverageState = Read-SalesCoverageState $salesCoverageStatePath $companyName
 $script:salesCoverageAttemptDate = $null
 $script:salesCoverageUploadFailures = 0
@@ -99,6 +101,10 @@ function Write-ConnectorHealth([string]$Message) {
 
 function Remove-PendingSalesCoverage([string]$Reason) {
     if ($script:pendingUpload.economicEvidence.purpose -ne 'sales_coverage') { return }
+    if ($script:pendingUpload.economicEvidence.backfillEntry) {
+        Write-ConnectorHealth "$([datetimeoffset]::Now.ToString('o')) request=sales_coverage_backfill status=retry entry=$($script:pendingUpload.economicEvidence.backfillEntry)"
+    }
+    $script:pendingBackfillEntry = $null
     $script:salesCoverageAttemptDate = (Get-SalesCoverageClock).ToString('yyyy-MM-dd')
     $script:economicSyncError = 'Sales coverage upload dropped after repeated failure'
     foreach ($key in @('economicEvidence','salesControlTotals','salesCoverageDate')) {
@@ -184,6 +190,16 @@ function Publish-CloudSnapshot([string]$Json) {
         }catch{
             Write-ConnectorHealth "$([datetimeoffset]::Now.ToString('o')) request=sales_coverage_state status=failed"
             return $false
+        }
+        if ($uploaded.economicEvidence.backfillEntry) {
+            $entry = [string]$uploaded.economicEvidence.backfillEntry
+            try {
+                Remove-SalesCoverageBackfillEntry $salesCoverageBackfillPath $entry
+                $script:pendingBackfillEntry = $null
+                Write-ConnectorHealth "$([datetimeoffset]::Now.ToString('o')) request=sales_coverage_backfill status=done entry=$entry"
+            } catch {
+                Write-ConnectorHealth "$([datetimeoffset]::Now.ToString('o')) request=sales_coverage_backfill status=failed entry=$entry"
+            }
         }
     }
     # Save coverage success before the generic receipt: a restart must not treat
@@ -511,7 +527,15 @@ function Read-ReorderData {
                 foreach($property in $voucherRoleDocument.PSObject.Properties){$voucherRoles[$property.Name]=[string]$property.Value}
             }
             if($coverageDue){
-                $coverage=Read-TallySalesCoverage $companyName $ledgerRoles $voucherRoles $coverageNow
+                $backfillNow=Get-NextSalesCoverageBackfill $salesCoverageBackfillPath $companyName
+                $script:pendingBackfillEntry=$null
+                if($backfillNow){
+                    $script:pendingBackfillEntry=$backfillNow.ToString('yyyy-MM-dd',[Globalization.CultureInfo]::InvariantCulture)
+                    $coverage=Read-TallySalesCoverage $companyName $ledgerRoles $voucherRoles -Now $backfillNow
+                    $coverage.economicEvidence.backfillEntry=$script:pendingBackfillEntry
+                }else{
+                    $coverage=Read-TallySalesCoverage $companyName $ledgerRoles $voucherRoles $coverageNow
+                }
                 $coverageDate=$istDate
                 # Restore the normal envelope on the next cycle, not after four hours.
                 $script:nextEconomicRead=Get-Date

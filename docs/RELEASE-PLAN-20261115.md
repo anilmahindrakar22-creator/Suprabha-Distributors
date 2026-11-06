@@ -31,24 +31,25 @@ The Market layer we just shipped has no data yet, and the 5-working-day office p
 - **`pg_cron`:** on both production and acceptance. The only job is the push job.
 - **Already shipped, so not in this plan:** Tally PO receipts and Contracts ending soon. Both design docs still say "next train".
 
-## 3. Correction: Feb–Oct certification can't be done yet
-The release package (section 7, step 2) and Claude's closing note offered "certify Feb–Oct" as an owner go-ahead. **No mechanism exists for that.**
-- Recover needs all 9 months certified: complete coverage and a matching reconciliation for each.
-- The connector only ever covers the last three complete months (`Get-SalesCoverageWindow`), and there is no backfill path.
-- Production coverage rows only start at 1 Aug.
-- Without a backfill, Recover stays empty until about May 2027.
+## 3. Feb–Oct certification (corrected and tested 6 Nov)
+The release package (section 7, step 2) offered "certify Feb–Oct" as an owner go-ahead, but no mechanism existed. Recover needs all 9 months certified, and the connector only covered the last 3 complete months.
 
-P4 builds the backfill.
+**Tested read-only against real Tally, loaded into a local copy of the 6 Nov backup, with the train's code:**
+- All 9 months: coverage complete, 0 blocking items, state `matches`, gap ₹0.00.
+- `stockflow_recover_read` reports `certified=true`.
+- Each coverage save took about 3 s locally.
 
-## 4. Before the train: Saturday 7 Nov, read-only
-The first sales coverage run is due tonight, at the first economics read after 22:00 IST (about 22:25, if the office PC stays on). It's the first real run of the heaviest upload through the 24 s save. If it fails 3 times it is dropped and normal uploads carry on, so it can't freeze the data. It retries the next night.
+**What stood in the way:**
+- Tally's `CMPINFO` summary has `VOUCHER` and `LEDGER` counters that were read as real rows. This caused the failed run at 22:28 on 6 Nov.
+- Tally leaves a zero closing balance blank.
+- About 1,050 Receipt, Payment, Contra and Journal vouchers had no classification, so they blocked coverage.
+- The app's net sales include invoice round-off (₹11–19 a month), which Tally books outside Sales Accounts. The gap equalled `roundingPaise` to the paisa in all 9 months.
+- No backfill existed. Now a queue file runs one older window a night; creating that file is the owner's go-ahead.
 
-Claude checks, with the package section 6 repeat:
-1. `request=sales_coverage` and `cloud_upload` lines for that cycle in `connector-health.log`.
-2. Rows in `private.stockflow_sales_control_totals`, and a `stockflow_sales_control_imports` row with `valid_months` set.
-3. `stockflow_sales_coverage_status` and `stockflow_sales_reconciliation` for Aug, Sep and Oct.
+This is local evidence. Production proof comes from the first real runs after release.
 
-If Aug–Oct don't match Tally, P4 waits. Fixing that difference comes first, and it may be the ₹100 September item.
+## 4. Tonight's run (6 Nov, done)
+The first coverage run started at 22:28 and failed in the connector on the `CMPINFO` date. Normal uploads carried on. It will fail the same way each night until the fixed connector is installed. That's harmless to data, but each failure logs one exception.
 
 ## 5. Packages
 | # | Package | Tier | Lane | Needs | Done when |
@@ -115,6 +116,18 @@ Checks for any design:
 - Add `ANALYZE` after migrations as a written deploy step. Add a nightly job only if P1 shows autoanalyze falls behind.
 - Add one synthetic upload through the acceptance Edge function. It goes through `safeupdate` and would have caught the 6 Nov bug. Synthetic data only; no production data on acceptance.
 - Add snapshot age and last `cloud_upload` to the pre-release checks.
+
+## 5a. Status, 6 Nov 23:10 IST
+| Package | State |
+| --- | --- |
+| P0 Full CI at `61a86db` | Passed: lint, types, connector, unit, build, 42 stock, 1,514 pricing, 20 offline, audit |
+| P1 Measure the save | Done |
+| P2 Rebuild out of the save | Committed `d290b41`, mode `inline`. Not yet proven under `pg_cron` |
+| P3 Freshness warning and Economics line | Committed `a381e59`, `e73bbeb`. 52 browser tests passed, design review passed |
+| P4 Coverage reader and backfill queue | Committed. All 4 connector suites passed; real Tally read passed |
+| P5 Small fixes | Committed `a381e59` |
+| Round-off in reconciliation (package F) | Built, NOT committed. Its new SQL test has a text-plus-JSON bug. Codex hit its usage limit until 00:20 on 7 Nov |
+| P6 Release gate fixes | Not started. The acceptance upload check needs a safer design: a made-up snapshot would overwrite acceptance data |
 
 ## 6. Calendar
 | Day | What happens |

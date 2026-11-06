@@ -303,7 +303,23 @@ Assert-Economic (@($coverage.economicEvidence.vouchers | Where-Object sourceId -
 $coverageVersion=[datetimeoffset]::MinValue
 Assert-Economic ([datetimeoffset]::TryParseExact($coverage.economicEvidence.sourceVersion,'o',[Globalization.CultureInfo]::InvariantCulture,[Globalization.DateTimeStyles]::None,[ref]$coverageVersion)) 'Coverage sourceVersion is not an ISO timestamp'
 Assert-Economic (@($coverage.economicEvidence.vouchers | Where-Object {$_.date -lt '2026-07-01' -or $_.date -ge '2026-10-01'}).Count -eq 0) 'Coverage included dates outside its window'
-Assert-Economic (@($coverage.economicEvidence.vouchers | Where-Object cancelled).Count -eq 1 -and @($coverage.economicEvidence.vouchers | Where-Object amountStatus -eq 'unverified').Count -eq 1) 'Coverage lost cancellation or unverified evidence'
+Assert-Economic (@($coverage.economicEvidence.vouchers | Where-Object cancelled).Count -eq 1 -and @($coverage.economicEvidence.vouchers | Where-Object amountStatus -eq 'unverified').Count -eq 0) 'Coverage lost cancellation or rejected ordinary accounting evidence'
+$bankingCoverage=@($coverage.economicEvidence.vouchers | Where-Object sourceId -eq 'banking')[0]
+Assert-Economic ($bankingCoverage.amountStatus -eq 'verified' -and $bankingCoverage.kind -eq 'non_economic' -and $bankingCoverage.lines.Count -eq 0) 'Accounting-only Receipt blocked coverage'
+foreach($accountingType in @('Receipt','Payment','Contra','Journal','Memo')){
+    [xml]$accountingXml="<ENVELOPE><VOUCHER><GUID>accounting</GUID><ALTERID>1</ALTERID><DATE>20260915</DATE><VOUCHERTYPENAME>$accountingType</VOUCHERTYPENAME></VOUCHER></ENVELOPE>"
+    $accounting=Convert-TallyEconomicEvidence $company $ledgers $products $accountingXml $from $to -SalesCoverage
+    if($accountingType -eq 'Memo'){
+        Assert-Economic ($accounting.vouchers[0].amountStatus -eq 'unverified' -and -not $accounting.vouchers[0].kind) 'Unknown no-stock voucher was classified'
+    }else{
+        Assert-Economic ($accounting.vouchers[0].amountStatus -eq 'verified' -and $accounting.vouchers[0].kind -eq 'non_economic' -and $accounting.vouchers[0].lines.Count -eq 0) "$accountingType blocked coverage"
+    }
+    $ordinary=Convert-TallyEconomicEvidence $company $ledgers $products $accountingXml $from $to
+    Assert-Economic ($ordinary.vouchers.Count -eq 0) 'Non-coverage accounting behavior changed'
+}
+[xml]$stockReceipt=$vouchers.OuterXml.Replace('<VOUCHERTYPENAME>Sales</VOUCHERTYPENAME>','<VOUCHERTYPENAME>Receipt</VOUCHERTYPENAME>')
+$stockReceiptEvidence=Convert-TallyEconomicEvidence $company $ledgers $products $stockReceipt $from $to -SalesCoverage
+Assert-Economic ($stockReceiptEvidence.vouchers[0].amountStatus -eq 'unverified' -and -not $stockReceiptEvidence.vouchers[0].kind) 'Receipt with stock entries was automatically classified'
 Assert-Economic ($coverage.salesControlTotals.months.Count -eq 3 -and $coverage.salesControlTotals.sourceVersion -eq $coverage.economicEvidence.sourceVersion -and -not $coverage.salesControlTotals.months[0].Contains('customers')) 'Controls lost generation binding or guessed customer controls'
 Assert-Economic (@($coverage.salesControlTotals.months | Where-Object {$_.salesLedgers.Count -ne 3}).Count -eq 0) 'Coverage monthly controls counted the CMPINFO ledger counter'
 $controlRequests=@($script:tallyRequests | Where-Object {$_ -match '<ID>SalesCoverageLedgers</ID>'})

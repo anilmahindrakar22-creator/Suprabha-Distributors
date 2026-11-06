@@ -146,6 +146,8 @@ function Convert-TallyEconomicEvidence([xml]$CompanyDocument,[xml]$LedgerDocumen
         $inventoryEntries=@(Get-EconomicVoucherEntries $voucher 'INVENTORY' | Where-Object { $_.SelectSingleNode('./STOCKITEMNAME | ./AMOUNT | ./ACTUALQTY | ./BILLEDQTY') })
         if (-not $kind -and $inventoryEntries.Count -eq 0) {
             if(-not $SalesCoverage){continue}
+            # Accounting documents carry no stock lines; a posting to a sales ledger still shows in the control totals.
+            if($type -in @('Receipt','Payment','Contra','Journal')){$kind='non_economic'}
         }
         $id = Get-EconomicXmlText $voucher './GUID'
         $revision = Get-EconomicXmlText $voucher './ALTERID'
@@ -389,6 +391,39 @@ function Get-SalesCoverageWindow([datetimeoffset]$Now=[datetimeoffset]::UtcNow) 
     $ist=Get-SalesCoverageClock $Now
     $to=[datetime]::new($ist.Year,$ist.Month,1)
     return @{From=$to.AddMonths(-3);To=$to}
+}
+function Get-NextSalesCoverageBackfill([string]$Path,[string]$Company) {
+    try {
+        if (-not [IO.File]::Exists($Path)) { return $null }
+        $json = [IO.File]::ReadAllText($Path)
+        if (-not $json.TrimStart().StartsWith('{')) { return $null }
+        $queue = $json | ConvertFrom-Json -ErrorAction Stop
+        if ($queue -isnot [pscustomobject] -or $queue.company -isnot [string] -or -not ($queue.company -ceq $Company) -or $queue.windows -isnot [array] -or $queue.windows.Count -eq 0) { return $null }
+        $entry = $queue.windows[0]
+        if ($entry -isnot [string] -or $entry -cnotmatch '^\d{4}-\d{2}-\d{2}$') { return $null }
+        return [datetimeoffset]::ParseExact(($entry + 'T12:00:00+05:30'), "yyyy-MM-dd'T'HH:mm:sszzz", [Globalization.CultureInfo]::InvariantCulture, [Globalization.DateTimeStyles]::None)
+    } catch { return $null }
+}
+function Remove-SalesCoverageBackfillEntry([string]$Path,[string]$Entry) {
+    if (-not [IO.File]::Exists($Path)) { return }
+    $json = [IO.File]::ReadAllText($Path)
+    if (-not $json.TrimStart().StartsWith('{')) { throw 'Invalid sales coverage backfill queue.' }
+    $queue = $json | ConvertFrom-Json -ErrorAction Stop
+    if ($queue -isnot [pscustomobject] -or $queue.company -isnot [string] -or $queue.windows -isnot [array]) { throw 'Invalid sales coverage backfill queue.' }
+    $index = [Array]::IndexOf($queue.windows, $Entry)
+    if ($index -lt 0) { return }
+    $remaining = [Collections.Generic.List[object]]::new($queue.windows)
+    $remaining.RemoveAt($index)
+    $queue.windows = @($remaining.ToArray())
+    # Preserve the owner-written shape; snapshots add an incompatible wrapper.
+    $temporary = "$Path.$([guid]::NewGuid().ToString('N')).tmp"
+    try {
+        $json = $queue | ConvertTo-Json -Depth 12 -Compress
+        [IO.File]::WriteAllText($temporary, $json, [Text.UTF8Encoding]::new($false))
+        [IO.File]::Replace($temporary, $Path, [NullString]::Value)
+    } finally {
+        if ([IO.File]::Exists($temporary)) { [IO.File]::Delete($temporary) }
+    }
 }
 function Read-SalesCoverageState([string]$Path,[string]$Company) {
     foreach($candidate in @($Path,"$Path.bak")){

@@ -52,3 +52,143 @@ $fallback = Get-SalesRecordIdentity '' '20260905' 'SD/26-27/0099' 'City Lab'
 if (-not $fallback.StartsWith('fallback:') -or $fallback -ne (Get-SalesRecordIdentity '' '20260905' 'SD/26-27/0099' 'City Lab')) { throw 'Fallback identity is not deterministic' }
 if ($null -ne (Get-SalesRecordIdentity '' '20260905' '' 'City Lab')) { throw 'Incomplete fallback identity accepted' }
 Write-Output 'PASS: historical retention, deleted window rows, moved IDs, cancellation replacement, empty window, invalid identity'
+
+. (Join-Path $PSScriptRoot '../desktop-connector/economics.ps1')
+function Assert-Backfill($Condition,[string]$Message) { if (-not $Condition) { throw $Message } }
+
+# Exercise the production helper bodies with in-memory file operations. These
+# tests must never create an operational backfill queue, even temporarily.
+class SalesCoverageMemoryFile {
+    static [hashtable] $Files = @{}
+    static [bool] $FailReplace = $false
+    static [int] $Replacements = 0
+    static [bool] Exists([string]$Path) { return [SalesCoverageMemoryFile]::Files.ContainsKey($Path) }
+    static [string] ReadAllText([string]$Path) {
+        if (-not [SalesCoverageMemoryFile]::Exists($Path)) { throw 'Missing memory file' }
+        return [SalesCoverageMemoryFile]::Files[$Path]
+    }
+    static [void] WriteAllText([string]$Path,[string]$Text,[Text.Encoding]$Encoding) { [SalesCoverageMemoryFile]::Files[$Path] = $Text }
+    static [void] Replace([string]$Source,[string]$Destination,[string]$Backup) {
+        if ([SalesCoverageMemoryFile]::FailReplace) { throw 'Fixture replace failure' }
+        if (-not [SalesCoverageMemoryFile]::Exists($Destination)) { throw 'Missing replacement target' }
+        [SalesCoverageMemoryFile]::Files[$Destination] = [SalesCoverageMemoryFile]::ReadAllText($Source)
+        [SalesCoverageMemoryFile]::Files.Remove($Source)
+        [SalesCoverageMemoryFile]::Replacements++
+    }
+    static [void] Delete([string]$Path) { [SalesCoverageMemoryFile]::Files.Remove($Path) }
+}
+$tokens=$null;$parseErrors=$null
+$economicsAst=[Management.Automation.Language.Parser]::ParseFile((Join-Path $PSScriptRoot '../desktop-connector/economics.ps1'),[ref]$tokens,[ref]$parseErrors)
+Assert-Backfill ($parseErrors.Count -eq 0) 'Economics parser errors'
+foreach($name in @('Get-NextSalesCoverageBackfill','Remove-SalesCoverageBackfillEntry')) {
+    $definition=$economicsAst.Find({param($node) $node -is [Management.Automation.Language.FunctionDefinitionAst] -and $node.Name -eq $name},$true)
+    Invoke-Expression $definition.Extent.Text.Replace('[IO.File]','[SalesCoverageMemoryFile]')
+}
+$salesCoverageBackfillPath='memory-backfill'
+$companyName='SUPRABHA DISTRIBUTORS'
+Assert-Backfill ($null -eq (Get-NextSalesCoverageBackfill $salesCoverageBackfillPath $companyName)) 'Missing queue was accepted'
+foreach($invalid in @(
+    '{broken',
+    '{"company":"OTHER","windows":["2026-05-15"]}',
+    '{"company":"suprabha distributors","windows":["2026-05-15"]}',
+    '{"company":"SUPRABHA DISTRIBUTORS","windows":["bad-date"]}',
+    '{"company":"SUPRABHA DISTRIBUTORS","windows":["2026-02-30"]}',
+    '{"company":"SUPRABHA DISTRIBUTORS","windows":["2026-5-15"]}',
+    '{"company":"SUPRABHA DISTRIBUTORS","windows":[]}',
+    '{"company":"SUPRABHA DISTRIBUTORS","windows":"2026-05-15"}',
+    '{"company":"SUPRABHA DISTRIBUTORS","windows":[null]}',
+    '{"company":"SUPRABHA DISTRIBUTORS"}',
+    '[{"company":"SUPRABHA DISTRIBUTORS","windows":["2026-05-15"]}]',
+    '[]', 'null'
+)) {
+    [SalesCoverageMemoryFile]::Files[$salesCoverageBackfillPath]=$invalid
+    Assert-Backfill ($null -eq (Get-NextSalesCoverageBackfill $salesCoverageBackfillPath $companyName)) 'Invalid queue was accepted'
+}
+$queueJson='{"company":"SUPRABHA DISTRIBUTORS","windows":["2026-05-15","2026-08-15"]}'
+[SalesCoverageMemoryFile]::Files[$salesCoverageBackfillPath]=$queueJson
+foreach($expected in @(
+    @{entry='2026-05-15';from='2026-02-01';to='2026-05-01'},
+    @{entry='2026-08-15';from='2026-05-01';to='2026-08-01'}
+)) {
+    $next=Get-NextSalesCoverageBackfill $salesCoverageBackfillPath $companyName
+    Assert-Backfill ($next -is [datetimeoffset] -and $next.Hour -eq 12 -and $next.Offset.TotalMinutes -eq 330 -and $next.ToString('yyyy-MM-dd') -eq $expected.entry) 'Queue date lost noon IST or ordering'
+    $window=Get-SalesCoverageWindow $next
+    Assert-Backfill ($window.From.ToString('yyyy-MM-dd') -eq $expected.from -and $window.To.ToString('yyyy-MM-dd') -eq $expected.to) 'Backfill window boundaries are incorrect'
+    Remove-SalesCoverageBackfillEntry $salesCoverageBackfillPath $expected.entry
+}
+$emptyQueue=[SalesCoverageMemoryFile]::Files[$salesCoverageBackfillPath] | ConvertFrom-Json
+Assert-Backfill ($emptyQueue.company -ceq $companyName -and $emptyQueue.windows -is [array] -and $emptyQueue.windows.Count -eq 0 -and $emptyQueue.PSObject.Properties.Name.Count -eq 2) 'Queue shape or empty list was lost'
+Assert-Backfill ([SalesCoverageMemoryFile]::Replacements -eq 2 -and [SalesCoverageMemoryFile]::Files.Count -eq 1) 'Removal did not use atomic replacement or left a temporary file'
+Assert-Backfill ($null -eq (Get-NextSalesCoverageBackfill $salesCoverageBackfillPath $companyName)) 'Drained queue scheduled coverage'
+Remove-SalesCoverageBackfillEntry $salesCoverageBackfillPath '2026-08-15'
+Assert-Backfill ([SalesCoverageMemoryFile]::Replacements -eq 2) 'Repeated removal rewrote the queue'
+[SalesCoverageMemoryFile]::Files[$salesCoverageBackfillPath]='{"company":"SUPRABHA DISTRIBUTORS","windows":["2026-05-15","2026-05-15","2026-08-15"]}'
+Remove-SalesCoverageBackfillEntry $salesCoverageBackfillPath '2026-05-15'
+Assert-Backfill (([SalesCoverageMemoryFile]::Files[$salesCoverageBackfillPath] | ConvertFrom-Json).windows.Count -eq 2) 'Removal consumed more than one matching entry'
+Write-Output 'PASS: backfill validation, noon IST, Feb-Apr and May-Jul windows, atomic removal and empty queue'
+
+# Extract dashboard functions and its actual coverage-due body without startup,
+# HTTP, Tally, or filesystem side effects.
+$dashboardAst=[Management.Automation.Language.Parser]::ParseFile((Join-Path $PSScriptRoot '../desktop-connector/dashboard.ps1'),[ref]$tokens,[ref]$parseErrors)
+Assert-Backfill ($parseErrors.Count -eq 0) 'Dashboard parser errors'
+$coverageBranch=$dashboardAst.Find({param($node) $node -is [Management.Automation.Language.IfStatementAst] -and $node.Clauses[0].Item1.Extent.Text -eq '$coverageDue'},$true)
+$body=$coverageBranch.Clauses[0].Item2.Extent.Text
+$readCoverage=[scriptblock]::Create($body.Substring(1,$body.Length-2))
+function Read-TallySalesCoverage($Company,$LedgerRoles,$VoucherRoles,[datetimeoffset]$Now) {
+    $script:readNow=$Now
+    return @{economicEvidence=@{purpose='sales_coverage'}}
+}
+$coverageNow=[datetimeoffset]'2026-11-15T22:00:00+05:30'
+$istDate='2026-11-15';$ledgerRoles=@{};$voucherRoles=@{}
+[SalesCoverageMemoryFile]::Files.Clear()
+. $readCoverage
+Assert-Backfill ($script:readNow -eq $coverageNow -and $coverageDate -eq $istDate -and -not $coverage.economicEvidence.ContainsKey('backfillEntry') -and $null -eq $script:pendingBackfillEntry) 'Absent queue changed normal coverage'
+[SalesCoverageMemoryFile]::Files[$salesCoverageBackfillPath]=$queueJson
+. $readCoverage
+Assert-Backfill ($script:readNow.ToString('o') -eq '2026-05-15T12:00:00.0000000+05:30' -and $coverageDate -eq $istDate -and $coverage.economicEvidence.backfillEntry -eq '2026-05-15' -and $script:pendingBackfillEntry -eq '2026-05-15') 'Queued coverage used the wrong date or lost its marker'
+foreach($name in @('Publish-CloudSnapshot','Remove-PendingSalesCoverage')) {
+    $definition=$dashboardAst.Find({param($node) $node -is [Management.Automation.Language.FunctionDefinitionAst] -and $node.Name -eq $name},$true)
+    Invoke-Expression $definition.Extent.Text
+}
+function Invoke-WebRequest { if($script:failCloud){throw 'Fixture offline'};return @{Content='ok'} }
+function Write-ConnectorHealth([string]$Message) { $script:healthLines+=,$Message }
+function Save-ConnectorSnapshot($Path,$Snapshot) {
+    if($Path -eq 'coverage-state') {
+        if($script:failState){throw 'Fixture state failure'}
+        Assert-Backfill (([SalesCoverageMemoryFile]::Files[$salesCoverageBackfillPath] | ConvertFrom-Json).windows[0] -eq '2026-05-15') 'Queue advanced before coverage state saved'
+    }
+}
+function Save-ConnectorUploadState($Path,$State) {}
+$salesCoverageStatePath='coverage-state';$snapshotPath='snapshot';$uploadStatePath='upload-state'
+$cloudSyncUrl='https://fixture.invalid';$cloudUploadKey='fixture'
+$uploadJson=@{economicEvidence=$coverage.economicEvidence;salesCoverageDate=$coverageDate} | ConvertTo-Json -Depth 6 -Compress
+foreach($mode in @('success','rewrite_failure','state_failure','three_failures')) {
+    [SalesCoverageMemoryFile]::Files[$salesCoverageBackfillPath]=$queueJson
+    [SalesCoverageMemoryFile]::FailReplace=$mode -eq 'rewrite_failure'
+    $script:failState=$mode -eq 'state_failure';$script:failCloud=$mode -eq 'three_failures'
+    $script:healthLines=@();$script:cloudUploadFailures=0;$script:salesCoverageUploadFailures=0
+    $script:uploadState=@{company=$companyName;rejectedPayloadHash=$null;blockedKeyHash=$null}
+    $script:pendingUpload=$uploadJson | ConvertFrom-Json
+    $script:pendingUploadJson=$uploadJson
+    $accepted=Publish-CloudSnapshot $uploadJson
+    if($mode -eq 'three_failures') {
+        Assert-Backfill (-not $accepted) 'Offline upload succeeded'
+        1..2 | ForEach-Object { Assert-Backfill (-not (Publish-CloudSnapshot $uploadJson)) 'Offline retry succeeded' }
+        Assert-Backfill ($null -eq $script:pendingUpload.economicEvidence -and $script:salesCoverageUploadFailures -eq 3) 'Three failures did not drop coverage'
+        Assert-Backfill (@($script:healthLines | Where-Object {$_ -match 'request=sales_coverage_backfill status=retry entry=2026-05-15$'}).Count -eq 1) 'Backfill retry log missing'
+    } elseif($mode -eq 'state_failure') {
+        Assert-Backfill (-not $accepted) 'Failed state save acknowledged coverage'
+    } else {
+        Assert-Backfill $accepted 'Queue handling failed the accepted upload'
+        $status=if($mode -eq 'success'){'done'}else{'failed'}
+        Assert-Backfill (@($script:healthLines | Where-Object {$_ -match "request=sales_coverage_backfill status=$status entry=2026-05-15$"}).Count -eq 1) 'Backfill completion log missing'
+    }
+    $remaining=[SalesCoverageMemoryFile]::Files[$salesCoverageBackfillPath] | ConvertFrom-Json
+    if($mode -eq 'success') {
+        Assert-Backfill ($remaining.windows.Count -eq 1 -and $remaining.windows[0] -eq '2026-08-15') 'Success did not remove only its uploaded entry'
+    } else {
+        Assert-Backfill ([SalesCoverageMemoryFile]::Files[$salesCoverageBackfillPath] -ceq $queueJson) 'Failure changed the queue'
+    }
+    Assert-Backfill ([SalesCoverageMemoryFile]::Files.Count -eq 1) 'Failed rewrite leaked a temporary file'
+}
+Write-Output 'PASS: dashboard date selection, evidence marker, success removal, rewrite failure isolation and three-failure retry'
