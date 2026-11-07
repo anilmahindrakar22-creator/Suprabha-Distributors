@@ -1361,6 +1361,13 @@
       "remoteVersion": null,
       "remoteSha256": null,
       "status": "not_deployed"
+    },
+    {
+      "localFile": "20261122090000_economic_result_pruning.sql",
+      "localSha256": "df7fb14c33abaf7f3e511446010f1f4bc096ec9f8fa8f2fba45a787603f8307b",
+      "remoteVersion": null,
+      "remoteSha256": null,
+      "status": "not_deployed"
     }
   ],
   "liveCheck": {
