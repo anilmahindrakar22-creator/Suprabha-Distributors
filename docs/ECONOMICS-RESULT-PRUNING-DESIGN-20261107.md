@@ -88,6 +88,14 @@ This replaces `ECONOMICS-RESULT-PRUNING-DESIGN-20261030.md` on `claude/result-pr
    - The next morning, check that the job succeeded and that the rows removed equal the sum of `results_pruned_rows`.
    - Check that cited rows are unchanged and the summary read is identical.
 4. After four nights on production, schedule the `VACUUM FULL` (own go-ahead), then record the database size.
+- **Lock and uploads:**
+  - While the prune runs, it holds the rebuild lock, so an inline upload rebuild would wait for it.
+  - On production, none of the 40 rebuilds so far started between 17:00 and 05:00 UTC (7 Nov). The job runs at 20:40 UTC, so overlap is unlikely.
+  - Still read the first night's job duration on acceptance from `cron.job_run_details`, and scale it by rows per run: production has about 5,880, acceptance about 720.
+- **At the 22 Nov cut:**
+  - This branch starts from `632d7a4`. Merge in the final 15 Nov SHA.
+  - Mark its 4 migrations as deployed in `supabase/migration-history-map.json`.
+  - Update the preflight unit expectations: 1 pending instead of 5.
 - **Rollback:**
   - unschedule `stockflow-economic-result-prune`;
   - put `no_delete` back on `private.prevent_business_delete()`.
