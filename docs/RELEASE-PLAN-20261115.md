@@ -118,7 +118,7 @@ Checks for any design:
 - Add snapshot age and last `cloud_upload` to the pre-release checks.
 - All of this is in the draft `docs/RELEASE-PACKAGE-20261115.md`.
 
-## 5a. Status, 6 Nov 23:10 IST
+## 5a. Status, 7 Nov 12:10 IST
 | Package | State |
 | --- | --- |
 | P0 Full CI at `61a86db` | Passed: lint, types, connector, unit, build, 42 stock, 1,514 pricing, 20 offline, audit |
@@ -129,6 +129,7 @@ Checks for any design:
 | P5 Small fixes | Committed `a381e59` |
 | Round-off in reconciliation (package F) | Committed 7 Nov. Deployment-order replay exit 0, preflight unit test 43/43 |
 | P6 Release gate fixes | Done as docs on 7 Nov, in the draft package. No script needed (see P6 above) |
+| Migration history map | Updated 7 Nov: all 38 migrations from the 6 Nov release match production by hash. Preflight lists only the 3 new files. Both replays exit 0 |
 
 ## 6. Calendar
 | Day | What happens |

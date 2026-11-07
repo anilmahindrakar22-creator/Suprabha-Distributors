@@ -33,7 +33,7 @@
    - `20261118100000_deferred_economic_rebuild`
    - `20261118110000_reconciliation_rounding`
 
-   Production's last migration is `20261106083351 supplier_prices_safe_delete` (read-only check, 7 Nov). **`supabase/migration-history-map.json` still lists the 6 Nov releases as `not_deployed`, so the preflight shows 41 pending.** Those 38 are already live. Do not apply them again.
+   Production's last migration is `20261106083351 supplier_prices_safe_delete`, and acceptance has it too (read-only checks, 7 Nov). `supabase/migration-history-map.json` now records the 6 Nov release: all 38 of its migrations matched production's stored SQL by hash, so `tests/pricing-release-preflight.mjs` should list exactly these 3 as pending. If it lists anything else, stop.
 2. **`ANALYZE`** the whole database straight after the migrations. Without statistics, a save took 99.6 s locally, and this caused the failures from 1 Nov.
 3. **Edge functions:** no change.
 4. **App (Worker):** deploy `build:staff:production`. No new environment variables, secrets or dependencies. The service worker cache doesn't change.
