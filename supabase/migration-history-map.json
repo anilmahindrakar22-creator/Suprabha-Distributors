@@ -1347,6 +1347,13 @@
       "remoteVersion": null,
       "remoteSha256": null,
       "status": "not_deployed"
+    },
+    {
+      "localFile": "20261118110000_reconciliation_rounding.sql",
+      "localSha256": "ad8376943bae0074ee56f92ac190df19fe816f7532c907e31fc1f0302b2831b5",
+      "remoteVersion": null,
+      "remoteSha256": null,
+      "status": "not_deployed"
     }
   ],
   "liveCheck": {

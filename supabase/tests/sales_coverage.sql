@@ -153,7 +153,7 @@ begin
   ordinal:=0;
   for row_value in select value from jsonb_array_elements(result->'months') loop
    if row_value is distinct from jsonb_build_object('month',to_char(window_end-interval '3 months'+ordinal*interval '1 month','YYYY-MM'),
-    'appNetPaise',0,'tallyNetPaise',null,'differencePaise',null,'state','no_control') then raise exception 'Month contract differs: %',row_value;end if;
+    'appNetPaise',0,'tallyNetPaise',null,'roundOffPaise',0,'differencePaise',null,'state','no_control') then raise exception 'Month contract differs: %',row_value;end if;
    ordinal:=ordinal+1;
   end loop;
  end loop;

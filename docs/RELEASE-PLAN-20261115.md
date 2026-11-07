@@ -114,8 +114,9 @@ Checks for any design:
 
 ### P6: release gate fixes
 - Add `ANALYZE` after migrations as a written deploy step. Add a nightly job only if P1 shows autoanalyze falls behind.
-- Add one synthetic upload through the acceptance Edge function. It goes through `safeupdate` and would have caught the 6 Nov bug. Synthetic data only; no production data on acceptance.
+- **Dropped on 7 Nov: the synthetic acceptance upload.** Acceptance holds a 768-byte stub, so re-posting it misses the import branches. `LOAD 'safeupdate'` is refused there, so a rolled-back rehearsal isn't possible. A full made-up upload would replace acceptance data. Instead, the bare-statement guard (P5) scans every function we own and would have failed the 6 Nov delete, and the package makes the first real upload a required stop-or-continue check.
 - Add snapshot age and last `cloud_upload` to the pre-release checks.
+- All of this is in the draft `docs/RELEASE-PACKAGE-20261115.md`.
 
 ## 5a. Status, 6 Nov 23:10 IST
 | Package | State |
@@ -126,8 +127,8 @@ Checks for any design:
 | P3 Freshness warning and Economics line | Committed `a381e59`, `e73bbeb`. 52 browser tests passed, design review passed |
 | P4 Coverage reader and backfill queue | Committed. All 4 connector suites passed; real Tally read passed |
 | P5 Small fixes | Committed `a381e59` |
-| Round-off in reconciliation (package F) | Built, NOT committed. Its new SQL test has a text-plus-JSON bug. Codex hit its usage limit until 00:20 on 7 Nov |
-| P6 Release gate fixes | Not started. The acceptance upload check needs a safer design: a made-up snapshot would overwrite acceptance data |
+| Round-off in reconciliation (package F) | Committed 7 Nov. Deployment-order replay exit 0, preflight unit test 43/43 |
+| P6 Release gate fixes | Done as docs on 7 Nov, in the draft package. No script needed (see P6 above) |
 
 ## 6. Calendar
 | Day | What happens |
