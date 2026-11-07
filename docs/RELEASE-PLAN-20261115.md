@@ -130,6 +130,7 @@ Checks for any design:
 | Round-off in reconciliation (package F) | Committed 7 Nov. Deployment-order replay exit 0, preflight unit test 43/43 |
 | P6 Release gate fixes | Done as docs on 7 Nov, in the draft package. No script needed (see P6 above) |
 | Migration history map | Updated 7 Nov: all 38 migrations from the 6 Nov release match production by hash. Preflight lists only the 3 new files. Both replays exit 0 |
+| Cron log trim (added 7 Nov) | Nightly job keeps 7 days of `cron.job_run_details`. Deployment-order replay exit 0. Not run under real `pg_cron` yet; acceptance proves it. Options in `docs/STORAGE-OPTIONS-20261107.md` |
 
 ## 6. Calendar
 | Day | What happens |

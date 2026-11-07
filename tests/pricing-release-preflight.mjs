@@ -30,6 +30,7 @@ const pricingReleaseFiles = new Set([
   '20261118090000_control_null_and_source_time.sql',
   '20261118100000_deferred_economic_rebuild.sql',
   '20261118110000_reconciliation_rounding.sql',
+  '20261118120000_cron_log_trim.sql',
   '20261102090000_po_tally_receipts.sql',
   '20261031140000_power_map_enhancement.sql',
   '20261030090000_instrument_register.sql',

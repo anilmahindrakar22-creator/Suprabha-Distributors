@@ -1354,6 +1354,13 @@
       "remoteVersion": null,
       "remoteSha256": null,
       "status": "not_deployed"
+    },
+    {
+      "localFile": "20261118120000_cron_log_trim.sql",
+      "localSha256": "f47cbe86b934feea969f2a794b0aeb73a7f0d69066e2fb70ebc7dc92abe76260",
+      "remoteVersion": null,
+      "remoteSha256": null,
+      "status": "not_deployed"
     }
   ],
   "liveCheck": {

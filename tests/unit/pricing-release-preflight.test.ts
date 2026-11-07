@@ -11,11 +11,27 @@ const source = new Map(readdirSync(fileURLToPath(directory)).filter((name) => na
 const releaseOrder = (result: { deployed: { localFile: string }[]; pending: string[] }) => [...result.deployed.map((entry) => entry.localFile), ...result.pending];
 
 describe('read-only pricing release preflight', () => {
+  it('registers the cron log trim last with a pg_cron guard and a 7 day bound', () => {
+    const name = '20261118120000_cron_log_trim.sql';
+    const result = pricingReleasePreflight(original, source);
+    expect(result.pending.at(-1)).toBe(name);
+    expect(result.pending.at(-2)).toBe('20261118110000_reconciliation_rounding.sql');
+    expect(original.migrations.find((entry: { localFile: string }) => entry.localFile === name)?.status).toBe('not_deployed');
+    const migration = source.get(name)!;
+    expect(migration).toContain("extname='pg_cron'");
+    expect(migration).toContain("'stockflow-cron-log-trim'");
+    expect(migration).toContain("'10 20 * * *'");
+    expect(migration).toContain("where end_time < now() - interval '7 days'");
+    expect([...migration.matchAll(/\bdelete\s+from\s+(\S+)/gi)].map(match => match[1])).toEqual(['cron.job_run_details']);
+    expect(migration).not.toMatch(/\b(?:private|public)\./i);
+    const runner = readFileSync(new URL('../pricing-migration-local.ps1', import.meta.url), 'utf8').replace(/\r/g, '');
+    expect(runner).toContain("$salesNames += '20261118110000_reconciliation_rounding.sql'\n  $salesNames += '20261118120000_cron_log_trim.sql'");
+  });
   it('registers reconciliation rounding after deferred rebuild and guards all three function anchors', () => {
     const name = '20261118110000_reconciliation_rounding.sql';
     const result = pricingReleasePreflight(original, source);
     expect(releaseOrder(result).indexOf(name)).toBe(releaseOrder(result).indexOf('20261118100000_deferred_economic_rebuild.sql') + 1);
-    expect(result.pending.at(-1)).toBe(name);
+    expect(result.pending.at(-2)).toBe(name);
     expect(original.migrations.find((entry: { localFile: string }) => entry.localFile === name)?.status).toBe('not_deployed');
     expect(result.sqlTests.indexOf('supabase/tests/reconciliation_rounding.sql')).toBe(result.sqlTests.indexOf('supabase/tests/deferred_economic_rebuild_concurrency.sql') + 1);
     const migration = source.get(name)!.replace(/\r/g, '');
@@ -37,7 +53,7 @@ describe('read-only pricing release preflight', () => {
     const name = '20261118100000_deferred_economic_rebuild.sql';
     const result = pricingReleasePreflight(original, source);
     expect(releaseOrder(result).indexOf(name)).toBe(releaseOrder(result).indexOf('20261118090000_control_null_and_source_time.sql') + 1);
-    expect(result.pending.at(-2)).toBe(name);
+    expect(result.pending.at(-3)).toBe(name);
     expect(original.migrations.find((entry: { localFile: string }) => entry.localFile === name)?.status).toBe('not_deployed');
     const index = result.sqlTests.indexOf('supabase/tests/control_null_and_source_time.sql');
     expect(result.sqlTests.slice(index + 1, index + 3)).toEqual([
@@ -60,7 +76,7 @@ describe('read-only pricing release preflight', () => {
     const name = '20261118090000_control_null_and_source_time.sql';
     const result = pricingReleasePreflight(original, source);
     expect(releaseOrder(result).indexOf(name)).toBe(releaseOrder(result).indexOf('20261117090000_supplier_prices_safe_delete.sql') + 1);
-    expect(result.pending.at(-3)).toBe(name);
+    expect(result.pending.at(-4)).toBe(name);
     expect(result.sqlTests.indexOf('supabase/tests/control_null_and_source_time.sql')).toBe(result.sqlTests.indexOf('supabase/tests/supplier_prices_safe_delete.sql') + 1);
     expect(original.migrations.find((entry: { localFile: string }) => entry.localFile === name)?.status).toBe('not_deployed');
     const migration = source.get(name)!;
@@ -80,7 +96,7 @@ describe('read-only pricing release preflight', () => {
     const name = '20261117090000_supplier_prices_safe_delete.sql';
     const result = pricingReleasePreflight(original, source);
     expect(releaseOrder(result).indexOf(name)).toBe(releaseOrder(result).indexOf('20261116170000_prospects_focus_first.sql') + 1);
-    expect(releaseOrder(result).at(-4)).toBe(name);
+    expect(releaseOrder(result).at(-5)).toBe(name);
     expect(result.sqlTests.indexOf('supabase/tests/supplier_prices_safe_delete.sql')).toBe(result.sqlTests.indexOf('supabase/tests/prospects_focus_first.sql') + 1);
     expect(original.migrations.find((entry: { localFile: string }) => entry.localFile === name)?.status).toBe('exact_normalized_match');
     expect(source.get(name)).toContain('delete from private.stockflow_supplier_prices where true;');
@@ -142,7 +158,7 @@ describe('read-only pricing release preflight', () => {
   it('registers Recover after the wallet split and replays its SQL immediately after Today', () => {
     const name = '20261116130000_recover_signal.sql';
     const result = pricingReleasePreflight(original, source);
-    expect(result.pending).toHaveLength(3);
+    expect(result.pending).toHaveLength(4);
     expect(result.sqlTests).toHaveLength(37);
     expect(releaseOrder(result).indexOf(name)).toBe(releaseOrder(result).indexOf('20261116120000_wallet_special_tests.sql') + 1);
     expect(result.sqlTests.indexOf('supabase/tests/recover_signal.sql')).toBe(result.sqlTests.indexOf('supabase/tests/today_decisions.sql') + 1);
@@ -626,8 +642,9 @@ describe('read-only pricing release preflight', () => {
       '20261118090000_control_null_and_source_time.sql',
       '20261118100000_deferred_economic_rebuild.sql',
       '20261118110000_reconciliation_rounding.sql',
+      '20261118120000_cron_log_trim.sql',
     ]);
-    expect(releaseOrder(result).slice(-41)).toEqual([
+    expect(releaseOrder(result).slice(-42)).toEqual([
       '20261028090000_to_order_list.sql',
       '20261029090000_challan_delivery.sql',
       '20261029091000_order_list_priority_sort.sql',
@@ -669,6 +686,7 @@ describe('read-only pricing release preflight', () => {
       '20261118090000_control_null_and_source_time.sql',
       '20261118100000_deferred_economic_rebuild.sql',
       '20261118110000_reconciliation_rounding.sql',
+      '20261118120000_cron_log_trim.sql',
     ]);
     expect(result.deployed.at(-1)?.localFile).toBe('20261117090000_supplier_prices_safe_delete.sql');
     expect(result.deployed).toHaveLength(185);
@@ -678,7 +696,7 @@ describe('read-only pricing release preflight', () => {
       '20260830071657_create_stockflow_member_allowlist.sql',
     ]);
     expect(names.indexOf('20260902113000_equipment_installations.sql')).toBeLessThan(names.indexOf('20260902080651_harden_business_history.sql'));
-    expect(releaseOrder(result).slice(-41).join(' ')).not.toMatch(/archive|reset|rotate/);
+    expect(releaseOrder(result).slice(-42).join(' ')).not.toMatch(/archive|reset|rotate/);
     expect(result.releaseReady).toBe(false);
     expect(result.liveHistoryRechecked).toBe(false);
   });
@@ -689,8 +707,9 @@ describe('read-only pricing release preflight', () => {
       '20261118090000_control_null_and_source_time.sql',
       '20261118100000_deferred_economic_rebuild.sql',
       '20261118110000_reconciliation_rounding.sql',
+      '20261118120000_cron_log_trim.sql',
     ]);
-    expect(releaseOrder(result).slice(-41)).toEqual([
+    expect(releaseOrder(result).slice(-42)).toEqual([
       '20261028090000_to_order_list.sql',
       '20261029090000_challan_delivery.sql',
       '20261029091000_order_list_priority_sort.sql',
@@ -732,6 +751,7 @@ describe('read-only pricing release preflight', () => {
       '20261118090000_control_null_and_source_time.sql',
       '20261118100000_deferred_economic_rebuild.sql',
       '20261118110000_reconciliation_rounding.sql',
+      '20261118120000_cron_log_trim.sql',
     ]);
   });
   it('rejects changed SQL including changes inside literals', () => {
