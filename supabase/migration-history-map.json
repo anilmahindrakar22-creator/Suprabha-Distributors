@@ -1368,6 +1368,13 @@
       "remoteVersion": null,
       "remoteSha256": null,
       "status": "not_deployed"
+    },
+    {
+      "localFile": "20261122100000_sync_error_domain.sql",
+      "localSha256": "63f43f462f9a63f954813fed174a12544ba843c27c6c94a27c78a4be5d146994",
+      "remoteVersion": null,
+      "remoteSha256": null,
+      "status": "not_deployed"
     }
   ],
   "liveCheck": {

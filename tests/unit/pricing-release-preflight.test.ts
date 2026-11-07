@@ -11,11 +11,36 @@ const source = new Map(readdirSync(fileURLToPath(directory)).filter((name) => na
 const releaseOrder = (result: { deployed: { localFile: string }[]; pending: string[] }) => [...result.deployed.map((entry) => entry.localFile), ...result.pending];
 
 describe('read-only pricing release preflight', () => {
-  it('registers guarded nightly economic result pruning last and its replay test', () => {
-    const name = '20261122090000_economic_result_pruning.sql';
+  it('registers sync error domains after pruning with guarded importer anchors', () => {
+    const name = '20261122100000_sync_error_domain.sql';
     const result = pricingReleasePreflight(original, source);
     expect(result.pending.at(-1)).toBe(name);
-    expect(result.pending.at(-2)).toBe('20261118120000_cron_log_trim.sql');
+    expect(result.pending.at(-2)).toBe('20261122090000_economic_result_pruning.sql');
+    expect(original.migrations.find((entry: { localFile: string }) => entry.localFile === name)?.status).toBe('not_deployed');
+    const migration = source.get(name)!;
+    const importer = source.get('20261007181000_instrument_economic_import_and_rebuild.sql')!;
+    const anchors = [...migration.matchAll(/old_text:=\$old\$([\s\S]*?)\$old\$;/g)].map(match => match[1]);
+    expect(anchors).toHaveLength(2);
+    for (const anchor of anchors) expect(importer.split(anchor)).toHaveLength(2);
+    expect(migration.match(/length\(old_text\)<>1/g)).toHaveLength(2);
+    const foundation = source.get('20261007180000_instrument_economics_foundation.sql')!;
+    const catalogFunction = foundation.match(/create function private\.stockflow_economic_item_catalog_current[\s\S]*?\$\$;/)![0];
+    expect(migration).toContain(catalogFunction.replace('create function', 'create or replace function')
+      .replace("e.evidence->>'source'='connector_sync'", "(e.evidence->>'source'='connector_sync' and e.evidence->>'domain' is distinct from 'sales_coverage')").replace(/\r/g, ''));
+    const runner = readFileSync(new URL('../pricing-migration-local.ps1', import.meta.url), 'utf8').replace(/\r/g, '');
+    expect(runner).toContain("$salesNames += '20261122090000_economic_result_pruning.sql'\n  $salesNames += '20261122100000_sync_error_domain.sql'");
+    const tests = [...runner.matchAll(/'supabase\/tests\/([^']+)'/g)].map(match => match[1]);
+    expect(tests.indexOf('economic_sync_error_domain.sql')).toBe(tests.indexOf('economic_result_pruning.sql') + 1);
+    expect(result.sqlTests.indexOf('supabase/tests/economic_sync_error_domain.sql')).toBe(result.sqlTests.indexOf('supabase/tests/economic_result_pruning.sql') + 1);
+    const fixture = readFileSync(new URL('../../supabase/tests/economic_sync_error_domain.sql', import.meta.url), 'utf8');
+    expect(fixture.trimEnd()).toMatch(/rollback;$/);
+    expect(fixture).toContain('PASS economic sync error domain D1-D6');
+  });
+  it('registers guarded nightly economic result pruning and its replay test', () => {
+    const name = '20261122090000_economic_result_pruning.sql';
+    const result = pricingReleasePreflight(original, source);
+    expect(result.pending.at(-2)).toBe(name);
+    expect(result.pending.at(-3)).toBe('20261118120000_cron_log_trim.sql');
     expect(original.migrations.find((entry: { localFile: string }) => entry.localFile === name)?.status).toBe('not_deployed');
     const migration = source.get(name)!;
     expect(migration).toContain("pg_try_advisory_xact_lock(hashtextextended('instrument-economics-v1',0))");
@@ -37,8 +62,8 @@ describe('read-only pricing release preflight', () => {
   it('registers the cron log trim with a pg_cron guard and a 7 day bound', () => {
     const name = '20261118120000_cron_log_trim.sql';
     const result = pricingReleasePreflight(original, source);
-    expect(result.pending.at(-2)).toBe(name);
-    expect(result.pending.at(-3)).toBe('20261118110000_reconciliation_rounding.sql');
+    expect(result.pending.at(-3)).toBe(name);
+    expect(result.pending.at(-4)).toBe('20261118110000_reconciliation_rounding.sql');
     expect(original.migrations.find((entry: { localFile: string }) => entry.localFile === name)?.status).toBe('not_deployed');
     const migration = source.get(name)!;
     expect(migration).toContain("extname='pg_cron'");
@@ -54,7 +79,7 @@ describe('read-only pricing release preflight', () => {
     const name = '20261118110000_reconciliation_rounding.sql';
     const result = pricingReleasePreflight(original, source);
     expect(releaseOrder(result).indexOf(name)).toBe(releaseOrder(result).indexOf('20261118100000_deferred_economic_rebuild.sql') + 1);
-    expect(result.pending.at(-3)).toBe(name);
+    expect(result.pending.at(-4)).toBe(name);
     expect(original.migrations.find((entry: { localFile: string }) => entry.localFile === name)?.status).toBe('not_deployed');
     expect(result.sqlTests.indexOf('supabase/tests/reconciliation_rounding.sql')).toBe(result.sqlTests.indexOf('supabase/tests/deferred_economic_rebuild_concurrency.sql') + 1);
     const migration = source.get(name)!.replace(/\r/g, '');
@@ -76,7 +101,7 @@ describe('read-only pricing release preflight', () => {
     const name = '20261118100000_deferred_economic_rebuild.sql';
     const result = pricingReleasePreflight(original, source);
     expect(releaseOrder(result).indexOf(name)).toBe(releaseOrder(result).indexOf('20261118090000_control_null_and_source_time.sql') + 1);
-    expect(result.pending.at(-4)).toBe(name);
+    expect(result.pending.at(-5)).toBe(name);
     expect(original.migrations.find((entry: { localFile: string }) => entry.localFile === name)?.status).toBe('not_deployed');
     const index = result.sqlTests.indexOf('supabase/tests/control_null_and_source_time.sql');
     expect(result.sqlTests.slice(index + 1, index + 3)).toEqual([
@@ -99,7 +124,7 @@ describe('read-only pricing release preflight', () => {
     const name = '20261118090000_control_null_and_source_time.sql';
     const result = pricingReleasePreflight(original, source);
     expect(releaseOrder(result).indexOf(name)).toBe(releaseOrder(result).indexOf('20261117090000_supplier_prices_safe_delete.sql') + 1);
-    expect(result.pending.at(-5)).toBe(name);
+    expect(result.pending.at(-6)).toBe(name);
     expect(result.sqlTests.indexOf('supabase/tests/control_null_and_source_time.sql')).toBe(result.sqlTests.indexOf('supabase/tests/supplier_prices_safe_delete.sql') + 1);
     expect(original.migrations.find((entry: { localFile: string }) => entry.localFile === name)?.status).toBe('not_deployed');
     const migration = source.get(name)!;
@@ -119,7 +144,7 @@ describe('read-only pricing release preflight', () => {
     const name = '20261117090000_supplier_prices_safe_delete.sql';
     const result = pricingReleasePreflight(original, source);
     expect(releaseOrder(result).indexOf(name)).toBe(releaseOrder(result).indexOf('20261116170000_prospects_focus_first.sql') + 1);
-    expect(releaseOrder(result).at(-6)).toBe(name);
+    expect(releaseOrder(result).at(-7)).toBe(name);
     expect(result.sqlTests.indexOf('supabase/tests/supplier_prices_safe_delete.sql')).toBe(result.sqlTests.indexOf('supabase/tests/prospects_focus_first.sql') + 1);
     expect(original.migrations.find((entry: { localFile: string }) => entry.localFile === name)?.status).toBe('exact_normalized_match');
     expect(source.get(name)).toContain('delete from private.stockflow_supplier_prices where true;');
@@ -172,7 +197,7 @@ describe('read-only pricing release preflight', () => {
     const result = pricingReleasePreflight(original, source);
     expect(releaseOrder(result).indexOf(name)).toBe(releaseOrder(result).indexOf('20261116140000_lab_size_specials.sql') + 1);
     expect(result.sqlTests.indexOf('supabase/tests/wallet_verification.sql')).toBe(result.sqlTests.indexOf('supabase/tests/lab_size_specials.sql') + 1);
-    expect(result.sqlTests).toHaveLength(38);
+    expect(result.sqlTests).toHaveLength(39);
     expect(original.migrations.find((entry: { localFile: string }) => entry.localFile === name)?.status).toBe('exact_normalized_match');
     const runner = readFileSync(new URL('../pricing-migration-local.ps1', import.meta.url), 'utf8');
     expect(runner).toContain("$salesNames += '20261116160000_wallet_verification.sql'");
@@ -181,8 +206,8 @@ describe('read-only pricing release preflight', () => {
   it('registers Recover after the wallet split and replays its SQL immediately after Today', () => {
     const name = '20261116130000_recover_signal.sql';
     const result = pricingReleasePreflight(original, source);
-    expect(result.pending).toHaveLength(5);
-    expect(result.sqlTests).toHaveLength(38);
+    expect(result.pending).toHaveLength(6);
+    expect(result.sqlTests).toHaveLength(39);
     expect(releaseOrder(result).indexOf(name)).toBe(releaseOrder(result).indexOf('20261116120000_wallet_special_tests.sql') + 1);
     expect(result.sqlTests.indexOf('supabase/tests/recover_signal.sql')).toBe(result.sqlTests.indexOf('supabase/tests/today_decisions.sql') + 1);
     expect(source.get(name)).toContain('stockflow_recover_read');
@@ -285,7 +310,7 @@ describe('read-only pricing release preflight', () => {
     expect(releaseOrder(result).indexOf('20261031130000_wallet_my_actions.sql')).toBeGreaterThan(releaseOrder(result).indexOf('20261031120000_wallet_actions.sql'));
     expect(releaseOrder(result).indexOf('20261031140000_power_map_enhancement.sql')).toBeGreaterThan(releaseOrder(result).indexOf('20261031130000_wallet_my_actions.sql'));
     expect(releaseOrder(result).indexOf('20261031150000_power_map_influence.sql')).toBeGreaterThan(releaseOrder(result).indexOf('20261031140000_power_map_enhancement.sql'));
-    expect(result.sqlTests).toEqual(['supabase/tests/sales_coverage.sql', 'supabase/tests/wallet_v2.sql', 'supabase/tests/wallet_v2_concurrency.sql', 'supabase/tests/wallet_diagnosis.sql', 'supabase/tests/wallet_diagnosis_concurrency.sql', 'supabase/tests/wallet_actions.sql', 'supabase/tests/wallet_actions_concurrency.sql', 'supabase/tests/wallet_my_actions.sql', 'supabase/tests/power_map_enhancement.sql', 'supabase/tests/power_map_influence.sql', 'supabase/tests/po_tally_receipts.sql', 'supabase/tests/po_tally_receipts_concurrency.sql', 'supabase/tests/contract_windows.sql', 'supabase/tests/today_decisions.sql', 'supabase/tests/recover_signal.sql', 'supabase/tests/customer_map.sql', 'supabase/tests/customer_city_pin.sql', 'supabase/tests/customer_rename_guid.sql', 'supabase/tests/customer_auto_link.sql', 'supabase/tests/wallet_test_volume.sql', 'supabase/tests/wallet_special_tests.sql', 'supabase/tests/lab_size_reports.sql', 'supabase/tests/lab_size_specials.sql', 'supabase/tests/wallet_verification.sql', 'supabase/tests/prospects_focus_first.sql', 'supabase/tests/supplier_prices_safe_delete.sql', 'supabase/tests/control_null_and_source_time.sql', 'supabase/tests/deferred_economic_rebuild.sql', 'supabase/tests/deferred_economic_rebuild_concurrency.sql', 'supabase/tests/reconciliation_rounding.sql', 'supabase/tests/economic_result_pruning.sql', 'supabase/tests/lab_mix_reports.sql', 'supabase/tests/brand_mapping.sql', 'supabase/tests/brand_prospects.sql', 'supabase/tests/instrument_rental_registration.sql', 'supabase/tests/pin_centroids.sql', 'supabase/tests/pin_placement.sql', 'supabase/tests/visit_checkins.sql']);
+    expect(result.sqlTests).toEqual(['supabase/tests/sales_coverage.sql', 'supabase/tests/wallet_v2.sql', 'supabase/tests/wallet_v2_concurrency.sql', 'supabase/tests/wallet_diagnosis.sql', 'supabase/tests/wallet_diagnosis_concurrency.sql', 'supabase/tests/wallet_actions.sql', 'supabase/tests/wallet_actions_concurrency.sql', 'supabase/tests/wallet_my_actions.sql', 'supabase/tests/power_map_enhancement.sql', 'supabase/tests/power_map_influence.sql', 'supabase/tests/po_tally_receipts.sql', 'supabase/tests/po_tally_receipts_concurrency.sql', 'supabase/tests/contract_windows.sql', 'supabase/tests/today_decisions.sql', 'supabase/tests/recover_signal.sql', 'supabase/tests/customer_map.sql', 'supabase/tests/customer_city_pin.sql', 'supabase/tests/customer_rename_guid.sql', 'supabase/tests/customer_auto_link.sql', 'supabase/tests/wallet_test_volume.sql', 'supabase/tests/wallet_special_tests.sql', 'supabase/tests/lab_size_reports.sql', 'supabase/tests/lab_size_specials.sql', 'supabase/tests/wallet_verification.sql', 'supabase/tests/prospects_focus_first.sql', 'supabase/tests/supplier_prices_safe_delete.sql', 'supabase/tests/control_null_and_source_time.sql', 'supabase/tests/deferred_economic_rebuild.sql', 'supabase/tests/deferred_economic_rebuild_concurrency.sql', 'supabase/tests/reconciliation_rounding.sql', 'supabase/tests/economic_result_pruning.sql', 'supabase/tests/economic_sync_error_domain.sql', 'supabase/tests/lab_mix_reports.sql', 'supabase/tests/brand_mapping.sql', 'supabase/tests/brand_prospects.sql', 'supabase/tests/instrument_rental_registration.sql', 'supabase/tests/pin_centroids.sql', 'supabase/tests/pin_placement.sql', 'supabase/tests/visit_checkins.sql']);
     expect(releaseOrder(result).indexOf('20261102140000_pin_centroids.sql')).toBeGreaterThan(releaseOrder(result).indexOf('20261102130000_customer_city_pin.sql'));
     const runner = readFileSync(new URL('../pricing-migration-local.ps1', import.meta.url), 'utf8');
     expect(runner).toContain("'20261030110000_economics_candidate_rebuild.sql','20261030130000_wallet_v2.sql','20261031090000_wallet_diagnosis.sql','20261031120000_wallet_actions.sql','20261031130000_wallet_my_actions.sql','20261031140000_power_map_enhancement.sql','20261031150000_power_map_influence.sql'");
@@ -667,8 +692,9 @@ describe('read-only pricing release preflight', () => {
       '20261118110000_reconciliation_rounding.sql',
       '20261118120000_cron_log_trim.sql',
       '20261122090000_economic_result_pruning.sql',
+      '20261122100000_sync_error_domain.sql',
     ]);
-    expect(releaseOrder(result).slice(-43)).toEqual([
+    expect(releaseOrder(result).slice(-44)).toEqual([
       '20261028090000_to_order_list.sql',
       '20261029090000_challan_delivery.sql',
       '20261029091000_order_list_priority_sort.sql',
@@ -712,6 +738,7 @@ describe('read-only pricing release preflight', () => {
       '20261118110000_reconciliation_rounding.sql',
       '20261118120000_cron_log_trim.sql',
       '20261122090000_economic_result_pruning.sql',
+      '20261122100000_sync_error_domain.sql',
     ]);
     expect(result.deployed.at(-1)?.localFile).toBe('20261117090000_supplier_prices_safe_delete.sql');
     expect(result.deployed).toHaveLength(185);
@@ -721,7 +748,7 @@ describe('read-only pricing release preflight', () => {
       '20260830071657_create_stockflow_member_allowlist.sql',
     ]);
     expect(names.indexOf('20260902113000_equipment_installations.sql')).toBeLessThan(names.indexOf('20260902080651_harden_business_history.sql'));
-    expect(releaseOrder(result).slice(-43).join(' ')).not.toMatch(/archive|reset|rotate/);
+    expect(releaseOrder(result).slice(-44).join(' ')).not.toMatch(/archive|reset|rotate/);
     expect(result.releaseReady).toBe(false);
     expect(result.liveHistoryRechecked).toBe(false);
   });
@@ -734,8 +761,9 @@ describe('read-only pricing release preflight', () => {
       '20261118110000_reconciliation_rounding.sql',
       '20261118120000_cron_log_trim.sql',
       '20261122090000_economic_result_pruning.sql',
+      '20261122100000_sync_error_domain.sql',
     ]);
-    expect(releaseOrder(result).slice(-43)).toEqual([
+    expect(releaseOrder(result).slice(-44)).toEqual([
       '20261028090000_to_order_list.sql',
       '20261029090000_challan_delivery.sql',
       '20261029091000_order_list_priority_sort.sql',
@@ -779,6 +807,7 @@ describe('read-only pricing release preflight', () => {
       '20261118110000_reconciliation_rounding.sql',
       '20261118120000_cron_log_trim.sql',
       '20261122090000_economic_result_pruning.sql',
+      '20261122100000_sync_error_domain.sql',
     ]);
   });
   it('rejects changed SQL including changes inside literals', () => {

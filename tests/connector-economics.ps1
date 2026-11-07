@@ -399,7 +399,7 @@ $script:testCoverageNow=[datetimeoffset]'2026-10-30T22:00:00+05:30'
 function Get-SalesCoverageClock([datetimeoffset]$Now=$script:testCoverageNow){return $Now.ToOffset([timespan]::FromMinutes(330))}
 function Read-ReorderData {
     $script:freshStock++
-    return [ordered]@{company='fixture';fetchedAtIso=[datetimeoffset]::UtcNow.ToString('o');tallyInvoices=@();stock=$script:freshStock;catalog=@('fresh catalog');pricingHistory=@{price=$script:freshStock};economicEvidence=@{purpose='normal'};salesControlTotals=$null;salesCoverageDate=$null;economicSyncError=$script:economicSyncError}
+    return [ordered]@{company='fixture';fetchedAtIso=[datetimeoffset]::UtcNow.ToString('o');tallyInvoices=@();stock=$script:freshStock;catalog=@('fresh catalog');pricingHistory=@{price=$script:freshStock};economicEvidence=@{purpose='normal'};salesControlTotals=$null;salesCoverageDate=$null;economicSyncError=$script:economicSyncError;economicSyncDomain=$script:economicSyncDomain}
 }
 $snapshotPath=$salesCoverageStatePath+'.snapshot'
 $SyncMinutes=15;$DisableSalesCoverage=$false
@@ -432,6 +432,7 @@ try {
             Assert-Economic (-not (Publish-CloudSnapshot $script:pendingUploadJson)) 'Rejected upload succeeded'
             Assert-Economic ($script:salesCoverageUploadFailures -eq 1) 'Rejection required more than one attempt'
         } else {
+            $script:pendingUpload=$script:pendingUploadJson | ConvertFrom-Json
             $script:uploadState.rejectedPayloadHash=Get-StableEvidenceVersion $script:pendingUploadJson
             Assert-Economic (-not (Publish-CloudSnapshot $script:pendingUploadJson)) 'Previously rejected payload was accepted'
         }
@@ -441,7 +442,8 @@ try {
         }
         Assert-Economic ($queued.stock -eq $script:freshStock -and -not $script:uploadPayloadBlocked) 'Dropping coverage lost stock or kept uploads blocked'
         Assert-Economic (@($script:healthLines | Where-Object {$_ -match 'request=sales_coverage status=dropped reason='}).Count -eq 1) 'Coverage drop health line missing or duplicated'
-        Assert-Economic ($script:economicSyncError -eq 'Sales coverage upload dropped after repeated failure' -and $script:salesCoverageAttemptDate -eq '2026-10-30') 'Drop did not set error and daily attempt gate'
+        Assert-Economic ($script:economicSyncError -eq 'Sales coverage upload dropped after repeated failure' -and $script:economicSyncDomain -eq 'sales_coverage' -and $script:salesCoverageAttemptDate -eq '2026-10-30') 'Drop did not set error, domain and daily attempt gate'
+        Assert-Economic ($script:pendingUpload.economicSyncDomain -eq 'sales_coverage' -and $queued.economicSyncDomain -eq 'sales_coverage') 'Dropped pending upload lost sales coverage domain'
         $coverageNow=$script:testCoverageNow;$istDate=(Get-SalesCoverageClock $coverageNow).ToString('yyyy-MM-dd')
         Invoke-Expression $dueAssignment.Extent.Text
         Assert-Economic (-not $coverageDue) 'Dropped coverage ran again on the same IST day'
@@ -455,3 +457,19 @@ try {
 } finally {
     foreach($path in @($snapshotPath,"$snapshotPath.bak",$uploadStatePath,"$uploadStatePath.bak")){if([IO.File]::Exists($path)){[IO.File]::Delete($path)}}
 }
+
+# Exercise the production economic read try/catch with failing reader stubs.
+$economicRead=$ast.Find({param($node) $node -is [Management.Automation.Language.TryStatementAst] -and $node.Body.Extent.Text -match 'Read-TallyEconomicEvidence'},$true)
+Assert-Economic ($null -ne $economicRead) 'Economic read try/catch not found'
+$stateDirectory=Join-Path ([IO.Path]::GetTempPath()) ('economic-read-'+[guid]::NewGuid().ToString('N'))
+function Get-NextSalesCoverageBackfill { return $null }
+function Read-TallyEconomicEvidence { throw 'fixture economic read failure' }
+function Read-TallySalesCoverage { throw 'fixture coverage read failure' }
+foreach($coverageDue in @($false,$true)) {
+    $script:economicSyncDomain=$null
+    Invoke-Expression $economicRead.Extent.Text
+    $expectedDomain=if($coverageDue){'sales_coverage'}else{'instrument_economics'}
+    $expectedError=if($coverageDue){'fixture coverage read failure'}else{'fixture economic read failure'}
+    Assert-Economic ($script:economicSyncDomain -eq $expectedDomain -and $script:economicSyncError -eq $expectedError) 'Economic read failure lost its step domain'
+}
+Write-Output 'PASS: economic read failures carry instrument_economics or sales_coverage domain'

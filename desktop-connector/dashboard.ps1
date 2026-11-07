@@ -9,6 +9,7 @@ $companyName = 'SUPRABHA DISTRIBUTORS'
 $script:nextEconomicRead=Get-Date
 $script:lastEconomicEvidence=$null
 $script:economicSyncError=$null
+$script:economicSyncDomain=$null
 $stateDirectory = Join-Path ([Environment]::GetFolderPath('LocalApplicationData')) 'SuprabhaStockFlow'
 [IO.Directory]::CreateDirectory($stateDirectory) | Out-Null
 $snapshotPath = Join-Path $stateDirectory 'snapshot-v1.json'
@@ -107,12 +108,15 @@ function Remove-PendingSalesCoverage([string]$Reason) {
     $script:pendingBackfillEntry = $null
     $script:salesCoverageAttemptDate = (Get-SalesCoverageClock).ToString('yyyy-MM-dd')
     $script:economicSyncError = 'Sales coverage upload dropped after repeated failure'
+    $script:economicSyncDomain = 'sales_coverage'
     foreach ($key in @('economicEvidence','salesControlTotals','salesCoverageDate')) {
         if ($script:pendingUpload -is [System.Collections.IDictionary]) { $script:pendingUpload.Remove($key) }
         else { $script:pendingUpload.PSObject.Properties.Remove($key) }
     }
     if ($script:pendingUpload -is [System.Collections.IDictionary]) { $script:pendingUpload.economicSyncError = $script:economicSyncError }
     else { $script:pendingUpload | Add-Member -NotePropertyName economicSyncError -NotePropertyValue $script:economicSyncError -Force }
+    if ($script:pendingUpload -is [System.Collections.IDictionary]) { $script:pendingUpload.economicSyncDomain = $script:economicSyncDomain }
+    else { $script:pendingUpload | Add-Member -NotePropertyName economicSyncDomain -NotePropertyValue $script:economicSyncDomain -Force }
     $script:pendingUploadJson = $script:pendingUpload | ConvertTo-Json -Depth 6 -Compress
     $script:uploadPayloadBlocked = Test-ConnectorUploadPayloadRejected $script:uploadState $script:pendingUploadJson
     Write-ConnectorHealth "$([datetimeoffset]::Now.ToString('o')) request=sales_coverage status=dropped reason=$Reason"
@@ -543,9 +547,11 @@ function Read-ReorderData {
                 $script:lastEconomicEvidence=Read-TallyEconomicEvidence $companyName $EconomicHistoryMonths $ledgerRoles $voucherRoles $EconomicPurchaseHistoryMonths
             }
             $script:economicSyncError=$null
+            $script:economicSyncDomain=$null
         } catch {
             $script:economicSyncError=$_.Exception.Message
             $domain=if($coverageDue){'sales_coverage'}else{'instrument_economics'}
+            $script:economicSyncDomain=$domain
             Write-ConnectorHealth "$([datetimeoffset]::Now.ToString('o')) domain=$domain status=failed reason=$($script:economicSyncError)"
         }
     }
@@ -660,6 +666,7 @@ function Read-ReorderData {
         salesControlTotals = if($coverage){$coverage.salesControlTotals}else{$null}
         salesCoverageDate = $coverageDate
         economicSyncError = $script:economicSyncError
+        economicSyncDomain = $script:economicSyncDomain
     }
 }
 
