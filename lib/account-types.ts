@@ -1,4 +1,5 @@
 import { parseLabMixInput, type LabMixInput } from '@/lib/lab-mix';
+import type { VisitReason } from '@/lib/my-actions-types';
 
 // D-19 (owner, 14 Oct 2026); bounding box with margin; used only to warn
 export const MARKET_AREA = { name: 'Kalaburagi, Bidar, Raichur, Yadgir, Bijapur', minLatitude: 15.4, maxLatitude: 18.6, minLongitude: 75.0, maxLongitude: 77.9 } as const;
@@ -59,6 +60,21 @@ export type AccountsResponse = {
   canAssign: boolean; canSeeMyActions?: boolean; canSeeProspects?: boolean; canEraseContacts: boolean; canSeePowerMap: boolean; actorEmail: string; today: string;
 };
 export type AccountsGatewayResponse = Omit<AccountsResponse, 'canAssign' | 'canEraseContacts' | 'actorEmail'>;
+export type GetAccountsPayload = { search: string; scope: 'all' | 'mine'; page: number; ownerEmail?: string; territoryId?: string; unassignedTerritory?: true; class?: string; alert?: PowerAlert };
+export function validateGetAccountsPayload(input: unknown): GetAccountsPayload | null {
+  if (!input || typeof input !== 'object' || Array.isArray(input)) return null;
+  const p = input as Record<string, unknown>;
+  const allowed = ['search', 'scope', 'page', 'ownerEmail', 'territoryId', 'unassignedTerritory', 'class', 'alert'];
+  if (Object.keys(p).some(key => !allowed.includes(key)) || typeof p.search !== 'string' || p.search.length > 120
+    || (p.scope !== 'all' && p.scope !== 'mine') || !Number.isInteger(p.page) || (p.page as number) < 1 || (p.page as number) > 2_147_483_647
+    || (p.ownerEmail !== undefined && (typeof p.ownerEmail !== 'string' || p.ownerEmail.length > 254 || !/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(p.ownerEmail)))
+    || (p.class !== undefined && !accountClassStates.includes(p.class as AccountClassState))
+    || (p.alert !== undefined && !powerAlerts.includes(p.alert as PowerAlert))
+    || (p.unassignedTerritory !== undefined && p.unassignedTerritory !== true)
+    || (p.unassignedTerritory === true && p.territoryId !== undefined)
+    || (p.territoryId !== undefined && (typeof p.territoryId !== 'string' || !accountUuidPattern.test(p.territoryId)))) return null;
+  return p as GetAccountsPayload;
+}
 export function withAccountContacts<T extends { accounts: (Omit<AccountRow, 'appContacts'> & { appContacts?: AccountRow['appContacts'] })[] }>(response: T): T & { accounts: AccountRow[] } {
   return { ...response, accounts: response.accounts.map(row => ({ ...row, appContacts: row.appContacts ?? [] })) };
 }
@@ -85,11 +101,19 @@ export type AccountCommand =
     { precision: 'pin'; latitude: string; longitude: string; source: 'manual_pin' | 'pasted_link' } |
     { precision: 'town'; town: string; source: 'town' }
   ) }
-  | { action: 'log_visit'; payload: CommandBase & { customerId: string; visitedOn: string; outcome: VisitOutcome; note?: string | null; nextVisitOn?: string | null; metContactIds?: string[] } };
+  | { action: 'log_visit'; payload: CommandBase & { customerId: string; visitedOn: string; outcome: VisitOutcome; note?: string | null; nextVisitOn?: string | null; metContactIds?: string[]; reason?: VisitReason } };
 
 export const accountUuidPattern = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
 const coordinatePattern = /^-?[0-9]{1,3}(\.[0-9]{1,6})?$/;
 const outcomes: VisitOutcome[] = ['met', 'not_available', 'order_taken', 'issue_raised', 'other'];
+const visitReasonCategories = ['price', 'portfolio', 'instrument', 'service', 'relationship', 'credit', 'availability', 'competitor_lock_in', 'contract_tender', 'unknown', 'none'] as const;
+function validVisitReason(value: unknown): value is VisitReason {
+  if (!value || typeof value !== 'object' || Array.isArray(value)) return false;
+  const reason = value as Record<string, unknown>;
+  return Object.keys(reason).length === 2 && Object.hasOwn(reason, 'category') && Object.hasOwn(reason, 'source')
+    && visitReasonCategories.includes(reason.category as typeof visitReasonCategories[number])
+    && (reason.category === 'none' ? reason.source === null : reason.source === 'lab_said' || reason.source === 'our_view');
+}
 function validCoordinates(latitude: unknown, longitude: unknown): latitude is string {
   return typeof latitude === 'string' && typeof longitude === 'string'
     && coordinatePattern.test(latitude) && coordinatePattern.test(longitude)
@@ -232,6 +256,7 @@ export function parseAccountCommand(body: unknown): AccountCommand | null {
       statedMonthlySpendPaise: typeof p.statedMonthlySpendPaise === 'number' ? p.statedMonthlySpendPaise : null, note: typeof p.note === 'string' ? p.note.trim() : null, idempotencyKey } };
   }
   if (p.action === 'log_visit') {
+    if (p.reason !== undefined && !validVisitReason(p.reason)) return null;
     if (p.metContactIds !== undefined && (!Array.isArray(p.metContactIds) || p.metContactIds.length > 10
       || p.metContactIds.some(id => typeof id !== 'string' || !accountUuidPattern.test(id)))) return null;
     if (!validDate(p.visitedOn) || typeof p.outcome !== 'string' || !outcomes.includes(p.outcome as VisitOutcome)
@@ -240,7 +265,8 @@ export function parseAccountCommand(body: unknown): AccountCommand | null {
     return { action: p.action, payload: { customerId, visitedOn: p.visitedOn, outcome: p.outcome as VisitOutcome, idempotencyKey,
       ...(p.note === undefined ? {} : { note: p.note as string | null }),
       ...(p.metContactIds === undefined ? {} : { metContactIds: p.metContactIds as string[] }),
-      ...(p.nextVisitOn === undefined ? {} : { nextVisitOn: p.nextVisitOn as string | null }) } };
+      ...(p.nextVisitOn === undefined ? {} : { nextVisitOn: p.nextVisitOn as string | null }),
+      ...(p.reason === undefined ? {} : { reason: p.reason as VisitReason }) } };
   }
   return null;
 }

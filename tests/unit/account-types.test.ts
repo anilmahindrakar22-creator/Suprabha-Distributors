@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { decisionRoles, isInsideMarketArea, parseAccountClass, parseAccountCommand, parseLocationInput, powerAlerts, withAccountContacts } from '@/lib/account-types';
+import { decisionRoles, isInsideMarketArea, parseAccountClass, parseAccountCommand, parseLocationInput, powerAlerts, validateGetAccountsPayload, withAccountContacts } from '@/lib/account-types';
 import type { AccountRow } from '@/lib/account-types';
 
 describe('optional app contacts response', () => {
@@ -88,6 +88,14 @@ describe('account class policy command', () => {
   });
 });
 describe('account command parser', () => {
+  it('validates territory filters for get_accounts', () => {
+    const base = { search: '', scope: 'all', page: 1 };
+    expect(validateGetAccountsPayload({ ...base, unassignedTerritory: true })).toEqual({ ...base, unassignedTerritory: true });
+    expect(validateGetAccountsPayload({ ...base, territoryId: customerId })).toEqual({ ...base, territoryId: customerId });
+    expect(validateGetAccountsPayload({ ...base, unassignedTerritory: false })).toBeNull();
+    expect(validateGetAccountsPayload({ ...base, unassignedTerritory: 'true' })).toBeNull();
+    expect(validateGetAccountsPayload({ ...base, unassignedTerritory: true, territoryId: customerId })).toBeNull();
+  });
   describe('lab mix commands', () => {
     const area = { area: 'IMMUNO', status: 'in_house', exact: 15 };
     const report = { action: 'record_lab_mix', customerId, idempotencyKey, areas: [area] };
@@ -156,6 +164,9 @@ describe('account command parser', () => {
   it('accepts visits and leaves business date limits to the database', () => {
     expect(parseAccountCommand({ action: 'log_visit', customerId, idempotencyKey, visitedOn: '2026-10-14', outcome: 'met', note: 'Visit', nextVisitOn: '2026-10-20' })?.payload).toMatchObject({ outcome: 'met', nextVisitOn: '2026-10-20' });
   });
+  it.each([{ category: 'price', source: 'lab_said' }, { category: 'portfolio', source: 'our_view' }, { category: 'none', source: null }])('accepts valid visit reason %o', reason => {
+    expect(parseAccountCommand({ action: 'log_visit', customerId, idempotencyKey, visitedOn: '2026-10-14', outcome: 'met', reason })?.payload).toMatchObject({ reason });
+  });
   it.each([
     null, [], {}, { ...pin, action: 'unknown' }, { ...pin, customerId: 'bad' }, { ...pin, idempotencyKey: 'short' },
     { ...pin, expectedVersion: undefined }, { ...pin, expectedVersion: 0 }, { ...pin, expectedVersion: 1.5 },
@@ -169,6 +180,7 @@ describe('account command parser', () => {
     { action: 'log_visit', customerId, idempotencyKey, visitedOn: '2026-10-14', outcome: 'bad' },
     { action: 'log_visit', customerId, idempotencyKey, visitedOn: '2026-10-14', outcome: 'met', nextVisitOn: '2026-10-14' },
     { action: 'log_visit', customerId, idempotencyKey, visitedOn: '2026-10-14', outcome: 'met', note: 'x'.repeat(501) },
+    ...[null, { category: 'price' }, { category: 'none', source: 'our_view' }, { category: 'clinical', source: 'lab_said' }, { category: 'price', source: 'customer_stated' }, { category: 'price', source: 'our_view', extra: true }].map(reason => ({ action: 'log_visit', customerId, idempotencyKey, visitedOn: '2026-10-14', outcome: 'met', reason })),
   ])('rejects malformed commands %#', input => { expect(parseAccountCommand(input)).toBeNull(); });
 });
 describe('Power Map commands', () => {

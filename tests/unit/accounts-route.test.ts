@@ -106,6 +106,11 @@ describe('accounts API', () => {
     expect(response.headers.get('cache-control')).toBe('private, no-store');
     expect(response.headers.has('server-timing')).toBe(true);
   });
+  it('maps the no territory filter without a territory id', async () => {
+    expect((await get('?territory=none')).status).toBe(200);
+    expect(mocks.gateway).toHaveBeenCalledWith('manager@example.test', 'get_accounts', { search: '', scope: 'all', page: 1, unassignedTerritory: true });
+    expect(mocks.gateway.mock.calls.at(-1)?.[2]).not.toHaveProperty('territoryId');
+  });
   it('defaults GET filters and page', async () => {
     await get();
     expect(mocks.gateway).toHaveBeenCalledWith('manager@example.test', 'get_accounts', { search: '', scope: 'all', page: 1 });

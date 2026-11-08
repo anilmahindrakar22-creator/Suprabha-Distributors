@@ -8,6 +8,7 @@ import { ArrowLeft, Ban, CalendarCheck, CalendarClock, CalendarPlus, CalendarX, 
 import { isInsideMarketArea, MARKET_AREA, parseLocationInput, powerAlerts, socialStyles, styleCues, withAccountContacts, type ContactStyle, type SocialStyle, type StyleCue, type AppContact, type ContactAssessment, type PowerAlert, type AccountRow, type AccountsResponse, type VisitOutcome } from '@/lib/account-types';
 import { walletPowerAlertLabels, walletRoleLabels } from '@/lib/wallet-labels';
 import { readJsonBody } from '@/lib/http-json';
+import { VisitReasonPicker, emptyVisitReason, visitReasonMissingSource, visitReasonPayload, type VisitReasonPickerValue } from '@/components/visit-reason-picker';
 
 type Mode = 'mine' | 'all';
 const CustomerLinks = lazy(() => import('./customer-links').then(module => ({ default: module.CustomerLinks })));
@@ -591,7 +592,7 @@ export function AccountsWorkspace({ defaultMode = 'mine', initialView, initialCu
       {data?.canSeePowerMap ? <div className="min-w-0 flex-1 basis-40"><label htmlFor={prefix + '-power'} className="text-xs text-sf-muted">Power Map</label><select id={prefix + '-power'} disabled={busy} value={powerAlert} onChange={event => { setPowerAlert(event.target.value); setPage(1); setOpen(null); }} className={inputClass}><option value="">Any</option>{powerAlerts.map(alert => <option key={alert} value={alert}>{alert === 'decision_maker_not_met' ? 'Decision maker not met' : alertLabel(alert)}</option>)}</select></div> : null}
       {data?.canAssign && mode === 'all' ? <>
         <div className="min-w-0 flex-1 basis-40"><label htmlFor={`${prefix}-owner`} className="text-xs text-sf-muted">Owner</label><select id={`${prefix}-owner`} disabled={busy} value={owner} onChange={event => { setOwner(event.target.value); setPage(1); setOpen(null); }} className={inputClass}><option value="">Any</option>{data.owners.map(item => <option key={item.email} value={item.email}>{item.name || item.email}</option>)}</select></div>
-        <div className="min-w-0 flex-1 basis-40"><label htmlFor={`${prefix}-territory`} className="text-xs text-sf-muted">Territory</label><select id={`${prefix}-territory`} disabled={busy} value={territory} onChange={event => { setTerritory(event.target.value); setPage(1); setOpen(null); }} className={inputClass}><option value="">Any</option>{data.territories.map(item => <option key={item.id} value={item.id}>{item.name}</option>)}</select></div>
+        <div className="min-w-0 flex-1 basis-40"><label htmlFor={`${prefix}-territory`} className="text-xs text-sf-muted">Territory</label><select id={`${prefix}-territory`} disabled={busy} value={territory} onChange={event => { setTerritory(event.target.value); setPage(1); setOpen(null); }} className={inputClass}><option value="">Any</option><option value="none">No territory</option>{data.territories.map(item => <option key={item.id} value={item.id}>{item.name}</option>)}</select></div>
       </> : null}
     </div>
     {classesNote ? <p className="text-xs text-sf-muted">{classesNote}</p> : null}
@@ -649,6 +650,7 @@ function AccountForm({ row, kind, data, onCancel, onSaved, onConflict, onBusy, o
   const [metContactIds, setMetContactIds] = useState<string[]>([]);
   const [note, setNote] = useState('');
   const [nextVisitOn, setNextVisitOn] = useState('');
+  const [visitReason, setVisitReason] = useState<VisitReasonPickerValue>(emptyVisitReason); const [visitReasonError, setVisitReasonError] = useState(false);
   const [precision, setPrecision] = useState<'pin' | 'town'>(row.location?.precision ?? 'pin');
   const [pin, setPin] = useState(row.location?.precision === 'pin' ? `${row.location.latitude}, ${row.location.longitude}` : '');
   const [town, setTown] = useState(row.location?.town ?? '');
@@ -686,7 +688,7 @@ function AccountForm({ row, kind, data, onCancel, onSaved, onConflict, onBusy, o
   }
   function submit(event: SubmitEvent<HTMLFormElement>) {
     event.preventDefault();
-    if (kind === 'visit') void post({ action: 'log_visit', customerId: row.id, visitedOn, outcome, ...(row.appContacts.length ? { metContactIds } : {}), ...(note.trim() ? { note: note.trim() } : {}), ...(nextVisitOn ? { nextVisitOn } : {}) });
+    if (kind === 'visit') { if (visitReasonMissingSource(visitReason)) { setVisitReasonError(true); return; } const reason = visitReasonPayload(visitReason); void post({ action: 'log_visit', customerId: row.id, visitedOn, outcome, ...(row.appContacts.length ? { metContactIds } : {}), ...(note.trim() ? { note: note.trim() } : {}), ...(nextVisitOn ? { nextVisitOn } : {}), ...(reason ? { reason } : {}) }); }
     if (kind === 'location') {
       if (row.location?.precision === 'pin' && !data.canAssign) { setError('Only management can move a pin.'); return; }
       if (precision === 'pin' && !parsed.ok) { setError(pinError); return; }
@@ -704,6 +706,7 @@ function AccountForm({ row, kind, data, onCancel, onSaved, onConflict, onBusy, o
         <div className="block"><label htmlFor={`${prefix}-note`} className="text-sm text-sf-body">Note</label><textarea id={`${prefix}-note`} maxLength={500} value={note} onChange={event => setNote(event.target.value)} className={`${inputClass} py-2`} /></div>
         <div className="block"><label htmlFor={`${prefix}-next`} className="text-sm text-sf-body">Next visit</label><input id={`${prefix}-next`} type="date" min={visitedOn ? addAccountDays(visitedOn, 1) : undefined} value={nextVisitOn} onChange={event => setNextVisitOn(event.target.value)} className={inputClass} /></div>
         <div className="flex flex-wrap gap-2">{[7, 14, 30].map(days => <button key={days} type="button" disabled={!visitedOn} className={`${buttonClass} rounded-full`} onClick={() => setNextVisitOn(addAccountDays(visitedOn, days))}>+{days} days</button>)}</div>
+        <VisitReasonPicker value={visitReason} onChange={next => { setVisitReason(next); setVisitReasonError(false); }} error={visitReasonError} disabled={busy} idPrefix={prefix} />
       </> : null}
       {kind === 'location' ? <>
         <fieldset><legend className="text-sm text-sf-body">Location</legend><div className="flex gap-4">{(['pin', 'town'] as const).map(value => <label key={value} className="flex min-h-11 items-center gap-2 text-sm text-sf-body"><input type="radio" name={`${prefix}-precision`} checked={precision === value} onChange={() => { setPrecision(value); setError(''); }} />{value === 'pin' ? 'Pin' : 'Town'}</label>)}</div></fieldset>

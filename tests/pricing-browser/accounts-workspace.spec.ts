@@ -736,6 +736,16 @@ test('log visit quick date posts the flat body and reloads', async ({ page }) =>
   await expect.poll(() => gets.length).toBeGreaterThan(before);
   await expect(form).toHaveCount(0);
 });
+
+test('log visit records a visit reason and source', async ({ page }) => {
+  const { posts } = await mockAccounts(page, { actorEmail: 'sales@example.test' });
+  await firstCard(page).getByRole('button', { name: 'Log visit for Care Lab', exact: false }).click();
+  const form = page.getByRole('form', { name: 'Log visit' });
+  await form.getByRole('button', { name: 'Price', exact: true }).click();
+  await form.getByLabel('Our view').check();
+  await form.getByRole('button', { name: 'Save', exact: true }).click();
+  await expect.poll(() => posts[0]).toMatchObject({ action: 'log_visit', reason: { category: 'price', source: 'our_view' } });
+});
 test('location parses a map link and blocks invalid input', async ({ page }) => {
   const { posts } = await mockAccounts(page);
   await firstCard(page).getByRole('button', { name: 'Location for Care Lab', exact: false }).click();
@@ -793,6 +803,14 @@ test('All filters and owner form use assignment choices and version', async ({ p
   await form.getByRole('button', { name: 'Save', exact: true }).click();
   await expect(page.getByRole('status')).toHaveText('Saved.');
   expect(posts[0]).toMatchObject({ action: 'assign_account', customerId, ownerEmail: 'other@example.test', territoryId, expectedVersion: 3 });
+});
+
+test('No territory filter requests territory=none', async ({ page }) => {
+  const { gets } = await mockAccounts(page, { actorEmail: 'manager@example.test', canAssign: true });
+  await page.getByRole('button', { name: 'All', exact: true }).click();
+  await expect(page.getByLabel('Territory', { exact: true })).toBeVisible();
+  await page.getByLabel('Territory', { exact: true }).selectOption('none');
+  await expect.poll(() => new URL(gets.at(-1)!).searchParams.get('territory')).toBe('none');
 });
 test('409 refreshes the list with a clear notice', async ({ page }) => {
   const { gets } = await mockAccounts(page, { status: 409 });
