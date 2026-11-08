@@ -294,9 +294,9 @@ for (const width of [375, 1280]) test.describe(`Customer map at ${width}px`, () 
     await expect(page.locator('.customer-map-group')).toHaveCount(1);
     await expect(page.getByRole('button', { name: groupLabel, exact: true })).toHaveCount(0);
     const filters = page.getByLabel('Map filters', { exact: true });
-    const pressedBackground = await filters.locator('button[aria-pressed="true"]').evaluate(el => getComputedStyle(el).backgroundColor);
     const unpressedBackground = await filters.getByRole('button', { name: 'Orders', exact: true }).evaluate(el => getComputedStyle(el).backgroundColor);
-    expect(pressedBackground).not.toBe(unpressedBackground);
+    await expect.poll(() => filters.locator('button[aria-pressed="true"]').evaluate(el => getComputedStyle(el).backgroundColor)).not.toBe(unpressedBackground);
+    await expect.poll(() => filters.locator('button[aria-pressed="true"]').evaluate(el => getComputedStyle(el).backgroundColor)).not.toBe('rgba(0, 0, 0, 0)');
     await page.getByRole('button', { name: 'Actions', exact: true }).click();
     await expect(page.locator('.customer-map-group')).toHaveCount(1);
     await expect(page.getByRole('button', { name: groupLabel, exact: true })).toBeVisible();
