@@ -32,8 +32,7 @@ begin
   where not v.cancelled and v.kind in ('sale','return','credit')
   group by v.id,v.company_id,v.customer_source_id,v.business_date,v.kind
  ), sales as materialized (
-  select *,(kind='sale' and net>=20000000)
-   or (kind in ('return','credit') and net<=-20000000) bulk,
+  select *,kind='sale' and net>=20000000 bulk,
    case when business_date<h2_start then 'H1' else 'H2' end half from vouchers
  ), periods as (
   select 'ALL' period union all select 'H1' union all select 'H2'
@@ -52,17 +51,21 @@ begin
    'revenuePaise',coalesce(sum(s.net),0),
    'repeatPaise',coalesce(sum(s.net) filter(where not s.bulk),0),
    'bulkPaise',coalesce(sum(s.net) filter(where s.bulk),0),
-   'bulkInvoices',count(s.id) filter(where s.bulk and s.kind='sale'),
-   'bulkReturns',count(s.id) filter(where s.bulk and s.kind in ('return','credit')),
+   'bulkInvoices',count(s.id) filter(where s.bulk),
    'labsBuying',coalesce(b.labs,0),'buyingMonths',coalesce(b.months,0),
    'perBuyingMonthPaise',round(coalesce(sum(s.net) filter(where not s.bulk),0)/nullif(b.months,0))) tree
   from periods p left join period_sales s on s.period=p.period
   left join buying_counts b on b.period=p.period group by p.period,b.labs,b.months
+ ), lab_months as (
+  -- Bridge regularity includes bulk and nets all vouchers within each month.
+  select company_id,customer_source_id,half,date_trunc('month',business_date) as sale_month,sum(net) net
+  from sales group by company_id,customer_source_id,half,date_trunc('month',business_date)
  ), labs as (
   select company_id,customer_source_id,
    coalesce(sum(net) filter(where half='H1'),0) h1,
-   coalesce(sum(net) filter(where half='H2'),0) h2
-  from sales group by company_id,customer_source_id
+   coalesce(sum(net) filter(where half='H2'),0) h2,
+   count(*) filter(where half='H1' and net>0) h1_buying_months
+  from lab_months group by company_id,customer_source_id
  ), classified as (
   select *,case when h1<=0 and h2>0 then 'new' when h1>0 and h2<=0 then 'stopped'
    when h1>0 and h2>h1 then 'grew' when h1>0 and h2>0 and h2<h1 then 'fell'
@@ -78,7 +81,9 @@ begin
  select jsonb_build_object('tree',(select tree from trees where period='ALL'),
   'halves',(select jsonb_agg(jsonb_build_object('half',period)||tree order by period) from trees where period<>'ALL'),
   'bridge',jsonb_build_object('h1Paise',(select coalesce(sum(h1),0) from labs),
-   'h2Paise',(select coalesce(sum(h2),0) from labs))||(select jsonb_object_agg(class,value) from classes)),
+   'h2Paise',(select coalesce(sum(h2),0) from labs),
+   'stoppedRegular',(select jsonb_build_object('labs',count(*),'paise',coalesce(sum(h1-h2),0))
+    from classified where class='stopped' and h1_buying_months>=3))||(select jsonb_object_agg(class,value) from classes)),
   coalesce((select array_agg(company_id order by company_id) from company_sales),'{}'::text[]),
   (select company_id from company_sales order by revenue desc,company_id limit 1)
  into result,companies,top_company;

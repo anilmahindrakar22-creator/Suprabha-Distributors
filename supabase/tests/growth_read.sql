@@ -32,25 +32,27 @@ begin
  perform pg_temp.growth_sale('c2','C','2031-03-01',300);
  r:=private.stockflow_growth_read('2031-07-15',array['management']);
  perform pg_temp.growth_assert(r->'window'='{"from":"2030-07-01","to":"2031-07-01","h1From":"2030-07-01","h2From":"2031-01-01"}'::jsonb,'G1 bounds');
- perform pg_temp.growth_assert(r->'tree'='{"revenuePaise":40000500,"repeatPaise":20000500,"bulkPaise":20000000,"bulkInvoices":1,"bulkReturns":0,"labsBuying":3,"buyingMonths":4,"perBuyingMonthPaise":5000125}'::jsonb,'G2-G3 tree');
+ perform pg_temp.growth_assert(r->'tree'='{"revenuePaise":40000500,"repeatPaise":20000500,"bulkPaise":20000000,"bulkInvoices":1,"labsBuying":3,"buyingMonths":4,"perBuyingMonthPaise":5000125}'::jsonb,'G2-G3 tree');
  perform pg_temp.growth_assert((r#>>'{halves,0,revenuePaise}')::numeric=20000000 and (r#>>'{halves,1,revenuePaise}')::numeric=20000500,'G1 halves');
  perform pg_temp.growth_assert(3*(4::numeric/3)*5000125 between 20000499 and 20000501,'G3 identity');
 
- raise notice 'Growth phase G2: bulk return and repeat return thresholds';
+ raise notice 'Growth phase G2: all returns remain repeat';
  before_data:=r;
  perform pg_temp.growth_sale('bulk-return','B','2031-02-01',-20000000,'return');
  perform pg_temp.growth_sale('repeat-return','B','2031-02-01',-19999999,'return');
  r:=private.stockflow_growth_read('2031-07-15',array['management']);
- perform pg_temp.growth_assert(r->'tree'='{"revenuePaise":501,"repeatPaise":501,"bulkPaise":0,"bulkInvoices":1,"bulkReturns":1,"labsBuying":3,"buyingMonths":4,"perBuyingMonthPaise":125}'::jsonb,'G2 return thresholds and separate counts');
- perform pg_temp.growth_assert((r#>>'{halves,0,bulkReturns}')::int=0 and (r#>>'{halves,1,bulkReturns}')::int=1
-  and (r#>>'{halves,1,bulkInvoices}')::int=1 and (r#>>'{halves,1,bulkPaise}')::numeric=0,'G2 half return and invoice counts');
- perform pg_temp.growth_assert((r#>>'{tree,repeatPaise}')::numeric-(before_data#>>'{tree,repeatPaise}')::numeric=-19999999
-  and (r#>>'{tree,bulkPaise}')::numeric-(before_data#>>'{tree,bulkPaise}')::numeric=-20000000,'G2 signed return allocation');
- -- A credit at the same negative threshold has the identical bulk treatment.
+ perform pg_temp.growth_assert(r->'tree'='{"revenuePaise":501,"repeatPaise":-19999499,"bulkPaise":20000000,"bulkInvoices":1,"labsBuying":3,"buyingMonths":4,"perBuyingMonthPaise":-4999875}'::jsonb,'G2 returns are repeat at both thresholds');
+ perform pg_temp.growth_assert((r#>>'{halves,1,bulkInvoices}')::int=1 and (r#>>'{halves,1,bulkPaise}')::numeric=20000000
+  and (r#>>'{halves,1,repeatPaise}')::numeric=-39999499,'G2 half return allocation');
+ perform pg_temp.growth_assert(not (r->'tree' ? 'bulkReturns') and not (r#>'{halves,0}' ? 'bulkReturns')
+  and not (r#>'{halves,1}' ? 'bulkReturns'),'G2 original tree shape');
+ perform pg_temp.growth_assert((r#>>'{tree,repeatPaise}')::numeric-(before_data#>>'{tree,repeatPaise}')::numeric=-39999999
+  and r#>'{tree,bulkPaise}'=before_data#>'{tree,bulkPaise}','G2 signed repeat return allocation');
+ -- A credit at the same negative threshold also remains repeat.
  before_data:=r;
  perform pg_temp.growth_sale('bulk-return','B','2031-02-01',-20000000,'credit',2);
  r:=private.stockflow_growth_read('2031-07-15',array['management']);
- perform pg_temp.growth_assert(r->'tree'=before_data->'tree' and r->'bridge'=before_data->'bridge','G2 bulk credit and bridge parity');
+ perform pg_temp.growth_assert(r->'tree'=before_data->'tree' and r->'bridge'=before_data->'bridge','G2 repeat credit and bridge parity');
 
  raise notice 'Growth phase G4: revisions, exclusion and half-open dates';
  perform pg_temp.growth_sale('revision','A','2030-07-01',999999);
@@ -70,6 +72,17 @@ begin
  before_data:=r;
  perform pg_temp.growth_sale('new','new','2031-01-01',500);
  perform pg_temp.growth_sale('stop','stopped','2030-07-01',600);
+ -- Three positive vouchers in one month still count as one buying month.
+ perform pg_temp.growth_sale('stop-extra1','stopped','2030-07-02',100);
+ perform pg_temp.growth_sale('stop-extra2','stopped','2030-07-03',100);
+ -- A month netting to zero does not establish regularity.
+ perform pg_temp.growth_sale('stop-zero-sale','stopped','2030-08-01',200);
+ perform pg_temp.growth_sale('stop-zero-return','stopped','2030-08-02',-200,'return');
+ -- The bulk month counts for bridge regularity, and H2 returns add to the decrease.
+ perform pg_temp.growth_sale('regular-jul','stopped-regular','2030-07-01',20000000);
+ perform pg_temp.growth_sale('regular-aug','stopped-regular','2030-08-01',100);
+ perform pg_temp.growth_sale('regular-sep','stopped-regular','2030-09-01',200);
+ perform pg_temp.growth_sale('regular-return','stopped-regular','2031-01-01',-50,'return');
  perform pg_temp.growth_sale('grow1','grew','2030-07-01',100);
  perform pg_temp.growth_sale('grow2','grew','2031-01-01',300);
  perform pg_temp.growth_sale('fall1','fell','2030-07-01',400);
@@ -80,10 +93,12 @@ begin
  perform pg_temp.growth_sale('other2','other','2031-01-01',-30,'credit');
  r:=private.stockflow_growth_read('2031-07-15',array['management']);b:=r->'bridge';
  foreach c in array array['new','stopped','grew','fell','same','other'] loop
-  perform pg_temp.growth_assert((b#>>array[c,'labs'])::int-(before_data#>>array['bridge',c,'labs'])::int=1,'G5 count '||c);
+  perform pg_temp.growth_assert((b#>>array[c,'labs'])::int-(before_data#>>array['bridge',c,'labs'])::int=
+   case when c='stopped' then 2 else 1 end,'G5 count '||c);
   perform pg_temp.growth_assert((b#>>array[c,'paise'])::numeric-(before_data#>>array['bridge',c,'paise'])::numeric=
-   case c when 'new' then 500 when 'stopped' then 600 when 'grew' then 200 when 'fell' then 300 when 'same' then 0 else 50 end,'G5 paise '||c);
+   case c when 'new' then 500 when 'stopped' then 20001150 when 'grew' then 200 when 'fell' then 300 when 'same' then 0 else 50 end,'G5 paise '||c);
  end loop;
+ perform pg_temp.growth_assert(b->'stoppedRegular'='{"labs":1,"paise":20000350}'::jsonb,'G5 stopped regular subset');
  perform pg_temp.growth_assert((b->>'h1Paise')::numeric+(b#>>'{new,paise}')::numeric-(b#>>'{stopped,paise}')::numeric
   +(b#>>'{grew,paise}')::numeric-(b#>>'{fell,paise}')::numeric+(b#>>'{other,paise}')::numeric=(b->>'h2Paise')::numeric,'G5 identity');
  perform pg_temp.growth_assert(r->>'confirmed'='false' and r->>'confirmedReason' like '%growth-test-co%'

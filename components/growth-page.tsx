@@ -42,7 +42,7 @@ function Revenue({ data, scope, comparison }: { data: GrowthData; scope: string;
     ['Labs buying', String(t.labsBuying), 'Bought in this period'],
     ['Buying months per lab', months(t).toFixed(1), 'Average per lab'],
     ['₹ per buying month', t.perBuyingMonthPaise === null ? '—' : rupees(t.perBuyingMonthPaise), 'Repeat sales per buying month'],
-    ['Instrument & bulk', lakh(t.bulkPaise), `${t.bulkInvoices} invoices of ₹2 L or more${t.bulkReturns > 0 ? `, net of ${t.bulkReturns} large return${t.bulkReturns === 1 ? '' : 's'}` : ''}`],
+    ['Instrument & bulk', lakh(t.bulkPaise), `${t.bulkInvoices} invoices of ₹2 L or more`],
     ['Gross profit', pct === null || pct < 50 ? 'Not measured yet' : 'Unknown', gpNote],
   ];
   const formula = t.perBuyingMonthPaise === null ? null : `${t.labsBuying} × ${months(t).toFixed(1)} × ${rupees(t.perBuyingMonthPaise)} = ${lakh(t.repeatPaise)}`;
@@ -77,10 +77,16 @@ function Revenue({ data, scope, comparison }: { data: GrowthData; scope: string;
 function Bridge({ data, scope, comparison }: { data: GrowthData; scope: string; comparison: string }) {
   const [table, setTable] = useState(false);
   const b = data.bridge;
+  const stoppedOccasional = b.stopped.labs - b.stoppedRegular.labs;
+  const bridgeHeadline = b.stoppedRegular.labs * 2 < b.stopped.labs
+    ? `Most labs that stopped were occasional buyers; ${b.stoppedRegular.labs} regular labs stopped (${lakh(b.stoppedRegular.paise)}). Growth came from ${b.grew.labs} existing labs.`
+    : b.new.paise <= b.stopped.paise
+      ? `New labs only replaced the labs we lost; growth came from ${b.grew.labs} existing labs.`
+      : 'New labs added more than we lost.';
   const bars = [
     { label: 'H1 total', lines: ['H1', 'total'], value: b.h1Paise, kind: 'total' },
     { label: `+ New labs (${b.new.labs})`, lines: ['New labs', `(${b.new.labs})`], value: b.new.paise, kind: 'up' },
-    { label: `− Labs that stopped (${b.stopped.labs})`, lines: ['Stopped', `(${b.stopped.labs})`], value: -b.stopped.paise, kind: 'down' },
+    { label: `− Labs that stopped (${b.stopped.labs}) · ${b.stoppedRegular.labs} regular`, lines: ['Stopped', `(${b.stopped.labs})`], value: -b.stopped.paise, kind: 'down' },
     { label: `+ Existing labs that grew (${b.grew.labs})`, lines: ['Existing', `grew (${b.grew.labs})`], value: b.grew.paise, kind: 'up' },
     { label: `− Existing labs that fell (${b.fell.labs})`, lines: ['Existing', `fell (${b.fell.labs})`], value: -b.fell.paise, kind: 'down' },
     ...(b.other.paise !== 0 ? [{ label: `Other (${b.other.labs})`, lines: ['Other', `(${b.other.labs})`], value: b.other.paise, kind: b.other.paise > 0 ? 'up' : 'down' }] : []),
@@ -92,9 +98,9 @@ function Bridge({ data, scope, comparison }: { data: GrowthData; scope: string; 
   const y = (n: number) => 30 + (high - n) / (high - low || 1) * 175;
   const width = 100 / bars.length;
   const identity = `${(b.h1Paise / 1e7).toFixed(1)} + ${(b.new.paise / 1e7).toFixed(1)} − ${(b.stopped.paise / 1e7).toFixed(1)} + ${(b.grew.paise / 1e7).toFixed(1)} − ${(b.fell.paise / 1e7).toFixed(1)}${b.other.paise ? ` ${b.other.paise > 0 ? '+' : '−'} ${(Math.abs(b.other.paise) / 1e7).toFixed(1)}` : ''} = ${(b.h2Paise / 1e7).toFixed(1)}.`;
-  return <section className={card} aria-labelledby="bridge-title"><div className="flex items-center justify-between gap-2"><h2 id="bridge-title" className="text-base font-bold">Where growth came from</h2><Toggle name="bridge" table={table} onClick={() => setTable(!table)} /></div><p className="text-xs font-bold text-sf-ink">{b.new.paise <= b.stopped.paise ? `New labs only replaced the labs we lost; growth came from ${b.grew.labs} existing labs.` : 'New labs added more than we lost.'}</p><p className={muted}>{comparison} · {scope} · all sales</p>
+  return <section className={card} aria-labelledby="bridge-title"><div className="flex items-center justify-between gap-2"><h2 id="bridge-title" className="text-base font-bold">Where growth came from</h2><Toggle name="bridge" table={table} onClick={() => setTable(!table)} /></div><p className="text-xs font-bold text-sf-ink">{bridgeHeadline}</p><p className={muted}>{comparison} · {scope} · all sales</p>
     {table ? <div id="bridge-table"><Table caption={`Revenue bridge · ${scope}`} headings={['Contribution', 'Revenue']} rows={bars.map(bar => [bar.label, lakh(Math.abs(bar.value))])} /></div> : <div id="bridge-chart"><svg className="block h-[270px] w-full overflow-visible" role="img" aria-labelledby="bridge-svg-title bridge-svg-desc"><title id="bridge-svg-title">H1 to H2 revenue bridge in ₹ lakh</title><desc id="bridge-svg-desc">{bars.map(bar => `${bar.label} ${lakh(Math.abs(bar.value))}`).join('; ')}. {identity}</desc><line x1="0" x2="100%" y1={y(0)} y2={y(0)} stroke="var(--sf-line)" />{geometry.map((bar, i) => { const x = i * width + 2; const top = y(Math.max(bar.start, bar.end)); return <g key={bar.label}>{i < bars.length - 1 && <line x1={`${x + width - 4}%`} x2={`${(i + 1) * width + 2}%`} y1={y(bar.end)} y2={y(bar.end)} stroke="var(--sf-line-strong)" strokeDasharray="3 3" />}<rect data-growth-bar={bar.kind} x={`${x}%`} width={`${width - 4}%`} y={top} height={Math.max(2, Math.abs(y(bar.start) - y(bar.end)))} rx="2" fill={`var(--sf-${bar.kind === 'total' ? 'brand' : bar.kind === 'up' ? 'success' : 'danger'})`} /><text x={`${(i + .5) * width}%`} y={top - 20} textAnchor="middle" className="fill-sf-label text-[15px]"><tspan x={`${(i + .5) * width}%`}>{lakh(Math.abs(bar.value)).replace(/ L$/, '')}</tspan><tspan x={`${(i + .5) * width}%`} dy="14" className="text-xs">L</tspan></text><text x={`${(i + .5) * width}%`} y="230" textAnchor="middle" className="fill-sf-label text-xs">{bar.lines.map((line, j) => <tspan key={j} x={`${(i + .5) * width}%`} dy={j ? 16 : 0}>{line}</tspan>)}</text></g>; })}</svg><div className="flex flex-wrap gap-3 text-xs text-sf-muted">{['Total', 'Increase', 'Decrease'].map((v, i) => <span key={v} className="inline-flex items-center gap-1"><i className={`size-2 rounded-sm ${['bg-sf-brand', 'bg-sf-success', 'bg-sf-danger'][i]}`} />{v}</span>)}<span>Values in ₹ L</span></div></div>}
-    <p className="text-xs tabular-nums text-sf-muted" aria-label="Bridge identity">{identity}</p><p className={muted}>Many labs buy only a few months a year, so part of &apos;stopped&apos; may be infrequent buyers.</p></section>;
+    <p className="text-xs tabular-nums text-sf-muted" aria-label="Bridge identity">{identity}</p><p className={muted}>Regular = bought in 3 or more of the 6 months before. {stoppedOccasional} of the labs that stopped had bought only once or twice.</p></section>;
 }
 
 function Health({ data }: { data: GrowthData }) {

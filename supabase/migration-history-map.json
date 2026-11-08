@@ -1406,7 +1406,7 @@
     },
     {
       "localFile": "20261129110000_growth_read.sql",
-      "localSha256": "c7a5d629de2340a27c49049597e7bd257a52b02436dd24792dc7dc9d479ceeef",
+      "localSha256": "7e0627f2fe1b6fbf705799df513ad849e0037459ad57bacc495ef9bf22d74273",
       "remoteVersion": null,
       "remoteSha256": null,
       "status": "not_deployed"
