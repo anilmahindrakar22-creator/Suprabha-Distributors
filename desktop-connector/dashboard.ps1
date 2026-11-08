@@ -23,6 +23,7 @@ $salesCoverageBackfillPath = Join-Path $stateDirectory 'sales-coverage-backfill-
 $script:pendingBackfillEntry = $null
 $script:salesCoverageState = Read-SalesCoverageState $salesCoverageStatePath $companyName
 $script:salesCoverageAttemptDate = $null
+$script:backfillAttemptDate=$null
 $script:salesCoverageUploadFailures = 0
 $script:salesCoverageUploadAttemptDate = $null
 $healthLogPath = Join-Path $stateDirectory 'connector-health.log'
@@ -517,6 +518,7 @@ function Read-ReorderData {
         $coverageNow=[datetimeoffset]::UtcNow
         $istDate=(Get-SalesCoverageClock $coverageNow).ToString('yyyy-MM-dd')
         $coverageDue=-not $DisableSalesCoverage -and $script:pendingUpload.economicEvidence.purpose -ne 'sales_coverage' -and $script:salesCoverageAttemptDate -ne $istDate -and (Test-SalesCoverageDue $script:salesCoverageState $coverageNow)
+        $backfillDue=-not $coverageDue -and -not $DisableSalesCoverage -and $script:pendingUpload.economicEvidence.purpose -ne 'sales_coverage' -and [string]$script:salesCoverageState.lastSalesCoverageDate -eq $istDate -and $script:backfillAttemptDate -ne $istDate -and ($backfillNow=Get-NextSalesCoverageBackfill $salesCoverageBackfillPath $companyName)
         try {
             $ledgerRoles=@{}
             $rolePath=Join-Path $stateDirectory 'economic-ledger-roles.json'
@@ -531,15 +533,16 @@ function Read-ReorderData {
                 foreach($property in $voucherRoleDocument.PSObject.Properties){$voucherRoles[$property.Name]=[string]$property.Value}
             }
             if($coverageDue){
-                $backfillNow=Get-NextSalesCoverageBackfill $salesCoverageBackfillPath $companyName
                 $script:pendingBackfillEntry=$null
-                if($backfillNow){
-                    $script:pendingBackfillEntry=$backfillNow.ToString('yyyy-MM-dd',[Globalization.CultureInfo]::InvariantCulture)
-                    $coverage=Read-TallySalesCoverage $companyName $ledgerRoles $voucherRoles -Now $backfillNow
-                    $coverage.economicEvidence.backfillEntry=$script:pendingBackfillEntry
-                }else{
-                    $coverage=Read-TallySalesCoverage $companyName $ledgerRoles $voucherRoles $coverageNow
-                }
+                $coverage=Read-TallySalesCoverage $companyName $ledgerRoles $voucherRoles $coverageNow
+                $coverageDate=$istDate
+                # Restore the normal envelope on the next cycle, not after four hours.
+                $script:nextEconomicRead=Get-Date
+            }elseif($backfillDue){
+                $script:backfillAttemptDate=$istDate
+                $script:pendingBackfillEntry=$backfillNow.ToString('yyyy-MM-dd',[Globalization.CultureInfo]::InvariantCulture)
+                $coverage=Read-TallySalesCoverage $companyName $ledgerRoles $voucherRoles -Now $backfillNow
+                $coverage.economicEvidence.backfillEntry=$script:pendingBackfillEntry
                 $coverageDate=$istDate
                 # Restore the normal envelope on the next cycle, not after four hours.
                 $script:nextEconomicRead=Get-Date
@@ -550,7 +553,7 @@ function Read-ReorderData {
             $script:economicSyncDomain=$null
         } catch {
             $script:economicSyncError=$_.Exception.Message
-            $domain=if($coverageDue){'sales_coverage'}else{'instrument_economics'}
+            $domain=if($coverageDue -or $backfillDue){'sales_coverage'}else{'instrument_economics'}
             $script:economicSyncDomain=$domain
             Write-ConnectorHealth "$([datetimeoffset]::Now.ToString('o')) domain=$domain status=failed reason=$($script:economicSyncError)"
         }
