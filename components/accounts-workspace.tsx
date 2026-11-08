@@ -460,7 +460,7 @@ export function AccountDetails({ row, mode, today, renderActions, ratingContactI
 }
 
 /** Managers start on All accounts; field staff start on the accounts assigned to them. */
-export function AccountsWorkspace({ defaultMode = 'mine', initialView, initialCustomerId, initialWalletView, onOpenOrder, onNewOrder }: { defaultMode?: Mode; initialView?: 'my-actions' | 'wallet' | 'map' | 'links'; initialCustomerId?: string; initialWalletView?: 'actions_due'; onOpenOrder?: (order: { orderId: string; orderNumber: string }) => void; onNewOrder?: (customerId: string) => void } = {}) {
+export function AccountsWorkspace({ defaultMode = 'mine', initialView, initialCustomerId, initialWalletView, onOpenOrder, onNewOrder }: { defaultMode?: Mode; initialView?: 'my-actions' | 'wallet' | 'map' | 'links' | 'prospects'; initialCustomerId?: string; initialWalletView?: 'actions_due'; onOpenOrder?: (order: { orderId: string; orderNumber: string }) => void; onNewOrder?: (customerId: string) => void } = {}) {
   const [view, setView] = useState<'accounts' | 'links' | 'wallet' | 'my-actions' | 'map' | 'prospects'>(initialView ?? 'accounts');
   const [mapWalletCustomerId, setMapWalletCustomerId] = useState<string>();
   const [addingCustomer, setAddingCustomer] = useState(false);

@@ -23,6 +23,12 @@ describe('Growth labs route', () => {
     'list=regular_labs&page=0', 'list=regular_labs&page=-1', 'list=regular_labs&page=1.5',
     'list=regular_labs&page=abc', 'list=regular_labs&page=1&sort=name',
     'list=regular_labs&page=1&unknown=true', 'list=regular_labs&list=bridge_new&page=1',
+    'list=window_labs&page=1&half=H3', 'list=bulk_invoices&page=1&half=',
+    'list=regular_labs&page=1&half=H1', 'list=month_buying&month=2026-10&page=1&half=H2',
+    'list=window_labs&page=1&half=H1&half=H2', 'list=window_labs&page=1&month=2026-10',
+    'list=regular_labs&page=1&sort=per_month', 'list=month_buying&month=2026-10&page=1&sort=per_month',
+    'list=bulk_invoices&page=1&sort=per_month', 'list=bulk_invoices&page=1&sort=months',
+    'list=window_labs&page=1&regularOnly=true', 'list=bulk_invoices&page=1&month=2026-10',
   ])('rejects invalid parameters without calling the gateway: %s', async query => {
     expect((await get(query)).status).toBe(400);
     expect(mocks.gateway).not.toHaveBeenCalled();
@@ -34,10 +40,15 @@ describe('Growth labs route', () => {
     ['list=month_large_purchases&month=2026-10&page=1', { list: 'month_large_purchases', month: '2026-10', page: 1 }],
     ['list=bridge_stopped&page=1&regularOnly=true&sort=months', { list: 'bridge_stopped', page: 1, regularOnly: true, sort: 'months' }],
     ['list=bridge_stopped&page=1&regularOnly=false', { list: 'bridge_stopped', page: 1, regularOnly: false }],
+    ['list=window_labs&page=1&sort=per_month', { list: 'window_labs', page: 1, sort: 'per_month' }],
+    ['list=window_labs&page=1&half=H1&sort=value', { list: 'window_labs', page: 1, half: 'H1', sort: 'value' }],
+    ['list=window_labs&page=1&half=H2&sort=months', { list: 'window_labs', page: 1, half: 'H2', sort: 'months' }],
+    ['list=bulk_invoices&page=1&half=H2&sort=value', { list: 'bulk_invoices', page: 1, half: 'H2', sort: 'value' }],
+    ['list=bulk_invoices&page=1&sort=last', { list: 'bulk_invoices', page: 1, sort: 'last' }],
     ...['bridge_new', 'bridge_grew', 'bridge_fell', 'regular_labs'].map(list => [`list=${list}&page=1`, { list, page: 1 }] as [string, Record<string, unknown>]),
   ])('passes only the exact validated payload: %s', async (query, payload) => {
     const params = new URLSearchParams(query as string);
-    const responseSample = { ...sample, list: params.get('list'), month: params.get('month'), page: Number(params.get('page')), rows: params.get('list') === 'month_large_purchases' ? [{ supplierName: 'Supplier A', valuePaise: 10000000, date: '2026-10-02' }] : sample.rows };
+    const responseSample = { ...sample, list: params.get('list'), month: params.get('month'), ...(params.has('half') ? { half: params.get('half') } : {}), page: Number(params.get('page')), rows: params.get('list') === 'bulk_invoices' ? [{ invoice: true, name: 'Lab A', customerId: 'customer-a', valuePaise: 25000000, date: '2026-10-02' }] : params.get('list') === 'month_large_purchases' ? [{ supplierName: 'Supplier A', valuePaise: 10000000, date: '2026-10-02' }] : sample.rows };
     mocks.gateway.mockResolvedValue(responseSample);
     const response = await get(query as string);
     expect(response.status).toBe(200);

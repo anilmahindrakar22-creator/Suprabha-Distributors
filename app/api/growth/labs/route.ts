@@ -14,14 +14,17 @@ export async function GET(request: Request) {
     const params = new URL(request.url).searchParams;
     const list = params.get('list'), pageText = params.get('page'), sort = params.get('sort');
     const month = params.get('month'), regularOnly = params.get('regularOnly');
-    const allowed = ['list', 'page', 'sort', 'month', 'regularOnly'];
+    const half = params.get('half');
+    const allowed = ['list', 'page', 'sort', 'month', 'regularOnly', 'half'];
     const page = Number(pageText);
     const monthly = list?.startsWith('month_');
     if ([...params.keys()].some(key => !allowed.includes(key) || params.getAll(key).length !== 1)
       || !growthLabLists.includes(list as GrowthLabList)
       || pageText === null || !/^[1-9]\d*$/.test(pageText) || !Number.isSafeInteger(page) || page < 1
-      || (sort !== null && !['value', 'months', 'last'].includes(sort))
+      || (sort !== null && !(list === 'window_labs' ? ['value', 'months', 'last', 'per_month']
+        : list === 'bulk_invoices' ? ['value', 'last'] : ['value', 'months', 'last']).includes(sort))
       || (monthly ? !isGrowthMonth(month) : month !== null)
+      || (half !== null && (!['window_labs', 'bulk_invoices'].includes(String(list)) || !['H1', 'H2'].includes(half)))
       || (regularOnly !== null && (list !== 'bridge_stopped' || !['true', 'false'].includes(regularOnly)))) {
       return Response.json({ error: 'Invalid growth list parameters' }, { status: 400, headers });
     }
@@ -29,6 +32,7 @@ export async function GET(request: Request) {
     if (sort !== null) payload.sort = sort;
     if (month !== null) payload.month = month;
     if (regularOnly !== null) payload.regularOnly = regularOnly === 'true';
+    if (half !== null) payload.half = half;
     const data = normalizeGrowthLabs(await callOrderGateway(session.email, 'get_growth_labs', payload));
     if (!data || data.list !== list || data.month !== month || data.page !== page) throw new Error('Malformed growth labs response');
     return Response.json(data, { headers });

@@ -73,12 +73,29 @@ describe('Growth lab response validation', () => {
   it('accepts non-month lists with a null month', () => {
     expect(normalizeGrowthLabs({ ...labs(), list: 'regular_labs', month: null })).not.toBeNull();
   });
+  it('normalizes window labs and invoice rows with optional half scope', () => {
+    const window = { ...labs(), list: 'window_labs', month: null, half: 'H2' };
+    expect(normalizeGrowthLabs(window)).toEqual(window);
+    expect(normalizeGrowthLabs({ ...window, half: null })).not.toBeNull();
+    const invoices = { ...labs(), list: 'bulk_invoices', month: null, half: 'H1', rows: [{ invoice: true, name: 'Lab A', customerId: 'customer-a', valuePaise: 25000000, date: '2026-02-02' }] };
+    expect(normalizeGrowthLabs(invoices)).toEqual(invoices);
+    const unlinked = { ...invoices, half: undefined, rows: [{ ...invoices.rows[0], name: null, customerId: null }] };
+    delete unlinked.half;
+    expect(normalizeGrowthLabs(unlinked)).toEqual(unlinked);
+  });
   it.each([
     { list: 'unknown' }, { month: null }, { month: '2026-13' }, { total: -1 }, { page: 0 }, { pageSize: 21 },
     { rows: [{ ...row, monthsBought: 13 }] }, { rows: [{ ...row, monthsBought: -1 }] },
     { rows: [{ ...row, trend: 'sideways' }] }, { rows: [{ ...row, lastBoughtOn: '2026-02-30' }] },
     { rows: [{ supplierName: 'Supplier A', valuePaise: 100, date: '2026-10-02' }] },
     { list: 'month_large_purchases', rows: [row] },
+    { list: 'window_labs', month: null, half: 'H3' },
+    { half: 'H1' },
+    { list: 'bulk_invoices', month: null, rows: [row] },
+    { list: 'bulk_invoices', month: null, rows: [{ invoice: false, name: 'Lab A', customerId: null, valuePaise: 100, date: '2026-10-02' }] },
+    { list: 'bulk_invoices', month: null, rows: [{ invoice: true, name: 'Lab A', customerId: null, valuePaise: 100, date: '2026-02-30' }] },
+    { list: 'bulk_invoices', month: null, rows: [{ invoice: true, name: 'Lab A', valuePaise: 100, date: '2026-10-02' }] },
+    { list: 'bulk_invoices', month: null, rows: [{ invoice: true, name: 'Lab A', customerId: null, valuePaise: Infinity, date: '2026-10-02' }] },
   ])('rejects malformed list response %#', patch => { expect(normalizeGrowthLabs({ ...labs(), ...patch })).toBeNull(); });
 });
 

@@ -7,16 +7,18 @@ export type GrowthMonth = {
   month: string; labsBuying: number; firstTime: number | null; skippedRegulars: number | null;
   salesPaise: number; purchasesRegularPaise: number; purchasesLargePaise: number; largePurchaseInvoices: number;
 };
-export const growthLabLists = ['month_buying', 'month_first', 'month_skipped', 'month_large_purchases', 'bridge_new', 'bridge_stopped', 'bridge_grew', 'bridge_fell', 'regular_labs'] as const;
+export const growthLabLists = ['month_buying', 'month_first', 'month_skipped', 'month_large_purchases', 'bridge_new', 'bridge_stopped', 'bridge_grew', 'bridge_fell', 'regular_labs', 'window_labs', 'bulk_invoices'] as const;
 export type GrowthLabList = typeof growthLabLists[number];
 export type GrowthLabRow = {
   labKey: string; customerId: string | null; name: string | null; town: string | null;
   valuePaise: number | null; monthsBought: number; lastBoughtOn: string | null; trend: 'up' | 'down' | 'flat' | null;
 };
 export type GrowthLargePurchaseRow = { supplierName: string | null; valuePaise: number; date: string };
+export type GrowthInvoiceRow = { invoice: true; name: string | null; customerId: string | null; valuePaise: number; date: string };
 export type GrowthLabsData = {
   list: GrowthLabList; month: string | null; total: number; page: number; pageSize: 20;
-  rows: (GrowthLabRow | GrowthLargePurchaseRow)[];
+  half?: 'H1' | 'H2' | null;
+  rows: (GrowthLabRow | GrowthLargePurchaseRow | GrowthInvoiceRow)[];
 };
 export type GrowthData = {
   companyCount: number;
@@ -76,16 +78,21 @@ export function normalizeGrowth(value: unknown): GrowthData | null {
   return value as GrowthData;
 }
 
-/** Validate either drill-down row kind without substituting missing business data. */
+/** Validate drill-down row kinds without substituting missing business data. */
 export function normalizeGrowthLabs(value: unknown): GrowthLabsData | null {
   if (!object(value) || !growthLabLists.includes(value.list as GrowthLabList)) return null;
   const monthly = String(value.list).startsWith('month_');
   if (monthly ? !isGrowthMonth(value.month) : value.month !== null) return null;
+  if ('half' in value && (!['window_labs', 'bulk_invoices'].includes(String(value.list))
+    || !nullable(value.half, v => v === 'H1' || v === 'H2'))) return null;
   if (!count(value.total) || !count(value.page) || value.page < 1 || value.pageSize !== 20
     || !Array.isArray(value.rows) || value.rows.length > 20 || value.rows.length > value.total) return null;
   const text = (v: unknown) => typeof v === 'string';
   const valid = value.list === 'month_large_purchases'
     ? value.rows.every(r => object(r) && nullable(r.supplierName, text) && money(r.valuePaise) && date(r.date))
+    : value.list === 'bulk_invoices'
+      ? value.rows.every(r => object(r) && r.invoice === true && nullable(r.name, text)
+        && nullable(r.customerId, text) && money(r.valuePaise) && date(r.date))
     : value.rows.every(r => object(r) && typeof r.labKey === 'string' && r.labKey.length > 0
       && nullable(r.customerId, text) && nullable(r.name, text) && nullable(r.town, text)
       && nullable(r.valuePaise, money) && count(r.monthsBought) && r.monthsBought <= 12

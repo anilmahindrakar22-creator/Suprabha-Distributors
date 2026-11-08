@@ -18,16 +18,19 @@ async function fixture(page: Page, options: { role?: string; status?: number; co
   await page.route('**/api/push-subscription**', route => route.fulfill({ json: { enabled: false, publicKey: '' } }));
   await page.route('**/api/wallet?**', route => route.fulfill({ json: { coverage: { certified: true } } }));
   await page.route('**/api/today**', route => route.fulfill({ json: { policyVersion: 'today-v1', generatedAt: '2026-11-01T06:00:00Z', coverageCertified: true, unblock: { total: 0, rows: [] }, grow: { total: 0, rows: [] } } }));
+  await page.route('**/api/accounts?**', route => route.fulfill({ json: { accounts: [], page: { page: 1, pageSize: 20, total: 0 }, owners: [], territories: [], classPolicy: { aMinPaise: '10000000', bMinPaise: '3000000' }, canAssign: true, canSeeProspects: true, canSeeMyActions: true, canEraseContacts: false, canSeePowerMap: true, actorEmail: 'manager@example.test', today: '2026-11-09' } }));
   await page.route('**/api/growth', route => route.fulfill({ status: options.status ?? 200, json: options.malformed ? {} : { ...sample(), confirmed: options.confirmed ?? true, confirmedReason: options.confirmed === false ? 'Sales import is pending' : null } }));
   await page.route('**/api/growth/labs?**', route => {
     const params = new URL(route.request().url()).searchParams;
     const list = params.get('list'), pageNumber = Number(params.get('page'));
-    const rows = list === 'month_large_purchases'
+    const rows = list === 'bulk_invoices'
+      ? [{ invoice: true, name: 'Lab A', customerId: 'customer-a', valuePaise: 25000000, date: '2026-10-02' }]
+      : list === 'month_large_purchases'
       ? [{ supplierName: 'Supplier A', valuePaise: 20000000, date: '2026-10-02' }]
       : pageNumber === 1
         ? Array.from({ length: Math.min(20, options.labsTotal ?? 12) }, (_, i) => ({ labKey: `ledger-${i}`, customerId: i === 1 ? null : `customer-${i}`, name: i === 1 ? null : i === 0 ? 'Lab A' : `Lab ${i + 1}`, town: i === 0 ? 'Town A' : null, valuePaise: null, monthsBought: 10, lastBoughtOn: '2026-09-02', trend: 'down' }))
         : [{ labKey: 'ledger-b', customerId: 'customer-b', name: 'Lab B', town: null, valuePaise: null, monthsBought: 9, lastBoughtOn: '2026-08-02', trend: 'flat' }];
-    return route.fulfill({ json: { list, month: params.get('month'), total: list === 'month_large_purchases' ? 1 : options.labsTotal ?? 12, page: pageNumber, pageSize: 20, rows } });
+    return route.fulfill({ json: { list, month: params.get('month'), ...(params.has('half') ? { half: params.get('half') } : {}), total: list === 'month_large_purchases' || list === 'bulk_invoices' ? 1 : options.labsTotal ?? 12, page: pageNumber, pageSize: 20, rows } });
   });
   await page.goto('/?view=frame&role=' + role + '&roles=' + role);
 }
@@ -112,6 +115,41 @@ for (const width of [375, 1280]) {
       const panel = page.getByRole('dialog');
       await expect(panel.getByText('Supplier A', { exact: true })).toBeVisible();
       await expect(panel.getByRole('button', { name: 'Check in Economics', exact: true })).toBeVisible();
+    });
+    test('tree spend drilldown requests per-month sorting across the window', async ({ page }) => {
+      await fixture(page); await openGrowth(page);
+      const request = page.waitForRequest(r => { const p = new URL(r.url()).searchParams; return r.url().includes('/api/growth/labs?') && p.get('list') === 'window_labs' && p.get('sort') === 'per_month' && p.get('page') === '1' && !p.has('half'); });
+      await page.locator('#tree-chart').getByRole('button', { name: /₹ per buying month/ }).click();
+      await request;
+      await expect(page.getByRole('dialog').getByText('Lab A', { exact: true })).toBeVisible();
+    });
+    test('H2 instrument and bulk cell requests half-scoped invoices', async ({ page }) => {
+      await fixture(page); await openGrowth(page);
+      const row = page.getByRole('region', { name: 'Where revenue comes from', exact: true }).getByRole('row').filter({ has: page.getByRole('rowheader', { name: 'Instrument & bulk', exact: true }) });
+      const request = page.waitForRequest(r => { const p = new URL(r.url()).searchParams; return r.url().includes('/api/growth/labs?') && p.get('list') === 'bulk_invoices' && p.get('half') === 'H2' && p.get('page') === '1'; });
+      await row.getByRole('cell').nth(1).getByRole('button').click(); await request;
+      await expect(page.getByRole('dialog').getByText('Lab A', { exact: true })).toBeVisible();
+      await expect(page.getByRole('dialog').getByRole('button', { name: 'Open', exact: true })).toBeVisible();
+    });
+    test('sales and regular purchase bars carry no drilldown button role', async ({ page }) => {
+      await fixture(page); await openGrowth(page);
+      const purchases = page.getByRole('region', { name: 'Purchases against sales', exact: true });
+      await expect(purchases.getByRole('button', { name: /sales|regular purchases/i })).toHaveCount(0);
+      await expect(purchases.locator('svg rect[role="button"]')).toHaveCount(12);
+      await purchases.getByRole('button', { name: 'View as table', exact: true }).click();
+      for (const row of await purchases.locator('tbody tr').all()) {
+        await expect(row.getByRole('cell').nth(0).getByRole('button')).toHaveCount(0);
+        await expect(row.getByRole('cell').nth(1).getByRole('button')).toHaveCount(0);
+      }
+    });
+    test('Brand setup health action reaches Accounts Prospects', async ({ page }) => {
+      await fixture(page); await openGrowth(page);
+      await page.route('**/api/customer-map?**', route => route.fulfill({ status: 503, json: { error: 'Unavailable in fixture' } }));
+      await page.locator('#data-health').getByRole('button', { name: /Open Brand setup/i }).click();
+      await expect(page.getByRole('heading', { name: 'Accounts', exact: true })).toBeVisible();
+      await expect(page.getByRole('region', { name: 'Prospects', exact: true })).toBeVisible();
+      await expect(page.getByRole('button', { name: 'Brands setup', exact: true })).toBeVisible();
+      await expect(page.getByRole('heading', { name: 'Growth', exact: true })).toHaveCount(0);
     });
     test('unconfirmed figures stay visible', async ({ page }) => {
       await fixture(page, { confirmed: false }); await openGrowth(page);
