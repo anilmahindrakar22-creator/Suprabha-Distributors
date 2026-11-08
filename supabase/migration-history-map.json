@@ -1396,6 +1396,13 @@
       "remoteVersion": null,
       "remoteSha256": null,
       "status": "not_deployed"
+    },
+    {
+      "localFile": "20261129100000_accounts_no_territory.sql",
+      "localSha256": "a1726a94c386cfd42663e845e7b0406690a3f096ecd764e755dc097d74119399",
+      "remoteVersion": null,
+      "remoteSha256": null,
+      "status": "not_deployed"
     }
   ],
   "liveCheck": {
