@@ -144,8 +144,9 @@ $istDate='2026-11-15';$ledgerRoles=@{};$voucherRoles=@{}
 . $readCoverage
 Assert-Backfill ($script:readNow -eq $coverageNow -and $coverageDate -eq $istDate -and -not $coverage.economicEvidence.ContainsKey('backfillEntry') -and $null -eq $script:pendingBackfillEntry) 'Absent queue changed normal coverage'
 [SalesCoverageMemoryFile]::Files[$salesCoverageBackfillPath]=$queueJson
+$script:pendingBackfillEntry=$null;$script:readNow=$null
 . $readCoverage
-Assert-Backfill ($script:readNow.ToString('o') -eq '2026-05-15T12:00:00.0000000+05:30' -and $coverageDate -eq $istDate -and $coverage.economicEvidence.backfillEntry -eq '2026-05-15' -and $script:pendingBackfillEntry -eq '2026-05-15') 'Queued coverage used the wrong date or lost its marker'
+Assert-Backfill ($script:readNow -eq $coverageNow -and $coverageDate -eq $istDate -and -not $coverage.economicEvidence.ContainsKey('backfillEntry') -and $null -eq $script:pendingBackfillEntry -and [SalesCoverageMemoryFile]::Files[$salesCoverageBackfillPath] -ceq $queueJson) 'Queued backfill changed regular coverage'
 foreach($name in @('Publish-CloudSnapshot','Remove-PendingSalesCoverage')) {
     $definition=$dashboardAst.Find({param($node) $node -is [Management.Automation.Language.FunctionDefinitionAst] -and $node.Name -eq $name},$true)
     Invoke-Expression $definition.Extent.Text
@@ -161,6 +162,8 @@ function Save-ConnectorSnapshot($Path,$Snapshot) {
 function Save-ConnectorUploadState($Path,$State) {}
 $salesCoverageStatePath='coverage-state';$snapshotPath='snapshot';$uploadStatePath='upload-state'
 $cloudSyncUrl='https://fixture.invalid';$cloudUploadKey='fixture'
+$script:pendingBackfillEntry='2026-05-15'
+$coverage=@{economicEvidence=@{purpose='sales_coverage';backfillEntry='2026-05-15'}}
 $uploadJson=@{economicEvidence=$coverage.economicEvidence;salesCoverageDate=$coverageDate} | ConvertTo-Json -Depth 6 -Compress
 foreach($mode in @('success','rewrite_failure','state_failure','three_failures')) {
     [SalesCoverageMemoryFile]::Files[$salesCoverageBackfillPath]=$queueJson
@@ -191,4 +194,4 @@ foreach($mode in @('success','rewrite_failure','state_failure','three_failures')
     }
     Assert-Backfill ([SalesCoverageMemoryFile]::Files.Count -eq 1) 'Failed rewrite leaked a temporary file'
 }
-Write-Output 'PASS: dashboard date selection, evidence marker, success removal, rewrite failure isolation and three-failure retry'
+Write-Output 'PASS: regular coverage ignores the queue; backfill success removal, rewrite failure isolation and three-failure retry'
