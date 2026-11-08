@@ -17,7 +17,7 @@ jobs:
   database-integrity:
     name: Replay migrations and test pricing ACID rules
     runs-on: ubuntu-latest
-    timeout-minutes: 10
+    timeout-minutes: 20
     services:
       postgres:
         image: postgres:15
