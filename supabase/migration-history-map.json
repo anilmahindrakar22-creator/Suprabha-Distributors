@@ -1382,6 +1382,13 @@
       "remoteVersion": null,
       "remoteSha256": null,
       "status": "not_deployed"
+    },
+    {
+      "localFile": "20261122120000_company_gp_model.sql",
+      "localSha256": "79fb893a44268e0b840cac1ef7d0caad7da7373dfdbab6172699f59010135c6b",
+      "remoteVersion": null,
+      "remoteSha256": null,
+      "status": "not_deployed"
     }
   ],
   "liveCheck": {
