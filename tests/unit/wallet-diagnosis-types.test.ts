@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { isOpportunityOutcomeResponse, validateWalletDiagnosisCommand } from '@/lib/wallet-diagnosis-types';
+import { isOpportunityOutcomeResponse, normalizeVisitReasons, validateWalletDiagnosisCommand } from '@/lib/wallet-diagnosis-types';
 const customerId = '11111111-1111-4111-8111-111111111111';
 const requestId = '22222222-2222-4222-8222-222222222222';
 const opportunityId = '33333333-3333-4333-8333-333333333333';
@@ -13,6 +13,12 @@ const samples: Array<[string, Record<string, unknown>]> = [
   ['clinical', { issue: 'Validation concern' }], ['contract_tender', { holder: 'District lab', endsOn: today }], ['competitor_lock_in', { competitor: 'Acme', endsOn: today }], ['unknown', { nextQuestion: 'Who supplies reagents?', askBy: today }],
 ];
 describe('validateWalletDiagnosisCommand', () => {
+  it('normalizes optional visit hints, drops malformed rows, and caps at five', () => {
+    const rows = [{ visitedOn: today, visitedBy: 'Asha', category: 'price', source: 'lab_said' }, { visitedOn: today, visitedBy: 'Ravi', category: 'none', source: null }, { visitedOn: 'bad', visitedBy: 'x', category: 'price', source: 'our_view' }, ...Array.from({ length: 5 }, (_, i) => ({ visitedOn: today, visitedBy: `Rep ${i}`, category: 'unknown', source: 'our_view' }))];
+    expect(normalizeVisitReasons(rows)).toHaveLength(5);
+    expect(normalizeVisitReasons(rows)[0]).toMatchObject({ category: 'price', source: 'lab_said' });
+    expect(normalizeVisitReasons(undefined)).toEqual([]);
+  });
   it('accepts the opportunity outcomes read and tolerant outcome response shapes', () => {
     expect(validateWalletDiagnosisCommand({ action: 'get_opportunity_outcomes', payload: { customerId } })).toEqual({ action: 'get_opportunity_outcomes', payload: { customerId } });
     expect(isOpportunityOutcomeResponse([{ opportunityId, kind: 'capture', outcome: 'won', extra: true }, {}])).toBe(true);

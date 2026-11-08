@@ -20,6 +20,11 @@ describe('my actions command contract', () => {
   it('accepts a next visit date after today and within 180 days', () => {
     expect(validateMyActionCommand(close({ visit: { outcome: 'met', nextVisitOn: addDays(todayIST(), 180) } }))).toMatchObject({ payload: { visit: { outcome: 'met' } } });
   });
+  it('accepts valid optional visit reasons', () => {
+    expect(validateMyActionCommand(close({ visit: { outcome: 'met', nextVisitOn: null, reason: { category: 'price', source: 'lab_said' } } })).payload).toMatchObject({ visit: { reason: { category: 'price', source: 'lab_said' } } });
+    expect(validateMyActionCommand(close({ visit: { outcome: 'met', nextVisitOn: null } })).payload).toMatchObject({ visit: { outcome: 'met', nextVisitOn: null } });
+    expect(validateMyActionCommand(close({ visit: { outcome: 'met', nextVisitOn: null, reason: { category: 'none', source: null } } })).action).toBe('close_my_action');
+  });
   it.each([
     null, {}, { action: 'get_my_actions', payload: { page: 0 } }, { action: 'get_my_actions', payload: { page: 1, extra: true } },
     { action: 'close_my_action', payload: { requestId: id, actionId: id, result: 'done', note: 'x', visit: null } },
@@ -27,6 +32,7 @@ describe('my actions command contract', () => {
     close({ visit: { outcome: 'invalid', nextVisitOn: null } }), close({ result: 'dropped', visit: { outcome: 'met', nextVisitOn: null } }),
     close({ visit: { outcome: 'met', nextVisitOn: addDays(todayIST(), 0) } }), close({ visit: { outcome: 'met', nextVisitOn: addDays(todayIST(), 181) } }),
     close({ visit: { outcome: 'met', nextVisitOn: '2026-02-30' } }), close({ visit: { outcome: 'met', nextVisitOn: null, extra: true } }),
+    ...[null, { category: 'price' }, { category: 'none', source: 'our_view' }, { category: 'clinical', source: 'lab_said' }, { category: 'price', source: 'customer_stated' }, { category: 'price', source: 'our_view', extra: true }].map(reason => close({ visit: { outcome: 'met', nextVisitOn: null, reason } })),
     close({ extra: true }), close({ visit: undefined }),
   ])('rejects invalid command %j', input => expect(() => validateMyActionCommand(input)).toThrow('Invalid my actions request'));
 });

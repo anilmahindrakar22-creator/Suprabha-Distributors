@@ -2,13 +2,16 @@ import type { ActionResult, ActionType } from '@/lib/wallet-action-types';
 
 export type MyActionRow = { actionId: string; customerId: string; customerName: string; city: string | null; actionType: ActionType; detail: string; dueOn: string; overdue: boolean; constraintCategory: string | null; routeToDecider: string[] | null };
 export type MyActions = { page: number; pageSize: 50; total: number; overdueCount: number; rows: MyActionRow[] };
+export type VisitReasonCategory = 'price' | 'portfolio' | 'instrument' | 'service' | 'relationship' | 'credit' | 'availability' | 'competitor_lock_in' | 'contract_tender' | 'unknown' | 'none';
+export type VisitReason = { category: VisitReasonCategory; source: 'lab_said' | 'our_view' | null };
 export type MyActionCommand =
   | { action: 'get_my_actions'; payload: { page: number } }
-  | { action: 'close_my_action'; payload: { requestId: string; actionId: string; result: ActionResult; note: string; visit: { outcome: 'met' | 'not_available' | 'order_taken' | 'issue_raised' | 'other'; nextVisitOn: string | null } | null } };
+  | { action: 'close_my_action'; payload: { requestId: string; actionId: string; result: ActionResult; note: string; visit: { outcome: 'met' | 'not_available' | 'order_taken' | 'issue_raised' | 'other'; nextVisitOn: string | null; reason?: VisitReason } | null } };
 
 const uuid = /^[0-9a-f]{8}-[0-9a-f]{4}-[1-8][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i;
 const results: ActionResult[] = ['done', 'dropped'];
 const visitOutcomes = ['met', 'not_available', 'order_taken', 'issue_raised', 'other'] as const;
+const visitCategories = ['price', 'portfolio', 'instrument', 'service', 'relationship', 'credit', 'availability', 'competitor_lock_in', 'contract_tender', 'unknown', 'none'] as const;
 const object = (value: unknown): value is Record<string, unknown> => !!value && typeof value === 'object' && !Array.isArray(value);
 const exact = (value: Record<string, unknown>, keys: string[]) => Object.keys(value).length === keys.length && keys.every(key => Object.hasOwn(value, key));
 const todayIST = () => new Intl.DateTimeFormat('en-CA', { timeZone: 'Asia/Kolkata', year: 'numeric', month: '2-digit', day: '2-digit' }).format(new Date());
@@ -26,7 +29,8 @@ export function validateMyActionCommand(input: unknown): MyActionCommand {
     if (!exact(payload, ['requestId', 'actionId', 'result', 'note', ...(Object.hasOwn(payload, 'visit') ? ['visit'] : [])]) || typeof payload.requestId !== 'string' || !uuid.test(payload.requestId) || typeof payload.actionId !== 'string' || !uuid.test(payload.actionId) || !results.includes(payload.result as ActionResult) || typeof payload.note !== 'string' || payload.note.trim() !== payload.note || payload.note.length < 3 || payload.note.length > 500) return fail();
     const visit = Object.hasOwn(payload, 'visit') ? payload.visit : null;
     if (visit !== null) {
-      if (payload.result !== 'done' || !object(visit) || !exact(visit, ['outcome', 'nextVisitOn']) || !visitOutcomes.includes(visit.outcome as typeof visitOutcomes[number])) return fail();
+      if (payload.result !== 'done' || !object(visit) || !(exact(visit, ['outcome', 'nextVisitOn']) || exact(visit, ['outcome', 'nextVisitOn', 'reason'])) || !visitOutcomes.includes(visit.outcome as typeof visitOutcomes[number])) return fail();
+      if (Object.hasOwn(visit, 'reason')) { const reason = visit.reason; if (!object(reason) || !exact(reason, ['category', 'source']) || !visitCategories.includes(reason.category as typeof visitCategories[number]) || (reason.category === 'none' ? reason.source !== null : reason.source !== 'lab_said' && reason.source !== 'our_view')) return fail(); }
       const nextVisitOn = visit.nextVisitOn;
       if (nextVisitOn !== null) {
         if (!validDate(nextVisitOn)) return fail();

@@ -7,6 +7,8 @@ export type OpportunityOutcomeRow = {
   changePaise?: number | null; changePermille?: number | null; measurable?: boolean; notMeasurableReason?: string | null;
 };
 export type ConstraintCategory = 'price' | 'portfolio' | 'instrument' | 'service' | 'relationship' | 'credit' | 'availability' | 'clinical' | 'contract_tender' | 'competitor_lock_in' | 'unknown';
+export type VisitReasonCategory = 'price' | 'portfolio' | 'instrument' | 'service' | 'relationship' | 'credit' | 'availability' | 'competitor_lock_in' | 'contract_tender' | 'unknown' | 'none';
+export type VisitReasonSignal = { visitedOn: string; visitedBy: string; category: VisitReasonCategory; source: 'lab_said' | 'our_view' | null };
 export type ConstraintConfidence = 'high' | 'medium' | 'low';
 export type EvidenceSource = 'document' | 'customer_stated' | 'our_view';
 export type ConstraintFacts =
@@ -29,7 +31,7 @@ export type WalletOpportunity = {
 };
 export type WalletDiagnosisRow = { customerId: string; kind: OpportunityKind; divisionCode: string | null; divisionName: string | null; category: ConstraintCategory | null; confidence: ConstraintConfidence | null; priceUnproven: boolean };
 export type WalletDiagnoses = { rows: WalletDiagnosisRow[]; undiagnosedFocusCount: number | null; focusCount: number | null; focusWithoutDecisionMaker?: number | null };
-export type WalletSignals = { priceExceptions90d: number; deliveryProblems90d: number; deliveryProblemsOpen: number; serviceTicketsOpen: number; serviceTickets90d: number; ourInstallations: number; lastVisitOn: string | null; powerAlerts?: string[]; decisionMakerLastMetOn?: string | null };
+export type WalletSignals = { priceExceptions90d: number; deliveryProblems90d: number; deliveryProblemsOpen: number; serviceTicketsOpen: number; serviceTickets90d: number; ourInstallations: number; lastVisitOn: string | null; powerAlerts?: string[]; decisionMakerLastMetOn?: string | null; visitReasons?: VisitReasonSignal[] };
 type FactsWithoutCategory = Omit<ConstraintFacts, 'category'>;
 export type WalletDiagnosisCommand =
   | { action: 'get_wallet_diagnoses'; payload: { customerIds: string[] } }
@@ -52,6 +54,8 @@ const isoDate = (v: unknown): v is string => typeof v === 'string' && /^\d{4}-\d
 const todayIST = () => new Intl.DateTimeFormat('en-CA', { timeZone: 'Asia/Kolkata', year: 'numeric', month: '2-digit', day: '2-digit' }).format(new Date());
 const exactKeys = (value: Record<string, unknown>, keys: string[]) => Object.keys(value).length === keys.length && keys.every(key => Object.hasOwn(value, key));
 const textFact = (v: unknown) => text(v, 2, 200);
+export function normalizeVisitReasons(value: unknown): VisitReasonSignal[] { if (!Array.isArray(value)) return []; const validDate = (date: unknown) => isoDate(date); return value.filter((row): row is Record<string, unknown> => object(row) && validDate(row.visitedOn) && typeof row.visitedBy === 'string' && visitReasonCategories.includes(row.category as VisitReasonCategory) && (row.category === 'none' ? row.source === null : row.source === 'lab_said' || row.source === 'our_view')).slice(0, 5).map(row => ({ visitedOn: row.visitedOn as string, visitedBy: row.visitedBy as string, category: row.category as VisitReasonCategory, source: row.source as VisitReasonSignal['source'] })); }
+const visitReasonCategories: VisitReasonCategory[] = ['price','portfolio','instrument','service','relationship','credit','availability','competitor_lock_in','contract_tender','unknown','none'];
 export function isOpportunityOutcomeResponse(value: unknown): value is OpportunityOutcomeRow[] {
   if (!Array.isArray(value)) return false;
   const optional = (record: Record<string, unknown>, key: string, check: (item: unknown) => boolean) => !Object.hasOwn(record, key) || check(record[key]);

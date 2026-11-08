@@ -25,7 +25,7 @@ const pastOutcomeRows = [
   { opportunityId: pastOpportunityIds[2], kind: 'recover', divisionName: 'Biochemistry', outcome: 'dropped', closedReason: 'No response', closedAt: '2026-10-28T00:00:00Z', lastActionType: null, lastActionResult: null, salesBeforePaise: null, salesNowPaise: null, changePaise: null, changePermille: null, measurable: false, notMeasurableReason: 'Coverage not certified' },
 ];
 const pastOpportunityRows: WalletOpportunity[] = pastOutcomeRows.map((item, index) => ({ ...diagnosed, id: pastOpportunityIds[index], closure: { outcome: item.outcome as 'won' | 'lost' | 'dropped', reason: item.closedReason, closedBy: 'manager@example.test', closedAt: item.closedAt } }));
-type Options = { diagnosisFailure?: '500' | 'shape'; conflict?: boolean; networkFailure?: boolean; zeroSignals?: boolean; certified?: boolean; pastOutcomes?: boolean };
+type Options = { diagnosisFailure?: '500' | 'shape'; conflict?: boolean; networkFailure?: boolean; zeroSignals?: boolean; certified?: boolean; pastOutcomes?: boolean; visitHints?: boolean };
 async function fixture(page: Page, options: Options = {}) {
   const posts: Array<{ action: string; payload: Record<string, unknown> }> = [];
   const outcomeReads: string[] = [];
@@ -51,7 +51,7 @@ async function fixture(page: Page, options: Options = {}) {
     }
     if (url.searchParams.get('action') === 'get_account_signals') {
       if (options.diagnosisFailure) return route.fulfill({ status: 500, json: { error: 'offline' } });
-      return route.fulfill({ json: options.zeroSignals ? { priceExceptions90d: 0, deliveryProblems90d: 0, deliveryProblemsOpen: 0, serviceTicketsOpen: 0, serviceTickets90d: 0, ourInstallations: 0, lastVisitOn: null, powerAlerts: [] } : { priceExceptions90d: 1, deliveryProblems90d: 2, deliveryProblemsOpen: 1, serviceTicketsOpen: 1, serviceTickets90d: 3, ourInstallations: 4, lastVisitOn: '2026-10-20', powerAlerts: ['influential_unknown', 'no_influential_supporter'], decisionMakerLastMetOn: null } });
+      return route.fulfill({ json: options.zeroSignals ? { priceExceptions90d: 0, deliveryProblems90d: 0, deliveryProblemsOpen: 0, serviceTicketsOpen: 0, serviceTickets90d: 0, ourInstallations: 0, lastVisitOn: null, powerAlerts: [] } : { priceExceptions90d: 1, deliveryProblems90d: 2, deliveryProblemsOpen: 1, serviceTicketsOpen: 1, serviceTickets90d: 3, ourInstallations: 4, lastVisitOn: '2026-10-20', powerAlerts: ['influential_unknown', 'no_influential_supporter'], decisionMakerLastMetOn: null, ...(options.visitHints ? { visitReasons: [{ visitedOn: '2026-10-21', visitedBy: 'Asha', category: 'price', source: 'lab_said' }, { visitedOn: '2026-10-20', visitedBy: 'Ravi', category: 'none', source: null }] } : {}) } });
     }
     if (url.searchParams.get('action') === 'get_opportunity_outcomes') { outcomeReads.push(url.searchParams.get('customerId') ?? ''); return route.fulfill({ json: options.pastOutcomes ? pastOutcomeRows : [] }); }
     return route.fulfill({ json: opportunities.filter(item => item.customerId === url.searchParams.get('customerId')) });
@@ -247,6 +247,10 @@ for (const width of [375, 1280]) test.describe(`Wallet diagnosis at ${width}px`,
     const diagnosis = page.getByRole('region', { name: "Why we're not winning" });
     await expect(diagnosis.getByText('No issues in StockFlow records (90 days)', { exact: true })).toBeVisible();
     expect(await page.evaluate(() => document.documentElement.scrollWidth <= document.documentElement.clientWidth)).toBe(true);
+  });
+  test('shows visit hints in account signals and omits the block when empty', async ({ page }) => {
+    await fixture(page, { visitHints: true }); await openAccount(page); const diagnosis = page.getByRole('region', { name: "Why we're not winning" }); await expect(diagnosis.getByText('From visits (not checked)', { exact: true })).toBeVisible(); await expect(diagnosis.getByText('Price · lab said · 21 Oct · Asha', { exact: true })).toBeVisible(); await expect(diagnosis.getByText('Buying well · 20 Oct · Ravi', { exact: true })).toBeVisible();
+    await fixture(page); await openAccount(page); await expect(page.getByRole('region', { name: "Why we're not winning" }).getByText('From visits (not checked)', { exact: true })).toHaveCount(0);
   });
   test('relationship can cite a Person in the POST facts', async ({ page }) => {
     const { posts } = await fixture(page);
