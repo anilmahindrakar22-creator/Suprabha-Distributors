@@ -2,6 +2,8 @@ import { expect, test, type Page } from '@playwright/test';
 const sample = () => ({
   companyCount: 1, window: { from: '2025-11-01', to: '2026-11-01', h1From: '2025-11-01', h2From: '2026-05-01' },
   confirmed: true, confirmedReason: null,
+  scorecard: { regularLabs: 20, regularPct: 40, top10Pct: 35 },
+  months: Array.from({ length: 12 }, (_, i) => ({ month: new Date(Date.UTC(2025, 10 + i, 1)).toISOString().slice(0, 7), labsBuying: 68, firstTime: 3, skippedRegulars: 12, salesPaise: 150000000, purchasesRegularPaise: 100000000, purchasesLargePaise: 20000000, largePurchaseInvoices: 1 })),
   tree: { revenuePaise: 1818000000, repeatPaise: 1367000000, bulkPaise: 451000000, bulkInvoices: 10, labsBuying: 164, buyingMonths: 760, perBuyingMonthPaise: 1799200 },
   halves: [
     { half: 'H1', revenuePaise: 715000000, repeatPaise: 579000000, bulkPaise: 136000000, bulkInvoices: 4, labsBuying: 121, buyingMonths: 374, perBuyingMonthPaise: 1548400 },
@@ -10,13 +12,23 @@ const sample = () => ({
   bridge: { h1Paise: 715000000, h2Paise: 1103000000, new: { labs: 43, paise: 179000000 }, stopped: { labs: 34, paise: 174000000 }, stoppedRegular: { labs: 4, paise: 21000000 }, grew: { labs: 41, paise: 483000000 }, fell: { labs: 46, paise: 100000000 }, same: { labs: 0, paise: 0 }, other: { labs: 0, paise: 0 } },
   health: { gp: { costedPct: 2, computedAt: null }, history: { firstSaleOn: '2025-10-01', monthsImported: 13 }, itemGroups: { unmappedPct: 21 }, reasons: { visitReasons180: 0, constraints: 0, openActions: 0, visits180: 4 }, catalog: { observedAt: '2026-11-09T00:00:00Z', groups: 30 } },
 });
-async function fixture(page: Page, options: { role?: string; status?: number; confirmed?: boolean; malformed?: boolean } = {}) {
+async function fixture(page: Page, options: { role?: string; status?: number; confirmed?: boolean; malformed?: boolean; labsTotal?: number } = {}) {
   const role = options.role ?? 'management';
   await page.route('**/api/me', route => route.fulfill({ json: { roles: [role] } }));
   await page.route('**/api/push-subscription**', route => route.fulfill({ json: { enabled: false, publicKey: '' } }));
   await page.route('**/api/wallet?**', route => route.fulfill({ json: { coverage: { certified: true } } }));
   await page.route('**/api/today**', route => route.fulfill({ json: { policyVersion: 'today-v1', generatedAt: '2026-11-01T06:00:00Z', coverageCertified: true, unblock: { total: 0, rows: [] }, grow: { total: 0, rows: [] } } }));
   await page.route('**/api/growth', route => route.fulfill({ status: options.status ?? 200, json: options.malformed ? {} : { ...sample(), confirmed: options.confirmed ?? true, confirmedReason: options.confirmed === false ? 'Sales import is pending' : null } }));
+  await page.route('**/api/growth/labs?**', route => {
+    const params = new URL(route.request().url()).searchParams;
+    const list = params.get('list'), pageNumber = Number(params.get('page'));
+    const rows = list === 'month_large_purchases'
+      ? [{ supplierName: 'Supplier A', valuePaise: 20000000, date: '2026-10-02' }]
+      : pageNumber === 1
+        ? Array.from({ length: Math.min(20, options.labsTotal ?? 12) }, (_, i) => ({ labKey: `ledger-${i}`, customerId: i === 1 ? null : `customer-${i}`, name: i === 1 ? null : i === 0 ? 'Lab A' : `Lab ${i + 1}`, town: i === 0 ? 'Town A' : null, valuePaise: null, monthsBought: 10, lastBoughtOn: '2026-09-02', trend: 'down' }))
+        : [{ labKey: 'ledger-b', customerId: 'customer-b', name: 'Lab B', town: null, valuePaise: null, monthsBought: 9, lastBoughtOn: '2026-08-02', trend: 'flat' }];
+    return route.fulfill({ json: { list, month: params.get('month'), total: list === 'month_large_purchases' ? 1 : options.labsTotal ?? 12, page: pageNumber, pageSize: 20, rows } });
+  });
   await page.goto('/?view=frame&role=' + role + '&roles=' + role);
 }
 async function openGrowth(page: Page) {
@@ -51,10 +63,60 @@ for (const width of [375, 1280]) {
       }
       if (width === 375) expect(await page.evaluate(() => document.documentElement.scrollWidth <= innerWidth)).toBe(true);
     });
+    test('scorecard and skipped segment open compact lab actions and restore keyboard focus', async ({ page }) => {
+      await fixture(page); await openGrowth(page);
+      const scorecard = page.getByRole('region', { name: 'Scorecard', exact: true });
+      await expect(scorecard).toBeVisible();
+      await expect(scorecard.locator('[data-scorecard-tile]')).toHaveCount(6);
+      for (const label of ['Revenue', 'Labs buying', '₹ per buying month', 'Regular labs', "Top 10 labs' share", 'Gross profit']) {
+        await expect(scorecard.getByText(label, { exact: true })).toBeVisible();
+      }
+      const skipped = page.getByRole('region', { name: 'Labs buying each month', exact: true }).getByRole('button', { name: /Oct.*skipped|skipped.*Oct/i });
+      await skipped.focus();
+      const request = page.waitForRequest(r => { const p = new URL(r.url()).searchParams; return r.url().includes('/api/growth/labs?') && p.get('list') === 'month_skipped' && p.get('month') === '2026-10' && p.get('page') === '1'; });
+      await skipped.press('Enter'); await request;
+      const panel = page.getByRole('dialog');
+      await expect(panel.getByRole('heading', { name: 'Regulars who skipped Oct 2026 · 12', exact: true })).toBeVisible();
+      await expect(panel.getByText('Lab A', { exact: true })).toBeVisible();
+      await expect(panel.getByRole('button', { name: 'Plan visit', exact: true }).first()).toBeVisible();
+      await expect(panel.getByRole('button', { name: 'Open', exact: true }).first()).toBeVisible();
+      await expect(panel.getByText('Tally ledger not linked', { exact: true })).toBeVisible();
+      await expect(panel.getByRole('button', { name: 'Link', exact: true })).toBeVisible();
+      if (width === 375) expect(await page.evaluate(() => document.documentElement.scrollWidth <= innerWidth)).toBe(true);
+      await page.keyboard.press('Escape');
+      await expect(panel).toHaveCount(0);
+      await expect(skipped).toBeFocused();
+    });
+    test('Load more appends page 2', async ({ page }) => {
+      await fixture(page, { labsTotal: 21 }); await openGrowth(page);
+      await page.getByRole('region', { name: 'Labs buying each month', exact: true }).getByRole('button', { name: /Oct.*skipped|skipped.*Oct/i }).click();
+      const panel = page.getByRole('dialog');
+      const request = page.waitForRequest(r => { const p = new URL(r.url()).searchParams; return r.url().includes('/api/growth/labs?') && p.get('list') === 'month_skipped' && p.get('page') === '2'; });
+      await panel.getByRole('button', { name: 'Load more', exact: true }).click(); await request;
+      await expect(panel.getByText('Lab B', { exact: true })).toBeVisible();
+      await expect(panel.getByText('Lab A', { exact: true })).toBeVisible();
+      await expect(panel.getByText('Showing 21 of 21', { exact: true })).toBeVisible();
+    });
+    test('Stopped starts with regular only and refetches when toggled off', async ({ page }) => {
+      await fixture(page); await openGrowth(page);
+      const request = page.waitForRequest(r => { const p = new URL(r.url()).searchParams; return r.url().includes('/api/growth/labs?') && p.get('list') === 'bridge_stopped' && p.get('regularOnly') === 'true'; });
+      await page.getByRole('region', { name: 'Where growth came from', exact: true }).getByRole('button', { name: /stopped/i }).click(); await request;
+      const regular = page.getByRole('dialog').getByRole('checkbox', { name: 'Regular only', exact: true });
+      await expect(regular).toBeChecked();
+      const unfiltered = page.waitForRequest(r => { const p = new URL(r.url()).searchParams; return r.url().includes('/api/growth/labs?') && p.get('list') === 'bridge_stopped' && p.get('regularOnly') === 'false'; });
+      await regular.uncheck(); await unfiltered;
+    });
+    test('large-purchase segments show suppliers and the Economics action', async ({ page }) => {
+      await fixture(page); await openGrowth(page);
+      await page.getByRole('region', { name: 'Purchases against sales', exact: true }).getByRole('button', { name: /Oct.*large|large.*Oct/i }).click();
+      const panel = page.getByRole('dialog');
+      await expect(panel.getByText('Supplier A', { exact: true })).toBeVisible();
+      await expect(panel.getByRole('button', { name: 'Check in Economics', exact: true })).toBeVisible();
+    });
     test('unconfirmed figures stay visible', async ({ page }) => {
       await fixture(page, { confirmed: false }); await openGrowth(page);
       await expect(page.getByText('Not confirmed: Sales import is pending', { exact: true })).toBeVisible();
-      await expect(page.getByText('₹181.8 L', { exact: true })).toBeVisible();
+      await expect(page.getByRole('region', { name: 'Where revenue comes from' }).getByText('₹181.8 L', { exact: true })).toBeVisible();
     });
     test('sales has no Growth entry and never fetches management data', async ({ page }) => {
       const requests: string[] = [];
@@ -74,7 +136,7 @@ for (const width of [375, 1280]) {
       await expect(page.getByText('Growth is unavailable. Try again.', { exact: true })).toBeVisible();
       await page.route('**/api/growth', route => route.fulfill({ json: sample() }));
       await page.getByRole('button', { name: 'Retry', exact: true }).click();
-      await expect(page.getByText('₹181.8 L', { exact: true })).toBeVisible();
+      await expect(page.getByRole('region', { name: 'Where revenue comes from' }).getByText('₹181.8 L', { exact: true })).toBeVisible();
     });
   });
 }

@@ -1,8 +1,10 @@
 import { describe, expect, it } from 'vitest';
-import { normalizeGrowth, type GrowthData } from '@/lib/growth-types';
+import { normalizeGrowth, normalizeGrowthLabs, type GrowthData } from '@/lib/growth-types';
 const sample = (): GrowthData => ({
   companyCount: 1, window: { from: '2025-11-01', to: '2026-11-01', h1From: '2025-11-01', h2From: '2026-05-01' },
   confirmed: true, confirmedReason: null,
+  scorecard: { regularLabs: 20, regularPct: 40, top10Pct: 35 },
+  months: Array.from({ length: 12 }, (_, i) => ({ month: new Date(Date.UTC(2025, 10 + i, 1)).toISOString().slice(0, 7), labsBuying: 68, firstTime: 3, skippedRegulars: 12, salesPaise: 150000000, purchasesRegularPaise: 100000000, purchasesLargePaise: 20000000, largePurchaseInvoices: 1 })),
   tree: { revenuePaise: 1818000000, repeatPaise: 1367000000, bulkPaise: 451000000, bulkInvoices: 10, labsBuying: 164, buyingMonths: 760, perBuyingMonthPaise: 1799200 },
   halves: [
     { half: 'H1', revenuePaise: 715000000, repeatPaise: 579000000, bulkPaise: 136000000, bulkInvoices: 4, labsBuying: 121, buyingMonths: 374, perBuyingMonthPaise: 1548400 },
@@ -24,6 +26,25 @@ describe('Growth response validation', () => {
     const v = sample(); v.halves[0].buyingMonths = 0; v.halves[0].perBuyingMonthPaise = null;
     expect(normalizeGrowth(v)?.halves[0].perBuyingMonthPaise).toBeNull();
   });
+  it('preserves unavailable scorecard percentages and monthly segments', () => {
+    const v = sample(); v.scorecard.regularPct = null; v.scorecard.top10Pct = null;
+    v.months[0].skippedRegulars = null; v.months[0].firstTime = null;
+    expect(normalizeGrowth(v)).toEqual(v);
+  });
+  it.each([
+    (v: GrowthData) => ({ ...v, scorecard: undefined }),
+    (v: GrowthData) => ({ ...v, scorecard: { ...v.scorecard, regularLabs: -1 } }),
+    (v: GrowthData) => ({ ...v, scorecard: { ...v.scorecard, regularPct: 101 } }),
+    (v: GrowthData) => ({ ...v, scorecard: { ...v.scorecard, top10Pct: -1 } }),
+    (v: GrowthData) => ({ ...v, months: v.months.slice(1) }),
+    (v: GrowthData) => ({ ...v, months: [...v.months, v.months[11]] }),
+    (v: GrowthData) => ({ ...v, months: v.months.map((m, i) => i === 4 ? { ...m, month: v.months[3].month } : m) }),
+    (v: GrowthData) => ({ ...v, window: { ...v.window, to: '2026-12-01' } }),
+    (v: GrowthData) => ({ ...v, months: v.months.map((m, i) => i === 0 ? { ...m, labsBuying: -1 } : m) }),
+    (v: GrowthData) => ({ ...v, months: v.months.map((m, i) => i === 0 ? { ...m, firstTime: -1 } : m) }),
+    (v: GrowthData) => ({ ...v, months: v.months.map((m, i) => i === 0 ? { ...m, skippedRegulars: -1 } : m) }),
+    (v: GrowthData) => ({ ...v, months: v.months.map((m, i) => i === 0 ? { ...m, largePurchaseInvoices: -1 } : m) }),
+  ])('rejects malformed scorecard or monthly data %#', mutate => { expect(normalizeGrowth(mutate(sample()))).toBeNull(); });
   it.each([
     (v: ReturnType<typeof sample>) => { const { companyCount: _count, ...rest } = v; return rest; },
     (v: ReturnType<typeof sample>) => ({ ...v, tree: { ...v.tree, labsBuying: -1 } }),
@@ -35,5 +56,29 @@ describe('Growth response validation', () => {
     (v: ReturnType<typeof sample>) => ({ ...v, health: { ...v.health, catalog: { groups: -1, observedAt: null } } }),
     (v: ReturnType<typeof sample>) => ({ ...v, window: { ...v.window, from: '2025-02-30' } }),
   ])('rejects malformed data %#', mutate => { expect(normalizeGrowth(mutate(sample()))).toBeNull(); });
+});
+
+describe('Growth lab response validation', () => {
+  const row = { labKey: 'ledger-a', customerId: 'customer-a', name: 'Lab A', town: 'Town A', valuePaise: 123400, monthsBought: 10, lastBoughtOn: '2026-10-01', trend: 'up' };
+  const labs = () => ({ list: 'month_buying', month: '2026-10', total: 1, page: 1, pageSize: 20, rows: [row] });
+  it('normalizes linked labs and nullable ledger details', () => {
+    expect(normalizeGrowthLabs(labs())).toEqual(labs());
+    const v = { ...labs(), rows: [{ ...row, customerId: null, name: null, town: null, valuePaise: null, lastBoughtOn: null, trend: null }] };
+    expect(normalizeGrowthLabs(v)).toEqual(v);
+  });
+  it('normalizes large purchases with nullable supplier names', () => {
+    const v = { ...labs(), list: 'month_large_purchases', rows: [{ supplierName: null, valuePaise: 25000000, date: '2026-10-02' }] };
+    expect(normalizeGrowthLabs(v)).toEqual(v);
+  });
+  it('accepts non-month lists with a null month', () => {
+    expect(normalizeGrowthLabs({ ...labs(), list: 'regular_labs', month: null })).not.toBeNull();
+  });
+  it.each([
+    { list: 'unknown' }, { month: null }, { month: '2026-13' }, { total: -1 }, { page: 0 }, { pageSize: 21 },
+    { rows: [{ ...row, monthsBought: 13 }] }, { rows: [{ ...row, monthsBought: -1 }] },
+    { rows: [{ ...row, trend: 'sideways' }] }, { rows: [{ ...row, lastBoughtOn: '2026-02-30' }] },
+    { rows: [{ supplierName: 'Supplier A', valuePaise: 100, date: '2026-10-02' }] },
+    { list: 'month_large_purchases', rows: [row] },
+  ])('rejects malformed list response %#', patch => { expect(normalizeGrowthLabs({ ...labs(), ...patch })).toBeNull(); });
 });
 
