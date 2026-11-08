@@ -1375,6 +1375,13 @@
       "remoteVersion": null,
       "remoteSha256": null,
       "status": "not_deployed"
+    },
+    {
+      "localFile": "20261122110000_omission_scope.sql",
+      "localSha256": "58468754f7d798473e949399a0f358a8a4d2ab21e0804dbf26ade44c976a7e28",
+      "remoteVersion": null,
+      "remoteSha256": null,
+      "status": "not_deployed"
     }
   ],
   "liveCheck": {
