@@ -33,6 +33,7 @@
     "test:ci": "pnpm lint && pnpm typecheck && pnpm test:connector && pnpm test && pnpm build",
     "security:audit:raw": "pnpm audit --prod --audit-level=high",
     "security:audit": "node lib/dependency-audit.mjs",
+    "ci:core": "pnpm test:ci && pnpm test:e2e && pnpm test:offline:e2e && pnpm security:audit",
     "ci": "pnpm test:ci && pnpm test:e2e && pnpm test:pricing:e2e && pnpm test:offline:e2e && pnpm security:audit",
     "format": "oxfmt"
   },

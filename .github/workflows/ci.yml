@@ -50,7 +50,7 @@ jobs:
   validate:
     name: Validate release candidate
     runs-on: ubuntu-latest
-    timeout-minutes: 30
+    timeout-minutes: 20
 
     steps:
       - name: Check out source
@@ -74,7 +74,7 @@ jobs:
         run: pnpm exec playwright install --with-deps chromium
 
       - name: Run quality and security gates
-        run: pnpm run ci
+        run: pnpm run ci:core
 
       - name: Store validated build
         uses: actions/upload-artifact@v4
@@ -89,6 +89,53 @@ jobs:
         uses: actions/upload-artifact@v4
         with:
           name: playwright-evidence-${{ github.sha }}
+          path: |
+            playwright-report/
+            test-results/
+          if-no-files-found: ignore
+          retention-days: 14
+
+  pricing-browser:
+    name: Pricing browser tests (shard ${{ matrix.shard }}/4)
+    runs-on: ubuntu-latest
+    timeout-minutes: 25
+    strategy:
+      fail-fast: false
+      matrix:
+        shard: [1, 2, 3, 4]
+
+    steps:
+      - name: Check out source
+        uses: actions/checkout@v4
+
+      - name: Install pnpm
+        uses: pnpm/action-setup@v4
+        with:
+          version: 11.19.0
+
+      - name: Install Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: 22.13.0
+          cache: pnpm
+
+      - name: Install locked dependencies
+        run: pnpm install --frozen-lockfile
+
+      - name: Install black-box test browser
+        run: pnpm exec playwright install --with-deps chromium
+
+      - name: Build offline bundle
+        run: pnpm build:offline
+
+      - name: Run pricing browser shard
+        run: pnpm exec playwright test --config playwright.pricing.config.ts --shard=${{ matrix.shard }}/4
+
+      - name: Store pricing browser failure evidence
+        if: failure()
+        uses: actions/upload-artifact@v4
+        with:
+          name: playwright-pricing-evidence-${{ github.sha }}-${{ matrix.shard }}
           path: |
             playwright-report/
             test-results/
