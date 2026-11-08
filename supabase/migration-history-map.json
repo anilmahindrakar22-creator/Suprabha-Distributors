@@ -1389,6 +1389,13 @@
       "remoteVersion": null,
       "remoteSha256": null,
       "status": "not_deployed"
+    },
+    {
+      "localFile": "20261129090000_visit_reasons.sql",
+      "localSha256": "c9312cf892a41589a6b7683c63e56972ed3344eba78632a98a98625ce98d42e5",
+      "remoteVersion": null,
+      "remoteSha256": null,
+      "status": "not_deployed"
     }
   ],
   "liveCheck": {
