@@ -1,4 +1,9 @@
 begin;
+set local lock_timeout='60s';
+set local statement_timeout='300s';
+load 'auto_explain';
+set local auto_explain.log_min_duration='30s';
+set local auto_explain.log_nested_statements=on;
 
 create temporary table gp_fixtures (
  voucher_id uuid default gen_random_uuid(),line_id uuid default gen_random_uuid(),
@@ -97,10 +102,12 @@ declare run uuid; second_run uuid; third_run uuid; summary jsonb; january jsonb;
  expected_revenue numeric; expected_costed numeric; expected_instrument numeric; expected_gp numeric;
  observed timestamptz; volume_run uuid; elapsed integer; volume_started timestamptz;
 begin
+ raise notice 'phase start %',clock_timestamp();
  select count(*) into before_auto from private.stockflow_economic_auto_cost_links;
  select count(*) into before_results from private.stockflow_economic_results;
  select count(*) into before_runs from private.stockflow_economic_runs;
  run:=private.stockflow_company_gp_refresh('company-gp-test');
+ raise notice 'phase first refresh done %',clock_timestamp();
  if run is null then raise exception 'G1 refresh returned no run';end if;
 
  -- G1-G7, G11-G12 check exact costs, exclusions, revisions and stored return signs.
@@ -123,6 +130,7 @@ begin
   or (select count(*) from private.stockflow_economic_results)<>before_results
   or (select count(*) from private.stockflow_economic_runs)<>before_runs then
   raise exception 'G8 Economics state changed';end if;
+ raise notice 'phase fixture checks done %',clock_timestamp();
 
  -- G9 imports advance the watermark, and the third successful refresh prunes only the oldest run.
  if private.stockflow_company_gp_refresh('company-gp-test') is distinct from run then
@@ -141,6 +149,7 @@ begin
   or exists(select 1 from private.stockflow_company_gp_lines where run_id=run)
   or not exists(select 1 from private.stockflow_company_gp_runs where id=second_run and status='complete') then
   raise exception 'G9 retention failed';end if;
+ raise notice 'phase g9 done %',clock_timestamp();
 
  -- G10 null roles also fail closed.
  begin
@@ -183,6 +192,7 @@ begin
   raise exception 'G10 half-open date window failed';end if;
  if private.stockflow_company_gp_summary(array['management'],'missing-company',null,null)->'coverage'->>'revenuePaise'<>'0' then
   raise exception 'G10 empty company coverage failed';end if;
+ raise notice 'phase summary done %',clock_timestamp();
 
  -- G13 exercises 300 product queues with 5,000 layers and 20,000 sales.
  insert into private.stockflow_economic_source_vouchers(company_id,source_id,source_revision,business_date,customer_source_id,kind,evidence)
@@ -196,8 +206,10 @@ begin
   case when kind='purchase' then 5 else 1 end,'pack',case when kind='purchase' then 500 else 200 end,
   'batch-'||((split_part(source_id,'-',2)::integer-1)/300%3),'{}'
  from private.stockflow_economic_source_vouchers where company_id='company-gp-volume';
+ raise notice 'phase volume inserts done %',clock_timestamp();
  volume_started:=clock_timestamp();
  volume_run:=private.stockflow_company_gp_refresh('company-gp-volume');
+ raise notice 'phase volume refresh done %',clock_timestamp();
  elapsed:=round(extract(epoch from clock_timestamp()-volume_started)*1000)::integer;
  raise notice 'G13 company GP duration_ms=% (run duration_ms=%)',elapsed,
   (select duration_ms from private.stockflow_company_gp_runs where id=volume_run);
