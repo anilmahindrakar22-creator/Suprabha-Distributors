@@ -2,7 +2,7 @@
 
 import { lazy, Suspense, useEffect, useMemo, useRef, useState } from 'react';
 import { desktopPopupState, disableDesktopPopups, enableDesktopPopups, showWorkPopup, type DesktopPopupState } from '@/lib/desktop-popups';
-import { Boxes, Building2, CloudDownload, Ellipsis, Inbox, LayoutDashboard, ShoppingCart, Tags, TrendingUp, TriangleAlert, Users, Wrench } from 'lucide-react';
+import { Boxes, Building2, CloudDownload, Ellipsis, Inbox, LayoutDashboard, LineChart, ShoppingCart, Tags, TrendingUp, TriangleAlert, Users, Wrench } from 'lucide-react';
 import { TodayWorkspace, type TodayQueue } from './today-workspace';
 import type { TodayTarget } from '@/lib/today';
 import { NotificationBell } from './notification-bell';
@@ -23,13 +23,14 @@ const OrderWorkspace = lazy(loadOrderWorkspace);
 const NewOrderCapture = lazy(() => import('./order-workspace').then(module => ({ default: module.HydratedNewOrderPanel })));
 const ServiceWorkspace = lazy(() => import('./service-workspace').then((module) => ({ default: module.ServiceWorkspace })));
 const InstrumentEconomicsWorkspace = lazy(() => import('./instrument-economics-workspace').then((module) => ({ default: module.InstrumentEconomicsWorkspace })));
+const GrowthPage = lazy(() => import('./growth-page').then(module => ({ default: module.GrowthPage })));
 const UserManagement = lazy(() => import('./user-management').then((module) => ({ default: module.UserManagement })));
 const PricingWorkspace = lazy(() => import('./pricing-workspace').then((module) => ({ default: module.PricingWorkspace })));
 const RequestsWorkspace = lazy(() => import('./requests-workspace').then((module) => ({ default: module.RequestsWorkspace })));
 const AccountsWorkspace = lazy(() => import('./accounts-workspace').then((module) => ({ default: module.AccountsWorkspace })));
 
-type Surface = 'today' | 'stock' | 'orders' | 'requests' | 'accounts' | 'pricing' | 'economics' | 'service' | 'users';
-const surfaceIcons = { today: LayoutDashboard, stock: Boxes, orders: ShoppingCart, requests: Inbox, accounts: Building2, pricing: Tags, economics: TrendingUp, service: Wrench, users: Users };
+type Surface = 'today' | 'stock' | 'orders' | 'requests' | 'accounts' | 'pricing' | 'economics' | 'growth' | 'service' | 'users';
+const surfaceIcons = { today: LayoutDashboard, stock: Boxes, orders: ShoppingCart, requests: Inbox, accounts: Building2, pricing: Tags, economics: TrendingUp, growth: LineChart, service: Wrench, users: Users };
 function SurfaceIcon({ surface, size }: { surface: Surface; size: number }) {
   const Icon = surfaceIcons[surface];
   return <Icon size={size} aria-hidden="true" className="shrink-0" />;
@@ -331,6 +332,7 @@ export function StockFlowFrame({ actorEmail, actorRole, actorRoles, staffAuth = 
   }
   const surfaces: Surface[] = ['stock', 'orders', 'requests', ...(hasAnyStockFlowRole(roles, ['administrator', 'management', 'sales', 'operations']) ? ['accounts' as const] : []), ...(hasAnyStockFlowRole(roles, ['administrator', 'management', 'accounts']) ? ['pricing' as const, 'economics' as const] : []), ...(hasAnyStockFlowRole(roles, ['administrator', 'operations', 'sales', 'management']) ? ['service' as const] : []), ...(hasAnyStockFlowRole(roles, ['administrator']) ? ['users' as const] : [])];
   if (canSeeToday) surfaces.unshift('today');
+  if (hasAnyStockFlowRole(roles, ['administrator', 'management'])) surfaces.push('growth');
   const phoneMain: Surface[] = canSeeToday ? ['today', 'stock', 'orders', 'requests'] : ['stock', 'orders', 'requests'];
   const phoneMore = surfaces.filter((item) => !phoneMain.includes(item));
   // Phone push: dormant until the server reports it is enabled (docs/PUSH-NOTIFICATIONS.md).
@@ -423,7 +425,7 @@ export function StockFlowFrame({ actorEmail, actorRole, actorRoles, staffAuth = 
                   : 'text-sf-muted hover:text-sf-ink'
               }`}
             >
-              <SurfaceIcon surface={item} size={18} />{item}{item === 'orders' ? ordersBadge : null}
+              <SurfaceIcon surface={item} size={18} />{item === 'growth' ? 'Growth' : item}{item === 'orders' ? ordersBadge : null}
             </button>
           ))}
           {/* Full navigation re-verifies the staff session before local preparation. */}
@@ -462,6 +464,8 @@ export function StockFlowFrame({ actorEmail, actorRole, actorRoles, staffAuth = 
           <Suspense fallback={<SectionLoading />}><PricingWorkspace actorEmail={actorEmail} actorRole={actorRole} actorRoles={roles} /></Suspense>
         ) : surface === 'economics' ? (
           <Suspense fallback={<SectionLoading />}><InstrumentEconomicsWorkspace embedded /></Suspense>
+        ) : surface === 'growth' ? (
+          hasAnyStockFlowRole(roles, ['administrator', 'management']) ? <Suspense fallback={<SectionLoading />}><GrowthPage key={`${actorEmail}:${rolesKey}`} /></Suspense> : <p>Growth is for management only.</p>
         ) : surface === 'service' ? (
           <Suspense fallback={<SectionLoading />}><ServiceWorkspace /></Suspense>
         ) : <Suspense fallback={<SectionLoading />}><UserManagement staffAuth={staffAuth} emailActionsEnabled={staffEmailActionsEnabled} /></Suspense>}
@@ -492,7 +496,7 @@ export function StockFlowFrame({ actorEmail, actorRole, actorRoles, staffAuth = 
         ))}
         {phoneMore.length || offlineLink ? <button type="button" aria-expanded={moreOpen} aria-controls="more-sections" onClick={() => setMoreOpen(!moreOpen)} className={`flex min-h-14 flex-1 flex-col items-center justify-center gap-0.5 text-xs font-bold ${phoneMore.includes(surface) || moreOpen ? 'text-sf-brand' : 'text-sf-muted'}`}><span aria-hidden="true" className={`block h-1 w-6 rounded-full ${phoneMore.includes(surface) ? 'bg-sf-ink' : 'bg-transparent'}`} /><Ellipsis size={22} aria-hidden="true" className="shrink-0" /><span className="text-xs">More</span></button> : null}
         {moreOpen ? <div id="more-sections" className="absolute inset-x-2 bottom-[calc(100%+0.5rem)] z-40 grid gap-1 rounded-2xl border border-sf-line-soft bg-white p-2 shadow-xl">
-          {phoneMore.map((item) => <button key={item} type="button" onClick={() => openSurface(item)} aria-pressed={surface === item} className="flex min-h-11 items-center gap-1.5 rounded-xl px-3 text-left text-sm font-bold capitalize text-sf-muted hover:bg-sf-soft aria-pressed:bg-sf-soft aria-pressed:text-sf-brand"><SurfaceIcon surface={item} size={18} />{item}</button>)}
+          {phoneMore.map((item) => <button key={item} type="button" onClick={() => openSurface(item)} aria-pressed={surface === item} className="flex min-h-11 items-center gap-1.5 rounded-xl px-3 text-left text-sm font-bold capitalize text-sf-muted hover:bg-sf-soft aria-pressed:bg-sf-soft aria-pressed:text-sf-brand"><SurfaceIcon surface={item} size={18} />{item === 'growth' ? 'Growth' : item}</button>)}
           {/* oxlint-disable-next-line next/no-html-link-for-pages */}
           {offlineLink ? <a href="/offline-preparation" className="flex min-h-11 items-center rounded-xl px-3 text-sm font-bold text-sf-body hover:bg-sf-soft">Offline</a> : null}
         </div> : null}

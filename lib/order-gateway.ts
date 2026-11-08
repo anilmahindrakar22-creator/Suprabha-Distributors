@@ -3,6 +3,7 @@ import { SUPABASE_FUNCTION_REGION } from './supabase-region';
 import type { EconomicAction } from './instrument-economics-types';
 
 export type GatewayAction =
+  | 'get_growth'
   | 'get_power_map'
   | 'set_influence'
   | 'end_influence'
