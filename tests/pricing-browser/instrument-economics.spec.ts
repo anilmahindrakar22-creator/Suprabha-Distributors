@@ -1050,7 +1050,7 @@ test('single item picker filters by search', async ({ page }) => {
   await expect(item).toHaveValue('');
   await search.fill('missing');
   await expect(item.locator('option')).toHaveCount(1);
-  await expect(itemForm.getByText('No items match "missing".', { exact: true })).toBeVisible();
+  await expect(itemForm.getByText('No items match “missing”.', { exact: true })).toBeVisible();
   await search.fill('ALPHA');
   await expect(item).toHaveValue('alpha-id');
   await search.fill('beta');
