@@ -9,7 +9,7 @@ export type GrowthMonth = {
 };
 export type GrowthProfitWindow = {
   salesPaise: number; knownSalesPaise: number; costPaise: number; gpPaise: number;
-  gpPct: number | null; coveragePct: number | null;
+  gpPct: number | null; coveragePct: number | null; unreliableLines?: number;
 };
 export type GrowthProfit = {
   method: 'average_purchase_cost_to_date';
@@ -84,7 +84,8 @@ export function normalizeGrowth(value: unknown): GrowthData | null {
     const gp = value.gp;
     const gpWindow = (v: unknown): v is GrowthProfitWindow => object(v)
       && ['salesPaise', 'knownSalesPaise', 'costPaise', 'gpPaise'].every(k => Number.isSafeInteger(v[k]))
-      && nullable(v.gpPct, signedPct) && nullable(v.coveragePct, pct);
+      && nullable(v.gpPct, signedPct) && nullable(v.coveragePct, pct)
+      && (!('unreliableLines' in v) || count(v.unreliableLines));
     if (!object(gp) || gp.method !== 'average_purchase_cost_to_date' || !gpWindow(gp.window)
       || !Array.isArray(gp.halves) || gp.halves.length !== 2
       || !gp.halves.every((v, i) => object(v) && gpWindow(v) && (v as Obj).half === (i === 0 ? 'H1' : 'H2'))

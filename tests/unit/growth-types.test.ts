@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { normalizeGrowth, normalizeGrowthLabs, type GrowthData } from '@/lib/growth-types';
+import { normalizeGrowth, normalizeGrowthLabs, type GrowthData, type GrowthProfitWindow } from '@/lib/growth-types';
 const sample = (): GrowthData => ({
   companyCount: 1, window: { from: '2025-11-01', to: '2026-11-01', h1From: '2025-11-01', h2From: '2026-05-01' },
   confirmed: true, confirmedReason: null,
@@ -14,11 +14,14 @@ const sample = (): GrowthData => ({
   health: { gp: { costedPct: 2, computedAt: null }, history: { firstSaleOn: '2025-10-01', monthsImported: 13 }, itemGroups: { unmappedPct: 21 }, reasons: { visitReasons180: 0, constraints: 0, openActions: 0, visits180: 4 }, catalog: { observedAt: '2026-11-09T00:00:00Z', groups: 30 } },
 });
 describe('Growth response validation', () => {
-  const profitWindow = (gpPct: number | null, coveragePct: number | null) => ({ salesPaise: 1000000, knownSalesPaise: 900000, costPaise: 700000, gpPaise: 200000, gpPct, coveragePct });
+  const profitWindow = (gpPct: number | null, coveragePct: number | null): GrowthProfitWindow => ({ salesPaise: 1000000, knownSalesPaise: 900000, costPaise: 700000, gpPaise: 200000, gpPct, coveragePct });
   const profit = () => ({ method: 'average_purchase_cost_to_date', window: profitWindow(20, 90), halves: [{ half: 'H1', ...profitWindow(18, 85) }, { half: 'H2', ...profitWindow(22, 95) }], repeat: profitWindow(25, 95), bulk: profitWindow(-5, 80), months: sample().months.map(m => ({ month: m.month, salesPaise: 100000, knownSalesPaise: 90000, gpPaise: 20000 })) });
   it('normalizes a complete sample', () => { expect(normalizeGrowth(sample())).toEqual(sample()); });
   it('allows the optional gross profit key to be absent', () => { expect(normalizeGrowth(sample())).not.toBeNull(); });
   it('normalizes gross profit when present', () => { const v = { ...sample(), gp: profit() }; expect(normalizeGrowth(v)).toEqual(v); });
+  it('accepts optional unreliable line count on the gross profit window', () => { const gp = profit(); gp.window.unreliableLines = 1; expect(normalizeGrowth({ ...sample(), gp })?.gp?.window.unreliableLines).toBe(1); });
+  it('allows gross profit window without unreliable line count', () => { expect(normalizeGrowth({ ...sample(), gp: profit() })).not.toBeNull(); });
+  it('rejects a negative unreliable line count', () => { const gp = profit(); gp.window.unreliableLines = -1; expect(normalizeGrowth({ ...sample(), gp })).toBeNull(); });
   it('rejects gross profit with a different method', () => { expect(normalizeGrowth({ ...sample(), gp: { ...profit(), method: 'other' } })).toBeNull(); });
   it('rejects non-integer gross profit paise', () => { const gp = profit(); gp.window.gpPaise = 1.5; expect(normalizeGrowth({ ...sample(), gp })).toBeNull(); });
   it('requires twelve gross profit months', () => { const gp = profit(); gp.months.pop(); expect(normalizeGrowth({ ...sample(), gp })).toBeNull(); });
