@@ -1,4 +1,18 @@
 import { expect, test, type Page } from '@playwright/test';
+const inboxSample = (filter = 'all', page = 1, inProgress = false, viewerEmail = 'manager@example.test') => ({
+  runMonth: '2026-11', salesTo: '2026-10-31', confirmed: true, confirmedReason: null,
+  counts: { all: 2, R1: 2, R2: 0, R3: 0, R4: 0, toReview: inProgress ? 1 : 2, inProgress: inProgress ? 1 : 0, done: 1 },
+  stakeToReviewPaise: 4000000, filter, page, pageSize: 10, total: filter === 'done' ? 1 : 2,
+  viewerEmail, owners: [{ email: 'sales@example.test' }, { email: 'manager@example.test' }],
+  rows: filter === 'done' ? [{
+    cardKey: 'done-a', labKey: 'ledger-a', customerId: 'customer-a', name: 'Lab A', town: 'Town A', rule: 'R1', period: '2026-10',
+    action: { actionType: 'visit', ownerEmail: 'manager@example.test', result: 'done', note: 'Stock checked, follow-up agreed.', closedOn: '2026-11-03' },
+    outcome: { status: 'bought', on: '2026-11-06', valuePaise: 820000, daysLeft: null },
+  }] : [
+    { cardKey: 'card-a', labKey: 'ledger-a', customerId: 'customer-a', name: 'Lab A', town: 'Town A', rule: 'R1', ruleVersion: 1, period: '2026-10', stakePaise: 2000000, inputs: { monthsBoughtPrev11: 7, lastBoughtOn: '2026-09-02', typicalPaise: 2000000 }, alsoMatches: [], lastReason: null, state: inProgress ? 'in_progress' : 'review', action: inProgress ? { id: 'action-a', actionType: 'visit', ownerEmail: 'manager@example.test', dueOn: '2026-11-16' } : null },
+    { cardKey: 'card-unlinked', labKey: 'ledger-unlinked', customerId: null, name: null, town: null, rule: 'R1', ruleVersion: 1, period: '2026-10', stakePaise: 2000000, inputs: { monthsBoughtPrev11: 6, lastBoughtOn: '2026-09-01', typicalPaise: 2000000 }, alsoMatches: [], lastReason: null, state: 'review', action: null },
+  ],
+});
 const sample = () => ({
   companyCount: 1, window: { from: '2025-11-01', to: '2026-11-01', h1From: '2025-11-01', h2From: '2026-05-01' },
   confirmed: true, confirmedReason: null,
@@ -12,7 +26,7 @@ const sample = () => ({
   bridge: { h1Paise: 715000000, h2Paise: 1103000000, new: { labs: 43, paise: 179000000 }, stopped: { labs: 34, paise: 174000000 }, stoppedRegular: { labs: 4, paise: 21000000 }, grew: { labs: 41, paise: 483000000 }, fell: { labs: 46, paise: 100000000 }, same: { labs: 0, paise: 0 }, other: { labs: 0, paise: 0 } },
   health: { gp: { costedPct: 2, computedAt: null }, history: { firstSaleOn: '2025-10-01', monthsImported: 13 }, itemGroups: { unmappedPct: 21 }, reasons: { visitReasons180: 0, constraints: 0, openActions: 0, visits180: 4 }, catalog: { observedAt: '2026-11-09T00:00:00Z', groups: 30 } },
 });
-async function fixture(page: Page, options: { role?: string; status?: number; confirmed?: boolean; malformed?: boolean; labsTotal?: number } = {}) {
+async function fixture(page: Page, options: { role?: string; status?: number; confirmed?: boolean; malformed?: boolean; labsTotal?: number; inboxViewerEmail?: string } = {}) {
   const role = options.role ?? 'management';
   await page.route('**/api/me', route => route.fulfill({ json: { roles: [role] } }));
   await page.route('**/api/push-subscription**', route => route.fulfill({ json: { enabled: false, publicKey: '' } }));
@@ -20,6 +34,16 @@ async function fixture(page: Page, options: { role?: string; status?: number; co
   await page.route('**/api/today**', route => route.fulfill({ json: { policyVersion: 'today-v1', generatedAt: '2026-11-01T06:00:00Z', coverageCertified: true, unblock: { total: 0, rows: [] }, grow: { total: 0, rows: [] } } }));
   await page.route('**/api/accounts?**', route => route.fulfill({ json: { accounts: [], page: { page: 1, pageSize: 20, total: 0 }, owners: [], territories: [], classPolicy: { aMinPaise: '10000000', bMinPaise: '3000000' }, canAssign: true, canSeeProspects: true, canSeeMyActions: true, canEraseContacts: false, canSeePowerMap: true, actorEmail: 'manager@example.test', today: '2026-11-09' } }));
   await page.route('**/api/growth', route => route.fulfill({ status: options.status ?? 200, json: options.malformed ? {} : { ...sample(), confirmed: options.confirmed ?? true, confirmedReason: options.confirmed === false ? 'Sales import is pending' : null } }));
+  let inboxInProgress = false;
+  await page.route('**/api/growth/inbox**', route => {
+    if (route.request().method() === 'POST') {
+      const body = route.request().postDataJSON();
+      if (body.decision === 'accept') inboxInProgress = true;
+      return route.fulfill({ json: { cardKey: body.cardKey, decision: body.decision, state: body.decision === 'accept' ? 'in_progress' : body.decision === 'undo' ? 'review' : body.decision === 'reject' ? 'rejected' : 'snoozed', ...(body.decision === 'accept' ? { opportunityId: 'opportunity-a', actionId: 'action-a' } : {}), ...(body.decision === 'snooze' ? { snoozeUntil: '2027-02-03' } : {}) } });
+    }
+    const params = new URL(route.request().url()).searchParams;
+    return route.fulfill({ json: inboxSample(params.get('filter') ?? 'all', Number(params.get('page') ?? 1), inboxInProgress, options.inboxViewerEmail) });
+  });
   await page.route('**/api/growth/labs?**', route => {
     const params = new URL(route.request().url()).searchParams;
     const list = params.get('list'), pageNumber = Number(params.get('page'));
@@ -43,6 +67,83 @@ async function openGrowth(page: Page) {
 for (const width of [375, 1280]) {
   test.describe('Growth at ' + width, () => {
     test.use({ viewport: { width, height: 900 } });
+    test('action inbox renders counts, cards, and the phone reading order', async ({ page }) => {
+      await fixture(page); await openGrowth(page);
+      const inbox = page.getByRole('region', { name: 'Action inbox', exact: true });
+      await expect(inbox.getByText('2 to review', { exact: true })).toBeVisible();
+      await expect(inbox.getByRole('button', { name: 'All 2', exact: true })).toBeVisible();
+      await expect(inbox.getByRole('button', { name: 'Skipped 2', exact: true })).toBeVisible();
+      await expect(inbox.getByText('Lab A', { exact: true })).toBeVisible();
+      await expect(inbox.getByText('Bought in 7 of the previous 11 months, nothing in Oct · last bought Sep', { exact: true })).toBeVisible();
+      if (width === 375) {
+        const scorecard = page.getByRole('region', { name: 'Scorecard', exact: true });
+        expect(await scorecard.evaluate(element => element.nextElementSibling?.getAttribute('aria-labelledby'))).toBe(await inbox.getAttribute('aria-labelledby'));
+        expect(await page.evaluate(() => document.documentElement.scrollWidth <= innerWidth)).toBe(true);
+      }
+    });
+    test('accept submits only the contract fields and shows the action in progress', async ({ page }) => {
+      await fixture(page); await openGrowth(page);
+      const inbox = page.getByRole('region', { name: 'Action inbox', exact: true });
+      await inbox.getByRole('button', { name: 'Accept: Lab A', exact: true }).click();
+      await expect(inbox.getByLabel('Action', { exact: true })).toBeFocused();
+      await expect(inbox.getByLabel('Owner', { exact: true })).toHaveValue('manager@example.test');
+      await expect(inbox.getByLabel('Owner', { exact: true }).locator('option:checked')).toHaveText('You');
+      const dueOn = await page.evaluate(() => {
+        const date = new Date(); date.setDate(date.getDate() + 7);
+        return `${date.getFullYear()}-${String(date.getMonth() + 1).padStart(2, '0')}-${String(date.getDate()).padStart(2, '0')}`;
+      });
+      const submitted = page.waitForRequest(request => new URL(request.url()).pathname === '/api/growth/inbox' && request.method() === 'POST');
+      await inbox.getByRole('button', { name: 'Create action: Lab A', exact: true }).click();
+      const body = (await submitted).postDataJSON();
+      expect(body).toEqual({ requestId: expect.stringMatching(/^[0-9a-f]{8}-[0-9a-f]{4}-4[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i), cardKey: 'card-a', decision: 'accept', actionType: 'visit', ownerEmail: 'manager@example.test', dueOn, detail: 'Bought in 7 of the previous 11 months, nothing in Oct · last bought Sep' });
+      await expect(inbox.getByText('Already in progress', { exact: true })).toBeVisible();
+      await expect(inbox.getByRole('button', { name: 'Accept: Lab A', exact: true })).toHaveCount(0);
+    });
+    test('reject requires a category before submitting', async ({ page }) => {
+      await fixture(page); await openGrowth(page);
+      const inbox = page.getByRole('region', { name: 'Action inbox', exact: true });
+      let posts = 0;
+      page.on('request', request => { if (new URL(request.url()).pathname === '/api/growth/inbox' && request.method() === 'POST') posts++; });
+      await inbox.getByRole('button', { name: 'Reject: Lab A', exact: true }).click();
+      const reason = inbox.getByLabel('Reason', { exact: true });
+      await expect(reason).toHaveAttribute('required', '');
+      await inbox.getByRole('button', { name: 'Reject: Lab A', exact: true }).last().click();
+      expect(await reason.evaluate(element => element instanceof HTMLSelectElement && element.validity.valueMissing)).toBe(true);
+      expect(posts).toBe(0);
+      await reason.selectOption('price');
+      await inbox.getByLabel('Note', { exact: true }).fill('  Price concern \n');
+      const submitted = page.waitForRequest(request => new URL(request.url()).pathname === '/api/growth/inbox' && request.method() === 'POST');
+      await inbox.getByRole('button', { name: 'Reject: Lab A', exact: true }).last().click();
+      expect((await submitted).postDataJSON()).toMatchObject({ cardKey: 'card-a', decision: 'reject', category: 'price', note: 'Price concern' });
+      await expect(inbox.getByText('Rejected · Price', { exact: true })).toBeVisible();
+    });
+    test('owner falls back to the first owner when the viewer is not eligible', async ({ page }) => {
+      await fixture(page, { inboxViewerEmail: 'another-manager@example.test' }); await openGrowth(page);
+      const inbox = page.getByRole('region', { name: 'Action inbox', exact: true });
+      await inbox.getByRole('button', { name: 'Accept: Lab A', exact: true }).click();
+      await expect(inbox.getByLabel('Owner', { exact: true })).toHaveValue('sales@example.test');
+    });
+    test('snooze shows the server date and omits a whitespace-only note', async ({ page }) => {
+      await fixture(page); await openGrowth(page);
+      const inbox = page.getByRole('region', { name: 'Action inbox', exact: true });
+      await inbox.getByRole('button', { name: 'Snooze: Lab A', exact: true }).click();
+      await inbox.getByLabel('Note', { exact: true }).fill(' \n\t ');
+      const submitted = page.waitForRequest(request => new URL(request.url()).pathname === '/api/growth/inbox' && request.method() === 'POST');
+      await inbox.getByRole('button', { name: 'Snooze: Lab A', exact: true }).last().click();
+      expect((await submitted).postDataJSON()).toEqual({ requestId: expect.any(String), cardKey: 'card-a', decision: 'snooze', until: '2w' });
+      await expect(inbox.getByText('Snoozed until 3 Feb', { exact: true })).toBeVisible();
+      await expect(inbox.getByRole('button', { name: 'Undo: Lab A', exact: true })).toBeVisible();
+    });
+    test('unlinked cards offer Link and Done shows the observed outcome', async ({ page }) => {
+      await fixture(page); await openGrowth(page);
+      const inbox = page.getByRole('region', { name: 'Action inbox', exact: true });
+      await expect(inbox.getByText('Tally ledger not linked', { exact: true })).toBeVisible();
+      await expect(inbox.getByRole('button', { name: 'Link: Tally ledger not linked', exact: true })).toBeVisible();
+      await expect(inbox.getByRole('button', { name: 'Accept: Tally ledger not linked', exact: true })).toHaveCount(0);
+      await inbox.getByRole('button', { name: 'Done & outcomes', exact: true }).click();
+      await expect(inbox.getByText('Bought again 6 Nov (₹8,200)', { exact: true })).toBeVisible();
+      await expect(inbox.getByText('Outcomes are what happened afterwards, not proof the visit caused it.', { exact: true })).toBeVisible();
+    });
     test('management sees the figures, waterfall, table toggles and six health rows', async ({ page }) => {
       await fixture(page); await openGrowth(page);
       await expect(page.getByRole('heading', { name: 'Growth', exact: true })).toBeVisible();

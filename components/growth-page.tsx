@@ -4,6 +4,8 @@ import { useEffect, useState, type ReactNode } from 'react';
 import { normalizeGrowth, type GrowthData, type GrowthMeasures } from '@/lib/growth-types';
 import { GrowthDrilldown, type GrowthNavigation, type GrowthSelection } from './growth-drilldown';
 import { formatPaise } from '@/lib/wallet-format';
+import { GrowthInbox } from './growth-inbox';
+import { useIsMobile } from '@/hooks/use-mobile';
 
 const lakh = (n: number) => `₹${(n / 1e7).toFixed(1)} L`;
 const rupees = (n: number) => formatPaise(Math.round(n / 100) * 100);
@@ -184,6 +186,7 @@ function Health({ data, onOpenBrandSetup, onOpenMyActions }: { data: GrowthData 
 }
 
 export function GrowthPage(navigation: GrowthNavigation) {
+  const isMobile = useIsMobile();
   const [selection, setSelection] = useState<GrowthSelection | null>(null);
   const [data, setData] = useState<GrowthData | null>(null);
   const [error, setError] = useState('');
@@ -201,5 +204,14 @@ export function GrowthPage(navigation: GrowthNavigation) {
   }, [revision]);
   const scope = data ? `${monthYear(data.window.from)} – ${monthYear(previousDay(data.window.to))} · ${data.companyCount === 1 ? 'one Tally company' : `${data.companyCount} Tally companies`}` : '';
   const comparison = data ? `H1 (${month(data.window.h1From)}–${month(previousDay(data.window.h2From))}) → H2 (${month(data.window.h2From)}–${month(previousDay(data.window.to))})` : '';
-  return <div className="h-full min-w-0 overflow-y-auto p-4 text-sm text-sf-strong sm:p-6 [overflow-wrap:break-word]"><header className="mb-5 space-y-2"><p className={muted}>More / Management</p><h1 className="text-xl font-bold">Growth</h1>{data && <p className={muted}>{scope} · management only</p>}{data && !data.confirmed && <p className="text-xs text-sf-warning">Not confirmed: {data.confirmedReason ?? 'Unknown'}</p>}</header>{error ? <div role="alert"><p>{error}</p>{error !== 'Growth is for management only.' && <button className="mt-3 min-h-11 rounded-lg border border-sf-line px-3" onClick={() => { setData(null); setError(''); setRevision(n => n + 1); }}>Retry</button>}</div> : !data ? <p role="status">Loading growth…</p> : <div className="grid min-w-0 items-start gap-4 lg:grid-cols-[minmax(0,2.2fr)_minmax(260px,1fr)] lg:gap-5"><div className="min-w-0 space-y-4"><Scorecard data={data} onDrill={setSelection} /><Revenue data={data} scope={scope} comparison={comparison} onDrill={setSelection} /><Bridge data={data} scope={scope} comparison={comparison} onDrill={setSelection} /><MonthlyCharts data={data} onDrill={setSelection} /></div><Health data={data} onOpenBrandSetup={navigation.onOpenBrandSetup} onOpenMyActions={navigation.onOpenMyActions} /></div>}{selection && <GrowthDrilldown key={`${selection.list}:${selection.month ?? ""}:${selection.half ?? ""}:${selection.sort ?? ""}`} selection={selection} onClose={() => setSelection(null)} {...navigation} />}</div>;
+  const inbox = <GrowthInbox onOpenCustomer={navigation.onOpenCustomer} onLinkLedger={navigation.onLinkLedger} />;
+  const pageError = error ? <div role="alert"><p>{error}</p>{error !== 'Growth is for management only.' && <button className="mt-3 min-h-11 rounded-lg border border-sf-line px-3" onClick={() => { setData(null); setError(''); setRevision(n => n + 1); }}>Retry</button>}</div> : !data ? <p role="status">Loading growth…</p> : null;
+  return <div className="h-full min-w-0 overflow-y-auto p-4 text-sm text-sf-strong sm:p-6 [overflow-wrap:break-word]">
+    <header className="mb-5 space-y-2"><p className={muted}>More / Management</p><h1 className="text-xl font-bold">Growth</h1>{data && <p className={muted}>{scope} · management only</p>}{data && !data.confirmed && <p className="text-xs text-sf-warning">Not confirmed: {data.confirmedReason ?? 'Unknown'}</p>}</header>
+    <div className="grid min-w-0 items-start gap-4 md:grid-cols-[minmax(0,2.2fr)_minmax(280px,1fr)] lg:gap-5">
+      <div className="min-w-0 space-y-4">{pageError}{data && <Scorecard data={data} onDrill={setSelection} />}{isMobile && inbox}{data && <><Revenue data={data} scope={scope} comparison={comparison} onDrill={setSelection} /><Bridge data={data} scope={scope} comparison={comparison} onDrill={setSelection} /><MonthlyCharts data={data} onDrill={setSelection} /></>}</div>
+      <div className="min-w-0 space-y-4">{!isMobile && inbox}{data && <Health data={data} onOpenBrandSetup={navigation.onOpenBrandSetup} onOpenMyActions={navigation.onOpenMyActions} />}</div>
+    </div>
+    {selection && <GrowthDrilldown key={`${selection.list}:${selection.month ?? ""}:${selection.half ?? ""}:${selection.sort ?? ""}`} selection={selection} onClose={() => setSelection(null)} {...navigation} />}
+  </div>;
 }

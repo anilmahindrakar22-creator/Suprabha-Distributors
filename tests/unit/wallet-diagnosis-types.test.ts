@@ -36,7 +36,10 @@ describe('validateWalletDiagnosisCommand', () => {
     for (const origin of ['manual', 'wallet_gap'] as const) expect(validateWalletDiagnosisCommand({ ...command, payload: { ...command.payload, origin } }).action).toBe('open_opportunity');
     expect(validateWalletDiagnosisCommand({ ...command, payload: { ...command.payload, kind: 'recover', origin: 'defend_signal' } }).action).toBe('open_opportunity');
     expect(isOpportunityOutcomeResponse([{ kind: 'recover', origin: 'defend_signal' }])).toBe(true);
+    expect(isOpportunityOutcomeResponse([{ kind: 'capture', origin: 'growth_rule' }])).toBe(true);
+    expect(() => validateWalletDiagnosisCommand({ ...command, payload: { ...command.payload, origin: 'growth_rule' } })).toThrow('Invalid wallet diagnosis request');
     expect(isOpportunityOutcomeResponse([{ origin: 'suggested' }])).toBe(false);
+    expect(isOpportunityOutcomeResponse([{ origin: 'unknown' }])).toBe(false);
     expect(() => validateWalletDiagnosisCommand({ ...command, payload: { ...command.payload, origin: 'suggested' } })).toThrow('Invalid wallet diagnosis request');
   });
   it.each(samples)('accepts valid %s facts and exact record payload', (category, facts) => {

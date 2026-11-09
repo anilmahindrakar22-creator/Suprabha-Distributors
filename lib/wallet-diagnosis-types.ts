@@ -1,7 +1,7 @@
 export type OpportunityKind = 'capture' | 'defend' | 'recover';
 export type OpportunityOutcome = 'won' | 'lost' | 'dropped';
 export type OpportunityOutcomeRow = {
-  opportunityId?: string; kind?: OpportunityKind; divisionName?: string | null; origin?: 'manual' | 'wallet_gap' | 'defend_signal'; openedAt?: string; openedReason?: string;
+  opportunityId?: string; kind?: OpportunityKind; divisionName?: string | null; origin?: 'manual' | 'wallet_gap' | 'defend_signal' | 'growth_rule'; openedAt?: string; openedReason?: string;
   outcome?: OpportunityOutcome; closedReason?: string; closedBy?: string; closedAt?: string; lastConstraintCategory?: ConstraintCategory | null;
   lastActionType?: string | null; lastActionResult?: 'done' | 'dropped' | null; salesBeforePaise?: number | null; salesNowPaise?: number | null;
   changePaise?: number | null; changePermille?: number | null; measurable?: boolean; notMeasurableReason?: string | null;
@@ -25,7 +25,7 @@ export type ConstraintFacts =
   | { category: 'unknown'; nextQuestion: string; askBy: string };
 export type WalletConstraint = { id: string; category: ConstraintCategory; evidence: string; confidence: ConstraintConfidence; recordedBy: string; recordedAt: string; source: EvidenceSource; sourcePerson: string | null; observedOn: string; facts: Omit<ConstraintFacts, 'category'>; contactName?: string | null; priceUnproven: boolean; gapPermille: number | null };
 export type WalletOpportunity = {
-  id: string; customerId: string; kind: OpportunityKind; divisionCode: string | null; divisionName: string | null; origin: 'manual' | 'wallet_gap' | 'defend_signal'; openedReason: string; openedBy: string; openedAt: string;
+  id: string; customerId: string; kind: OpportunityKind; divisionCode: string | null; divisionName: string | null; origin: 'manual' | 'wallet_gap' | 'defend_signal' | 'growth_rule'; openedReason: string; openedBy: string; openedAt: string;
   closure: { outcome: OpportunityOutcome; reason: string; closedBy: string; closedAt: string } | null;
   constraint: WalletConstraint | null; history: WalletConstraint[];
 };
@@ -63,7 +63,7 @@ export function isOpportunityOutcomeResponse(value: unknown): value is Opportuni
     && optional(item, 'opportunityId', value => typeof value === 'string')
     && optional(item, 'kind', value => kinds.includes(value as OpportunityKind))
     && optional(item, 'divisionName', value => value === null || typeof value === 'string')
-    && optional(item, 'origin', value => value === 'manual' || value === 'wallet_gap' || value === 'defend_signal')
+    && optional(item, 'origin', value => value === 'manual' || value === 'wallet_gap' || value === 'defend_signal' || value === 'growth_rule')
     && optional(item, 'openedAt', value => typeof value === 'string')
     && optional(item, 'openedReason', value => typeof value === 'string')
     && optional(item, 'outcome', value => outcomes.includes(value as OpportunityOutcome))

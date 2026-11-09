@@ -5,6 +5,8 @@ import type { EconomicAction } from './instrument-economics-types';
 export type GatewayAction =
   | 'get_growth'
   | 'get_growth_labs'
+  | 'get_growth_inbox'
+  | 'decide_growth_card'
   | 'get_power_map'
   | 'set_influence'
   | 'end_influence'

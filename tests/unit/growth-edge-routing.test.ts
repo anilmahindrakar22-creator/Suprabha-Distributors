@@ -25,11 +25,11 @@ function fixture() {
 }
 
 describe('Growth Edge routing', () => {
-  it.each(['get_growth', 'get_growth_labs'])('routes %s read-only to its RPC', async action => {
+  it.each(['get_growth', 'get_growth_labs', 'get_growth_inbox'])('routes %s read-only to its RPC', async action => {
     const admission = vi.spyOn(RequestGate.prototype, 'begin');
     try {
       const { send, fetcher } = fixture();
-      const payload = action === 'get_growth_labs' ? { list: 'month_skipped', month: '2026-10', page: 1 } : {};
+      const payload = action === 'get_growth_labs' ? { list: 'month_skipped', month: '2026-10', page: 1 } : action === 'get_growth_inbox' ? { filter: 'all', page: 1 } : {};
       expect((await send(action, payload)).status).toBe(200);
       expect(fetcher).toHaveBeenCalledOnce();
       expect(fetcher.mock.calls[0][0]).toBe('https://database.example.test/rest/v1/rpc/stockflow_growth_gateway');
@@ -41,6 +41,17 @@ describe('Growth Edge routing', () => {
     const { send, fetcher } = fixture();
     fetcher.mockResolvedValue(Response.json({ message: 'Management required', code: '42501' }, { status: 403 }));
     expect((await send('get_growth', {})).status).toBe(403);
+  });
+  it('gates decisions and routes them to the growth gateway', async () => {
+    const admission = vi.spyOn(RequestGate.prototype, 'begin');
+    try {
+      const { send, fetcher } = fixture();
+      const payload = { requestId: '12345678-1234-4123-8123-123456789abc', cardKey: 'card-a', decision: 'undo' };
+      expect((await send('decide_growth_card', payload)).status).toBe(200);
+      expect(admission).toHaveBeenCalledWith(key, 'staff@example.test', 'decide_growth_card', payload);
+      expect(fetcher.mock.calls[0][0]).toBe('https://database.example.test/rest/v1/rpc/stockflow_growth_gateway');
+      expect(JSON.parse(fetcher.mock.calls[0][1].body).p_payload).toEqual(payload);
+    } finally { admission.mockRestore(); }
   });
 });
 
