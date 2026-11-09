@@ -190,6 +190,13 @@ It is shown as a graph plus a list view.
    - Confidence lives on the **constraint**, derived from its evidence source: document = High, a named person at the lab = Medium, our view = Low.
    - When the system starts suggesting opportunities, add `origin` (`manual`, `wallet_gap`, `defend_signal`) and the policy version that produced the suggestion. A suggestion stays a suggestion until a person opens it.
    - *Record, 2 Nov 2026:* `defend_signal` is now used by the Recover signal (`20261116130000_recover_signal.sql`, policy `recover-v1`, [design](../RECOVER-SIGNAL-DESIGN-20261030.md)). It applies to kind `recover` only. The server checks the lab is currently signalling, and the opportunity is opened by a person.
+   - *Amendment, 9 Nov 2026 (Growth P2 Act, owner-approved mockup):* adds origin **`growth_rule`** (`20261129140000_growth_inbox.sql`).
+     - **When:** a manager accepts a Growth action-inbox card (rules R1 skipped, R2 stopped, R3 falling, R4 new-not-back, version 1). The opening reason records `[rule=Rn vN period=YYYY-MM]`.
+     - **Kinds:** `recover` for R1–R3, `capture` for R4.
+     - **Not user-creatable:** it cannot be opened through `open_opportunity`.
+     - **Server checks:** the card must be current, the lab must be linked to a customer, and the customer must have no open action. The one-open-opportunity-per-(customer, kind, division) rule is kept: Accept reuses an existing open opportunity of that kind instead of creating a second.
+     - **Decision record:** `stockflow_growth_decisions` is append-only and stores rule, version, inputs, stake and the person deciding.
+     - **Certification:** unlike `defend_signal`, these cards are shown before sales are certified against Tally. They are labelled "Not confirmed", and that difference is listed for financial sign-off.
 
 7. **Privacy (D-07).** Opportunities hold business facts only. A cited contact is referenced by id. Erasing a contact nulls the free-text evidence that refers to them (by trigger), and the audit rows remain.
 
