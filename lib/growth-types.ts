@@ -7,6 +7,18 @@ export type GrowthMonth = {
   month: string; labsBuying: number; firstTime: number | null; skippedRegulars: number | null;
   salesPaise: number; purchasesRegularPaise: number; purchasesLargePaise: number; largePurchaseInvoices: number;
 };
+export type GrowthProfitWindow = {
+  salesPaise: number; knownSalesPaise: number; costPaise: number; gpPaise: number;
+  gpPct: number | null; coveragePct: number | null;
+};
+export type GrowthProfit = {
+  method: 'average_purchase_cost_to_date';
+  window: GrowthProfitWindow;
+  halves: [GrowthProfitWindow & { half: 'H1' }, GrowthProfitWindow & { half: 'H2' }];
+  repeat: GrowthProfitWindow;
+  bulk: GrowthProfitWindow;
+  months: { month: string; salesPaise: number; knownSalesPaise: number; gpPaise: number }[];
+};
 export const growthLabLists = ['month_buying', 'month_first', 'month_skipped', 'month_large_purchases', 'bridge_new', 'bridge_stopped', 'bridge_grew', 'bridge_fell', 'regular_labs', 'window_labs', 'bulk_invoices'] as const;
 export type GrowthLabList = typeof growthLabLists[number];
 export type GrowthLabRow = {
@@ -26,6 +38,7 @@ export type GrowthData = {
   confirmed: boolean; confirmedReason: string | null;
   tree: GrowthMeasures;
   scorecard: { regularLabs: number; regularPct: number | null; top10Pct: number | null };
+  gp?: GrowthProfit;
   months: GrowthMonth[];
   halves: [GrowthMeasures & { half: 'H1' }, GrowthMeasures & { half: 'H2' }];
   bridge: { h1Paise: number; h2Paise: number; new: Contribution; stopped: Contribution; stoppedRegular: Contribution; grew: Contribution; fell: Contribution; same: Contribution; other: Contribution };
@@ -46,6 +59,7 @@ const date = (v: unknown): v is string => typeof v === 'string' && /^\d{4}-\d{2}
 const timestamp = (v: unknown) => typeof v === 'string' && date(v.slice(0, 10)) && /^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}(?:\.\d+)?(?:Z|[+-]\d{2}:\d{2})$/.test(v) && Number.isFinite(Date.parse(v));
 const nullable = (v: unknown, check: (v: unknown) => boolean) => v === null || check(v);
 const pct = (v: unknown) => typeof v === 'number' && Number.isFinite(v) && v >= 0 && v <= 100;
+const signedPct = (v: unknown) => typeof v === 'number' && Number.isFinite(v);
 export const isGrowthMonth = (v: unknown): v is string => typeof v === 'string' && /^\d{4}-(0[1-9]|1[0-2])$/.test(v);
 const measures = (v: unknown) => object(v) && ['revenuePaise', 'repeatPaise', 'bulkPaise'].every(k => money(v[k])) && nullable(v.perBuyingMonthPaise, money) && ['bulkInvoices', 'labsBuying', 'buyingMonths'].every(k => count(v[k]));
 
@@ -66,6 +80,20 @@ export function normalizeGrowth(value: unknown): GrowthData | null {
       && count(m.labsBuying) && nullable(m.firstTime, count) && nullable(m.skippedRegulars, count)
       && count(m.largePurchaseInvoices) && ['salesPaise', 'purchasesRegularPaise', 'purchasesLargePaise'].every(k => money(m[k]));
   })) return null;
+  if ('gp' in value) {
+    const gp = value.gp;
+    const gpWindow = (v: unknown): v is GrowthProfitWindow => object(v)
+      && ['salesPaise', 'knownSalesPaise', 'costPaise', 'gpPaise'].every(k => Number.isSafeInteger(v[k]))
+      && nullable(v.gpPct, signedPct) && nullable(v.coveragePct, pct);
+    if (!object(gp) || gp.method !== 'average_purchase_cost_to_date' || !gpWindow(gp.window)
+      || !Array.isArray(gp.halves) || gp.halves.length !== 2
+      || !gp.halves.every((v, i) => object(v) && gpWindow(v) && (v as Obj).half === (i === 0 ? 'H1' : 'H2'))
+      || !gpWindow(gp.repeat) || !gpWindow(gp.bulk)
+      || !Array.isArray(gp.months) || gp.months.length !== 12
+      || !gp.months.every((v, i) => object(v) && isGrowthMonth(v.month)
+        && v.month === (value.months as Obj[])[i].month
+        && ['salesPaise', 'knownSalesPaise', 'gpPaise'].every(k => Number.isSafeInteger(v[k])))) return null;
+  }
   if (!measures(tree) || !Array.isArray(halves) || halves.length !== 2 || !halves.every((v, i) => measures(v) && v.half === (i === 0 ? 'H1' : 'H2'))) return null;
   if (!object(b) || !money(b.h1Paise) || !money(b.h2Paise) || !['new', 'stopped', 'stoppedRegular', 'grew', 'fell', 'same', 'other'].every(k => object(b[k]) && count(b[k].labs) && money(b[k].paise))) return null;
   const stoppedRegularLabs = (b.stoppedRegular as Obj).labs, stoppedLabs = (b.stopped as Obj).labs;

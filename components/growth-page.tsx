@@ -127,15 +127,20 @@ function barButton(label: string, open: () => void) {
 function Scorecard({ data, onDrill }: { data: GrowthData; onDrill: (s: GrowthSelection) => void }) {
   const [a, b] = data.halves, t = data.tree, s = data.scorecard, gp = data.health.gp.costedPct;
   const compare = (a: number | null, b: number | null, format: (n: number) => string) => a === null || b === null || a === 0 ? '—' : `${changeLabel(a, b)} (${format(a)} → ${format(b)})`;
+  const profit = data.gp;
+  const profitChange = profit && profit.halves[0].gpPct !== null && profit.halves[1].gpPct !== null
+    ? `${profit.halves[1].gpPct - profit.halves[0].gpPct >= 0 ? '+' : '−'}${Math.abs(profit.halves[1].gpPct - profit.halves[0].gpPct).toFixed(1)} pts (${profit.halves[0].gpPct}% → ${profit.halves[1].gpPct}%)`
+    : '—';
+  const profitNote = profit ? `₹${(profit.window.gpPaise / 1e7).toFixed(1)} L on sales with known cost · cost known for ${profit.window.coveragePct ?? '—'}% of sales` : gp === null ? 'cost not computed yet' : `Cost known for ${gp}% of sales`;
   const tiles = [
     ['Revenue', lakh(t.revenuePaise), compare(a.revenuePaise, b.revenuePaise, lakh)],
     ['Labs buying', String(t.labsBuying), compare(a.labsBuying, b.labsBuying, String)],
     ['₹ per buying month', t.perBuyingMonthPaise === null ? '—' : rupees(t.perBuyingMonthPaise), compare(a.perBuyingMonthPaise, b.perBuyingMonthPaise, rupees)],
     ['Regular labs', String(s.regularLabs), `bought in 10+ months · ${s.regularPct === null ? '—' : s.regularPct + '%'} of revenue`],
     ["Top 10 labs' share", s.top10Pct === null ? '—' : `${s.top10Pct}%`, 'of revenue'],
-    ['Gross profit', gp === null || gp < 50 ? 'Not measured yet' : 'Unknown', gp === null ? 'cost not computed yet' : `Cost known for ${gp}% of sales`],
+    ['Gross profit', profit ? (profit.window.gpPct === null ? '—' : `${profit.window.gpPct}%`) : gp === null || gp < 50 ? 'Not measured yet' : 'Unknown', profit ? profitChange : profitNote],
   ];
-  return <section className={card} aria-labelledby="scorecard-title"><h2 id="scorecard-title" className="text-base font-bold">Scorecard</h2><p className={muted}>{monthYear(data.window.from)} – {monthYear(previousDay(data.window.to))} · change is H2 against H1</p><div className="grid grid-cols-2 gap-3 lg:grid-cols-3">{tiles.map(([label, value, note], i) => <div key={label} data-scorecard-tile className="min-w-0 rounded-lg border border-sf-line-soft bg-sf-soft-0 p-3" {...(i === 3 ? barButton(`Regular labs: ${s.regularLabs}, open list`, () => onDrill({ list: 'regular_labs', count: s.regularLabs, title: 'Regular labs', explanation: 'Bought in 10+ of 12 months.' })) : {})}><p className="text-xs text-sf-label">{label}</p><strong className={`my-1 block tabular-nums ${i === 0 ? 'text-xl' : 'text-base'}`}>{value}</strong><p className={muted}>{note}{i === 5 && <> <a className="inline-flex min-h-9 items-center text-sf-brand underline" href="#data-health">Why?</a></>}</p></div>)}</div></section>;
+  return <section className={card} aria-labelledby="scorecard-title"><h2 id="scorecard-title" className="text-base font-bold">Scorecard</h2><p className={muted}>{monthYear(data.window.from)} – {monthYear(previousDay(data.window.to))} · change is H2 against H1</p><div className="grid grid-cols-2 gap-3 lg:grid-cols-3">{tiles.map(([label, value, note], i) => <div key={label} data-scorecard-tile className="min-w-0 rounded-lg border border-sf-line-soft bg-sf-soft-0 p-3" {...(i === 3 ? barButton(`Regular labs: ${s.regularLabs}, open list`, () => onDrill({ list: 'regular_labs', count: s.regularLabs, title: 'Regular labs', explanation: 'Bought in 10+ of 12 months.' })) : {})}><p className="text-xs text-sf-label">{label}</p><strong className={`my-1 block tabular-nums ${i === 0 ? 'text-xl' : 'text-base'}`}>{value}</strong><p className={muted}>{note}</p>{i === 5 && profit && <><p className={muted}>{profitNote}</p>{profit.bulk.gpPct !== null && profit.bulk.gpPct < 0 && <p className={muted}>Instruments &amp; bulk at {profit.bulk.gpPct}%; consumables {profit.repeat.gpPct ?? '—'}%</p>}</>}{i === 5 && <> <a className="inline-flex min-h-9 items-center text-sf-brand underline" href="#data-health">Why?</a></>}</div>)}</div></section>;
 }
 
 function MonthlyCharts({ data, onDrill }: { data: GrowthData; onDrill: (s: GrowthSelection) => void }) {
@@ -173,9 +178,10 @@ function MonthlyCharts({ data, onDrill }: { data: GrowthData; onDrill: (s: Growt
 
 function Health({ data, onOpenBrandSetup, onOpenMyActions }: { data: GrowthData } & Pick<GrowthNavigation, 'onOpenBrandSetup' | 'onOpenMyActions'>) {
   const h = data.health, pct = h.gp.costedPct;
+  const profit = data.gp;
   const age = h.catalog.observedAt === null ? null : Date.now() - Date.parse(h.catalog.observedAt);
   const rows = [
-    { title: 'Gross profit', status: pct === null || pct < 50 ? 'Blocked' : pct < 90 ? 'Limited' : 'Current', text: pct === null ? 'cost not computed yet' : `Cost known for ${pct}% of sales`, effect: pct === null || pct < 50 ? 'Profit side of the tree is blank' : '' },
+    { title: 'Gross profit', status: profit ? (profit.window.coveragePct !== null && profit.window.coveragePct >= 95 ? 'Current' : profit.window.coveragePct !== null && profit.window.coveragePct >= 80 ? 'Limited' : 'Blocked') : pct === null || pct < 50 ? 'Blocked' : pct < 90 ? 'Limited' : 'Current', text: profit ? `Cost known for ${profit.window.coveragePct ?? '—'}% of sales (average purchase cost)` : pct === null ? 'cost not computed yet' : `Cost known for ${pct}% of sales`, effect: profit ? profit.window.coveragePct !== null && profit.window.coveragePct < 100 ? 'The rest was bought before imported history; the 36-month load will fill it' : '' : pct === null || pct < 50 ? 'Profit side of the tree is blank' : '' },
     { title: 'History depth', status: h.history.monthsImported < 24 ? 'Limited' : 'Current', text: `${h.history.monthsImported} months imported`, effect: h.history.monthsImported < 24 ? 'No year-on-year yet' : '' },
     { title: 'Sales confirmation', status: data.confirmed ? 'Current' : 'Limited', text: data.confirmed ? 'Confirmed' : data.confirmedReason ?? 'Unknown' },
     { title: 'Item groups', status: h.itemGroups.unmappedPct === null ? 'Unknown' : h.itemGroups.unmappedPct > 10 ? 'Limited' : 'Current', text: h.itemGroups.unmappedPct === null ? 'Unknown' : `${h.itemGroups.unmappedPct}% of sales has no principal`, owner: 'Map items to principals in Brand setup' },
