@@ -57,6 +57,7 @@ readActions.add('get_account_opportunities');
 readActions.add('get_account_signals');
 readActions.add('get_opportunity_outcomes');
 economicActions.push('get_sales_coverage');
+actions.push('get_sales_coverage');
 readActions.add('get_sales_coverage');
 readActions.add('get_link_suggestions');
 const brandMappingActions = ['get_brand_mapping', 'set_group_brand', 'set_item_brand', 'set_equipment_area', 'add_brand'];
