@@ -17,6 +17,18 @@ beforeEach(() => {
 });
 
 describe('Brand mapping route', () => {
+  const itemKind = { action: 'set_item_kind', requestId: '19300000-0000-4000-8000-000000000001', companyId: 'company-1', productId: 'product-1', kind: 'consumable', reason: 'Costly reagent' };
+  it.each(['administrator', 'management'])('forwards set_item_kind for %s with only the gateway fields', async role => {
+    mocks.session.mockResolvedValue({ email: 'staff@example.test', roles: [role] });
+    expect((await POST(post(itemKind))).status).toBe(200);
+    const { action, ...payload } = itemKind;
+    expect(mocks.gateway).toHaveBeenCalledExactlyOnceWith('staff@example.test', action, payload);
+  });
+  it.each(['sales', 'operations', 'accounts', 'viewer'])('blocks item-kind writes by %s before the gateway', async role => {
+    mocks.session.mockResolvedValue({ email: 'staff@example.test', roles: [role] });
+    expect((await POST(post(itemKind))).status).toBe(403);
+    expect(mocks.gateway).not.toHaveBeenCalled();
+  });
   it.each(['administrator', 'management'])('allows %s on reads and writes', async role => {
     mocks.session.mockResolvedValue({ email: 'staff@example.test', roles: [role] });
     const read = await GET(get('?q=Acme&page=2'));

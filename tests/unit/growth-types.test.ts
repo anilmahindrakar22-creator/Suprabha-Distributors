@@ -19,6 +19,21 @@ describe('Growth response validation', () => {
   it('normalizes a complete sample', () => { expect(normalizeGrowth(sample())).toEqual(sample()); });
   it('allows the optional gross profit key to be absent', () => { expect(normalizeGrowth(sample())).not.toBeNull(); });
   it('normalizes gross profit when present', () => { const v = { ...sample(), gp: profit() }; expect(normalizeGrowth(v)).toEqual(v); });
+  it('accepts optional P3 windows and signed integer month segments', () => {
+    const gp = { ...profit(), consumables: profitWindow(28, 90), instruments: profitWindow(-15, 85), months: profit().months.map(m => ({ ...m, consumablesKnownSalesPaise: -100, consumablesGpPaise: -30, instrumentsKnownSalesPaise: 500, instrumentsGpPaise: -200 })) };
+    expect(normalizeGrowth({ ...sample(), gp })?.gp).toEqual(gp);
+  });
+  it.each(['consumables', 'instruments'])('strictly validates optional %s windows', key => {
+    expect(normalizeGrowth({ ...sample(), gp: { ...profit(), [key]: null } })).toBeNull();
+    expect(normalizeGrowth({ ...sample(), gp: { ...profit(), [key]: { ...profitWindow(20, 90), gpPaise: 1.1 } } })).toBeNull();
+  });
+  it.each(['consumablesKnownSalesPaise', 'consumablesGpPaise', 'instrumentsKnownSalesPaise', 'instrumentsGpPaise'])('rejects malformed optional %s', key => {
+    for (const bad of [null, '100', 1.5, NaN, Infinity, Number.MAX_SAFE_INTEGER + 1]) {
+      const gp = profit();
+      gp.months[0] = { ...gp.months[0], [key]: bad };
+      expect(normalizeGrowth({ ...sample(), gp })).toBeNull();
+    }
+  });
   it('accepts optional unreliable line count on the gross profit window', () => { const gp = profit(); gp.window.unreliableLines = 1; expect(normalizeGrowth({ ...sample(), gp })?.gp?.window.unreliableLines).toBe(1); });
   it('allows gross profit window without unreliable line count', () => { expect(normalizeGrowth({ ...sample(), gp: profit() })).not.toBeNull(); });
   it('rejects a negative unreliable line count', () => { const gp = profit(); gp.window.unreliableLines = -1; expect(normalizeGrowth({ ...sample(), gp })).toBeNull(); });

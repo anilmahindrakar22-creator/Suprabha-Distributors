@@ -17,7 +17,9 @@ export type GrowthProfit = {
   halves: [GrowthProfitWindow & { half: 'H1' }, GrowthProfitWindow & { half: 'H2' }];
   repeat: GrowthProfitWindow;
   bulk: GrowthProfitWindow;
-  months: { month: string; salesPaise: number; knownSalesPaise: number; gpPaise: number }[];
+  consumables?: GrowthProfitWindow;
+  instruments?: GrowthProfitWindow;
+  months: { month: string; salesPaise: number; knownSalesPaise: number; gpPaise: number; consumablesKnownSalesPaise?: number; consumablesGpPaise?: number; instrumentsKnownSalesPaise?: number; instrumentsGpPaise?: number }[];
 };
 export const growthLabLists = ['month_buying', 'month_first', 'month_skipped', 'month_large_purchases', 'bridge_new', 'bridge_stopped', 'bridge_grew', 'bridge_fell', 'regular_labs', 'window_labs', 'bulk_invoices'] as const;
 export type GrowthLabList = typeof growthLabLists[number];
@@ -90,10 +92,12 @@ export function normalizeGrowth(value: unknown): GrowthData | null {
       || !Array.isArray(gp.halves) || gp.halves.length !== 2
       || !gp.halves.every((v, i) => object(v) && gpWindow(v) && (v as Obj).half === (i === 0 ? 'H1' : 'H2'))
       || !gpWindow(gp.repeat) || !gpWindow(gp.bulk)
+      || ('consumables' in gp && !gpWindow(gp.consumables)) || ('instruments' in gp && !gpWindow(gp.instruments))
       || !Array.isArray(gp.months) || gp.months.length !== 12
       || !gp.months.every((v, i) => object(v) && isGrowthMonth(v.month)
         && v.month === (value.months as Obj[])[i].month
-        && ['salesPaise', 'knownSalesPaise', 'gpPaise'].every(k => Number.isSafeInteger(v[k])))) return null;
+        && ['salesPaise', 'knownSalesPaise', 'gpPaise'].every(k => Number.isSafeInteger(v[k]))
+        && ['consumablesKnownSalesPaise', 'consumablesGpPaise', 'instrumentsKnownSalesPaise', 'instrumentsGpPaise'].every(k => !(k in v) || Number.isSafeInteger(v[k])))) return null;
   }
   if (!measures(tree) || !Array.isArray(halves) || halves.length !== 2 || !halves.every((v, i) => measures(v) && v.half === (i === 0 ? 'H1' : 'H2'))) return null;
   if (!object(b) || !money(b.h1Paise) || !money(b.h2Paise) || !['new', 'stopped', 'stoppedRegular', 'grew', 'fell', 'same', 'other'].every(k => object(b[k]) && count(b[k].labs) && money(b[k].paise))) return null;

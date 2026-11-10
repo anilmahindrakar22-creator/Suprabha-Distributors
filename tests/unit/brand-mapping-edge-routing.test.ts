@@ -37,7 +37,7 @@ describe('Brand mapping Edge routing', () => {
     } finally { admission.mockRestore(); }
   });
 
-  it.each(['set_group_brand', 'set_item_brand', 'set_equipment_area', 'add_brand'])('routes %s as a write to the brand mapping gateway', async action => {
+  it.each(['set_group_brand', 'set_item_brand', 'set_equipment_area', 'add_brand', 'set_item_kind'])('routes %s as a write to the brand mapping gateway', async action => {
     const admission = vi.spyOn(RequestGate.prototype, 'begin');
     try {
       const { send, fetcher } = fixture();

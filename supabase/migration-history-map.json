@@ -1412,6 +1412,27 @@
       "status": "not_deployed"
     },
     {
+      "localFile": "20261129180000_growth_billed_below.sql",
+      "localSha256": "b5441e3ddb76fb5dbfe79e5fda14ff43b693582a1294feb7e1437aa0e494c80c",
+      "remoteVersion": null,
+      "remoteSha256": null,
+      "status": "not_deployed"
+    },
+    {
+      "localFile": "20261129170000_growth_margin.sql",
+      "localSha256": "7924521512d34c78a085495ae32662e4274469b5eb5afe505e7d5e3dbeae893a",
+      "remoteVersion": null,
+      "remoteSha256": null,
+      "status": "not_deployed"
+    },
+    {
+      "localFile": "20261129160000_growth_item_kind.sql",
+      "localSha256": "8fa4cc6b845c73198b15c9f9515efce4300b86d42a92bce8ad28d1088f4e4dfb",
+      "remoteVersion": null,
+      "remoteSha256": null,
+      "status": "not_deployed"
+    },
+    {
       "localFile": "20261129150000_growth_gp.sql",
       "localSha256": "24b966b1a4a4fce9032c267bf10b0be60c6f1ee2efa3ccee139690864c59f1f1",
       "remoteVersion": null,

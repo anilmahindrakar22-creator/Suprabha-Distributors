@@ -42,6 +42,7 @@ export async function POST(request: Request) {
     const session = await actor();
     const command = parseBrandMappingCommand(await readBoundedJsonRequest(request, 8_192));
     if (!command) return failure('Invalid brand mapping request', 400);
+    if (command.action === 'set_item_kind' && !hasAnyStockFlowRole(session.roles, ['administrator', 'management'])) return failure('Item kind management access required', 403);
     return Response.json(await callOrderGateway(session.email, command.action, command.payload), { headers });
   } catch (error) { return failed(error); }
 }

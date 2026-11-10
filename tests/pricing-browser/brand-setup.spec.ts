@@ -5,6 +5,8 @@ const brands = [{ code: 'BIOMERIEUX', name: 'bioMérieux', areas: ['IMMUNO', 'CU
 async function fixture(page: Page, statuses: (number | 'network')[] = []) {
   const posts: Record<string, unknown>[] = [];
   const reads: URL[] = [];
+  let itemKind = 'instrument';
+  let kindSource = 'auto';
   await page.route('**/api/accounts**', route => route.fulfill({ json: { accounts: [], page: { page: 1, pageSize: 50, total: 0 }, owners: [], territories: [], canAssign: true, canSeeProspects: true, canEraseContacts: false, canSeePowerMap: false, actorEmail: 'manager@example.test', today: '2026-11-01', classPolicy: { aMinPaise: '20000000', bMinPaise: '7500000' } } }));
   await page.route('**/api/customer-map?**', route => route.fulfill({ json: { brand: brands[0], brands, rows: [], total: 0, page: 1, mappedShare: { unmappedSalesPaise: 180000, totalSalesPaise: 1000000 } } }));
   await page.route('**/api/brand-mapping**', route => {
@@ -12,12 +14,17 @@ async function fixture(page: Page, statuses: (number | 'network')[] = []) {
       posts.push(route.request().postDataJSON());
       const status = statuses[posts.length - 1] ?? 200;
       if (status === 'network') return route.abort('failed');
+      const body = posts.at(-1)!;
+      if (status === 200 && body.action === 'set_item_kind') {
+        itemKind = body.kind === 'auto' ? 'instrument' : String(body.kind); kindSource = body.kind === 'auto' ? 'auto' : 'override';
+        return route.fulfill({ json: { companyId: body.companyId, productId: body.productId, kind: itemKind, source: kindSource } });
+      }
       return route.fulfill({ status, json: status === 200 ? { ok: true, linkId } : { error: 'Untrusted failure text' } });
     }
     const url = new URL(route.request().url()); reads.push(url);
     return route.fulfill({ json: { brands,
       groups: [{ group: '\u0004 Primary', label: 'Primary', items: 2, salesPaise: 100000, linkId: null, kind: null, brandCode: null }],
-      items: [{ itemKey: 'item-key', name: 'Reagent', group: 'Primary', salesPaise: 12000, linkId, kind: 'none', brandCode: null }],
+      items: [{ itemKey: 'item-key', name: 'Reagent', group: 'Primary', salesPaise: 12000, linkId, brandKind: 'none', kind: itemKind, kindSource, autoKind: 'instrument', companyId: 'company-1', productId: 'product-1', brandCode: null }],
       equipment: [{ itemKey: 'machine-key', name: 'Machine', installs: 3, linkId: null, areaCode: null }],
       total: 1, page: Number(url.searchParams.get('page')), unmappedSalesPaise: 180000, totalSalesPaise: 1000000,
     } });
@@ -45,6 +52,22 @@ test('Group select posts the exact raw Tally group and expected link', async ({ 
   await expect.poll(() => posts.length).toBe(1);
   expect(posts[0]).toEqual({ action: 'set_group_brand', group: '\u0004 Primary', expectedLinkId: null, brandCode: 'BIOMERIEUX', idempotencyKey: expect.any(String) });
   expect(posts[0].idempotencyKey).toMatch(/^[0-9a-f-]{36}$/);
+});
+
+test('Kind requires an inline reason and saves a consumable override', async ({ page }) => {
+  const { section, posts } = await fixture(page);
+  const select = section.getByLabel('Kind for Reagent', { exact: true });
+  await expect(select).toHaveValue('auto');
+  await expect(select.locator('option:checked')).toHaveText('Auto (Instrument)');
+  await select.selectOption('consumable');
+  expect(posts).toHaveLength(0);
+  await expect(section.getByRole('button', { name: 'Save kind', exact: true })).toBeDisabled();
+  await section.getByLabel('Kind reason for Reagent', { exact: true }).fill('Costly reagent');
+  await section.getByRole('button', { name: 'Save kind', exact: true }).click();
+  await expect.poll(() => posts.length).toBe(1);
+  expect(posts[0]).toEqual({ action: 'set_item_kind', requestId: expect.any(String), companyId: 'company-1', productId: 'product-1', kind: 'consumable', reason: 'Costly reagent' });
+  await expect(select).toHaveValue('consumable');
+  await expect(section.getByText('Kind saved.', { exact: true })).toBeVisible();
 });
 
 test('A 409 shows the reload text and reads mapping again', async ({ page }) => {

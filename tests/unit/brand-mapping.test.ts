@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { parseBrandMappingCommand, parseBrandMappingResponse } from '@/lib/brand-mapping';
+import { buildSetItemKindPayload, parseBrandMappingCommand, parseBrandMappingResponse } from '@/lib/brand-mapping';
 
 const id = 'b3a10000-0000-4000-8000-000000000001';
 const base = { expectedLinkId: null, idempotencyKey: 'brand-mapping-test-key' };
@@ -12,6 +12,14 @@ const read = () => ({
 });
 
 describe('brand mapping commands', () => {
+  it('builds the exact item-kind payload and trims the reason', () => {
+    const input = { requestId: id, companyId: 'company-1', productId: 'product-1', kind: 'consumable' as const, reason: ' Costly reagent ' };
+    expect(buildSetItemKindPayload(input)).toEqual({ ...input, reason: 'Costly reagent' });
+    expect(parseBrandMappingCommand({ action: 'set_item_kind', ...input })).toEqual({ action: 'set_item_kind', payload: { ...input, reason: 'Costly reagent' } });
+    for (const change of [{ reason: 'ab' }, { reason: 'x'.repeat(501) }, { kind: 'other' }, { companyId: '' }, { productId: '' }, { requestId: 'bad' }, { extra: true }]) {
+      expect(parseBrandMappingCommand({ action: 'set_item_kind', ...input, ...change })).toBeNull();
+    }
+  });
   it.each([
     { action: 'set_group_brand', group: '\u0004 Primary', brandCode: 'SYSMEX', ...base },
     { action: 'set_group_brand', group: '', brandCode: null, ...base },
@@ -46,6 +54,12 @@ describe('brand mapping commands', () => {
 });
 
 describe('brand mapping response', () => {
+  it('accepts item kinds while preserving separate brand link state and exact IDs', () => {
+    const response = { ...read(), items: [{ ...read().items[0], kind: 'instrument', brandKind: 'inherit', kindSource: 'auto', autoKind: 'instrument', companyId: 'company-1', productId: 'product-1' }] };
+    expect(parseBrandMappingResponse(response)).toEqual(response);
+    expect(parseBrandMappingResponse({ ...response, items: [{ ...response.items[0], kindSource: 'invalid' }] })).toBeNull();
+    expect(parseBrandMappingResponse({ ...response, items: [{ ...response.items[0], autoKind: 'invalid' }] })).toBeNull();
+  });
   it('preserves Unicode, negative sales, cleared and explicit none links', () => {
     expect(parseBrandMappingResponse(read())).toEqual(read());
   });

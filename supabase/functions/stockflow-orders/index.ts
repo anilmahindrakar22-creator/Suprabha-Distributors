@@ -59,13 +59,17 @@ readActions.add('get_opportunity_outcomes');
 economicActions.push('get_sales_coverage');
 readActions.add('get_sales_coverage');
 readActions.add('get_link_suggestions');
-const brandMappingActions = ['get_brand_mapping', 'set_group_brand', 'set_item_brand', 'set_equipment_area', 'add_brand'];
+const brandMappingActions = ['get_brand_mapping', 'set_group_brand', 'set_item_brand', 'set_equipment_area', 'add_brand', 'set_item_kind'];
 actions.push(...brandMappingActions);
 readActions.add('get_brand_mapping');
 actions.push('get_growth');
 readActions.add('get_growth');
 actions.push('get_growth_labs');
 readActions.add('get_growth_labs');
+actions.push('get_growth_margin', 'get_growth_margin_detail', 'get_growth_billed_below');
+readActions.add('get_growth_billed_below');
+readActions.add('get_growth_margin');
+readActions.add('get_growth_margin_detail');
 actions.push('get_growth_inbox', 'decide_growth_card');
 readActions.add('get_growth_inbox');
 
@@ -96,7 +100,7 @@ Deno.serve(async (request: Request) => {
     // Modern Supabase secret keys belong only in `apikey`. The supabase-js
     // default Authorization header treats them as JWTs and rejects the call.
     const rpcGateway = body.action === 'get_contract_windows' ? 'stockflow_contract_window_gateway' : body.action === 'get_today' ? 'stockflow_today_gateway' : ['get_my_actions', 'close_my_action'].includes(body.action) ? 'stockflow_my_actions_gateway' : ['get_actions_due', 'get_opportunity_actions', 'get_action_owners', 'create_action', 'close_action'].includes(body.action) ? 'stockflow_action_gateway' : purchaseReceiptActions.includes(body.action) ? 'stockflow_po_receipt_gateway' : purchaseActions.includes(body.action) ? 'stockflow_purchase_gateway' : pushActions.includes(body.action) ? 'stockflow_push_gateway' : accountActions.includes(body.action) ? 'stockflow_accounts_gateway' : ['get_wallet_workspace', 'get_wallet_account', 'record_wallet_snapshot', 'verify_wallet_snapshot', 'set_wallet_policy'].includes(body.action) ? 'stockflow_wallet_gateway' : ['get_wallet_diagnoses', 'get_account_opportunities', 'get_account_signals', 'get_opportunity_outcomes', 'open_opportunity', 'record_constraint', 'close_opportunity'].includes(body.action) ? 'stockflow_opportunity_gateway' : economicActions.includes(body.action) ? 'stockflow_economics_gateway' : body.action === 'get_stock_alerts' ? 'stockflow_stock_alert_gateway' : body.action === 'get_requirement_orders' ? 'stockflow_requirement_orders_gateway' : body.action === 'get_requirements' ? 'stockflow_requirements_gateway' : productRequestActions.includes(body.action) ? 'stockflow_product_request_gateway' : gateway;
-    const routedGateway = ['get_growth', 'get_growth_labs', 'get_growth_inbox', 'decide_growth_card'].includes(body.action) ? 'stockflow_growth_gateway' : customerMapActions.includes(body.action) ? 'stockflow_customer_map_gateway' : powerMapActions.includes(body.action) ? 'stockflow_power_map_gateway' : brandMappingActions.includes(body.action) ? 'stockflow_brand_mapping_gateway' : rpcGateway;
+    const routedGateway = ['get_growth', 'get_growth_labs', 'get_growth_margin', 'get_growth_margin_detail', 'get_growth_billed_below', 'get_growth_inbox', 'decide_growth_card'].includes(body.action) ? 'stockflow_growth_gateway' : customerMapActions.includes(body.action) ? 'stockflow_customer_map_gateway' : powerMapActions.includes(body.action) ? 'stockflow_power_map_gateway' : brandMappingActions.includes(body.action) ? 'stockflow_brand_mapping_gateway' : rpcGateway;
     const response = await fetch(`${url}/rest/v1/rpc/${routedGateway}`, {
       method: "POST",
       headers: { apikey: secretKey, "content-type": "application/json" },

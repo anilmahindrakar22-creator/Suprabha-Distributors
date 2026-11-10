@@ -1,6 +1,8 @@
 export const brandAreaCodes = ['HAEM', 'BIOCHEM', 'IMMUNO', 'HBA1C', 'URINE', 'COAG', 'RAPID', 'CULTURE'] as const;
 export type BrandAreaCode = typeof brandAreaCodes[number];
 export type BrandLinkKind = 'brand' | 'none';
+export type ItemKind = 'instrument' | 'consumable';
+export type ItemKindPayload = { requestId: string; companyId: string; productId: string; kind: ItemKind | 'auto'; reason: string };
 export type BrandMappingBrand = { code: string; name: string; areas: BrandAreaCode[] };
 export type BrandMappingGroup = {
   group: string; label: string; items: number; salesPaise: number;
@@ -8,16 +10,20 @@ export type BrandMappingGroup = {
 };
 export type BrandMappingItem = {
   itemKey: string; name: string; group: string; salesPaise: number;
-  linkId: string | null; kind: BrandLinkKind | 'inherit' | null; brandCode: string | null;
+  linkId: string | null; kind: BrandLinkKind | 'inherit' | ItemKind | null; brandCode: string | null;
+  brandKind?: BrandLinkKind | 'inherit' | null;
+  kindSource?: 'auto' | 'override'; autoKind?: ItemKind; companyId?: string | null; productId?: string | null;
 };
 export type BrandMappingEquipment = { itemKey: string; name: string; installs: number; linkId: string | null; areaCode: BrandAreaCode | null };
 export type BrandMappingResponse = {
   brands: BrandMappingBrand[]; groups: BrandMappingGroup[]; items: BrandMappingItem[];
   equipment: BrandMappingEquipment[]; total: number; page: number;
   unmappedSalesPaise: number; totalSalesPaise: number;
+  companyId?: string;
 };
 type ExpectedLink = { expectedLinkId: string | null; idempotencyKey: string };
 export type BrandMappingCommand =
+  | { action: 'set_item_kind'; payload: ItemKindPayload }
   | { action: 'set_group_brand'; payload: ExpectedLink & { group: string; brandCode: string | null } }
   | { action: 'set_item_brand'; payload: ExpectedLink & { itemKey: string } & ({ brandCode: string | null } | { clear: true }) }
   | { action: 'set_equipment_area'; payload: ExpectedLink & { itemKey: string; areaCode: BrandAreaCode | null } }
@@ -39,6 +45,16 @@ const length = (v: string) => Array.from(v).length;
 
 /** Exact Tally keys and groups must survive parsing unchanged, including control characters. */
 export function parseBrandMappingCommand(value: unknown): BrandMappingCommand | null {
+  if (record(value) && value.action === 'set_item_kind') {
+    const { action, ...payload } = value;
+    if (!keys(payload, ['requestId', 'companyId', 'productId', 'kind', 'reason'])
+      || !text(payload.requestId) || !uuid.test(payload.requestId)
+      || !nonempty(payload.companyId) || length(payload.companyId) > 240
+      || !nonempty(payload.productId) || length(payload.productId) > 240
+      || !text(payload.kind) || !['instrument', 'consumable', 'auto'].includes(payload.kind)
+      || !text(payload.reason) || length(payload.reason.trim()) < 3 || length(payload.reason.trim()) > 500) return null;
+    return { action, payload: { ...payload, reason: payload.reason.trim() } as ItemKindPayload };
+  }
   if (!record(value) || !text(value.idempotencyKey) || length(value.idempotencyKey.trim()) < 16 || length(value.idempotencyKey) > 200) return null;
   const { action, ...payload } = value;
   if (action === 'add_brand') {
@@ -65,6 +81,11 @@ export function parseBrandMappingCommand(value: unknown): BrandMappingCommand | 
   return { action, payload } as BrandMappingCommand;
 }
 
+export function buildSetItemKindPayload(input: ItemKindPayload): ItemKindPayload | null {
+  const command = parseBrandMappingCommand({ action: 'set_item_kind', ...input });
+  return command?.action === 'set_item_kind' ? command.payload : null;
+}
+
 function link(v: Record<string, unknown>, inherit: boolean) {
   if (!nullableUuid(v.linkId)) return false;
   if (v.linkId === null) return v.kind === null && v.brandCode === null;
@@ -74,7 +95,8 @@ function link(v: Record<string, unknown>, inherit: boolean) {
 
 /** Reject partial or drifted gateway output before presenting it as mapping data. */
 export function parseBrandMappingResponse(value: unknown): BrandMappingResponse | null {
-  if (!record(value) || !keys(value, ['brands', 'groups', 'items', 'equipment', 'total', 'page', 'unmappedSalesPaise', 'totalSalesPaise'])
+  if (!record(value) || !keys(value, ['brands', 'groups', 'items', 'equipment', 'total', 'page', 'unmappedSalesPaise', 'totalSalesPaise', ...(Object.hasOwn(value, 'companyId') ? ['companyId'] : [])])
+    || (value.companyId !== undefined && (!nonempty(value.companyId) || length(value.companyId) > 240))
     || !count(value.total) || !count(value.page, 1) || value.page > 4000
     || !finite(value.unmappedSalesPaise) || !finite(value.totalSalesPaise)) return null;
   if (!Array.isArray(value.brands) || !value.brands.every(v => record(v) && keys(v, ['code', 'name', 'areas'])
@@ -84,8 +106,14 @@ export function parseBrandMappingResponse(value: unknown): BrandMappingResponse 
     && keys(v, ['group', 'label', 'items', 'salesPaise', 'linkId', 'kind', 'brandCode'])
     && text(v.group) && text(v.label) && count(v.items, 1) && finite(v.salesPaise) && link(v, false))) return null;
   if (!Array.isArray(value.items) || value.items.length > 20 || value.items.length > value.total || !value.items.every(v => record(v)
-    && keys(v, ['itemKey', 'name', 'group', 'salesPaise', 'linkId', 'kind', 'brandCode'])
-    && nonempty(v.itemKey) && nonempty(v.name) && text(v.group) && finite(v.salesPaise) && link(v, true))) return null;
+    && keys(v, ['itemKey', 'name', 'group', 'salesPaise', 'linkId', 'kind', 'brandCode', ...['kindSource', 'brandKind', 'autoKind', 'companyId', 'productId'].filter(key => Object.hasOwn(v, key))])
+    && (v.kindSource === undefined || v.kindSource === 'auto' || v.kindSource === 'override')
+    && (v.autoKind === undefined || v.autoKind === 'instrument' || v.autoKind === 'consumable')
+    && ['companyId', 'productId'].every(key => v[key] == null || (nonempty(v[key]) && length(v[key]) <= 240))
+    && nonempty(v.itemKey) && nonempty(v.name) && text(v.group) && finite(v.salesPaise)
+    && (v.kind === 'instrument' || v.kind === 'consumable'
+      ? link({ ...v, kind: Object.hasOwn(v, 'brandKind') ? v.brandKind : (v.linkId === null ? null : v.brandCode ? 'brand' : 'none') }, true)
+      : link(v, true)))) return null;
   if (!Array.isArray(value.equipment) || !value.equipment.every(v => record(v)
     && keys(v, ['itemKey', 'name', 'installs', 'linkId', 'areaCode']) && nonempty(v.itemKey) && nonempty(v.name)
     && count(v.installs, 1) && nullableUuid(v.linkId) && (v.areaCode === null || (v.linkId !== null && area(v.areaCode))))) return null;

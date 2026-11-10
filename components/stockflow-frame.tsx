@@ -1,6 +1,7 @@
 'use client';
 
 import { lazy, Suspense, useEffect, useMemo, useRef, useState } from 'react';
+import { PriceReviewContext, type PriceReview } from './customer-price-book';
 import { desktopPopupState, disableDesktopPopups, enableDesktopPopups, showWorkPopup, type DesktopPopupState } from '@/lib/desktop-popups';
 import { Boxes, Building2, CloudDownload, Ellipsis, Inbox, LayoutDashboard, LineChart, ShoppingCart, Tags, TrendingUp, TriangleAlert, Users, Wrench } from 'lucide-react';
 import { TodayWorkspace, type TodayQueue } from './today-workspace';
@@ -51,6 +52,12 @@ export function StockFlowFrame({ actorEmail, actorRole, actorRoles, staffAuth = 
   const rolesKey = roles.join(',');
   const canSeeToday = hasAnyStockFlowRole(roles, ['administrator', 'management']);
   const [surface, setSurface] = useState<Surface>(() => canSeeToday ? 'today' : 'stock');
+  const [priceReview, setPriceReview] = useState<PriceReview>();
+  const priceReviewHandoff = useMemo(() => ({ review: priceReview, onConsumed: () => setPriceReview(undefined) }), [priceReview]);
+  function onOpenPriceReview(review: PriceReview) {
+    if (!hasAnyStockFlowRole(roles, ['administrator', 'management', 'accounts'])) return;
+    setPriceReview(review); setSurface('pricing');
+  }
   const [accountsOpen, setAccountsOpen] = useState<{ view?: 'my-actions' | 'wallet' | 'map' | 'links' | 'prospects'; customerId?: string; walletView?: 'actions_due'; nonce: number }>({ nonce: 0 });
   const [newOrderData, setNewOrderData] = useState<import('@/lib/order-types').OrderBootstrap | null>(null);
   const [newOrderCustomerId, setNewOrderCustomerId] = useState<string | undefined>();
@@ -461,11 +468,11 @@ export function StockFlowFrame({ actorEmail, actorRole, actorRoles, staffAuth = 
         ) : surface === 'accounts' && hasAnyStockFlowRole(roles, ['administrator', 'management', 'sales', 'operations']) ? (
           <Suspense fallback={<SectionLoading />}><AccountsWorkspace key={accountsOpen.nonce} defaultMode={hasAnyStockFlowRole(roles, ['administrator', 'management']) ? 'all' : 'mine'} initialView={accountsOpen.view} initialCustomerId={accountsOpen.customerId} initialWalletView={accountsOpen.walletView} onOpenOrder={openOrder} onNewOrder={id => void openMapOrder(id)} /></Suspense>
         ) : surface === 'pricing' ? (
-          <Suspense fallback={<SectionLoading />}><PricingWorkspace actorEmail={actorEmail} actorRole={actorRole} actorRoles={roles} /></Suspense>
+          <PriceReviewContext.Provider value={priceReviewHandoff}><Suspense fallback={<SectionLoading />}><PricingWorkspace actorEmail={actorEmail} actorRole={actorRole} actorRoles={roles} /></Suspense></PriceReviewContext.Provider>
         ) : surface === 'economics' ? (
           <Suspense fallback={<SectionLoading />}><InstrumentEconomicsWorkspace embedded /></Suspense>
         ) : surface === 'growth' ? (
-          hasAnyStockFlowRole(roles, ['administrator', 'management']) ? <Suspense fallback={<SectionLoading />}><GrowthPage key={`${actorEmail}:${rolesKey}`} onOpenCustomer={customerId => { setAccountsOpen(current => ({ view: 'map', customerId, nonce: current.nonce + 1 })); setSurface('accounts'); }} onPlanVisit={customerId => { setAccountsOpen(current => ({ view: 'wallet', customerId, nonce: current.nonce + 1 })); setSurface('accounts'); }} onLinkLedger={() => { setAccountsOpen(current => ({ view: 'links', nonce: current.nonce + 1 })); setSurface('accounts'); }} onOpenEconomics={() => setSurface('economics')} onOpenBrandSetup={() => { setAccountsOpen(current => ({ view: 'prospects', nonce: current.nonce + 1 })); setSurface('accounts'); }} onOpenMyActions={() => { setAccountsOpen(current => ({ view: 'my-actions', nonce: current.nonce + 1 })); setSurface('accounts'); }} /></Suspense> : <p>Growth is for management only.</p>
+          hasAnyStockFlowRole(roles, ['administrator', 'management']) ? <Suspense fallback={<SectionLoading />}><GrowthPage onOpenPriceReview={hasAnyStockFlowRole(roles, ['administrator', 'management', 'accounts']) ? onOpenPriceReview : undefined} key={`${actorEmail}:${rolesKey}`} onOpenCustomer={customerId => { setAccountsOpen(current => ({ view: 'map', customerId, nonce: current.nonce + 1 })); setSurface('accounts'); }} onPlanVisit={customerId => { setAccountsOpen(current => ({ view: 'wallet', customerId, nonce: current.nonce + 1 })); setSurface('accounts'); }} onLinkLedger={() => { setAccountsOpen(current => ({ view: 'links', nonce: current.nonce + 1 })); setSurface('accounts'); }} onOpenEconomics={() => setSurface('economics')} onOpenBrandSetup={() => { setAccountsOpen(current => ({ view: 'prospects', nonce: current.nonce + 1 })); setSurface('accounts'); }} onOpenMyActions={() => { setAccountsOpen(current => ({ view: 'my-actions', nonce: current.nonce + 1 })); setSurface('accounts'); }} /></Suspense> : <p>Growth is for management only.</p>
         ) : surface === 'service' ? (
           <Suspense fallback={<SectionLoading />}><ServiceWorkspace /></Suspense>
         ) : <Suspense fallback={<SectionLoading />}><UserManagement staffAuth={staffAuth} emailActionsEnabled={staffEmailActionsEnabled} /></Suspense>}

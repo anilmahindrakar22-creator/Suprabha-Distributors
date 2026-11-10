@@ -6,6 +6,7 @@ import { formatPaise } from '@/lib/wallet-format';
 
 export type GrowthSelection = { list: string; month?: string; half?: 'H1' | 'H2'; sort?: 'value' | 'months' | 'last' | 'per_month'; count: number; title: string; explanation: string };
 export type GrowthNavigation = {
+  onOpenPriceReview?: (review: { customerId: string; tallyItemKey: string; suggestedPricePaise: number; reason: string }) => void;
   onOpenCustomer: (id: string) => void;
   onPlanVisit: (id: string) => void;
   onLinkLedger: () => void;

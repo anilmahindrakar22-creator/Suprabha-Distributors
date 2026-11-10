@@ -25,11 +25,11 @@ function fixture() {
 }
 
 describe('Growth Edge routing', () => {
-  it.each(['get_growth', 'get_growth_labs', 'get_growth_inbox'])('routes %s read-only to its RPC', async action => {
+  it.each(['get_growth', 'get_growth_labs', 'get_growth_inbox', 'get_growth_margin', 'get_growth_margin_detail', 'get_growth_billed_below'])('routes %s read-only to its RPC', async action => {
     const admission = vi.spyOn(RequestGate.prototype, 'begin');
     try {
       const { send, fetcher } = fixture();
-      const payload = action === 'get_growth_labs' ? { list: 'month_skipped', month: '2026-10', page: 1 } : action === 'get_growth_inbox' ? { filter: 'all', page: 1 } : {};
+      const payload = action === 'get_growth_billed_below' ? { page: 1 } : action === 'get_growth_margin' ? { view: 'items', page: 1 } : action === 'get_growth_margin_detail' ? { itemKey: 'item-a', page: 1 } : action === 'get_growth_labs' ? { list: 'month_skipped', month: '2026-10', page: 1 } : action === 'get_growth_inbox' ? { filter: 'all', page: 1 } : {};
       expect((await send(action, payload)).status).toBe(200);
       expect(fetcher).toHaveBeenCalledOnce();
       expect(fetcher.mock.calls[0][0]).toBe('https://database.example.test/rest/v1/rpc/stockflow_growth_gateway');
