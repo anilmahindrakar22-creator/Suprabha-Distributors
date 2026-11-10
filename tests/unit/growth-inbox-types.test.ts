@@ -2,10 +2,30 @@ import { describe, expect, it } from 'vitest';
 import { buildGrowthDecision, growthReasonLine, inboxStake, normalizeGrowthDecision, normalizeGrowthInbox, normalizeGrowthInboxResponse, ruleLever, ruleTitle, type GrowthCard } from '@/lib/growth-inbox-types';
 
 const card: GrowthCard = { cardKey: 'card-a', labKey: 'lab-a', customerId: 'customer-a', name: 'Lab A', town: null, rule: 'R1', ruleVersion: 1, period: '2026-10', stakePaise: 800000, inputs: { monthsBoughtPrev11: 7, lastBoughtOn: '2026-09-12', typicalPaise: 800000 }, alsoMatches: ['R3'], lastReason: null, state: 'review', action: null };
-const inbox = () => ({ runMonth: '2026-11', salesTo: '2026-10-31', confirmed: true, confirmedReason: null, counts: { all: 1, R1: 1, R2: 0, R3: 0, R4: 0, toReview: 1, inProgress: 0, done: 0 }, stakeToReviewPaise: 800000, filter: 'all', page: 1, pageSize: 10, total: 1, owners: [{ email: 'manager@example.test' }], rows: [structuredClone(card)] });
+const inbox = () => ({ runMonth: '2026-11', salesTo: '2026-10-31', confirmed: true, confirmedReason: null, counts: { all: 1, R1: 1, R2: 0, R3: 0, R4: 0, R5: 0, toReview: 1, inProgress: 0, done: 0 }, stakeToReviewPaise: 800000, filter: 'all', page: 1, pageSize: 10, total: 1, owners: [{ email: 'manager@example.test' }], rows: [structuredClone(card)] });
 const accept = { requestId: '12345678-1234-4123-8123-123456789abc', cardKey: 'card-a', decision: 'accept', actionType: 'visit', ownerEmail: 'manager@example.test', dueOn: '2026-11-16', detail: 'Call the lab' };
 
 describe('Growth inbox responses', () => {
+  const price = { ...card, rule: 'R5', alsoMatches: [], inputs: { items: 1, annualGapPaise: 120000, lastBoughtOn: '2026-10-12', lines: [{ itemKey: 'item-a', name: 'CRP', tallyItemKey: 'tally-a', unitPricePaise: 160800, typicalPricePaise: 250000, quantity: 1.5, gapPaise: 120000 }] } };
+  it('parses a valid R5 card and its reason with an optional last purchase', () => {
+    const result = normalizeGrowthInbox({ ...inbox(), filter: 'R5', rows: [price] });
+    expect(result?.rows[0]).toEqual(price);
+    expect(growthReasonLine(result!.rows[0] as GrowthCard, '2026-11')).toBe('Pays under 90% of the typical price on 1 item · last bought 12 Oct');
+    expect(normalizeGrowthInbox({ ...inbox(), rows: [{ ...price, inputs: { ...price.inputs, lastBoughtOn: null } }] })).not.toBeNull();
+  });
+  it('rejects bad price lines and any cost or gp input keys', () => {
+    for (const inputs of [
+      { ...price.inputs, costPaise: 100 }, { ...price.inputs, gpPaise: 100 },
+      { ...price.inputs, lines: 'invalid' }, { ...price.inputs, lines: [{ ...price.inputs.lines[0], quantity: -1 }] },
+      { ...price.inputs, lines: [{ ...price.inputs.lines[0], typicalPricePaise: NaN }] },
+      { ...price.inputs, lines: [{ ...price.inputs.lines[0], costPaise: 10 }] },
+      { ...price.inputs, lines: [{ ...price.inputs.lines[0], gpPaise: 10 }] },
+      { ...price.inputs, items: 51, lines: Array(51).fill(price.inputs.lines[0]) },
+    ]) expect(normalizeGrowthInbox({ ...inbox(), rows: [{ ...price, inputs }] })).toBeNull();
+    for (const patch of [{ state: 'in_progress' }, { alsoMatches: ['R1'] }]) expect(normalizeGrowthInbox({ ...inbox(), rows: [{ ...price, ...patch }] })).toBeNull();
+    const { R5, ...counts } = inbox().counts;
+    expect(normalizeGrowthInbox({ ...inbox(), counts })).toBeNull();
+  });
   it('requires viewerEmail only for the client response and strips it from gateway normalization', () => {
     const response = { ...inbox(), viewerEmail: 'manager@example.test' };
     expect(normalizeGrowthInboxResponse(response)).toEqual(response);
@@ -43,6 +63,19 @@ describe('Growth inbox responses', () => {
 });
 
 describe('Growth decision payloads', () => {
+  it('validates review requests, hidden results and agreed volume rates', () => {
+    const base = { requestId: accept.requestId, cardKey: 'price-card', decision: 'review' };
+    expect(buildGrowthDecision(base)).toEqual(base);
+    expect(buildGrowthDecision({ ...base, note: ' Changed price ' })).toEqual({ ...base, note: 'Changed price' });
+    for (const note of ['', '   ', null, 1, 'x'.repeat(501)]) expect(buildGrowthDecision({ ...base, note })).toBeNull();
+    expect(buildGrowthDecision({ ...base, note: 'x'.repeat(500) })).not.toBeNull();
+    expect(buildGrowthDecision({ ...base, category: 'price' })).toBeNull();
+    const result = { cardKey: 'price-card', decision: 'review', state: 'hidden' };
+    expect(normalizeGrowthDecision(result)).toEqual(result);
+    expect(normalizeGrowthDecision({ ...result, state: 'in_progress' })).toBeNull();
+    expect(buildGrowthDecision({ ...base, decision: 'reject', category: 'agreed_volume_rate' })).not.toBeNull();
+    expect(buildGrowthDecision({ ...base, decision: 'reject', category: 'not_a_category' })).toBeNull();
+  });
   it('builds only exact allowed payloads for each decision', () => {
     expect(buildGrowthDecision(accept)).toEqual(accept);
     const base = { requestId: accept.requestId, cardKey: accept.cardKey };
@@ -82,7 +115,7 @@ describe('Growth rule wording', () => {
       [{ rule: 'R4', inputs: { firstMonth: '2026-07', firstPaise: 8880000 } }, 'First bought in Jul (₹88,800), not since'],
     ];
     for (const [patch, expected] of examples) {
-      expect(growthReasonLine({ ...card, ...patch }, '2026-11')).toBe(expected);
+      expect(growthReasonLine({ ...card, ...patch } as GrowthCard, '2026-11')).toBe(expected);
       expect(normalizeGrowthInbox({ ...inbox(), rows: [{ ...card, ...patch }] })).not.toBeNull();
     }
   });

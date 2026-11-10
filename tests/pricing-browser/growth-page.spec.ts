@@ -22,7 +22,7 @@ const itemDetail = () => ({
 });
 const inboxSample = (filter = 'all', page = 1, inProgress = false, viewerEmail = 'manager@example.test') => ({
   runMonth: '2026-11', salesTo: '2026-10-31', confirmed: true, confirmedReason: null,
-  counts: { all: 2, R1: 2, R2: 0, R3: 0, R4: 0, toReview: inProgress ? 1 : 2, inProgress: inProgress ? 1 : 0, done: 1 },
+  counts: { all: 2, R1: 2, R2: 0, R3: 0, R4: 0, R5: 0, toReview: inProgress ? 1 : 2, inProgress: inProgress ? 1 : 0, done: 1 },
   stakeToReviewPaise: 4000000, filter, page, pageSize: 10, total: filter === 'done' ? 1 : 2,
   viewerEmail, owners: [{ email: 'sales@example.test' }, { email: 'manager@example.test' }],
   rows: filter === 'done' ? [{
@@ -95,6 +95,28 @@ async function openGrowth(page: Page) {
   await expect(entry).toBeVisible();
   await entry.click();
 }
+
+const priceInputs = { items: 4, annualGapPaise: 1200000, lastBoughtOn: '2026-10-12', lines: [
+  { itemKey: 'item-a', name: 'Cliniquant CRP', tallyItemKey: 'tally-a', unitPricePaise: 160800, typicalPricePaise: 250000, quantity: 6, gapPaise: 535200 },
+  { itemKey: 'item-b', name: 'Other reagent', tallyItemKey: null, unitPricePaise: 10000, typicalPricePaise: 20000, quantity: 3, gapPaise: 30000 },
+] };
+async function priceFixture(page: Page, unlinked = false) {
+  await fixture(page);
+  await page.route('**/api/growth/inbox**', route => {
+    const request = route.request();
+    if (request.method() === 'POST') {
+      const body = request.postDataJSON();
+      return route.fulfill({ json: { cardKey: body.cardKey, decision: body.decision, state: body.decision === 'review' ? 'hidden' : body.decision === 'undo' ? 'review' : 'rejected' } });
+    }
+    const params = new URL(request.url()).searchParams;
+    const data = inboxSample(params.get('filter') ?? 'all', Number(params.get('page') ?? 1));
+    return route.fulfill({ json: { ...data, counts: { ...data.counts, R5: 1 }, rows: [
+      { ...data.rows[0], cardKey: 'price-card', rule: 'R5', customerId: unlinked ? null : 'customer-a', name: unlinked ? null : 'Lab A', state: 'review', action: null, inputs: priceInputs, stakePaise: 100000 },
+      data.rows[1],
+    ] } });
+  });
+}
+
 for (const width of [375, 1280]) {
   test.describe('Growth at ' + width, () => {
     test.use({ viewport: { width, height: 900 } });
@@ -283,6 +305,90 @@ for (const width of [375, 1280]) {
       expect(posts).toBe(0);
       await expect(page.getByRole('dialog')).toHaveCount(0);
     });
+
+    test('price card Review prices opens rows and hands the exact item and suggested price to Pricing', async ({ page }) => {
+      await priceFixture(page);
+      await page.route('**/api/orders?**', route => route.fulfill({ json: { customerVersion: '1', catalogVersion: '1', customers: [{ id: 'customer-a', name: 'Lab A' }], catalog: [] } }));
+      const priceRow = { customerId: 'customer-a', customerName: 'Lab A', tallyKey: 'tally-a', itemName: 'Cliniquant CRP', currentDecisionId: null, evidenceHash: 'evidence', currentPrice: 1608, currentPriceSource: 'LAST_TALLY_INVOICE', riskStatus: 'AMBER', pricingDate: '2026-11-09', fixed: false, lastRate: 1608, lastInvoiceDate: null, lastInvoiceReference: null, historicCost: null, currentCost: null, costChange: null, continuity: 1608, target: 2500, recommended: 2500, continuityGP: null, continuityMargin: null, recommendedGP: null, recommendedMargin: null, differenceToCustomer: null, additionalGP: null, status: 'review', warnings: [] };
+      await page.route('**/api/pricing?**', route => {
+        const p = new URL(route.request().url()).searchParams;
+        return route.fulfill({ json: p.has('book') ? { rows: [priceRow], hasMore: false, offset: 0, bulkEligibleKeys: [] } : { contracts: [], policies: [] } });
+      });
+      let posts = 0;
+      page.on('request', request => { if (request.method() === 'POST' && new URL(request.url()).pathname === '/api/pricing') posts++; });
+      await openGrowth(page);
+      const card = page.getByRole('region', { name: 'Action inbox', exact: true }).getByRole('article', { name: 'Lab A', exact: true });
+      const trigger = card.getByRole('button', { name: 'Review prices: Lab A', exact: true });
+      await trigger.click();
+      const panel = page.getByRole('dialog');
+      await expect(panel.getByRole('heading', { name: 'Lab A · items under typical price', exact: true })).toBeVisible();
+      await expect(panel).toContainText('Some low prices are agreed volume rates. Check the quantity before proposing a change.');
+      await expect(panel).toContainText('₹1,608 per unit vs typical ₹2,500 · 6 bought · ₹5,352 a year');
+      await expect(panel.getByRole('button', { name: 'Not in price book', exact: true })).toBeDisabled();
+      await expect(panel).toContainText('+2 more items not listed');
+      await page.keyboard.press('Escape'); await expect(trigger).toBeFocused();
+      await trigger.click();
+      const bookRequest = page.waitForRequest(r => r.url().includes('/api/pricing?') && new URL(r.url()).searchParams.get('customerId') === 'customer-a');
+      await page.getByRole('dialog').getByRole('button', { name: 'Review prices: Cliniquant CRP for Lab A', exact: true }).click(); await bookRequest;
+      const review = page.getByRole('article', { name: 'Price review for Cliniquant CRP', exact: true });
+      await expect(review.getByLabel('Custom rate', { exact: true })).toHaveValue('2500');
+      await expect(review.getByLabel(/Decision note/)).toHaveValue('Growth review: pays ₹1,608 per unit for 6; typical ₹2,500 across labs.');
+      expect(await review.getByLabel(/Decision note/).inputValue()).not.toMatch(/cost|margin|gross profit|GP/i);
+      expect(posts).toBe(0);
+      await expect(page.getByRole('dialog')).toHaveCount(0);
+    });
+    test('price card renders chip, reason, stake, buttons and rule evidence', async ({ page }) => {
+      await priceFixture(page); await openGrowth(page);
+      const inbox = page.getByRole('region', { name: 'Action inbox', exact: true });
+      await inbox.getByRole('button', { name: 'Price 1', exact: true }).click();
+      const card = inbox.getByRole('article', { name: 'Lab A', exact: true });
+      await expect(card).toContainText('Pays under typical price · Price');
+      await expect(card).toContainText('Pays under 90% of the typical price on 4 items · last bought 12 Oct');
+      await expect(card).toContainText('₹1,000 a month at stake (₹12,000 a year) · no reason recorded');
+      for (const name of ['Review prices', 'Done', 'Snooze', 'Reject', 'Why this card']) await expect(card.getByRole('button', { name: name + ': Lab A', exact: true })).toBeVisible();
+      await expect(card.getByRole('button', { name: 'Accept: Lab A', exact: true })).toHaveCount(0);
+      if (width === 375) expect(await page.evaluate(() => document.documentElement.scrollWidth <= innerWidth)).toBe(true);
+      await card.getByRole('button', { name: 'Why this card: Lab A', exact: true }).click();
+      await expect(card).toContainText('typical = median price across labs (3+ labs)');
+      await expect(card).toContainText('Cliniquant CRP · ₹1,608 per unit vs typical ₹2,500 · 6 bought · ₹5,352 a year');
+      await expect(card).toContainText('+1 more items');
+    });
+    test('unlinked price card offers Link without Review prices', async ({ page }) => {
+      await priceFixture(page, true); await openGrowth(page);
+      const card = page.getByRole('region', { name: 'Action inbox', exact: true }).getByRole('article').first();
+      await expect(card.getByRole('button', { name: /^Link:/ })).toBeVisible();
+      await expect(card.getByRole('button', { name: /^Review prices:/ })).toHaveCount(0);
+      await expect(card).toContainText('Link it to a customer to open its price book');
+    });
+    test('price card Done submits review and keeps Reviewed with Undo', async ({ page }) => {
+      await priceFixture(page); await openGrowth(page);
+      const card = page.getByRole('region', { name: 'Action inbox', exact: true }).getByRole('article', { name: 'Lab A', exact: true });
+      await card.getByRole('button', { name: 'Done: Lab A', exact: true }).click();
+      await expect(card.getByLabel('What did you change?', { exact: true })).toBeFocused();
+      await card.getByLabel('What did you change?', { exact: true }).fill('Changed the rate');
+      const submitted = page.waitForRequest(r => r.url().includes('/api/growth/inbox') && r.method() === 'POST');
+      await card.getByRole('button', { name: 'Mark reviewed: Lab A', exact: true }).click();
+      expect((await submitted).postDataJSON()).toEqual({ requestId: expect.any(String), cardKey: 'price-card', decision: 'review', note: 'Changed the rate' });
+      await expect(card).toContainText('Reviewed');
+      const today = await page.evaluate(() => new Date().toLocaleDateString('en-GB', { day: 'numeric', month: 'short' }));
+      await expect(card).toContainText(today);
+      const undone = page.waitForRequest(r => r.url().includes('/api/growth/inbox') && r.method() === 'POST');
+      await card.getByRole('button', { name: 'Undo: Lab A', exact: true }).click();
+      expect((await undone).postDataJSON()).toEqual({ requestId: expect.any(String), cardKey: 'price-card', decision: 'undo' });
+      await expect(card.getByRole('button', { name: 'Done: Lab A', exact: true })).toBeVisible();
+    });
+    test('price card alone offers Agreed volume rate in Reject', async ({ page }) => {
+      await priceFixture(page); await openGrowth(page);
+      const inbox = page.getByRole('region', { name: 'Action inbox', exact: true });
+      const price = inbox.getByRole('article', { name: 'Lab A', exact: true });
+      await price.getByRole('button', { name: 'Reject: Lab A', exact: true }).click();
+      await expect(price.getByLabel('Reason', { exact: true }).locator('option')).toHaveCount(13);
+      await expect(price.getByLabel('Reason', { exact: true }).locator('option[value="agreed_volume_rate"]')).toHaveText('Agreed volume rate');
+      const other = inbox.getByRole('article').last();
+      await other.getByRole('button', { name: /^Reject:/ }).click();
+      await expect(other.getByLabel('Reason', { exact: true }).locator('option[value="agreed_volume_rate"]')).toHaveCount(0);
+    });
+
     test('action inbox renders counts, cards, and the phone reading order', async ({ page }) => {
       await fixture(page); await openGrowth(page);
       const inbox = page.getByRole('region', { name: 'Action inbox', exact: true });

@@ -9,7 +9,7 @@ import { OrderGatewayError } from '@/lib/order-gateway';
 
 const sample = {
   runMonth: '2026-11', salesTo: '2026-10-31', confirmed: false, confirmedReason: 'October differs',
-  counts: { all: 0, R1: 0, R2: 0, R3: 0, R4: 0, toReview: 0, inProgress: 0, done: 0 },
+  counts: { all: 0, R1: 0, R2: 0, R3: 0, R4: 0, R5: 0, toReview: 0, inProgress: 0, done: 0 },
   stakeToReviewPaise: 0, filter: 'all', page: 1, pageSize: 10, total: 0,
   owners: [{ email: 'manager@example.test' }], rows: [],
 };
@@ -28,7 +28,20 @@ beforeEach(() => {
 });
 
 describe('Growth inbox route', () => {
-  it.each(['all', 'R1', 'R2', 'R3', 'R4', 'done'])('reads %s with exactly the validated payload', async filter => {
+  it.each([undefined, 'x', 'x'.repeat(500)])('forwards review with an optional 1–500 character note', async note => {
+    const body = { requestId: accept.requestId, cardKey: 'price-card', decision: 'review', ...(note === undefined ? {} : { note }) };
+    const result = { cardKey: 'price-card', decision: 'review', state: 'hidden' };
+    mocks.gateway.mockResolvedValue(result);
+    const response = await post(body);
+    expect(response.status).toBe(200);
+    expect(await response.json()).toEqual(result);
+    expect(mocks.gateway).toHaveBeenCalledWith('manager@example.test', 'decide_growth_card', body);
+  });
+  it.each(['', '  ', 'x'.repeat(501), null, 42])('rejects invalid review notes without forwarding', async note => {
+    expect((await post({ requestId: accept.requestId, cardKey: 'price-card', decision: 'review', note })).status).toBe(400);
+    expect(mocks.gateway).not.toHaveBeenCalled();
+  });
+  it.each(['all', 'R1', 'R2', 'R3', 'R4', 'R5', 'done'])('reads %s with exactly the validated payload', async filter => {
     mocks.gateway.mockResolvedValue({ ...sample, filter, page: 2 });
     const response = await get(`filter=${filter}&page=2`);
     expect(response.status).toBe(200);

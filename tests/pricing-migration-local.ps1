@@ -159,6 +159,7 @@ try {
   $salesNames += '20261129160000_growth_item_kind.sql'
   $salesNames += '20261129170000_growth_margin.sql'
   $salesNames += '20261129180000_growth_billed_below.sql'
+  $salesNames += '20261129190000_growth_price_cards.sql'
   for ($salesIndex = 1; $salesIndex -lt $salesNames.Count; $salesIndex++) {
     if ([array]::IndexOf($planNames,$salesNames[$salesIndex]) -le [array]::IndexOf($planNames,$salesNames[$salesIndex-1])) { throw 'Full sales replay order is invalid' }
   }
@@ -194,6 +195,16 @@ create table public.test_upgrade_expected as select to_jsonb(o) as order_data,(s
 create table public.test_growth_item_kind_before as select
  pg_get_functiondef('public.stockflow_brand_mapping_gateway(text,text,text,jsonb)'::regprocedure) gateway,
  pg_get_functiondef('private.stockflow_growth_gp(date)'::regprocedure) gp;
+'@
+      Invoke-DatabaseCommand $psqlProgram @('-U',$databaseUser,'-X','-q','-v','ON_ERROR_STOP=1','-d',$database,'-c',$baselineSql)
+    }
+    if ($migration.Name -eq '20261129190000_growth_price_cards.sql') {
+      # Run the original exact-count suite before adding the new card stream.
+      # P5 compares this captured model against R1-R4 on the same inbox fixture.
+      Invoke-DatabaseCommand $psqlProgram @('-U',$databaseUser,'-X','-q','-v','ON_ERROR_STOP=1','-d',$database,'-f',(Join-Path $repository 'supabase/tests/growth_inbox.sql'))
+      $baselineSql = @'
+create table public.test_growth_price_cards_before as select
+ pg_get_functiondef('private.stockflow_growth_inbox_model(date)'::regprocedure) model;
 '@
       Invoke-DatabaseCommand $psqlProgram @('-U',$databaseUser,'-X','-q','-v','ON_ERROR_STOP=1','-d',$database,'-c',$baselineSql)
     }
@@ -378,11 +389,11 @@ end$$;
   Invoke-DatabaseCommand $psqlProgram @('-U',$databaseUser,'-X','-q','-v','ON_ERROR_STOP=1','-d',$database,'-f',(Join-Path $repository 'supabase/tests/growth_read.sql'))
   Invoke-DatabaseCommand $psqlProgram @('-U',$databaseUser,'-X','-q','-v','ON_ERROR_STOP=1','-d',$database,'-f',(Join-Path $repository 'supabase/tests/growth_p1b.sql'))
   Invoke-DatabaseCommand $psqlProgram @('-U',$databaseUser,'-X','-q','-v','ON_ERROR_STOP=1','-d',$database,'-f',(Join-Path $repository 'supabase/tests/growth_tree_lists.sql'))
-  Invoke-DatabaseCommand $psqlProgram @('-U',$databaseUser,'-X','-q','-v','ON_ERROR_STOP=1','-d',$database,'-f',(Join-Path $repository 'supabase/tests/growth_inbox.sql'))
   Invoke-DatabaseCommand $psqlProgram @('-U',$databaseUser,'-X','-q','-v','ON_ERROR_STOP=1','-d',$database,'-f',(Join-Path $repository 'supabase/tests/growth_gp.sql'))
   Invoke-DatabaseCommand $psqlProgram @('-U',$databaseUser,'-X','-q','-v','ON_ERROR_STOP=1','-d',$database,'-f',(Join-Path $repository 'supabase/tests/growth_item_kind.sql'))
   Invoke-DatabaseCommand $psqlProgram @('-U',$databaseUser,'-X','-q','-v','ON_ERROR_STOP=1','-d',$database,'-f',(Join-Path $repository 'supabase/tests/growth_margin.sql'))
   Invoke-DatabaseCommand $psqlProgram @('-U',$databaseUser,'-X','-q','-v','ON_ERROR_STOP=1','-d',$database,'-f',(Join-Path $repository 'supabase/tests/growth_billed_below.sql'))
+  Invoke-DatabaseCommand $psqlProgram @('-U',$databaseUser,'-X','-q','-v','ON_ERROR_STOP=1','-d',$database,'-f',(Join-Path $repository 'supabase/tests/growth_price_cards.sql'))
   Write-Output 'PASS: LSS lab size specials LSS1-LSS4'
   Invoke-DatabaseCommand $psqlProgram @('-U',$databaseUser,'-X','-q','-v','ON_ERROR_STOP=1','-d',$database,'-f',(Join-Path $repository 'supabase/tests/lab_mix_reports.sql'))
   Invoke-DatabaseCommand $psqlProgram @('-U',$databaseUser,'-X','-q','-v','ON_ERROR_STOP=1','-d',$database,'-f',(Join-Path $repository 'supabase/tests/brand_mapping.sql'))

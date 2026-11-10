@@ -1412,6 +1412,13 @@
       "status": "not_deployed"
     },
     {
+      "localFile": "20261129190000_growth_price_cards.sql",
+      "localSha256": "6537eda9589fe907296708dcd84bdbcff960007eb2d3bb4637484b6e930d11fb",
+      "remoteVersion": null,
+      "remoteSha256": null,
+      "status": "not_deployed"
+    },
+    {
       "localFile": "20261129180000_growth_billed_below.sql",
       "localSha256": "b5441e3ddb76fb5dbfe79e5fda14ff43b693582a1294feb7e1437aa0e494c80c",
       "remoteVersion": null,

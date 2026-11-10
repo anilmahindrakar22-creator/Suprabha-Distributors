@@ -18,6 +18,7 @@
 | Instrument kind | Management, administrator | Items with an average purchase cost of ₹25,000 or more count as instruments. Override in Brand setup (append-only, with reason) |
 | Review prices | Roles that can already open Pricing | Opens the lab's price book with the item focused and a proposal prefilled. Never submits; approval unchanged (ADR-0003) |
 | Billed below approved price | Management, administrator | Flags Tally sale lines billed under the customer's approved price. Read-only |
+| Price cards (inbox R5) | Management, administrator | Labs paying 40–90% of the typical price on consumables (₹5,000+ a year) get a card. Review prices opens the price book per item. Done records "Reviewed". "Agreed volume rate" reject. A reviewed card stays hidden until a new underpaid item appears or the price drops more than 1% |
 
 ## Migrations (apply in order; each replays on PG15 with its SQL test)
 1. `20261129090000_visit_reasons.sql`: new table, plus patches to three gateways.
@@ -40,6 +41,13 @@
    - Approved prices are in INR per base unit, before GST; billed rate = line net ÷ quantity.
    - Each line is checked against the price in effect on its invoice date (approved, or since superseded).
    - Lines more than 2.5× apart are counted as unit differences, not flagged.
+11. `20261129190000_growth_price_cards.sql`:
+   - **live constraint changes** on `stockflow_growth_decisions` (fail closed on the expected definitions):
+     - rule adds `R5`;
+     - decision adds `reviewed`;
+     - category adds `agreed_volume_rate`.
+   - Patches the inbox model, read and decide functions with guarded anchors. The R1–R4 output is byte-identical (test P5).
+   - Scale test P13 (300 labs × 400 items): inbox read 0.5 s, one decision 0.8 s. Please measure `get_growth_inbox` on production after deploy.
 
 ## Edge function
 Redeploy `stockflow-orders`. New routed actions:

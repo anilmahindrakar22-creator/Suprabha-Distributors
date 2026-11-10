@@ -8,7 +8,8 @@ const button = 'min-h-9 rounded-lg border border-sf-line px-3 text-xs text-sf-br
 const field = 'min-h-9 w-full min-w-0 rounded-lg border border-sf-line bg-white p-2 text-sm';
 const muted = 'text-xs text-sf-muted';
 const responseMessage = (value: unknown) => value && typeof value === 'object' && 'error' in value && typeof value.error === 'string' ? value.error : 'Could not save. Try again.';
-type Mode = 'accept' | 'snooze' | 'reject';
+type Mode = 'accept' | 'snooze' | 'reject' | 'review';
+const priceRule = "Rule R5 v1 · typical = median price across labs (3+ labs) · counts prices from 40% to 90% of typical; lower is probably a different pack · instruments excluded · items with an approved price are left out (the 'billed below approved price' check watches them)";
 const localDate = (d: Date) => `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`;
 function futureDate(days: number) { const d = new Date(); d.setDate(d.getDate() + days); return localDate(d); }
 
@@ -29,7 +30,7 @@ function DecisionForm({ mode, card, owners, email, runMonth, onCancel, onSuccess
     const payload = buildGrowthDecision({ requestId, cardKey: card.cardKey, decision: mode,
       ...(mode === 'accept' ? { actionType: values.get('actionType'), ownerEmail: owner, dueOn: values.get('dueOn'), detail: String(values.get('detail') ?? '').trim() }
         : mode === 'snooze' ? { until: values.get('until'), ...(values.get('category') ? { category: values.get('category') } : {}), ...(note ? { note } : {}) }
-        : { category: values.get('category'), ...(note ? { note } : {}) }) });
+        : { ...(mode === 'reject' ? { category: values.get('category') } : {}), ...(note ? { note } : {}) }) });
     if (!payload) { setError('Check the fields and try again.'); return; }
     setBusy(true); setError('');
     try {
@@ -38,7 +39,7 @@ function DecisionForm({ mode, card, owners, email, runMonth, onCancel, onSuccess
       if (response.status === 409 || (response.status === 400 && responseMessage(json) === 'Card is no longer current')) { onConflict(responseMessage(json)); return; }
       const result = normalizeGrowthDecision(json);
       if (!response.ok || !result || result.cardKey !== card.cardKey || result.decision !== mode) throw new Error();
-      onSuccess({ ...payload, ...(result.decision === 'snooze' ? { snoozeUntil: result.snoozeUntil } : {}) }); announce(`${name}: ${mode === 'accept' ? 'Already in progress' : mode === 'snooze' ? 'Snoozed' : 'Rejected'}.`);
+      onSuccess({ ...payload, ...(result.decision === 'snooze' ? { snoozeUntil: result.snoozeUntil } : {}) }); announce(`${name}: ${mode === 'accept' ? 'Already in progress' : mode === 'snooze' ? 'Snoozed' : mode === 'review' ? 'Reviewed' : 'Rejected'}.`);
     } catch { setError('Could not save. Try again with this form.'); }
     finally { setBusy(false); }
   };
@@ -49,17 +50,22 @@ function DecisionForm({ mode, card, owners, email, runMonth, onCancel, onSuccess
       <label htmlFor={`${id}-due`}>Due date</label><input id={`${id}-due`} name="dueOn" type="date" className={field} defaultValue={futureDate(7)} required />
       <label htmlFor={`${id}-detail`}>Note to owner</label><textarea id={`${id}-detail`} className={field} name="detail" rows={3} minLength={3} maxLength={500} required defaultValue={growthReasonLine(card, runMonth)} />
       <p className={muted}>Creates a visit in {owner}&apos;s My actions. Only the sales figures above are shared with the owner.</p>
+    </> : mode === 'review' ? <>
+      <label htmlFor={`${id}-note`}>What did you change?</label><textarea id={`${id}-note`} className={field} name="note" rows={2} maxLength={500} />
     </> : <>
       {mode === 'snooze' && <><label htmlFor={`${id}-until`}>Snooze for</label><select id={`${id}-until`} className={field} name="until"><option value="2w">2 weeks</option><option value="1m">1 month</option><option value="next_run">Next month&apos;s run</option></select></>}
-      <label htmlFor={`${id}-category`}>{mode === 'snooze' ? 'Reason (optional)' : 'Reason'}</label><select id={`${id}-category`} className={field} name="category" defaultValue="" required={mode === 'reject'}><option value="">Choose a reason</option>{Object.entries(growthReasonLabels).map(([value, label]) => <option key={value} value={value}>{label}</option>)}</select>
+      <label htmlFor={`${id}-category`}>{mode === 'snooze' ? 'Reason (optional)' : 'Reason'}</label><select id={`${id}-category`} className={field} name="category" defaultValue="" required={mode === 'reject'}><option value="">Choose a reason</option>{Object.entries(growthReasonLabels).filter(([value]) => value !== 'agreed_volume_rate' || card.rule === 'R5').map(([value, label]) => <option key={value} value={value}>{label}</option>)}</select>
       <label htmlFor={`${id}-note`}>Note</label><textarea id={`${id}-note`} className={field} name="note" rows={2} maxLength={500} />
     </>}
     {error && <p role="alert">{error}</p>}
-    <div className="flex gap-2"><button disabled={busy} className={button} aria-label={`${mode === 'accept' ? 'Create action' : mode === 'snooze' ? 'Snooze' : 'Reject'}: ${name}`}>{busy ? 'Saving…' : mode === 'accept' ? 'Create action' : mode === 'snooze' ? 'Snooze' : 'Reject'}</button><button type="button" disabled={busy} className={button} onClick={onCancel} aria-label={`Cancel: ${name}`}>Cancel</button></div>
+    <div className="flex gap-2"><button disabled={busy} className={button} aria-label={`${mode === 'accept' ? 'Create action' : mode === 'snooze' ? 'Snooze' : mode === 'review' ? 'Mark reviewed' : 'Reject'}: ${name}`}>{busy ? 'Saving…' : mode === 'accept' ? 'Create action' : mode === 'snooze' ? 'Snooze' : mode === 'review' ? 'Mark reviewed' : 'Reject'}</button><button type="button" disabled={busy} className={button} onClick={onCancel} aria-label={`Cancel: ${name}`}>Cancel</button></div>
   </form>;
 }
 
-function InboxCard({ card, data, email, navigation, refreshCounts, refresh, announce }: { card: GrowthCard; data: InboxData; email?: string; navigation: Pick<GrowthNavigation, 'onOpenCustomer' | 'onLinkLedger'>; refreshCounts: () => void; refresh: (message?: string) => void; announce: (s: string) => void }) {
+type PriceCard = Extract<GrowthCard, { rule: 'R5' }>;
+type InboxNavigation = Pick<GrowthNavigation, 'onOpenCustomer' | 'onLinkLedger'> & { onReviewPrices: (card: PriceCard) => void };
+
+function InboxCard({ card, data, email, navigation, refreshCounts, refresh, announce }: { card: GrowthCard; data: InboxData; email?: string; navigation: InboxNavigation; refreshCounts: () => void; refresh: (message?: string) => void; announce: (s: string) => void }) {
   const [mode, setMode] = useState<Mode | null>(null);
   const [why, setWhy] = useState(false);
   const [decided, setDecided] = useState<Record<string, unknown> | null>(null);
@@ -70,6 +76,8 @@ function InboxCard({ card, data, email, navigation, refreshCounts, refresh, anno
   const article = useRef<HTMLElement>(null);
   const name = card.customerId ? card.name ?? 'Lab not named' : 'Tally ledger not linked';
   const reason = growthReasonLine(card, data.runMonth);
+  const price = card.rule === 'R5' ? card.inputs : null;
+  const cardButton = price ? `${button} !px-[7px] !text-[11px] shrink-0` : button;
   const close = () => { setMode(null); requestAnimationFrame(() => opener.current?.focus()); };
   const open = (m: Mode, target: HTMLButtonElement) => { opener.current = target; setMode(m); setError(''); };
   const undo = async () => {
@@ -90,16 +98,16 @@ function InboxCard({ card, data, email, navigation, refreshCounts, refresh, anno
   const progress = decided?.decision === 'accept' ? { actionType: decided.actionType as GrowthActionType, ownerEmail: String(decided.ownerEmail), dueOn: String(decided.dueOn) } : card.action;
   return <article ref={article} aria-label={name} className="min-w-0 space-y-2 border-b border-sf-line-soft py-4 text-sm [overflow-wrap:anywhere]">
     <p><strong>{name}</strong>{card.town && <span className="text-sf-muted"> · {card.town}</span>}</p>
-    <p className="text-xs leading-relaxed"><span className="rounded bg-sf-soft-0 px-1.5 py-1 font-bold">{ruleTitle[card.rule]} · {ruleLever[card.rule]}</span> <span>{reason}</span></p>
-    <p className={muted}>{inboxRupees(card.stakePaise)} a month at stake{!card.lastReason && <> · <span className="text-sf-warning">no reason recorded</span></>}</p>
+    <p className="text-xs leading-relaxed"><span className="rounded bg-sf-soft-0 px-1.5 py-1 font-bold">{card.rule === 'R5' ? 'Pays under typical price' : ruleTitle[card.rule]} · {ruleLever[card.rule]}</span> <span>{reason}</span></p>
+    <p className={muted}>{inboxRupees(card.stakePaise)} a month at stake{price && ` (${inboxRupees(price.annualGapPaise)} a year)`}{!card.lastReason && <> · <span className="text-sf-warning">no reason recorded</span></>}</p>
     {card.lastReason && <p className={muted}>Last reason: {growthReasonLabels[card.lastReason.category]} ({card.lastReason.source === 'lab_said' ? 'lab said' : 'our view'}), {inboxDate(card.lastReason.on)}</p>}
-    {!card.customerId && <p className={muted}>Link it to a customer to create an action</p>}
+    {!card.customerId && <p className={muted}>Link it to a customer to {price ? 'open its price book' : 'create an action'}</p>}
     {progress ? <div className="space-y-1 text-xs"><p><strong>Already in progress</strong> · {growthActionLabels[progress.actionType]} · {progress.ownerEmail} · due {inboxDate(progress.dueOn)}</p>{card.customerId && <button className={button} aria-label={`View action: ${name}`} onClick={() => navigation.onOpenCustomer(card.customerId!)}>View action</button>}</div>
-      : decided ? <div className="text-xs"><p>{decided.decision === 'snooze' ? `Snoozed until ${inboxDate(String(decided.snoozeUntil))}` : `Rejected · ${growthReasonLabels[decided.category as keyof typeof growthReasonLabels]}`}</p><button className={button} disabled={undoBusy} onClick={undo} aria-label={`Undo: ${name}`}>Undo</button></div>
-        : <div className="flex items-center gap-1.5"><button className={button} disabled={mode !== null} aria-label={`${card.customerId ? 'Accept' : 'Link'}: ${name}`} onClick={event => card.customerId ? open('accept', event.currentTarget) : navigation.onLinkLedger()}>{card.customerId ? 'Accept' : 'Link'}</button><button className={button} disabled={mode !== null} aria-label={`Snooze: ${name}`} onClick={event => open('snooze', event.currentTarget)}>Snooze</button><button className={button} disabled={mode !== null} aria-label={`Reject: ${name}`} onClick={event => open('reject', event.currentTarget)}>Reject</button><button className="min-h-9 min-w-0 text-xs text-sf-brand underline" aria-label={`Why this card: ${name}`} aria-expanded={why} onClick={() => setWhy(v => !v)}>Why this card</button></div>}
+      : decided ? <div className="text-xs"><p className={decided.decision === 'review' ? 'inline' : undefined}>{decided.decision === 'review' ? <><strong>Reviewed</strong> · {inboxDate(String(decided.reviewedOn))} · </> : decided.decision === 'snooze' ? `Snoozed until ${inboxDate(String(decided.snoozeUntil))}` : `Rejected · ${growthReasonLabels[decided.category as keyof typeof growthReasonLabels]}`}</p><button className={button} disabled={undoBusy} onClick={undo} aria-label={`Undo: ${name}`}>Undo</button></div>
+        : <div className="flex min-w-0 items-center gap-1"><button className={price ? `${cardButton} bg-sf-brand text-white` : cardButton} disabled={mode !== null} aria-label={`${card.customerId ? price ? 'Review prices' : 'Accept' : 'Link'}: ${name}`} onClick={event => card.customerId ? card.rule === 'R5' ? navigation.onReviewPrices(card) : open('accept', event.currentTarget) : navigation.onLinkLedger()}>{card.customerId ? price ? 'Review prices' : 'Accept' : 'Link'}</button>{price && <button className={cardButton} disabled={mode !== null} aria-label={`Done: ${name}`} onClick={event => open('review', event.currentTarget)}>Done</button>}<button className={cardButton} disabled={mode !== null} aria-label={`Snooze: ${name}`} onClick={event => open('snooze', event.currentTarget)}>Snooze</button><button className={cardButton} disabled={mode !== null} aria-label={`Reject: ${name}`} onClick={event => open('reject', event.currentTarget)}>Reject</button><button className={`min-h-9 min-w-0 text-sf-brand underline ${price ? 'text-[11px] leading-tight' : 'text-xs'}`} aria-label={`Why this card: ${name}`} aria-expanded={why} onClick={() => setWhy(v => !v)}>Why this card</button></div>}
     {(progress || decided) && <button className="min-h-9 min-w-0 text-xs text-sf-brand underline" aria-label={`Why this card: ${name}`} aria-expanded={why} onClick={() => setWhy(v => !v)}>Why this card</button>}
-    {why && <div className="space-y-1 rounded-lg bg-sf-soft-0 p-3 text-xs"><p><strong>Rule {card.rule} v{card.ruleVersion}</strong></p><p>{reason}.</p><p>{card.rule === 'R3' ? 'Monthly loss' : 'Typical month'}: {inboxRupees(Number(card.inputs.typicalPaise ?? (card.rule === 'R4' ? card.inputs.firstPaise : card.stakePaise)))} (repeat purchases only; instrument and bulk invoices excluded).</p>{card.alsoMatches.length > 0 && <p>Also matches: {card.alsoMatches.map(r => ruleTitle[r]).join(', ')}</p>}</div>}
-    {mode && <DecisionForm mode={mode} card={card} owners={data.owners} email={email} runMonth={data.runMonth} onCancel={close} onSuccess={payload => { setDecided(payload); setMode(null); refreshCounts(); requestAnimationFrame(() => article.current?.querySelector<HTMLButtonElement>('button')?.focus()); }} onConflict={message => { setError(message); setMode(null); refresh(message); }} announce={announce} />}
+    {why && price ? <div className="space-y-1 rounded-lg bg-sf-soft-0 p-3 text-xs"><p>{priceRule}</p><p><strong>Top items:</strong></p>{price.lines.slice(0, 3).map(line => <p key={line.itemKey}>{line.name ?? 'Unnamed item'} · {inboxRupees(line.unitPricePaise)} per unit vs typical {inboxRupees(line.typicalPricePaise)} · {line.quantity.toLocaleString('en-IN')} bought · {inboxRupees(line.gapPaise)} a year</p>)}{price.items > 3 && <p>+{price.items - 3} more items</p>}</div> : why && card.rule !== 'R5' && <div className="space-y-1 rounded-lg bg-sf-soft-0 p-3 text-xs"><p><strong>Rule {card.rule} v{card.ruleVersion}</strong></p><p>{reason}.</p><p>{card.rule === 'R3' ? 'Monthly loss' : 'Typical month'}: {inboxRupees(Number(card.inputs.typicalPaise ?? (card.rule === 'R4' ? card.inputs.firstPaise : card.stakePaise)))} (repeat purchases only; instrument and bulk invoices excluded).</p>{card.alsoMatches.length > 0 && <p>Also matches: {card.alsoMatches.map(r => ruleTitle[r]).join(', ')}</p>}</div>}
+    {mode && <DecisionForm mode={mode} card={card} owners={data.owners} email={email} runMonth={data.runMonth} onCancel={close} onSuccess={payload => { setDecided({ ...payload, ...(payload.decision === 'review' ? { reviewedOn: localDate(new Date()) } : {}) }); setMode(null); refreshCounts(); requestAnimationFrame(() => article.current?.querySelector<HTMLButtonElement>('button')?.focus()); }} onConflict={message => { setError(message); setMode(null); refresh(message); }} announce={announce} />}
     {error && <p role="alert" className="text-xs">{error}</p>}
   </article>;
 }
@@ -109,7 +117,7 @@ function DoneRow({ row }: { row: GrowthDoneRow }) {
   return <article className="space-y-1 border-b border-sf-line-soft py-4 text-xs"><strong className="text-sm">{row.customerId ? row.name ?? 'Lab not named' : 'Tally ledger not linked'}</strong>{row.town && <> · {row.town}</>}<p>{ruleTitle[row.rule]}</p><p>{growthActionLabels[row.action.actionType]} · {row.action.result} {inboxDate(row.action.closedOn)} · note: {row.action.note}</p><p>{o.status === 'bought' ? `Bought again ${inboxDate(o.on!)} (${inboxRupees(o.valuePaise!)})` : o.status === 'not_bought' ? 'Not bought in 30 days' : `Waiting · ${o.daysLeft} days left`}</p></article>;
 }
 
-export function GrowthInbox({ onOpenCustomer, onLinkLedger }: Pick<GrowthNavigation, 'onOpenCustomer' | 'onLinkLedger'>) {
+export function GrowthInbox({ onOpenCustomer, onLinkLedger, onReviewPrices }: InboxNavigation) {
   const [data, setData] = useState<InboxData | null>(null);
   const [filter, setFilter] = useState<GrowthInboxFilter>('all');
   const [page, setPage] = useState(1);
@@ -144,8 +152,8 @@ export function GrowthInbox({ onOpenCustomer, onLinkLedger }: Pick<GrowthNavigat
   };
   return <section aria-labelledby="growth-inbox-title" className="min-w-0 space-y-3 rounded-xl border border-sf-line-soft bg-white p-4 lg:p-5 [overflow-wrap:anywhere]">
     <h2 id="growth-inbox-title" className="text-base font-bold">Action inbox</h2>
-    {data && <><p className={muted}>Rules run on sales to {inboxDate(data.salesTo)} · reviewed weekly</p>{!data.confirmed && <p className={muted}>Sales not confirmed against Tally: {data.confirmedReason ?? 'Unknown'}</p>}<p className="text-sm"><strong>{data.counts.toReview} to review</strong> · {inboxStake(data.stakeToReviewPaise)} a month at stake · {data.counts.inProgress} in progress</p><div className="flex flex-wrap gap-1.5" role="group" aria-label="Filter action inbox">{growthInboxFilters.map(f => <button key={f} className={button} aria-pressed={filter === f} onClick={() => { if (filter !== f) { setData(null); setFilter(f); setPage(1); } }}>{f === 'done' ? 'Done & outcomes' : `${{ all: 'All', R1: 'Skipped', R2: 'Stopped', R3: 'Falling', R4: 'New, not back' }[f]} ${data.counts[f]}`}</button>)}</div>
-      <div>{data.rows.map(row => 'outcome' in row ? <DoneRow key={row.cardKey} row={row} /> : <InboxCard key={row.cardKey} card={row} data={data} email={data.viewerEmail} navigation={{ onOpenCustomer, onLinkLedger }} refreshCounts={() => { void refreshCounts(); }} refresh={refresh} announce={setLive} />)}</div>
+    {data && <><p className={muted}>Rules run on sales to {inboxDate(data.salesTo)} · reviewed weekly</p>{!data.confirmed && <p className={muted}>Sales not confirmed against Tally: {data.confirmedReason ?? 'Unknown'}</p>}<p className="text-sm"><strong>{data.counts.toReview} to review</strong> · {inboxStake(data.stakeToReviewPaise)} a month at stake · {data.counts.inProgress} in progress</p><div className="flex flex-wrap gap-1.5" role="group" aria-label="Filter action inbox">{growthInboxFilters.map(f => <button key={f} className={button} aria-pressed={filter === f} onClick={() => { if (filter !== f) { setData(null); setFilter(f); setPage(1); } }}>{f === 'done' ? 'Done & outcomes' : `${{ all: 'All', R1: 'Skipped', R2: 'Stopped', R3: 'Falling', R4: 'New, not back', R5: 'Price' }[f]} ${data.counts[f]}`}</button>)}</div>
+      <div>{data.rows.map(row => 'outcome' in row ? <DoneRow key={row.cardKey} row={row} /> : <InboxCard key={row.cardKey} card={row} data={data} email={data.viewerEmail} navigation={{ onOpenCustomer, onLinkLedger, onReviewPrices }} refreshCounts={() => { void refreshCounts(); }} refresh={refresh} announce={setLive} />)}</div>
       {filter === 'done' && <p className={muted}>Outcomes are what happened afterwards, not proof the visit caused it.</p>}
       {!loading && data.rows.length === 0 && <p className={muted}>No cards in this view.</p>}
       <p className={muted}>Showing {data.rows.length} of {data.total}{data.rows.length < data.total && <> · <button className={button} disabled={loading || !!error} onClick={() => setPage(n => n + 1)}>Load more</button></>}</p>
@@ -154,6 +162,7 @@ export function GrowthInbox({ onOpenCustomer, onLinkLedger }: Pick<GrowthNavigat
     {error && <p role="alert" className="text-xs">{error} <button className={button} onClick={() => setRevision(n => n + 1)}>Retry</button></p>}
     <p className={muted}>₹ at stake: Skipped, Stopped and New, not back use average repeat spend per buying month; Falling uses (first-half repeat − second-half repeat) ÷ 6. Instrument and bulk invoices excluded.</p>
     <p className={muted}>Not yet: Deepen (cross-sell) cards need items mapped to principals in Brand setup; call logging comes later.</p>
+    <p className={muted}>Price cards: prices are proposed in the price book and approved as usual; approved prices apply to new StockFlow orders. Tally invoices are checked by &apos;Billed below approved price&apos;.</p>
     <p aria-live="polite" className="text-xs">{live}</p>
   </section>;
 }
