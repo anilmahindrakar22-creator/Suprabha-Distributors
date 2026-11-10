@@ -144,12 +144,10 @@ export function CustomerPriceBook({ actorEmail, actorRole, actorRoles, refreshVe
     pendingReview.current = review;
     setTab('purchased'); setOffset(0); setPage(null); setRowReview(undefined); setReviewMissing(false); setRevision(value => value + 1);
   }, [review]);
-  useEffect(() => {
-    if (mode === 'customer' && selected) {
-      const customer = customers.find(customer => customer.id === selected);
-      if (customer) setQuery(customer.name);
-    }
-  }, [customers, selected, mode]);
+  const syncedCustomerName = mode === 'customer' && selected ? customers.find(customer => customer.id === selected)?.name : undefined;
+  const syncedQueryKey = [mode, selected ?? '', syncedCustomerName ?? ''].join('|');
+  const [prevQueryKey, setPrevQueryKey] = useState('');
+  if (syncedQueryKey !== prevQueryKey) { setPrevQueryKey(syncedQueryKey); if (syncedCustomerName !== undefined) setQuery(syncedCustomerName); }
   const [acceptRecommended, setAcceptRecommended] = useState(true);
   const [group, setGroup] = useState<typeof CUSTOMER_GROUP_MARGIN_GROUPS[number]>(CUSTOMER_GROUP_MARGIN_GROUPS[0]);
   const [grossMargin, setGrossMargin] = useState('');
@@ -251,7 +249,7 @@ export function CustomerPriceBook({ actorEmail, actorRole, actorRoles, refreshVe
   if (accessDenied) return <p role="alert" className="p-4 text-sm font-bold">Pricing access is restricted. Reopen the app after your access is restored.</p>;
   return <section className="rounded-2xl border border-sf-line-soft bg-white p-4 sm:p-5">
     <h2 className="text-lg font-extrabold text-sf-ink">Price book</h2>
-    {reviewMissing ? <p role="status">This item isn't in this lab's price book yet. Search for it below.</p> : null}
+    {reviewMissing ? <output className="block">This item isn&apos;t in this lab&apos;s price book yet. Search for it below.</output> : null}
     {recovery.length > 0 ? <aside className="mt-3 rounded-lg bg-amber-50 p-3 text-sm"><p>An earlier pricing save needs checking before another approval. No prices were stored on this device.</p><p>Close only if unsaved checks the server first. A completed save is preserved; an unsaved request is blocked from arriving later.</p>{recovery.map(reference => <div key={reference.idempotencyKey} className="mt-2 flex flex-wrap gap-2"><button type="button" className={button} onClick={() => void checkRecovery(reference)}>Check earlier save {reference.idempotencyKey.slice(-6)}</button><button type="button" className={button} onClick={() => void checkRecovery(reference, true)}>Close only if unsaved {reference.idempotencyKey.slice(-6)}</button></div>)}</aside> : null}
     {recoveryMessage ? <output className="mt-2 block text-sm">{recoveryMessage}</output> : null}
     <nav aria-label="Pricing workbench" className="mt-3 flex flex-wrap gap-2">{([['customer','Customer prices'],['impact','Purchase-cost review'],['base','Base / default prices']] as const).map(([value,label]) => <button key={value} type="button" aria-pressed={mode === value} className={`${button} ${mode === value ? '!border-sf-ink !bg-sf-ink !text-white' : ''}`} onClick={() => { setMode(value); setSelected(''); setQuery(''); setPage(null); setOffset(0); setError(''); setNotice(''); }}>{label}</button>)}</nav>
@@ -271,7 +269,8 @@ export function CustomerPriceBook({ actorEmail, actorRole, actorRoles, refreshVe
 
 function CustomerPriceTable({ rows, eligibleKeys, canApprove, mutate, onChanged, review, onDismissReview }: { rows: Row[]; eligibleKeys: string[]; canApprove: boolean; mutate: typeof send; onChanged: () => void; review?: PriceReview; onDismissReview: () => void }) {
   const [expanded, setExpanded] = useState('');
-  useEffect(() => { if (review) setExpanded(review.tallyItemKey); }, [review]);
+  const [prevReview, setPrevReview] = useState<PriceReview | undefined>(undefined);
+  if (review !== prevReview) { setPrevReview(review); if (review) setExpanded(review.tallyItemKey); }
   const eligible = new Set(eligibleKeys);
   return <div className="overflow-x-auto rounded-xl border border-sf-line-soft"><table className="w-full min-w-[760px] text-left text-sm"><thead className="bg-sf-soft text-xs text-sf-label"><tr>{['Product','Last price','Old cost','Cost now','GP%','Recommended','Status'].map((heading) => <th key={heading} className="px-3 py-2">{heading}</th>)}</tr></thead><tbody className="divide-y divide-sf-line-soft">{rows.map((row) => {
     const currentRate = row.currentPrice;
@@ -287,12 +286,16 @@ function PriceRow({ row, customerMode, canApprove, onChanged, mutate, review, on
   const [reason,setReason] = useState(''); const [custom,setCustom] = useState(''); const [busy,setBusy] = useState(false); const [message,setMessage] = useState('');
   const article = useRef<HTMLElement>(null);
   const appliedReview = useRef<PriceReview | undefined>(undefined);
+  const [prefilledReview, setPrefilledReview] = useState<PriceReview | undefined>(undefined);
+  if (review !== prefilledReview) {
+    setPrefilledReview(review);
+    const prefill = review ? prefillPriceReview([row], review) : null;
+    if (prefill) { setCustom(prefill.custom); setReason(prefill.reason); }
+  }
   useEffect(() => {
     if (!review || appliedReview.current === review) return;
     appliedReview.current = review;
-    const prefill = prefillPriceReview([row], review);
-    if (!prefill) return;
-    setCustom(prefill.custom); setReason(prefill.reason);
+    if (!prefillPriceReview([row], review)) return;
     article.current?.scrollIntoView({ block: 'center', behavior: 'smooth' });
     article.current?.focus({ preventScroll: true });
   }, [review, row]);

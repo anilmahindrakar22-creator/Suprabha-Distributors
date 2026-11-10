@@ -101,7 +101,9 @@ function ItemKindControl({ item, companyId, canEdit, disabled }: { item: BrandMa
   const prefix = useId();
   const currentKind = item.kind === 'instrument' || item.kind === 'consumable' ? item.kind : undefined;
   const [saved, setSaved] = useState<{ kind?: ItemKind; source?: 'auto' | 'override' }>({ kind: currentKind, source: item.kindSource });
-  useEffect(() => { setSaved({ kind: currentKind, source: item.kindSource }); }, [currentKind, item.kindSource, item.companyId, item.productId]);
+  const savedKey = [currentKind ?? '', item.kindSource ?? '', item.companyId ?? '', item.productId ?? ''].join('|');
+  const [prevSavedKey, setPrevSavedKey] = useState(savedKey);
+  if (savedKey !== prevSavedKey) { setPrevSavedKey(savedKey); setSaved({ kind: currentKind, source: item.kindSource }); }
   const [draft, setDraft] = useState<ItemKind | 'auto' | null>(null);
   const [reason, setReason] = useState('');
   const [busy, setBusy] = useState(false);
