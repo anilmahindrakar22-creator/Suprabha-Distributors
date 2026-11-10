@@ -47,7 +47,10 @@
      - decision adds `reviewed`;
      - category adds `agreed_volume_rate`.
    - Patches the inbox model, read and decide functions with guarded anchors. The R1–R4 output is byte-identical (test P5).
-   - Scale test P13 (300 labs × 400 items): inbox read 0.5 s, one decision 0.8 s. Please measure `get_growth_inbox` on production after deploy.
+   - Scale test P13 (300 labs × 400 items): inbox read 0.5 s, one decision 0.8 s.
+   - **Coupling:** every inbox read, and every decision on any rule, now runs the margin model, which is the full GP costed-line pass. If that pass is slow, the whole Action inbox slows, not just price cards. It grows with purchase history.
+     - Measure `get_growth_inbox` and one `decide_growth_card` on production after deploy, and again after the 36-month backfill. The statement timeout is 20 s.
+   - **Deploy order:** apply this migration before the web deploy. The web client requires `counts.R5`, so an older database makes the inbox fail to parse.
 
 ## Edge function
 Redeploy `stockflow-orders`. New routed actions:
