@@ -206,6 +206,10 @@ begin
   case when kind='purchase' then 5 else 1 end,'pack',case when kind='purchase' then 500 else 200 end,
   'batch-'||((split_part(source_id,'-',2)::integer-1)/300%3),'{}'
  from private.stockflow_economic_source_vouchers where company_id='company-gp-volume';
+ -- Fresh statistics: earlier suites leave rolled-back rows that autovacuum may analyze, which skews the refresh plan.
+ analyze private.stockflow_economic_source_vouchers;
+ analyze private.stockflow_economic_source_lines;
+ analyze private.stockflow_economic_acquisition_links;
  raise notice 'phase volume inserts done %',clock_timestamp();
  volume_started:=clock_timestamp();
  volume_run:=private.stockflow_company_gp_refresh('company-gp-volume');
