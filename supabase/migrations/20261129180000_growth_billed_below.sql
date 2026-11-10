@@ -53,7 +53,7 @@ begin
  ), flagged as materialized (
   select * from classified where not mismatch and billed<approved*0.995
  ), page as (
-  select * from flagged order by gap desc,business_date desc,source_id,line_key,company_id
+  select * from flagged order by gap desc,business_date desc,source_id collate "C",line_key collate "C",company_id collate "C"
   limit 20 offset (page_number::bigint-1)*20
  )
  select jsonb_build_object('lines',(select count(*) from flagged),
@@ -65,7 +65,7 @@ begin
   'rows',coalesce(jsonb_agg(jsonb_build_object('date',business_date,'customerId',customer_id,
    'name',name,'town',town,'itemName',item_name,'quantity',quantity,'billedRatePaise',billed,
    'approvedRatePaise',approved,'gapPaise',gap,'voucherRef',source_id)
-   order by gap desc,business_date desc,source_id,line_key,company_id),'[]')) into result from page;
+   order by gap desc,business_date desc,source_id collate "C",line_key collate "C",company_id collate "C"),'[]')) into result from page;
  return result;
 end$$;
 

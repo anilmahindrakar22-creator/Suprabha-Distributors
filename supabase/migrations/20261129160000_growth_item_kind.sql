@@ -152,7 +152,7 @@ begin
  old_text:=$old$'linkId',id,'kind',kind,'brandCode',brand_code) order by sales_paise desc,name,tally_item_key) from selected)$old$;
  new_text:=$new$'linkId',id,'brandKind',kind,'kind',sk.item_kind,'kindSource',sk.kind_source,'brandCode',brand_code,
     'companyId',sk.company_id,'productId',sk.product_id,'autoKind',sk.auto_kind)
-    order by sales_paise desc,name,tally_item_key) from selected join selected_kinds sk using(tally_item_key))$new$;
+    order by sales_paise desc,name collate "C",tally_item_key collate "C") from selected join selected_kinds sk using(tally_item_key))$new$;
  if (length(f)-length(replace(f,old_text,'')))/length(old_text)<>1 then
   raise exception 'Unexpected item kind gateway anchor 4';end if;
  f:=replace(f,old_text,new_text);

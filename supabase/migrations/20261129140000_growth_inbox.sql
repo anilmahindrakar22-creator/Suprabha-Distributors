@@ -226,7 +226,7 @@ begin
    order by s.business_date,s.id limit 1
   ) sale on true where filter_name='done'
  ), page as (
-  select * from selected order by group_order,stake_paise desc,due_on,closed_at desc,card_key
+  select * from selected order by group_order,stake_paise desc,due_on,closed_at desc,card_key collate "C"
   limit 10 offset (page_number::bigint-1)*10
  ) select jsonb_build_object('runMonth',to_char(window_end-interval '1 month','YYYY-MM'),'salesTo',window_end-1,
   'confirmed',confirmed,'confirmedReason',reason,
@@ -239,9 +239,9 @@ begin
    'done',(select count(*) from done)),
   'stakeToReviewPaise',(select coalesce(sum(stake_paise),0) from cards where state='review'),
   'filter',filter_name,'page',page_number,'pageSize',10,'total',(select count(*) from selected),
-  'owners',(select coalesce(jsonb_agg(jsonb_build_object('email',m.email) order by m.email),'[]')
+  'owners',(select coalesce(jsonb_agg(jsonb_build_object('email',m.email) order by m.email collate "C"),'[]')
    from public.stockflow_members m where m.status='active' and m.role in ('administrator','management','sales')),
-  'rows',coalesce(jsonb_agg(item order by group_order,stake_paise desc,due_on,closed_at desc,card_key),'[]')) into result from page;
+  'rows',coalesce(jsonb_agg(item order by group_order,stake_paise desc,due_on,closed_at desc,card_key collate "C"),'[]')) into result from page;
  return result;
 end$$;
 

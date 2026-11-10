@@ -69,7 +69,7 @@ begin
    case when sort_name='value' then val when sort_name='per_month' then per_month end desc nulls last,
    case when sort_name='months' then (lab->>'months_bought')::int end desc,
    case when sort_name in ('months','last') then last_on end desc nulls last,
-   row_key) ordinal from selected
+   row_key collate "C") ordinal from selected
  ), page as (
   select * from ranked order by ordinal limit 20 offset (page_number::bigint-1)*20
  ) select jsonb_build_object('list',list_name,'month',null,'total',(select count(*) from selected),

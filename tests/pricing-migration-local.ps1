@@ -109,7 +109,12 @@ try {
   [IO.File]::WriteAllText($historyMigration, $historySql, [Text.UTF8Encoding]::new($false))
   }
 
-  Invoke-DatabaseCommand $createdbProgram @('-U',$databaseUser,$database)
+  $createdbArguments = @('-U',$databaseUser,$database)
+  if ($env:STOCKFLOW_TEST_ICU_LOCALE) {
+    # Optional: reproduce CI's non-byte-order (en_US-like) collation locally.
+    $createdbArguments = @('-U',$databaseUser,'--template=template0','--locale-provider=icu',"--icu-locale=$($env:STOCKFLOW_TEST_ICU_LOCALE)",$database)
+  }
+  Invoke-DatabaseCommand $createdbProgram $createdbArguments
   $databaseCreated = $true
   Invoke-DatabaseCommand $psqlProgram @('-U',$databaseUser,'-X','-q','-v','ON_ERROR_STOP=1','-d',$database,'-f',(Join-Path $PSScriptRoot 'supabase-local-scaffold.sql'))
 

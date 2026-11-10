@@ -57,7 +57,7 @@ select jsonb_build_object(
  'scorecard',jsonb_build_object('regularLabs',(select count(*) from labs where months_bought>=10),
  'regularPct',case when revenue>0 then round(100*(select coalesce(sum(net),0) from labs where months_bought>=10)/revenue,1) end,
  'top10Pct',case when revenue>0 then round(100*(select coalesce(sum(net),0) from
-  (select net from labs where in_window order by net desc,company_id,customer_source_id limit 10) t)/revenue,1) end),
+  (select net from labs where in_window order by net desc,company_id collate "C",customer_source_id collate "C" limit 10) t)/revenue,1) end),
  'months',(select jsonb_agg(jsonb_build_object('month',to_char(m,'YYYY-MM'),
  'labsBuying',(select count(*) from lm where lm.m=mm.m and net>0),
  'salesPaise',(select coalesce(sum(net),0) from lm where lm.m=mm.m),
@@ -127,13 +127,13 @@ begin
    select p from selected order by
     case when sort_name='value' then (p->>'net')::numeric end desc nulls last,
     case when sort_name='last' then p->>'business_date' end desc nulls last,
-    p->>'company_id',p->>'id' limit 20 offset (page_number::bigint-1)*20
+    (p->>'company_id') collate "C",(p->>'id') collate "C" limit 20 offset (page_number::bigint-1)*20
   ) select jsonb_build_object('total',(select count(*) from selected),'rows',coalesce(jsonb_agg(jsonb_build_object(
    'supplierName',private.stockflow_growth_ledger_name(p->>'company_id',p->>'customer_source_id'),
    'valuePaise',(p->>'net')::numeric,'date',p->>'business_date') order by
     case when sort_name='value' then (p->>'net')::numeric end desc nulls last,
     case when sort_name='last' then p->>'business_date' end desc nulls last,
-    p->>'company_id',p->>'id'),'[]')) into result from page;
+    (p->>'company_id') collate "C",(p->>'id') collate "C"),'[]')) into result from page;
  else
   with selected as materialized (
    select l,case when list_name in ('month_buying','month_first') then (l#>>array['month_nets',month_name])::numeric
@@ -154,7 +154,7 @@ begin
     case when sort_name='value' then val end desc nulls last,
     case when sort_name='months' then (l->>'months_bought')::int end desc,
     case when sort_name in ('months','last') then l->>'last_bought' end desc nulls last,
-    l->>'lab_key' limit 20 offset (page_number::bigint-1)*20
+    (l->>'lab_key') collate "C" limit 20 offset (page_number::bigint-1)*20
   ) select jsonb_build_object('total',(select count(*) from selected),'rows',coalesce(jsonb_agg(jsonb_build_object(
    'labKey',l->>'lab_key','customerId',c.id,'name',coalesce(c.name,private.stockflow_growth_ledger_name(l->>'company_id',l->>'customer_source_id')),
    'town',c.city,'valuePaise',val,'monthsBought',(l->>'months_bought')::int,'lastBoughtOn',l->>'last_bought',
@@ -164,7 +164,7 @@ begin
     case when sort_name='value' then val end desc nulls last,
     case when sort_name='months' then (l->>'months_bought')::int end desc,
     case when sort_name in ('months','last') then l->>'last_bought' end desc nulls last,
-    l->>'lab_key'),'[]')) into result
+    (l->>'lab_key') collate "C"),'[]')) into result
    from page left join private.stockflow_economic_customer_identities i on i.company_id=l->>'company_id' and i.source_id=l->>'customer_source_id'
    left join private.stockflow_customers c on c.id=i.customer_id;
  end if;

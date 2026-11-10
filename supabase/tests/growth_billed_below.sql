@@ -162,8 +162,8 @@ begin
   r:=pg_temp.b_call(jsonb_build_object('page',page_number));
   select coalesce(jsonb_agg(jsonb_build_object('voucherRef',src,'date',d,'gapPaise',gap,
    'quantity',case when src='page-24' and line_key='0' then 2 when src='b1' then 2.5 else 1 end)
-   order by gap desc,d desc,src,line_key),'[]') into expected
-  from (select * from expected_billed order by gap desc,d desc,src,line_key limit 20 offset (page_number-1)*20) p;
+   order by gap desc,d desc,src collate "C",line_key collate "C"),'[]') into expected
+  from (select * from expected_billed order by gap desc,d desc,src collate "C",line_key collate "C" limit 20 offset (page_number-1)*20) p;
   select coalesce(jsonb_agg(jsonb_build_object('voucherRef',v->'voucherRef','date',v->'date',
    'gapPaise',v->'gapPaise','quantity',v->'quantity') order by ordinal),'[]') into actual
   from jsonb_array_elements(r->'rows') with ordinality a(v,ordinal);

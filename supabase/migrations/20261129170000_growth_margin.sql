@@ -104,8 +104,8 @@ with costed as materialized (select * from private.stockflow_growth_costed_lines
 select jsonb_build_object('consumablesMarginPct',t.margin,'thresholdPct',t.threshold,
  'labs',coalesce((select jsonb_agg(jsonb_build_object('labKey',lab_key,'customerId',customer_id,'name',name,'town',town,
   'salesPaise',sales,'knownSalesPaise',known,'gpPaise',gp,'marginPct',margin,'coveragePct',coverage,
-  'low',coalesce(sales>=10000000 and margin<t.threshold,false)) order by lab_key) from labs),'[]'),
- 'items',coalesce((select jsonb_agg(row||jsonb_build_object('tallyItemKey',tally_item_key) order by item_key) from item_rows),'[]'),
+  'low',coalesce(sales>=10000000 and margin<t.threshold,false)) order by lab_key collate "C") from labs),'[]'),
+ 'items',coalesce((select jsonb_agg(row||jsonb_build_object('tallyItemKey',tally_item_key) order by item_key collate "C") from item_rows),'[]'),
  'pairs',coalesce((select jsonb_agg(jsonb_build_object('itemKey',p.item_key,'labKey',p.lab_key,
   'unitPricePaise',p.price,'typicalPricePaise',p.typical,'quantity',p.quantity,'salesPaise',p.sales,
   'gpPaise',p.known-p.cost,'marginPct',case when p.known>0 then round(100*(p.known-p.cost)/p.known,1) end,
@@ -116,7 +116,7 @@ select jsonb_build_object('consumablesMarginPct',t.margin,'thresholdPct',t.thres
   'lowMargin',jsonb_build_object('items',(select count(*) from item_rows where low),
    'paiseToThreshold',(select coalesce(sum(greatest(0,sales*t.threshold/100-gp)),0) from item_rows where low),
    'examples',coalesce((select jsonb_agg(jsonb_build_object('name',name,'marginPct',margin,'salesPaise',sales,'labs',labs)
-    order by sales desc,item_key) from (select * from item_rows where low order by sales desc,item_key limit 2) e),'[]')),
+    order by sales desc,item_key collate "C") from (select * from item_rows where low order by sales desc,item_key collate "C" limit 2) e),'[]')),
   'freeGoods',(select jsonb_build_object('lines',count(*),'costPaise',coalesce(sum(cost),0))
    from consumables where net=0 and quantity>0 and cost is not null),
   'instrumentsGpPaise',(select coalesce(sum(net) filter(where cost is not null),0)-coalesce(sum(cost),0)
@@ -160,7 +160,7 @@ begin
    case sort_name when 'sales' then (r->>'salesPaise')::numeric when 'gp' then (r->>'gpPaise')::numeric
     when 'margin' then (r->>'marginPct')::numeric when 'spread' then (r->>'spreadPaise')::numeric end desc nulls last,
    case when sort_name='margin_asc' then (r->>'marginPct')::numeric end asc nulls last,
-   coalesce(r->>'labKey',r->>'itemKey')) ordinal from selected
+   coalesce(r->>'labKey',r->>'itemKey') collate "C") ordinal from selected
  ), page as (select * from ranked order by ordinal limit 20 offset (page_number::bigint-1)*20)
  select jsonb_build_object('view',view_name,'sort',sort_name,'filter',filter_name,'q',query,'page',page_number,
   'pageSize',20,'total',(select count(*) from selected),'rows',coalesce(jsonb_agg(r-'tallyItemKey' order by ordinal),'[]'))
@@ -197,7 +197,7 @@ begin
   select r,row_number() over(order by
    case when is_item then (r->>'unitPricePaise')::numeric end asc nulls last,
    case when not is_item then (r->>'salesPaise')::numeric end desc,
-   case when is_item then r->>'labKey' else r->>'itemKey' end) ordinal from selected
+   case when is_item then r->>'labKey' else r->>'itemKey' end collate "C") ordinal from selected
  ), page as (select * from ranked order by ordinal limit 20 offset (page_number::bigint-1)*20),
  enriched as (
   select p.*,l,i from page p

@@ -96,6 +96,8 @@ Redeploy `stockflow-orders`. New routed actions:
 - Playwright pricing config: Growth, Accounts, My actions, Brand setup, price-review hand-off.
 - CI (`ci.yml`) on the pushed branch.
 
+Growth list ties sort by key in byte order (`collate "C"`), so pages are identical whatever the database's default collation. To reproduce CI's en_US collation locally, run the replay with `STOCKFLOW_TEST_ICU_LOCALE=en-US-u-ka-shifted`.
+
 The AL9 auto-link timing check can fail under heavy machine load. It passed on a quiet rerun each time.
 
 ## Not in this train

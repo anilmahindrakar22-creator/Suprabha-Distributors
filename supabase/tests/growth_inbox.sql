@@ -139,7 +139,7 @@ begin
   join jsonb_array_elements(r->'rows') b on a->>'cardKey'=b->>'cardKey'),'I5 disjoint second page');
  q:=private.stockflow_growth_read(fixed_today,array['management']);
  perform pg_temp.inbox_assert(r->'confirmed'=q->'confirmed' and r->'confirmedReason'=q->'confirmedReason','I5 confirmation matches Growth');
- perform pg_temp.inbox_assert(r->'owners'=(select jsonb_agg(jsonb_build_object('email',email) order by email)
+ perform pg_temp.inbox_assert(r->'owners'=(select jsonb_agg(jsonb_build_object('email',email) order by email collate "C")
   from public.stockflow_members where status='active' and role in ('administrator','management','sales')),'I5 owners');
  q:=pg_temp.inbox_call('get_growth_inbox','{"filter":"R1","page":1}');
  perform pg_temp.inbox_assert(q->>'total'='14' and exists(select 1 from jsonb_array_elements(q->'rows') x

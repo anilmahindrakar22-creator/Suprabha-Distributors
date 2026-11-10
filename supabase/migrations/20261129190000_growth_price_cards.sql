@@ -52,16 +52,16 @@ language sql stable security definer set search_path=pg_catalog,private,public,e
      and approved.status='approved' and approved.valid_from<=p_today
      and (approved.valid_to is null or approved.valid_to>=p_today))
  ), ranked as (
-  select *,row_number() over(partition by lab_key order by gap desc,item_key) ordinal,
+  select *,row_number() over(partition by lab_key order by gap desc,item_key collate "C") ordinal,
    jsonb_build_object('itemKey',item_key,'name',item_name,'tallyItemKey',tally_item_key,
     'unitPricePaise',round(price),'typicalPricePaise',round(typical),'quantity',quantity,'gapPaise',gap) line
   from underpaid
  ), labs as (
   select lab_key,customer_id,name,town,sum(gap) annual_gap,count(*) items,
-   jsonb_agg(line order by gap desc,item_key) filter(where ordinal<=50) lines,
+   jsonb_agg(line order by gap desc,item_key collate "C") filter(where ordinal<=50) lines,
    -- Carry-over checks the full set, even when the displayed snapshot is capped.
    -- More than 50 underpaid items always return next period because the stored lines are capped at 50.
-   jsonb_agg(jsonb_build_object('itemKey',item_key,'unitPricePaise',round(price)) order by item_key) all_lines
+   jsonb_agg(jsonb_build_object('itemKey',item_key,'unitPricePaise',round(price)) order by item_key collate "C") all_lines
   from ranked group by lab_key,customer_id,name,town having sum(gap)>=500000
  ), identified as materialized (
   select *,regexp_match(lab_key,'^(.+)\|([^|]+)$') parts from labs

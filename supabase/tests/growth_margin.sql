@@ -182,7 +182,7 @@ begin
      ), ranked as (
       select *,row_number() over(order by
        case sort_name when 'sales' then sales when 'gp' then gp when 'margin' then margin when 'spread' then spread end desc nulls last,
-       case when sort_name='margin_asc' then margin end asc nulls last,key) ordinal from selected
+       case when sort_name='margin_asc' then margin end asc nulls last,key collate "C") ordinal from selected
      ), page as (select * from ranked order by ordinal limit 20 offset (page_number-1)*20)
      select jsonb_build_object('total',(select count(*) from selected),'keys',coalesce(jsonb_agg(key order by ordinal),'[]')) into expected from page;
      select jsonb_build_object('total',r->'total','keys',coalesce(jsonb_agg(coalesce(v->>'labKey',v->>'itemKey') order by a.n),'[]'))
