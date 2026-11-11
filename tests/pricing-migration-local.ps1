@@ -145,6 +145,7 @@ try {
   $salesNames += '20261118100000_deferred_economic_rebuild.sql'
   $salesNames += '20261118110000_reconciliation_rounding.sql'
   $salesNames += '20261118120000_cron_log_trim.sql'
+  $salesNames += '20261118130000_catalog_current_columns.sql'
   $salesNames += '20261122090000_economic_result_pruning.sql'
   $salesNames += '20261122100000_sync_error_domain.sql'
   $salesNames += '20261122110000_omission_scope.sql'
@@ -349,6 +350,7 @@ end$$;
   Invoke-DatabaseCommand $psqlProgram @('-U',$databaseUser,'-X','-q','-v','ON_ERROR_STOP=1','-d',$database,'-f',(Join-Path $repository 'supabase/tests/control_null_and_source_time.sql'))
   Invoke-DatabaseCommand $psqlProgram @('-U',$databaseUser,'-X','-q','-v','ON_ERROR_STOP=1','-d',$database,'-f',(Join-Path $repository 'supabase/tests/deferred_economic_rebuild.sql'))
   Invoke-DatabaseCommand $psqlProgram @('-U',$databaseUser,'-X','-q','-v','ON_ERROR_STOP=1','-d',$database,'-f',(Join-Path $repository 'supabase/tests/deferred_economic_rebuild_concurrency.sql'))
+  Invoke-DatabaseCommand $psqlProgram @('-U',$databaseUser,'-X','-q','-v','ON_ERROR_STOP=1','-d',$database,'-f',(Join-Path $repository 'supabase/tests/catalog_current_columns.sql'))
   Invoke-DatabaseCommand $psqlProgram @('-U',$databaseUser,'-X','-q','-v','ON_ERROR_STOP=1','-d',$database,'-f',(Join-Path $repository 'supabase/tests/reconciliation_rounding.sql'))
   Invoke-DatabaseCommand $psqlProgram @('-U',$databaseUser,'-X','-q','-v','ON_ERROR_STOP=1','-d',$database,'-f',(Join-Path $repository 'supabase/tests/economic_result_pruning.sql'))
   Invoke-DatabaseCommand $psqlProgram @('-U',$databaseUser,'-X','-q','-v','ON_ERROR_STOP=1','-d',$database,'-f',(Join-Path $repository 'supabase/tests/economic_sync_error_domain.sql'))

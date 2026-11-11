@@ -45,18 +45,26 @@ export function EconomicMappingIdentityFields({ data, simpleOnly = false, onTarg
   const [advanced, setAdvanced] = useState(false);
   const [targetId, setTargetId] = useState(defaultTargetId);
   const [productId, setProductId] = useState('');
+  const [query, setQuery] = useState('');
   const placements = data.targets.filter(row => row.kind === 'placement');
+  const fixedTarget = placements.find(row => row.id === defaultTargetId);
   const target = placements.find(row => row.id === targetId);
   const products = new Map<string, string>();
   (data.sourceLines ?? []).filter(row => row.companyId === target?.companyId).forEach(row => products.set(row.productId, row.productName || row.productId));
   data.mappings.filter(row => row.companyId === target?.companyId).forEach(row => { if (!products.has(row.productId)) products.set(row.productId, row.productId); });
   (data.itemGroupCatalogs ?? []).filter(row => row.companyId === target?.companyId && row.current)
     .sort((a, b) => a.observedAt.localeCompare(b.observedAt)).forEach(catalog => catalog.products.forEach(row => products.set(row.id, row.name)));
+  const normalizedQuery = query.trim().toLowerCase();
+  const sortedProducts = [...products].sort((a, b) => a[1].localeCompare(b[1]) || a[0].localeCompare(b[0]));
+  const matches = sortedProducts.filter(([id, name]) => normalizedQuery.length < 2 || name.toLowerCase().includes(normalizedQuery) || id.toLowerCase().includes(normalizedQuery));
+  const limited = normalizedQuery.length >= 2 && matches.length > 200;
+  const visibleIds = new Set((limited ? matches.slice(0, 200) : matches).map(([id]) => id));
+  const visibleProducts = sortedProducts.filter(([id]) => visibleIds.has(id) || id === productId);
   return <div className="grid gap-3 sm:col-span-2">
     {simpleOnly ? null : <button type="button" onClick={() => { setAdvanced(!advanced); onTargetChange?.(advanced ? targetId : ''); }} className="min-h-10 justify-self-start text-xs font-bold text-sf-brand">{advanced ? 'Use simple item selection' : 'Advanced: model-wide mapping or verified IDs'}</button>}
     {advanced ? <AdvancedMappingIdentityFields data={data} /> : <section aria-label="Product mapping identity" className="grid gap-3 rounded-xl border border-sf-line-soft p-3 sm:grid-cols-2">
-      <label className="grid gap-1 text-xs font-semibold">Instrument placement<select aria-label="Instrument placement" name="targetId" required value={targetId} onChange={event => { setTargetId(event.target.value); setProductId(''); onTargetChange?.(event.target.value); }} className={inputStyle}><option value="">Select an instrument…</option>{placements.map(row => <option key={row.id} value={row.id}>{row.name} · {row.customerName}</option>)}</select></label>
-      <label className="grid gap-1 text-xs font-semibold">Individual reagent item<select aria-label="Individual reagent item" name="productId" required value={productId} disabled={!target} onChange={event => setProductId(event.target.value)} className={inputStyle}><option value="">Select a Tally item…</option>{[...products].sort((a, b) => a[1].localeCompare(b[1]) || a[0].localeCompare(b[0])).map(([id, name]) => <option key={id} value={id}>{name}</option>)}</select></label>
+      {fixedTarget ? <><p className="text-sm text-sf-body sm:col-span-2">For: {fixedTarget.name} · {fixedTarget.customerName}</p><input type="hidden" name="targetId" value={fixedTarget.id} /></> : <label className="grid gap-1 text-xs font-semibold">Instrument placement<select aria-label="Instrument placement" name="targetId" required value={targetId} onChange={event => { setTargetId(event.target.value); setQuery(''); setProductId(''); onTargetChange?.(event.target.value); }} className={inputStyle}><option value="">Select an instrument…</option>{placements.map(row => <option key={row.id} value={row.id}>{row.name} · {row.customerName}</option>)}</select></label>}
+      <div className="grid min-w-0 gap-1"><input type="search" aria-label="Search items" placeholder="Search items" value={query} disabled={!target} onChange={event => { const nextQuery = event.target.value; setQuery(nextQuery); const normalized = nextQuery.trim().toLowerCase(); if (normalized.length >= 2) { const found = sortedProducts.filter(([id, name]) => name.toLowerCase().includes(normalized) || id.toLowerCase().includes(normalized)); if (found.length === 1) setProductId(found[0][0]); } }} className={inputStyle} /><label className="grid min-w-0 gap-1 text-xs font-semibold">Individual reagent item<select aria-label="Individual reagent item" name="productId" required value={productId} disabled={!target} onChange={event => setProductId(event.target.value)} className={inputStyle}><option value="">Select a Tally item…</option>{visibleProducts.map(([id, name]) => <option key={id} value={id}>{name}</option>)}</select></label>{limited ? <p className="text-xs text-sf-muted">Showing 200 of {matches.length} items. Type more to narrow the list.</p> : null}{normalizedQuery.length >= 2 && matches.length === 0 ? <p className="text-xs text-sf-muted">No items match “{query}”.</p> : null}</div>
       {target ? <><input type="hidden" name="companyId" value={target.companyId} /><input type="hidden" name="modelId" value={target.modelId} /></> : null}
       <p className="text-xs text-sf-muted sm:col-span-2">Add individual items alongside groups. The same item is counted once.</p>
     </section>}
@@ -111,6 +119,7 @@ export function ItemGroupMappingFields({ data, onTargetChange, defaultTargetId =
   const [targetId, setTargetId] = useState(defaultTargetId);
   const [groupId, setGroupId] = useState('');
   const placements = data.targets.filter(target => target.kind === 'placement');
+  const fixedTarget = placements.find(row => row.id === defaultTargetId);
   const target = placements.find(row => row.id === targetId);
   const catalog = target ? (data.itemGroupCatalogs ?? [])
     .filter(row => row.companyId === target.companyId && row.current)
@@ -119,7 +128,7 @@ export function ItemGroupMappingFields({ data, onTargetChange, defaultTargetId =
   const groups = catalog?.groups ?? [];
   return <section aria-label="Item group mapping identity" className="grid min-w-0 gap-3 rounded-xl border border-sf-line-soft p-3 sm:col-span-2 sm:grid-cols-2">
     <p className="text-xs leading-5 text-sf-muted sm:col-span-2">All items in the selected group, including subgroups, contribute reagent sales and GP. New group items follow after a verified Tally sync. Direct product exclusions at the same scope take precedence.</p>
-    <label className="grid min-w-0 gap-1 text-xs font-semibold">Instrument placement<select aria-label="Instrument placement" name="targetId" required value={targetId} onChange={event => { setTargetId(event.target.value); setGroupId(''); onTargetChange?.(event.target.value); }} className={inputStyle}><option value="">Select an instrument placement…</option>{placements.map(row => <option key={row.id} value={row.id}>{row.name} · {row.customerName}</option>)}</select></label>
+    {fixedTarget ? <><p className="text-sm text-sf-body sm:col-span-2">For: {fixedTarget.name} · {fixedTarget.customerName}</p><input type="hidden" name="targetId" value={fixedTarget.id} /></> : <label className="grid min-w-0 gap-1 text-xs font-semibold">Instrument placement<select aria-label="Instrument placement" name="targetId" required value={targetId} onChange={event => { setTargetId(event.target.value); setGroupId(''); onTargetChange?.(event.target.value); }} className={inputStyle}><option value="">Select an instrument placement…</option>{placements.map(row => <option key={row.id} value={row.id}>{row.name} · {row.customerName}</option>)}</select></label>}
     {target ? <><input type="hidden" name="companyId" value={target.companyId} /><input type="hidden" name="modelId" value={target.modelId} /></> : null}
     {catalog ? <input type="hidden" name="expectedCatalogId" value={catalog.id} /> : null}
     <label className="grid min-w-0 gap-1 text-xs font-semibold">Tally item group<select aria-label="Tally item group" name="groupId" required value={groupId} onChange={event => setGroupId(event.target.value)} className={inputStyle} disabled={!catalog || groups.length === 0}><option value="">{catalog ? 'Select an item group…' : 'No current item group catalog'}</option>{groups.map(row => <option key={row.id} value={row.id}>{row.name} · {row.itemCount} items</option>)}</select></label>

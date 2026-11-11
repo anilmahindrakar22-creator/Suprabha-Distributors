@@ -1001,6 +1001,74 @@ test('verified IDs outside imported history still permit a model mapping', async
   expect(posts[0]).toMatchObject({ payload: { companyId: 'verified-unimported-company', modelId: 'SYS 240', productId: 'verified-unimported-product', targetId: '' } });
 });
 
+test('mapping forms opened from an instrument show the placement as fixed text', async ({ page }) => {
+  const posts: { action: string; payload: Record<string, unknown> }[] = [];
+  const data = economicsData({ targets: [target], itemGroupCatalogs: [{ id: 'current-catalog', companyId: 'company-guid', sourceVersion: 'v1', observedAt: '2026-10-09T10:00:00Z', current: true, groups: [{ id: 'group-one', name: 'Chemistry group', itemCount: 3, parentId: null }], products: [] }] });
+  await page.route('**/api/instrument-economics', route => {
+    if (route.request().method() === 'GET') return route.fulfill({ json: data });
+    posts.push(route.request().postDataJSON());
+    return route.fulfill({ status: 409, json: { error: 'Test keeps the mapping forms available' } });
+  });
+  await page.goto('/?view=instrument-economics');
+  await page.getByRole('button', { name: 'Add reagents', exact: true }).click();
+  const groupForm = page.locator('form').filter({ has: page.getByRole('region', { name: 'Item group mapping identity' }) });
+  await expect(groupForm.getByLabel('Instrument placement', { exact: true })).toHaveCount(0);
+  await expect(groupForm.getByText(`For: ${target.name} · ${target.customerName}`, { exact: true })).toBeVisible();
+  await groupForm.getByLabel('Tally item group', { exact: true }).selectOption('group-one');
+  await groupForm.getByRole('button', { name: 'Add item group', exact: true }).click();
+  await expect.poll(() => posts.length).toBe(1);
+  expect(posts[0]).toMatchObject({ action: 'set_item_group_mapping', payload: { targetId: target.id, companyId: target.companyId, modelId: target.modelId, groupId: 'group-one', expectedCatalogId: 'current-catalog' } });
+  await page.getByText('Add a single item', { exact: true }).click();
+  const itemForm = page.locator('form').filter({ has: page.getByRole('region', { name: 'Product mapping identity' }) });
+  await expect(itemForm.getByLabel('Instrument placement', { exact: true })).toHaveCount(0);
+  await expect(itemForm.getByText(`For: ${target.name} · ${target.customerName}`, { exact: true })).toBeVisible();
+  await itemForm.getByLabel('Individual reagent item', { exact: true }).selectOption('product-guid-one');
+  await itemForm.getByRole('button', { name: 'Add item', exact: true }).click();
+  await expect.poll(() => posts.length).toBe(2);
+  expect(posts[1]).toMatchObject({ action: 'set_mapping', payload: { targetId: target.id, companyId: target.companyId, modelId: target.modelId, productId: 'product-guid-one' } });
+});
+
+test('single item picker filters by search', async ({ page }) => {
+  const posts: { action: string; payload: Record<string, unknown> }[] = [];
+  const data = economicsData({ targets: [target], sourceLines: [], itemGroupCatalogs: [{ id: 'current-catalog', companyId: 'company-guid', sourceVersion: 'v1', observedAt: '2026-10-09T10:00:00Z', current: true, groups: [], products: [
+    { id: 'alpha-id', name: 'Alpha reagent', groupId: null, unit: 'qty' },
+    { id: 'beta-reagent-id', name: 'Beta reagent', groupId: null, unit: 'qty' },
+    { id: 'beta-control-id', name: 'Beta control', groupId: null, unit: 'qty' },
+  ] }] });
+  await page.route('**/api/instrument-economics', route => {
+    if (route.request().method() === 'GET') return route.fulfill({ json: data });
+    posts.push(route.request().postDataJSON()); return route.fulfill({ json: { ok: true } });
+  });
+  await page.goto('/?view=instrument-economics');
+  await page.getByRole('button', { name: 'Add reagents', exact: true }).click();
+  await page.getByText('Add a single item', { exact: true }).click();
+  const itemForm = page.locator('form').filter({ has: page.getByRole('region', { name: 'Product mapping identity' }) });
+  const search = itemForm.getByRole('searchbox', { name: 'Search items', exact: true });
+  const item = itemForm.getByLabel('Individual reagent item', { exact: true });
+  await search.fill('beta');
+  await expect(item.locator('option')).toHaveText(['Select a Tally item…', 'Beta control', 'Beta reagent']);
+  await expect(item).toHaveValue('');
+  await search.fill('missing');
+  await expect(item.locator('option')).toHaveCount(1);
+  await expect(itemForm.getByText('No items match “missing”.', { exact: true })).toBeVisible();
+  await search.fill('ALPHA');
+  await expect(item).toHaveValue('alpha-id');
+  await search.fill('beta');
+  await expect(item.locator('option')).toHaveCount(4);
+  await expect(item).toHaveValue('alpha-id');
+  await search.fill('beta-control-id');
+  await expect(item).toHaveValue('beta-control-id');
+  await search.fill('alpha');
+  await expect(item).toHaveValue('alpha-id');
+  await search.fill('');
+  await expect(item).toHaveValue('alpha-id');
+  await expect(item.locator('option')).toHaveCount(4);
+  expect(await page.evaluate(() => document.documentElement.scrollWidth <= innerWidth)).toBe(true);
+  await itemForm.getByRole('button', { name: 'Add item', exact: true }).click();
+  await expect.poll(() => posts.length).toBe(1);
+  expect(posts[0]).toMatchObject({ action: 'set_mapping', payload: { targetId: target.id, productId: 'alpha-id' } });
+});
+
 test('item group mapping follows the selected placement company and submits exact IDs', async ({ page }) => {
   const posts: Record<string, unknown>[] = [];
   const base = economicsData();

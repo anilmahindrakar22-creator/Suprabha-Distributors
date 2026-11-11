@@ -1363,6 +1363,13 @@
       "status": "not_deployed"
     },
     {
+      "localFile": "20261118130000_catalog_current_columns.sql",
+      "localSha256": "e6f9fa6b814f11bf6b3e357189fe8c94d8ecaa79e0f81d94379483ab206b3a71",
+      "remoteVersion": null,
+      "remoteSha256": null,
+      "status": "not_deployed"
+    },
+    {
       "localFile": "20261122090000_economic_result_pruning.sql",
       "localSha256": "df7fb14c33abaf7f3e511446010f1f4bc096ec9f8fa8f2fba45a787603f8307b",
       "remoteVersion": null,
@@ -1371,7 +1378,7 @@
     },
     {
       "localFile": "20261122100000_sync_error_domain.sql",
-      "localSha256": "63f43f462f9a63f954813fed174a12544ba843c27c6c94a27c78a4be5d146994",
+      "localSha256": "4da2d5e20a7011002e33d5615e7ec38d9266c31da62f3c902aacc19925acc375",
       "remoteVersion": null,
       "remoteSha256": null,
       "status": "not_deployed"
