@@ -38,18 +38,7 @@ async function fixture(page: Page, { certified = true, deepLink = false, sharePe
   });
   const mine: MyActions = { page: 1, pageSize: 50, total: 1, overdueCount: 1, rows: [{ actionId, customerId, customerName: row.name, city: row.city, actionType: 'visit', detail: due.detail, dueOn: due.dueOn, overdue: true, constraintCategory: 'price', routeToDecider: ['Asha', 'Ravi', 'Meena'] }] };
   await page.route('**/api/my-actions?**', route => route.fulfill({ json: mine }));
-  if (deepLink) {
-    // Supply the new props to the existing Vite fixture at the browser boundary.
-    // Keep the shared harness file unchanged for every other spec.
-    await page.route('**/main.tsx', async route => {
-      const response = await route.fetch();
-      const source = await response.text();
-      const withProps = source.replace(/((?:_?jsxDEV|_?jsx)\(AccountsWorkspace,\s*\{)/, `$1 initialView: 'wallet', initialCustomerId: '${customerId}',`);
-      expect(withProps).not.toBe(source);
-      await route.fulfill({ response, body: withProps });
-    });
-  }
-  await page.goto('/?view=accounts');
+  await page.goto(deepLink ? `/?view=accounts&initialView=wallet&customerId=${encodeURIComponent(customerId)}` : '/?view=accounts');
   if (!deepLink) await page.getByRole('button', { name: 'Wallet', exact: true }).click();
 }
 

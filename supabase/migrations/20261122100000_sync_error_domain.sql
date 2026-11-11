@@ -25,7 +25,9 @@ language sql stable set search_path=pg_catalog,private as $$
  select exists(select 1 from private.stockflow_economic_item_catalogs c where c.company_id=p_company
   and not exists(select 1 from private.stockflow_economic_item_catalogs n where n.company_id=c.company_id and n.observed_at>c.observed_at)
   and not exists(select 1 from private.stockflow_economic_import_exceptions e where (e.company_id=p_company or e.company_id is null)
-   and e.recorded_at>=c.imported_at and ((e.evidence->>'kind'='item_group_catalog' and coalesce((e.evidence->>'observedAt')::timestamptz>=c.observed_at,true)) or (e.evidence->>'source'='connector_sync' and e.evidence->>'domain' is distinct from 'sales_coverage'))))
+   and e.recorded_at>=c.imported_at
+   and ((e.evidence_kind='item_group_catalog' and coalesce(e.evidence_observed_at::timestamptz>=c.observed_at,true))
+    or (e.evidence_source='connector_sync' and e.evidence->>'domain' is distinct from 'sales_coverage'))))
 $$;
 revoke all on function private.stockflow_economic_item_catalog_current(text) from public,anon,authenticated;
 

@@ -42,7 +42,11 @@ function Fixture() {
   if (parameters.get('view') === 'staff-users-disabled') return <UserManagement staffAuth />;
   if (parameters.get('view') === 'instrument-economics') return <InstrumentEconomicsWorkspace />;
   if (parameters.get('view') === 'service') return <main className="h-dvh overflow-hidden"><ServiceWorkspace /></main>;
-  if (parameters.get('view') === 'accounts') return <main className="h-dvh overflow-auto"><AccountsWorkspace /></main>;
+  if (parameters.get('view') === 'accounts') {
+    const initialView = parameters.get('initialView');
+    const customerId = parameters.get('customerId');
+    return <main className="h-dvh overflow-auto"><AccountsWorkspace initialView={initialView === 'my-actions' || initialView === 'wallet' || initialView === 'map' ? initialView : undefined} initialCustomerId={customerId || undefined} /></main>;
+  }
   if (parameters.get('view') === 'frame') return <StockFlowFrame actorEmail="staff@example.test" actorRole={parameters.get('role') || 'sales'} actorRoles={parameters.has('roles') ? normalizeStockFlowRoles(parameters.get('roles')?.split(',')) ?? [] : undefined} />;
   if (parameters.get('view') === 'staff-frame') return <StockFlowFrame actorEmail="staff@example.test" actorRole="administrator" staffAuth />;
   if (parameters.get('view') === 'product-requests') return <ProductRequestInbox />;
