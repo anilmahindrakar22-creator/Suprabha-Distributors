@@ -5,12 +5,32 @@ import { describe, expect, it } from 'vitest';
 import { pricingReleasePreflight } from '../pricing-release-preflight.mjs';
 
 const directory = new URL('../../supabase/migrations/', import.meta.url);
-const original = JSON.parse(readFileSync(new URL('../../supabase/migration-history-map.json', import.meta.url), 'utf8'));
+const current = JSON.parse(readFileSync(new URL('../../supabase/migration-history-map.json', import.meta.url), 'utf8'));
+// Keep the historical 185-migration scenarios separate from the current live cutover.
+const original = structuredClone(current);
+for (const entry of original.migrations) {
+  if (entry.remoteVersion && entry.remoteVersion > '20261106083351') {
+    Object.assign(entry, { status: 'not_deployed', remoteVersion: null, remoteSha256: null });
+  }
+}
 const source = new Map(readdirSync(fileURLToPath(directory)).filter((name) => name.endsWith('.sql')).map((name) => [name, readFileSync(new URL(name, directory), 'utf8')]));
 
 const releaseOrder = (result: { deployed: { localFile: string }[]; pending: string[] }) => [...result.deployed.map((entry) => entry.localFile), ...result.pending];
 
 describe('read-only pricing release preflight', () => {
+  it('records all 190 live migrations and only the four Train 22 migrations as pending', () => {
+    const result = pricingReleasePreflight(current, source);
+    expect(result.deployed).toHaveLength(190);
+    expect(result.deployed.at(-1)?.remoteVersion).toBe('20261111101803');
+    expect(result.pending).toEqual([
+      '20261122090000_economic_result_pruning.sql',
+      '20261122100000_sync_error_domain.sql',
+      '20261122110000_omission_scope.sql',
+      '20261122120000_company_gp_model.sql',
+    ]);
+    expect(current.liveCheck.matchedMigrationHashes).toBe(190);
+    expect(result.releaseReady).toBe(false);
+  });
   it('registers the isolated company GP model and its guarded gateway read', () => {
     const name = '20261122120000_company_gp_model.sql';
     const result = pricingReleasePreflight(original, source);
