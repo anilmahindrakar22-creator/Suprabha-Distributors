@@ -1361,6 +1361,13 @@
       "remoteVersion": null,
       "remoteSha256": null,
       "status": "not_deployed"
+    },
+    {
+      "localFile": "20261118130000_catalog_current_columns.sql",
+      "localSha256": "e6f9fa6b814f11bf6b3e357189fe8c94d8ecaa79e0f81d94379483ab206b3a71",
+      "remoteVersion": null,
+      "remoteSha256": null,
+      "status": "not_deployed"
     }
   ],
   "liveCheck": {
