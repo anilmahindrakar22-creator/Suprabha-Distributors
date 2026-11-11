@@ -207,15 +207,11 @@ it('registers billed-below after margin with guarded read-only dispatch', () => 
     expect(fixture.trimEnd()).toMatch(/rollback;$/);
     expect(fixture).toContain('PASS accounts no territory T1-T5');
   });
-  it('records all 190 live migrations and the four Train 22 and eleven Train 29 migrations as pending', () => {
+  it('records all 194 live migrations and only the eleven Train 29 migrations as pending', () => {
     const result = pricingReleasePreflight(current, source);
-    expect(result.deployed).toHaveLength(190);
-    expect(result.deployed.at(-1)?.remoteVersion).toBe('20261111101803');
+    expect(result.deployed).toHaveLength(194);
+    expect(result.deployed.at(-1)?.remoteVersion).toBe('20261111140857');
     expect(result.pending).toEqual([
-      '20261122090000_economic_result_pruning.sql',
-      '20261122100000_sync_error_domain.sql',
-      '20261122110000_omission_scope.sql',
-      '20261122120000_company_gp_model.sql',
       '20261129090000_visit_reasons.sql',
       '20261129100000_accounts_no_territory.sql',
       '20261129110000_growth_read.sql',
@@ -228,7 +224,7 @@ it('registers billed-below after margin with guarded read-only dispatch', () => 
       '20261129180000_growth_billed_below.sql',
       '20261129190000_growth_price_cards.sql',
     ]);
-    expect(current.liveCheck.matchedMigrationHashes).toBe(190);
+    expect(current.liveCheck.matchedMigrationHashes).toBe(194);
     expect(result.releaseReady).toBe(false);
   });
   it('registers the isolated company GP model and its guarded gateway read', () => {
