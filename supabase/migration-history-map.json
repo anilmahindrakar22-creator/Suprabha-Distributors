@@ -1,9 +1,9 @@
 {
   "projectId": "aormuidjbdqruglmyseh",
-  "checkedAt": "2026-11-07T06:30:00+00:00",
+  "checkedAt": "2026-11-11 11:55:44.815277+00",
   "purpose": "Read-only release evidence; NOT an executable migration plan or authority to repair history.",
   "normalization": "Remove CR characters and trim surrounding whitespace only; SHA-256 over UTF-8.",
-  "localGitHead": "ce0442ae57d05a979bdb2ffd03ed2bc5f9cc4866",
+  "localGitHead": "ca5041b6d95b1c7b892693ef785c2af78321ecf3",
   "remoteOnly": [
     {
       "localFile": "20260829054025_create_stockflow_private_snapshots.sql",
@@ -1337,37 +1337,37 @@
     {
       "localFile": "20261118090000_control_null_and_source_time.sql",
       "localSha256": "2d4eb93b18ed4b694b5c1f53896eeb6e3ba858b8f6129903ab89809869730677",
-      "remoteVersion": null,
-      "remoteSha256": null,
-      "status": "not_deployed"
+      "remoteVersion": "20261111062550",
+      "remoteSha256": "2d4eb93b18ed4b694b5c1f53896eeb6e3ba858b8f6129903ab89809869730677",
+      "status": "exact_normalized_match"
     },
     {
       "localFile": "20261118100000_deferred_economic_rebuild.sql",
       "localSha256": "81af92ac5d1e80a30b4a50a9f638a2f3e2a5311a6da1f99556103c48dc5058b2",
-      "remoteVersion": null,
-      "remoteSha256": null,
-      "status": "not_deployed"
+      "remoteVersion": "20261111062554",
+      "remoteSha256": "81af92ac5d1e80a30b4a50a9f638a2f3e2a5311a6da1f99556103c48dc5058b2",
+      "status": "exact_normalized_match"
     },
     {
       "localFile": "20261118110000_reconciliation_rounding.sql",
       "localSha256": "ad8376943bae0074ee56f92ac190df19fe816f7532c907e31fc1f0302b2831b5",
-      "remoteVersion": null,
-      "remoteSha256": null,
-      "status": "not_deployed"
+      "remoteVersion": "20261111062558",
+      "remoteSha256": "ad8376943bae0074ee56f92ac190df19fe816f7532c907e31fc1f0302b2831b5",
+      "status": "exact_normalized_match"
     },
     {
       "localFile": "20261118120000_cron_log_trim.sql",
       "localSha256": "f47cbe86b934feea969f2a794b0aeb73a7f0d69066e2fb70ebc7dc92abe76260",
-      "remoteVersion": null,
-      "remoteSha256": null,
-      "status": "not_deployed"
+      "remoteVersion": "20261111062601",
+      "remoteSha256": "f47cbe86b934feea969f2a794b0aeb73a7f0d69066e2fb70ebc7dc92abe76260",
+      "status": "exact_normalized_match"
     },
     {
       "localFile": "20261118130000_catalog_current_columns.sql",
       "localSha256": "e6f9fa6b814f11bf6b3e357189fe8c94d8ecaa79e0f81d94379483ab206b3a71",
-      "remoteVersion": null,
-      "remoteSha256": null,
-      "status": "not_deployed"
+      "remoteVersion": "20261111101803",
+      "remoteSha256": "e6f9fa6b814f11bf6b3e357189fe8c94d8ecaa79e0f81d94379483ab206b3a71",
+      "status": "exact_normalized_match"
     },
     {
       "localFile": "20261122090000_economic_result_pruning.sql",
@@ -1477,9 +1477,9 @@
   ],
   "liveCheck": {
     "method": "Read-only full migration version/hash comparison after deployment; normalized SQL removes CR and trims ASCII whitespace",
-    "remoteMigrationCount": 185,
-    "matchedMigrationHashes": 185,
-    "latestRemoteVersion": "20261106083351",
-    "checkedAt": "2026-11-07T06:30:00+00:00"
+    "remoteMigrationCount": 190,
+    "matchedMigrationHashes": 190,
+    "latestRemoteVersion": "20261111101803",
+    "checkedAt": "2026-11-11 11:55:44.815277+00"
   }
 }
