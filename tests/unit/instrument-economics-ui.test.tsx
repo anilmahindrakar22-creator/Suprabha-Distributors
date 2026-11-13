@@ -3,7 +3,7 @@ import { describe, expect, it, vi } from 'vitest';
 vi.mock('next/link', () => ({ default: 'a' }));
 import { renderToStaticMarkup } from 'react-dom/server';
 import { CumulativeFinancialBreakdown, importProblemText, ImportProblemItem } from '@/components/instrument-economics-workspace';
-import { EconomicActionOptions, ProposedTargetReview, EconomicApprovalPreview, EconomicHealthBadge, EconomicTargetAdvancedDetails, EconomicTargetCard, InstrumentEconomicsWorkspace, economicCommandNotice, ItemGpBreakdown, reagentLifetime, reportingPeriodLabel, CommandForm } from '@/components/instrument-economics-workspace';
+import { EconomicActionOptions, ProposedTargetReview, EconomicApprovalPreview, EconomicHealthBadge, EconomicTargetAdvancedDetails, EconomicTargetCard, InstrumentEconomicsWorkspace, economicCommandNotice, friendlyEconomicError, ItemGpBreakdown, reagentLifetime, reportingPeriodLabel, CommandForm } from '@/components/instrument-economics-workspace';
 import { capitalBeyondManagementReview, capitalPreviewPaise } from '@/components/instrument-economics-evidence-forms';
 import type { EconomicTarget } from '@/lib/instrument-economics-types';
 
@@ -90,6 +90,11 @@ describe('instrument economics presentation', () => {
     expect(economicCommandNotice({ autoApproved: { paybackMonths: 24, attractiveMonths: 24 } })).toBe('Saved. Approved automatically: payback 24.0 months (within 24).');
     expect(economicCommandNotice({})).toBe('Saved. Workspace refreshed with the latest records.');
     expect(economicCommandNotice({ autoApproved: { paybackMonths: 'x', attractiveMonths: 24 } })).toBe('Saved. Workspace refreshed with the latest records.');
+  });
+  it('explains duplicate item-group mappings in plain words and passes other errors through', () => {
+    expect(friendlyEconomicError('duplicate key value violates unique constraint "stockflow_economic_group_mapping_identity"')).toMatch(/^This item group is already included for this instrument/);
+    expect(friendlyEconomicError('Target changed; refresh')).toBe('Target changed; refresh');
+    expect(friendlyEconomicError(undefined)).toBeUndefined();
   });
   it('offers the policy action only to administrators', () => {
     const management = renderToStaticMarkup(<EconomicActionOptions data={{ canAdministrator: false }} />);

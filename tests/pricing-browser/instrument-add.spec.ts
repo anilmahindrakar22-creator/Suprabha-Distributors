@@ -76,10 +76,14 @@ test('Add an instrument registers a sold machine from readable invoices and open
   expect(posts[1]).toMatchObject({ payload: { acquisitionPurchaseLineId: 'purchase-uuid-1', installationId: 'installation-uuid-1' } });
   expect(posts[2]).toMatchObject({ payload: { targetId: 'target-uuid-1', sourceLineId: 'sale-uuid-1' } });
   for (const post of posts) expect(post.payload.idempotencyKey).toBeTruthy();
-  await expect(add).toContainText('Added. Waiting for approval');
+  await expect(add).toContainText('Added:');
+  await expect(add).toContainText('Serial SYS240-009 · installed 2026-07-23');
   const firstRegisterKey = posts[0].payload.idempotencyKey;
-  await add.getByRole('button', { name: 'Approve now', exact: true }).click();
-  await expect(page.getByRole('region', { name: 'Placement approval preview' })).toBeVisible();
+  // The approval sits at the top of Set up, outside Advanced, with the instrument's details.
+  const approvals = page.getByRole('region', { name: /^Waiting for approval/ });
+  await expect(approvals.getByRole('region', { name: 'Placement approval preview' })).toBeVisible();
+  await add.getByRole('button', { name: 'Review and approve', exact: true }).click();
+  await expect(approvals).toBeInViewport();
   await add.getByRole('button', { name: 'Add another instrument', exact: true }).click();
   await expect(add.getByLabel('Search machines')).toHaveValue('');
   await expect(add.getByLabel('Serial number')).toHaveCount(0);
@@ -137,9 +141,8 @@ test('rental uses the purchase, bounded linked-lab search, and retries step two 
   expect(posts[0]).toMatchObject({ payload: { sourceLineId: 'purchase-uuid-1', basis: 'rental', customerId: 'lab-0' } });
   expect(posts[0].payload).not.toHaveProperty('customerSourceId');
   expect(posts[1]).toMatchObject({ payload: { acquisitionPurchaseLineId: 'purchase-uuid-1', installationId: 'installation-rental' } });
-  await expect(add).toContainText('Added. Waiting for approval');
-  await add.getByRole('button', { name: 'Approve now', exact: true }).click();
-  await expect(page.getByRole('region', { name: 'Placement approval preview' })).toBeVisible();
+  await expect(add).toContainText('Added:');
+  await expect(page.getByRole('region', { name: /^Waiting for approval/ }).getByRole('region', { name: 'Placement approval preview' })).toBeVisible();
 });
 
 test('old registration and correction forms stay inside Advanced', async ({ page }) => {

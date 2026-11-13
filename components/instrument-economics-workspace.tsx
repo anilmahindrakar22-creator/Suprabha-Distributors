@@ -21,6 +21,12 @@ import { InstrumentAdd, type InstrumentAddCommand } from '@/components/instrumen
 
 type EconomicsWorkspaceData = BaseEconomicsWorkspaceData & { canAdministrator?: boolean };
 
+/** Turns known database refusals into plain words; other messages pass through unchanged. */
+export function friendlyEconomicError(message: string | undefined) {
+  if (message && /stockflow_economic_group_mapping_identity/.test(message)) return 'This item group is already included for this instrument from that date. Nothing was changed; check the instrument\'s reagent list instead.';
+  if (message && /stockflow_economic_mapping_identity|duplicate key value/.test(message)) return 'This is already recorded. Nothing was changed; refresh to see it.';
+  return message;
+}
 export function economicCommandNotice(body: { autoApproved?: { paybackMonths?: number | string; attractiveMonths?: number } }): string {
   const payback = Number(body.autoApproved?.paybackMonths);
   return body.autoApproved && Number.isFinite(payback)
@@ -315,6 +321,7 @@ export function ProposedTargetReview({ target, data, disabled, onSubmit }: { tar
   return <div className="mt-3 rounded-xl border border-sf-line-soft p-3">
     <div className="flex flex-wrap justify-between gap-2"><strong className="break-words">{target.name}</strong><EconomicHealthBadge health="proposed" /></div>
     <p className="mt-1 text-xs text-sf-muted">{target.customerName} · version {target.version}</p>
+    <p className="mt-1 text-xs text-sf-muted">Serial {target.instrumentSerialNumber || '—'} · installed {target.effectiveFrom} · net investment {money(target.netInvestmentPaise)}</p>
     <EconomicApprovalPreview target={target} />
     {data.canApprove ? <form onSubmit={onSubmit} className="mt-3 grid gap-2"><fieldset disabled={disabled} className="grid gap-2">
       <input type="hidden" name="targetId" value={target.id} /><input type="hidden" name="expectedVersion" value={target.version} /><input type="hidden" name="expectedGeneration" value={data.generation ?? ''} />
@@ -633,7 +640,8 @@ function SetupSteps({ data, disabled, busy, onSubmit, runCommand, onRefresh, onA
   const proposed = data.targets.filter(row => row.approval === 'proposed');
   if (!data.canManage) return <Empty title="Administrator access required" body="Your role can view instrument economics but cannot set up instruments." />;
   return <div className="space-y-4">
-    <InstrumentAdd data={data} disabled={disabled} runCommand={runCommand} onApprove={event => void onSubmit(event, 'approve_target')} onRefresh={onRefresh} />
+    {proposed.length ? <section id="economics-approvals" aria-labelledby="economics-approvals-title" className="scroll-mt-4 rounded-2xl border border-sf-brand bg-white p-4 sm:p-6"><h2 id="economics-approvals-title" className="text-lg font-extrabold">Waiting for approval ({proposed.length})</h2><p className="mt-1 text-sm text-sf-muted">Check the machine, lab, serial and investment, then approve or reject with a reason.</p>{proposed.map(row => <ProposedTargetReview key={`${row.id}:${data.generation}`} target={row} data={data} disabled={disabled} onSubmit={event => void onSubmit(event, 'approve_target')} />)}</section> : null}
+    <InstrumentAdd data={data} disabled={disabled} runCommand={runCommand} onRefresh={onRefresh} />
     <details onToggle={event => { if (event.currentTarget.open) void onAdvancedOpen(); }} className="rounded-xl border border-sf-line-soft p-4"><summary className="min-h-11 cursor-pointer font-bold">Advanced (corrections)</summary>
     <SetupStep number={1} title="Choose the instrument" body="Instruments delivered through Orders are already listed; go to step 2. For an instrument installed earlier, register it from its Tally invoice.">
       <details className="mt-3 rounded-xl bg-sf-soft p-3"><summary className="-m-3 list-item cursor-pointer p-3 text-sm font-bold">Register an existing instrument</summary><CommandForm action="register_historical_instrument" data={data} disabled={disabled} busy={busy} onSubmit={onSubmit} /></details>
@@ -641,7 +649,7 @@ function SetupSteps({ data, disabled, busy, onSubmit, runCommand, onRefresh, onA
     <SetupStep number={2} title="Investment and approval" body="Record the instrument purchase, link the customer billing, then approve. Investment = purchase cost − instrument billing.">
       <details className="mt-3 rounded-xl bg-sf-soft p-3"><summary className="-m-3 list-item cursor-pointer p-3 text-sm font-bold">a. Record the instrument purchase</summary><CommandForm action="create_target" data={data} disabled={disabled} busy={busy} onSubmit={onSubmit} label="Save purchase" /></details>
       <details className="mt-3 rounded-xl bg-sf-soft p-3"><summary className="-m-3 list-item cursor-pointer p-3 text-sm font-bold">b. Link the customer billing</summary><CommandForm action="link_instrument_billing" data={data} disabled={disabled} busy={busy} onSubmit={onSubmit} label="Link billing" /></details>
-      <div className="mt-3 rounded-xl bg-sf-soft p-3"><h3 className="text-sm font-bold">c. Approve</h3>{proposed.length ? proposed.map(row => <ProposedTargetReview key={`${row.id}:${data.generation}`} target={row} data={data} disabled={disabled} onSubmit={event => void onSubmit(event, 'approve_target')} />) : <p className="mt-2 text-sm text-sf-muted">No instruments are waiting for approval.</p>}</div>
+      <div className="mt-3 rounded-xl bg-sf-soft p-3"><h3 className="text-sm font-bold">c. Approve</h3><p className="mt-2 text-sm text-sf-muted">{proposed.length ? `${proposed.length} waiting: approve them in "Waiting for approval" at the top of Set up.` : 'No instruments are waiting for approval.'}</p></div>
     </SetupStep>
     <SetupStep number={3} title="Choose reagent items" body="Pick a Tally item group and/or single items. New items in the group are included automatically after a Tally sync. Each item counts once.">
       <details className="mt-3 rounded-xl bg-sf-soft p-3"><summary className="-m-3 list-item cursor-pointer p-3 text-sm font-bold">Add a Tally item group</summary><CommandForm action="set_item_group_mapping" data={data} disabled={disabled} busy={busy} onSubmit={onSubmit} label="Add item group" /></details>
@@ -754,7 +762,7 @@ export function InstrumentEconomicsWorkspace({ embedded = false }: { embedded?: 
     if (!await ensureView('detail')) return;
     setExpandedId(targetId);
   }
-  async function sendCommand(commandToSend: { action: EconomicAction; payload: Record<string, unknown>; key: string; form: HTMLFormElement | null }) {
+  async function sendCommand(commandToSend: { action: EconomicAction; payload: Record<string, unknown>; key: string; form: HTMLFormElement | null }, refresh = true) {
     if (busyRef.current) return; busyRef.current = true; setBusy(true); setHasSavedPayload(true); setNotice(''); setError('');
     try {
       const reference = { action: commandToSend.action, key: commandToSend.key, actorEmail: String(commandToSend.payload.expectedActorEmail) };
@@ -773,23 +781,24 @@ export function InstrumentEconomicsWorkspace({ embedded = false }: { embedded?: 
       catch { pendingCommand.current = commandToSend; setUnresolved(true); setError('The server response could not be read, so the result is unknown. Retry the saved command with the same request key.'); return; }
       if (!response.ok) {
         const transient = response.status === 429 || response.status >= 500;
-        if (transient) { pendingCommand.current = commandToSend; setUnresolved(true); setError(body.error || `The result for ${commandToSend.action} is unknown. Retry the saved command with the same request key.`); }
-        else { clearEconomicRecoveryReference(window.sessionStorage); recoveryReference.current = null; pendingCommand.current = null; setHasSavedPayload(false); retryKey.current = null; setSavedCommandActor(null); setUnresolved(false); setError(body.error || `Unable to complete ${commandToSend.action}.`); }
+        if (transient && /duplicate key value/.test(body.error ?? '')) { clearEconomicRecoveryReference(window.sessionStorage); recoveryReference.current = null; pendingCommand.current = null; setHasSavedPayload(false); retryKey.current = null; setSavedCommandActor(null); setUnresolved(false); setError(friendlyEconomicError(body.error) ?? ''); }
+        else if (transient) { pendingCommand.current = commandToSend; setUnresolved(true); setError(body.error || `The result for ${commandToSend.action} is unknown. Retry the saved command with the same request key.`); }
+        else { clearEconomicRecoveryReference(window.sessionStorage); recoveryReference.current = null; pendingCommand.current = null; setHasSavedPayload(false); retryKey.current = null; setSavedCommandActor(null); setUnresolved(false); setError(friendlyEconomicError(body.error) || `Unable to complete ${commandToSend.action}.`); }
         return;
       }
       clearEconomicRecoveryReference(window.sessionStorage); recoveryReference.current = null;
-      pendingCommand.current = null; setHasSavedPayload(false); retryKey.current = null; setSavedCommandActor(null); setUnresolved(false); setNotice(economicCommandNotice(body)); if (commandToSend.form?.isConnected) commandToSend.form.reset(); await load();
+      pendingCommand.current = null; setHasSavedPayload(false); retryKey.current = null; setSavedCommandActor(null); setUnresolved(false); setNotice(economicCommandNotice(body)); if (commandToSend.form?.isConnected) commandToSend.form.reset(); if (refresh) await load();
       return body;
     } catch (cause) {
       pendingCommand.current = commandToSend; setUnresolved(true); setError(`${cause instanceof Error ? cause.message : 'Network error'} The result is unknown. Retry the saved command with the same request key.`);
     } finally { busyRef.current = false; setBusy(false); }
   }
-  const runInstrumentCommand: InstrumentAddCommand = async (action, payload, key) => {
+  const runInstrumentCommand: InstrumentAddCommand = async (action, payload, key, refresh = true) => {
     if (!data?.actorEmail || busyRef.current || (recoveryReference.current && recoveryReference.current.key !== key)) return null;
     const next = pendingCommand.current?.key === key ? pendingCommand.current : { action, payload: { ...payload, expectedActorEmail: data.actorEmail }, key, form: null };
     if (next.payload.expectedActorEmail !== data.actorEmail) return null;
     pendingCommand.current = next; setSavedCommandActor(data.actorEmail);
-    return await sendCommand(next) ?? null;
+    return await sendCommand(next, refresh) ?? null;
   };
   async function recoverCommand(closeUnresolved: boolean) {
     const reference = recoveryReference.current;

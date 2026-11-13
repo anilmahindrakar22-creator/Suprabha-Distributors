@@ -3,20 +3,19 @@
 import { useRef, useState, type SubmitEvent } from 'react';
 import type { EconomicAction, EconomicsWorkspaceData } from '@/lib/instrument-economics-types';
 import { derivedInstrumentFields, instrumentLabIdentities, instrumentLineLabel, instrumentPurchases, investmentLine, matchingInstrumentSales, rentalLabs } from '@/lib/instrument-add';
-import { ProposedTargetReview } from './instrument-economics-workspace';
 import { CustomerLinks } from './customer-links';
 
 type Line = NonNullable<EconomicsWorkspaceData['sourceLines']>[number];
 type Lab = { id: string; name: string; city?: string | null; customerSourceId: string };
-export type InstrumentAddCommand = (action: EconomicAction, payload: Record<string, unknown>, key: string) => Promise<{ entityId?: string } | null>;
+/** `refresh` false skips the workspace reload when the next step does not need the new records. */
+export type InstrumentAddCommand = (action: EconomicAction, payload: Record<string, unknown>, key: string, refresh?: boolean) => Promise<{ entityId?: string } | null>;
 const inputClass = 'min-h-11 min-w-0 rounded-lg border border-sf-line bg-white px-3 text-sm';
 const buttonClass = 'min-h-11 rounded-lg border border-sf-line px-3 py-2 text-left text-sm break-words disabled:opacity-50';
 const choiceBaseClass = 'min-h-11 rounded-lg border px-3 py-2 text-left text-sm break-words disabled:opacity-50';
 const choiceClass = (selected: boolean) => `${choiceBaseClass} ${selected ? 'border-sf-brand bg-sf-soft font-semibold' : 'border-sf-line'}`;
 
-export function InstrumentAdd({ data, disabled, runCommand, onApprove, onRefresh }: {
+export function InstrumentAdd({ data, disabled, runCommand, onRefresh }: {
   data: EconomicsWorkspaceData; disabled: boolean; runCommand: InstrumentAddCommand;
-  onApprove: (event: SubmitEvent<HTMLFormElement>) => void;
   onRefresh: () => Promise<unknown>;
 }) {
   const [search, setSearch] = useState(''); const [cheaper, setCheaper] = useState(false);
@@ -27,7 +26,7 @@ export function InstrumentAdd({ data, disabled, runCommand, onApprove, onRefresh
   const [keys, setKeys] = useState(() => [crypto.randomUUID(), crypto.randomUUID(), crypto.randomUUID()]);
   const [step, setStep] = useState(1); const [started, setStarted] = useState(false); const [failed, setFailed] = useState(false);
   const [saving, setSaving] = useState(false); const inFlight = useRef(false);
-  const [installationId, setInstallationId] = useState(''); const [targetId, setTargetId] = useState(''); const [review, setReview] = useState(false);
+  const [installationId, setInstallationId] = useState(''); const [targetId, setTargetId] = useState('');
   const [linking, setLinking] = useState(false);
   const [savedPayloads, setSavedPayloads] = useState<Record<number, Record<string, unknown>>>({});
   const identities = instrumentLabIdentities(data);
@@ -48,17 +47,17 @@ export function InstrumentAdd({ data, disabled, runCommand, onApprove, onRefresh
   function addAnother() {
     setSearch(''); setCheaper(false); setPurchase(null); setSale(null); setBasis('sold'); setLabQuery(''); setRentalLab(null);
     setSerial(''); setDate(''); setKeys([crypto.randomUUID(), crypto.randomUUID(), crypto.randomUUID()]); setStep(1);
-    setStarted(false); setFailed(false); setInstallationId(''); setTargetId(''); setReview(false); setSavedPayloads({});
+    setStarted(false); setFailed(false); setInstallationId(''); setTargetId(''); setSavedPayloads({});
   }
   async function save(event: SubmitEvent<HTMLFormElement>) {
     event.preventDefault(); if (inFlight.current || !purchase || !lab || !serial.trim() || !date || (disabled && !failed)) return;
     inFlight.current = true; setSaving(true); setStarted(true); setFailed(false);
     let current = step; let installed = installationId; let target = targetId;
-    const send: InstrumentAddCommand = (action, payload, key) => {
+    const send: InstrumentAddCommand = (action, payload, key, refresh) => {
       const commandStep = current;
       const frozen = savedPayloads[commandStep] ?? payload;
       setSavedPayloads(previous => ({ ...previous, [commandStep]: frozen }));
-      return runCommand(action, frozen, key);
+      return runCommand(action, frozen, key, refresh);
     };
     try {
       if (current === 1) {
@@ -70,7 +69,8 @@ export function InstrumentAdd({ data, disabled, runCommand, onApprove, onRefresh
         const serialKey = (value: string) => value.trim().toUpperCase().replace(/[\s\-/.]/g, '');
         const installation = data.installations.find(i => i.id === installed) ?? data.installations.find(i => serialKey(i.serialNumber) === serialKey(serial));
         const { lab: hiddenLab, ...fields } = derivedInstrumentFields(purchase, lab, installation, date);
-        const result = await send('create_target', { ...fields, customerId: hiddenLab.id, installationId: installed, acquisitionPurchaseLineId: purchase.id }, keys[1]);
+        // Linking the billing needs only the new target id, so reload once at the end instead of here.
+        const result = await send('create_target', { ...fields, customerId: hiddenLab.id, installationId: installed, acquisitionPurchaseLineId: purchase.id }, keys[1], basis !== 'sold');
         if (!result?.entityId) throw new Error(); target = result.entityId; setTargetId(target); current = 3; setStep(3);
       }
       if (current === 3 && basis === 'sold') {
@@ -83,11 +83,12 @@ export function InstrumentAdd({ data, disabled, runCommand, onApprove, onRefresh
   }
   if (linking) return <CustomerLinks onBack={() => { setLinking(false); void onRefresh(); }} />;
   if (step === 4) return <section aria-label="Add an instrument" className="min-w-0 rounded-2xl border border-sf-line-soft bg-white p-4">
-    <p role="status">Added. Waiting for approval</p>
-    <button type="button" className="min-h-11 rounded-lg bg-sf-brand px-4 font-bold text-white disabled:opacity-50" onClick={() => setReview(true)}>Approve now</button>
-    <button type="button" className="mt-2 text-sm font-semibold text-sf-brand" onClick={addAnother}>Add another instrument</button>
-    {review && selectedTarget ? <ProposedTargetReview target={selectedTarget} data={data} disabled={disabled} onSubmit={onApprove} /> : null}
+    <p role="status" className="font-bold">Added: {selectedTarget?.name ?? `${purchase?.productName || 'Instrument'} · ${lab?.name ?? ''}`}</p>
+    <p className="mt-1 text-sm text-sf-muted">Serial {serial.trim()} · installed {date}. It is waiting for approval: review its investment and approve it in “Waiting for approval” above.</p>
+    <div className="mt-3 flex flex-wrap gap-3"><button type="button" className="min-h-11 rounded-lg bg-sf-brand px-4 font-bold text-white disabled:opacity-50" onClick={() => document.getElementById('economics-approvals')?.scrollIntoView({ block: 'start', behavior: 'smooth' })}>Review and approve</button>
+    <button type="button" className="min-h-11 text-sm font-semibold text-sf-brand" onClick={addAnother}>Add another instrument</button></div>
   </section>;
+  const totalSteps = basis === 'sold' ? 3 : 2;
   return <section aria-label="Add an instrument" className="min-w-0 rounded-2xl border border-sf-line-soft bg-white p-4 sm:p-6">
     <h2 className="text-lg font-extrabold">Add an instrument</h2>
     <form onSubmit={event => void save(event)} className="mt-4 grid min-w-0 gap-4">
@@ -108,7 +109,8 @@ export function InstrumentAdd({ data, disabled, runCommand, onApprove, onRefresh
         {purchase ? <><label className="grid min-w-0 gap-1">Serial number<input required minLength={2} maxLength={100} className={inputClass} value={serial} onChange={e => setSerial(e.target.value)} /></label><label className="grid min-w-0 gap-1">Installation date<input required type="date" min={(basis === 'sold' ? sale?.date : null) || purchase.date} max={data.businessDate} className={inputClass} value={date} onChange={e => setDate(e.target.value)} /></label><p className="break-words">{investmentLine(purchase, basis === 'sold' ? sale : null)}</p></> : null}
       </fieldset>
       {failed ? <p role="alert">Step {step} didn't save. Retry</p> : null}
-      <button disabled={saving || (!failed && disabled) || !purchase || !lab || (basis === 'sold' && !sale)} className="min-h-11 rounded-lg bg-sf-brand px-4 font-bold text-white disabled:opacity-50">{saving ? 'Saving…' : failed ? 'Retry' : 'Save'}</button>
+      <button disabled={saving || (!failed && disabled) || !purchase || !lab || (basis === 'sold' && !sale)} className="min-h-11 rounded-lg bg-sf-brand px-4 font-bold text-white disabled:opacity-50">{saving ? `Saving step ${Math.min(step, totalSteps)} of ${totalSteps}…` : failed ? 'Retry' : 'Save'}</button>
+      {saving ? <p role="status" className="text-sm text-sf-muted">Saving the installation, its investment and the billing link. This takes a few seconds per step.</p> : null}
     </form>
   </section>;
 }
