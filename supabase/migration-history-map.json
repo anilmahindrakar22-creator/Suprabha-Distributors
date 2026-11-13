@@ -1487,6 +1487,13 @@
       "remoteVersion": null,
       "remoteSha256": null,
       "status": "not_deployed"
+    },
+    {
+      "localFile": "20261130100000_coverage_exception_date.sql",
+      "localSha256": "632aa5a9e8b51c40aa20ab5ae1c268c4e1155b109b13fb94329bef01b86818d8",
+      "remoteVersion": null,
+      "remoteSha256": null,
+      "status": "not_deployed"
     }
   ],
   "liveCheck": {
