@@ -56,17 +56,18 @@ describe('lightweight order operations summary', () => {
     expect(route).toContain("'get_order_summary'");
   });
 
-  it('avoids the full order bootstrap and suppresses focus refresh bursts', () => {
-    expect(dashboard).toContain("fetchJsonWithTimeout('/api/orders?summary=1'");
+  it('no longer reads orders on Stock and suppresses focus refresh bursts', () => {
+    expect(dashboard).not.toContain('/api/orders');
     expect(dashboard).not.toContain("fetch('/api/orders',{cache:'no-store'})");
     expect(dashboard).toContain('const BACKGROUND_REFRESH_FLOOR_MS=15*1000');
     expect(dashboard).toContain('Date.now()-lastRefreshStarted<BACKGROUND_REFRESH_FLOOR_MS');
     expect(dashboard).toContain("window.addEventListener('online',()=>void refreshData(true))");
   });
 
-  it('renders current stock before waiting for operational counters', () => {
-    const load = dashboard.slice(dashboard.indexOf('async function load()'), dashboard.indexOf('const focusCopy='));
-    expect(load.indexOf("applyData(body,'Cloud snapshot current')")).toBeLessThan(load.indexOf('const orders=await orderRequest'));
-    expect(load).toContain('data=body;renderOperations()');
+  it('renders current stock without waiting for order counters', () => {
+    const load = dashboard.slice(dashboard.indexOf('async function load()'), dashboard.indexOf('function showCachedSnapshot'));
+    expect(load).toContain("applyData(body,'Cloud snapshot current')");
+    expect(load).not.toContain('orderRequest');
+    expect(load).not.toContain('renderOperations()');
   });
 });
