@@ -176,33 +176,20 @@ test('a stalled Stock response body times out and a later refresh recovers', asy
   await expect(page.locator('#company')).toHaveText('Test company');
 });
 
-test('a stalled order summary body times out without discarding Stock and refresh can recover', async ({ page }) => {
-  await page.clock.install();
-  await page.addInitScript(() => {
-    const nativeFetch = window.fetch.bind(window);
-    let stall = true;
-    window.fetch = (input, init) => {
-      if (stall && (input instanceof Request ? input.url : String(input)).includes('/api/orders?summary=1')) {
-        stall = false;
-        const body = new ReadableStream({
-          start(controller) {
-            init?.signal?.addEventListener('abort', () => controller.error(new DOMException('Aborted', 'AbortError')), { once: true });
-          },
-        });
-        return Promise.resolve(new Response(body, { headers: { 'Content-Type': 'application/json' } }));
-      }
-      return nativeFetch(input, init);
-    };
-  });
-  await page.route('**/api/stock?view=dashboard', (route) => route.fulfill({ json: stockPayload() }));
-  await page.route('**/api/orders?summary=1', (route) => route.fulfill({ json: {} }));
+test('Stock makes no order request and shows tappable groups', async ({ page }) => {
+  const orderRequests: string[] = [];
+  page.on('request', (request) => { if (request.url().includes('/api/orders')) orderRequests.push(request.url()); });
+  await page.route('**/api/stock?view=dashboard', (route) => route.fulfill({ json: { ...stockPayload(), groups: ['Generic group'], rows: [{ group: 'Generic group', item: 'Generic reagent', closing: 1, reorderLevel: 5, minimumOrder: 1, shortfall: 4, orderToBePlaced: 4 }] } }));
   await page.goto('/stockflow.html');
-  await page.clock.fastForward(20_001);
   await expect(page.locator('#company')).toHaveText('Test company');
-  await expect(page.locator('#refresh')).toBeEnabled();
-  await expect(page.locator('#opsSource')).toHaveText('Orders unavailable');
+  await expect(page.locator('#groupCards summary')).toContainText('Generic group');
+  const firstGroup = page.locator('#groupCards details.group-row').first();
+  await expect(firstGroup).toBeVisible();
+  await firstGroup.locator('summary').click();
+  await expect(firstGroup.locator('.group-item').first()).toBeVisible();
   await page.getByRole('button', { name: 'Refresh' }).click();
-  await expect(page.locator('#opsSource')).toHaveText('Live Orders');
+  await expect(page.locator('#refresh')).toBeEnabled();
+  expect(orderRequests).toEqual([]);
 });
 
 test('offline Stock cache is not shared between signed-in accounts', async ({ page }) => {
