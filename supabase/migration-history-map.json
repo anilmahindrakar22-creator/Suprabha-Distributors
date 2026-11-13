@@ -1473,6 +1473,13 @@
       "remoteVersion": null,
       "remoteSha256": null,
       "status": "not_deployed"
+    },
+    {
+      "localFile": "20261130090000_growth_integer_paise.sql",
+      "localSha256": "c06327cf56c3acbeae8efabcf800849b182dd8be37ba95ca11d17e3226b99310",
+      "remoteVersion": null,
+      "remoteSha256": null,
+      "status": "not_deployed"
     }
   ],
   "liveCheck": {
