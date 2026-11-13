@@ -37,16 +37,9 @@ for (const width of [320, 375, 768, 1280]) {
     await expect(frame.getByRole('heading', { name: 'Stock & reorder', exact: true })).toBeVisible();
     await expect(frame.getByLabel('Find an item', { exact: true })).toBeInViewport();
     await expect(frame.locator('.mobile-nav')).toHaveCount(0);
-    const stockViews = frame.getByRole('navigation', { name: 'Stock views' });
-    for (const [label, view] of [['Daily', 'operations'], ['Insights', 'insights'], ['Groups', 'groups']]) {
-      const button = stockViews.getByRole('button', { name: label, exact: true });
-      await button.scrollIntoViewIfNeeded();
-      await expect(button).toBeInViewport();
-      await button.click();
-      await expect(frame.locator(`#${view}View`)).toHaveClass('view active');
-      expect(await frame.locator(`#${view}View`).evaluate(element => getComputedStyle(element).display)).toBe('block');
-    }
-    expect(await stockViews.evaluate(nav => getComputedStyle(nav).position)).toBe('static');
+    await expect(frame.getByRole('navigation', { name: 'Stock views' })).toHaveCount(0);
+    await expect(frame.locator('#groupsView')).toHaveClass('view active');
+    expect(await frame.locator('#groupsView').evaluate(element => getComputedStyle(element).display)).toBe('block');
     await frame.locator('.footer').scrollIntoViewIfNeeded();
     await expect(frame.locator('.footer')).toBeInViewport();
   });
