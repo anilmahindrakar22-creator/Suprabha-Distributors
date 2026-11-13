@@ -566,6 +566,17 @@ for (const width of [375, 1280]) {
       await request;
       await expect(page.getByRole('dialog').getByText('Lab A', { exact: true })).toBeVisible();
     });
+    test('scorecard tiles open their details and Gross profit opens the Profit tab', async ({ page }) => {
+      await fixture(page); await openGrowth(page);
+      const request = page.waitForRequest(r => { const p = new URL(r.url()).searchParams; return r.url().includes('/api/growth/labs?') && p.get('list') === 'window_labs' && p.get('sort') === 'months' && !p.has('half'); });
+      await page.getByRole('button', { name: /^Labs buying: \d+, open labs by buying months$/ }).click();
+      await request;
+      await expect(page.getByRole('dialog').getByText('Lab A', { exact: true })).toBeVisible();
+      await page.keyboard.press('Escape');
+      await expect(page.getByRole('dialog')).toHaveCount(0);
+      await page.getByRole('button', { name: /^Gross profit: .*, open Profit$/ }).click();
+      await expect(page.getByRole('tab', { name: 'Profit', exact: true })).toHaveAttribute('aria-selected', 'true');
+    });
     test('H2 instrument and bulk cell requests half-scoped invoices', async ({ page }) => {
       await fixture(page); await openGrowth(page);
       const row = page.getByRole('region', { name: 'Where revenue comes from', exact: true }).getByRole('row').filter({ has: page.getByRole('rowheader', { name: 'Instrument & bulk', exact: true }) });
@@ -584,6 +595,16 @@ for (const width of [375, 1280]) {
         await expect(row.getByRole('cell').nth(0).getByRole('button')).toHaveCount(0);
         await expect(row.getByRole('cell').nth(1).getByRole('button')).toHaveCount(0);
       }
+    });
+    test('hovering a monthly bar shows its value straight away and hides on leave', async ({ page }) => {
+      await fixture(page); await openGrowth(page); await page.getByRole('tab', { name: 'Monthly', exact: true }).click();
+      const tip = page.locator('[data-chart-tip]');
+      await expect(tip).toHaveCount(0);
+      await page.locator('#buying-chart rect').first().hover();
+      await expect(tip).toBeVisible();
+      await expect(tip).toContainText(/^[A-Z][a-z]{2} · \d+ labs buying$/);
+      await page.mouse.move(0, 0);
+      await expect(tip).toBeHidden();
     });
     test('Brand setup health action reaches Accounts Prospects', async ({ page }) => {
       await fixture(page); await openGrowth(page);
