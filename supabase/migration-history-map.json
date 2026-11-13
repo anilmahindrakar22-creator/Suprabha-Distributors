@@ -1501,6 +1501,13 @@
       "remoteVersion": null,
       "remoteSha256": null,
       "status": "not_deployed"
+    },
+    {
+      "localFile": "20261130120000_economic_covered_segments.sql",
+      "localSha256": "97d5db9f0a327b1f1b6e7b71b252cfb0d78ba1e4caa06b7621ba27406e46e656",
+      "remoteVersion": null,
+      "remoteSha256": null,
+      "status": "not_deployed"
     }
   ],
   "liveCheck": {
