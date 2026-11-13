@@ -73,11 +73,11 @@ export function PowerMapInfluence({ customerId, customerName, refreshOn, busy = 
     } catch { setError('Not saved. Check the connection and try again.'); }
     finally { inFlight.current = false; setSaving(false); onBusy?.(false); }
   }
-  const decider = map?.contacts.filter(c => c.decisionRole === 'decision_maker').sort((a, b) => a.name.localeCompare(b.name) || a.id.localeCompare(b.id))[0];
+  const decider = map?.contacts.filter(c => c.decisionRole === 'final_approver').sort((a, b) => a.name.localeCompare(b.name) || a.id.localeCompare(b.id))[0];
   const steps = map?.route?.steps;
   const disabled = busy || saving;
   return <section aria-label={`Influence for ${customerName}`} className="min-w-0 space-y-1 break-words pt-2 text-sm text-sf-body [overflow-wrap:anywhere]">
-    <p>{readError ? 'Influence unavailable' : !map ? 'Loading influence…' : steps ? <>Route to decider: {steps.map((step, index) => <span key={step.contactId}>{index ? ' → ' : ''}{index === steps.length - 1 ? <strong>{step.name}</strong> : step.name}</span>)}</> : !map.contacts.some(c => c.stance === 'supporter') ? 'No supporter yet: find a champion' : !decider ? 'No decision maker known' : `No known route to ${decider.name}: ask who they listen to`}</p>
+    <p>{readError ? 'Influence unavailable' : !map ? 'Loading influence…' : steps ? <>Route to decider: {steps.map((step, index) => <span key={step.contactId}>{index ? ' → ' : ''}{index === steps.length - 1 ? <strong>{step.name}</strong> : step.name}</span>)}</> : !map.contacts.some(c => c.stance === 'supporter' || c.stance === 'champion') ? 'No supporter yet: find a champion' : !decider ? 'No final approver known' : `No known route to ${decider.name}: ask who they listen to`}</p>
     {readError ? <div><p role="alert">{readError}</p><button type="button" className={buttonClass} onClick={() => void load()}>Retry influence</button></div> : null}
     {map ? <>
       <button type="button" className="inline-flex min-h-11 items-center gap-1 text-xs text-sf-muted" aria-expanded={expanded} aria-controls={`${prefix}-details`} onClick={() => setExpanded(value => !value)}>Influence ({map.links.length})<ChevronDown aria-hidden="true" size={16} className={`transition-transform ${expanded ? 'rotate-180' : ''}`} /></button>

@@ -41,7 +41,7 @@ async function mockAccounts(page: Page, options: { location?: AccountRow['locati
 const firstCard = (page: Page) => page.getByRole('list', { name: 'Accounts' }).getByRole('listitem').first();
 const appContact: AccountRow['appContacts'][number] = { id: '66666666-6666-4666-8666-666666666666', name: 'App buyer', businessRole: 'Purchase', phone: '+91 98765 43210', email: 'buyer@example.test', addedBy: 'sales@example.test', version: 3, canEdit: true };
 const powerContacts: AccountRow['appContacts'] = [
-  { ...appContact, name: 'Asha', canEdit: false, lastMetOn: '2026-10-03', assessment: { decisionRole: 'decision_maker', stance: 'sceptical', influence: 'high', reason: 'Chose competitor', recordedAt: '2026-10-14', actor: 'manager@example.test' } },
+  { ...appContact, name: 'Asha', canEdit: false, lastMetOn: '2026-10-03', assessment: { decisionRole: 'decision_maker', stance: 'sceptical', influence: 'high', sharesInsideInfo: false, reason: 'Chose competitor', recordedAt: '2026-10-14', actor: 'manager@example.test' } },
   { ...appContact, id: '77777777-7777-4777-8777-777777777777', name: 'Ravi' },
 ];
 
@@ -373,31 +373,45 @@ for (const failure of [502, 408, 429, 422, 'network'] as const) {
 test('management sees Power Map and saves a preset role assessment with a reload', async ({ page }) => {
   const { gets, posts } = await mockAccounts(page, { canSeePowerMap: true, powerAlerts: ['no_decision_maker', 'decision_maker_not_met', 'influential_blocker'], appContacts: powerContacts });
   const card = firstCard(page);
-  for (const text of ['No decision maker known', 'Decision maker not met in 60 days', 'Influential blocker']) await expect(card.getByText(text, { exact: true })).toBeVisible();
+  for (const text of ['No final approver known', 'Final approver or daily orderer not met in 60 days', 'Influential blocker']) await expect(card.getByText(text, { exact: true })).toBeVisible();
+  // Asha carries a legacy role: shown read-only with its old label.
   for (const text of ['Decision maker', 'Sceptical', 'High influence', 'Last met 3 Oct']) await expect(card.getByText(text, { exact: true })).toBeVisible();
   for (const text of ['Role not set', 'Not met yet']) await expect(card.getByText(text, { exact: true })).toBeVisible();
   await card.getByRole('button', { name: 'Set role for Asha', exact: true }).click();
   const form = card.getByRole('form', { name: 'Set role for Asha at Care Lab', exact: false });
-  await expect(form.getByLabel('Decision role for Asha', { exact: false })).toHaveValue('decision_maker');
+  const roleSelect = form.getByLabel('Decision role for Asha', { exact: false });
+  await expect(roleSelect).toHaveValue('unknown');
+  await expect(form.getByText('Old role: Decision maker. Choose the new role.', { exact: true })).toBeVisible();
+  expect(await roleSelect.locator('option').allTextContents()).toEqual(['Final approver', 'Technical decider', 'Daily orderer', 'Purchase & payments', 'User', 'Gatekeeper', 'Unknown']);
+  expect(await form.getByLabel('Stance for Asha', { exact: false }).locator('option').allTextContents()).toEqual(['Champion', 'Supporter', 'Neutral', 'Sceptical', 'Blocker', 'Unknown']);
+  await expect(form.getByText('Not known yet; find out on the next visit', { exact: true })).toBeVisible();
   await expect(form.getByLabel('Stance for Asha', { exact: false })).toHaveValue('sceptical');
   await expect(form.getByLabel('Influence for Asha', { exact: false })).toHaveValue('high');
   await expect(form.getByLabel('Reason for Asha', { exact: false })).toHaveValue('Chose competitor');
   await expect(form.getByLabel('Reason for Asha', { exact: false })).toHaveAttribute('maxlength', '300');
   await expect(form.locator('label select')).toHaveCount(0);
-  await form.getByLabel('Decision role for Asha', { exact: false }).selectOption('influencer');
-  await form.getByLabel('Stance for Asha', { exact: false }).selectOption('supporter');
+  await roleSelect.selectOption('final_approver');
+  await expect(form.getByText('Approves big purchases and payment terms', { exact: true })).toBeVisible();
+  await roleSelect.selectOption('purchase_payments');
+  await expect(form.getByText('Negotiates price, places orders, clears payments', { exact: true })).toBeVisible();
+  await expect(form.getByText('Approves big purchases and payment terms', { exact: true })).toHaveCount(0);
+  await form.getByLabel('Stance for Asha', { exact: false }).selectOption('champion');
+  await expect(form.getByText('Actively sells for us inside the lab', { exact: true })).toBeVisible();
+  const shares = form.getByRole('checkbox', { name: 'Shares inside information with us', exact: true });
+  await expect(shares).not.toBeChecked();
+  await shares.check();
   await form.getByLabel('Influence for Asha', { exact: false }).selectOption('medium');
   await form.getByLabel('Reason for Asha', { exact: false }).fill('Recommended our offer');
   const before = gets.length;
   await form.getByRole('button', { name: 'Save role for Asha', exact: false }).click();
   await expect(page.getByRole('status')).toHaveText('Saved.');
-  expect(posts[0]).toEqual({ action: 'set_assessment', contactId: appContact.id, decisionRole: 'influencer', stance: 'supporter', influence: 'medium', reason: 'Recommended our offer', idempotencyKey: expect.any(String) });
+  expect(posts[0]).toEqual({ action: 'set_assessment', contactId: appContact.id, decisionRole: 'purchase_payments', stance: 'champion', influence: 'medium', sharesInsideInfo: true, reason: 'Recommended our offer', idempotencyKey: expect.any(String) });
   await expect.poll(() => gets.length).toBeGreaterThan(before);
   await expect(form).toHaveCount(0);
 });
 
 test('management sees Who decides while sales does not, and the line fits on mobile', async ({ page }, testInfo) => {
-  const decisionMaker = { ...appContact, name: 'Asha', assessment: { decisionRole: 'decision_maker' as const, stance: 'supporter' as const, influence: 'high' as const, reason: null, recordedAt: '2026-10-14', actor: 'manager@example.test' }, lastMetOn: '2026-09-12' };
+  const decisionMaker = { ...appContact, name: 'Asha', assessment: { decisionRole: 'final_approver' as const, stance: 'supporter' as const, influence: 'high' as const, reason: null, recordedAt: '2026-10-14', actor: 'manager@example.test' }, lastMetOn: '2026-09-12' };
   await mockAccounts(page, { canSeePowerMap: true, appContacts: [decisionMaker] });
   const line = 'Decides: Asha · Supporter · met 12 Sep';
   await expect(firstCard(page).getByText(line, { exact: true })).toBeVisible();
@@ -416,7 +430,7 @@ test('sales response without Power Map contact keys hides all Power Map UI', asy
   await mockAccounts(page, { appContacts: [appContact] });
   await expect(page.getByLabel('Power Map', { exact: true })).toHaveCount(0);
   await expect(page.getByRole('button', { name: /^Set role for/ })).toHaveCount(0);
-  for (const text of ['No decision maker known', 'Decision maker not met in 60 days', 'Influential blocker', 'Role not set · Not met yet']) await expect(page.getByText(text, { exact: true })).toHaveCount(0);
+  for (const text of ['No final approver known', 'Final approver or daily orderer not met in 60 days', 'Influential blocker', 'Role not set · Not met yet']) await expect(page.getByText(text, { exact: true })).toHaveCount(0);
   await expect(firstCard(page).getByText(/Last met|influence/)).toHaveCount(0);
 });
 

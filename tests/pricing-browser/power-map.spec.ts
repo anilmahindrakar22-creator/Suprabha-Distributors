@@ -8,7 +8,7 @@ const pathologistId = '33333333-3333-4333-8333-333333333333';
 const deciderId = '44444444-4444-4444-8444-444444444444';
 const linkId = '55555555-5555-4555-8555-555555555555';
 const contact = (id: string, name: string, decisionRole: string, stance: string): PowerMapContact => ({ id, name, decisionRole, stance, businessRole: null, influence: 'high', lastMetOn: null });
-const contacts = [contact(championId, 'Asha', 'champion', 'supporter'), contact(pathologistId, 'Ravi', 'influencer', 'neutral'), contact(deciderId, 'Meena', 'decision_maker', 'neutral')];
+const contacts = [contact(championId, 'Asha', 'user', 'champion'), contact(pathologistId, 'Ravi', 'technical_decider', 'neutral'), contact(deciderId, 'Meena', 'final_approver', 'neutral')];
 const mapFixture: PowerMap = {
   contacts,
   links: [{ id: linkId, fromContactId: championId, toContactId: pathologistId, strength: 'strong', evidence: 'Ravi asks Asha for advice', recordedBy: 'manager@example.test', recordedAt: '2026-10-29T10:00:00Z' }],
@@ -74,14 +74,14 @@ for (const width of [375, 1280]) {
       await expect(panel.getByRole('button', { name: 'Add influence', exact: true })).toHaveCount(0);
     });
     test('summary supports a supporter who is the decider', async ({ page }) => {
-      const decider = { ...contacts[0], decisionRole: 'decision_maker' };
+      const decider = { ...contacts[0], decisionRole: 'final_approver' };
       const { panel } = await setup(page, { contacts: [decider], links: [], route: { steps: [{ ...decider, contactId: decider.id }], strengths: [] } });
       await expect(panel.locator('p').first()).toHaveText('Route to decider: Asha');
       await expect(panel.locator('strong')).toHaveText('Asha');
     });
     const states: Array<{ title: string; map: PowerMap; summary: string }> = [
       { title: 'no supporter', map: { contacts: contacts.map(c => ({ ...c, stance: 'neutral' })), links: [], route: null }, summary: 'No supporter yet: find a champion' },
-      { title: 'no decision maker', map: { contacts: contacts.slice(0, 2), links: [], route: null }, summary: 'No decision maker known' },
+      { title: 'no decision maker', map: { contacts: contacts.slice(0, 2), links: [], route: null }, summary: 'No final approver known' },
       { title: 'no known path', map: { contacts, links: [], route: null }, summary: 'No known route to Meena: ask who they listen to' },
     ];
     for (const state of states) test(`summary shows ${state.title}`, async ({ page }) => { const { panel } = await setup(page, state.map); await expect(panel.locator('p').first()).toHaveText(state.summary); });

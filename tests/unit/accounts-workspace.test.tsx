@@ -3,6 +3,7 @@ import { renderToStaticMarkup } from 'react-dom/server';
 import { describe, expect, it } from 'vitest';
 import { CalendarClock, CalendarPlus, CalendarX } from 'lucide-react';
 import type { AccountRow, ContactStyle } from '@/lib/account-types';
+import { walletCurrentRoleLabels } from '@/lib/wallet-labels';
 import { AccountDetails, accountClassesNote, accountDate, accountMetaLine, addAccountDays, alertLabel, assessmentSummary, classChip, ratingChoice, visitChip, stanceTone, styleLine, styleTip, whoDecidesLine } from '@/components/accounts-workspace';
 
 const row: AccountRow = {
@@ -71,7 +72,7 @@ describe('Accounts pure presentation', () => {
     expect(renderToStaticMarkup(<AccountDetails row={{ ...row, canSeeStyle: true, appContacts: [appContact] }} mode="mine" today="2026-10-14" />)).toContain('Observed: not enough information');
   });
   const contact = { id: 'asha', name: 'Asha', businessRole: null, phone: null, email: null, addedBy: 'sales@example.test', version: 1, canEdit: false };
-  const assessment = { decisionRole: 'decision_maker', stance: 'sceptical', influence: 'high', reason: null, actor: 'manager@example.test', recordedAt: '2026-10-14' } as const;
+  const assessment = { decisionRole: 'final_approver', stance: 'sceptical', influence: 'high', reason: null, actor: 'manager@example.test', recordedAt: '2026-10-14' } as const;
   it('focuses account presentation on one contact and keeps a focusable account heading', () => {
     const account: AccountRow = { ...row, nextVisitOn: '2026-10-14', appContacts: [contact, { ...contact, id: 'ravi', name: 'Ravi' }] };
     const normal = renderToStaticMarkup(<AccountDetails row={account} mode="mine" today="2026-10-14" />);
@@ -87,19 +88,27 @@ describe('Accounts pure presentation', () => {
   it('summarises known assessment parts and defaults to Role not set', () => {
     expect(assessmentSummary(contact)).toBe('Role not set');
     expect(assessmentSummary({ ...contact, assessment: null })).toBe('Role not set');
-    expect(assessmentSummary({ ...contact, assessment })).toBe('Decision maker · Sceptical · High influence');
+    expect(assessmentSummary({ ...contact, assessment })).toBe('Final approver · Sceptical · High influence');
+    expect(assessmentSummary({ ...contact, assessment: { ...assessment, stance: 'champion' } })).toBe('Final approver · Champion · High influence');
+  });
+  it('displays a legacy role read-only with its old label', () => {
+    expect(assessmentSummary({ ...contact, assessment: { ...assessment, decisionRole: 'coach' } })).toBe('Coach · Sceptical · High influence');
+    expect(assessmentSummary({ ...contact, assessment: { ...assessment, decisionRole: 'technical_evaluator' } })).toContain('Technical evaluator');
+    const legacy = renderToStaticMarkup(<AccountDetails row={{ ...row, appContacts: [{ ...contact, assessment: { ...assessment, decisionRole: 'decision_maker' } }] }} mode="mine" today="2026-10-14" canSeePowerMap />);
+    expect(legacy).toContain('Decision maker');
+    for (const code of ['decision_maker', 'influencer', 'champion', 'technical_evaluator', 'coach']) expect(Object.keys(walletCurrentRoleLabels)).not.toContain(code);
     expect(assessmentSummary({ ...contact, assessment: { ...assessment, decisionRole: 'unknown', influence: 'unknown' } })).toBe('Sceptical');
     expect(assessmentSummary({ ...contact, assessment: { ...assessment, decisionRole: 'unknown', stance: 'unknown', influence: 'unknown' } })).toBe('Role not set');
   });
   it.each([
-    ['no_decision_maker', 'No decision maker known'],
-    ['decision_maker_not_met', 'Decision maker not met in 60 days'],
+    ['no_decision_maker', 'No final approver known'],
+    ['decision_maker_not_met', 'Final approver or daily orderer not met in 60 days'],
     ['influential_blocker', 'Influential blocker'],
   ] as const)('labels Power Map alert %s', (alert, label) => expect(alertLabel(alert)).toBe(label));
   it('gates alerts, assessments and Set role on Power Map permission, including read-only contacts', () => {
     const powerRow: AccountRow = { ...row, powerAlerts: ['no_decision_maker', 'decision_maker_not_met', 'influential_blocker'], appContacts: [{ ...contact, assessment, lastMetOn: '2026-10-03' }, { ...contact, id: 'ravi', name: 'Ravi' }] };
     const visible = renderToStaticMarkup(<AccountDetails row={powerRow} mode="mine" today="2026-10-14" canSeePowerMap />);
-    for (const text of ['Decision maker', 'Sceptical', 'High influence', 'Last met 3 Oct']) expect(visible).toContain(text);
+    for (const text of ['Final approver', 'Sceptical', 'High influence', 'Last met 3 Oct']) expect(visible).toContain(text);
     for (const text of ['Role not set', 'Not met yet']) expect(visible).toContain(text);
     expect(visible).toContain('Set role for Asha');
     for (const alert of powerRow.powerAlerts!) expect(visible).toContain(alertLabel(alert));
@@ -113,7 +122,9 @@ describe('Accounts pure presentation', () => {
     const makeContact = (name: string, changes: Partial<AccountRow['appContacts'][number]> = {}): AccountRow['appContacts'][number] => ({ ...contact, id: name, name, ...changes });
     const decisionMaker = makeContact('Dr Rao', { assessment: { ...assessment, stance: 'supporter' }, lastMetOn: '2026-09-12', style });
     expect(whoDecidesLine({ ...row, appContacts: [decisionMaker] })).toBe('Decides: Dr Rao · Supporter · Analytical · met 12 Sep');
-    const blocker = makeContact('Mr Iyer', { assessment: { ...assessment, decisionRole: 'influencer', stance: 'blocker' } });
+    const orderer = makeContact('Sunita', { assessment: { ...assessment, decisionRole: 'daily_orderer', stance: 'supporter' } });
+    expect(whoDecidesLine({ ...row, appContacts: [orderer] })).toBe('Decides: Sunita · Supporter · not met');
+    const blocker = makeContact('Mr Iyer', { assessment: { ...assessment, decisionRole: 'user', stance: 'blocker' } });
     expect(whoDecidesLine({ ...row, appContacts: [decisionMaker, blocker] })).toBe('Decides: Dr Rao · Supporter · Analytical · met 12 Sep | Blocking: Mr Iyer');
     const unknown = makeContact('Asha', { assessment: { ...assessment, stance: 'unknown' } });
     expect(whoDecidesLine({ ...row, appContacts: [unknown] })).toBe('Decides: Asha · not met');
@@ -121,7 +132,7 @@ describe('Accounts pure presentation', () => {
     expect(whoDecidesLine({ ...row, appContacts: [overridden] })).toContain('Zara · Sceptical · Driving · not met');
     const decisionMakers = ['Meena', 'Asha', 'Ravi'].map(name => makeContact(name, { assessment }));
     expect(whoDecidesLine({ ...row, appContacts: decisionMakers })).toBe('Decides: Asha · Sceptical · not met; Meena · Sceptical · not met; +1 more');
-    const blockers = ['Zed', 'Asha', 'Meena'].map(name => makeContact(name, { assessment: { ...assessment, decisionRole: 'influencer', stance: 'blocker' } }));
+    const blockers = ['Zed', 'Asha', 'Meena'].map(name => makeContact(name, { assessment: { ...assessment, decisionRole: 'user', stance: 'blocker' } }));
     expect(whoDecidesLine({ ...row, appContacts: blockers })).toBe('Blocking: Asha, Meena, +1 more');
     expect(whoDecidesLine({ ...row, appContacts: [contact] })).toBeNull();
   });

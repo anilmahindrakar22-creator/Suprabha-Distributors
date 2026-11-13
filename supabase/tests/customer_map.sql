@@ -69,8 +69,8 @@ begin
    'businessRole','Lab stakeholder','phone','9876543210','email',null));
  v_id:=(v_data->>'contactId')::uuid;
  perform public.stockflow_accounts_gateway('cmap-read-gateway-key-20261102','cmap-read-management@test.local','set_assessment',
-  jsonb_build_object('idempotencyKey','cmap-read-assessment-'||p_n||'-'||p_role,'contactId',v_id,'decisionRole',p_role,
-   'stance',case when p_role='champion' then 'supporter' else 'neutral' end,'influence','high','reason',null));
+  jsonb_build_object('idempotencyKey','cmap-read-assessment-'||p_n||'-'||p_role,'contactId',v_id,'decisionRole',case when p_role='champion' then 'unknown' else p_role end,
+   'stance',case when p_role='champion' then 'champion' else 'neutral' end,'influence','high','reason',null));
  return v_id;
 end$$;
 
@@ -174,7 +174,7 @@ begin
  raise notice 'PASS M1: bounds, precision, coverage and unplaced pagination';
 
  -- M2: each first-match tone, true wallet certification and U3 boundaries.
- foreach v_n in array array[2,3,4,6,7,8] loop perform pg_temp.cmap_contact(v_n,'decision_maker','CMAP Decider '||v_n);end loop;
+ foreach v_n in array array[2,3,4,6,7,8] loop perform pg_temp.cmap_contact(v_n,'final_approver','CMAP Decider '||v_n);end loop;
  foreach v_n in array array[1,4,5,6] loop
   perform public.stockflow_wallet_gateway('cmap-read-gateway-key-20261102','cmap-read-management@test.local','record_wallet_snapshot',
    jsonb_build_object('requestId','cmap-read-wallet-'||v_n,'customerId',pg_temp.cmap_id(v_n),
@@ -349,7 +349,7 @@ begin
  v_data:=pg_temp.cmap_sheet(7);
  v_other:=public.stockflow_power_map_gateway('cmap-read-gateway-key-20261102','cmap-read-management@test.local','get_power_map',jsonb_build_object('customerId',pg_temp.cmap_id(7)));
  if v_data->'route' is distinct from v_other->'route' or v_data#>>'{decisionMaker,contactId}'<>v_decider::text
-  or v_data#>>'{decisionMaker,stance}'<>'neutral' or v_data#>>'{route,steps,0,decisionRole}'<>'champion'
+  or v_data#>>'{decisionMaker,stance}'<>'neutral' or v_data#>>'{route,steps,0,stance}'<>'champion'
   or v_data#>>'{contacts,total}'<>'2' or v_data#>>'{contacts,champions}'<>'1'
   or pg_temp.cmap_sheet(10)#>>'{decisionMaker,label}'<>'No decider known' then raise exception 'M7 power map';end if;
  raise notice 'PASS M7: decider, stance, champion route and missing-decider row';

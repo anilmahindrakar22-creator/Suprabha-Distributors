@@ -39,7 +39,7 @@ begin
     raise exception 'Assessment replay appended history'; end if;
   v_read:=public.stockflow_accounts_gateway('power-test-key','power-manager@example.test','get_accounts','{"search":"Power main"}');
   if not (v_read->'accounts'->0->'powerAlerts' ? 'no_decision_maker') then raise exception 'Missing no decision maker alert'; end if;
-  v_payload:=v_payload||'{"decisionRole":"decision_maker","stance":"supporter","influence":"high","idempotencyKey":"power-assessment-0002"}'::jsonb;
+  v_payload:=v_payload||'{"decisionRole":"final_approver","stance":"supporter","influence":"high","idempotencyKey":"power-assessment-0002"}'::jsonb;
   perform public.stockflow_accounts_gateway('power-test-key','power-manager@example.test','set_assessment',v_payload);
   foreach v_actor in array array['power-sales@example.test','power-manager@example.test'] loop
     v_read:=public.stockflow_accounts_gateway('power-test-key',v_actor,'get_accounts','{"search":"Power main"}');
@@ -50,7 +50,7 @@ begin
         raise exception 'Power Map keys leaked to sales'; end if;
     else
       if not (v_row ? 'powerAlerts') or not (v_row->'appContacts'->0 ? 'assessment') or not (v_row->'appContacts'->0 ? 'lastMetOn')
-        or v_row->'appContacts'->0->'assessment'->>'decisionRole'<>'decision_maker'
+        or v_row->'appContacts'->0->'assessment'->>'decisionRole'<>'final_approver'
         or v_row->'appContacts'->0->'assessment'->>'stance'<>'supporter'
         or not (v_row->'powerAlerts' ? 'decision_maker_not_met') then raise exception 'Latest assessment or never met alert missing'; end if;
     end if;
@@ -68,14 +68,14 @@ begin
   if v_read->'accounts'->0->'lastVisit'->'metContacts'->0->>'name'<>'Unique erased name' then raise exception 'Met contact names missing for sales'; end if;
   -- Separate fixture preserves immutable visits while exercising the 61-day boundary.
   insert into private.stockflow_contact_assessments(contact_id,decision_role,stance,influence,actor)
-    values(v_old_contact,'decision_maker','neutral','medium','power-manager@example.test');
+    values(v_old_contact,'final_approver','neutral','medium','power-manager@example.test');
   insert into private.stockflow_customer_visits(customer_id,visited_on,visited_by,outcome,request_id)
     select customer_id,v_today-61,'power-sales@example.test','met','power-old-visit-0001' from private.stockflow_account_contacts where id=v_old_contact returning id into v_visit;
   insert into private.stockflow_visit_contacts values(v_visit,v_old_contact);
   v_read:=public.stockflow_accounts_gateway('power-test-key','power-manager@example.test','get_accounts','{"search":"Power old"}');
   if not (v_read->'accounts'->0->'powerAlerts' ? 'decision_maker_not_met') then raise exception 'Old visit alert missing'; end if;
   perform public.stockflow_accounts_gateway('power-test-key','power-manager@example.test','set_assessment',
-    jsonb_build_object('contactId',v_other_contact,'decisionRole','influencer','stance','sceptical','influence','high','idempotencyKey','power-sceptic-key-0001'));
+    jsonb_build_object('contactId',v_other_contact,'decisionRole','unknown','stance','sceptical','influence','high','idempotencyKey','power-sceptic-key-0001'));
   foreach v_alert in array array['no_decision_maker','decision_maker_not_met','influential_blocker'] loop
     v_read:=public.stockflow_accounts_gateway('power-test-key','power-manager@example.test','get_accounts',jsonb_build_object('search','Power fixture','alert',v_alert));
     if jsonb_array_length(v_read->'accounts')=0 or exists(select 1 from jsonb_array_elements(v_read->'accounts') k where not (k->'powerAlerts' ? v_alert)) then

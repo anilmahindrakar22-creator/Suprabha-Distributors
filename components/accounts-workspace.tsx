@@ -6,7 +6,7 @@ import { NewVisitCustomer } from '@/components/new-visit-customer';
 import { Briefcase, Calculator, Check, Coffee, Crown, FileSearch, Gavel, Handshake, Heart, Hourglass, ListChecks, Megaphone, MessageCircleQuestionMark, Snail, Timer, Users, Zap } from 'lucide-react';
 import { ArrowLeft, Ban, CalendarCheck, CalendarClock, CalendarPlus, CalendarX, ChevronDown, CircleAlert, CircleCheck, CircleQuestionMark, ClipboardList, Ellipsis, FileClock, Info, Lightbulb, Mail, MapIcon, MapPin, MapPinOff, Network, Pencil, Phone, ShieldX, Signal, SkipForward, ThumbsUp, Trash2, TriangleAlert, User, UserCog, UserPlus, Wand } from 'lucide-react';
 import { isInsideMarketArea, MARKET_AREA, parseLocationInput, powerAlerts, socialStyles, styleCues, withAccountContacts, type ContactStyle, type SocialStyle, type StyleCue, type AppContact, type ContactAssessment, type PowerAlert, type AccountRow, type AccountsResponse, type VisitOutcome } from '@/lib/account-types';
-import { walletPowerAlertLabels, walletRoleLabels } from '@/lib/wallet-labels';
+import { walletPowerAlertLabels, walletRoleLabels, walletCurrentRoleLabels, walletRoleMeanings, walletStanceLabels, walletStanceMeanings } from '@/lib/wallet-labels';
 import { readJsonBody } from '@/lib/http-json';
 import { VisitReasonPicker, emptyVisitReason, visitReasonMissingSource, visitReasonPayload, type VisitReasonPickerValue } from '@/components/visit-reason-picker';
 
@@ -30,7 +30,9 @@ const contactActionClass = 'inline-flex min-h-11 items-center gap-2 px-1 text-xs
 const outcomes: Record<VisitOutcome, string> = { met: 'Met', not_available: 'Not available', order_taken: 'Order taken', issue_raised: 'Issue raised', other: 'Other' };
 const pinError = 'Paste a Google Maps link or two numbers like 18.52, 73.85';
 const roleLabels = walletRoleLabels;
-const stanceLabels = { unknown: 'Unknown', supporter: 'Supporter', neutral: 'Neutral', sceptical: 'Sceptical', blocker: 'Blocker' };
+const stanceLabels = walletStanceLabels;
+const isCurrentRole = (role: string): role is keyof typeof walletCurrentRoleLabels => role in walletCurrentRoleLabels;
+const decidingRoles: string[] = ['final_approver', 'daily_orderer'];
 const influenceLabels = { unknown: 'Unknown', high: 'High', medium: 'Medium', low: 'Low' };
 const styleLabels: Record<SocialStyle, string> = { analytical: 'Analytical', driving: 'Driving', expressive: 'Expressive', amiable: 'Amiable' };
 export function styleTip(styleKey: ContactStyle['state']) {
@@ -216,8 +218,8 @@ export function accountDate(date: string) {
   return new Date(`${date}T00:00:00Z`).toLocaleDateString('en-IN', { day: 'numeric', month: 'short', timeZone: 'UTC' }).replace('Sept', 'Sep');
 }
 export function whoDecidesLine(row: AccountRow): string | null {
-  const decisionMakers = row.appContacts.filter(contact => contact.assessment?.decisionRole === 'decision_maker').sort((a, b) => a.name.localeCompare(b.name));
-  const blockers = row.appContacts.filter(contact => contact.assessment?.stance === 'blocker' && contact.assessment!.decisionRole !== 'decision_maker').sort((a, b) => a.name.localeCompare(b.name));
+  const decisionMakers = row.appContacts.filter(contact => contact.assessment && decidingRoles.includes(contact.assessment.decisionRole)).sort((a, b) => a.name.localeCompare(b.name));
+  const blockers = row.appContacts.filter(contact => contact.assessment?.stance === 'blocker' && !decidingRoles.includes(contact.assessment.decisionRole)).sort((a, b) => a.name.localeCompare(b.name));
   const shownDecisionMakers = decisionMakers.slice(0, 2).map(contact => [contact.name,
     contact.assessment && contact.assessment.stance !== 'unknown' ? stanceLabels[contact.assessment.stance] : null,
     contact.style?.override ? styleLabels[contact.style.override.style] : contact.style?.computedStyle ? styleLabels[contact.style.computedStyle] : null,
@@ -242,7 +244,7 @@ export function visitChip(row: AccountRow, today: string) {
   return !row.lastVisit ? { text: 'Never visited', className: 'bg-sf-warning-soft text-sf-warning', icon: CalendarPlus } : null;
 }
 export function stanceTone(stance: ContactAssessment['stance']): 'success' | 'neutral' | 'warning' | 'danger' | null {
-  return ({ supporter: 'success', neutral: 'neutral', sceptical: 'warning', blocker: 'danger', unknown: null } as const)[stance];
+  return ({ champion: 'success', supporter: 'success', neutral: 'neutral', sceptical: 'warning', blocker: 'danger', unknown: null } as const)[stance];
 }
 const summaryChipClass = 'inline-flex items-center gap-1 rounded-full border px-2 py-0.5 text-xs font-semibold';
 const neutralToneClass = 'border-sf-line bg-sf-soft-2 text-sf-label';
@@ -257,10 +259,10 @@ function PowerMapSummary({ contact }: { contact: AppContact }) {
   const stance = contact.assessment?.stance ?? 'unknown';
   const influence = contact.assessment?.influence ?? 'unknown';
   const tone = stanceTone(stance);
-  const RoleIcon = role === 'decision_maker' ? Crown : User;
-  const StanceIcon = stance === 'supporter' ? ThumbsUp : stance === 'sceptical' ? CircleQuestionMark : stance === 'blocker' ? Ban : null;
+  const RoleIcon = role === 'final_approver' ? Crown : User;
+  const StanceIcon = stance === 'champion' || stance === 'supporter' ? ThumbsUp : stance === 'sceptical' ? CircleQuestionMark : stance === 'blocker' ? Ban : null;
   return <div className="flex flex-wrap gap-1.5">
-    <span className={`${summaryChipClass} ${role === 'decision_maker' ? 'border-sf-accent-line bg-sf-accent-soft text-sf-brand' : neutralToneClass}`}>
+    <span className={`${summaryChipClass} ${role === 'final_approver' ? 'border-sf-accent-line bg-sf-accent-soft text-sf-brand' : neutralToneClass}`}>
       {role !== 'unknown' ? <RoleIcon aria-hidden="true" size={16} className="shrink-0" /> : null}{role === 'unknown' ? 'Role not set' : roleLabels[role]}
     </span>
     {tone ? <span className={`${summaryChipClass} ${stanceToneClasses[tone]}`}>{StanceIcon ? <StanceIcon aria-hidden="true" size={16} className="shrink-0" /> : null}{stanceLabels[stance]}</span> : null}
@@ -313,7 +315,9 @@ function AppContacts({ row, today, actorEmail, ratingContactId, onRatingFocus, b
   const [erasing, setErasing] = useState<string | null>(null);
   const [eraseReason, setEraseReason] = useState('');
   const [assessing, setAssessing] = useState<string | null>(null);
-  const [decisionRole, setDecisionRole] = useState<ContactAssessment['decisionRole']>('unknown');
+  const [decisionRole, setDecisionRole] = useState<keyof typeof walletCurrentRoleLabels>('unknown');
+  const [legacyRoleLabel, setLegacyRoleLabel] = useState<string | null>(null);
+  const [sharesInsideInfo, setSharesInsideInfo] = useState(false);
   const [stance, setStance] = useState<ContactAssessment['stance']>('unknown');
   const [influence, setInfluence] = useState<ContactAssessment['influence']>('unknown');
   const [reason, setReason] = useState('');
@@ -395,7 +399,8 @@ function AppContacts({ row, today, actorEmail, ratingContactId, onRatingFocus, b
         {canSeePowerMap ? <button type="button" disabled={busy} className={chipClass} aria-label={`Set role for ${contact.name}`} aria-expanded={assessing === contact.id} onClick={event => {
           setCloseSocialVersion(value => value + 1);
           origin.current = event.currentTarget; setAssessing(contact.id); setEditing(null); setRemoving(null); setErasing(null); setError('');
-          setDecisionRole(contact.assessment?.decisionRole ?? 'unknown'); setStance(contact.assessment?.stance ?? 'unknown'); setInfluence(contact.assessment?.influence ?? 'unknown'); setReason(contact.assessment?.reason ?? '');
+          const latestRole = contact.assessment?.decisionRole ?? 'unknown';
+          setDecisionRole(isCurrentRole(latestRole) ? latestRole : 'unknown'); setLegacyRoleLabel(isCurrentRole(latestRole) ? null : roleLabels[latestRole]); setSharesInsideInfo(contact.assessment?.sharesInsideInfo === true); setStance(contact.assessment?.stance ?? 'unknown'); setInfluence(contact.assessment?.influence ?? 'unknown'); setReason(contact.assessment?.reason ?? '');
         }}><Network aria-hidden="true" size={18} className="shrink-0" />Set role</button> : null}
         {contact.canEdit ? <button type="button" disabled={busy} className={chipClass} aria-label={`Edit ${contact.name}`} onClick={event => open(contact, event.currentTarget)}><Pencil aria-hidden="true" size={18} className="shrink-0" />Edit</button> : null}
         {secondary || contact.canEdit ? <button type="button" className={chipClass} aria-label={`More actions for ${contact.name}`} aria-expanded={!!moreOpen[contact.id]} aria-controls={`${prefix}-${contact.id}-actions`} onClick={() => setMoreOpen(previous => ({ ...previous, [contact.id]: !previous[contact.id] }))}><Ellipsis aria-hidden="true" size={18} className="shrink-0" />More<ChevronDown aria-hidden="true" size={18} className={`shrink-0 ${moreOpen[contact.id] ? 'rotate-180' : ''}`} /></button> : null}
@@ -406,11 +411,15 @@ function AppContacts({ row, today, actorEmail, ratingContactId, onRatingFocus, b
         </div> : null}
         </>} contact={contact} canSeeStyle={row.canSeeStyle} busy={busy} onBusy={onBusy} onSaved={onSaved}
         visitId={row.lastVisit?.id && row.lastVisit.visitedBy === actorEmail && row.lastVisit.visitedOn >= addAccountDays(today, -30) && row.lastVisit.visitedOn <= today && row.lastVisit.metContacts.some(met => met.id === contact.id) ? row.lastVisit.id : undefined} />
-      {canSeePowerMap && assessing === contact.id ? <form aria-label={`Set role for ${contact.name} at ${accountLabel}`} onSubmit={event => { event.preventDefault(); void post({ action: 'set_assessment', contactId: contact.id, decisionRole, stance, influence, reason: reason.trim() || null }); }} className="min-w-0 space-y-3 border-t border-sf-line-soft py-3">
+      {canSeePowerMap && assessing === contact.id ? <form aria-label={`Set role for ${contact.name} at ${accountLabel}`} onSubmit={event => { event.preventDefault(); void post({ action: 'set_assessment', contactId: contact.id, decisionRole, stance, influence, sharesInsideInfo, reason: reason.trim() || null }); }} className="min-w-0 space-y-3 border-t border-sf-line-soft py-3">
         <fieldset disabled={busy} className="min-w-0 space-y-3">
-          <div><label htmlFor={`${prefix}-decision`} className="text-sm text-sf-body">Decision role</label><select id={`${prefix}-decision`} aria-label={`Decision role for ${contact.name} at ${accountLabel}`} value={decisionRole} onChange={event => setDecisionRole(event.target.value as ContactAssessment['decisionRole'])} className={inputClass}>{Object.entries(roleLabels).map(([value, label]) => <option key={value} value={value}>{label}</option>)}</select></div>
-          <div><label htmlFor={`${prefix}-stance`} className="text-sm text-sf-body">Stance</label><select id={`${prefix}-stance`} aria-label={`Stance for ${contact.name} at ${accountLabel}`} value={stance} onChange={event => setStance(event.target.value as ContactAssessment['stance'])} className={inputClass}>{Object.entries(stanceLabels).map(([value, label]) => <option key={value} value={value}>{label}</option>)}</select></div>
+          <div><label htmlFor={`${prefix}-decision`} className="text-sm text-sf-body">Decision role</label><select id={`${prefix}-decision`} aria-label={`Decision role for ${contact.name} at ${accountLabel}`} value={decisionRole} aria-describedby={`${prefix}-decision-meaning`} onChange={event => setDecisionRole(event.target.value as keyof typeof walletCurrentRoleLabels)} className={inputClass}>{Object.entries(walletCurrentRoleLabels).map(([value, label]) => <option key={value} value={value}>{label}</option>)}</select>
+            <p id={`${prefix}-decision-meaning`} className="mt-1 text-xs text-sf-muted">{walletRoleMeanings[decisionRole]}</p>
+            {legacyRoleLabel ? <p className="mt-1 text-xs text-sf-muted">Old role: {legacyRoleLabel}. Choose the new role.</p> : null}</div>
+          <div><label htmlFor={`${prefix}-stance`} className="text-sm text-sf-body">Stance</label><select id={`${prefix}-stance`} aria-label={`Stance for ${contact.name} at ${accountLabel}`} value={stance} aria-describedby={`${prefix}-stance-meaning`} onChange={event => setStance(event.target.value as ContactAssessment['stance'])} className={inputClass}>{Object.entries(stanceLabels).map(([value, label]) => <option key={value} value={value}>{label}</option>)}</select>
+            <p id={`${prefix}-stance-meaning`} className="mt-1 text-xs text-sf-muted">{walletStanceMeanings[stance]}</p></div>
           <div><label htmlFor={`${prefix}-influence`} className="text-sm text-sf-body">Influence</label><select id={`${prefix}-influence`} aria-label={`Influence for ${contact.name} at ${accountLabel}`} value={influence} onChange={event => setInfluence(event.target.value as ContactAssessment['influence'])} className={inputClass}>{Object.entries(influenceLabels).map(([value, label]) => <option key={value} value={value}>{label}</option>)}</select></div>
+          <label className="flex min-h-11 items-center gap-2 text-sm text-sf-body"><input type="checkbox" checked={sharesInsideInfo} onChange={event => setSharesInsideInfo(event.target.checked)} className="size-5 shrink-0" />Shares inside information with us</label>
           <div><label htmlFor={`${prefix}-reason`} className="text-sm text-sf-body">Reason</label><input id={`${prefix}-reason`} aria-label={`Reason for ${contact.name} at ${accountLabel}`} maxLength={300} placeholder="Business reason, e.g. chose competitor in tender" value={reason} onChange={event => setReason(event.target.value)} className={inputClass} /></div>
         </fieldset>
         <div className="flex flex-wrap gap-2"><button type="submit" disabled={busy} className={primaryClass} aria-label={`Save role for ${contact.name} at ${accountLabel}`}>{busy ? 'Saving…' : 'Save'}</button><button type="button" disabled={busy} className={buttonClass} aria-label={`Cancel role for ${contact.name} at ${accountLabel}`} onClick={cancel}>Cancel</button></div>
@@ -589,7 +598,7 @@ export function AccountsWorkspace({ defaultMode = 'mine', initialView, initialCu
       <div aria-label="Account scope" className="inline-flex rounded-xl border border-sf-line-soft bg-sf-soft-0 p-1">{(['mine', 'all'] as const).map(value => <button key={value} type="button" disabled={busy} aria-pressed={mode === value} onClick={() => changeMode(value)} className={`${buttonClass} ${mode === value ? 'bg-sf-brand text-sf-soft-0' : ''}`}>{value === 'mine' ? 'Mine' : 'All'}</button>)}</div>
       <div className="min-w-0 flex-1 basis-44"><label htmlFor={`${prefix}-search`} className="text-xs text-sf-muted">Search accounts</label><input id={`${prefix}-search`} value={query} disabled={busy} onChange={event => setQuery(event.target.value)} maxLength={120} placeholder="Name or town" className={inputClass} /></div>
       <div className="min-w-0 flex-1 basis-40"><label htmlFor={`${prefix}-class`} className="text-xs text-sf-muted">Class</label><select id={`${prefix}-class`} disabled={busy} value={accountClass} onChange={event => { setAccountClass(event.target.value); setPage(1); setOpen(null); }} className={inputClass}><option value="">Any</option><option value="A">A</option><option value="B">B</option><option value="below_b">Below B</option><option value="not_available">Not available</option><option value="not_linked">Not linked</option></select></div>
-      {data?.canSeePowerMap ? <div className="min-w-0 flex-1 basis-40"><label htmlFor={prefix + '-power'} className="text-xs text-sf-muted">Power Map</label><select id={prefix + '-power'} disabled={busy} value={powerAlert} onChange={event => { setPowerAlert(event.target.value); setPage(1); setOpen(null); }} className={inputClass}><option value="">Any</option>{powerAlerts.map(alert => <option key={alert} value={alert}>{alert === 'decision_maker_not_met' ? 'Decision maker not met' : alertLabel(alert)}</option>)}</select></div> : null}
+      {data?.canSeePowerMap ? <div className="min-w-0 flex-1 basis-40"><label htmlFor={prefix + '-power'} className="text-xs text-sf-muted">Power Map</label><select id={prefix + '-power'} disabled={busy} value={powerAlert} onChange={event => { setPowerAlert(event.target.value); setPage(1); setOpen(null); }} className={inputClass}><option value="">Any</option>{powerAlerts.map(alert => <option key={alert} value={alert}>{alertLabel(alert)}</option>)}</select></div> : null}
       {data?.canAssign && mode === 'all' ? <>
         <div className="min-w-0 flex-1 basis-40"><label htmlFor={`${prefix}-owner`} className="text-xs text-sf-muted">Owner</label><select id={`${prefix}-owner`} disabled={busy} value={owner} onChange={event => { setOwner(event.target.value); setPage(1); setOpen(null); }} className={inputClass}><option value="">Any</option>{data.owners.map(item => <option key={item.email} value={item.email}>{item.name || item.email}</option>)}</select></div>
         <div className="min-w-0 flex-1 basis-40"><label htmlFor={`${prefix}-territory`} className="text-xs text-sf-muted">Territory</label><select id={`${prefix}-territory`} disabled={busy} value={territory} onChange={event => { setTerritory(event.target.value); setPage(1); setOpen(null); }} className={inputClass}><option value="">Any</option><option value="none">No territory</option>{data.territories.map(item => <option key={item.id} value={item.id}>{item.name}</option>)}</select></div>

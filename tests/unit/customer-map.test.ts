@@ -136,7 +136,7 @@ describe('customer map parsers', () => {
       location: { lat: 17.3, lng: 76.8, version: 1, precision: 'pin' }, heldBackBy: { category: 'price', label: 'Price (not proven)', priceUnproven: true },
       nextAction: { id: 'action-1', actionType: 'visit', detail: 'Meet Meena', dueOn: '2026-11-01', canDone: true },
       decisionMaker: { contactId: 'contact-1', name: 'Meena', businessRole: 'Director', stance: 'supporter' },
-      route: { steps: [{ name: 'Asha', decisionRole: 'champion' }, { name: 'Meena', decisionRole: 'decision_maker' }] },
+      route: { steps: [{ name: 'Asha', decisionRole: 'user', stance: 'champion' }, { name: 'Meena', decisionRole: 'final_approver', stance: 'supporter' }] },
       instruments: { moreCount: 2, rows: [{ kind: 'ours', model: 'Analyzer A', placedOn: '2026-01-01', serial: 'SN1', payback: 'Paying back' }, { kind: 'theirs', analyser: 'Analyzer B', closedSystem: 'yes' }, { kind: 'theirs', competitor: 'Other supplier', daysLeft: -2 }] },
       openWork: [order], recentOrders: [{ ...order, kind: 'order' }], contacts: { total: 3, champions: 1 }, actions: { ...empty.actions, call: 'tel:+919876543210' }, extra: 1 });
     expect(value.walletPaise).toBe(1000000); expect(value.constraint?.proven).toBe(false);

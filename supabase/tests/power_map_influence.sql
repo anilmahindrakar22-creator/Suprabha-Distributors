@@ -36,9 +36,9 @@ begin
   if result_data->>'contactId' is null then raise exception 'lab_contacts fixture missing';end if;
   lab_contacts:=array_append(lab_contacts,(result_data->>'contactId')::uuid);
  end loop;
- perform pg_temp.power_call('set_assessment',jsonb_build_object('idempotencyKey','power-influence-lab-assess-01','contactId',lab_contacts[1],'decisionRole','influencer','stance','supporter','influence','high','reason',null)::jsonb);
- perform pg_temp.power_call('set_assessment',jsonb_build_object('idempotencyKey','power-influence-lab-assess-02','contactId',lab_contacts[2],'decisionRole','influencer','stance','neutral','influence','medium','reason',null)::jsonb);
- perform pg_temp.power_call('set_assessment',jsonb_build_object('idempotencyKey','power-influence-lab-assess-03','contactId',lab_contacts[3],'decisionRole','decision_maker','stance','neutral','influence','high','reason',null)::jsonb);
+ perform pg_temp.power_call('set_assessment',jsonb_build_object('idempotencyKey','power-influence-lab-assess-01','contactId',lab_contacts[1],'decisionRole','unknown','stance','supporter','influence','high','reason',null)::jsonb);
+ perform pg_temp.power_call('set_assessment',jsonb_build_object('idempotencyKey','power-influence-lab-assess-02','contactId',lab_contacts[2],'decisionRole','unknown','stance','neutral','influence','medium','reason',null)::jsonb);
+ perform pg_temp.power_call('set_assessment',jsonb_build_object('idempotencyKey','power-influence-lab-assess-03','contactId',lab_contacts[3],'decisionRole','final_approver','stance','neutral','influence','high','reason',null)::jsonb);
  perform pg_temp.power_call('set_assessment',jsonb_build_object('idempotencyKey','power-influence-lab-assess-04','contactId',lab_contacts[4],'decisionRole','user','stance','neutral','influence','low','reason',null)::jsonb);
  perform pg_temp.power_call('set_assessment',jsonb_build_object('idempotencyKey','power-influence-lab-assess-05','contactId',lab_contacts[5],'decisionRole','gatekeeper','stance','sceptical','influence','low','reason',null)::jsonb);
  begin
@@ -51,14 +51,14 @@ begin
   if result_data->>'contactId' is null then raise exception 'no_supporter_contacts fixture missing';end if;
   no_supporter_contacts:=array_append(no_supporter_contacts,(result_data->>'contactId')::uuid);
  end loop;
- perform pg_temp.power_call('set_assessment',jsonb_build_object('idempotencyKey','power-influence-no-supporter-dm-01','contactId',no_supporter_contacts[2],'decisionRole','decision_maker','stance','neutral','influence','high','reason',null)::jsonb);
+ perform pg_temp.power_call('set_assessment',jsonb_build_object('idempotencyKey','power-influence-no-supporter-dm-01','contactId',no_supporter_contacts[2],'decisionRole','final_approver','stance','neutral','influence','high','reason',null)::jsonb);
  perform pg_temp.power_call('set_assessment',jsonb_build_object('idempotencyKey','power-influence-no-supporter-neutral-01','contactId',no_supporter_contacts[1],'decisionRole','user','stance','neutral','influence','low','reason',null)::jsonb);
  for fixture_index in 1..2 loop
   result_data:=pg_temp.power_call('add_contact',jsonb_build_object('idempotencyKey','power-influence-no-dm-contact-0'||fixture_index,'customerId','b2a00000-0000-4000-8000-000000000002'::uuid,'name','No Decision Maker Contact '||fixture_index,'businessRole','Lab stakeholder','phone',null,'email',null)::jsonb);
   if result_data->>'contactId' is null then raise exception 'no_dm_contacts fixture missing';end if;
   no_dm_contacts:=array_append(no_dm_contacts,(result_data->>'contactId')::uuid);
  end loop;
- perform pg_temp.power_call('set_assessment',jsonb_build_object('idempotencyKey','power-influence-no-dm-supporter-01','contactId',no_dm_contacts[1],'decisionRole','influencer','stance','supporter','influence','high','reason',null)::jsonb);
+ perform pg_temp.power_call('set_assessment',jsonb_build_object('idempotencyKey','power-influence-no-dm-supporter-01','contactId',no_dm_contacts[1],'decisionRole','unknown','stance','supporter','influence','high','reason',null)::jsonb);
  perform pg_temp.power_call('set_assessment',jsonb_build_object('idempotencyKey','power-influence-no-dm-neutral-01','contactId',no_dm_contacts[2],'decisionRole','user','stance','neutral','influence','low','reason',null)::jsonb);
 
  -- I1 immutable history, with only the trigger-driven evidence erasure exception.

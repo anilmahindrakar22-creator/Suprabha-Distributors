@@ -107,7 +107,7 @@ begin
     'businessRole','Director','phone',null,'email',null));
   contact:=(s->>'contactId')::uuid;
   perform public.stockflow_accounts_gateway('pin-placement-fixture-key','pin-placement-administrator@test.local','set_assessment',
-   jsonb_build_object('idempotencyKey','pin-placement-assessment-'||n,'contactId',contact,'decisionRole','decision_maker',
+   jsonb_build_object('idempotencyKey','pin-placement-assessment-'||n,'contactId',contact,'decisionRole','final_approver',
     'stance','neutral','influence','high','reason',null));
  end loop;
  perform public.stockflow_accounts_gateway('pin-placement-fixture-key','pin-placement-administrator@test.local','set_location',
@@ -368,11 +368,11 @@ begin
  insert into private.stockflow_contact_assessments(id,contact_id,decision_role,stance,influence,actor,recorded_at)
  select pg_temp.pp_id(51000+x.assessment_number),pg_temp.pp_id(50000+x.contact_number),x.role,'neutral','high',
   'pin-placement-administrator@test.local',now()-make_interval(days=>x.days_old)
- from (values(1,1,'decision_maker',1),(2,3,'decision_maker',1),
-  (3,4,'decision_maker',2),(4,4,'user',1),(5,5,'user',2),(6,5,'decision_maker',1),
-  (7,6,'decision_maker',1),(8,7,'user',1),(9,8,'decision_maker',1),
-  (10,10,'decision_maker',1),(11,11,'decision_maker',1),(12,12,'decision_maker',1),
-  (13,13,'decision_maker',1),(14,13,'user',1)) x(assessment_number,contact_number,role,days_old);
+ from (values(1,1,'final_approver',1),(2,3,'final_approver',1),
+  (3,4,'final_approver',2),(4,4,'user',1),(5,5,'user',2),(6,5,'final_approver',1),
+  (7,6,'final_approver',1),(8,7,'user',1),(9,8,'final_approver',1),
+  (10,10,'final_approver',1),(11,11,'final_approver',1),(12,12,'final_approver',1),
+  (13,13,'final_approver',1),(14,13,'user',1)) x(assessment_number,contact_number,role,days_old);
 
  insert into private.stockflow_commercial_opportunities(id,customer_id,kind,opened_reason,opened_by)
  select pg_temp.pp_id(60000+x.n),pg_temp.pp_id(22000+x.n),'capture','M16 opportunity','pin-placement-administrator@test.local'

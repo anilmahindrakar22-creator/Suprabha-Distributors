@@ -1501,6 +1501,13 @@
       "remoteVersion": null,
       "remoteSha256": null,
       "status": "not_deployed"
+    },
+    {
+      "localFile": "20261130120000_contact_decision_roles.sql",
+      "localSha256": "0112379c6a5f792a790d233b0ce41f64dc4fae2e00148d7a89b60cb7144746a0",
+      "remoteVersion": null,
+      "remoteSha256": null,
+      "status": "not_deployed"
     }
   ],
   "liveCheck": {

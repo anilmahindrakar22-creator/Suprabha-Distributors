@@ -29,10 +29,12 @@ export type CheckinPayload = { customerId: string; latitude: number | string; lo
 export type CheckinResult = { checkinId: string; checkedInAt: string; verified: boolean; distanceM: number | null; hasPin: boolean };
 export const powerAlerts = ['no_decision_maker', 'decision_maker_not_met', 'influential_blocker', 'influential_unknown', 'no_influential_supporter'] as const;
 export type PowerAlert = typeof powerAlerts[number];
-export const decisionRoles = ['decision_maker', 'champion', 'influencer', 'technical_evaluator', 'user', 'gatekeeper', 'coach', 'unknown'] as const;
-export const contactStances = ['supporter', 'neutral', 'sceptical', 'blocker', 'unknown'] as const;
+export const decisionRoles = ['final_approver', 'technical_decider', 'daily_orderer', 'purchase_payments', 'user', 'gatekeeper', 'unknown'] as const;
+/** Retired roles: old history rows may still carry them. Display only; never offered or accepted for writes. */
+export const legacyDecisionRoles = ['decision_maker', 'influencer', 'champion', 'technical_evaluator', 'coach'] as const;
+export const contactStances = ['champion', 'supporter', 'neutral', 'sceptical', 'blocker', 'unknown'] as const;
 export const contactInfluences = ['high', 'medium', 'low', 'unknown'] as const;
-export type ContactAssessment = { decisionRole: typeof decisionRoles[number]; stance: typeof contactStances[number]; influence: typeof contactInfluences[number]; reason: string | null; recordedAt: string; actor: string };
+export type ContactAssessment = { decisionRole: typeof decisionRoles[number] | typeof legacyDecisionRoles[number]; stance: typeof contactStances[number]; influence: typeof contactInfluences[number]; sharesInsideInfo?: boolean; reason: string | null; recordedAt: string; actor: string };
 export type AppContact = { id: string; name: string; businessRole: string | null; phone: string | null; email: string | null; addedBy: string; version: number; canEdit: boolean; assessment?: ContactAssessment | null; lastMetOn?: string | null; style?: ContactStyle; styleObservations?: StyleObservation[] };
 export const accountClassStates = ['A', 'B', 'below_b', 'not_available', 'not_linked'] as const;
 export type AccountClassState = typeof accountClassStates[number];
@@ -89,7 +91,7 @@ export type AccountCommand =
   | { action: 'create_customer'; payload: CommandBase & { name: string; city: string | null; phone: string | null } }
   | { action: 'record_style_observation'; payload: CommandBase & { contactId: string; visitId: string; a: StyleRatings; r: StyleRatings; cues?: StyleCue[] } }
   | { action: 'set_style_override'; payload: CommandBase & { contactId: string; style: SocialStyle | null; reason: string } }
-  | { action: 'set_assessment'; payload: CommandBase & Pick<ContactAssessment, 'decisionRole' | 'stance' | 'influence'> & { contactId: string; reason?: string | null } }
+  | { action: 'set_assessment'; payload: CommandBase & Pick<ContactAssessment, 'stance' | 'influence'> & { decisionRole: typeof decisionRoles[number]; sharesInsideInfo?: boolean; contactId: string; reason?: string | null } }
   | { action: 'erase_contact'; payload: CommandBase & { contactId: string; reason: string } }
   | { action: 'add_contact'; payload: CommandBase & ContactFields & { customerId: string } }
   | { action: 'update_contact'; payload: CommandBase & ContactFields & { contactId: string; expectedVersion: number } }
@@ -188,12 +190,14 @@ export function parseAccountCommand(body: unknown): AccountCommand | null {
       if (typeof p.reason !== 'string' || p.reason.trim().length < 3 || p.reason.trim().length > 300) return null;
       return { action: p.action, payload: { contactId: p.contactId, reason: p.reason.trim(), idempotencyKey } };
     }
-    if (!decisionRoles.includes(p.decisionRole as ContactAssessment['decisionRole'])
+    if (!decisionRoles.includes(p.decisionRole as typeof decisionRoles[number])
+      || (p.sharesInsideInfo !== undefined && typeof p.sharesInsideInfo !== 'boolean')
       || !contactStances.includes(p.stance as ContactAssessment['stance'])
       || !contactInfluences.includes(p.influence as ContactAssessment['influence'])
       || (p.reason != null && (typeof p.reason !== 'string' || p.reason.length > 300))) return null;
-    return { action: p.action, payload: { contactId: p.contactId, decisionRole: p.decisionRole as ContactAssessment['decisionRole'],
+    return { action: p.action, payload: { contactId: p.contactId, decisionRole: p.decisionRole as typeof decisionRoles[number],
       stance: p.stance as ContactAssessment['stance'], influence: p.influence as ContactAssessment['influence'], idempotencyKey,
+      ...(p.sharesInsideInfo === undefined ? {} : { sharesInsideInfo: p.sharesInsideInfo as boolean }),
       ...(p.reason === undefined ? {} : { reason: p.reason as string | null }) } };
   }
   if (p.action === 'add_contact' || p.action === 'update_contact' || p.action === 'remove_contact') {

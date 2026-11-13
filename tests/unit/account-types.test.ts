@@ -1,6 +1,7 @@
 import { describe, expect, it } from 'vitest';
-import { decisionRoles, isInsideMarketArea, parseAccountClass, parseAccountCommand, parseLocationInput, powerAlerts, validateGetAccountsPayload, withAccountContacts } from '@/lib/account-types';
+import { contactStances, decisionRoles, legacyDecisionRoles, isInsideMarketArea, parseAccountClass, parseAccountCommand, parseLocationInput, powerAlerts, validateGetAccountsPayload, withAccountContacts } from '@/lib/account-types';
 import type { AccountRow } from '@/lib/account-types';
+import { walletRoleLabels } from '@/lib/wallet-labels';
 
 describe('optional app contacts response', () => {
   it('defaults absent app contacts to an empty array and preserves supplied contacts', () => {
@@ -186,9 +187,15 @@ describe('account command parser', () => {
 describe('Power Map commands', () => {
   const contactId = '12345678-1234-4234-8234-123456789abc';
   const idempotencyKey = 'power-map-types-key-0001';
-  const assessment = { action: 'set_assessment', contactId, decisionRole: 'decision_maker', stance: 'sceptical', influence: 'high', idempotencyKey };
+  const assessment = { action: 'set_assessment', contactId, decisionRole: 'final_approver', stance: 'sceptical', influence: 'high', idempotencyKey };
+  it('passes sharesInsideInfo through only as a boolean', () => {
+    expect(parseAccountCommand({ ...assessment, sharesInsideInfo: true })?.payload).toHaveProperty('sharesInsideInfo', true);
+    expect(parseAccountCommand({ ...assessment, sharesInsideInfo: false })?.payload).toHaveProperty('sharesInsideInfo', false);
+    expect(parseAccountCommand(assessment)?.payload).not.toHaveProperty('sharesInsideInfo');
+    for (const bad of ['yes', 1, null]) expect(parseAccountCommand({ ...assessment, sharesInsideInfo: bad })).toBeNull();
+  });
   it('parses assessments with optional and null reasons', () => {
-    expect(parseAccountCommand(assessment)).toEqual({ action: 'set_assessment', payload: { contactId, decisionRole: 'decision_maker', stance: 'sceptical', influence: 'high', idempotencyKey } });
+    expect(parseAccountCommand(assessment)).toEqual({ action: 'set_assessment', payload: { contactId, decisionRole: 'final_approver', stance: 'sceptical', influence: 'high', idempotencyKey } });
     expect(parseAccountCommand({ ...assessment, reason: null })?.payload).toHaveProperty('reason', null);
     expect(parseAccountCommand({ ...assessment, reason: 'x'.repeat(300) })).not.toBeNull();
   });
@@ -246,10 +253,19 @@ describe('account location input', () => {
 });
 describe('Power Map account types', () => {
   it('accepts the added roles and alerts', () => {
-    expect(decisionRoles).toEqual(expect.arrayContaining(['champion', 'technical_evaluator', 'coach']));
+    expect([...decisionRoles]).toEqual(['final_approver', 'technical_decider', 'daily_orderer', 'purchase_payments', 'user', 'gatekeeper', 'unknown']);
+    expect([...contactStances]).toEqual(['champion', 'supporter', 'neutral', 'sceptical', 'blocker', 'unknown']);
     expect(powerAlerts).toEqual(expect.arrayContaining(['influential_unknown', 'no_influential_supporter']));
-    for (const decisionRole of ['champion', 'technical_evaluator', 'coach']) {
-      expect(parseAccountCommand({ action: 'set_assessment', contactId: '66666666-6666-4666-8666-666666666666', decisionRole, stance: 'supporter', influence: 'high', idempotencyKey: 'assessment-key-0001' })).not.toBeNull();
+    for (const decisionRole of decisionRoles) {
+      expect(parseAccountCommand({ action: 'set_assessment', contactId: '66666666-6666-4666-8666-666666666666', decisionRole, stance: 'champion', influence: 'high', idempotencyKey: 'assessment-key-0001' })).not.toBeNull();
     }
+  });
+  it('shows legacy roles read-only: labelled for display but rejected on write', () => {
+    for (const decisionRole of legacyDecisionRoles) {
+      expect(decisionRoles as readonly string[]).not.toContain(decisionRole);
+      expect(walletRoleLabels[decisionRole]).toBeTruthy();
+      expect(parseAccountCommand({ action: 'set_assessment', contactId: '66666666-6666-4666-8666-666666666666', decisionRole, stance: 'supporter', influence: 'high', idempotencyKey: 'assessment-key-0001' })).toBeNull();
+    }
+    expect(walletRoleLabels.coach).toBe('Coach');
   });
 });

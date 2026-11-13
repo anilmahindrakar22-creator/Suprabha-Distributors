@@ -63,12 +63,18 @@ describe('accounts API', () => {
     expect((await get('?alert=no_decision_maker')).status).toBe(403);
   });
   it.each(['set_assessment', 'erase_contact'])('forwards %s and preserves SQL authorization', async action => {
-    const fields = action === 'set_assessment' ? { decisionRole: 'decision_maker', stance: 'neutral', influence: 'high' } : { reason: 'Privacy request' };
+    const fields = action === 'set_assessment' ? { decisionRole: 'final_approver', stance: 'champion', influence: 'high', sharesInsideInfo: true } : { reason: 'Privacy request' };
     const payload = { contactId: id, ...fields, idempotencyKey: 'power-route-command-0001' };
     expect((await POST(post({ action, ...payload }))).status).toBe(200);
     expect(mocks.gateway).toHaveBeenCalledWith('manager@example.test', action, payload);
     mocks.gateway.mockRejectedValue(new OrderGatewayError('Role required', 403));
     expect((await POST(post({ action, ...payload }))).status).toBe(403);
+  });
+  it.each([{ sharesInsideInfo: 'yes' }, { sharesInsideInfo: 1 }, { decisionRole: 'coach' }, { decisionRole: 'decision_maker' }])('rejects assessment %j with 400', async override => {
+    const body = { action: 'set_assessment', contactId: id, decisionRole: 'final_approver', stance: 'neutral', influence: 'high', idempotencyKey: 'power-route-command-0002', ...override };
+    mocks.gateway.mockClear();
+    expect((await POST(post(body))).status).toBe(400);
+    expect(mocks.gateway).not.toHaveBeenCalled();
   });
   it('forwards met contacts on visits', async () => {
     const payload = { customerId: id, visitedOn: '2026-10-14', outcome: 'met', metContactIds: [id], idempotencyKey: 'power-route-visit-0001' };

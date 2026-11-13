@@ -170,6 +170,7 @@ try {
   $salesNames += '20261130091000_growth_lab_coverage.sql'
   $salesNames += '20261130100000_coverage_exception_date.sql'
   $salesNames += '20261130110000_growth_lab_total_business.sql'
+  $salesNames += '20261130120000_contact_decision_roles.sql'
   for ($salesIndex = 1; $salesIndex -lt $salesNames.Count; $salesIndex++) {
     if ([array]::IndexOf($planNames,$salesNames[$salesIndex]) -le [array]::IndexOf($planNames,$salesNames[$salesIndex-1])) { throw 'Full sales replay order is invalid' }
   }
@@ -367,6 +368,7 @@ end$$;
   Invoke-DatabaseCommand $psqlProgram @('-U',$databaseUser,'-X','-q','-v','ON_ERROR_STOP=1','-d',$database,'-f',(Join-Path $repository 'supabase/tests/wallet_actions_concurrency.sql'))
   Invoke-DatabaseCommand $psqlProgram @('-U',$databaseUser,'-X','-q','-v','ON_ERROR_STOP=1','-d',$database,'-f',(Join-Path $repository 'supabase/tests/wallet_my_actions.sql'))
   Invoke-DatabaseCommand $psqlProgram @('-U',$databaseUser,'-X','-q','-v','ON_ERROR_STOP=1','-d',$database,'-f',(Join-Path $repository 'supabase/tests/power_map_enhancement.sql'))
+  Invoke-DatabaseCommand $psqlProgram @('-U',$databaseUser,'-X','-q','-v','ON_ERROR_STOP=1','-d',$database,'-f',(Join-Path $repository 'supabase/tests/contact_decision_roles.sql'))
   Invoke-DatabaseCommand $psqlProgram @('-U',$databaseUser,'-X','-q','-v','ON_ERROR_STOP=1','-d',$database,'-f',(Join-Path $repository 'supabase/tests/power_map_influence.sql'))
   Invoke-DatabaseCommand $psqlProgram @('-U',$databaseUser,'-X','-q','-v','ON_ERROR_STOP=1','-d',$database,'-f',(Join-Path $repository 'supabase/tests/po_tally_receipts.sql'))
   Invoke-DatabaseCommand $psqlProgram @('-U',$databaseUser,'-X','-q','-v','ON_ERROR_STOP=1','-d',$database,'-f',(Join-Path $repository 'supabase/tests/po_tally_receipts_concurrency.sql'))

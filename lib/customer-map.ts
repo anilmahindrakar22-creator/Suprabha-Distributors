@@ -143,7 +143,7 @@ export function parseCustomerSheet(value: unknown): CustomerSheetData {
     openOrders: optional(tiles.openOrders, count), lastVisit: optional(tiles.lastVisit, n => date(object(n).visitedOn)), nextActionDue: optional(tiles.nextActionDue, date), overdue: optional(tiles.overdue, count),
     nextAction: optional(v.nextAction, n => { const a = object(n); return { actionId: string(a.id), type: string(a.actionType), detail: string(a.detail), dueOn: date(a.dueOn), owned: boolean(a.canDone) }; }),
     decider: hasDecider ? { name: string(decider.name), role: optional(decider.businessRole, string), stance: choice(decider.stance, ['supporter', 'neutral', 'unknown', 'sceptical', 'blocker']) === 'supporter' ? 'supportive' : decider.stance === 'blocker' || decider.stance === 'sceptical' ? 'opposed' : decider.stance as 'neutral' | 'unknown' } : null,
-    route: v.route === undefined || v.route === null ? [] : array(object(v.route).steps, n => { const r = object(n); const role = string(r.decisionRole); return { name: string(r.name), champion: role === 'champion', decider: role === 'decision_maker' }; }),
+    route: v.route === undefined || v.route === null ? [] : array(object(v.route).steps, n => { const r = object(n); const role = string(r.decisionRole); return { name: string(r.name), champion: string(r.stance) === 'champion', decider: role === 'final_approver' }; }),
     instruments: { ours: rows.filter(r => r.kind === 'ours').map(r => r.item), theirs: rows.filter(r => r.kind === 'theirs').map(r => r.item), moreCount: instruments ? count(instruments.moreCount) : 0 },
     ...(v.labMix === undefined ? {} : { labMix: nullable(v.labMix, parseLabMix) }),
     ...(v.labMixOptions === undefined ? {} : { labMixOptions: parseLabMixOptions(v.labMixOptions) }),
