@@ -48,6 +48,7 @@ test('Growth Review prices opens a focused proposal and waits for the person to 
   const growth = page.getByRole('button', { name: /^growth$/i });
   if (!await growth.isVisible()) await page.getByRole('button', { name: 'More', exact: true }).click();
   await growth.click();
+  await page.getByRole('tab', { name: 'Profit', exact: true }).click();
   await page.getByRole('tab', { name: 'Items', exact: true }).click();
   await page.getByRole('button', { name: 'Reagent: open labs and prices', exact: true }).click();
   await page.getByRole('button', { name: 'Review prices', exact: true }).click();
