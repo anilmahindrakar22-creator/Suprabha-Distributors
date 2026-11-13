@@ -529,13 +529,29 @@ function InstrumentItems({ target, data, disabled, onSubmit }: { target: Economi
     }
     return false;
   };
+  const groupMembers = (groupId: string) => (catalog?.products ?? []).filter(product => {
+    let current: string | null | undefined = product.groupId;
+    const visited = new Set<string>();
+    while (current && !visited.has(current)) {
+      if (current === groupId) return true;
+      visited.add(current); current = catalogGroups.get(current)?.parentId;
+    }
+    return false;
+  }).map(product => ({ id: product.id, name: product.name })).sort((a, b) => a.name.localeCompare(b.name));
   const addFields = (productId: string) => ({ ...scope, productId, effect: 'include', effectiveFrom: itemState.has(productId) ? today : salesStart ?? '', effectiveTo: '', reason: `Added to ${target.name} from the instrument items list` });
   const canEdit = data.canManage && salesStart !== null;
   return <section aria-label="Instrument items" className="rounded-2xl border border-sf-line-soft bg-white p-4 sm:p-6">
     <h2 className="text-lg font-extrabold">{target.name} · items counted</h2>
     <p className="mt-1 text-sm text-sf-muted">These groups and items count toward this instrument&apos;s sales and GP.</p>
     <ul className="mt-3 divide-y divide-sf-soft">
-      {groups.map(({ groupId, rule }) => <li key={groupId} className="flex flex-wrap items-center justify-between gap-2 py-2"><span className="text-sm"><strong>{groupName(groupId)}</strong> · Tally item group{groupSize(groupId) != null ? ` · ${groupSize(groupId)} items` : ''}</span>{canEdit && catalog ? <ItemCommand action="set_item_group_mapping" label="Remove group" disabled={disabled} onSubmit={onSubmit} fields={{ ...scope, groupId, expectedCatalogId: catalog.id, effect: 'exclude', effectiveFrom: today, effectiveTo: '', reason: `Removed group from ${target.name}` }} /> : null}{rule.effectiveFrom > today ? <span className="text-xs text-sf-muted">from {displayDate(rule.effectiveFrom)}</span> : null}</li>)}
+      {groups.map(({ groupId, rule }) => { const members = groupMembers(groupId); const counted = members.filter(item => countedItem(item.id)).length; return <li key={groupId} className="py-2"><div className="flex flex-wrap items-center justify-between gap-2"><span className="text-sm"><strong>{groupName(groupId)}</strong> · Tally item group{groupSize(groupId) != null ? ` · ${groupSize(groupId)} items` : ''}</span>{canEdit && catalog ? <ItemCommand action="set_item_group_mapping" label="Remove group" disabled={disabled} onSubmit={onSubmit} fields={{ ...scope, groupId, expectedCatalogId: catalog.id, effect: 'exclude', effectiveFrom: today, effectiveTo: '', reason: `Removed group from ${target.name}` }} /> : null}{rule.effectiveFrom > today ? <span className="text-xs text-sf-muted">from {displayDate(rule.effectiveFrom)}</span> : null}</div>
+        {members.length ? <details className="mt-2 rounded-xl bg-sf-soft p-3" data-group-items={groupId}><summary className="-m-3 list-item cursor-pointer p-3 text-sm font-bold">Items in this group · {counted} of {members.length} counted</summary>
+          <p className="mt-1 text-xs text-sf-muted">Untick an item that belongs to another machine. Unticking removes it from {displayDate(rule.effectiveFrom)}, when this group started counting; ticking it back counts it from today.</p>
+          <ul aria-label={`Items in ${groupName(groupId)}`} className="mt-2 max-h-80 divide-y divide-sf-line-soft overflow-y-auto">{members.map(item => { const isCounted = countedItem(item.id); const hasRule = itemState.has(item.id); const fields = isCounted
+            ? { ...scope, productId: item.id, effect: 'exclude', effectiveFrom: hasRule ? today : rule.effectiveFrom, effectiveTo: '', reason: `Unticked in ${groupName(groupId)} for ${target.name}` }
+            : addFields(item.id);
+            return <li key={item.id}><form onSubmit={event => void onSubmit(event, 'set_mapping')} className="flex min-h-11 items-center gap-3 py-1">{Object.entries(fields).map(([name, value]) => <input key={name} type="hidden" name={name} value={value} />)}<input type="checkbox" aria-label={`Count ${item.name} for this instrument`} checked={isCounted} disabled={disabled || !canEdit} onChange={event => event.currentTarget.form?.requestSubmit()} className="size-5 shrink-0" /><span className={`min-w-0 break-words text-sm ${isCounted ? '' : 'text-sf-muted line-through'}`}>{item.name}</span></form></li>; })}</ul>
+        </details> : null}</li>; })}
       {included.map(item => <li key={item.productId} className="flex flex-wrap items-center justify-between gap-2 py-2"><span className="text-sm"><strong>{item.name}</strong> · single item</span>{canEdit ? <ItemCommand action="set_mapping" label="Remove" disabled={disabled} onSubmit={onSubmit} fields={{ ...scope, productId: item.productId, effect: 'exclude', effectiveFrom: today, effectiveTo: '', reason: `Removed from ${target.name} from the instrument items list` }} /> : null}</li>)}
       {!groups.length && !included.length ? <li className="py-2 text-sm text-sf-muted">No items are counted yet.</li> : null}
     </ul>
