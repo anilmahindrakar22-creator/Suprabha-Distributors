@@ -1,7 +1,10 @@
 const CACHE_PREFIX = 'suprabha-stockflow-static-';
-const CACHE = `${CACHE_PREFIX}v17`;
+const CACHE = `${CACHE_PREFIX}v18`;
 const OWNED_CACHE_PREFIXES = [CACHE_PREFIX, 'suprabha-stockflow-v'];
 const PUBLIC_ASSETS = ['/stockflow.html', '/manifest.webmanifest', '/suprabha-logo.png', '/app-icon.svg', '/favicon.svg', '/offline.html', '/offline.css', '/generated-offline/offline-app.js'];
+// The Stock page changes with each release: fetch it fresh, fall back to the cached copy offline or when slow.
+const NETWORK_FIRST_ASSETS = ['/stockflow.html'];
+const NETWORK_FIRST_TIMEOUT_MS = 4_000;
 
 async function cachePublicAsset(cache, path) {
   // Use the .html file when it is served directly (the offline preview). On
@@ -14,6 +17,15 @@ async function cachePublicAsset(cache, path) {
   }
   if (!response.ok || response.redirected || response.type !== 'basic') throw new Error(`Unsafe public asset response: ${path}`);
   await cache.put(path, response);
+}
+
+async function networkFirst(cache, path, request) {
+  const refreshed = cachePublicAsset(cache, path).then(() => true, () => false);
+  const fresh = await Promise.race([refreshed, new Promise((resolve) => setTimeout(() => resolve(false), NETWORK_FIRST_TIMEOUT_MS))]);
+  const cached = await cache.match(path);
+  if (cached) return cached;
+  if (!fresh) return fetch(request);
+  return cached;
 }
 
 self.addEventListener('install', (event) => {
@@ -34,6 +46,10 @@ self.addEventListener('fetch', (event) => {
     return;
   }
   if (url.origin !== self.location.origin || !PUBLIC_ASSETS.includes(url.pathname) || url.search) return;
+  if (NETWORK_FIRST_ASSETS.includes(url.pathname)) {
+    event.respondWith(caches.open(CACHE).then((cache) => networkFirst(cache, url.pathname, event.request)));
+    return;
+  }
   event.respondWith(caches.open(CACHE).then((cache) => cache.match(url.pathname)).then((cached) => cached || fetch(event.request)));
 });
 
