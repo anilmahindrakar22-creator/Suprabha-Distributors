@@ -132,3 +132,6 @@ export function normalizeGrowthLabs(value: unknown): GrowthLabsData | null {
       && nullable(r.lastBoughtOn, date) && nullable(r.trend, v => v === 'up' || v === 'down' || v === 'flat'));
   return valid ? value as GrowthLabsData : null;
 }
+
+/** Drops a trailing internal id ("Sales coverage incomplete: <uuid>") so people see plain words. */
+export const plainReason = (reason: string | null) => (reason ?? 'Unknown').replace(/:\s*[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}\s*$/i, '');

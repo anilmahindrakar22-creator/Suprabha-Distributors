@@ -3,6 +3,7 @@
 import { useEffect, useId, useRef, useState } from 'react';
 import { buildGrowthDecision, growthActionLabels, growthInboxFilters, growthReasonLabels, growthReasonLine, inboxDate, inboxRupees, inboxStake, normalizeGrowthDecision, normalizeGrowthInboxResponse, ruleLever, ruleTitle, type GrowthActionType, type GrowthCard, type GrowthDoneRow, type GrowthInboxResponse as InboxData, type GrowthInboxFilter } from '@/lib/growth-inbox-types';
 import type { GrowthNavigation } from './growth-drilldown';
+import { plainReason } from '@/lib/growth-types';
 
 const button = 'min-h-9 rounded-lg border border-sf-line px-3 text-xs text-sf-brand disabled:opacity-50';
 const field = 'min-h-9 w-full min-w-0 rounded-lg border border-sf-line bg-white p-2 text-sm';
@@ -125,6 +126,9 @@ export function GrowthInbox({ onOpenCustomer, onLinkLedger, onReviewPrices }: In
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState('');
   const [live, setLive] = useState('');
+  const [open, setOpen] = useState(false);
+  useEffect(() => { try { if (localStorage.getItem('sf-growth-inbox-open') === '1') setOpen(true); } catch { /* storage unavailable */ } }, []);
+  const toggle = () => { const next = !open; setOpen(next); try { localStorage.setItem('sf-growth-inbox-open', next ? '1' : '0'); } catch { /* storage unavailable */ } };
   const generation = useRef(0);
   const summaryRevision = useRef(0);
   useEffect(() => {
@@ -151,19 +155,21 @@ export function GrowthInbox({ onOpenCustomer, onLinkLedger, onReviewPrices }: In
     } catch { setLive('Saved. Counts will update on the next refresh.'); }
   };
   return <section aria-labelledby="growth-inbox-title" className="min-w-0 space-y-3 rounded-xl border border-sf-line-soft bg-white p-4 lg:p-5 [overflow-wrap:anywhere]">
-    <h2 id="growth-inbox-title" className="text-base font-bold">Action inbox</h2>
-    {data && <><p className={muted}>Rules run on sales to {inboxDate(data.salesTo)} · reviewed weekly</p>{!data.confirmed && <p className={muted}>Sales not confirmed against Tally: {data.confirmedReason ?? 'Unknown'}</p>}<p className="text-sm"><strong>{data.counts.toReview} to review</strong> · {inboxStake(data.stakeToReviewPaise)} a month at stake · {data.counts.inProgress} in progress</p><div className="flex flex-wrap gap-1.5" role="group" aria-label="Filter action inbox">{growthInboxFilters.map(f => <button key={f} className={button} aria-pressed={filter === f} onClick={() => { if (filter !== f) { setData(null); setFilter(f); setPage(1); } }}>{f === 'done' ? 'Done & outcomes' : `${{ all: 'All', R1: 'Skipped', R2: 'Stopped', R3: 'Falling', R4: 'New, not back', R5: 'Price' }[f]} ${data.counts[f]}`}</button>)}</div>
+    <div className="flex flex-wrap items-center justify-between gap-2"><div className="min-w-0"><h2 id="growth-inbox-title" className="text-base font-bold">Action inbox</h2>{data && <p className="text-sm"><strong>{data.counts.toReview} to review</strong> · {inboxStake(data.stakeToReviewPaise)} a month at stake · {data.counts.inProgress} in progress</p>}</div><button type="button" className={button} aria-expanded={open} aria-controls="growth-inbox-body" onClick={toggle}>{open ? 'Hide cards' : 'Show cards'}</button></div>
+    {open && <div id="growth-inbox-body" className="space-y-3">
+    {data && <><p className={muted}>Rules run on sales to {inboxDate(data.salesTo)} · reviewed weekly</p>{!data.confirmed && <p className={muted}>Sales not confirmed against Tally: {plainReason(data.confirmedReason)}</p>}<div className="flex flex-wrap gap-1.5" role="group" aria-label="Filter action inbox">{growthInboxFilters.map(f => <button key={f} className={button} aria-pressed={filter === f} onClick={() => { if (filter !== f) { setData(null); setFilter(f); setPage(1); } }}>{f === 'done' ? 'Done & outcomes' : `${{ all: 'All', R1: 'Skipped', R2: 'Stopped', R3: 'Falling', R4: 'New, not back', R5: 'Price' }[f]} ${data.counts[f]}`}</button>)}</div>
       <div>{data.rows.map(row => 'outcome' in row ? <DoneRow key={row.cardKey} row={row} /> : <InboxCard key={row.cardKey} card={row} data={data} email={data.viewerEmail} navigation={{ onOpenCustomer, onLinkLedger, onReviewPrices }} refreshCounts={() => { void refreshCounts(); }} refresh={refresh} announce={setLive} />)}</div>
       {filter === 'done' && <p className={muted}>Outcomes are what happened afterwards, not proof the visit caused it.</p>}
       {!loading && data.rows.length === 0 && <p className={muted}>No cards in this view.</p>}
       <p className={muted}>Showing {data.rows.length} of {data.total}{data.rows.length < data.total && <> · <button className={button} disabled={loading || !!error} onClick={() => setPage(n => n + 1)}>Load more</button></>}</p>
     </>}
+    </div>}
     {loading && <div role="status" className="animate-pulse rounded-lg bg-sf-soft-0 p-4 text-xs">Loading action inbox…</div>}
     {error && <p role="alert" className="text-xs">{error} <button className={button} onClick={() => setRevision(n => n + 1)}>Retry</button></p>}
-    <details className="mt-2"><summary className="cursor-pointer text-xs text-sf-muted min-h-11 flex items-center">How the inbox works</summary>
+    {open && <details className="mt-2"><summary className="cursor-pointer text-xs text-sf-muted min-h-11 flex items-center">How the inbox works</summary>
     <p className={muted}>₹ at stake: Skipped, Stopped and New, not back use average repeat spend per buying month; Falling uses (first-half repeat − second-half repeat) ÷ 6. Instrument and bulk invoices excluded.</p>
     <p className={muted}>Not yet: Deepen (cross-sell) cards need items mapped to principals in Brand setup; call logging comes later.</p>
-    <p className={muted}>Price cards: prices are proposed in the price book and approved as usual; approved prices apply to new StockFlow orders. Tally invoices are checked by &apos;Billed below approved price&apos;.</p></details>
+    <p className={muted}>Price cards: prices are proposed in the price book and approved as usual; approved prices apply to new StockFlow orders. Tally invoices are checked by &apos;Billed below approved price&apos;.</p></details>}
     <p aria-live="polite" className="text-xs">{live}</p>
   </section>;
 }

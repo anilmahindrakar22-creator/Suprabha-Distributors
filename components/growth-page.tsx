@@ -1,7 +1,7 @@
 'use client';
 
 import { useEffect, useState, type ReactNode } from 'react';
-import { normalizeGrowth, type GrowthData, type GrowthMeasures } from '@/lib/growth-types';
+import { normalizeGrowth, plainReason, type GrowthData, type GrowthMeasures } from '@/lib/growth-types';
 import { GrowthDrilldown, type GrowthNavigation, type GrowthSelection } from './growth-drilldown';
 import { formatPaise } from '@/lib/wallet-format';
 import { GrowthInbox } from './growth-inbox';
@@ -21,6 +21,29 @@ const muted = 'text-xs text-sf-muted';
 const growthTabs = [{ id: 'revenue', label: 'Revenue' }, { id: 'bridge', label: 'H1 → H2' }, { id: 'monthly', label: 'Monthly' }, { id: 'profit', label: 'Profit' }] as const;
 type GrowthTab = typeof growthTabs[number]['id'];
 const toggleClass ='min-h-11 shrink-0 text-xs text-sf-brand underline';
+/** Waits for a tab panel to mount, then scrolls the target into view. */
+const scrollToWhenReady = (id: string, tries = 20) => {
+  const el = document.getElementById(id);
+  if (!el) { if (tries > 0) setTimeout(() => scrollToWhenReady(id, tries - 1), 50); return; }
+  el.scrollIntoView({ block: 'start', behavior: 'smooth' });
+  // Sections above may still be loading and push the target down; re-align while they settle.
+  for (const delay of [400, 900, 1600]) setTimeout(() => { const top = el.getBoundingClientRect().top; if (el.isConnected && (top < -8 || top > 120)) el.scrollIntoView({ block: 'start' }); }, delay);
+};
+
+function RevenueMonths({ data, onDrill }: { data: GrowthData; onDrill: (s: GrowthSelection) => void }) {
+  const { tipProps, tip, containerProps } = useChartTip();
+  const ms = data.months, max = Math.max(1, ...ms.map(m => m.salesPaise)), total = ms.reduce((n, m) => n + m.salesPaise, 0);
+  const first = data.health.history.firstSaleOn, w = 92 / Math.max(1, ms.length);
+  return <section id="revenue-months" className={`${card} scroll-mt-4`} aria-labelledby="revenue-months-title">
+    <h2 id="revenue-months-title" className="text-base font-bold">Revenue by month</h2>
+    <p className={muted}>{ms.length} months · {lakh(total)} · all sales · hover a bar for its value, tap for that month&apos;s labs</p>
+    <div {...containerProps}><svg className="block h-[220px] w-full" aria-label="Revenue by month chart">
+      {[0, 1, 2, 3, 4].map(n => <g key={n}><line x1="6%" x2="99%" y1={190 - n * 42.5} y2={190 - n * 42.5} stroke="var(--sf-line-soft)" /><text x="5%" y={194 - n * 42.5} textAnchor="end" className="fill-sf-muted text-[10px]">{(max / 1e7 * n / 4).toFixed(0)}</text></g>)}
+      {ms.map((m, i) => { const x = 7 + i * w, h = m.salesPaise / max * 170, label = `${monthYear(m.month + '-01')}: revenue ${lakh(m.salesPaise)}, ${m.labsBuying} labs buying`; return <g key={m.month}><rect {...tipProps(chartTipText(label))} {...barButton(`${label}, open list`, () => onDrill({ list: 'month_buying', month: m.month, count: m.labsBuying, title: `Labs buying in ${monthYear(m.month + '-01')}`, explanation: 'Labs with sales in this month.' }))} x={`${x}%`} y={190 - h} width={`${w * 0.7}%`} height={Math.max(2, h)} rx="1" fill="var(--sf-brand)" /><text x={`${x + w * 0.35}%`} y="208" textAnchor="middle" className="fill-sf-label text-[10px]">{month(m.month + '-01')}</text></g>; })}
+    </svg>{tip}</div>
+    <p className={muted}>₹ L. Last 12 months. StockFlow holds sales from {first ? monthYear(first) : '—'}; a longer trend comes with the Tally history load.</p>
+  </section>;
+}
 
 function Table({ caption, headings, rows }: { caption: string; headings: string[]; rows: ReactNode[][] }) {
   return <table className="w-full table-fixed border-collapse text-xs tabular-nums [&_th]:font-normal [&_th]:text-sf-muted [&_td]:text-right [&_td]:text-[15px] [&_td]:leading-5 [&_th]:p-1.5 [&_td]:p-1.5 [&_th]:border-b [&_td]:border-b [&_th]:border-sf-line-soft [&_td]:border-sf-line-soft [&_th]:align-top [&_td]:align-top [&_td]:break-words"><caption className="mb-2 text-left text-xs text-sf-muted">{caption}</caption><thead><tr>{headings.map((v, i) => <th key={v} scope="col" className={i ? 'text-right' : 'w-[34%] text-left'}>{v}</th>)}</tr></thead><tbody>{rows.map((row, i) => <tr key={i}>{row.map((v, j) => j ? <td key={j}>{v}</td> : <th key={j} scope="row" className="text-left">{v}</th>)}</tr>)}</tbody></table>;
@@ -128,7 +151,8 @@ function barButton(label: string, open: () => void) {
   return { role: 'button' as const, tabIndex: 0, 'aria-label': label, style: { cursor: 'pointer' }, onClick: open, onKeyDown: (event: React.KeyboardEvent) => { if (event.key === 'Enter' || event.key === ' ') { event.preventDefault(); open(); } } };
 }
 
-function Scorecard({ data, onDrill, onOpenProfit }: { data: GrowthData; onDrill: (s: GrowthSelection) => void; onOpenProfit: () => void }) {
+function Scorecard({ data, onDrill, onOpen }: { data: GrowthData; onDrill: (s: GrowthSelection) => void; onOpen: (tab: GrowthTab, target: string) => void }) {
+  const onOpenProfit = () => onOpen('profit', 'growth-panel');
   const [a, b] = data.halves, t = data.tree, s = data.scorecard, gp = data.health.gp.costedPct;
   const compare = (a: number | null, b: number | null, format: (n: number) => string) => a === null || b === null || a === 0 ? '—' : `${changeLabel(a, b)} (${format(a)} → ${format(b)})`;
   const profit = data.gp;
@@ -147,14 +171,14 @@ function Scorecard({ data, onDrill, onOpenProfit }: { data: GrowthData; onDrill:
   const period = `${monthYear(data.window.from)} – ${monthYear(previousDay(data.window.to))}`;
   const windowLabs = (sort: 'value' | 'months' | 'per_month', title: string): GrowthSelection => ({ list: 'window_labs', sort, count: t.labsBuying, title: `${title}, ${period}`, explanation: 'Labs with sales in this period.' });
   const tileOpen: Array<[string, () => void]> = [
-    [`Revenue: ${tiles[0][1]}, open labs by sales`, () => onDrill(windowLabs('value', 'Labs by sales'))],
-    [`Labs buying: ${t.labsBuying}, open labs by buying months`, () => onDrill(windowLabs('months', 'Labs by buying months'))],
+    [`Revenue: ${tiles[0][1]}, open revenue by month`, () => onOpen('revenue', 'revenue-months')],
+    [`Labs buying: ${t.labsBuying}, open labs with sales, gross profit and margin`, () => onOpen('profit', 'margin-explorer')],
     [`₹ per buying month: ${tiles[2][1]}, open labs by spend per month`, () => onDrill(windowLabs('per_month', 'Labs by spend per buying month'))],
     [`Regular labs: ${s.regularLabs}, open list`, () => onDrill({ list: 'regular_labs', count: s.regularLabs, title: 'Regular labs', explanation: 'Bought in 10+ of 12 months.' })],
     [`Top 10 labs' share: ${tiles[4][1]}, open labs by sales`, () => onDrill(windowLabs('value', 'Top labs by sales'))],
     [`Gross profit: ${tiles[5][1]}, open Profit`, onOpenProfit],
   ];
-  return <section className={card} aria-labelledby="scorecard-title"><h2 id="scorecard-title" className="text-base font-bold">Scorecard</h2><p className={muted}>{period} · change is H2 against H1 · tap a tile for details</p><div className="grid grid-cols-2 gap-3 lg:grid-cols-3">{tiles.map(([label, value, note], i) => <div key={label} data-scorecard-tile className="min-w-0 rounded-lg border border-sf-line-soft bg-sf-soft-0 p-3 hover:border-sf-brand" {...(i === 5 ? { style: { cursor: 'pointer' }, onClick: (event: React.MouseEvent) => { if (!(event.target as Element).closest('a,button')) onOpenProfit(); } } : barButton(tileOpen[i][0], tileOpen[i][1]))}><p className="text-xs text-sf-label">{label}</p><strong className={`my-1 block tabular-nums ${i === 0 ? 'text-xl' : 'text-base'}`}>{value}</strong><p className={muted}>{note}</p>{i === 5 && profit && <><p className={muted}>{profitNote}</p>{profit.consumables ? <p className={muted}>Consumables {profit.consumables.gpPct ?? '—'}%; instruments {profit.instruments ? profit.instruments.gpPaise < 0 ? 'below cost' : `${profit.instruments.gpPct ?? '—'}%` : '—'}</p> : profit.bulk.gpPct !== null && profit.bulk.gpPct < 0 && <p className={muted}>Instruments &amp; bulk at {profit.bulk.gpPct}%; consumables {profit.repeat.gpPct ?? '—'}%</p>}</>}{i === 5 && <span className="flex flex-wrap gap-3"><button type="button" className="inline-flex min-h-9 items-center text-sf-brand underline" aria-label={tileOpen[5][0]} onClick={onOpenProfit}>See profit</button><a className="inline-flex min-h-9 items-center text-sf-brand underline" href="#data-health">Why?</a></span>}</div>)}</div></section>;
+  return <section className={card} aria-labelledby="scorecard-title"><h2 id="scorecard-title" className="text-base font-bold">Scorecard</h2><p className={muted}>{period} · change is H2 against H1 · tap a tile for details</p><div className="grid grid-cols-2 gap-3 lg:grid-cols-3">{tiles.map(([label, value, note], i) => <div key={label} data-scorecard-tile className="min-w-0 rounded-lg border border-sf-line-soft bg-sf-soft-0 p-3 hover:border-sf-brand" {...(i === 5 ? { style: { cursor: 'pointer' }, onClick: (event: React.MouseEvent) => { if (!(event.target as Element).closest('a,button')) onOpenProfit(); } } : barButton(tileOpen[i][0], tileOpen[i][1]))}><p className="text-xs text-sf-label">{label}</p><strong className={`my-1 block tabular-nums ${i === 0 ? 'text-xl' : 'text-base'}`}>{value}</strong><p className={muted}>{note}</p>{i === 5 && profit && <p className={muted}>{profitNote}</p>}{i === 5 && <span className="flex flex-wrap gap-3"><button type="button" className="inline-flex min-h-9 items-center text-sf-brand underline" aria-label={tileOpen[5][0]} onClick={onOpenProfit}>See profit</button><a className="inline-flex min-h-9 items-center text-sf-brand underline" href="#data-health">Why?</a></span>}</div>)}</div></section>;
 }
 
 function MonthlyCharts({ data, onDrill }: { data: GrowthData; onDrill: (s: GrowthSelection) => void }) {
@@ -204,7 +228,7 @@ function Health({ data, onOpenBrandSetup, onOpenMyActions }: { data: GrowthData 
   const rows = [
     { title: 'Gross profit', status: profit ? (profit.window.coveragePct !== null && profit.window.coveragePct >= 95 ? 'Current' : profit.window.coveragePct !== null && profit.window.coveragePct >= 80 ? 'Limited' : 'Blocked') : pct === null || pct < 50 ? 'Blocked' : pct < 90 ? 'Limited' : 'Current', text: profit ? `Cost known for ${profit.window.coveragePct ?? '—'}% of sales (average purchase cost)` : pct === null ? 'cost not computed yet' : `Cost known for ${pct}% of sales`, effect: profit ? profit.window.coveragePct !== null && profit.window.coveragePct < 100 ? 'The rest was bought before imported history; the 36-month load will fill it' : '' : pct === null || pct < 50 ? 'Profit side of the tree is blank' : '', detail: profit?.window.unreliableLines ? `${profit.window.unreliableLines} line${profit.window.unreliableLines === 1 ? '' : 's'} left out: sale and cost units look different` : '' },
     { title: 'History depth', status: h.history.monthsImported < 24 ? 'Limited' : 'Current', text: `${h.history.monthsImported} months imported`, effect: h.history.monthsImported < 24 ? 'No year-on-year yet' : '' },
-    { title: 'Sales confirmation', status: data.confirmed ? 'Current' : 'Limited', text: data.confirmed ? 'Confirmed' : data.confirmedReason ?? 'Unknown' },
+    { title: 'Sales confirmation', status: data.confirmed ? 'Current' : 'Limited', text: data.confirmed ? 'Confirmed' : plainReason(data.confirmedReason) },
     { title: 'Item groups', status: h.itemGroups.unmappedPct === null ? 'Unknown' : h.itemGroups.unmappedPct > 10 ? 'Limited' : 'Current', text: h.itemGroups.unmappedPct === null ? 'Unknown' : `${h.itemGroups.unmappedPct}% of sales has no principal`, owner: 'Map items to principals in Brand setup' },
     { title: 'Reasons (qualitative)', status: h.reasons.visitReasons180 + h.reasons.constraints === 0 ? 'Blocked' : 'Current', text: `${h.reasons.visitReasons180} visit reasons, ${h.reasons.constraints} diagnoses, ${h.reasons.openActions} open actions, ${h.reasons.visits180} visits (180 days)`, effect: h.reasons.visitReasons180 + h.reasons.constraints === 0 ? 'We can see what changed, not why' : '' },
     { title: 'Item catalog', status: age !== null && age >= 0 && age <= 7 * 86400000 ? 'Current' : 'Limited', text: h.catalog.groups === null ? 'Unknown' : `${h.catalog.groups} groups` },
@@ -249,11 +273,12 @@ export function GrowthPage(navigation: GrowthNavigation) {
   const inbox = <GrowthInbox onOpenCustomer={navigation.onOpenCustomer} onLinkLedger={navigation.onLinkLedger} onReviewPrices={card => { if (card.customerId) setSelection({ list: 'price_card', count: card.inputs.items, title: `${card.name ?? 'Lab not named'} · items under typical price`, explanation: 'Some low prices are agreed volume rates. Check the quantity before proposing a change.', priceCard: { customerId: card.customerId, name: card.name ?? 'Lab not named', inputs: card.inputs } }); }} />;
   const pageError = error ? <div role="alert"><p>{error}</p>{error !== 'Growth is for management only.' && <button className="mt-3 min-h-11 rounded-lg border border-sf-line px-3" onClick={() => { setData(null); setError(''); setRevision(n => n + 1); }}>Retry</button>}</div> : !data ? <p role="status">Loading growth…</p> : null;
   return <div className="h-full min-w-0 overflow-y-auto p-4 text-sm text-sf-strong sm:p-6 [overflow-wrap:break-word]">
-    <header className="mb-5 space-y-2"><p className={muted}>More / Management</p><h1 className="text-xl font-bold">Growth</h1>{data && <p className={muted}>{scope} · management only</p>}{data && !data.confirmed && <p className="text-xs text-sf-warning">Not confirmed: {data.confirmedReason ?? 'Unknown'}</p>}</header>
+    <header className="mb-5 space-y-2"><p className={muted}>More / Management</p><h1 className="text-xl font-bold">Growth</h1>{data && <p className={muted}>{scope} · management only</p>}{data && !data.confirmed && <p className="text-xs text-sf-warning">Not confirmed: {plainReason(data.confirmedReason)}</p>}</header>
     <div className="grid min-w-0 items-start gap-4 md:grid-cols-[minmax(0,2.2fr)_minmax(280px,1fr)] lg:gap-5">
-      <div className="min-w-0 space-y-4">{pageError}{data && <Scorecard data={data} onDrill={setSelection} onOpenProfit={() => { chooseTab('profit'); requestAnimationFrame(() => document.getElementById('growth-panel')?.scrollIntoView({ block: 'start', behavior: 'smooth' })); }} />}{inbox}{data && <>
+      <div className="min-w-0 space-y-4">{pageError}{data && <Scorecard data={data} onDrill={setSelection} onOpen={(next, target) => { chooseTab(next); setTimeout(() => scrollToWhenReady(target), 0); }} />}{inbox}{data && <>
         <div role="tablist" aria-label="Growth analysis" className="flex gap-1 overflow-x-auto rounded-lg border border-sf-line p-1">{growthTabs.map(item => <button key={item.id} type="button" role="tab" id={`growth-tab-${item.id}`} aria-selected={tab === item.id} aria-controls="growth-panel" tabIndex={tab === item.id ? 0 : -1} className={`min-h-11 shrink-0 rounded-md px-3 text-sm ${tab === item.id ? 'bg-sf-accent-soft font-bold text-sf-brand' : 'text-sf-muted'}`} onClick={() => chooseTab(item.id)} onKeyDown={event => onTabKey(event, item.id)}>{item.label}</button>)}</div>
         <div id="growth-panel" role="tabpanel" aria-labelledby={`growth-tab-${tab}`} className="min-w-0 space-y-4">
+          {tab === 'revenue' && <RevenueMonths data={data} onDrill={setSelection} />}
           {tab === 'revenue' && <Revenue data={data} scope={scope} comparison={comparison} onDrill={setSelection} />}
           {tab === 'bridge' && <Bridge data={data} scope={scope} comparison={comparison} onDrill={setSelection} />}
           {tab === 'monthly' && <MonthlyCharts data={data} onDrill={setSelection} />}

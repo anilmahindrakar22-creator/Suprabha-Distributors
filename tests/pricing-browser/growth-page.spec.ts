@@ -48,14 +48,14 @@ const sample = () => ({
   health: { gp: { costedPct: 2, computedAt: null }, history: { firstSaleOn: '2025-10-01', monthsImported: 13 }, itemGroups: { unmappedPct: 21 }, reasons: { visitReasons180: 0, constraints: 0, openActions: 0, visits180: 4 }, catalog: { observedAt: '2026-11-09T00:00:00Z', groups: 30 } },
   gp: { method: 'average_purchase_cost_to_date', window: { salesPaise: 10000000, knownSalesPaise: 8500000, costPaise: 6000000, gpPaise: 2500000, gpPct: 29.4, coveragePct: 85, unreliableLines: 1 }, halves: [{ half: 'H1', salesPaise: 5000000, knownSalesPaise: 4000000, costPaise: 3000000, gpPaise: 1000000, gpPct: 25, coveragePct: 80 }, { half: 'H2', salesPaise: 5000000, knownSalesPaise: 4500000, costPaise: 3000000, gpPaise: 1500000, gpPct: 33, coveragePct: 90 }], repeat: { salesPaise: 8000000, knownSalesPaise: 7000000, costPaise: 5000000, gpPaise: 2000000, gpPct: 25, coveragePct: 87.5 }, bulk: { salesPaise: 2000000, knownSalesPaise: 1500000, costPaise: 1000000, gpPaise: 500000, gpPct: 25, coveragePct: 75 }, months: Array.from({ length: 12 }, (_, i) => ({ month: new Date(Date.UTC(2025, 10 + i, 1)).toISOString().slice(0, 7), salesPaise: 1000000, knownSalesPaise: 850000, gpPaise: 250000 })) },
 });
-async function fixture(page: Page, options: { role?: string; status?: number; confirmed?: boolean; malformed?: boolean; labsTotal?: number; inboxViewerEmail?: string; billedBelow?: 'lines' | 'error' } = {}) {
+async function fixture(page: Page, options: { role?: string; status?: number; confirmed?: boolean; malformed?: boolean; labsTotal?: number; inboxViewerEmail?: string; billedBelow?: 'lines' | 'error'; inboxOpen?: boolean; reason?: string } = {}) {
   const role = options.role ?? 'management';
   await page.route('**/api/me', route => route.fulfill({ json: { roles: [role] } }));
   await page.route('**/api/push-subscription**', route => route.fulfill({ json: { enabled: false, publicKey: '' } }));
   await page.route('**/api/wallet?**', route => route.fulfill({ json: { coverage: { certified: true } } }));
   await page.route('**/api/today**', route => route.fulfill({ json: { policyVersion: 'today-v1', generatedAt: '2026-11-01T06:00:00Z', coverageCertified: true, unblock: { total: 0, rows: [] }, grow: { total: 0, rows: [] } } }));
   await page.route('**/api/accounts?**', route => route.fulfill({ json: { accounts: [], page: { page: 1, pageSize: 20, total: 0 }, owners: [], territories: [], classPolicy: { aMinPaise: '10000000', bMinPaise: '3000000' }, canAssign: true, canSeeProspects: true, canSeeMyActions: true, canEraseContacts: false, canSeePowerMap: true, actorEmail: 'manager@example.test', today: '2026-11-09' } }));
-  await page.route('**/api/growth', route => route.fulfill({ status: options.status ?? 200, json: options.malformed ? {} : { ...sample(), confirmed: options.confirmed ?? true, confirmedReason: options.confirmed === false ? 'Sales import is pending' : null } }));
+  await page.route('**/api/growth', route => route.fulfill({ status: options.status ?? 200, json: options.malformed ? {} : { ...sample(), confirmed: options.confirmed ?? true, confirmedReason: options.confirmed === false ? options.reason ?? 'Sales import is pending' : null } }));
   let billedRequests = 0;
   await page.route('**/api/growth/margin?**', route => {
     const params = new URL(route.request().url()).searchParams;
@@ -87,6 +87,7 @@ async function fixture(page: Page, options: { role?: string; status?: number; co
         : [{ labKey: 'ledger-b', customerId: 'customer-b', name: 'Lab B', town: null, valuePaise: null, monthsBought: 9, lastBoughtOn: '2026-08-02', trend: 'flat' }];
     return route.fulfill({ json: { list, month: params.get('month'), ...(params.has('half') ? { half: params.get('half') } : {}), total: list === 'month_large_purchases' || list === 'bulk_invoices' ? 1 : options.labsTotal ?? 12, page: pageNumber, pageSize: 20, rows } });
   });
+  if (options.inboxOpen !== false) await page.addInitScript(() => { try { localStorage.setItem('sf-growth-inbox-open', '1'); } catch { /* storage unavailable */ } });
   await page.goto('/?view=frame&role=' + role + '&roles=' + role);
 }
 async function openGrowth(page: Page) {
@@ -568,14 +569,31 @@ for (const width of [375, 1280]) {
     });
     test('scorecard tiles open their details and Gross profit opens the Profit tab', async ({ page }) => {
       await fixture(page); await openGrowth(page);
-      const request = page.waitForRequest(r => { const p = new URL(r.url()).searchParams; return r.url().includes('/api/growth/labs?') && p.get('list') === 'window_labs' && p.get('sort') === 'months' && !p.has('half'); });
-      await page.getByRole('button', { name: /^Labs buying: \d+, open labs by buying months$/ }).click();
+      const request = page.waitForRequest(r => { const p = new URL(r.url()).searchParams; return r.url().includes('/api/growth/labs?') && p.get('list') === 'window_labs' && p.get('sort') === 'per_month' && !p.has('half'); });
+      await page.getByRole('button', { name: /^₹ per buying month: .*, open labs by spend per month$/ }).click();
       await request;
       await expect(page.getByRole('dialog').getByText('Lab A', { exact: true })).toBeVisible();
       await page.keyboard.press('Escape');
       await expect(page.getByRole('dialog')).toHaveCount(0);
+      await page.getByRole('button', { name: /^Revenue: .*, open revenue by month$/ }).click();
+      await expect(page.getByRole('tab', { name: 'Revenue', exact: true })).toHaveAttribute('aria-selected', 'true');
+      await expect(page.getByRole('heading', { name: 'Revenue by month', exact: true })).toBeVisible();
+      await page.getByRole('button', { name: /^Labs buying: \d+, open labs with sales, gross profit and margin$/ }).click();
+      await expect(page.getByRole('tab', { name: 'Profit', exact: true })).toHaveAttribute('aria-selected', 'true');
+      await expect(page.getByRole('heading', { name: 'Margin by lab and item', exact: true })).toBeInViewport();
       await page.getByRole('button', { name: /^Gross profit: .*, open Profit$/ }).click();
       await expect(page.getByRole('tab', { name: 'Profit', exact: true })).toHaveAttribute('aria-selected', 'true');
+    });
+    test('action inbox starts folded with its summary, opens on demand and remembers', async ({ page }) => {
+      await fixture(page, { inboxOpen: false, confirmed: false, reason: 'Sales coverage incomplete: c0071957-a387-4298-89e4-70aaa8dc6989' }); await openGrowth(page);
+      await expect(page.getByText('Not confirmed: Sales coverage incomplete', { exact: true })).toBeVisible();
+      const inbox = page.getByRole('region', { name: /^Action inbox/ });
+      await expect(inbox.getByText('2 to review', { exact: true })).toBeVisible();
+      await expect(inbox.getByRole('article')).toHaveCount(0);
+      await inbox.getByRole('button', { name: 'Show cards', exact: true }).click();
+      await expect(inbox.getByRole('article').first()).toBeVisible();
+      expect(await page.evaluate(() => localStorage.getItem('sf-growth-inbox-open'))).toBe('1');
+      await expect(page.getByText(/[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}/)).toHaveCount(0);
     });
     test('H2 instrument and bulk cell requests half-scoped invoices', async ({ page }) => {
       await fixture(page); await openGrowth(page);
