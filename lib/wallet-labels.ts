@@ -8,14 +8,14 @@ export const walletRoleLabels: Record<ContactAssessment['decisionRole'], string>
 /** One-line meaning of each role, shown to field staff when they pick it. */
 export const walletRoleHints: Record<ContactAssessment['decisionRole'], string> = {
   decision_maker: 'Signs off what the lab buys',
-  champion: 'Wants us to win and pushes for us inside the lab',
+  champion: 'Has a say and actively sells for us inside the lab (more than a Supporter)',
   influencer: 'Their opinion sways the decision',
   technical_evaluator: 'Judges methods, quality and machines (e.g. pathologist)',
   user: 'Runs the tests day to day (e.g. technician)',
   gatekeeper: 'Controls access to the decision maker (e.g. purchase clerk)',
-  coach: 'Shares inside information and tells us how to win',
+  coach: 'Tips us off with inside information, even without a say',
   unknown: 'Not known yet; find out on the next visit',
 };
-export const walletStanceHints = { unknown: 'Not known yet', supporter: 'Prefers us', neutral: 'No preference yet', sceptical: 'Has doubts about us or our products', blocker: 'Favours a competitor or works against us' } as const;
+export const walletStanceHints = { unknown: 'Not known yet', supporter: 'Prefers us (if they also push for us inside, their role is Champion)', neutral: 'No preference yet', sceptical: 'Has doubts about us or our products', blocker: 'Favours a competitor or works against us' } as const;
 export const walletInfluenceHints = { unknown: 'Not known yet', high: 'Their view usually decides', medium: 'Heard, but others decide', low: 'Little say in what is bought' } as const;
 export const walletPowerAlertLabels: Record<PowerAlert, string> = { no_decision_maker: 'No decision maker known', decision_maker_not_met: 'Decision maker not met in 60 days', influential_blocker: 'Influential blocker', influential_unknown: 'Influential person, stance unknown', no_influential_supporter: 'No influential supporter' };

@@ -390,7 +390,7 @@ test('management sees Power Map and saves a preset role assessment with a reload
   // Each choice explains itself in the picker and under the field.
   await expect(form.getByLabel('Decision role for Asha', { exact: false }).locator('option[value="gatekeeper"]')).toHaveText('Gatekeeper – Controls access to the decision maker (e.g. purchase clerk)');
   await expect(form.getByText('Their opinion sways the decision', { exact: true })).toBeVisible();
-  await expect(form.getByText('Prefers us', { exact: true })).toBeVisible();
+  await expect(form.getByText('Prefers us (if they also push for us inside, their role is Champion)', { exact: true })).toBeVisible();
   await expect(form.getByText('Heard, but others decide', { exact: true })).toBeVisible();
   await form.getByLabel('Reason for Asha', { exact: false }).fill('Recommended our offer');
   const before = gets.length;
