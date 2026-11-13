@@ -126,7 +126,7 @@ test('to order loads immediately, keeps unknown stock explicit and appends pages
   await expect(page.getByText('Demand reagent 1')).toBeVisible();
   await page.getByRole('button', { name: 'Load more', exact: true }).click();
   await expect(page.getByText('Demand reagent 2')).toBeVisible();
-  await expect(page.getByText('Stock unknown, check Tally', { exact: true })).toBeVisible();
+  await expect(page.getByText('Stock unknown, check Tally')).toBeVisible();
   await expect(page.getByText('Demand reagent 1')).toBeVisible();
   await expect(page.getByText('No new stock for waiting orders in the last 7 days.')).toBeVisible();
   expect(reads).toBe(2);

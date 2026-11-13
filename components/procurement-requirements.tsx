@@ -58,6 +58,7 @@ export function ProcurementRequirements({ onOpenOrder, roles = [], refreshKey = 
   const permitted = canManagePurchaseOrders(roles);
   const [selected, setSelected] = useState<ToOrderItem[]>([]);
   const [review, setReview] = useState(false);
+  const [openGroups, setOpenGroups] = useState<Set<string>>(() => new Set());
   const [success, setSuccess] = useState('');
   const [page, setPage] = useState(1);
   const [result, setResult] = useState<ToOrderResponse | null>(null);
@@ -262,6 +263,14 @@ export function ProcurementRequirements({ onOpenOrder, roles = [], refreshKey = 
   }, [refreshKey]);
 
   const items = [...(result?.items ?? [])].sort((a, b) => Number(a.state === 'stock_unknown') - Number(b.state === 'stock_unknown'));
+  const groups = [...items.reduce((map, item) => {
+    const name = item.group?.trim() || 'No stock group';
+    const group = map.get(name) ?? { name, items: [] as ToOrderItem[], waiting: 0 };
+    group.items.push(item);
+    if (item.waitingOrders > 0) group.waiting += 1;
+    return map.set(name, group);
+  }, new Map<string, { name: string; items: ToOrderItem[]; waiting: number }>()).values()]
+    .sort((a, b) => b.waiting - a.waiting || a.name.localeCompare(b.name, 'en-IN'));
   return <section aria-label="To order" className="mt-3 min-w-0 rounded-xl border border-sf-line-soft bg-sf-soft p-3">
     <div className="flex flex-wrap items-start justify-between gap-2">
       <div className="min-w-0 flex-1">
@@ -287,24 +296,33 @@ export function ProcurementRequirements({ onOpenOrder, roles = [], refreshKey = 
     {success ? <output className="mt-2 block text-sm text-sf-success">{success}</output> : null}
     {loading && !result ? <p className="mt-3 text-sm text-sf-subtle">Loading to order…</p> : null}
     <div className="mt-3 space-y-2">
-      {items.map((item) => <article key={item.itemKey} aria-label={item.itemName} className={`min-w-0 rounded-lg border border-sf-line-soft px-3 py-2 ${item.state === 'stock_unknown' ? 'bg-sf-soft-2 text-sf-muted' : 'bg-sf-soft-0 text-sf-body'}`}>
-        <div className="flex items-start justify-between gap-3">
-          {permitted && item.state === 'order' ? <label className="flex min-h-11 shrink-0 items-center">
-            <input type="checkbox" aria-label={`Select ${item.itemName}`} checked={selected.some((line) => line.itemKey === item.itemKey)} onChange={(event) => {
-              setSelected((previous) => event.target.checked ? [...previous, item] : previous.filter((line) => line.itemKey !== item.itemKey));
-            }} />
-          </label> : null}
-          <h3 className="min-w-0 flex-1 break-words text-left text-sm font-bold">{item.itemName}</h3>
-          <p className="shrink-0 text-right text-lg font-bold">Order {item.state === 'stock_unknown' || item.suggestedQty === null ? '—' : quantity(item.suggestedQty)}</p>
+      {groups.map((group) => <details key={group.name} data-request-group={group.name} open={groups.length === 1 || openGroups.has(group.name)} onToggle={(event) => {
+        const isOpen = event.currentTarget.open;
+        setOpenGroups((previous) => { const next = new Set(previous); if (isOpen) next.add(group.name); else next.delete(group.name); return next; });
+      }} className="min-w-0 rounded-lg border border-sf-line-soft bg-sf-soft-0">
+        <summary className="flex min-h-11 cursor-pointer flex-wrap items-baseline justify-between gap-x-3 gap-y-0.5 px-3 py-2">
+          <span className="min-w-0 flex-1 break-words text-sm font-bold text-sf-body">{group.name}</span>
+          <span className="text-xs text-sf-muted">{group.items.length} item{group.items.length === 1 ? '' : 's'}{group.waiting ? <> · <b className="text-sf-danger">{group.waiting} waiting</b></> : null}</span>
+        </summary>
+        <div className="divide-y divide-sf-line-soft border-t border-sf-line-soft">
+          {group.items.map((item) => <article key={item.itemKey} aria-label={item.itemName} className={`min-w-0 px-3 py-1.5 ${item.state === 'stock_unknown' ? 'bg-sf-soft-2 text-sf-muted' : 'text-sf-body'}`}>
+            <div className="flex items-center justify-between gap-2">
+              {permitted && item.state === 'order' ? <label className="flex min-h-11 shrink-0 items-center">
+                <input type="checkbox" aria-label={`Select ${item.itemName}`} checked={selected.some((line) => line.itemKey === item.itemKey)} onChange={(event) => {
+                  setSelected((previous) => event.target.checked ? [...previous, item] : previous.filter((line) => line.itemKey !== item.itemKey));
+                }} />
+              </label> : null}
+              <h3 className="min-w-0 flex-1 break-words text-left text-sm font-semibold">{item.itemName}</h3>
+              <p className="shrink-0 text-right text-sm font-bold">Order {item.state === 'stock_unknown' || item.suggestedQty === null ? '—' : quantity(item.suggestedQty)}</p>
+            </div>
+            <p className="break-words text-xs text-sf-muted"><span className="text-sf-body">{toOrderReasonText(item)}</span> · {toOrderStockText(item)}{item.lowestSupplier ? <> · Lowest price: {item.lowestSupplier.supplierName}</> : null}</p>
+            {item.waitingOrders > 0 ? <button type="button" aria-expanded={waitingOrigin === item.itemKey} onClick={() => toggleWaitingOrders(item.itemKey)} className="mt-1 min-h-11 rounded-lg border border-sf-line px-3 text-xs font-bold text-sf-body">
+              {waitingOrigin === item.itemKey ? 'Hide waiting orders' : 'View waiting orders'}
+            </button> : null}
+            {renderWaitingOrders(item.itemKey, item.itemName)}
+          </article>)}
         </div>
-        <p className="mt-0.5 break-words text-xs">{toOrderReasonText(item)}</p>
-        <p className="mt-0.5 break-words text-xs text-sf-muted">{toOrderStockText(item)}</p>
-        {item.lowestSupplier ? <p className="mt-0.5 break-words text-xs text-sf-muted">Lowest price: {item.lowestSupplier.supplierName}</p> : null}
-        {item.waitingOrders > 0 ? <button type="button" aria-expanded={waitingOrigin === item.itemKey} onClick={() => toggleWaitingOrders(item.itemKey)} className="mt-2 min-h-11 rounded-lg border border-sf-line px-3 text-xs font-bold text-sf-body">
-          {waitingOrigin === item.itemKey ? 'Hide waiting orders' : 'View waiting orders'}
-        </button> : null}
-        {renderWaitingOrders(item.itemKey, item.itemName)}
-      </article>)}
+      </details>)}
       {result && !result.total ? <p className="text-sm text-sf-subtle">Nothing to order.</p> : null}
     </div>
     {result && result.items.length < result.total ? <button type="button" disabled={loading} onClick={() => void load(page + 1)} className="mt-3 min-h-11 rounded-lg border border-sf-line px-3 text-xs font-bold text-sf-body disabled:opacity-50">{loading ? 'Loading…' : 'Load more'}</button> : null}

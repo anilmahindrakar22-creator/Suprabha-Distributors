@@ -16,7 +16,6 @@ test('phone frame stays pinned while embedded stock views scroll and resize', as
   const header = page.locator('main > header');
   const appNav = page.getByRole('navigation', { name: 'Application sections' });
   const stock = page.frameLocator('iframe');
-  const stockViews = stock.getByRole('navigation', { name: 'Stock views' });
 
   async function expectShellPinned() {
     const viewportHeight = page.viewportSize()!.height;
@@ -42,12 +41,9 @@ test('phone frame stays pinned while embedded stock views scroll and resize', as
   await expect.poll(() => page.evaluate(() => window.scrollY)).toBeGreaterThan(0);
   await expectShellPinned();
 
-  for (const [label, view] of [['Daily', 'operations'], ['Insights', 'insights'], ['Groups', 'groups']]) {
-    await stockViews.getByRole('button', { name: label, exact: true }).click();
-    await expect(stock.locator(`#${view}View`)).toHaveClass('view active');
-    await page.waitForTimeout(300);
-    await expectShellPinned();
-  }
+  await expect(stock.locator('#groupsView')).toHaveClass('view active');
+  await expect(stock.locator('.tab')).toHaveCount(0);
+  await expectShellPinned();
 
   const hero = stock.locator('.hero');
   await hero.scrollIntoViewIfNeeded();

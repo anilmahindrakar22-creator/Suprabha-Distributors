@@ -23,7 +23,7 @@ async function openStockDashboard(page: import('@playwright/test').Page, payload
   await expect(page.locator('details dl')).toContainText('Stock');
 }
 
-test('phone Stock shows unified Requests counts with Daily active and no page overflow', async ({ page }) => {
+test('phone Stock shows unified Requests counts with Groups as the only view and no page overflow', async ({ page }) => {
   await page.setViewportSize({ width: 375, height: 812 });
   await openStockDashboard(page, stockPayload());
 
@@ -33,8 +33,10 @@ test('phone Stock shows unified Requests counts with Daily active and no page ov
   await expect(page.locator('.metric-chips [data-action="critical"]')).toHaveClass(/has-critical/);
   await expect(page.getByRole('button', { name: 'Reorder list', exact: true })).toHaveCount(0);
   await expect(page.getByText('Order to be placed', { exact: true })).toHaveCount(0);
-  await expect(page.locator('.tab.active')).toHaveText('Daily');
-  await expect(page.locator('#operationsView')).toHaveClass(/active/);
+  await expect(page.locator('.tab')).toHaveCount(0);
+  await expect(page.locator('#operationsView')).toHaveCount(0);
+  await expect(page.locator('#insightsView')).toHaveCount(0);
+  await expect(page.locator('#groupsView')).toHaveClass(/active/);
   expect(await page.evaluate(() => document.documentElement.scrollWidth <= innerWidth)).toBe(true);
 });
 
@@ -224,7 +226,7 @@ test('offline Stock cache is not shared between signed-in accounts', async ({ pa
   await expect(stock.locator('#company')).toHaveText('FIRST ACCOUNT CACHE');
 });
 
-test('Stock history stays scoped to the trusted account and ignores legacy shared history', async ({ page }) => {
+test('Stock shows no history chart, clears legacy shared history and keeps other accounts untouched', async ({ page }) => {
   const older = new Date(Date.now() - 2 * 24 * 60 * 60 * 1000).toISOString().slice(0, 10);
   await page.addInitScript((stamp) => {
     localStorage.setItem('stockflow-history-daily-v1', JSON.stringify([{ stamp, label: 'Legacy daily history', count: 90, qty: 900 }]));
@@ -242,18 +244,12 @@ test('Stock history stays scoped to the trusted account and ignores legacy share
   await expect.poll(() => page.evaluate(() => [localStorage.getItem('stockflow-history-daily-v1'), localStorage.getItem('stockflow-history-v2')])).toEqual([null, null]);
 
   await page.evaluate(() => document.querySelector('iframe')?.contentWindow?.postMessage({ type: 'stockflow-cache-account', email: 'first@example.com' }, location.origin));
-  await expect(stock.locator('#history')).toContainText('First account history');
-  await expect(stock.locator('#history')).not.toContainText('Second account history');
-  await expect(stock.locator('#history')).not.toContainText('Legacy');
 
   await page.evaluate(() => document.querySelector('iframe')?.contentWindow?.postMessage({ type: 'stockflow-cache-account', email: 'second@example.com' }, location.origin));
-  await expect(stock.locator('#history')).toContainText('Second account history');
-  await expect(stock.locator('#history')).not.toContainText('First account history');
-  await expect(stock.locator('#history')).not.toContainText('Legacy');
 
   await page.evaluate(() => document.querySelector('iframe')?.contentWindow?.postMessage({ type: 'stockflow-cache-account', email: 'first@example.com' }, location.origin));
-  await expect(stock.locator('#history')).toContainText('First account history');
-  await expect(stock.locator('#history')).not.toContainText('Second account history');
+  await expect(stock.locator('#history')).toHaveCount(0);
+  await expect.poll(() => page.evaluate(() => localStorage.getItem('stockflow-history-daily-v2:second%40example.com'))).toContain('Second account history');
 });
 
 test('a trusted account handoff before the live Stock response saves history in that account scope', async ({ page }) => {
@@ -278,6 +274,5 @@ test('a trusted account handoff before the live Stock response saves history in 
   await page.evaluate(() => document.querySelector('iframe')?.contentWindow?.postMessage({ type: 'stockflow-cache-account', email: 'early@example.com' }, location.origin));
   releaseStock();
   await expect(stock.locator('#company')).toHaveText('Test company');
-  await expect(stock.locator('#history')).toContainText('Early account history');
   await expect.poll(() => page.evaluate(() => localStorage.getItem('stockflow-history-daily-v2:early%40example.com'))).not.toBeNull();
 });
