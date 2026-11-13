@@ -160,9 +160,10 @@ export function GrowthInbox({ onOpenCustomer, onLinkLedger, onReviewPrices }: In
     </>}
     {loading && <div role="status" className="animate-pulse rounded-lg bg-sf-soft-0 p-4 text-xs">Loading action inbox…</div>}
     {error && <p role="alert" className="text-xs">{error} <button className={button} onClick={() => setRevision(n => n + 1)}>Retry</button></p>}
+    <details className="mt-2"><summary className="cursor-pointer text-xs text-sf-muted min-h-11 flex items-center">How the inbox works</summary>
     <p className={muted}>₹ at stake: Skipped, Stopped and New, not back use average repeat spend per buying month; Falling uses (first-half repeat − second-half repeat) ÷ 6. Instrument and bulk invoices excluded.</p>
     <p className={muted}>Not yet: Deepen (cross-sell) cards need items mapped to principals in Brand setup; call logging comes later.</p>
-    <p className={muted}>Price cards: prices are proposed in the price book and approved as usual; approved prices apply to new StockFlow orders. Tally invoices are checked by &apos;Billed below approved price&apos;.</p>
+    <p className={muted}>Price cards: prices are proposed in the price book and approved as usual; approved prices apply to new StockFlow orders. Tally invoices are checked by &apos;Billed below approved price&apos;.</p></details>
     <p aria-live="polite" className="text-xs">{live}</p>
   </section>;
 }

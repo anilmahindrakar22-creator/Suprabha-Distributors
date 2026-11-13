@@ -121,7 +121,7 @@ for (const width of [375, 1280]) {
   test.describe('Growth at ' + width, () => {
     test.use({ viewport: { width, height: 900 } });
     test('billed below has a muted zero-prices state without money or action', async ({ page }) => {
-      await fixture(page); await openGrowth(page);
+      await fixture(page); await openGrowth(page); await page.getByRole('tab', { name: 'Profit', exact: true }).click();
       const card = page.getByRole('region', { name: 'Where margin can grow', exact: true });
       const row = card.getByRole('listitem').filter({ has: page.getByText('Billed below approved price.', { exact: true }) });
       await expect(row).toContainText('No approved customer prices yet. Once prices are approved through Review prices, invoices billed below them appear here.');
@@ -132,7 +132,7 @@ for (const width of [375, 1280]) {
       await expect(card).toContainText("Tally invoices aren't changed by StockFlow; this check finds lines billed below an approved price so billing can correct them.");
     });
     test('billed below opens both invoice lines and restores focus', async ({ page }) => {
-      await fixture(page, { billedBelow: 'lines' }); await openGrowth(page);
+      await fixture(page, { billedBelow: 'lines' }); await openGrowth(page); await page.getByRole('tab', { name: 'Profit', exact: true }).click();
       const card = page.getByRole('region', { name: 'Where margin can grow', exact: true });
       await expect(card.getByText('2 invoice lines billed under the approved price. · 1 skipped: unit looks different', { exact: true })).toBeVisible();
       await expect(card.getByText('₹650 so far', { exact: true })).toBeVisible();
@@ -151,7 +151,7 @@ for (const width of [375, 1280]) {
       await expect(drawer).toHaveCount(0); await expect(trigger).toBeFocused();
     });
     test('billed below failure stays inline and Retry recovers', async ({ page }) => {
-      await fixture(page, { billedBelow: 'error' }); await openGrowth(page);
+      await fixture(page, { billedBelow: 'error' }); await openGrowth(page); await page.getByRole('tab', { name: 'Profit', exact: true }).click();
       const card = page.getByRole('region', { name: 'Where margin can grow', exact: true });
       const row = card.getByRole('listitem').filter({ has: page.getByText('Billed below approved price.', { exact: true }) });
       await expect(row.getByRole('alert')).toContainText("Couldn't load this check");
@@ -169,7 +169,7 @@ for (const width of [375, 1280]) {
         const value = billedBelowSample(pageNumber);
         return route.fulfill({ json: { ...value, rows: [value.rows[pageNumber - 1]] } });
       });
-      await openGrowth(page);
+      await openGrowth(page); await page.getByRole('tab', { name: 'Profit', exact: true }).click();
       await page.getByRole('button', { name: 'See lines', exact: true }).click();
       const drawer = page.getByRole('dialog');
       await drawer.getByRole('button', { name: 'Load more', exact: true }).click();
@@ -185,7 +185,7 @@ for (const width of [375, 1280]) {
       const data = sample();
       const gp = { ...data.gp, consumables: { ...data.gp.repeat, gpPct: 28.1 }, instruments: { ...data.gp.bulk, gpPaise: -30000000, gpPct: -20 }, months: data.gp.months.map(m => ({ ...m, consumablesKnownSalesPaise: 1000000, consumablesGpPaise: 280000, instrumentsKnownSalesPaise: 500000, instrumentsGpPaise: -100000 })) };
       await page.route('**/api/growth', route => route.fulfill({ json: { ...data, gp } }));
-      await openGrowth(page);
+      await openGrowth(page); await page.getByRole('tab', { name: 'Profit', exact: true }).click();
       const section = page.getByRole('region', { name: 'Gross profit by month', exact: true });
       await expect(section.getByText(/Consumables earn 28.0–28.0% a month/)).toBeVisible();
       await expect(section.locator('svg text').filter({ hasText: /^−/ })).toHaveCount(1);
@@ -200,7 +200,7 @@ for (const width of [375, 1280]) {
       if (width === 375) expect(await page.evaluate(() => document.documentElement.scrollWidth <= innerWidth)).toBe(true);
     });
     test('P3 levers show live figures and jump to the matching item list', async ({ page }) => {
-      await fixture(page); await openGrowth(page);
+      await fixture(page); await openGrowth(page); await page.getByRole('tab', { name: 'Profit', exact: true }).click();
       const levers = page.getByRole('region', { name: 'Where margin can grow', exact: true });
       await expect(levers.getByText('up to ₹1.9 L a year', { exact: true })).toBeVisible();
       await expect(levers.getByText('₹0.7 L a year', { exact: true })).toBeVisible();
@@ -220,7 +220,7 @@ for (const width of [375, 1280]) {
       if (width === 375) expect(await page.evaluate(() => document.documentElement.scrollWidth <= innerWidth)).toBe(true);
     });
     test('P3 labs sort low margin first and items filter low', async ({ page }) => {
-      await fixture(page); await openGrowth(page);
+      await fixture(page); await openGrowth(page); await page.getByRole('tab', { name: 'Profit', exact: true }).click();
       const explorer = page.getByRole('region', { name: 'Margin by lab and item', exact: true });
       const sorted = page.waitForRequest(r => r.url().includes('/api/growth/margin?') && new URL(r.url()).searchParams.get('sort') === 'margin_asc');
       await explorer.getByLabel('Sort', { exact: true }).selectOption('margin_asc'); await sorted;
@@ -234,8 +234,10 @@ for (const width of [375, 1280]) {
       await fixture(page);
       await page.route('**/api/growth/margin?**', route => route.fulfill({ status: 503, json: { error: 'Unavailable' } }));
       await openGrowth(page);
-      await expect(page.getByRole('region', { name: 'Gross profit by month', exact: true })).toHaveCount(0);
+      await page.getByRole('tab', { name: 'Monthly', exact: true }).click();
       await expect(page.getByRole('region', { name: 'Purchases against sales', exact: true })).toBeVisible();
+      await page.getByRole('tab', { name: 'Profit', exact: true }).click();
+      await expect(page.getByRole('region', { name: 'Gross profit by month', exact: true })).toHaveCount(0);
       const explorer = page.getByRole('region', { name: 'Margin by lab and item', exact: true });
       await expect(explorer.getByRole('alert')).toContainText('Margins are unavailable.');
       await page.route('**/api/growth/margin?**', route => route.fulfill({ json: marginSample(new URL(route.request().url()).searchParams) }));
@@ -251,7 +253,7 @@ for (const width of [375, 1280]) {
         const value = marginSample(p);
         return route.fulfill({ json: { ...value, total: 2, rows: p.get('page') === '2' ? [{ ...value.rows[0], labKey: 'ledger-b', name: 'Lab B' }] : value.rows } });
       });
-      await openGrowth(page);
+      await openGrowth(page); await page.getByRole('tab', { name: 'Profit', exact: true }).click();
       const explorer = page.getByRole('region', { name: 'Margin by lab and item', exact: true });
       await explorer.getByLabel('Search labs', { exact: true }).fill('La');
       await explorer.getByLabel('Search labs', { exact: true }).fill('Lab');
@@ -264,7 +266,7 @@ for (const width of [375, 1280]) {
       if (width === 375) expect(await explorer.evaluate(element => element.scrollWidth <= element.clientWidth)).toBe(true);
     });
     test('P3 item detail distinguishes price reviews, packs and unlinked labs', async ({ page }) => {
-      await fixture(page); await openGrowth(page);
+      await fixture(page); await openGrowth(page); await page.getByRole('tab', { name: 'Profit', exact: true }).click();
       const explorer = page.getByRole('region', { name: 'Margin by lab and item', exact: true });
       await explorer.getByRole('tab', { name: 'Items', exact: true }).click();
       const trigger = explorer.getByRole('button', { name: 'Cliniquant CRP: open labs and prices', exact: true });
@@ -292,7 +294,7 @@ for (const width of [375, 1280]) {
       });
       let posts = 0;
       page.on('request', request => { if (request.method() === 'POST' && new URL(request.url()).pathname === '/api/pricing') posts++; });
-      await openGrowth(page);
+      await openGrowth(page); await page.getByRole('tab', { name: 'Profit', exact: true }).click();
       const explorer = page.getByRole('region', { name: 'Margin by lab and item', exact: true });
       await explorer.getByRole('tab', { name: 'Items', exact: true }).click();
       await explorer.getByRole('button', { name: 'Cliniquant CRP: open labs and prices', exact: true }).click();
@@ -476,12 +478,21 @@ for (const width of [375, 1280]) {
       await expect(tree.getByText('10 invoices of ₹2 L or more', { exact: true })).toBeVisible();
       await expect(tree.getByText('164 × 4.6 × ₹17,992 = ₹136.7 L', { exact: true })).toBeVisible();
       await expect(tree.getByText('Growth came from labs spending more each time, not from more labs.', { exact: true })).toBeVisible();
+      await page.getByRole('tab', { name: 'H1 → H2', exact: true }).click();
       const bridge = page.getByRole('region', { name: 'Where growth came from' });
       await expect(bridge.locator('svg rect[data-growth-bar]')).toHaveCount(6);
       await expect(bridge.getByLabel('Bridge identity')).toHaveText('71.5 + 17.9 − 17.4 + 48.3 − 10.0 = 110.3.');
       await expect(bridge.getByText('Most labs that stopped were occasional buyers; 4 regular labs stopped (₹2.1 L). Growth came from 41 existing labs.', { exact: true })).toBeVisible();
       await expect(bridge.getByText('Regular = bought in 3 or more of the 6 months before. 30 of the labs that stopped had bought only once or twice.', { exact: true })).toBeVisible();
+      const healthDetails = page.locator('#data-health details');
+      const inboxDetails = page.getByRole('region', { name: 'Action inbox', exact: true }).locator('details');
+      await expect(healthDetails).not.toHaveAttribute('open', '');
+      await expect(inboxDetails).not.toHaveAttribute('open', '');
+      await expect(page.locator('#data-health summary')).toContainText(/Data health · \d+ limited · 1 blocked/);
+      await page.locator('#data-health summary').click();
       await expect(page.locator('#data-health li')).toHaveCount(6);
+      await inboxDetails.locator('summary', { hasText: 'How the inbox works' }).click();
+      await expect(inboxDetails).toContainText('₹ at stake:');
       const scorecard = page.getByRole('region', { name: 'Scorecard', exact: true });
       await expect(scorecard.getByText('29.4%', { exact: true })).toBeVisible();
       await expect(scorecard.getByText('+8.0 pts (25% → 33%)', { exact: true })).toBeVisible();
@@ -490,7 +501,8 @@ for (const width of [375, 1280]) {
       await expect(grossProfit.getByText('· Limited', { exact: true })).toBeVisible();
       await expect(grossProfit.getByText('Cost known for 85% of sales (average purchase cost)', { exact: true })).toBeVisible();
       await expect(grossProfit.getByText('1 line left out: sale and cost units look different', { exact: true })).toBeVisible();
-      for (const section of [tree, bridge]) {
+      for (const [tabName, section] of [['Revenue', tree], ['H1 → H2', bridge]] as const) {
+        await page.getByRole('tab', { name: tabName, exact: true }).click();
         await section.getByRole('button', { name: 'View as table' }).click();
         await expect(section.locator('table').first()).toBeVisible();
         await section.getByRole('button', { name: 'View as chart' }).click();
@@ -498,7 +510,7 @@ for (const width of [375, 1280]) {
       if (width === 375) expect(await page.evaluate(() => document.documentElement.scrollWidth <= innerWidth)).toBe(true);
     });
     test('scorecard and skipped segment open compact lab actions and restore keyboard focus', async ({ page }) => {
-      await fixture(page); await openGrowth(page);
+      await fixture(page); await openGrowth(page); await page.getByRole('tab', { name: 'Monthly', exact: true }).click();
       const scorecard = page.getByRole('region', { name: 'Scorecard', exact: true });
       await expect(scorecard).toBeVisible();
       await expect(scorecard.locator('[data-scorecard-tile]')).toHaveCount(6);
@@ -522,7 +534,7 @@ for (const width of [375, 1280]) {
       await expect(skipped).toBeFocused();
     });
     test('Load more appends page 2', async ({ page }) => {
-      await fixture(page, { labsTotal: 21 }); await openGrowth(page);
+      await fixture(page, { labsTotal: 21 }); await openGrowth(page); await page.getByRole('tab', { name: 'Monthly', exact: true }).click();
       await page.getByRole('region', { name: 'Labs buying each month', exact: true }).getByRole('button', { name: /Oct.*skipped|skipped.*Oct/i }).click();
       const panel = page.getByRole('dialog');
       const request = page.waitForRequest(r => { const p = new URL(r.url()).searchParams; return r.url().includes('/api/growth/labs?') && p.get('list') === 'month_skipped' && p.get('page') === '2'; });
@@ -532,7 +544,7 @@ for (const width of [375, 1280]) {
       await expect(panel.getByText('Showing 21 of 21', { exact: true })).toBeVisible();
     });
     test('Stopped starts with regular only and refetches when toggled off', async ({ page }) => {
-      await fixture(page); await openGrowth(page);
+      await fixture(page); await openGrowth(page); await page.getByRole('tab', { name: 'H1 → H2', exact: true }).click();
       const request = page.waitForRequest(r => { const p = new URL(r.url()).searchParams; return r.url().includes('/api/growth/labs?') && p.get('list') === 'bridge_stopped' && p.get('regularOnly') === 'true'; });
       await page.getByRole('region', { name: 'Where growth came from', exact: true }).getByRole('button', { name: /stopped/i }).click(); await request;
       const regular = page.getByRole('dialog').getByRole('checkbox', { name: 'Regular only', exact: true });
@@ -541,7 +553,7 @@ for (const width of [375, 1280]) {
       await regular.uncheck(); await unfiltered;
     });
     test('large-purchase segments show suppliers and the Economics action', async ({ page }) => {
-      await fixture(page); await openGrowth(page);
+      await fixture(page); await openGrowth(page); await page.getByRole('tab', { name: 'Monthly', exact: true }).click();
       await page.getByRole('region', { name: 'Purchases against sales', exact: true }).getByRole('button', { name: /Oct.*large|large.*Oct/i }).click();
       const panel = page.getByRole('dialog');
       await expect(panel.getByText('Supplier A', { exact: true })).toBeVisible();
@@ -563,7 +575,7 @@ for (const width of [375, 1280]) {
       await expect(page.getByRole('dialog').getByRole('button', { name: 'Open', exact: true })).toBeVisible();
     });
     test('sales and regular purchase bars carry no drilldown button role', async ({ page }) => {
-      await fixture(page); await openGrowth(page);
+      await fixture(page); await openGrowth(page); await page.getByRole('tab', { name: 'Monthly', exact: true }).click();
       const purchases = page.getByRole('region', { name: 'Purchases against sales', exact: true });
       await expect(purchases.getByRole('button', { name: /sales|regular purchases/i })).toHaveCount(0);
       await expect(purchases.locator('svg rect[role="button"]')).toHaveCount(12);
@@ -576,6 +588,7 @@ for (const width of [375, 1280]) {
     test('Brand setup health action reaches Accounts Prospects', async ({ page }) => {
       await fixture(page); await openGrowth(page);
       await page.route('**/api/customer-map?**', route => route.fulfill({ status: 503, json: { error: 'Unavailable in fixture' } }));
+      await page.locator('#data-health summary').click();
       await page.locator('#data-health').getByRole('button', { name: /Open Brand setup/i }).click();
       await expect(page.getByRole('heading', { name: 'Accounts', exact: true })).toBeVisible();
       await expect(page.getByRole('region', { name: 'Prospects', exact: true })).toBeVisible();
@@ -594,6 +607,30 @@ for (const width of [375, 1280]) {
       if (width === 375) await page.getByRole('button', { name: 'More', exact: true }).click();
       await expect(page.getByRole('button', { name: /^growth$/i })).toHaveCount(0);
       expect(requests).toHaveLength(0);
+    });
+    test('Growth shows one analysis tab at a time, loads margins only on demand and remembers the tab', async ({ page }) => {
+      const marginRequests: string[] = [];
+      page.on('request', request => { if (request.url().includes('/api/growth/margin')) marginRequests.push(request.url()); });
+      await fixture(page); await openGrowth(page);
+      await expect(page.getByRole('tab', { name: 'Revenue', exact: true })).toHaveAttribute('aria-selected', 'true');
+      await expect(page.getByRole('region', { name: 'Where revenue comes from' })).toBeVisible();
+      await expect(page.getByRole('region', { name: 'Where growth came from' })).toHaveCount(0);
+      await expect(page.getByRole('region', { name: 'Where margin can grow' })).toHaveCount(0);
+      expect(marginRequests).toHaveLength(0);
+      await page.getByRole('tab', { name: 'Profit', exact: true }).click();
+      await expect(page.getByRole('region', { name: 'Margin by lab and item', exact: true })).toBeVisible();
+      await expect(page.getByRole('region', { name: 'Where revenue comes from' })).toHaveCount(0);
+      expect(marginRequests.length).toBeGreaterThan(0);
+      await page.reload(); await openGrowth(page);
+      await expect(page.getByRole('tab', { name: 'Profit', exact: true })).toHaveAttribute('aria-selected', 'true');
+      await expect(page.getByRole('region', { name: 'Margin by lab and item', exact: true })).toBeVisible();
+    });
+    test('the Why? link opens the collapsed Data health items', async ({ page }) => {
+      await fixture(page); await openGrowth(page);
+      await expect(page.locator('#data-health li').first()).toBeHidden();
+      await page.getByRole('region', { name: 'Scorecard', exact: true }).getByRole('link', { name: 'Why?' }).click();
+      await expect(page.locator('#data-health li')).toHaveCount(6);
+      await expect(page.locator('#data-health li').first()).toBeVisible();
     });
     test('403 shows the management-only message', async ({ page }) => {
       await fixture(page, { status: 403 }); await openGrowth(page);

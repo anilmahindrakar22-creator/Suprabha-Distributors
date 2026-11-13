@@ -18,7 +18,9 @@ const monthYear = (s: string | number) => new Date(s).toLocaleDateString('en-GB'
 const previousDay = (s: string) => new Date(Date.parse(s) - 86400000).toISOString().slice(0, 10);
 const card = 'min-w-0 space-y-3 rounded-xl border border-sf-line-soft bg-white p-4 lg:p-5';
 const muted = 'text-xs text-sf-muted';
-const toggleClass = 'min-h-11 shrink-0 text-xs text-sf-brand underline';
+const growthTabs = [{ id: 'revenue', label: 'Revenue' }, { id: 'bridge', label: 'H1 → H2' }, { id: 'monthly', label: 'Monthly' }, { id: 'profit', label: 'Profit' }] as const;
+type GrowthTab = typeof growthTabs[number]['id'];
+const toggleClass ='min-h-11 shrink-0 text-xs text-sf-brand underline';
 
 function Table({ caption, headings, rows }: { caption: string; headings: string[]; rows: ReactNode[][] }) {
   return <table className="w-full table-fixed border-collapse text-xs tabular-nums [&_th]:font-normal [&_th]:text-sf-muted [&_td]:text-right [&_td]:text-[15px] [&_td]:leading-5 [&_th]:p-1.5 [&_td]:p-1.5 [&_th]:border-b [&_td]:border-b [&_th]:border-sf-line-soft [&_td]:border-sf-line-soft [&_th]:align-top [&_td]:align-top [&_td]:break-words"><caption className="mb-2 text-left text-xs text-sf-muted">{caption}</caption><thead><tr>{headings.map((v, i) => <th key={v} scope="col" className={i ? 'text-right' : 'w-[34%] text-left'}>{v}</th>)}</tr></thead><tbody>{rows.map((row, i) => <tr key={i}>{row.map((v, j) => j ? <td key={j}>{v}</td> : <th key={j} scope="row" className="text-left">{v}</th>)}</tr>)}</tbody></table>;
@@ -179,6 +181,12 @@ function MonthlyCharts({ data, onDrill }: { data: GrowthData; onDrill: (s: Growt
 
 function Health({ data, onOpenBrandSetup, onOpenMyActions }: { data: GrowthData } & Pick<GrowthNavigation, 'onOpenBrandSetup' | 'onOpenMyActions'>) {
   const h = data.health, pct = h.gp.costedPct;
+  const [open, setOpen] = useState(false);
+  useEffect(() => {
+    const sync = () => { if (location.hash === '#data-health') setOpen(true); };
+    sync(); window.addEventListener('hashchange', sync);
+    return () => window.removeEventListener('hashchange', sync);
+  }, []);
   const profit = data.gp;
   const age = h.catalog.observedAt === null ? null : Date.now() - Date.parse(h.catalog.observedAt);
   const rows = [
@@ -189,7 +197,10 @@ function Health({ data, onOpenBrandSetup, onOpenMyActions }: { data: GrowthData 
     { title: 'Reasons (qualitative)', status: h.reasons.visitReasons180 + h.reasons.constraints === 0 ? 'Blocked' : 'Current', text: `${h.reasons.visitReasons180} visit reasons, ${h.reasons.constraints} diagnoses, ${h.reasons.openActions} open actions, ${h.reasons.visits180} visits (180 days)`, effect: h.reasons.visitReasons180 + h.reasons.constraints === 0 ? 'We can see what changed, not why' : '' },
     { title: 'Item catalog', status: age !== null && age >= 0 && age <= 7 * 86400000 ? 'Current' : 'Limited', text: h.catalog.groups === null ? 'Unknown' : `${h.catalog.groups} groups` },
   ];
-  return <aside id="data-health" tabIndex={-1} className={`${card} scroll-mt-4 focus:outline-sf-accent`} aria-labelledby="health-title"><h2 id="health-title" className="text-base font-bold">Data health</h2><p className={muted}>What limits these numbers · {data.companyCount === 1 ? 'one Tally company' : `${data.companyCount} Tally companies`}</p><ul>{rows.map(row => <li key={row.title} className="grid grid-cols-[8px_minmax(0,1fr)] gap-2.5 border-b border-sf-line-soft py-3.5 text-xs last:border-0 last:pb-0"><span aria-hidden="true" className={`mt-1.5 size-2 rounded-full ${row.status === 'Current' ? 'bg-sf-success' : row.status === 'Blocked' ? 'bg-sf-danger' : 'bg-sf-warning'}`} /><div><strong>{row.title}</strong><span className="text-sf-muted"> · {row.status}</span><p className="mt-1">{row.text}</p>{row.effect && <p className="mt-1 text-sf-muted">{row.effect}</p>}{row.detail && <p className="mt-1 text-sf-muted">{row.detail}</p>}{row.owner && <p className="mt-1 text-sf-brand">{row.owner}</p>}{row.title === 'Item groups' && <button className="min-h-11 text-sf-brand underline" onClick={onOpenBrandSetup}>Open Brand setup</button>}{row.title === 'Reasons (qualitative)' && <button className="min-h-11 text-sf-brand underline" onClick={onOpenMyActions}>Open My actions</button>}</div></li>)}</ul></aside>;
+  const count = (status: string) => rows.filter(row => row.status === status).length;
+  const summaryParts = [['limited', count('Limited')], ['blocked', count('Blocked')], ['unknown', count('Unknown')]].filter(([, n]) => n).map(([label, n]) => `${n} ${label}`);
+  const summaryText = summaryParts.length ? summaryParts.join(' · ') : 'all current';
+  return <aside id="data-health" tabIndex={-1} onFocus={event => { if (event.target === event.currentTarget) setOpen(true); }} className={`${card} scroll-mt-4 focus:outline-sf-accent`} aria-labelledby="health-title"><details open={open} onToggle={event => setOpen(event.currentTarget.open)}><summary className="flex min-h-11 cursor-pointer items-center"><h2 id="health-title" className="text-xs font-bold">Data health<span className="font-normal text-sf-muted"> · {summaryText}</span></h2></summary><p className={muted}>What limits these numbers · {data.companyCount === 1 ? 'one Tally company' : `${data.companyCount} Tally companies`}</p><ul>{rows.map(row => <li key={row.title} className="grid grid-cols-[8px_minmax(0,1fr)] gap-2.5 border-b border-sf-line-soft py-3.5 text-xs last:border-0 last:pb-0"><span aria-hidden="true" className={`mt-1.5 size-2 rounded-full ${row.status === 'Current' ? 'bg-sf-success' : row.status === 'Blocked' ? 'bg-sf-danger' : 'bg-sf-warning'}`} /><div><strong>{row.title}</strong><span className="text-sf-muted"> · {row.status}</span><p className="mt-1">{row.text}</p>{row.effect && <p className="mt-1 text-sf-muted">{row.effect}</p>}{row.detail && <p className="mt-1 text-sf-muted">{row.detail}</p>}{row.owner && <p className="mt-1 text-sf-brand">{row.owner}</p>}{row.title === 'Item groups' && <button className="min-h-11 text-sf-brand underline" onClick={onOpenBrandSetup}>Open Brand setup</button>}{row.title === 'Reasons (qualitative)' && <button className="min-h-11 text-sf-brand underline" onClick={onOpenMyActions}>Open My actions</button>}</div></li>)}</ul></details></aside>;
 }
 
 export function GrowthPage(navigation: GrowthNavigation) {
@@ -198,6 +209,19 @@ export function GrowthPage(navigation: GrowthNavigation) {
   const [data, setData] = useState<GrowthData | null>(null);
   const [error, setError] = useState('');
   const [revision, setRevision] = useState(0);
+  const [tab, setTab] = useState<GrowthTab>('revenue');
+  useEffect(() => {
+    try { const saved = localStorage.getItem('sf-growth-tab'); const match = growthTabs.find(item => item.id === saved); if (match) setTab(match.id); } catch { /* storage unavailable */ }
+  }, []);
+  const chooseTab = (id: GrowthTab) => { setTab(id); try { localStorage.setItem('sf-growth-tab', id); } catch { /* storage unavailable */ } };
+  const onTabKey = (event: React.KeyboardEvent, id: GrowthTab) => {
+    if (event.key !== 'ArrowRight' && event.key !== 'ArrowLeft') return;
+    event.preventDefault();
+    const index = growthTabs.findIndex(item => item.id === id);
+    const next = growthTabs[(index + (event.key === 'ArrowRight' ? 1 : growthTabs.length - 1)) % growthTabs.length].id;
+    chooseTab(next);
+    document.getElementById(`growth-tab-${next}`)?.focus();
+  };
   useEffect(() => {
     const controller = new AbortController();
     void fetch('/api/growth', { cache: 'no-store', signal: controller.signal }).then(async response => {
@@ -216,7 +240,14 @@ export function GrowthPage(navigation: GrowthNavigation) {
   return <div className="h-full min-w-0 overflow-y-auto p-4 text-sm text-sf-strong sm:p-6 [overflow-wrap:break-word]">
     <header className="mb-5 space-y-2"><p className={muted}>More / Management</p><h1 className="text-xl font-bold">Growth</h1>{data && <p className={muted}>{scope} · management only</p>}{data && !data.confirmed && <p className="text-xs text-sf-warning">Not confirmed: {data.confirmedReason ?? 'Unknown'}</p>}</header>
     <div className="grid min-w-0 items-start gap-4 md:grid-cols-[minmax(0,2.2fr)_minmax(280px,1fr)] lg:gap-5">
-      <div className="min-w-0 space-y-4">{pageError}{data && <Scorecard data={data} onDrill={setSelection} />}{isMobile && inbox}{data && <><Revenue data={data} scope={scope} comparison={comparison} onDrill={setSelection} /><Bridge data={data} scope={scope} comparison={comparison} onDrill={setSelection} /><MonthlyCharts data={data} onDrill={setSelection} /><GrowthProfit data={data} scope={scope} onDrill={setSelection} navigation={navigation} /></>}</div>
+      <div className="min-w-0 space-y-4">{pageError}{data && <Scorecard data={data} onDrill={setSelection} />}{isMobile && inbox}{data && <>
+        <div role="tablist" aria-label="Growth analysis" className="flex gap-1 overflow-x-auto rounded-lg border border-sf-line p-1">{growthTabs.map(item => <button key={item.id} type="button" role="tab" id={`growth-tab-${item.id}`} aria-selected={tab === item.id} aria-controls="growth-panel" tabIndex={tab === item.id ? 0 : -1} className={`min-h-11 shrink-0 rounded-md px-3 text-sm ${tab === item.id ? 'bg-sf-accent-soft font-bold text-sf-brand' : 'text-sf-muted'}`} onClick={() => chooseTab(item.id)} onKeyDown={event => onTabKey(event, item.id)}>{item.label}</button>)}</div>
+        <div id="growth-panel" role="tabpanel" aria-labelledby={`growth-tab-${tab}`} className="min-w-0 space-y-4">
+          {tab === 'revenue' && <Revenue data={data} scope={scope} comparison={comparison} onDrill={setSelection} />}
+          {tab === 'bridge' && <Bridge data={data} scope={scope} comparison={comparison} onDrill={setSelection} />}
+          {tab === 'monthly' && <MonthlyCharts data={data} onDrill={setSelection} />}
+          {tab === 'profit' && <GrowthProfit data={data} scope={scope} onDrill={setSelection} navigation={navigation} />}
+        </div></>}</div>
       <div className="min-w-0 space-y-4">{!isMobile && inbox}{data && <Health data={data} onOpenBrandSetup={navigation.onOpenBrandSetup} onOpenMyActions={navigation.onOpenMyActions} />}</div>
     </div>
     {selection && <GrowthDrilldown key={`${selection.list}:${selection.month ?? ""}:${selection.half ?? ""}:${selection.sort ?? ""}`} selection={selection} onClose={() => setSelection(null)} {...navigation} />}
