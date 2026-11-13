@@ -10,7 +10,7 @@ const billedBelowSample = (page = 1, approvedPricesInUse = 2) => ({
 const marginLevers = { priceSpread: { items: 76, pairs: 164, paise: 19000000 }, lowMargin: { items: 12, paiseToThreshold: 7000000, examples: [{ name: 'HIV Tridot', marginPct: 13.2, salesPaise: 55000000, labs: 35 }] }, freeGoods: { lines: 9, costPaise: 3500000 }, instrumentsGpPaise: -30000000 };
 const marginSample = (p: URLSearchParams) => ({
   view: p.get('view'), sort: p.get('sort') ?? 'sales', filter: p.get('filter') ?? 'all', q: p.get('q'), page: Number(p.get('page')), pageSize: 20, total: 1, thresholdPct: 14, consumablesMarginPct: 28.1, levers: marginLevers,
-  rows: p.get('view') === 'items' ? [{ itemKey: 'item-a', name: 'Cliniquant CRP', salesPaise: 55000000, knownSalesPaise: 55000000, gpPaise: 7000000, marginPct: 13.2, labs: 13, priceLowPaise: 140000, typicalPricePaise: 250000, priceHighPaise: 322000, spreadPaise: 2904900, low: true, belowCost: false }] : [{ labKey: 'ledger-a', customerId: 'customer-a', name: 'Lab A', town: 'Town A', salesPaise: 55000000, knownSalesPaise: 55000000, gpPaise: 7000000, marginPct: 13.2, coveragePct: 100, low: true }],
+  rows: p.get('view') === 'items' ? [{ itemKey: 'item-a', name: 'Cliniquant CRP', salesPaise: 55000000, knownSalesPaise: 55000000, gpPaise: 7000000, marginPct: 13.2, labs: 13, priceLowPaise: 140000, typicalPricePaise: 250000, priceHighPaise: 322000, spreadPaise: 2904900, low: true, belowCost: false }] : [{ labKey: 'ledger-a', customerId: 'customer-a', name: 'Lab A', town: 'Town A', salesPaise: 55000000, knownSalesPaise: 55000000, gpPaise: 7000000, marginPct: 13.2, coveragePct: 100, low: true, totalSalesPaise: 80000000, instrumentSalesPaise: 25000000 }],
 });
 const itemDetail = () => ({
   kind: 'item', itemKey: 'item-a', name: 'Cliniquant CRP', typicalPricePaise: 250000, labs: 13, marginPct: 28.1, tallyItemKey: 'tally-a', page: 1, pageSize: 20, total: 3,
@@ -583,6 +583,18 @@ for (const width of [375, 1280]) {
       await expect(page.getByRole('heading', { name: 'Margin by lab and item', exact: true })).toBeInViewport();
       await page.getByRole('button', { name: /^Gross profit: .*, open Profit$/ }).click();
       await expect(page.getByRole('tab', { name: 'Profit', exact: true })).toHaveAttribute('aria-selected', 'true');
+    });
+    test('lab margin list shows total business beside consumables', async ({ page }) => {
+      await fixture(page); await openGrowth(page);
+      await page.getByRole('tab', { name: 'Profit', exact: true }).click();
+      const explorer = page.getByRole('region', { name: 'Margin by lab and item', exact: true });
+      await expect(explorer.getByRole('button', { name: 'Lab A: open items bought', exact: true })).toBeVisible();
+      if (width >= 640) {
+        await expect(explorer.getByRole('columnheader', { name: 'Total business', exact: true })).toBeVisible();
+        await expect(explorer.getByText(/^instruments ₹/)).toBeVisible();
+      } else {
+        await expect(explorer.getByText(/^Total ₹.* · Consumables ₹/)).toBeVisible();
+      }
     });
     test('action inbox starts folded with its summary, opens on demand and remembers', async ({ page }) => {
       await fixture(page, { inboxOpen: false, confirmed: false, reason: 'Sales coverage incomplete: c0071957-a387-4298-89e4-70aaa8dc6989' }); await openGrowth(page);

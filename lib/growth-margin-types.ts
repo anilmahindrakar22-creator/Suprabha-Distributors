@@ -10,7 +10,7 @@ export type GrowthBilledBelow = {
   rows: { date: string; customerId: string; name: string | null; town: string | null; itemName: string; quantity: number; billedRatePaise: number; approvedRatePaise: number; gapPaise: number; voucherRef: string }[];
 };
 type MarginNumbers = { salesPaise: number; knownSalesPaise: number; gpPaise: number; marginPct: number | null; low: boolean };
-export type GrowthMarginLabRow = MarginNumbers & { labKey: string; customerId: string | null; name: string | null; town: string | null; coveragePct: number | null };
+export type GrowthMarginLabRow = MarginNumbers & { labKey: string; customerId: string | null; name: string | null; town: string | null; coveragePct: number | null; totalSalesPaise?: number | null; instrumentSalesPaise?: number | null };
 export type GrowthMarginItemRow = MarginNumbers & { itemKey: string; name: string | null; labs: number; priceLowPaise: number | null; typicalPricePaise: number | null; priceHighPaise: number | null; spreadPaise: number; belowCost: boolean };
 export type GrowthMarginLevers = {
   priceSpread: { items: number; pairs: number; paise: number };
@@ -68,7 +68,9 @@ export function normalizeGrowthBilledBelow(value: unknown): GrowthBilledBelow | 
   return { ...pick(value, ['lines', 'gapPaise', 'unitMismatchLines', 'approvedPricesInUse', 'page', 'pageSize', 'total']), rows: (value.rows as Obj[]).map(r => pick(r, fields)) } as GrowthBilledBelow;
 }
 const baseFields = ['salesPaise', 'knownSalesPaise', 'gpPaise', 'marginPct', 'low'];
-const labFields = [...baseFields, 'labKey', 'customerId', 'name', 'town', 'coveragePct'];
+const labFields = [...baseFields, 'labKey', 'customerId', 'name', 'town', 'coveragePct', 'totalSalesPaise', 'instrumentSalesPaise'];
+/** Total business fields arrive only after the lab-total migration; absent or null is accepted. */
+const optionalPaise = (v: unknown) => v === undefined || v === null || integer(v);
 const itemFields = [...baseFields, 'itemKey', 'name', 'labs', 'priceLowPaise', 'typicalPricePaise', 'priceHighPaise', 'spreadPaise', 'belowCost'];
 export function normalizeGrowthMargin(value: unknown): GrowthMarginData | null {
   if (!object(value) || !pageValid(value, true) || (value.view !== 'labs' && value.view !== 'items') || !growthMarginSorts(value.view).includes(value.sort as GrowthMarginSort) || !growthMarginFilters(value.view).includes(value.filter as GrowthMarginFilter)
@@ -79,7 +81,7 @@ export function normalizeGrowthMargin(value: unknown): GrowthMarginData | null {
     || !l.lowMargin.examples.every(e => object(e) && nullableText(e.name) && nullable(e.marginPct, finite) && integer(e.salesPaise) && count(e.labs))
     || !object(l.freeGoods) || !count(l.freeGoods.lines) || !integer(l.freeGoods.costPaise) || !integer(l.instrumentsGpPaise)) return null;
   if (!(value.rows as unknown[]).every(r => object(r) && ['salesPaise', 'knownSalesPaise', 'gpPaise'].every(k => integer(r[k])) && nullable(r.marginPct, finite) && typeof r.low === 'boolean' && nullableText(r.name)
-    && (value.view === 'labs' ? text(r.labKey) && nullableText(r.customerId) && nullableText(r.town) && nullable(r.coveragePct, coverage)
+    && (value.view === 'labs' ? text(r.labKey) && nullableText(r.customerId) && nullableText(r.town) && nullable(r.coveragePct, coverage) && optionalPaise(r.totalSalesPaise) && optionalPaise(r.instrumentSalesPaise)
       : text(r.itemKey) && count(r.labs) && ['priceLowPaise', 'typicalPricePaise', 'priceHighPaise'].every(k => nullable(r[k], integer)) && integer(r.spreadPaise) && typeof r.belowCost === 'boolean'))) return null;
   return { ...pick(value, ['view', 'sort', 'filter', 'q', 'page', 'pageSize', 'total', 'thresholdPct', 'consumablesMarginPct']), levers: {
     priceSpread: pick(l.priceSpread, ['items', 'pairs', 'paise']), lowMargin: { ...pick(l.lowMargin, ['items', 'paiseToThreshold']), examples: l.lowMargin.examples.map(e => pick(e as Obj, ['name', 'marginPct', 'salesPaise', 'labs'])) }, freeGoods: pick(l.freeGoods, ['lines', 'costPaise']), instrumentsGpPaise: l.instrumentsGpPaise,
