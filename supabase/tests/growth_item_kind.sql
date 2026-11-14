@@ -215,7 +215,7 @@ begin
  insert into private.stockflow_brand_item_links(tally_item_key,kind,brand_code,recorded_by)
  values('Kind fixture instrument','brand','SYSMEX','growth-kind-management@test.local');
  before_read:=pg_temp.before_gateway('growth-kind-key','growth-kind-management@test.local','get_brand_mapping','{"q":"Kind fixture"}');
- after_read:=public.stockflow_brand_mapping_gateway('growth-kind-key','growth-kind-management@test.local','get_brand_mapping','{"q":"Kind fixture"}');
+ after_read:=public.stockflow_brand_mapping_gateway('growth-kind-key','growth-kind-management@test.local','get_brand_mapping','{"q":"Kind fixture"}')-array['tree','catalogObservedAt'];
  perform pg_temp.k_assert((after_read-'items')::text=(before_read-'items')::text,'K7 all other top-level keys byte-identical');
  select (after_read-'items')||jsonb_build_object('items',jsonb_agg(
   (item-array['kind','kindSource','brandKind','companyId','productId','autoKind'])
