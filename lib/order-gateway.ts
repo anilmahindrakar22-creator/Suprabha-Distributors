@@ -67,6 +67,7 @@ export type GatewayAction =
   | 'get_prospects'
   | 'get_brand_mapping'
   | 'set_group_brand'
+  | 'set_group_area'
   | 'set_item_brand'
   | 'set_equipment_area'
   | 'add_brand'

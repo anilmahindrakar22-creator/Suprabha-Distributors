@@ -8,6 +8,11 @@ export type BrandMappingGroup = {
   group: string; label: string; items: number; salesPaise: number;
   linkId: string | null; kind: BrandLinkKind | null; brandCode: string | null;
 };
+export type BrandTreeRow = {
+  group: string; parent: string | null; top: string; depth: number; items: number; salesPaise: number;
+  linkId: string | null; kind: BrandLinkKind | null; brandCode: string | null;
+  inheritedBrandCode: string | null; areaLinkId: string | null; areaCode: BrandAreaCode | null;
+};
 export type BrandMappingItem = {
   itemKey: string; name: string; group: string; salesPaise: number;
   linkId: string | null; kind: BrandLinkKind | 'inherit' | ItemKind | null; brandCode: string | null;
@@ -20,11 +25,13 @@ export type BrandMappingResponse = {
   equipment: BrandMappingEquipment[]; total: number; page: number;
   unmappedSalesPaise: number; totalSalesPaise: number;
   companyId?: string;
+  tree?: BrandTreeRow[]; catalogObservedAt?: string | null;
 };
 type ExpectedLink = { expectedLinkId: string | null; idempotencyKey: string };
 export type BrandMappingCommand =
   | { action: 'set_item_kind'; payload: ItemKindPayload }
   | { action: 'set_group_brand'; payload: ExpectedLink & { group: string; brandCode: string | null } }
+  | { action: 'set_group_area'; payload: ExpectedLink & { group: string; areaCode: BrandAreaCode | null } }
   | { action: 'set_item_brand'; payload: ExpectedLink & { itemKey: string } & ({ brandCode: string | null } | { clear: true }) }
   | { action: 'set_equipment_area'; payload: ExpectedLink & { itemKey: string; areaCode: BrandAreaCode | null } }
   | { action: 'add_brand'; payload: { name: string; idempotencyKey: string } };
@@ -69,6 +76,9 @@ export function parseBrandMappingCommand(value: unknown): BrandMappingCommand | 
   if (action === 'set_group_brand') {
     if (!keys(payload, common.concat('group', 'brandCode')) || !text(payload.group)
       || !(payload.brandCode === null || validCode(payload.brandCode))) return null;
+  } else if (action === 'set_group_area') {
+    if (!keys(payload, common.concat('group', 'areaCode')) || !nonempty(payload.group)
+      || !(payload.areaCode === null || area(payload.areaCode))) return null;
   } else if (action === 'set_item_brand') {
     if (!nonempty(payload.itemKey)) return null;
     if (Object.hasOwn(payload, 'clear')) {
@@ -94,8 +104,20 @@ function link(v: Record<string, unknown>, inherit: boolean) {
 }
 
 /** Reject partial or drifted gateway output before presenting it as mapping data. */
+const treeRow = (v: unknown) => record(v)
+  && keys(v, ['group', 'parent', 'top', 'depth', 'items', 'salesPaise', 'linkId', 'kind', 'brandCode', 'inheritedBrandCode', 'areaLinkId', 'areaCode'])
+  && text(v.group) && (v.parent === null || text(v.parent)) && text(v.top) && count(v.depth) && count(v.items) && finite(v.salesPaise)
+  && link(v, false)
+  && (v.inheritedBrandCode === null || (validCode(v.inheritedBrandCode) && v.linkId === null))
+  && nullableUuid(v.areaLinkId) && (v.areaCode === null || (v.areaLinkId !== null && area(v.areaCode)));
+
 export function parseBrandMappingResponse(value: unknown): BrandMappingResponse | null {
-  if (!record(value) || !keys(value, ['brands', 'groups', 'items', 'equipment', 'total', 'page', 'unmappedSalesPaise', 'totalSalesPaise', ...(Object.hasOwn(value, 'companyId') ? ['companyId'] : [])])
+  if (!record(value)) return null;
+  const hasTree = Object.hasOwn(value, 'tree'), hasObserved = Object.hasOwn(value, 'catalogObservedAt');
+  if (hasTree !== hasObserved) return null;
+  if (hasTree && (!Array.isArray(value.tree) || !value.tree.every(treeRow)
+    || !(value.catalogObservedAt === null || (text(value.catalogObservedAt) && !Number.isNaN(Date.parse(value.catalogObservedAt)))))) return null;
+  if (!keys(value, ['brands', 'groups', 'items', 'equipment', 'total', 'page', 'unmappedSalesPaise', 'totalSalesPaise', ...(Object.hasOwn(value, 'companyId') ? ['companyId'] : []), ...(hasTree ? ['tree', 'catalogObservedAt'] : [])])
     || (value.companyId !== undefined && (!nonempty(value.companyId) || length(value.companyId) > 240))
     || !count(value.total) || !count(value.page, 1) || value.page > 4000
     || !finite(value.unmappedSalesPaise) || !finite(value.totalSalesPaise)) return null;

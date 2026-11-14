@@ -72,13 +72,15 @@ describe('Brand mapping route', () => {
     expect(mocks.gateway).not.toHaveBeenCalled();
   });
 
-  it.each(['get_brand_mapping', 'set_group_brand', 'set_item_brand', 'set_equipment_area', 'add_brand'])(
+  it.each(['get_brand_mapping', 'set_group_brand', 'set_group_area', 'set_item_brand', 'set_equipment_area', 'add_brand'])(
     'routes %s through the gateway', async action => {
       const payload = action === 'get_brand_mapping' ? { page: 1 } : action === 'add_brand'
         ? { name: 'Test brand', idempotencyKey: 'brand-route-command-001' }
         : action === 'set_group_brand'
           ? { group: 'BM test group', expectedLinkId: null, brandCode: 'SYSMEX', idempotencyKey: 'brand-route-command-001' }
-          : action === 'set_item_brand'
+          : action === 'set_group_area'
+            ? { group: 'BM test group', expectedLinkId: null, areaCode: 'HAEM', idempotencyKey: 'brand-route-command-001' }
+            : action === 'set_item_brand'
             ? { itemKey: 'BM-test-1', expectedLinkId: null, brandCode: 'SYSMEX', idempotencyKey: 'brand-route-command-001' }
             : { itemKey: 'BM-test-1', expectedLinkId: null, areaCode: 'HAEM', idempotencyKey: 'brand-route-command-001' };
       const response = action === 'get_brand_mapping' ? await GET(get()) : await POST(post({ action, ...payload }));

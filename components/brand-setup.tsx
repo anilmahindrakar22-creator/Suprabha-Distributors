@@ -1,7 +1,8 @@
 'use client';
 
 import { useEffect, useId, useRef, useState } from 'react';
-import { buildSetItemKindPayload, parseBrandMappingCommand, parseBrandMappingResponse, type BrandAreaCode, type BrandMappingResponse, type BrandMappingItem, type ItemKind, type ItemKindPayload } from '@/lib/brand-mapping';
+import { buildSetItemKindPayload, parseBrandMappingCommand, parseBrandMappingResponse, type BrandAreaCode, type BrandMappingGroup, type BrandMappingResponse, type BrandTreeRow, type BrandMappingItem, type ItemKind, type ItemKindPayload } from '@/lib/brand-mapping';
+import { cleanBrandName, suggestBrand } from '@/lib/brand-suggestions';
 import { hasAnyStockFlowRole, normalizeStockFlowRoles } from '@/lib/user-types';
 import { formatPaise } from '@/lib/wallet-format';
 
@@ -12,6 +13,13 @@ const areaNames: Record<BrandAreaCode, string> = {
 const control = 'min-h-11 w-full min-w-0 max-w-full rounded-lg border border-sf-line bg-white px-3 text-sm disabled:opacity-50';
 const button = 'min-h-11 rounded-lg border border-sf-line px-3 text-sm disabled:opacity-50';
 type Draft = { action: string; [key: string]: unknown };
+type SaveResult = 'ok' | 'conflict' | 'fail';
+const itemCount = (n: number) => n === 1 ? '1 item' : `${n} items`;
+const shownName = (group: string) => group.replace(/[\u0000-\u001f]/g, '').trim() || group;
+function formatObserved(value: string) {
+  const parts = Object.fromEntries(new Intl.DateTimeFormat('en-US', { timeZone: 'Asia/Kolkata', day: 'numeric', month: 'short', year: 'numeric' }).formatToParts(new Date(value)).map(part => [part.type, part.value]));
+  return `${parts.day} ${parts.month} ${parts.year}`;
+}
 
 export function BrandSetup({ onBack }: { onBack: () => void }) {
   const prefix = useId();
@@ -57,29 +65,92 @@ export function BrandSetup({ onBack }: { onBack: () => void }) {
     }, 0);
     return () => { clearTimeout(timer); controller.abort(); };
   }, [query, page, revision]);
-  async function save(draft: Draft) {
-    if (flight.current) return;
+  async function save(draft: Draft, quiet = false): Promise<SaveResult> {
+    if (flight.current) return 'fail';
     const fingerprint = JSON.stringify(draft);
     if (pending.current?.fingerprint !== fingerprint) pending.current = { fingerprint, key: crypto.randomUUID() };
     const body = { ...draft, idempotencyKey: pending.current.key };
-    if (!parseBrandMappingCommand(body)) { setNotice('Mapping could not be saved. Check the selection and try again.'); return; }
+    if (!parseBrandMappingCommand(body)) { setNotice('Mapping could not be saved. Check the selection and try again.'); return 'fail'; }
     flight.current = true; setBusy(true); setNotice(''); setRetry(null);
     try {
       const response = await fetch('/api/brand-mapping', { method: 'POST', headers: { 'content-type': 'application/json' }, body: JSON.stringify(body) });
       if (response.status >= 400 && response.status < 500 && response.status !== 408 && response.status !== 429) pending.current = null;
-      if (response.status === 409) { setNotice('Changed by someone else. Reloaded.'); setLoading(true); setRevision(n => n + 1); return; }
+      if (response.status === 409) { setNotice('Changed by someone else. Reloaded.'); setLoading(true); setRevision(n => n + 1); return 'conflict'; }
       if (!response.ok) throw new Error('Save failed');
       pending.current = null;
       if (draft.action === 'add_brand') setName('');
-      setLoading(true); setRevision(n => n + 1);
+      if (!quiet) { setLoading(true); setRevision(n => n + 1); }
+      return 'ok';
     } catch {
-      setNotice('Mapping save could not be confirmed. Retry the same save.'); setRetry(draft);
+      setNotice('Mapping save could not be confirmed. Retry the same save.'); setRetry(draft); return 'fail';
     } finally { flight.current = false; setBusy(false); }
   }
   function options(linkId: string | null, item = false) {
     return <>{!linkId ? <option value="">Not set</option> : null}{item && linkId ? <option value="inherit">Use group</option> : null}{data?.brands.map(brand => <option key={brand.code} value={brand.code}>{brand.name}</option>)}<option value="none">Not a brand we target</option></>;
   }
   const disabled = busy || loading || !!error;
+  const tree = data?.tree ?? [];
+  const hasTree = tree.length > 0;
+  const brandName = (brandCode: string | null) => data?.brands.find(brand => brand.code === brandCode)?.name ?? brandCode ?? '';
+  const principals = tree.filter(row => row.depth === 0);
+  const suggestionFor = (row: BrandTreeRow) => row.linkId === null && data ? suggestBrand(row.group, data.brands) : null;
+  const suggested = principals.filter(row => suggestionFor(row));
+  async function acceptAll() {
+    let outcome: SaveResult = 'ok';
+    for (const row of suggested) {
+      outcome = await save({ action: 'set_group_brand', group: row.group, expectedLinkId: null, brandCode: suggestionFor(row) }, true);
+      if (outcome !== 'ok') break;
+    }
+    if (outcome !== 'conflict') { setLoading(true); setRevision(n => n + 1); }
+  }
+  function groupCards(groups: BrandMappingGroup[]) {
+    return groups.map((group, index) => <div key={group.group} className="min-w-0 space-y-1 rounded-xl border border-sf-line-soft p-3 break-words"><p className="font-semibold">{group.label}</p><p className="text-xs text-sf-muted">{group.items} items · {formatPaise(group.salesPaise)}</p><label className="block text-xs" htmlFor={`${prefix}-group-${index}`}>Brand<span className="sr-only"> for {group.label}</span></label><select id={`${prefix}-group-${index}`} className={control} disabled={disabled} value={group.kind === 'none' ? 'none' : group.brandCode ?? ''} onChange={event => { if (event.target.value) void save({ action: 'set_group_brand', group: group.group, expectedLinkId: group.linkId ?? null, brandCode: event.target.value === 'none' ? null : event.target.value }); }}>{options(group.linkId)}</select></div>);
+  }
+  function brandSelect(row: BrandTreeRow, id: string, emptyLabel = 'Not set') {
+    const shown = shownName(row.group);
+    return <><label className="block text-xs" htmlFor={id}>Brand<span className="sr-only"> for {shown}</span></label><select id={id} className={control} disabled={disabled} value={row.kind === 'none' ? 'none' : row.brandCode ?? ''} onChange={event => { if (event.target.value) void save({ action: 'set_group_brand', group: row.group, expectedLinkId: row.linkId ?? null, brandCode: event.target.value === 'none' ? null : event.target.value }); }}>{!row.linkId ? <option value="">{emptyLabel}</option> : null}{data?.brands.map(brand => <option key={brand.code} value={brand.code}>{brand.name}</option>)}<option value="none">Not a brand we target</option></select></>;
+  }
+  function areaSelect(row: BrandTreeRow, id: string) {
+    const shown = shownName(row.group);
+    return <><label className="block text-xs" htmlFor={id}>Test area<span className="sr-only"> for {shown}</span></label><select id={id} className={control} disabled={disabled} value={row.areaCode ?? ''} onChange={event => void save({ action: 'set_group_area', group: row.group, expectedLinkId: row.areaLinkId ?? null, areaCode: event.target.value || null })}><option value="">Not set</option>{Object.entries(areaNames).map(([areaCode, label]) => <option key={areaCode} value={areaCode}>{label}</option>)}</select></>;
+  }
+  const treeSection = () => {
+    if (!data) return null;
+    const inTree = new Set(tree.map(row => row.group));
+    const others = data.groups.filter(group => !inTree.has(group.group));
+    return <section aria-label="Brands from Tally groups" className="max-w-3xl space-y-2">
+      <h3 className="font-semibold">Brands from Tally groups</h3>
+      <p className="text-xs text-sf-muted">{data.catalogObservedAt ? `Tally groups as of ${formatObserved(data.catalogObservedAt)}` : 'Tally groups not received yet'}</p>
+      {suggested.length ? <button type="button" className={button} disabled={disabled} onClick={() => void acceptAll()}>Accept all suggestions ({suggested.length})</button> : null}
+      {principals.map((principal, index) => {
+        const lines = tree.filter(row => row.top === principal.group && row.depth > 0);
+        const items = principal.items + lines.reduce((sum, line) => sum + line.items, 0);
+        const sales = principal.salesPaise + lines.reduce((sum, line) => sum + line.salesPaise, 0);
+        const shown = shownName(principal.group);
+        const code = suggestionFor(principal);
+        const cleaned = cleanBrandName(shownName(principal.group));
+        const canAdd = !code && principal.linkId === null && !!parseBrandMappingCommand({ action: 'add_brand', name: cleaned, idempotencyKey: 'x'.repeat(16) });
+        return <div key={principal.group} className="min-w-0 space-y-1 rounded-xl border border-sf-line-soft p-3 break-words">
+          <p className="font-semibold">{shown}</p>
+          <p className="text-xs text-sf-muted">{itemCount(items)} · {formatPaise(sales)}</p>
+          {principal.items > 0 && !lines.length
+            ? <div className="grid grid-cols-2 gap-2"><div className="min-w-0">{brandSelect(principal, `${prefix}-principal-${index}`)}</div><div className="min-w-0">{areaSelect(principal, `${prefix}-principal-area-${index}`)}</div></div>
+            : brandSelect(principal, `${prefix}-principal-${index}`)}
+          {code ? <p className="text-xs text-sf-muted">Suggested: {brandName(code)} <button type="button" className={button} aria-label={`Accept ${brandName(code)} for ${shown}`} disabled={disabled} onClick={() => void save({ action: 'set_group_brand', group: principal.group, expectedLinkId: null, brandCode: code })}>Accept</button></p> : null}
+          {canAdd ? <button type="button" className={button} aria-label={`Add ${shown} as a brand`} disabled={disabled} onClick={() => void save({ action: 'add_brand', name: cleaned })}>Add as brand</button> : null}
+          {lines.map((line, lineIndex) => <div key={line.group} className="min-w-0 space-y-1 border-t border-sf-line-soft pt-2 break-words" style={{ paddingLeft: line.depth * 12 }}>
+            <p className="font-semibold">{shownName(line.group)} <span className="text-xs font-normal text-sf-muted">· {itemCount(line.items)} · {formatPaise(line.salesPaise)}</span></p>
+            <div className="grid grid-cols-2 gap-2">
+              <div className="min-w-0">{brandSelect(line, `${prefix}-line-${index}-${lineIndex}`, line.inheritedBrandCode ? `${brandName(line.inheritedBrandCode)} (from group)` : 'Not set')}</div>
+              <div className="min-w-0">{areaSelect(line, `${prefix}-line-area-${index}-${lineIndex}`)}</div>
+            </div>
+            {line.kind === 'brand' && principal.kind === 'brand' && principal.brandCode === line.brandCode ? <p className="text-xs text-sf-muted">Same as brand group</p> : null}
+          </div>)}
+        </div>;
+      })}
+      {others.length ? <><h4 className="pt-2 text-xs font-semibold text-sf-muted">Other groups</h4>{groupCards(others)}</> : null}
+    </section>;
+  };
   const pages = Math.max(1, Math.ceil((data?.total ?? 0) / 20));
   return <section aria-label="Brands setup" className="min-w-0 space-y-4 text-sm text-sf-ink">
     <header className="space-y-3"><div className="flex flex-wrap items-center gap-3"><button type="button" className="min-h-11 rounded-xl border border-sf-line px-3 text-xs font-bold text-sf-ink disabled:opacity-50" disabled={busy} onClick={onBack}>Back to prospects</button><h2 className="text-xl font-bold">Brands setup</h2></div>{data ? <p className="text-xs text-sf-muted">Unmapped sales: {formatPaise(data.unmappedSalesPaise)} of {formatPaise(data.totalSalesPaise)} (last 180 days)</p> : null}</header>
@@ -87,7 +158,7 @@ export function BrandSetup({ onBack }: { onBack: () => void }) {
     {loading ? <p className="text-sm text-sf-muted">Loading brands setup…</p> : null}
     {error ? <p className="text-sm text-sf-muted">{error} <button type="button" className={button} onClick={() => setRevision(n => n + 1)}>Retry</button></p> : null}
     {data ? <>
-      <section aria-label="Stock groups" className="space-y-2"><h3 className="font-semibold">Stock groups</h3>{data.groups.map((group, index) => <div key={group.group} className="min-w-0 space-y-1 rounded-xl border border-sf-line-soft p-3 break-words"><p className="font-semibold">{group.label}</p><p className="text-xs text-sf-muted">{group.items} items · {formatPaise(group.salesPaise)}</p><label className="block text-xs" htmlFor={`${prefix}-group-${index}`}>Brand<span className="sr-only"> for {group.label}</span></label><select id={`${prefix}-group-${index}`} className={control} disabled={disabled} value={group.kind === 'none' ? 'none' : group.brandCode ?? ''} onChange={event => { if (event.target.value) void save({ action: 'set_group_brand', group: group.group, expectedLinkId: group.linkId ?? null, brandCode: event.target.value === 'none' ? null : event.target.value }); }}>{options(group.linkId)}</select></div>)}</section>
+      {hasTree ? treeSection() : <section aria-label="Stock groups" className="space-y-2"><h3 className="font-semibold">Stock groups</h3>{groupCards(data.groups)}</section>}
       <section aria-label="Items without a brand" className="space-y-2"><h3 className="font-semibold">Items without a brand</h3><p className="text-xs text-sf-muted">Items with an average purchase cost of ₹25,000 or more count as instruments in Growth. Change it here for exceptions, such as a costly reagent.</p><label className="block text-xs" htmlFor={`${prefix}-search`}>Search items</label><input type="search" placeholder="Item name" id={`${prefix}-search`} className={control} maxLength={120} value={search} disabled={busy} onChange={event => setSearch(event.target.value)} />{data.items.map((item, index) => <div key={item.itemKey} className="min-w-0 space-y-1 rounded-xl border border-sf-line-soft p-3 break-words"><p className="font-semibold">{item.name}</p><p className="text-xs text-sf-muted">{item.group} · {formatPaise(item.salesPaise)}</p><label className="block text-xs" htmlFor={`${prefix}-item-${index}`}>Brand<span className="sr-only"> for {item.name}</span></label><select id={`${prefix}-item-${index}`} className={control} disabled={disabled} value={(item.brandKind ?? item.kind) === 'none' ? 'none' : (item.brandKind ?? item.kind) === 'inherit' ? 'inherit' : item.brandCode ?? ''} onChange={event => { const value = event.target.value; if (value) void save({ action: 'set_item_brand', itemKey: item.itemKey, expectedLinkId: item.linkId ?? null, ...(value === 'inherit' ? { clear: true } : { brandCode: value === 'none' ? null : value }) }); }}>{options(item.linkId, true)}</select><ItemKindControl item={item} companyId={data.companyId} canEdit={canSetKind} disabled={disabled} /></div>)}
         <div className="flex flex-wrap items-center gap-3 text-xs"><button type="button" className={button} disabled={disabled || page <= 1} onClick={() => setPage(n => n - 1)}>Previous</button><span>Page {page} of {pages}</span><button type="button" className={button} disabled={disabled || page >= pages} onClick={() => setPage(n => n + 1)}>Next</button></div>
       </section>

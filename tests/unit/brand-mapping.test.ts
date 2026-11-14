@@ -82,3 +82,40 @@ describe('brand mapping response', () => {
     expect(parseBrandMappingResponse(value)).toBeNull();
   });
 });
+
+const areaId = 'b3a10000-0000-4000-8000-000000000002';
+const treeRow = (over: Record<string, unknown> = {}) => ({
+  group: 'Line A', parent: 'Principal', top: 'Principal', depth: 1, items: 0, salesPaise: 5,
+  linkId: null, kind: null, brandCode: null, inheritedBrandCode: 'SYSMEX', areaLinkId: areaId, areaCode: 'HAEM', ...over,
+});
+const withTree = (rows: unknown[] = [treeRow()], observed: string | null = '2026-11-13T05:00:00Z') => ({ ...read(), tree: rows, catalogObservedAt: observed });
+
+describe('brand tree response', () => {
+  it('still parses the old shape and parses the new shape', () => {
+    expect(parseBrandMappingResponse(read())).toEqual(read());
+    expect(parseBrandMappingResponse(withTree())).toEqual(withTree());
+    expect(parseBrandMappingResponse(withTree([treeRow({ inheritedBrandCode: null, areaLinkId: null, areaCode: null })], null))).not.toBeNull();
+  });
+  it.each([
+    ['only tree', () => ({ ...read(), tree: [] })],
+    ['only catalogObservedAt', () => ({ ...read(), catalogObservedAt: null })],
+    ['extra tree row key', () => withTree([{ ...treeRow(), extra: 1 }])],
+    ['area code without link', () => withTree([treeRow({ areaLinkId: null })])],
+    ['lower-case inherited code', () => withTree([treeRow({ inheritedBrandCode: 'sysmex' })])],
+    ['negative items', () => withTree([treeRow({ items: -1 })])],
+    ['inherited code with own link', () => withTree([treeRow({ linkId: id, kind: 'brand', brandCode: 'SYSMEX' })])],
+    ['bad date', () => withTree([treeRow()], 'not a date')],
+  ])('rejects %s', (_name, make) => expect(parseBrandMappingResponse(make())).toBeNull());
+});
+
+describe('set_group_area command', () => {
+  const area = { action: 'set_group_area', group: '\u0004 Primary ', expectedLinkId: null, areaCode: 'HAEM', idempotencyKey: base.idempotencyKey };
+  it('parses a valid area and a null area and keeps the group raw', () => {
+    const { action, ...payload } = area;
+    expect(parseBrandMappingCommand(area)).toEqual({ action, payload });
+    expect(parseBrandMappingCommand({ ...area, areaCode: null })).toEqual({ action, payload: { ...payload, areaCode: null } });
+  });
+  it.each([{ areaCode: 'INVALID' }, { extra: true }, { group: '' }, { expectedLinkId: 'bad' }])('rejects %o', change => {
+    expect(parseBrandMappingCommand({ ...area, ...change })).toBeNull();
+  });
+});

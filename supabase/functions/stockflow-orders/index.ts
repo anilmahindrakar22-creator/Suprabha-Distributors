@@ -60,7 +60,7 @@ economicActions.push('get_sales_coverage');
 actions.push('get_sales_coverage');
 readActions.add('get_sales_coverage');
 readActions.add('get_link_suggestions');
-const brandMappingActions = ['get_brand_mapping', 'set_group_brand', 'set_item_brand', 'set_equipment_area', 'add_brand', 'set_item_kind'];
+const brandMappingActions = ['get_brand_mapping', 'set_group_brand', 'set_group_area', 'set_item_brand', 'set_equipment_area', 'add_brand', 'set_item_kind'];
 actions.push(...brandMappingActions);
 readActions.add('get_brand_mapping');
 actions.push('get_growth');

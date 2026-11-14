@@ -1,8 +1,23 @@
 import { expect, test, type Page } from '@playwright/test';
 
 const linkId = '19300000-0000-4000-8000-000000000001';
+const areaLinkId = '19300000-0000-4000-8000-000000000002';
 const brands = [{ code: 'BIOMERIEUX', name: 'bioMérieux', areas: ['IMMUNO', 'CULTURE'] }];
-async function fixture(page: Page, statuses: (number | 'network')[] = []) {
+const allBrands = [...brands, { code: 'TEST_PRINCIPAL', name: 'Test Principal', areas: [] }, { code: 'SECOND_PRINCIPAL', name: 'Second Principal', areas: [] }];
+const noLink = { linkId: null, kind: null, brandCode: null };
+const noArea = { areaLinkId: null, areaCode: null };
+const row = (group: string, parent: string | null, top: string, depth: number, items: number, salesPaise: number, extra: Record<string, unknown> = {}) =>
+  ({ group, parent, top, depth, items, salesPaise, ...noLink, inheritedBrandCode: null, ...noArea, ...extra });
+const tree = [
+  row('Test Principal Diagnostics Pvt Ltd', null, 'Test Principal Diagnostics Pvt Ltd', 0, 0, 0),
+  row('Line A', 'Test Principal Diagnostics Pvt Ltd', 'Test Principal Diagnostics Pvt Ltd', 1, 4, 4000000),
+  row('Line B', 'Test Principal Diagnostics Pvt Ltd', 'Test Principal Diagnostics Pvt Ltd', 1, 2, 2000000, { linkId, kind: 'brand', brandCode: 'BIOMERIEUX', areaLinkId, areaCode: 'HAEM' }),
+  row('Second Principal Ltd', null, 'Second Principal Ltd', 0, 3, 1500000),
+  row('Unknown Agency', null, 'Unknown Agency', 0, 2, 500000),
+  row('Linked Maker', null, 'Linked Maker', 0, 0, 0, { linkId, kind: 'brand', brandCode: 'BIOMERIEUX' }),
+  row('Line C', 'Linked Maker', 'Linked Maker', 1, 1, 100000, { inheritedBrandCode: 'BIOMERIEUX' }),
+];
+async function fixture(page: Page, statuses: (number | 'network')[] = [], shape: 'tree' | 'old' = 'tree') {
   const posts: Record<string, unknown>[] = [];
   const reads: URL[] = [];
   let itemKind = 'instrument';
@@ -22,11 +37,12 @@ async function fixture(page: Page, statuses: (number | 'network')[] = []) {
       return route.fulfill({ status, json: status === 200 ? { ok: true, linkId } : { error: 'Untrusted failure text' } });
     }
     const url = new URL(route.request().url()); reads.push(url);
-    return route.fulfill({ json: { brands,
+    return route.fulfill({ json: { brands: allBrands,
       groups: [{ group: '\u0004 Primary', label: 'Primary', items: 2, salesPaise: 100000, linkId: null, kind: null, brandCode: null }],
       items: [{ itemKey: 'item-key', name: 'Reagent', group: 'Primary', salesPaise: 12000, linkId, brandKind: 'none', kind: itemKind, kindSource, autoKind: 'instrument', companyId: 'company-1', productId: 'product-1', brandCode: null }],
       equipment: [{ itemKey: 'machine-key', name: 'Machine', installs: 3, linkId: null, areaCode: null }],
       total: 1, page: Number(url.searchParams.get('page')), unmappedSalesPaise: 180000, totalSalesPaise: 1000000,
+      ...(shape === 'tree' ? { tree, catalogObservedAt: '2026-11-13T05:00:00Z' } : {}),
     } });
   });
   await page.route('**/api/me', route => route.fulfill({ json: { roles: ['management'] } }));
@@ -116,4 +132,69 @@ test('Retry after a network error reuses the idempotency key', async ({ page }) 
   await expect.poll(() => posts.length).toBe(2);
   expect(posts[1]).toEqual(posts[0]);
   await expect.poll(() => reads.length).toBeGreaterThan(before);
+});
+
+const principal = 'Test Principal Diagnostics Pvt Ltd';
+test('Accept posts set_group_brand for the raw group with no expected link', async ({ page }) => {
+  const { section, posts } = await fixture(page);
+  await section.getByRole('button', { name: `Accept Test Principal for ${principal}`, exact: true }).click();
+  await expect.poll(() => posts.length).toBe(1);
+  expect(posts[0]).toEqual({ action: 'set_group_brand', group: principal, expectedLinkId: null, brandCode: 'TEST_PRINCIPAL', idempotencyKey: expect.any(String) });
+});
+
+test('Accept all posts one command per suggestion', async ({ page }) => {
+  const { section, posts } = await fixture(page);
+  await section.getByRole('button', { name: 'Accept all suggestions (2)', exact: true }).click();
+  await expect.poll(() => posts.length).toBe(2);
+  expect(posts.map(post => [post.action, post.group, post.expectedLinkId, post.brandCode])).toEqual([
+    ['set_group_brand', principal, null, 'TEST_PRINCIPAL'],
+    ['set_group_brand', 'Second Principal Ltd', null, 'SECOND_PRINCIPAL'],
+  ]);
+  expect(posts[0].idempotencyKey).not.toBe(posts[1].idempotencyKey);
+});
+
+test('A line Test area select posts set_group_area with the area link', async ({ page }) => {
+  const { section, posts } = await fixture(page);
+  await section.getByLabel('Test area for Line B', { exact: true }).selectOption('IMMUNO');
+  await expect.poll(() => posts.length).toBe(1);
+  expect(posts[0]).toEqual({ action: 'set_group_area', group: 'Line B', expectedLinkId: areaLinkId, areaCode: 'IMMUNO', idempotencyKey: expect.any(String) });
+});
+
+test('Add as brand posts add_brand with the cleaned name and does not link', async ({ page }) => {
+  const { section, posts } = await fixture(page);
+  await section.getByRole('button', { name: 'Add Unknown Agency as a brand', exact: true }).click();
+  await expect.poll(() => posts.length).toBe(1);
+  expect(posts[0]).toEqual({ action: 'add_brand', name: 'Unknown Agency', idempotencyKey: expect.any(String) });
+});
+
+test('Tree shows inheritance, observation date and other groups', async ({ page }) => {
+  const { section } = await fixture(page);
+  await expect(section.getByLabel('Brand for Line C', { exact: true }).locator('option:checked')).toHaveText('bioMérieux (from group)');
+  await expect(section.getByText('Tally groups as of 13 Nov 2026', { exact: true })).toBeVisible();
+  await expect(section.getByRole('region', { name: 'Brands from Tally groups' })).toBeVisible();
+  await expect(section.getByText('Other groups', { exact: true })).toBeVisible();
+});
+
+test('The old response shape still renders Stock groups', async ({ page }) => {
+  const { section } = await fixture(page, [], 'old');
+  await expect(section.getByRole('region', { name: 'Stock groups' })).toBeVisible();
+  await expect(section.getByRole('region', { name: 'Brands from Tally groups' })).toHaveCount(0);
+});
+
+test('Brands setup has no sideways scroll at 375 px', async ({ page }) => {
+  await fixture(page);
+  await page.setViewportSize({ width: 375, height: 812 });
+  const overflow = await page.evaluate(() => document.documentElement.scrollWidth - document.documentElement.clientWidth);
+  expect(overflow).toBeLessThanOrEqual(1);
+});
+
+test('Screenshots of the brand tree at 375 and 1280', async ({ page }) => {
+  const { section } = await fixture(page);
+  const tree = section.getByRole('region', { name: 'Brands from Tally groups' });
+  for (const width of [375, 1280]) {
+    await page.setViewportSize({ width, height: 3200 });
+    await page.addStyleTag({ content: 'nav, footer{display:none !important}' });
+    await tree.scrollIntoViewIfNeeded();
+    await tree.screenshot({ path: `work/bl3-${width}.png` });
+  }
 });
