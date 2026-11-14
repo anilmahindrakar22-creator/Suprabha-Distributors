@@ -64,7 +64,7 @@ export type EconomicsWorkspaceData = {
   policy: { attractiveMonths: number; reviewMonths: number; exceptionMonths: number; forecastWindowMonths: number; watchRevenuePercent: number; criticalRevenuePercent: number };
 };
 
-export const economicActions = ['register_historical_instrument','create_target', 'set_mapping', 'set_item_group_mapping', 'set_expectation','record_observation', 'approve_target', 'link_instrument_billing', 'review_acquisition', 'record_capital', 'set_group_members', 'close_group_membership', 'set_allocation','close_allocation', 'close_target', 'set_policy', 'rebuild', 'create_case', 'update_case', 'claim_recovery', 'verify_cost', 'resolve_line'] as const;
+export const economicActions = ['register_historical_instrument','create_target', 'set_mapping', 'set_mappings', 'set_item_group_mapping', 'set_expectation','record_observation', 'approve_target', 'link_instrument_billing', 'review_acquisition', 'record_capital', 'set_group_members', 'close_group_membership', 'set_allocation','close_allocation', 'close_target', 'set_policy', 'rebuild', 'create_case', 'update_case', 'claim_recovery', 'verify_cost', 'resolve_line'] as const;
 export type EconomicAction = typeof economicActions[number];
 export type EconomicCommand = { action: EconomicAction; payload: Record<string, unknown> & { idempotencyKey: string } };
 

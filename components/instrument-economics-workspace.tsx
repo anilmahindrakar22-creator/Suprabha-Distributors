@@ -472,7 +472,43 @@ function ItemCommand({ action, fields, label, tone = 'plain', disabled, onSubmit
   </form>;
 }
 // Add or remove reagent items for one instrument. Removing stops counting from today and keeps earlier sales.
-function InstrumentItems({ target, data, disabled, onSubmit }: { target: EconomicTarget; data: EconomicsWorkspaceData; disabled: boolean; onSubmit: SubmitCommand }) {
+// Ticks are collected locally and saved together, so one save rebuilds economics once.
+function GroupItemsList({ groupId, groupLabel, members, startFrom, today, canEdit, disabled, targetName, scope, runCommand, countedItem, itemState, addFrom }: {
+  groupId: string; groupLabel: string; members: { id: string; name: string }[]; startFrom: string; today: string; canEdit: boolean; disabled: boolean; targetName: string;
+  scope: { companyId: string; modelId: string; targetId: string }; runCommand: InstrumentAddCommand; countedItem: (productId: string) => boolean; itemState: Map<string, string>; addFrom: (productId: string) => string;
+}) {
+  const [pending, setPending] = useState<Map<string, boolean>>(() => new Map());
+  const [saving, setSaving] = useState(false);
+  const savingRef = useRef(false);
+  const batchKey = useRef<string | null>(null);
+  const locked = disabled || saving || !canEdit;
+  const toggle = (productId: string, desired: boolean) => {
+    batchKey.current = null;
+    setPending(current => { const next = new Map(current); if (desired === countedItem(productId)) next.delete(productId); else next.set(productId, desired); return next; });
+  };
+  const fromFor = (productId: string, desired: boolean) => desired ? addFrom(productId) : itemState.has(productId) ? today : startFrom;
+  const save = async () => {
+    if (savingRef.current || !pending.size) return;
+    savingRef.current = true; setSaving(true);
+    try {
+      const items = [...pending].sort((a, b) => a[0].localeCompare(b[0])).map(([productId, desired]) => ({ productId, effect: desired ? 'include' : 'exclude', effectiveFrom: fromFor(productId, desired), effectiveTo: '' }));
+      batchKey.current ??= crypto.randomUUID();
+      const result = await runCommand('set_mappings', { ...scope, reason: `Ticks changed in ${groupLabel} for ${targetName}`, items }, batchKey.current);
+      if (result) { batchKey.current = null; setPending(new Map()); }
+    } finally { savingRef.current = false; setSaving(false); }
+  };
+  return <>
+    <ul aria-label={`Items in ${groupLabel}`} className="mt-2 max-h-80 divide-y divide-sf-line-soft overflow-y-auto">{members.map(item => {
+      const changed = pending.has(item.id); const isCounted = pending.get(item.id) ?? countedItem(item.id);
+      return <li key={item.id} className="flex min-h-11 items-start gap-3 py-2"><input type="checkbox" aria-label={`Count ${item.name} for this instrument`} checked={isCounted} disabled={locked} onChange={event => toggle(item.id, event.currentTarget.checked)} className="mt-0.5 size-5 shrink-0" />
+        <span className="min-w-0"><span className={`block break-words text-sm ${isCounted ? '' : 'text-sf-muted line-through'}`}>{item.name}</span>{changed ? <span className="block text-xs text-sf-muted">{isCounted ? `Will count from ${displayDate(fromFor(item.id, true))}` : `Will stop counting from ${displayDate(fromFor(item.id, false))}`}</span> : null}</span></li>;
+    })}</ul>
+    {pending.size ? <div className="mt-3 flex flex-wrap items-center gap-2" data-group-save={groupId}><span className="text-xs text-sf-muted">{pending.size} {pending.size === 1 ? 'change' : 'changes'} not saved</span>
+      <button type="button" disabled={locked} onClick={() => void save()} className="min-h-11 rounded-lg bg-sf-brand px-3 text-sm font-bold text-white disabled:opacity-50">Save changes</button>
+      <button type="button" disabled={locked} onClick={() => { batchKey.current = null; setPending(new Map()); }} className="min-h-11 rounded-lg border border-sf-line px-3 text-sm font-bold text-sf-brand disabled:opacity-50">Cancel</button></div> : null}
+  </>;
+}
+function InstrumentItems({ target, data, disabled, onSubmit, runCommand }: { target: EconomicTarget; data: EconomicsWorkspaceData; disabled: boolean; onSubmit: SubmitCommand; runCommand: InstrumentAddCommand }) {
   const today = data.businessDate ?? target.effectiveFrom;
   const catalog = (data.itemGroupCatalogs ?? []).filter(row => row.companyId === target.companyId && row.current).sort((a, b) => b.observedAt.localeCompare(a.observedAt))[0];
   const names = new Map<string, string>();
@@ -546,11 +582,8 @@ function InstrumentItems({ target, data, disabled, onSubmit }: { target: Economi
     <ul className="mt-3 divide-y divide-sf-soft">
       {groups.map(({ groupId, rule }) => { const members = groupMembers(groupId); const counted = members.filter(item => countedItem(item.id)).length; return <li key={groupId} className="py-2"><div className="flex flex-wrap items-center justify-between gap-2"><span className="text-sm"><strong>{groupName(groupId)}</strong> · Tally item group{groupSize(groupId) != null ? ` · ${groupSize(groupId)} items` : ''}</span>{canEdit && catalog ? <ItemCommand action="set_item_group_mapping" label="Remove group" disabled={disabled} onSubmit={onSubmit} fields={{ ...scope, groupId, expectedCatalogId: catalog.id, effect: 'exclude', effectiveFrom: today, effectiveTo: '', reason: `Removed group from ${target.name}` }} /> : null}{rule.effectiveFrom > today ? <span className="text-xs text-sf-muted">from {displayDate(rule.effectiveFrom)}</span> : null}</div>
         {members.length ? <details className="mt-2 rounded-xl bg-sf-soft p-3" data-group-items={groupId}><summary className="-m-3 list-item cursor-pointer p-3 text-sm font-bold">Items in this group · {counted} of {members.length} counted</summary>
-          <p className="mt-1 text-xs text-sf-muted">Untick an item that belongs to another machine. Unticking removes it from {displayDate(rule.effectiveFrom)}, when this group started counting; ticking it back counts it from today.</p>
-          <ul aria-label={`Items in ${groupName(groupId)}`} className="mt-2 max-h-80 divide-y divide-sf-line-soft overflow-y-auto">{members.map(item => { const isCounted = countedItem(item.id); const hasRule = itemState.has(item.id); const fields = isCounted
-            ? { ...scope, productId: item.id, effect: 'exclude', effectiveFrom: hasRule ? today : rule.effectiveFrom, effectiveTo: '', reason: `Unticked in ${groupName(groupId)} for ${target.name}` }
-            : addFields(item.id);
-            return <li key={item.id}><form onSubmit={event => void onSubmit(event, 'set_mapping')} className="flex min-h-11 items-center gap-3 py-1">{Object.entries(fields).map(([name, value]) => <input key={name} type="hidden" name={name} value={value} />)}<input type="checkbox" aria-label={`Count ${item.name} for this instrument`} checked={isCounted} disabled={disabled || !canEdit} onChange={event => event.currentTarget.form?.requestSubmit()} className="size-5 shrink-0" /><span className={`min-w-0 break-words text-sm ${isCounted ? '' : 'text-sf-muted line-through'}`}>{item.name}</span></form></li>; })}</ul>
+          <p className="mt-1 text-xs text-sf-muted">Untick an item that belongs to another machine. Unticking removes it from {displayDate(rule.effectiveFrom)}, when this group started counting; ticking it back counts it from today. Tick or untick items, then Save changes.</p>
+          <GroupItemsList groupId={groupId} groupLabel={groupName(groupId)} members={members} startFrom={rule.effectiveFrom} today={today} canEdit={!!canEdit} disabled={disabled} targetName={target.name} scope={scope} runCommand={runCommand} countedItem={countedItem} itemState={itemState} addFrom={productId => addFields(productId).effectiveFrom} />
         </details> : null}</li>; })}
       {included.map(item => <li key={item.productId} className="flex flex-wrap items-center justify-between gap-2 py-2"><span className="text-sm"><strong>{item.name}</strong> · single item</span>{canEdit ? <ItemCommand action="set_mapping" label="Remove" disabled={disabled} onSubmit={onSubmit} fields={{ ...scope, productId: item.productId, effect: 'exclude', effectiveFrom: today, effectiveTo: '', reason: `Removed from ${target.name} from the instrument items list` }} /> : null}</li>)}
       {!groups.length && !included.length ? <li className="py-2 text-sm text-sf-muted">No items are counted yet.</li> : null}
@@ -907,7 +940,7 @@ export function InstrumentEconomicsWorkspace({ embedded = false }: { embedded?: 
     {data && tab === 'Instruments' ? <SalesCoverageCard key={data.actorEmail} roles={data.canAdministrator ? ['administrator'] : data.canManage ? ['management'] : ['accounts']} /> : null}
     {loading && data ? <output className="block text-sm text-sf-muted">Loading economics details…</output> : null}
     {loading && !data ? <div className="rounded-2xl bg-white p-8 text-sm text-sf-muted">Loading economics data…</div> : null}
-    {data && tab === 'Instruments' ? <>{data.targets.length > 2 ? <InstrumentEconomicsPortfolioFilters filters={portfolioFilters} onChange={setPortfolioFilters} total={data.targets.length} matching={visibleTargets.length} /> : null}<section aria-label="Economic targets" className="grid gap-4 xl:grid-cols-2">{visibleTargets.length ? visibleTargets.map(target => <EconomicTargetCard key={target.id} target={target} reagentAction={target.kind === 'placement' ? <PlacementReagents onOpen={() => ensureView('detail')} target={target} data={data} disabled={unresolved || busy} onSubmit={submit} /> : null} pooledInName={data.targets.find(row => row.id === target.pooledIn)?.name} selected={expanded?.id === target.id} expanded={expanded?.id === target.id} onToggle={() => void toggleTarget(target.id)} lifetime={target.reagentLifetime ?? (data.attributionLines ? reagentLifetime(target.id, data.attributionLines) : undefined)} period={reportingPeriodLabel(data.reportingFrom, data.reportingTo)} onReviewCosts={() => void openTab('To do')}>{target.kind === 'placement' && !target.pooledIn ? <InstrumentItems key={`${target.id}:${data.generation}`} target={target} data={data} disabled={unresolved || busy} onSubmit={submit} /> : null}<ReagentSalesList target={target} data={data} /></EconomicTargetCard>) : <Empty title={data.targets.length ? "No matching instruments" : "No instruments yet"} body={data.targets.length ? "Change the search, status or type filters to see more instruments." : "Add an instrument in Set up."} />}</section></> : null}
+    {data && tab === 'Instruments' ? <>{data.targets.length > 2 ? <InstrumentEconomicsPortfolioFilters filters={portfolioFilters} onChange={setPortfolioFilters} total={data.targets.length} matching={visibleTargets.length} /> : null}<section aria-label="Economic targets" className="grid gap-4 xl:grid-cols-2">{visibleTargets.length ? visibleTargets.map(target => <EconomicTargetCard key={target.id} target={target} reagentAction={target.kind === 'placement' ? <PlacementReagents onOpen={() => ensureView('detail')} target={target} data={data} disabled={unresolved || busy} onSubmit={submit} /> : null} pooledInName={data.targets.find(row => row.id === target.pooledIn)?.name} selected={expanded?.id === target.id} expanded={expanded?.id === target.id} onToggle={() => void toggleTarget(target.id)} lifetime={target.reagentLifetime ?? (data.attributionLines ? reagentLifetime(target.id, data.attributionLines) : undefined)} period={reportingPeriodLabel(data.reportingFrom, data.reportingTo)} onReviewCosts={() => void openTab('To do')}>{target.kind === 'placement' && !target.pooledIn ? <InstrumentItems key={`${target.id}:${data.generation}`} target={target} data={data} disabled={unresolved || busy} onSubmit={submit} runCommand={runInstrumentCommand} /> : null}<ReagentSalesList target={target} data={data} /></EconomicTargetCard>) : <Empty title={data.targets.length ? "No matching instruments" : "No instruments yet"} body={data.targets.length ? "Change the search, status or type filters to see more instruments." : "Add an instrument in Set up."} />}</section></> : null}
     {data && tab === 'To do' ? <TodoPanel data={data} onAccountsReview={() => void openTab('Accounts review')} /> : null}
     {data && tab === 'Accounts review' ? <div className="space-y-3"><button type="button" onClick={() => void openTab('To do')} className="min-h-11 rounded-xl border border-sf-line bg-white px-4 text-sm font-bold text-sf-brand">Back to instrument tasks</button><AccountsDocumentReview data={data} /></div> : null}
     {data && tab === 'Set up' ? <SetupSteps data={data} disabled={unresolved || busy} busy={busy} onSubmit={submit} runCommand={runInstrumentCommand} onRefresh={load} onAdvancedOpen={loadAllSourceLines} /> : null}

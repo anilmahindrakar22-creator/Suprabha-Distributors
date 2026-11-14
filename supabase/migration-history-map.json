@@ -1508,6 +1508,13 @@
       "remoteVersion": null,
       "remoteSha256": null,
       "status": "not_deployed"
+    },
+    {
+      "localFile": "20261130130000_batch_item_mappings.sql",
+      "localSha256": "e180e0e80dbcc513428bc0ba527efd46d3d990463845d9aa609dad9640ae0a4e",
+      "remoteVersion": null,
+      "remoteSha256": null,
+      "status": "not_deployed"
     }
   ],
   "liveCheck": {

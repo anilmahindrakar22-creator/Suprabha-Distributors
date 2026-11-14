@@ -30,7 +30,7 @@ actions.push('get_requirement_orders');
 readActions.add('get_requirement_orders');
 actions.push('get_stock_alerts');
 readActions.add('get_stock_alerts');
-const economicActions = ['get_link_suggestions','confirm_customer_links','get_instrument_economics','recover_economic_command','register_historical_instrument','create_target','set_mapping','set_item_group_mapping','set_expectation','record_observation','approve_target','link_instrument_billing','review_acquisition','record_capital','set_group_members','close_group_membership','set_allocation','close_allocation','close_target','set_policy','rebuild','create_case','update_case','claim_recovery','verify_cost','resolve_line'];
+const economicActions = ['get_link_suggestions','confirm_customer_links','get_instrument_economics','recover_economic_command','register_historical_instrument','create_target','set_mapping','set_mappings','set_item_group_mapping','set_expectation','record_observation','approve_target','link_instrument_billing','review_acquisition','record_capital','set_group_members','close_group_membership','set_allocation','close_allocation','close_target','set_policy','rebuild','create_case','update_case','claim_recovery','verify_cost','resolve_line'];
 actions.push(...economicActions);
 actions.push('get_wallet_workspace', 'get_wallet_account', 'record_wallet_snapshot', 'verify_wallet_snapshot', 'set_wallet_policy');
 actions.push('get_wallet_diagnoses', 'get_account_opportunities', 'get_account_signals', 'get_opportunity_outcomes', 'open_opportunity', 'record_constraint', 'close_opportunity');

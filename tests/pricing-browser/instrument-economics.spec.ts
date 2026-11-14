@@ -1449,6 +1449,41 @@ test('group item checklist unticks an item from the group start and records the 
   await expect(items.getByLabel('Count Haem diluent for this instrument')).toBeChecked();
   await expect(items.getByLabel('Count Coag cleaner for this instrument')).not.toBeChecked();
   await items.getByLabel('Count Coag reagent for this instrument').click();
+  await expect(checklist.getByText('Will stop counting from', { exact: false })).toBeVisible();
+  expect(posts).toHaveLength(0);
+  await checklist.getByRole('button', { name: 'Save changes', exact: true }).click();
   await expect.poll(() => posts.length).toBe(1);
-  expect(posts[0]).toMatchObject({ action: 'set_mapping', payload: { targetId: target.id, productId: 'coag-reagent', effect: 'exclude', effectiveFrom: '2026-05-01', modelId: 'model-1' } });
+  expect(posts[0]).toMatchObject({ action: 'set_mappings', payload: { targetId: target.id, companyId: 'company-guid', modelId: 'model-1', items: [{ productId: 'coag-reagent', effect: 'exclude', effectiveFrom: '2026-05-01', effectiveTo: '' }] } });
+});
+
+test('group item checklist collects ticks and saves them in one batch', async ({ page }) => {
+  const posts: { action: string; payload: Record<string, unknown> }[] = [];
+  const data = economicsData({ targets: [target], sourceLines: [], businessDate: '2026-11-13',
+    itemGroupMappings: [{ id: 'group-map', companyId: 'company-guid', modelId: 'model-1', groupId: 'haem', targetId: target.id, effect: 'include', effectiveFrom: '2026-05-01', effectiveTo: null, catalogId: 'catalog-1', reason: 'Generic haematology group' }],
+    itemGroupCatalogs: [{ id: 'catalog-1', companyId: 'company-guid', sourceVersion: 'v1', observedAt: '2026-10-09T10:00:00Z', current: true, groups: [{ id: 'haem', name: 'Generic haematology', itemCount: 3, parentId: null }], products: [
+      { id: 'haem-diluent', name: 'Haem diluent', groupId: 'haem', unit: 'qty' },
+      { id: 'coag-reagent', name: 'Coag reagent', groupId: 'haem', unit: 'qty' },
+      { id: 'coag-clean', name: 'Coag cleaner', groupId: 'haem', unit: 'qty' },
+    ] }] });
+  await page.route('**/api/instrument-economics', route => {
+    if (route.request().method() === 'GET') return route.fulfill({ json: data });
+    posts.push(route.request().postDataJSON()); return route.fulfill({ json: { ok: true } });
+  });
+  await page.goto('/?view=instrument-economics');
+  const items = page.getByRole('region', { name: 'Instrument items' });
+  const checklist = items.locator('details[data-group-items="haem"]');
+  await checklist.locator('summary').click();
+  await items.getByLabel('Count Haem diluent for this instrument').click();
+  await items.getByLabel('Count Coag reagent for this instrument').click();
+  await expect(checklist.getByText('2 changes not saved', { exact: true })).toBeVisible();
+  await items.getByLabel('Count Coag reagent for this instrument').click();
+  await expect(checklist.getByText('1 change not saved', { exact: true })).toBeVisible();
+  expect(posts).toHaveLength(0);
+  expect(await page.evaluate(() => document.documentElement.scrollWidth <= innerWidth)).toBe(true);
+  await checklist.getByRole('button', { name: 'Save changes', exact: true }).click();
+  await expect.poll(() => posts.length).toBe(1);
+  expect(posts[0].action).toBe('set_mappings');
+  expect((posts[0].payload.items as unknown[]).length).toBe(1);
+  expect(posts[0].payload.items).toMatchObject([{ productId: 'haem-diluent', effect: 'exclude' }]);
+  expect(posts).toHaveLength(1);
 });

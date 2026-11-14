@@ -142,6 +142,15 @@ describe('instrument economics API', () => {
     expect(mocks.gateway).toHaveBeenCalledWith('manager@example.com', 'record_capital', payload);
   });
 
+  it('accepts a batch mapping command from management and forwards the set_mappings action to the gateway', async () => {
+    mocks.session.mockResolvedValue({ email: 'manager@example.com', roles: ['management'] });
+    const payload = { idempotencyKey: 'mapping-batch-key-123456', targetId: 'target-1', expectedActorEmail: 'manager@example.com', items: [{ productId: 'item-a', effect: 'exclude', effectiveFrom: '2026-11-01', effectiveTo: '' }] };
+    const response = await POST(jsonRequest({ action: 'set_mappings', payload }));
+    expect(response.status).toBe(200);
+    expect(response.headers.get('cache-control')).toBe('private, no-store');
+    expect(mocks.gateway).toHaveBeenCalledWith('manager@example.com', 'set_mappings', payload);
+  });
+
   it('forwards an acquisition revision review with the signed-in manager and source/version preconditions', async () => {
     mocks.session.mockResolvedValue({ email: 'manager@example.com', roles: ['management'] });
     const payload = { idempotencyKey: 'acquisition-review-123456', expectedActorEmail: 'manager@example.com', targetId: 'target-1', expectedVersion: 3, expectedSourceRevision: '7', confirmCancellation: true, reason: 'Reviewed supplier cancellation' };
