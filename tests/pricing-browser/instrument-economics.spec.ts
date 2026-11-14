@@ -1176,6 +1176,21 @@ test('selected placement details retain item group mapping versions and current 
   expect(await page.evaluate(() => document.documentElement.scrollWidth <= window.innerWidth)).toBe(true);
 });
 
+test('instrument card keeps the sales table scrolling inside the card on a phone', async ({ page }) => {
+  await page.setViewportSize({ width: 375, height: 800 });
+  const line = (id: string, itemId: string, itemName: string) => ({ id, sourceLineId: `source-${id}`, targetId: target.id, status: 'attributed', reason: '', shareBasisPoints: 10000, quantity: '2', revenuePaise: '586000', costPaise: '300000', gpPaise: '286000', date: '2026-10-05', voucherId: `TEST-INV-${id}`, revision: '1', productId: itemId, productName: itemName, unit: 'qty', costEvidence: null });
+  await mockWorkspace(page, economicsData({ targets: [target], attributionLines: [line('t1', 'TEST-ITEM-1', 'TEST-ITEM One'), line('t2', 'TEST-ITEM-2', 'TEST-ITEM Two')] }));
+  const card = page.getByRole('article').filter({ has: page.getByRole('heading', { name: target.name, exact: true }) });
+  const open = card.getByRole('button', { name: 'Sales & items', exact: true });
+  if (await open.count()) await open.click();
+  await expect(card.getByRole('button', { name: 'Hide sales & items', exact: true })).toBeVisible();
+  const table = card.getByRole('region', { name: 'Instrument sales' }).locator('table');
+  await expect(table).toBeVisible();
+  expect(await page.getByRole('main').last().evaluate(e => e.scrollWidth <= e.clientWidth + 1)).toBe(true);
+  expect(await card.evaluate(e => e.getBoundingClientRect().right <= innerWidth + 1)).toBe(true);
+  expect(await table.evaluate(t => { const p = t.parentElement as HTMLElement; return p.className.includes('overflow-x-auto') && p.scrollWidth > p.clientWidth; })).toBe(true);
+});
+
 
 test('monthly item GP breakdown shows unique billed items and partial costs without duplicate names merging', async ({ page }, testInfo) => {
   await mockWorkspace(page, economicsData({ targets: [{ ...target, revenuePaise: '6000000', knownGpPaise: '1940000', missingCostLines: 1, attributedLines: 5, itemBreakdown: [
