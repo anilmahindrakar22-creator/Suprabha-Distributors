@@ -1,7 +1,7 @@
 'use client';
 
 import { useEffect, useId, useRef, useState } from 'react';
-import { buildSetItemKindPayload, parseBrandMappingCommand, parseBrandMappingResponse, type BrandAreaCode, type BrandMappingGroup, type BrandMappingResponse, type BrandTreeRow, type BrandMappingItem, type ItemKind, type ItemKindPayload } from '@/lib/brand-mapping';
+import { buildSetItemKindPayload, parseBrandMappingCommand, parseBrandMappingResponse, type BrandAreaCode, type BrandMappingBrand, type BrandMappingGroup, type BrandMappingResponse, type BrandTreeRow, type BrandMappingItem, type ItemKind, type ItemKindPayload } from '@/lib/brand-mapping';
 import { cleanBrandName, suggestBrand } from '@/lib/brand-suggestions';
 import { hasAnyStockFlowRole, normalizeStockFlowRoles } from '@/lib/user-types';
 import { formatPaise } from '@/lib/wallet-format';
@@ -15,10 +15,47 @@ const button = 'min-h-11 rounded-lg border border-sf-line px-3 text-sm disabled:
 type Draft = { action: string; [key: string]: unknown };
 type SaveResult = 'ok' | 'conflict' | 'fail';
 const itemCount = (n: number) => n === 1 ? '1 item' : `${n} items`;
-const shownName = (group: string) => group.replace(/[\u0000-\u001f]/g, '').trim() || group;
+const shownName = (group: string) => group.replace(/\p{Cc}/gu, '').trim() || group;
 function formatObserved(value: string) {
   const parts = Object.fromEntries(new Intl.DateTimeFormat('en-US', { timeZone: 'Asia/Kolkata', day: 'numeric', month: 'short', year: 'numeric' }).formatToParts(new Date(value)).map(part => [part.type, part.value]));
   return `${parts.day} ${parts.month} ${parts.year}`;
+}
+
+type OnSave = (draft: Draft) => Promise<SaveResult>;
+
+function BrandSelect({ row, id, emptyLabel = 'Not set', brands, disabled, onSave }: { row: BrandTreeRow; id: string; emptyLabel?: string; brands: BrandMappingBrand[]; disabled: boolean; onSave: OnSave }) {
+  return <><label className="block text-xs" htmlFor={id}>Brand<span className="sr-only"> for {shownName(row.group)}</span></label><select id={id} className={control} disabled={disabled} value={row.kind === 'none' ? 'none' : row.brandCode ?? ''} onChange={event => { if (event.target.value) void onSave({ action: 'set_group_brand', group: row.group, expectedLinkId: row.linkId ?? null, brandCode: event.target.value === 'none' ? null : event.target.value }); }}>{!row.linkId ? <option value="">{emptyLabel}</option> : null}{brands.map(brand => <option key={brand.code} value={brand.code}>{brand.name}</option>)}<option value="none">Not a brand we target</option></select></>;
+}
+
+function AreaSelect({ row, id, disabled, onSave }: { row: BrandTreeRow; id: string; disabled: boolean; onSave: OnSave }) {
+  return <><label className="block text-xs" htmlFor={id}>Test area<span className="sr-only"> for {shownName(row.group)}</span></label><select id={id} className={control} disabled={disabled} value={row.areaCode ?? ''} onChange={event => void onSave({ action: 'set_group_area', group: row.group, expectedLinkId: row.areaLinkId ?? null, areaCode: event.target.value || null })}><option value="">Not set</option>{Object.entries(areaNames).map(([areaCode, label]) => <option key={areaCode} value={areaCode}>{label}</option>)}</select></>;
+}
+
+function PrincipalCard({ principal, lines, brands, suggestedCode, idPrefix, disabled, onSave }: { principal: BrandTreeRow; lines: BrandTreeRow[]; brands: BrandMappingBrand[]; suggestedCode: string | null; idPrefix: string; disabled: boolean; onSave: OnSave }) {
+  const brandName = (brandCode: string | null) => brands.find(brand => brand.code === brandCode)?.name ?? brandCode ?? '';
+  const items = principal.items + lines.reduce((sum, line) => sum + line.items, 0);
+  const sales = principal.salesPaise + lines.reduce((sum, line) => sum + line.salesPaise, 0);
+  const shown = shownName(principal.group);
+  const cleaned = cleanBrandName(shown);
+  const canAdd = !suggestedCode && principal.linkId === null && !!parseBrandMappingCommand({ action: 'add_brand', name: cleaned, idempotencyKey: 'x'.repeat(16) });
+  const brandSelect = (row: BrandTreeRow, id: string, emptyLabel?: string) => <BrandSelect row={row} id={id} emptyLabel={emptyLabel} brands={brands} disabled={disabled} onSave={onSave} />;
+  return <div className="min-w-0 space-y-1 rounded-xl border border-sf-line-soft p-3 break-words">
+    <p className="font-semibold">{shown}</p>
+    <p className="text-xs text-sf-muted">{itemCount(items)} · {formatPaise(sales)}</p>
+    {principal.items > 0 && !lines.length
+      ? <div className="grid grid-cols-2 gap-2"><div className="min-w-0">{brandSelect(principal, `${idPrefix}-principal`)}</div><div className="min-w-0"><AreaSelect row={principal} id={`${idPrefix}-principal-area`} disabled={disabled} onSave={onSave} /></div></div>
+      : brandSelect(principal, `${idPrefix}-principal`)}
+    {suggestedCode ? <p className="text-xs text-sf-muted">Suggested: {brandName(suggestedCode)} <button type="button" className={button} aria-label={`Accept ${brandName(suggestedCode)} for ${shown}`} disabled={disabled} onClick={() => void onSave({ action: 'set_group_brand', group: principal.group, expectedLinkId: null, brandCode: suggestedCode })}>Accept</button></p> : null}
+    {canAdd ? <button type="button" className={button} aria-label={`Add ${shown} as a brand`} disabled={disabled} onClick={() => void onSave({ action: 'add_brand', name: cleaned })}>Add as brand</button> : null}
+    {lines.map((line, lineIndex) => <div key={line.group} className="min-w-0 space-y-1 border-t border-sf-line-soft pt-2 break-words" style={{ paddingLeft: line.depth * 12 }}>
+      <p className="font-semibold">{shownName(line.group)} <span className="text-xs font-normal text-sf-muted">· {itemCount(line.items)} · {formatPaise(line.salesPaise)}</span></p>
+      <div className="grid grid-cols-2 gap-2">
+        <div className="min-w-0">{brandSelect(line, `${idPrefix}-line-${lineIndex}`, line.inheritedBrandCode ? `${brandName(line.inheritedBrandCode)} (from group)` : 'Not set')}</div>
+        <div className="min-w-0"><AreaSelect row={line} id={`${idPrefix}-line-area-${lineIndex}`} disabled={disabled} onSave={onSave} /></div>
+      </div>
+      {line.kind === 'brand' && principal.kind === 'brand' && principal.brandCode === line.brandCode ? <p className="text-xs text-sf-muted">Same as brand group</p> : null}
+    </div>)}
+  </div>;
 }
 
 export function BrandSetup({ onBack }: { onBack: () => void }) {
@@ -91,7 +128,6 @@ export function BrandSetup({ onBack }: { onBack: () => void }) {
   const disabled = busy || loading || !!error;
   const tree = data?.tree ?? [];
   const hasTree = tree.length > 0;
-  const brandName = (brandCode: string | null) => data?.brands.find(brand => brand.code === brandCode)?.name ?? brandCode ?? '';
   const principals = tree.filter(row => row.depth === 0);
   const suggestionFor = (row: BrandTreeRow) => row.linkId === null && data ? suggestBrand(row.group, data.brands) : null;
   const suggested = principals.filter(row => suggestionFor(row));
@@ -106,14 +142,6 @@ export function BrandSetup({ onBack }: { onBack: () => void }) {
   function groupCards(groups: BrandMappingGroup[]) {
     return groups.map((group, index) => <div key={group.group} className="min-w-0 space-y-1 rounded-xl border border-sf-line-soft p-3 break-words"><p className="font-semibold">{group.label}</p><p className="text-xs text-sf-muted">{group.items} items · {formatPaise(group.salesPaise)}</p><label className="block text-xs" htmlFor={`${prefix}-group-${index}`}>Brand<span className="sr-only"> for {group.label}</span></label><select id={`${prefix}-group-${index}`} className={control} disabled={disabled} value={group.kind === 'none' ? 'none' : group.brandCode ?? ''} onChange={event => { if (event.target.value) void save({ action: 'set_group_brand', group: group.group, expectedLinkId: group.linkId ?? null, brandCode: event.target.value === 'none' ? null : event.target.value }); }}>{options(group.linkId)}</select></div>);
   }
-  function brandSelect(row: BrandTreeRow, id: string, emptyLabel = 'Not set') {
-    const shown = shownName(row.group);
-    return <><label className="block text-xs" htmlFor={id}>Brand<span className="sr-only"> for {shown}</span></label><select id={id} className={control} disabled={disabled} value={row.kind === 'none' ? 'none' : row.brandCode ?? ''} onChange={event => { if (event.target.value) void save({ action: 'set_group_brand', group: row.group, expectedLinkId: row.linkId ?? null, brandCode: event.target.value === 'none' ? null : event.target.value }); }}>{!row.linkId ? <option value="">{emptyLabel}</option> : null}{data?.brands.map(brand => <option key={brand.code} value={brand.code}>{brand.name}</option>)}<option value="none">Not a brand we target</option></select></>;
-  }
-  function areaSelect(row: BrandTreeRow, id: string) {
-    const shown = shownName(row.group);
-    return <><label className="block text-xs" htmlFor={id}>Test area<span className="sr-only"> for {shown}</span></label><select id={id} className={control} disabled={disabled} value={row.areaCode ?? ''} onChange={event => void save({ action: 'set_group_area', group: row.group, expectedLinkId: row.areaLinkId ?? null, areaCode: event.target.value || null })}><option value="">Not set</option>{Object.entries(areaNames).map(([areaCode, label]) => <option key={areaCode} value={areaCode}>{label}</option>)}</select></>;
-  }
   const treeSection = () => {
     if (!data) return null;
     const inTree = new Set(tree.map(row => row.group));
@@ -122,32 +150,7 @@ export function BrandSetup({ onBack }: { onBack: () => void }) {
       <h3 className="font-semibold">Brands from Tally groups</h3>
       <p className="text-xs text-sf-muted">{data.catalogObservedAt ? `Tally groups as of ${formatObserved(data.catalogObservedAt)}` : 'Tally groups not received yet'}</p>
       {suggested.length ? <button type="button" className={button} disabled={disabled} onClick={() => void acceptAll()}>Accept all suggestions ({suggested.length})</button> : null}
-      {principals.map((principal, index) => {
-        const lines = tree.filter(row => row.top === principal.group && row.depth > 0);
-        const items = principal.items + lines.reduce((sum, line) => sum + line.items, 0);
-        const sales = principal.salesPaise + lines.reduce((sum, line) => sum + line.salesPaise, 0);
-        const shown = shownName(principal.group);
-        const code = suggestionFor(principal);
-        const cleaned = cleanBrandName(shownName(principal.group));
-        const canAdd = !code && principal.linkId === null && !!parseBrandMappingCommand({ action: 'add_brand', name: cleaned, idempotencyKey: 'x'.repeat(16) });
-        return <div key={principal.group} className="min-w-0 space-y-1 rounded-xl border border-sf-line-soft p-3 break-words">
-          <p className="font-semibold">{shown}</p>
-          <p className="text-xs text-sf-muted">{itemCount(items)} · {formatPaise(sales)}</p>
-          {principal.items > 0 && !lines.length
-            ? <div className="grid grid-cols-2 gap-2"><div className="min-w-0">{brandSelect(principal, `${prefix}-principal-${index}`)}</div><div className="min-w-0">{areaSelect(principal, `${prefix}-principal-area-${index}`)}</div></div>
-            : brandSelect(principal, `${prefix}-principal-${index}`)}
-          {code ? <p className="text-xs text-sf-muted">Suggested: {brandName(code)} <button type="button" className={button} aria-label={`Accept ${brandName(code)} for ${shown}`} disabled={disabled} onClick={() => void save({ action: 'set_group_brand', group: principal.group, expectedLinkId: null, brandCode: code })}>Accept</button></p> : null}
-          {canAdd ? <button type="button" className={button} aria-label={`Add ${shown} as a brand`} disabled={disabled} onClick={() => void save({ action: 'add_brand', name: cleaned })}>Add as brand</button> : null}
-          {lines.map((line, lineIndex) => <div key={line.group} className="min-w-0 space-y-1 border-t border-sf-line-soft pt-2 break-words" style={{ paddingLeft: line.depth * 12 }}>
-            <p className="font-semibold">{shownName(line.group)} <span className="text-xs font-normal text-sf-muted">· {itemCount(line.items)} · {formatPaise(line.salesPaise)}</span></p>
-            <div className="grid grid-cols-2 gap-2">
-              <div className="min-w-0">{brandSelect(line, `${prefix}-line-${index}-${lineIndex}`, line.inheritedBrandCode ? `${brandName(line.inheritedBrandCode)} (from group)` : 'Not set')}</div>
-              <div className="min-w-0">{areaSelect(line, `${prefix}-line-area-${index}-${lineIndex}`)}</div>
-            </div>
-            {line.kind === 'brand' && principal.kind === 'brand' && principal.brandCode === line.brandCode ? <p className="text-xs text-sf-muted">Same as brand group</p> : null}
-          </div>)}
-        </div>;
-      })}
+      {principals.map((principal, index) => <PrincipalCard key={principal.group} principal={principal} lines={tree.filter(row => row.top === principal.group && row.depth > 0)} brands={data.brands} suggestedCode={suggestionFor(principal)} idPrefix={`${prefix}-p${index}`} disabled={disabled} onSave={save} />)}
       {others.length ? <><h4 className="pt-2 text-xs font-semibold text-sf-muted">Other groups</h4>{groupCards(others)}</> : null}
     </section>;
   };
