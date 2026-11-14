@@ -65,7 +65,7 @@ describe('instrument economics API', () => {
     expect(await response.json()).toEqual({ status: 'not_saved' });
   });
   it('allows accounts to read the workspace without caching it', async () => {
-    const response = await GET();
+    const response = await GET(new Request('https://test.local/api/instrument-economics', { headers: { 'x-stockflow-economics-view': 'full' } }));
     expect(response.status).toBe(200);
     expect(response.headers.get('cache-control')).toBe('private, no-store');
     expect(mocks.gateway).toHaveBeenCalledWith('staff@example.com', 'get_instrument_economics');
@@ -75,7 +75,7 @@ describe('instrument economics API', () => {
   it('measures authorized reads without changing financial response bytes or gateway scope', async () => {
     const workspace = { targets: [], leakage: [], knownGpPaise: '2300000', customer: 'आरोग्य Lab' };
     mocks.gateway.mockResolvedValue(workspace);
-    const response = await GET();
+    const response = await GET(new Request('https://test.local/api/instrument-economics', { headers: { 'x-stockflow-economics-view': 'full' } }));
     const expected = new TextEncoder().encode(JSON.stringify({ ...workspace, actorEmail: 'staff@example.com', canAdministrator: false }));
     expect(response.headers.get('server-timing')).toMatch(/^stockflow;dur=\d+\.\d, auth;dur=\d+\.\d, member;dur=\d+\.\d, rpc;dur=\d+\.\d, json;dur=\d+\.\d$/);
     expect(response.headers.get('x-stockflow-response-bytes')).toBe(String(expected.byteLength));
@@ -126,6 +126,14 @@ describe('instrument economics API', () => {
     const stale = await GET(new Request('https://test.local/api/instrument-economics', { headers: { 'x-stockflow-economics-view': 'detail' } }));
     expect(stale.status).toBe(503);
     expect(await stale.json()).toMatchObject({ error: expect.stringContaining('detail is not available') });
+  });
+
+  it('defaults a request without a view header to the summary read', async () => {
+    mocks.session.mockResolvedValue({ email: 'staff@example.com', roles: ['administrator'] });
+    mocks.gateway.mockResolvedValue({ readView: 'summary', targets: [] });
+    const response = await GET(new Request('https://test.local/api/instrument-economics'));
+    expect(response.status).toBe(200);
+    expect(mocks.gateway).toHaveBeenCalledExactlyOnceWith('staff@example.com', 'get_instrument_economics', { view: 'summary' });
   });
 
   it('rejects unknown read views without executing the financial RPC', async () => {

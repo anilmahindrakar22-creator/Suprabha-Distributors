@@ -31,7 +31,7 @@ export async function GET(request?: Request) {
     const action = validateEconomicReadAction(request ? new URL(request.url).searchParams.get('action') : null);
     if (!action) return Response.json({ error: 'Invalid economics read action' }, { status: 400, headers });
     if (action === 'get_sales_coverage') return Response.json(await callOrderGateway(session.email, action, {}), { headers });
-    const view = request?.headers.get('x-stockflow-economics-view') ?? 'full';
+    const view = request?.headers.get('x-stockflow-economics-view') ?? 'summary';
     if (view !== 'full' && view !== 'summary' && view !== 'detail') return Response.json({ error: 'Invalid economics view' }, { status: 400, headers });
     const rpcStartedAt = performance.now();
     const workspace = view === 'full'
