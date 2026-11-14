@@ -1515,6 +1515,13 @@
       "remoteVersion": null,
       "remoteSha256": null,
       "status": "not_deployed"
+    },
+    {
+      "localFile": "20261130140000_brand_line_tree.sql",
+      "localSha256": "8930765076d666d23e5553aab7bbf24ad461dd79a6315e6117673ffb3d09df1c",
+      "remoteVersion": null,
+      "remoteSha256": null,
+      "status": "not_deployed"
     }
   ],
   "liveCheck": {
