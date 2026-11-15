@@ -54,6 +54,7 @@ const pricingReleaseFiles = new Set([
   '20261130120000_contact_decision_roles.sql',
   '20261130130000_batch_item_mappings.sql',
   '20261130140000_brand_line_tree.sql',
+  '20261130150000_growth_brands.sql',
   '20261102090000_po_tally_receipts.sql',
   '20261031140000_power_map_enhancement.sql',
   '20261030090000_instrument_register.sql',
@@ -220,6 +221,7 @@ export const pricingReleaseSqlTests = [
   'supabase/tests/visit_checkins.sql',
   'supabase/tests/batch_item_mappings.sql',
   'supabase/tests/brand_line_tree.sql',
+  'supabase/tests/growth_brands.sql',
 ];
 
 export function pricingReleasePreflight(evidence, files) {

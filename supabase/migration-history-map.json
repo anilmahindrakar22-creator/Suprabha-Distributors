@@ -1522,6 +1522,13 @@
       "remoteVersion": null,
       "remoteSha256": null,
       "status": "not_deployed"
+    },
+    {
+      "localFile": "20261130150000_growth_brands.sql",
+      "localSha256": "cb979114fb97c983091b07595b60e173ee400d03f55808188e6e93a38cef3a1e",
+      "remoteVersion": null,
+      "remoteSha256": null,
+      "status": "not_deployed"
     }
   ],
   "liveCheck": {
