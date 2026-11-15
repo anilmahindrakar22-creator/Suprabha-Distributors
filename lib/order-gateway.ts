@@ -9,6 +9,7 @@ export type GatewayAction =
   | 'get_growth_margin_detail'
   | 'get_growth_billed_below'
   | 'get_growth_brands'
+  | 'get_growth_lab_months'
   | 'set_item_kind'
   | 'get_growth_inbox'
   | 'decide_growth_card'

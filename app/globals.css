@@ -94,6 +94,19 @@
   --color-sf-warm: #a24a12;
   --color-sf-warm-soft: #fdf0e6;
   --color-sf-warm-line: #f1cfb4;
+  --color-sf-chart-1: #1a9a6c;
+  --color-sf-chart-2: #eb6834;
+  --color-sf-chart-3: #2a78d6;
+  --color-sf-chart-up: #0ca30c;
+  --color-sf-chart-down: #d03b3b;
+  --color-sf-chart-grid: #e1e0d9;
+  --color-sf-chart-axis: #c3c2b7;
+  --color-sf-heat-0: #f1f5f3;
+  --color-sf-heat-1: #c6e9d9;
+  --color-sf-heat-2: #86cfae;
+  --color-sf-heat-3: #3fae82;
+  --color-sf-heat-4: #1a9a6c;
+  --color-sf-heat-5: #0e6b4a;
 }
 
 body {

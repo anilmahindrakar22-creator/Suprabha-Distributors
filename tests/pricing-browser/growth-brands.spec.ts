@@ -78,13 +78,13 @@ for (const width of [375, 1280]) {
       await expect(section).toContainText('12 months · sales include instruments · margin is consumables only, average purchase cost');
       const rows = section.locator('[data-brand-row]');
       await expect(rows).toHaveCount(12);
-      await expect(section.getByText('Principal K', { exact: true })).toHaveCount(0);
+      await expect(rows.getByText('Principal K', { exact: true })).toHaveCount(0);
       const first = rows.first();
       expect(await first.getByText(/^Sales .* · H2 vs H1/).count()).toBeGreaterThanOrEqual(1);
       expect(await first.locator('span[aria-hidden="true"]').count()).toBeGreaterThanOrEqual(4);
       await section.getByRole('button', { name: 'Show all 11 principals', exact: true }).click();
       await expect(rows).toHaveCount(13);
-      await expect(section.getByText('Principal K', { exact: true })).toBeVisible();
+      await expect(rows.getByText('Principal K', { exact: true })).toBeVisible();
       await expect(section.getByRole('button', { name: /Show all/ })).toHaveCount(0);
       await expect(section.getByText('Not a principal product', { exact: true })).toBeVisible();
       await expect(section).toContainText('Total ₹9,00,000 · instruments ₹50,000 · consumables margin 22.5%. Same 12 months as Gross profit.');

@@ -4,10 +4,44 @@ import { useEffect, useRef, useState } from 'react';
 import { normalizeGrowthMarginDetail, normalizeGrowthBilledBelow, type GrowthBilledBelow, type GrowthMarginDetail as Detail } from '@/lib/growth-margin-types';
 import { formatPaise } from '@/lib/wallet-format';
 import type { GrowthNavigation } from './growth-drilldown';
+import { chartTipText, useChartTip } from './growth-chart-tip';
 
 export type MarginSelection = { itemKey: string } | { labKey: string };
 const button = 'min-h-9 rounded-lg border border-sf-line px-3 text-xs text-sf-brand disabled:text-sf-muted';
 const money = (n: number | null) => n === null ? '—' : formatPaise(n);
+
+type ItemDetail = Extract<Detail, { kind: 'item' }>;
+const jitter = [-8, 0, 8];
+
+function PriceStrip({ data, onPick }: { data: ItemDetail; onPick: (index: number) => void }) {
+  const { tipProps, tip, containerProps } = useChartTip();
+  const typical = data.typicalPricePaise;
+  const dots = data.rows.map((row, index) => ({ row, index })).filter(({ row }) => row.unitPricePaise > 0 && !row.packDifference);
+  if (typical === null || typical <= 0 || dots.length < 3) return null;
+  const prices = dots.map(({ row }) => row.unitPricePaise);
+  const lo = Math.min(...prices, typical * 0.6), hi = Math.max(...prices, typical * 1.2);
+  const px = (price: number) => 4 + (price - lo) / (hi - lo) * 92;
+  return <div className="mt-3"><div data-price-strip {...containerProps}>
+    <svg className="block h-[72px] w-full overflow-visible" role="group" aria-label={`Price per unit by lab against typical ${money(typical)}`}>
+      <rect x={`${px(typical * 0.9)}%`} width={`${px(typical * 1.1) - px(typical * 0.9)}%`} y="16" height="38" fill="var(--color-sf-chart-grid)" />
+      <line x1="4%" x2="96%" y1="58" y2="58" stroke="var(--color-sf-chart-axis)" />
+      <line x1={`${px(typical)}%`} x2={`${px(typical)}%`} y1="12" y2="58" stroke="var(--color-sf-chart-axis)" strokeWidth="2" />
+      <text x={`${px(typical)}%`} y="8" textAnchor="middle" className="fill-sf-label text-[10px]">Typical {money(typical)}</text>
+      <text x="4%" y="70" textAnchor="start" className="fill-sf-muted text-[10px]">{money(Math.round(lo))}</text>
+      <text x="96%" y="70" textAnchor="end" className="fill-sf-muted text-[10px]">{money(Math.round(hi))}</text>
+      {dots.map(({ row, index }, i) => {
+        const under = row.unitPricePaise < typical * 0.9, share = Math.round(row.unitPricePaise / typical * 100);
+        const label = `${row.name ?? 'Unlinked lab'}: ${money(row.unitPricePaise)}, ${share}% of typical`;
+        return <g key={index} role="button" tabIndex={0} aria-label={label} data-price-dot={under ? 'under' : 'ok'} {...tipProps(chartTipText(label))} className="cursor-pointer focus-visible:outline-2 focus-visible:outline-sf-ink" onClick={() => onPick(index)} onKeyDown={e => { if (e.key === 'Enter' || e.key === ' ') { e.preventDefault(); onPick(index); } }}>
+          <circle cx={`${px(row.unitPricePaise)}%`} cy={36 + jitter[i % 3]} r="18" fill="transparent" />
+          <circle cx={`${px(row.unitPricePaise)}%`} cy={36 + jitter[i % 3]} r="5" fill={under ? 'var(--color-sf-chart-2)' : 'var(--color-sf-chart-3)'} stroke={under ? 'var(--color-sf-chart-down)' : undefined} strokeWidth={under ? 2 : undefined} />
+        </g>;
+      })}
+    </svg>
+    <p className="text-xs text-sf-muted">Showing {dots.length} of {data.total} labs · orange = under 90% of typical</p>
+    {tip}
+  </div></div>;
+}
 
 export function GrowthBilledBelowDetail({ navigation, onClose }: { navigation: GrowthNavigation; onClose: () => void }) {
   const dialog = useRef<HTMLDialogElement>(null);
@@ -69,6 +103,8 @@ export function GrowthMarginDetail({ selection, navigation, onClose }: { selecti
   const [reviewing, setReviewing] = useState(false);
   const [reviewError, setReviewError] = useState(false);
   const reviewRequest = useRef<AbortController | null>(null);
+  const [highlight, setHighlight] = useState<number | null>(null);
+  const rowRefs = useRef<(HTMLLIElement | null)[]>([]);
   useEffect(() => {
     const trigger = document.activeElement as HTMLElement | null;
     const panel = dialog.current!;
@@ -121,13 +157,14 @@ export function GrowthMarginDetail({ selection, navigation, onClose }: { selecti
     <div className="space-y-2"><div className="flex justify-end"><button className={button} onClick={onClose} aria-label="Close margin detail">Close</button></div><h2 id="growth-margin-detail-title" className="text-base font-bold">{data ? `${data.name ?? (data.kind === 'item' ? 'Unnamed item' : '(unlinked ledger)')} · ${data.kind === 'item' ? 'price per unit by lab' : 'items bought'}` : 'Margin detail'}</h2><p id="growth-margin-detail-explanation" className="text-xs text-sf-muted">{data?.kind === 'item' ? `Typical (median) ${money(data.typicalPricePaise)} across ${data.labs} labs. Labs under 90% of typical are highlighted; prices under 40% are probably a different pack and are not counted.` : 'Consumables bought by this lab · average purchase cost.'}</p></div>
     {loading && <p role="status" className="py-4 text-xs">Loading margin detail…</p>}{error && <p role="alert" className="py-4 text-xs">Margin detail is unavailable. <button className={button} onClick={() => setRevision(n => n + 1)}>Retry</button></p>}
     {reviewError && <p role="alert" className="text-xs">Could not open price review. Try again.</p>}
+    {data?.kind === 'item' && <PriceStrip data={data} onPick={index => { setHighlight(index); rowRefs.current[index]?.scrollIntoView({ block: 'nearest' }); }} />}
     <ul aria-label="Margin detail results">{data?.rows.map((row, index) => {
       const itemRow = 'labKey' in row;
       const customerId = itemRow ? row.customerId : data.kind === 'lab' ? data.customerId : null;
       const tallyItemKey = itemRow ? data.kind === 'item' ? data.tallyItemKey : null : row.tallyItemKey;
       const typical = itemRow ? data.kind === 'item' ? data.typicalPricePaise : null : row.typicalPricePaise;
       const highlighted = row.belowTypical && !row.packDifference;
-      return <li key={index} className={`space-y-1 border-b border-sf-line-soft py-2 ${highlighted ? 'rounded-md bg-sf-warning-soft px-2' : ''}`}><p className="text-sm"><strong>{row.name ?? (itemRow ? '(unlinked ledger)' : 'Unnamed item')}</strong>{itemRow && row.town && <span className="text-xs text-sf-muted"> · {row.town}</span>}</p><p className="text-xs text-sf-muted">{money(row.unitPricePaise)} per unit{!itemRow && ` (typical ${money(typical)})`} · {row.quantity} bought{!itemRow && ` · margin ${row.marginPct === null ? '—' : row.marginPct.toFixed(1) + '%'}`}{row.approvedPricePaise !== null && ` · Approved ${money(row.approvedPricePaise)}`}</p>
+      return <li key={index} ref={el => { rowRefs.current[index] = el; }} data-lab-row={highlight === index ? 'selected' : undefined} className={`space-y-1 border-b border-sf-line-soft py-2 ${highlighted ? 'rounded-md bg-sf-warning-soft px-2' : ''} ${highlight === index ? 'outline outline-2 outline-sf-chart-3' : ''}`}><p className="text-sm"><strong>{row.name ?? (itemRow ? '(unlinked ledger)' : 'Unnamed item')}</strong>{itemRow && row.town && <span className="text-xs text-sf-muted"> · {row.town}</span>}</p><p className="text-xs text-sf-muted">{money(row.unitPricePaise)} per unit{!itemRow && ` (typical ${money(typical)})`} · {row.quantity} bought{!itemRow && ` · margin ${row.marginPct === null ? '—' : row.marginPct.toFixed(1) + '%'}`}{row.approvedPricePaise !== null && ` · Approved ${money(row.approvedPricePaise)}`}</p>
       {row.packDifference && <p className="text-xs text-sf-muted">Probably a different pack · not counted</p>}
       <div className="flex flex-wrap gap-1.5">{highlighted && (customerId === null ? <button className={button} onClick={() => navigate(navigation.onLinkLedger)}>Link</button> : tallyItemKey === null ? <button className={button} disabled>Not in price book</button> : navigation.onOpenPriceReview && typical !== null && <button className={button} disabled={reviewing} onClick={() => void review(customerId, tallyItemKey, typical, row.unitPricePaise, row.quantity, itemRow ? null : row.itemKey)}>Review prices</button>)}{customerId && <button className={button} onClick={() => navigate(() => navigation.onOpenCustomer(customerId))}>Open</button>}</div>
       </li>;
