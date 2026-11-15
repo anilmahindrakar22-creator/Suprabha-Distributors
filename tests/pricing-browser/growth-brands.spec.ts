@@ -64,7 +64,6 @@ async function openProfit(page: Page) {
   await entry.click();
   await page.getByRole('tab', { name: 'Profit', exact: true }).click();
   const section = page.getByRole('region', { name: 'Sales by principal', exact: true });
-  await section.scrollIntoViewIfNeeded();
   return section;
 }
 
@@ -74,6 +73,7 @@ for (const width of [375, 1280]) {
     test('shows the first ten principals, then all on request', async ({ page }) => {
       await fixture(page);
       const section = await openProfit(page);
+      await expect(section.locator('[data-brand-row]').first()).toBeAttached();
       await expect(section.getByRole('heading', { name: 'Sales by principal', exact: true })).toBeVisible();
       await expect(section).toContainText('12 months · sales include instruments · margin is consumables only, average purchase cost');
       const rows = section.locator('[data-brand-row]');

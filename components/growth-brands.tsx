@@ -1,6 +1,6 @@
 'use client';
 
-import { useEffect, useId, useRef, useState } from 'react';
+import { useEffect, useId, useState } from 'react';
 import type { BrandAreaCode } from '@/lib/brand-mapping';
 import { normalizeGrowthBrands, type GrowthBrandLine, type GrowthBrandRow, type GrowthBrandsData } from '@/lib/growth-brand-types';
 import { formatPaise } from '@/lib/wallet-format';
@@ -86,21 +86,10 @@ function BrandTable({ data, onOpenBrandSetup }: { data: GrowthBrandsData; onOpen
 }
 
 export function GrowthBrands({ onOpenBrandSetup }: { onOpenBrandSetup: () => void }) {
-  const section = useRef<HTMLElement>(null);
-  const [near, setNear] = useState(() => typeof IntersectionObserver === 'undefined');
   const [data, setData] = useState<GrowthBrandsData | null>(null);
   const [error, setError] = useState(false);
   const [revision, setRevision] = useState(0);
   useEffect(() => {
-    if (near) return;
-    const element = section.current;
-    if (!element) return;
-    const observer = new IntersectionObserver(entries => { if (entries.some(e => e.isIntersecting)) setNear(true); }, { rootMargin: '400px' });
-    observer.observe(element);
-    return () => observer.disconnect();
-  }, [near]);
-  useEffect(() => {
-    if (!near) return;
     const controller = new AbortController();
     void fetch('/api/growth/brands', { cache: 'no-store', signal: controller.signal }).then(async response => {
       const next = response.ok ? normalizeGrowthBrands(await response.json()) : null;
@@ -108,8 +97,8 @@ export function GrowthBrands({ onOpenBrandSetup }: { onOpenBrandSetup: () => voi
       if (!controller.signal.aborted) setData(next);
     }).catch(() => { if (!controller.signal.aborted) setError(true); });
     return () => controller.abort();
-  }, [near, revision]);
-  return <section ref={section} className={card} aria-labelledby="growth-brands-title">
+  }, [revision]);
+  return <section className={card} aria-labelledby="growth-brands-title">
     <h2 id="growth-brands-title" className="text-base font-bold">Sales by principal</h2>
     <p className={muted}>12 months · sales include instruments · margin is consumables only, average purchase cost</p>
     {error ? <div role="alert" className="text-xs">Principals are unavailable. <button type="button" className={button} onClick={() => { setError(false); setRevision(n => n + 1); }}>Retry</button></div>
