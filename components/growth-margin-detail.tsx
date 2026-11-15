@@ -12,6 +12,7 @@ const money = (n: number | null) => n === null ? '—' : formatPaise(n);
 
 type ItemDetail = Extract<Detail, { kind: 'item' }>;
 const jitter = [-8, 0, 8];
+const wholeRupees = (paise: number) => `₹${Math.floor(paise / 100 + 0.5).toLocaleString('en-IN')}`;
 
 function PriceStrip({ data, onPick }: { data: ItemDetail; onPick: (index: number) => void }) {
   const { tipProps, tip, containerProps } = useChartTip();
@@ -26,9 +27,9 @@ function PriceStrip({ data, onPick }: { data: ItemDetail; onPick: (index: number
       <rect x={`${px(typical * 0.9)}%`} width={`${px(typical * 1.1) - px(typical * 0.9)}%`} y="16" height="38" fill="var(--color-sf-chart-grid)" />
       <line x1="4%" x2="96%" y1="58" y2="58" stroke="var(--color-sf-chart-axis)" />
       <line x1={`${px(typical)}%`} x2={`${px(typical)}%`} y1="12" y2="58" stroke="var(--color-sf-chart-axis)" strokeWidth="2" />
-      <text x={`${px(typical)}%`} y="8" textAnchor="middle" className="fill-sf-label text-[10px]">Typical {money(typical)}</text>
-      <text x="4%" y="70" textAnchor="start" className="fill-sf-muted text-[10px]">{money(Math.round(lo))}</text>
-      <text x="96%" y="70" textAnchor="end" className="fill-sf-muted text-[10px]">{money(Math.round(hi))}</text>
+      <text x={`${px(typical)}%`} y="8" textAnchor="middle" className="fill-sf-label text-[10px]">Typical {wholeRupees(typical)}</text>
+      <text x="4%" y="70" textAnchor="start" className="fill-sf-muted text-[10px]">{wholeRupees(lo)}</text>
+      <text x="96%" y="70" textAnchor="end" className="fill-sf-muted text-[10px]">{wholeRupees(hi)}</text>
       {dots.map(({ row, index }, i) => {
         const under = row.unitPricePaise < typical * 0.9, share = Math.round(row.unitPricePaise / typical * 100);
         const label = `${row.name ?? 'Unlinked lab'}: ${money(row.unitPricePaise)}, ${share}% of typical`;

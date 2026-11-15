@@ -37,7 +37,7 @@ function Pill() {
 function HeaderRow({ months }: { months: string[] }) {
   return <div aria-hidden="true" className={`${rowGrid} text-[10px] text-sf-muted`}>
     <span />
-    {months.map((m, i) => <span key={m} className={`text-center ${i % 2 === 1 ? 'max-[400px]:invisible' : ''}`}>{monthShort(m)}</span>)}
+    {months.map(m => <span key={m} data-month-header className="whitespace-nowrap text-center text-[10px]"><span className="sm:hidden">{monthShort(m).charAt(0)}</span><span className="hidden sm:inline">{monthShort(m)}</span></span>)}
   </div>;
 }
 

@@ -91,6 +91,17 @@ for (const width of [375, 1280]) {
       await section.getByRole('button', { name: 'Retry', exact: true }).click();
       await expect(section.locator('[data-lab-row]')).toHaveCount(20);
     });
+    test('month headers never wrap', async ({ page }) => {
+      await fixture(page);
+      const section = await openMonthly(page);
+      const headers = section.locator('[data-month-header]');
+      await expect(headers).toHaveCount(12);
+      for (const header of await headers.all()) {
+        const box = await header.boundingBox();
+        expect(box?.height ?? 99).toBeLessThanOrEqual(16);
+      }
+      expect(await headers.first().innerText()).toBe(width === 375 ? 'N' : 'Nov');
+    });
     test('does not overflow the page', async ({ page }) => {
       await fixture(page);
       const section = await openMonthly(page);
