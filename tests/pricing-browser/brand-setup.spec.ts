@@ -17,7 +17,7 @@ const tree = [
   row('Linked Maker', null, 'Linked Maker', 0, 0, 0, { linkId, kind: 'brand', brandCode: 'BIOMERIEUX' }),
   row('Line C', 'Linked Maker', 'Linked Maker', 1, 1, 100000, { inheritedBrandCode: 'BIOMERIEUX' }),
 ];
-async function fixture(page: Page, statuses: (number | 'network')[] = [], shape: 'tree' | 'old' = 'tree') {
+async function fixture(page: Page, statuses: (number | 'network')[] = [], shape: 'tree' | 'old' = 'tree', fixtureTree = tree) {
   const posts: Record<string, unknown>[] = [];
   const reads: URL[] = [];
   let itemKind = 'instrument';
@@ -34,6 +34,14 @@ async function fixture(page: Page, statuses: (number | 'network')[] = [], shape:
         itemKind = body.kind === 'auto' ? 'instrument' : String(body.kind); kindSource = body.kind === 'auto' ? 'auto' : 'override';
         return route.fulfill({ json: { companyId: body.companyId, productId: body.productId, kind: itemKind, source: kindSource } });
       }
+      if (status === 200 && body.action === 'set_group_brand' && body.clear === true) {
+        fixtureTree = fixtureTree.map(line => line.group === body.group
+          ? row(line.group, line.parent, line.top, line.depth, line.items, line.salesPaise, {
+            ...line, linkId: areaLinkId, kind: 'inherit', brandCode: null,
+            inheritedBrandCode: fixtureTree.find(principal => principal.group === line.top)?.brandCode ?? null,
+          }) : line);
+        return route.fulfill({ json: { ok: true, linkId: areaLinkId } });
+      }
       return route.fulfill({ status, json: status === 200 ? { ok: true, linkId } : { error: 'Untrusted failure text' } });
     }
     const url = new URL(route.request().url()); reads.push(url);
@@ -42,7 +50,7 @@ async function fixture(page: Page, statuses: (number | 'network')[] = [], shape:
       items: [{ itemKey: 'item-key', name: 'Reagent', group: 'Primary', salesPaise: 12000, linkId, brandKind: 'none', kind: itemKind, kindSource, autoKind: 'instrument', companyId: 'company-1', productId: 'product-1', brandCode: null }],
       equipment: [{ itemKey: 'machine-key', name: 'Machine', installs: 3, linkId: null, areaCode: null }],
       total: 1, page: Number(url.searchParams.get('page')), unmappedSalesPaise: 180000, totalSalesPaise: 1000000,
-      ...(shape === 'tree' ? { tree, catalogObservedAt: '2026-11-13T05:00:00Z' } : {}),
+      ...(shape === 'tree' ? { tree: fixtureTree, catalogObservedAt: '2026-11-13T05:00:00Z' } : {}),
     } });
   });
   await page.route('**/api/me', route => route.fulfill({ json: { roles: ['management'] } }));
@@ -115,6 +123,31 @@ test('Use group posts clear true for an item override', async ({ page }) => {
   await expect.poll(() => posts.length).toBe(1);
   expect(posts[0]).toEqual({ action: 'set_item_brand', itemKey: 'item-key', expectedLinkId: linkId, clear: true, idempotencyKey: expect.any(String) });
 });
+
+for (const own of ['same', 'different', 'none'] as const) {
+  test(`Use brand group clears a line with ${own} own brand and reloads inheritance`, async ({ page }) => {
+    const principal = 'Linked Maker';
+    const line = 'Linked Line';
+    const rows = [
+      row(principal, null, principal, 0, 0, 0, { linkId, kind: 'brand', brandCode: 'BIOMERIEUX' }),
+      row(line, principal, principal, 1, 2, 200000, { linkId, kind: own === 'none' ? 'none' : 'brand', brandCode: own === 'same' ? 'BIOMERIEUX' : own === 'different' ? 'TEST_PRINCIPAL' : null }),
+    ];
+    const { section, posts } = await fixture(page, [], 'tree', rows);
+    const useGroup = section.getByRole('button', { name: `Use brand group for ${line}`, exact: true });
+    await expect(useGroup).toBeVisible();
+    if (own === 'same') await expect(section.getByText('Same as brand group', { exact: false })).toBeVisible();    await useGroup.click();
+    await expect.poll(() => posts.length).toBe(1);
+    expect(posts[0]).toEqual({ action: 'set_group_brand', group: line, expectedLinkId: linkId, clear: true, idempotencyKey: expect.any(String) });
+    expect(posts[0].idempotencyKey).toMatch(/^[0-9a-f-]{36}$/);
+    const select = section.getByLabel(`Brand for ${line}`, { exact: true });
+    await expect(select).toHaveValue('');
+    await expect(select.locator('option:checked')).toHaveText(`${brands[0].name} (from group)`);
+    await expect(useGroup).toHaveCount(0);
+    expect(posts).toHaveLength(1);
+    await page.setViewportSize({ width: 375, height: 812 });
+    expect(await page.evaluate(() => document.documentElement.scrollWidth - document.documentElement.clientWidth)).toBeLessThanOrEqual(1);
+  });
+}
 
 test('Equipment select posts set_equipment_area', async ({ page }) => {
   const { section, posts } = await fixture(page);

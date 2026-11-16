@@ -18,6 +18,7 @@ import { filterEconomicTargets, InstrumentEconomicsPortfolioFilters, type Instru
 import { readJsonBody } from '@/lib/http-json';
 import { SalesCoverageCard } from '@/components/sales-coverage-card';
 import { InstrumentAdd, type InstrumentAddCommand } from '@/components/instrument-add';
+import { niceTicks } from '@/lib/chart-ticks';
 
 type EconomicsWorkspaceData = BaseEconomicsWorkspaceData & { canAdministrator?: boolean };
 
@@ -215,7 +216,58 @@ function recoveryPercent(recovered: string | null | undefined, investment: strin
   const percent = (BigInt(recovered) * BigInt(100)) / BigInt(investment);
   return Number(percent < BigInt(0) ? BigInt(0) : percent > BigInt(100) ? BigInt(100) : percent);
 }
-function InvestmentRecovery({ target }: { target: EconomicTarget }) {
+function PaybackTimeline({ target, policyWindowMonths, businessDate }: { target: EconomicTarget; policyWindowMonths: number; businessDate?: string }) {
+  const review = target.forecastReview;
+  if (target.pooledIn || target.approval !== 'approved' || !review || /^0+$/.test(target.capitalPaise) || /^0+$/.test(target.outstandingPaise)) return null;
+  if (review.status === 'non_positive_gp') return <p className="mt-2 flex items-center gap-1.5 text-xs text-sf-danger"><AlertTriangle size={14} aria-hidden="true" className="shrink-0" />Not paying back: verified reagent GP is zero or negative.</p>;
+  if (target.forecastMonths == null) return <p className="mt-2 text-xs text-sf-muted">{target.health === 'data_incomplete' ? 'Payback date waits for complete data.' : `Payback date needs ${policyWindowMonths} months of complete data.`}</p>;
+
+  const months = target.forecastMonths;
+  const axisMax = Math.min(review.exceptionMonths * 2, Math.max(review.exceptionMonths, Math.ceil(months)));
+  const ticks = niceTicks(0, axisMax, 4).ticks.filter(tick => tick <= axisMax);
+  const position = Math.min(months, axisMax) / axisMax * 100;
+  const reviewPosition = review.reviewMonths / axisMax * 100;
+  const maximumPosition = review.exceptionMonths / axisMax * 100;
+  const closeMarks = Math.abs(reviewPosition - maximumPosition) < 20;
+  const status = review.status;
+  const tone = {
+    within_limit: { line: 'bg-sf-success/60', dot: 'bg-sf-success', text: 'text-sf-success' },
+    review_required: { line: 'bg-sf-warning/60', dot: 'bg-sf-warning', text: 'text-sf-warning' },
+    limit_exceeded: { line: 'bg-sf-danger/60', dot: 'bg-sf-danger', text: 'text-sf-danger' },
+  } as const;
+  const statusTone = tone[status === 'within_limit' || status === 'review_required' || status === 'limit_exceeded' ? status : 'limit_exceeded'];
+  const statusLabel = status === 'within_limit' ? 'within limit' : status === 'review_required' ? 'needs review' : 'over maximum';
+  const StatusIcon = status === 'within_limit' ? CheckCircle2 : AlertTriangle;
+  const alignmentClass = (positionPercent: number) => positionPercent <= 10 ? 'translate-x-0' : positionPercent >= 90 ? '-translate-x-full' : '-translate-x-1/2';
+  let paybackMonth: string | null = null;
+  if (businessDate) {
+    const date = new Date(`${businessDate}T00:00:00Z`);
+    if (!Number.isNaN(date.getTime())) {
+      date.setUTCMonth(date.getUTCMonth() + Math.round(months));
+      paybackMonth = new Intl.DateTimeFormat('en-US', { month: 'short', year: 'numeric', timeZone: 'UTC' }).format(date);
+    }
+  }
+  return <figure data-payback-timeline data-payback-status={status} aria-label={`Payback: about ${months} months from today; review above ${review.reviewMonths}, maximum ${review.exceptionMonths}`} className="mt-3 min-w-0">
+    <div className="relative h-7 text-[10px] text-sf-muted">
+      <span className={`absolute whitespace-nowrap ${alignmentClass(reviewPosition)}`} style={{ left: `${reviewPosition}%` }}>{closeMarks ? null : `Review ${review.reviewMonths}`}</span>
+      <span className={`absolute whitespace-nowrap text-sf-danger ${alignmentClass(maximumPosition)}`} style={{ left: `${maximumPosition}%` }}>Max {review.exceptionMonths}</span>
+      {closeMarks ? <span className={`absolute top-3 whitespace-nowrap text-sf-warning ${alignmentClass(reviewPosition)}`} style={{ left: `${reviewPosition}%` }}>Review {review.reviewMonths}</span> : null}
+    </div>
+    <div className="relative h-1 rounded-full bg-sf-line-soft">
+      <div className={`absolute left-0 top-0 h-full rounded-full ${statusTone.line}`} style={{ width: `${position}%` }} />
+      <span aria-hidden="true" className="absolute top-1/2 h-1.5 w-px -translate-y-1/2 bg-sf-warning" style={{ left: `${reviewPosition}%` }} />
+      <span aria-hidden="true" className="absolute top-1/2 h-1.5 w-px -translate-y-1/2 bg-sf-danger" style={{ left: `${maximumPosition}%` }} />
+      <span aria-hidden="true" className={`absolute top-1/2 h-2.5 w-2.5 ${months > axisMax ? '-translate-x-full' : '-translate-x-1/2'} -translate-y-1/2 rounded-full border-2 border-white ${statusTone.dot}`} style={{ left: `${position}%` }} />
+      {months > axisMax ? <span data-payback-clamped className="absolute right-0 -top-4 text-sm font-bold text-sf-strong">›</span> : null}
+    </div>
+    <div className="relative mt-1 h-3 text-[10px] text-sf-muted">{ticks.map((tick, index) => {
+      const tickPosition = tick / axisMax * 100;
+      return <span key={tick} className={`absolute whitespace-nowrap ${alignmentClass(tickPosition)}`} style={{ left: `${tickPosition}%` }}>{index === 0 ? 'Today' : `${tick} mo`}</span>;
+    })}</div>
+    <p className="mt-2 flex flex-wrap items-center gap-x-1 text-xs text-sf-body">Pays back in about {months} months{paybackMonth ? ` (${paybackMonth})` : ''}<span className={`inline-flex items-center gap-1 ${statusTone.text}`}><StatusIcon size={12} aria-hidden="true" />{statusLabel}</span></p>
+  </figure>;
+}
+function InvestmentRecovery({ target, policyWindowMonths, businessDate }: { target: EconomicTarget; policyWindowMonths: number; businessDate?: string }) {
   if (target.pooledIn) return null;
   const billing = target.instrumentBillingPaise ?? '0';
   const recovered = recoveredInvestmentPaise(target);
@@ -225,6 +277,7 @@ function InvestmentRecovery({ target }: { target: EconomicTarget }) {
   return <section aria-label="Investment and recovery" className="mt-4 rounded-xl border border-sf-line-soft p-3">
     {pending ? <p className="text-sm text-sf-muted">Investment {money(investment)} · recovery starts after approval</p> : <p className="flex flex-wrap items-baseline justify-between gap-x-3 gap-y-1"><span><span className="text-base font-extrabold text-sf-strong">{money(recovered)}</span> <span className="text-sm text-sf-muted">recovered of {money(investment)}</span></span><span className="text-sm text-sf-muted">Balance <strong className="text-sf-strong">{money(target.outstandingPaise)}</strong></span></p>}
     {percent !== null ? <figure aria-label="Recovery progress" title={`${percent}% recovered`} className="mt-2 h-2 overflow-hidden rounded-full bg-sf-line-soft"><div className={`h-full rounded-full ${percent >= 100 ? 'bg-sf-success' : 'bg-sf-accent'}`} style={{ width: `${percent}%` }} /></figure> : null}
+    <PaybackTimeline target={target} policyWindowMonths={policyWindowMonths} businessDate={businessDate} />
     <details className="mt-2"><summary className="cursor-pointer text-xs font-bold text-sf-brand">Breakdown</summary>
     <dl className="mt-3 grid gap-2 sm:grid-cols-3">
       <Metric label="Investment" value={money(investment)} hint="Instrument cost less net instrument billing" />
@@ -238,7 +291,7 @@ function InvestmentRecovery({ target }: { target: EconomicTarget }) {
 }
 
 const approvalLabel: Record<EconomicTarget['approval'], string> = { approved: 'Approved', proposed: 'Proposed', rejected: 'Rejected' };
-export function EconomicTargetCard({ target, selected, pooledInName, expanded, onToggle, children, lifetime, period, onReviewCosts, reagentAction }: { target: EconomicTarget; selected?: boolean; pooledInName?: string; expanded?: boolean; onToggle?: () => void; children?: ReactNode; lifetime?: ReagentLifetime; period?: string; onReviewCosts?: () => void; reagentAction?: ReactNode }) {
+export function EconomicTargetCard({ target, selected, pooledInName, expanded, onToggle, children, lifetime, period, policyWindowMonths = 3, businessDate, onReviewCosts, reagentAction }: { target: EconomicTarget; selected?: boolean; pooledInName?: string; expanded?: boolean; onToggle?: () => void; children?: ReactNode; lifetime?: ReagentLifetime; period?: string; policyWindowMonths?: number; businessDate?: string; onReviewCosts?: () => void; reagentAction?: ReactNode }) {
   const missingCost = target.approval === 'proposed' ? 0 : lifetime?.missingCostLines ?? target.missingCostLines;
   return <article className={`min-w-0 rounded-2xl border bg-white p-4 shadow-sm sm:p-5 ${selected ? 'border-sf-accent ring-2 ring-sf-accent/20' : 'border-sf-line-soft'}`}>
      <div className="flex flex-wrap items-start justify-between gap-3"><div className="min-w-0"><p className="text-xs font-semibold text-sf-muted">{target.customerName}{target.kind === 'group' ? ' · group' : ''}</p><h3 className="mt-1 break-words text-lg font-extrabold text-sf-ink">{target.name}</h3>{target.kind === 'placement' && target.instrumentSerialNumber ? <p className="mt-1 text-xs text-sf-muted">Instrument SN {target.instrumentSerialNumber} · placed here since {displayDate(target.effectiveFrom)}{target.instrumentMovedFrom ? ` · previously at ${target.instrumentMovedFrom}` : ''}</p> : null}<p className="mt-1 text-xs text-sf-muted">Since {displayDate(target.effectiveFrom)}{target.effectiveTo ? ` to ${displayDate(target.effectiveTo)}` : ''} · {approvalLabel[target.approval]}</p></div><EconomicHealthBadge health={target.health} /></div>
@@ -247,7 +300,7 @@ export function EconomicTargetCard({ target, selected, pooledInName, expanded, o
       : <p className="mt-3 inline-flex items-center gap-2 rounded-lg border border-sf-warning-line bg-sf-warning-soft px-3 py-2 text-sm font-bold text-sf-warning"><AlertTriangle size={16} aria-hidden="true" />{salesWithoutPurchase(missingCost)}</p> : null}
     {target.pooledIn ? <p className="mt-3 rounded-full border border-sf-line bg-sf-info-soft px-3 py-1.5 text-xs font-bold text-sf-info inline-flex items-center gap-1"><Info size={12} aria-hidden="true" className="shrink-0" />Pooled in {pooledInName ?? 'an approved group'} · recovery is reported for the group</p> : null}
     {target.approval === 'proposed' ? <p className="mt-3 rounded-xl bg-sf-info-soft p-3 text-sm text-sf-info inline-flex items-center gap-1"><Info size={14} aria-hidden="true" className="shrink-0" />Waiting for approval in Set up. Reagent sales are counted after approval.</p> : null}
-    <InvestmentRecovery target={target} />
+    <InvestmentRecovery target={target} policyWindowMonths={policyWindowMonths} businessDate={businessDate} />
     <ReagentSummary target={target} lifetime={lifetime} period={period} />
     {reagentAction}
     {onToggle ? <button type="button" onClick={onToggle} aria-expanded={expanded} className="mt-4 inline-flex min-h-10 items-center gap-1 rounded-lg border border-sf-line px-3 text-sm font-bold text-sf-brand">{expanded ? <>Hide sales &amp; items</> : <>Sales &amp; items</>}</button> : null}{expanded ? <div className="mt-4 space-y-4">{children}</div> : null}
@@ -1046,7 +1099,7 @@ export function InstrumentEconomicsWorkspace({ embedded = false }: { embedded?: 
     {data && tab === 'Instruments' ? <SalesCoverageCard key={data.actorEmail} roles={data.canAdministrator ? ['administrator'] : data.canManage ? ['management'] : ['accounts']} /> : null}
     {loading && data ? <output className="block text-sm text-sf-muted">Loading economics details…</output> : null}
     {loading && !data ? <div className="rounded-2xl bg-white p-8 text-sm text-sf-muted">Loading economics data…</div> : null}
-    {data && tab === 'Instruments' ? <>{data.targets.length > 2 ? <InstrumentEconomicsPortfolioFilters filters={portfolioFilters} onChange={setPortfolioFilters} total={data.targets.length} matching={visibleTargets.length} /> : null}<section aria-label="Economic targets" className="grid gap-4 xl:grid-cols-2">{visibleTargets.length ? visibleTargets.map(target => <EconomicTargetCard key={target.id} target={target} reagentAction={target.kind === 'placement' ? <PlacementReagents runCommand={runInstrumentCommand} onOpen={() => ensureView('detail')} target={target} data={data} disabled={unresolved || busy} onSubmit={submit} /> : null} pooledInName={data.targets.find(row => row.id === target.pooledIn)?.name} selected={expanded?.id === target.id} expanded={expanded?.id === target.id} onToggle={() => void toggleTarget(target.id)} lifetime={target.reagentLifetime ?? (data.attributionLines ? reagentLifetime(target.id, data.attributionLines) : undefined)} period={reportingPeriodLabel(data.reportingFrom, data.reportingTo)} onReviewCosts={() => void openTab('To do')}>{target.kind === 'placement' && !target.pooledIn ? <InstrumentItems key={target.id} target={target} data={data} disabled={unresolved || busy} onSubmit={submit} runCommand={runInstrumentCommand} /> : null}<ReagentSalesList target={target} data={data} /></EconomicTargetCard>) : <Empty title={data.targets.length ? "No matching instruments" : "No instruments yet"} body={data.targets.length ? "Change the search, status or type filters to see more instruments." : "Add an instrument in Set up."} />}</section></> : null}
+    {data && tab === 'Instruments' ? <>{data.targets.length > 2 ? <InstrumentEconomicsPortfolioFilters filters={portfolioFilters} onChange={setPortfolioFilters} total={data.targets.length} matching={visibleTargets.length} /> : null}<section aria-label="Economic targets" className="grid gap-4 xl:grid-cols-2">{visibleTargets.length ? visibleTargets.map(target => <EconomicTargetCard key={target.id} target={target} policyWindowMonths={data.policy.forecastWindowMonths} businessDate={data.businessDate} reagentAction={target.kind === 'placement' ? <PlacementReagents runCommand={runInstrumentCommand} onOpen={() => ensureView('detail')} target={target} data={data} disabled={unresolved || busy} onSubmit={submit} /> : null} pooledInName={data.targets.find(row => row.id === target.pooledIn)?.name} selected={expanded?.id === target.id} expanded={expanded?.id === target.id} onToggle={() => void toggleTarget(target.id)} lifetime={target.reagentLifetime ?? (data.attributionLines ? reagentLifetime(target.id, data.attributionLines) : undefined)} period={reportingPeriodLabel(data.reportingFrom, data.reportingTo)} onReviewCosts={() => void openTab('To do')}>{target.kind === 'placement' && !target.pooledIn ? <InstrumentItems key={target.id} target={target} data={data} disabled={unresolved || busy} onSubmit={submit} runCommand={runInstrumentCommand} /> : null}<ReagentSalesList target={target} data={data} /></EconomicTargetCard>) : <Empty title={data.targets.length ? "No matching instruments" : "No instruments yet"} body={data.targets.length ? "Change the search, status or type filters to see more instruments." : "Add an instrument in Set up."} />}</section></> : null}
     {data && tab === 'To do' ? <TodoPanel data={data} onAccountsReview={() => void openTab('Accounts review')} /> : null}
     {data && tab === 'Accounts review' ? <div className="space-y-3"><button type="button" onClick={() => void openTab('To do')} className="min-h-11 rounded-xl border border-sf-line bg-white px-4 text-sm font-bold text-sf-brand">Back to instrument tasks</button><AccountsDocumentReview data={data} /></div> : null}
     {data && tab === 'Set up' ? <SetupSteps data={data} disabled={unresolved || busy} busy={busy} onSubmit={submit} runCommand={runInstrumentCommand} onRefresh={load} onAdvancedOpen={loadAllSourceLines} /> : null}

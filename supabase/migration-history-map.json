@@ -1550,6 +1550,13 @@
       "remoteVersion": null,
       "remoteSha256": null,
       "status": "not_deployed"
+    },
+    {
+      "localFile": "20261130190000_brand_group_inherit.sql",
+      "localSha256": "7bf682280b10d1f3ca8007e7d8277ae0ab78b5fac85d169be12b5e9473bf1e39",
+      "remoteVersion": null,
+      "remoteSha256": null,
+      "status": "not_deployed"
     }
   ],
   "liveCheck": {

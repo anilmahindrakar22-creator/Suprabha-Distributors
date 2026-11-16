@@ -123,6 +123,50 @@ const economicsData = (overrides: Record<string, unknown> = {}) => ({
   policy: { attractiveMonths: 24, reviewMonths: 36, exceptionMonths: 48, forecastWindowMonths: 3, watchRevenuePercent: 80, criticalRevenuePercent: 50 }, ...overrides,
 });
 
+test('payback timeline shows forecast against limits', async ({ page }) => {
+  const forecastTarget = { ...target, forecastMonths: 14, forecastReview: { status: 'within_limit', policyId: 'policy-1', reviewMonths: 36, exceptionMonths: 48 } };
+  await mockWorkspace(page, economicsData({ targets: [forecastTarget] }));
+  const timeline = page.locator('[data-payback-timeline]');
+  await expect(timeline).toBeVisible();
+  await expect(timeline).toHaveAttribute('data-payback-status', 'within_limit');
+  await expect(timeline).toContainText('Pays back in about 14 months');
+  await expect(timeline).toContainText('within limit');
+  await expect(timeline).toContainText('Review 36');
+  await expect(timeline).toContainText('Max 48');
+});
+
+test('payback timeline reflects review and clamps long forecasts', async ({ page }) => {
+  const reviewTarget = { ...target, forecastMonths: 40, forecastReview: { status: 'review_required', policyId: 'policy-1', reviewMonths: 36, exceptionMonths: 48 } };
+  await mockWorkspace(page, economicsData({ targets: [reviewTarget] }));
+  await expect(page.locator('[data-payback-timeline]')).toHaveAttribute('data-payback-status', 'review_required');
+  await expect(page.locator('[data-payback-timeline]')).toContainText('needs review');
+  const clampedTarget = { ...reviewTarget, forecastMonths: 150, forecastReview: { ...reviewTarget.forecastReview, status: 'limit_exceeded' as const } };
+  await mockWorkspace(page, economicsData({ targets: [clampedTarget] }));
+  await expect(page.locator('[data-payback-clamped]')).toBeVisible();
+  await expect(page.locator('[data-payback-timeline]')).toContainText('150');
+});
+
+test('payback timeline handles missing, blocked, recovered and proposed instruments', async ({ page }) => {
+  const base = { ...target, forecastReview: { status: 'within_limit' as const, policyId: 'policy-1', reviewMonths: 36, exceptionMonths: 48 } };
+  await mockWorkspace(page, economicsData({ targets: [{ ...base, forecastReview: { ...base.forecastReview, status: 'non_positive_gp' as const } }] }));
+  await expect(page.getByText('Not paying back: verified reagent GP is zero or negative.', { exact: true })).toBeVisible();
+  await expect(page.locator('[data-payback-timeline]')).toHaveCount(0);
+  await mockWorkspace(page, economicsData({ targets: [{ ...base, outstandingPaise: '0' }] }));
+  await expect(page.locator('[data-payback-timeline]')).toHaveCount(0);
+  await mockWorkspace(page, economicsData({ targets: [{ ...base, approval: 'proposed', forecastMonths: 14 }] }));
+  await expect(page.locator('[data-payback-timeline]')).toHaveCount(0);
+  await mockWorkspace(page, economicsData({ targets: [{ ...base, forecastMonths: null }] }));
+  await expect(page.getByText('Payback date needs 3 months of complete data.', { exact: true })).toBeVisible();
+});
+
+test('payback timeline fits a 375 pixel screen', async ({ page }) => {
+  const forecastTarget = { ...target, forecastMonths: 14, forecastReview: { status: 'within_limit' as const, policyId: 'policy-1', reviewMonths: 36, exceptionMonths: 48 } };
+  await mockWorkspace(page, economicsData({ targets: [forecastTarget] }));
+  await page.setViewportSize({ width: 375, height: 812 });
+  await expect(page.locator('[data-payback-timeline]')).toBeVisible();
+  expect(await page.evaluate(() => document.documentElement.scrollWidth <= 375)).toBe(true);
+});
+
 async function openAdvanced(page: Page, section: 'All actions' | 'Exceptions' | 'Reagent leakage' | 'Reports' = 'All actions') {
   await page.getByRole('navigation', { name: 'Economics sections' }).getByRole('button', { name: 'Advanced', exact: true }).click();
   await page.getByRole('navigation', { name: 'Advanced sections' }).getByRole('button', { name: section, exact: true }).click();

@@ -24,7 +24,7 @@ function formatObserved(value: string) {
 type OnSave = (draft: Draft) => Promise<SaveResult>;
 
 function BrandSelect({ row, id, emptyLabel = 'Not set', brands, disabled, onSave }: { row: BrandTreeRow; id: string; emptyLabel?: string; brands: BrandMappingBrand[]; disabled: boolean; onSave: OnSave }) {
-  return <><label className="block text-xs" htmlFor={id}>Brand<span className="sr-only"> for {shownName(row.group)}</span></label><select id={id} className={control} disabled={disabled} value={row.kind === 'none' ? 'none' : row.brandCode ?? ''} onChange={event => { if (event.target.value) void onSave({ action: 'set_group_brand', group: row.group, expectedLinkId: row.linkId ?? null, brandCode: event.target.value === 'none' ? null : event.target.value }); }}>{!row.linkId ? <option value="">{emptyLabel}</option> : null}{brands.map(brand => <option key={brand.code} value={brand.code}>{brand.name}</option>)}<option value="none">Not a brand we target</option></select></>;
+  return <><label className="block text-xs" htmlFor={id}>Brand<span className="sr-only"> for {shownName(row.group)}</span></label><select id={id} className={control} disabled={disabled} value={row.kind === 'inherit' ? '' : row.kind === 'none' ? 'none' : row.brandCode ?? ''} onChange={event => { if (event.target.value) void onSave({ action: 'set_group_brand', group: row.group, expectedLinkId: row.linkId ?? null, brandCode: event.target.value === 'none' ? null : event.target.value }); }}>{!row.linkId || row.kind === 'inherit' ? <option value="">{emptyLabel}</option> : null}{brands.map(brand => <option key={brand.code} value={brand.code}>{brand.name}</option>)}<option value="none">Not a brand we target</option></select></>;
 }
 
 function AreaSelect({ row, id, disabled, onSave }: { row: BrandTreeRow; id: string; disabled: boolean; onSave: OnSave }) {
@@ -53,7 +53,7 @@ function PrincipalCard({ principal, lines, brands, suggestedCode, idPrefix, disa
         <div className="min-w-0">{brandSelect(line, `${idPrefix}-line-${lineIndex}`, line.inheritedBrandCode ? `${brandName(line.inheritedBrandCode)} (from group)` : 'Not set')}</div>
         <div className="min-w-0"><AreaSelect row={line} id={`${idPrefix}-line-area-${lineIndex}`} disabled={disabled} onSave={onSave} /></div>
       </div>
-      {line.kind === 'brand' && principal.kind === 'brand' && principal.brandCode === line.brandCode ? <p className="text-xs text-sf-muted">Same as brand group</p> : null}
+      {line.depth > 0 && (line.kind === 'brand' || line.kind === 'none') && (line.inheritedBrandCode || principal.brandCode) ? <p className="text-xs text-sf-muted">{line.kind === 'brand' && principal.kind === 'brand' && principal.brandCode === line.brandCode ? 'Same as brand group · ' : null}<button type="button" className={button} aria-label={`Use brand group for ${shownName(line.group)}`} disabled={disabled} onClick={() => void onSave({ action: 'set_group_brand', group: line.group, expectedLinkId: line.linkId, clear: true })}>Use brand group</button></p> : null}
     </div>)}
   </div>;
 }
@@ -140,7 +140,7 @@ export function BrandSetup({ onBack }: { onBack: () => void }) {
     if (outcome !== 'conflict') { setLoading(true); setRevision(n => n + 1); }
   }
   function groupCards(groups: BrandMappingGroup[]) {
-    return groups.map((group, index) => <div key={group.group} className="min-w-0 space-y-1 rounded-xl border border-sf-line-soft p-3 break-words"><p className="font-semibold">{group.label}</p><p className="text-xs text-sf-muted">{group.items} items · {formatPaise(group.salesPaise)}</p><label className="block text-xs" htmlFor={`${prefix}-group-${index}`}>Brand<span className="sr-only"> for {group.label}</span></label><select id={`${prefix}-group-${index}`} className={control} disabled={disabled} value={group.kind === 'none' ? 'none' : group.brandCode ?? ''} onChange={event => { if (event.target.value) void save({ action: 'set_group_brand', group: group.group, expectedLinkId: group.linkId ?? null, brandCode: event.target.value === 'none' ? null : event.target.value }); }}>{options(group.linkId)}</select></div>);
+    return groups.map((group, index) => <div key={group.group} className="min-w-0 space-y-1 rounded-xl border border-sf-line-soft p-3 break-words"><p className="font-semibold">{group.label}</p><p className="text-xs text-sf-muted">{group.items} items · {formatPaise(group.salesPaise)}</p><label className="block text-xs" htmlFor={`${prefix}-group-${index}`}>Brand<span className="sr-only"> for {group.label}</span></label><select id={`${prefix}-group-${index}`} className={control} disabled={disabled} value={group.kind === 'inherit' ? '' : group.kind === 'none' ? 'none' : group.brandCode ?? ''} onChange={event => { if (event.target.value) void save({ action: 'set_group_brand', group: group.group, expectedLinkId: group.linkId ?? null, brandCode: event.target.value === 'none' ? null : event.target.value }); }}>{options(group.kind === 'inherit' ? null : group.linkId)}</select></div>);
   }
   const treeSection = () => {
     if (!data) return null;

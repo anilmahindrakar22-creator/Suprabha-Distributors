@@ -6,11 +6,11 @@ export type ItemKindPayload = { requestId: string; companyId: string; productId:
 export type BrandMappingBrand = { code: string; name: string; areas: BrandAreaCode[] };
 export type BrandMappingGroup = {
   group: string; label: string; items: number; salesPaise: number;
-  linkId: string | null; kind: BrandLinkKind | null; brandCode: string | null;
+  linkId: string | null; kind: BrandLinkKind | 'inherit' | null; brandCode: string | null;
 };
 export type BrandTreeRow = {
   group: string; parent: string | null; top: string; depth: number; items: number; salesPaise: number;
-  linkId: string | null; kind: BrandLinkKind | null; brandCode: string | null;
+  linkId: string | null; kind: BrandLinkKind | 'inherit' | null; brandCode: string | null;
   inheritedBrandCode: string | null; areaLinkId: string | null; areaCode: BrandAreaCode | null;
 };
 export type BrandMappingItem = {
@@ -30,7 +30,7 @@ export type BrandMappingResponse = {
 type ExpectedLink = { expectedLinkId: string | null; idempotencyKey: string };
 export type BrandMappingCommand =
   | { action: 'set_item_kind'; payload: ItemKindPayload }
-  | { action: 'set_group_brand'; payload: ExpectedLink & { group: string; brandCode: string | null } }
+  | { action: 'set_group_brand'; payload: ExpectedLink & { group: string } & ({ brandCode: string | null } | { clear: true }) }
   | { action: 'set_group_area'; payload: ExpectedLink & { group: string; areaCode: BrandAreaCode | null } }
   | { action: 'set_item_brand'; payload: ExpectedLink & { itemKey: string } & ({ brandCode: string | null } | { clear: true }) }
   | { action: 'set_equipment_area'; payload: ExpectedLink & { itemKey: string; areaCode: BrandAreaCode | null } }
@@ -74,8 +74,10 @@ export function parseBrandMappingCommand(value: unknown): BrandMappingCommand | 
   if (!nullableUuid(payload.expectedLinkId)) return null;
   const common = ['expectedLinkId', 'idempotencyKey'];
   if (action === 'set_group_brand') {
-    if (!keys(payload, common.concat('group', 'brandCode')) || !text(payload.group)
-      || !(payload.brandCode === null || validCode(payload.brandCode))) return null;
+    if (!text(payload.group)) return null;
+    if (Object.hasOwn(payload, 'clear')) {
+      if (!keys(payload, common.concat('group', 'clear')) || payload.clear !== true) return null;
+    } else if (!keys(payload, common.concat('group', 'brandCode')) || !(payload.brandCode === null || validCode(payload.brandCode))) return null;
   } else if (action === 'set_group_area') {
     if (!keys(payload, common.concat('group', 'areaCode')) || !nonempty(payload.group)
       || !(payload.areaCode === null || area(payload.areaCode))) return null;
@@ -107,8 +109,8 @@ function link(v: Record<string, unknown>, inherit: boolean) {
 const treeRow = (v: unknown) => record(v)
   && keys(v, ['group', 'parent', 'top', 'depth', 'items', 'salesPaise', 'linkId', 'kind', 'brandCode', 'inheritedBrandCode', 'areaLinkId', 'areaCode'])
   && text(v.group) && (v.parent === null || text(v.parent)) && text(v.top) && count(v.depth) && count(v.items) && finite(v.salesPaise)
-  && link(v, false)
-  && (v.inheritedBrandCode === null || (validCode(v.inheritedBrandCode) && v.linkId === null))
+  && link(v, true)
+  && (v.inheritedBrandCode === null || (validCode(v.inheritedBrandCode) && (v.linkId === null || v.kind === 'inherit')))
   && nullableUuid(v.areaLinkId) && (v.areaCode === null || (v.areaLinkId !== null && area(v.areaCode)));
 
 export function parseBrandMappingResponse(value: unknown): BrandMappingResponse | null {
@@ -126,7 +128,7 @@ export function parseBrandMappingResponse(value: unknown): BrandMappingResponse 
     && new Set(v.areas).size === v.areas.length)) return null;
   if (!Array.isArray(value.groups) || !value.groups.every(v => record(v)
     && keys(v, ['group', 'label', 'items', 'salesPaise', 'linkId', 'kind', 'brandCode'])
-    && text(v.group) && text(v.label) && count(v.items, 1) && finite(v.salesPaise) && link(v, false))) return null;
+    && text(v.group) && text(v.label) && count(v.items, 1) && finite(v.salesPaise) && link(v, true))) return null;
   if (!Array.isArray(value.items) || value.items.length > 20 || value.items.length > value.total || !value.items.every(v => record(v)
     && keys(v, ['itemKey', 'name', 'group', 'salesPaise', 'linkId', 'kind', 'brandCode', ...['kindSource', 'brandKind', 'autoKind', 'companyId', 'productId'].filter(key => Object.hasOwn(v, key))])
     && (v.kindSource === undefined || v.kindSource === 'auto' || v.kindSource === 'override')

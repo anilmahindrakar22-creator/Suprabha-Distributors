@@ -40,6 +40,8 @@ describe('brand mapping commands', () => {
     { action: 'set_group_brand', group: 'x', brandCode: null, ...base, expectedLinkId: 'bad' },
     { action: 'set_group_brand', group: 'x', brandCode: null, ...base, extra: true },
     { action: 'set_item_brand', itemKey: '', brandCode: null, ...base },
+    { action: 'set_group_brand', group: 'x', clear: false, ...base },
+    { action: 'set_group_brand', group: 'x', clear: true, brandCode: null, ...base },
     { action: 'set_item_brand', itemKey: 'x', clear: false, ...base },
     { action: 'set_item_brand', itemKey: 'x', clear: true, brandCode: null, ...base },
     { action: 'set_equipment_area', itemKey: 'x', areaCode: 'INVALID', ...base },
@@ -63,6 +65,12 @@ describe('brand mapping response', () => {
   it('preserves Unicode, negative sales, cleared and explicit none links', () => {
     expect(parseBrandMappingResponse(read())).toEqual(read());
   });
+  it('preserves the latest cleared group link for the next save', () => {
+    const response = { ...read(), groups: [{ ...read().groups[0], kind: 'inherit' }] };
+    expect(parseBrandMappingResponse(response)).toEqual(response);
+    expect(parseBrandMappingResponse({ ...response, groups: [{ ...response.groups[0], brandCode: 'SYSMEX' }] })).toBeNull();
+    expect(parseBrandMappingResponse({ ...response, groups: [{ ...response.groups[0], linkId: null }] })).toBeNull();
+  });
   it.each([
     (r: ReturnType<typeof read>) => ({ ...r, extra: true }),
     (r: ReturnType<typeof read>) => ({ ...r, page: 0 }),
@@ -70,7 +78,6 @@ describe('brand mapping response', () => {
     (r: ReturnType<typeof read>) => ({ ...r, totalSalesPaise: '100' }),
     (r: ReturnType<typeof read>) => ({ ...r, totalSalesPaise: Number.NaN }),
     (r: ReturnType<typeof read>) => ({ ...r, brands: [{ ...r.brands[0], areas: ['BOGUS'] }] }),
-    (r: ReturnType<typeof read>) => ({ ...r, groups: [{ ...r.groups[0], kind: 'inherit' }] }),
     (r: ReturnType<typeof read>) => ({ ...r, groups: [{ ...r.groups[0], kind: 'brand' }] }),
     (r: ReturnType<typeof read>) => ({ ...r, groups: [{ ...r.groups[0], linkId: null }] }),
     (r: ReturnType<typeof read>) => ({ ...r, items: [{ ...r.items[0], brandCode: 'SYSMEX' }] }),
@@ -91,6 +98,13 @@ const treeRow = (over: Record<string, unknown> = {}) => ({
 const withTree = (rows: unknown[] = [treeRow()], observed: string | null = '2026-11-13T05:00:00Z') => ({ ...read(), tree: rows, catalogObservedAt: observed });
 
 describe('brand tree response', () => {
+  it('accepts group clear commands and inherited tree links without a brand code', () => {
+    const { action, ...payload } = { action: 'set_group_brand', group: 'Line A', clear: true, ...base };
+    expect(parseBrandMappingCommand({ action, ...payload })).toEqual({ action, payload });
+    const response = withTree([treeRow({ linkId: id, kind: 'inherit' })]);
+    expect(parseBrandMappingResponse(response)).toEqual(response);
+    expect(parseBrandMappingResponse(withTree([treeRow({ linkId: id, kind: 'inherit', brandCode: 'SYSMEX' })]))).toBeNull();
+  });
   it('still parses the old shape and parses the new shape', () => {
     expect(parseBrandMappingResponse(read())).toEqual(read());
     expect(parseBrandMappingResponse(withTree())).toEqual(withTree());
