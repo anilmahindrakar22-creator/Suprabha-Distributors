@@ -52,6 +52,7 @@ export function StockFlowFrame({ actorEmail, actorRole, actorRoles, staffAuth = 
   const rolesKey = roles.join(',');
   const canSeeToday = hasAnyStockFlowRole(roles, ['administrator', 'management']);
   const [surface, setSurface] = useState<Surface>(() => canSeeToday ? 'today' : 'stock');
+  const desktopNavRef = useRef<HTMLElement>(null);
   const [priceReview, setPriceReview] = useState<PriceReview>();
   const priceReviewHandoff = useMemo(() => ({ review: priceReview, onConsumed: () => setPriceReview(undefined) }), [priceReview]);
   function onOpenPriceReview(review: PriceReview) {
@@ -342,6 +343,9 @@ export function StockFlowFrame({ actorEmail, actorRole, actorRoles, staffAuth = 
   if (hasAnyStockFlowRole(roles, ['administrator', 'management'])) surfaces.push('growth');
   const phoneMain: Surface[] = canSeeToday ? ['today', 'stock', 'orders', 'requests'] : ['stock', 'orders', 'requests'];
   const phoneMore = surfaces.filter((item) => !phoneMain.includes(item));
+  useEffect(() => {
+    desktopNavRef.current?.querySelector('[aria-pressed="true"]')?.scrollIntoView({ block: 'nearest', inline: 'nearest' });
+  }, [surface]);
   // Phone push: dormant until the server reports it is enabled (docs/PUSH-NOTIFICATIONS.md).
   const [pushConfig, setPushConfig] = useState<PushConfig>({ enabled: false, publicKey: '' });
   const [pushState, setPushState] = useState<PushState>('hidden');
@@ -415,7 +419,7 @@ export function StockFlowFrame({ actorEmail, actorRole, actorRoles, staffAuth = 
             <p className="hidden text-xs text-sf-subtle sm:block">Suprabha Distributors</p>
           </div>
         </div>
-        <nav aria-label="Application sections" className="hidden min-w-0 overflow-x-auto rounded-xl bg-sf-soft p-1 [scrollbar-width:none] sm:flex">
+        <nav ref={desktopNavRef} aria-label="Application sections" className="hidden min-w-0 overflow-x-auto rounded-xl bg-sf-soft p-1 [scrollbar-width:none] sm:flex">
           {surfaces.map((item) => (
             <button
               key={item}
@@ -426,18 +430,18 @@ export function StockFlowFrame({ actorEmail, actorRole, actorRoles, staffAuth = 
               onPointerDown={item === 'orders' ? warmOrders : undefined}
               aria-pressed={surface === item}
               aria-describedby={item === 'orders' && waitingCount ? 'orders-new-work' : undefined}
-              className={`inline-flex min-h-11 shrink-0 items-center gap-1.5 rounded-lg px-3 text-sm font-bold capitalize transition 2xl:px-4 ${
+              className={`relative inline-flex min-h-11 shrink-0 flex-col items-center justify-center gap-0.5 rounded-lg px-2 text-[11px] leading-none font-bold capitalize transition 2xl:flex-row 2xl:gap-1.5 2xl:px-4 2xl:text-sm 2xl:leading-normal ${
                 surface === item
                   ? 'bg-white text-sf-brand shadow-sm'
                   : 'text-sf-muted hover:text-sf-ink'
               }`}
             >
-              <SurfaceIcon surface={item} size={18} />{item === 'growth' ? 'Growth' : item}{item === 'orders' ? ordersBadge : null}
+                <SurfaceIcon surface={item} size={18} />{item === 'growth' ? 'Growth' : item}{item === 'orders' && waitingCount ? <span className="absolute right-0 top-0 2xl:static">{ordersBadge}</span> : null}
             </button>
           ))}
           {/* Full navigation re-verifies the staff session before local preparation. */}
           {/* oxlint-disable-next-line next/no-html-link-for-pages */}
-          {offlineLink ? <a href="/offline-preparation" className="inline-flex min-h-11 shrink-0 items-center gap-1.5 rounded-lg px-3 text-sm font-bold text-sf-muted hover:text-sf-ink 2xl:px-4"><CloudDownload aria-hidden="true" size={18} />Offline</a> : null}
+          {offlineLink ? <a href="/offline-preparation" className="inline-flex min-h-11 shrink-0 flex-col items-center justify-center gap-0.5 rounded-lg px-2 text-[11px] leading-none font-bold text-sf-muted hover:text-sf-ink 2xl:flex-row 2xl:gap-1.5 2xl:px-4 2xl:text-sm 2xl:leading-normal"><CloudDownload aria-hidden="true" size={18} />Offline</a> : null}
         </nav>
         <div className="flex shrink-0 items-center gap-2">
         {notifiable ? <NotificationBell state={work} desktop={{ state: desktopPopups, onEnable: () => void enableDesktopPopups().then(setDesktopPopups), onDisable: () => setDesktopPopups(disableDesktopPopups()) }} ordersFilterFor={(queue) => workService.current?.ordersFilterFor(queue) ?? queue.statuses[0]} phone={pushState === 'hidden' ? undefined : { state: pushState, onEnable: () => void changePush(true), onDisable: () => void changePush(false) }} onSeen={markWorkSeen} onOpenOrder={openOrder} onOpenQueue={openQueue} onRetry={() => workService.current?.retry()} /> : null}

@@ -2,6 +2,36 @@ import { expect, test } from '@playwright/test';
 import { orderBootstrap } from '../fixtures/api-builders';
 import { readFileSync } from 'node:fs';
 
+test('desktop section navigation fits at laptop width and stays horizontal at 2xl', async ({ page }, testInfo) => {
+  test.skip(testInfo.project.name !== 'pricing-desktop', 'Desktop navigation layout');
+  await page.setViewportSize({ width: 1270, height: 640 });
+  await page.route('**/api/staff-auth', route => route.fulfill({ json: { ok: true, renewAfterSeconds: 3000 } }));
+  await page.route('**/api/stock**', route => route.fulfill({ json: { rows: [], groups: [] } }));
+  await page.route('**/stockflow.html', route => route.fulfill({ contentType: 'text/html', body: readFileSync('public/stockflow.html', 'utf8') }));
+  await page.goto('/?view=staff-frame');
+  const nav = page.getByRole('navigation', { name: 'Application sections' });
+  await expect(nav.getByRole('button', { name: 'Growth', exact: true })).toBeVisible();
+  expect(await nav.evaluate(element => element.scrollWidth <= element.clientWidth + 1)).toBe(true);
+  const navBox = await nav.boundingBox();
+  expect(navBox).not.toBeNull();
+  const buttons = nav.locator('button');
+  await expect(buttons).toHaveCount(10);
+  for (const button of await buttons.all()) {
+    await expect(button).toBeVisible();
+    const box = await button.boundingBox();
+    expect(box).not.toBeNull();
+    expect(box!.x + box!.width).toBeLessThanOrEqual(navBox!.x + navBox!.width);
+  }
+
+  await page.setViewportSize({ width: 1600, height: 900 });
+  for (const button of await buttons.all()) {
+    await expect(button).toHaveCSS('flex-direction', 'row');
+    const box = await button.boundingBox();
+    expect(box).not.toBeNull();
+    expect(box!.height).toBeLessThanOrEqual(48);
+  }
+});
+
 test('phone frame stays pinned while embedded stock views scroll and resize', async ({ page }, testInfo) => {
   await page.setViewportSize({ width: 375, height: 532 });
   await page.route('**/api/staff-auth', route => route.fulfill({ json: { ok: true, renewAfterSeconds: 3000 } }));
