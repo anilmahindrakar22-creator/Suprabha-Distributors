@@ -1531,6 +1531,13 @@
       "status": "not_deployed"
     },
     {
+      "localFile": "20261130160000_economic_covered_segments.sql",
+      "localSha256": "97d5db9f0a327b1f1b6e7b71b252cfb0d78ba1e4caa06b7621ba27406e46e656",
+      "remoteVersion": null,
+      "remoteSha256": null,
+      "status": "not_deployed"
+    },
+    {
       "localFile": "20261130170000_growth_lab_months.sql",
       "localSha256": "e73174229e8d890b7928cbceba8e29ab11cdb4a3f4627e3f7d41387e3459ef1f",
       "remoteVersion": null,
