@@ -156,7 +156,38 @@ describe('instrument economics API', () => {
     const response = await POST(jsonRequest({ action: 'set_mappings', payload }));
     expect(response.status).toBe(200);
     expect(response.headers.get('cache-control')).toBe('private, no-store');
-    expect(mocks.gateway).toHaveBeenCalledWith('manager@example.com', 'set_mappings', payload);
+    expect(mocks.gateway).toHaveBeenCalledExactlyOnceWith('manager@example.com', 'set_mappings', payload);
+  });
+
+  it.each(['administrator', 'management'])('allows %s to set item areas and forwards the payload unchanged', async role => {
+    mocks.session.mockResolvedValue({ email: 'manager@example.com', roles: [role] });
+    const payload = { idempotencyKey: 'areas-batch-key-123456', expectedActorEmail: 'manager@example.com', companyId: 'company', reason: 'Correct test area', areaCode: 'COAG', items: [{ productId: 'item-a', expectedLinkId: null }] };
+    const response = await POST(jsonRequest({ action: 'set_item_areas', payload }));
+    expect(response.status).toBe(200);
+    expect(mocks.gateway).toHaveBeenCalledExactlyOnceWith('manager@example.com', 'set_item_areas', payload);
+
+    mocks.gateway.mockClear();
+    mocks.session.mockResolvedValue({ email: 'accounts@example.com', roles: ['accounts'] });
+    const denied = await POST(jsonRequest({ action: 'set_item_areas', payload: { ...payload, expectedActorEmail: 'accounts@example.com' } }));
+    expect(denied.status).toBe(403);
+    expect(mocks.gateway).not.toHaveBeenCalled();
+  });
+
+  it.each([{ items: [] }, { items: [{ productId: 'item-a', effect: 'exclude', effectiveFrom: '2026-11-01' }, { productId: 'item-b', effect: 'exclude', effectiveFrom: '2026-11-01' }] }])('forwards a group include and its item ticks in one command: %j', async ({ items }) => {
+    mocks.session.mockResolvedValue({ email: 'manager@example.com', roles: ['management'] });
+    const payload = { idempotencyKey: 'mapping-group-key-123456', expectedActorEmail: 'manager@example.com', companyId: 'company', modelId: 'model', targetId: 'target', reason: 'Group with item exclusions', group: { groupId: 'group', expectedCatalogId: '12345678-1234-1234-1234-123456789abc', effectiveFrom: '2026-11-01' }, items };
+    expect((await POST(jsonRequest({ action: 'set_mappings', payload }))).status).toBe(200);
+    expect(mocks.gateway).toHaveBeenCalledExactlyOnceWith('manager@example.com', 'set_mappings', payload);
+  });
+
+  it('recovers an economic command using the original manager identity and command reference', async () => {
+    mocks.session.mockResolvedValue({ email: 'manager@example.com', roles: ['management'] });
+    const payload = { commandAction: 'set_item_areas', commandKey: 'area-command-key-12345', closeUnresolved: true, expectedActorEmail: 'manager@example.com' };
+    const response = await POST(jsonRequest({ action: 'recover_economic_command', payload }));
+    expect(response.status).toBe(200);
+    expect(mocks.gateway).toHaveBeenCalledExactlyOnceWith('manager@example.com', 'recover_economic_command', {
+      commandAction: 'set_item_areas', commandKey: payload.commandKey, closeUnresolved: true,
+    });
   });
 
   it('forwards an acquisition revision review with the signed-in manager and source/version preconditions', async () => {

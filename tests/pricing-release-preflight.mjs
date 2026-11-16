@@ -57,6 +57,7 @@ const pricingReleaseFiles = new Set([
   '20261130150000_growth_brands.sql',
   '20261130160000_economic_covered_segments.sql',
   '20261130170000_growth_lab_months.sql',
+  '20261130180000_economic_item_areas.sql',
   '20261102090000_po_tally_receipts.sql',
   '20261031140000_power_map_enhancement.sql',
   '20261030090000_instrument_register.sql',
@@ -226,6 +227,7 @@ export const pricingReleaseSqlTests = [
   'supabase/tests/brand_line_tree.sql',
   'supabase/tests/growth_brands.sql',
   'supabase/tests/growth_lab_months.sql',
+  'supabase/tests/economic_item_areas.sql',
 ];
 
 export function pricingReleasePreflight(evidence, files) {

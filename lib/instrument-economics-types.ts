@@ -1,4 +1,50 @@
 import type { LeakageClassification } from './leakage-classification';
+import { brandAreaCodes, type BrandAreaCode } from './brand-mapping';
+
+export type EconomicLabArea = { code: BrandAreaCode; name: string };
+export type EconomicItemArea = { companyId: string; productId: string; areaCode: BrandAreaCode | null; linkId: string };
+export type EconomicAreaMetadata = { labAreas: EconomicLabArea[]; itemAreas: EconomicItemArea[] };
+export type EconomicItemAreasPayload = {
+  companyId: string; reason: string; areaCode: BrandAreaCode | null;
+  items: { productId: string; expectedLinkId: string | null }[];
+};
+export type EconomicMappingsPayload = {
+  companyId: string; modelId: string; targetId?: string; reason: string;
+  group?: { groupId: string; expectedCatalogId: string; effectiveFrom: string; effectiveTo?: string | null };
+  items: { productId: string; effect: 'include' | 'exclude'; effectiveFrom: string; effectiveTo?: string | null }[];
+};
+
+/** Normalize the optional metadata contract independently of financial fields.
+ * Old servers may omit these keys; a present malformed key must fail visibly.
+ * A cleared area retains its linkId for the next optimistic concurrency check.
+ */
+export function normalizeEconomicAreaMetadata(raw: unknown): EconomicAreaMetadata | null {
+  const object = (v: unknown): v is Record<string, unknown> => !!v && typeof v === 'object' && !Array.isArray(v);
+  const text = (v: unknown): v is string => typeof v === 'string' && v.trim().length > 0;
+  const area = (v: unknown): v is BrandAreaCode => typeof v === 'string' && (brandAreaCodes as readonly string[]).includes(v);
+  const uuid = (v: unknown): v is string => typeof v === 'string' && /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(v);
+  if (!object(raw)) return null;
+  const labRows = 'labAreas' in raw ? raw.labAreas : [];
+  const itemRows = 'itemAreas' in raw ? raw.itemAreas : [];
+  if (!Array.isArray(labRows) || !Array.isArray(itemRows)) return null;
+  const labAreas: EconomicLabArea[] = [];
+  const itemAreas: EconomicItemArea[] = [];
+  const codes = new Set<string>();
+  const items = new Set<string>();
+  for (const row of labRows) {
+    if (!object(row) || !area(row.code) || !text(row.name) || codes.has(row.code)) return null;
+    codes.add(row.code);
+    labAreas.push({ code: row.code, name: row.name });
+  }
+  for (const row of itemRows) {
+    if (!object(row) || !text(row.companyId) || !text(row.productId) || !(row.areaCode === null || area(row.areaCode)) || !uuid(row.linkId)) return null;
+    const key = JSON.stringify([row.companyId, row.productId]);
+    if (items.has(key)) return null;
+    items.add(key);
+    itemAreas.push({ companyId: row.companyId, productId: row.productId, areaCode: row.areaCode, linkId: row.linkId });
+  }
+  return { labAreas, itemAreas };
+}
 export type EconomicItemBreakdown = {
   productId: string; productName: string; unit: string; quantity: string;
   revenuePaise: string; knownCostPaise: string | null; knownGpPaise: string | null;
@@ -35,6 +81,8 @@ export type EconomicsWorkspaceData = {
   readView?: 'summary' | 'detail' | 'full';
   todoCount?: number;
   actorEmail: string;
+  labAreas?: EconomicLabArea[];
+  itemAreas?: EconomicItemArea[];
   itemGroupCatalogs?: { id: string; companyId: string; sourceVersion: string; observedAt: string; current: boolean; groups: { id: string; name: string; parentId: string | null; itemCount: number }[]; products: { id: string; name: string; groupId: string | null; unit: string }[] }[];
   itemGroupMappings?: { id: string; companyId: string; modelId: string; groupId: string; targetId: string | null; effect: 'include' | 'exclude'; effectiveFrom: string; effectiveTo: string | null; catalogId: string; reason: string }[];
 
@@ -64,7 +112,7 @@ export type EconomicsWorkspaceData = {
   policy: { attractiveMonths: number; reviewMonths: number; exceptionMonths: number; forecastWindowMonths: number; watchRevenuePercent: number; criticalRevenuePercent: number };
 };
 
-export const economicActions = ['register_historical_instrument','create_target', 'set_mapping', 'set_mappings', 'set_item_group_mapping', 'set_expectation','record_observation', 'approve_target', 'link_instrument_billing', 'review_acquisition', 'record_capital', 'set_group_members', 'close_group_membership', 'set_allocation','close_allocation', 'close_target', 'set_policy', 'rebuild', 'create_case', 'update_case', 'claim_recovery', 'verify_cost', 'resolve_line'] as const;
+export const economicActions = ['register_historical_instrument','create_target', 'set_mapping', 'set_mappings', 'set_item_areas', 'set_item_group_mapping', 'set_expectation','record_observation', 'approve_target', 'link_instrument_billing', 'review_acquisition', 'record_capital', 'set_group_members', 'close_group_membership', 'set_allocation','close_allocation', 'close_target', 'set_policy', 'rebuild', 'create_case', 'update_case', 'claim_recovery', 'verify_cost', 'resolve_line'] as const;
 export type EconomicAction = typeof economicActions[number];
 export type EconomicCommand = { action: EconomicAction; payload: Record<string, unknown> & { idempotencyKey: string } };
 

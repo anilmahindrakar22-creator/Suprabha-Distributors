@@ -1543,6 +1543,13 @@
       "remoteVersion": null,
       "remoteSha256": null,
       "status": "not_deployed"
+    },
+    {
+      "localFile": "20261130180000_economic_item_areas.sql",
+      "localSha256": "33b840c11f64c0ff98f0d4318b022592624370c596f73230b698caa93dafba88",
+      "remoteVersion": null,
+      "remoteSha256": null,
+      "status": "not_deployed"
     }
   ],
   "liveCheck": {
