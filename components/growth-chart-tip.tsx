@@ -16,7 +16,7 @@ export function useChartTip() {
   const hide = () => setState(null);
   const place = (text: string, x: number, y: number) => {
     const width = container.current?.getBoundingClientRect().width ?? 0;
-    const left = width > 128 ? Math.min(Math.max(x, 64), width - 64) : x;
+    const left = width > 256 ? Math.min(Math.max(x, 128), width - 128) : width / 2;
     setState(current => current && current.text === text && current.left === left && current.top === y ? current : { text, left, top: y });
   };
   const atPointer = (text: string) => (e: PointerEvent<SVGElement>) => {
@@ -35,6 +35,6 @@ export function useChartTip() {
     },
     onBlur: hide,
   });
-  const tip: ReactNode = state && <div aria-hidden="true" data-chart-tip className="pointer-events-none absolute z-10 max-w-[16rem] -translate-x-1/2 -translate-y-full whitespace-nowrap rounded border border-sf-line-soft bg-white px-2 py-1 text-xs tabular-nums text-sf-ink shadow-sm" style={{ left: state.left, top: state.top - 8 }}>{state.text}</div>;
+  const tip: ReactNode = state && <div aria-hidden="true" data-chart-tip className="pointer-events-none absolute z-10 w-max max-w-[16rem] -translate-x-1/2 -translate-y-full whitespace-normal rounded border border-sf-line-soft bg-white px-2 py-1 text-xs tabular-nums text-sf-ink shadow-sm" style={{ left: state.left, top: state.top - 8 }}>{state.text}</div>;
   return { tipProps, tip, containerProps: { ref: container, className: 'relative', onPointerLeave: hide } };
 }

@@ -4,6 +4,7 @@ import { useEffect, useId, useRef, useState } from 'react';
 import type { BrandAreaCode } from '@/lib/brand-mapping';
 import { normalizeGrowthBrands, type GrowthBrandLine, type GrowthBrandRow, type GrowthBrandsData } from '@/lib/growth-brand-types';
 import { formatPaise } from '@/lib/wallet-format';
+import { niceTicks } from '@/lib/chart-ticks';
 import { chartTipText, useChartTip } from './growth-chart-tip';
 
 const card = 'min-w-0 space-y-3 rounded-xl border border-sf-line-soft bg-white p-4 lg:p-5';
@@ -60,17 +61,19 @@ function BrandScatter({ data, onPick }: { data: GrowthBrandsData; onPick: (key: 
   if (brands.length < 2) return null;
   const average = data.totals.marginPct;
   const margins = brands.map(r => r.marginPct as number);
-  const xMax = Math.max(...brands.map(r => r.salesPaise)) * 1.1 || 1;
-  const yMin = Math.min(...margins, average ?? Infinity) - 3, yMax = Math.max(...margins, average ?? -Infinity) + 3;
+  const maxSalesLakh = Math.max(...brands.map(r => r.salesPaise / 1e7)) || 1;
+  const xTicks = niceTicks(0, maxSalesLakh * 1.1);
+  const xMax = xTicks.hi || 1;
+  const yMinRaw = Math.min(...margins, average ?? Infinity), yMaxRaw = Math.max(...margins, average ?? -Infinity);
+  const yTicks = niceTicks(yMinRaw, yMaxRaw);
+  const yMin = yTicks.lo, yMax = yTicks.hi;
   const top = 12, bottom = 180;
-  const px = (sales: number) => 10 + Math.max(0, sales) / xMax * 86;
+  const px = (sales: number) => 10 + Math.max(0, sales / 1e7) / xMax * 86;
   const py = (margin: number) => bottom - (margin - yMin) / (yMax - yMin) * (bottom - top);
-  const ticks = [0, 1, 2, 3, 4];
-  const lakhDigits = xMax / 1e7 >= 5 ? 0 : 1;
   return <div data-brand-scatter {...containerProps}>
     <svg className="block h-[220px] w-full overflow-visible" role="group" aria-label="Principals: sales against margin">
-      {ticks.map(n => { const v = yMin + (yMax - yMin) * n / 4; return <g key={`y${n}`}><line x1="10%" x2="97%" y1={py(v)} y2={py(v)} stroke="var(--color-sf-chart-grid)" /><text x="8%" y={py(v) + 3} textAnchor="end" className="fill-sf-muted text-[10px]">{v.toFixed(0)}%</text></g>; })}
-      {ticks.map(n => { const v = xMax * n / 4; return <text key={`x${n}`} x={`${px(v)}%`} y="198" textAnchor="middle" className="fill-sf-muted text-[10px]">{(v / 1e7).toFixed(lakhDigits)}</text>; })}
+      {yTicks.ticks.map(v => <g key={`y${v}`}><line x1="10%" x2="97%" y1={py(v)} y2={py(v)} stroke="var(--color-sf-chart-grid)" /><text x="8%" y={py(v) + 3} textAnchor="end" className="fill-sf-muted text-[10px]">{v}%</text></g>)}
+      {xTicks.ticks.map(v => <text key={`x${v}`} x={`${px(v * 1e7)}%`} y="198" textAnchor="middle" className="fill-sf-muted text-[10px]">{v}</text>)}
       <line x1="10%" x2="97%" y1={bottom} y2={bottom} stroke="var(--color-sf-chart-axis)" />
       {average !== null && <g><line data-scatter-average x1="10%" x2="97%" y1={py(average)} y2={py(average)} stroke="var(--color-sf-chart-axis)" strokeDasharray="4 3" /><text x="97%" y={py(average) - 4} textAnchor="end" className="fill-sf-label text-[10px]">Average {average.toFixed(1)}%</text></g>}
       {brands.map(row => {

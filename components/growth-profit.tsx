@@ -7,6 +7,7 @@ import { formatPaise } from '@/lib/wallet-format';
 import type { GrowthNavigation, GrowthSelection } from './growth-drilldown';
 import { chartTipText, useChartTip } from './growth-chart-tip';
 import { GrowthBrands } from './growth-brands';
+import { GrowthItemScatter } from './growth-item-scatter';
 import { GrowthMarginDetail, GrowthBilledBelowDetail, type MarginSelection } from './growth-margin-detail';
 
 const card = 'min-w-0 space-y-3 rounded-xl border border-sf-line-soft bg-white p-4 lg:p-5';
@@ -133,6 +134,7 @@ export function GrowthProfit({ data, scope, onDrill, navigation }: { data: Growt
       </ol><p className={muted}>{instrumentRule}</p><p className={muted}>Price changes are made by people in Pricing; nothing changes automatically. Accepted reviews can become Action inbox cards in a later step.</p>
       <p className={muted}>Tally invoices aren&apos;t changed by StockFlow; this check finds lines billed below an approved price so billing can correct them.</p>
     </section>
+    {levers?.view === 'items' && <GrowthItemScatter rows={levers.rows} thresholdPct={levers.thresholdPct} averagePct={levers.consumablesMarginPct} onOpen={itemKey => { setSelection({ itemKey }); explorer.current?.scrollIntoView({ block: 'start', behavior: 'smooth' }); }} />}
     <GrowthBrands onOpenBrandSetup={navigation.onOpenBrandSetup} />
     <section ref={explorer} id="margin-explorer" className={`${card} scroll-mt-4`} aria-labelledby="margin-explorer-title"><h2 id="margin-explorer-title" className="text-base font-bold">Margin by lab and item</h2><p className={muted}>Margin is consumables only · 12 months · average purchase cost · instruments excluded by item{query.view === 'labs' ? ' · Total business includes instruments and bulk invoices' : ''}</p><p className={muted}>Instruments: average purchase cost ≥ ₹25,000, wherever invoiced · consumables margin {pct(result?.consumablesMarginPct ?? levers?.consumablesMarginPct ?? null)} · low margin &lt; {result?.thresholdPct ?? levers?.thresholdPct ?? '—'}%</p>
       <div role="tablist" aria-label="Margin by lab or item" className="flex gap-2 border-b border-sf-line">{(['labs', 'items'] as const).map(view => <button key={view} id={`margin-tab-${view}`} role="tab" aria-selected={query.view === view} aria-controls="margin-panel" tabIndex={query.view === view ? 0 : -1} className={`min-h-11 border-b-2 px-4 text-sm font-bold ${query.view === view ? 'border-sf-brand text-sf-brand' : 'border-transparent text-sf-muted'}`} onClick={() => { setSearch(''); update({ view, sort: 'sales', filter: 'all', q: '' }); }} onKeyDown={e => { if (['ArrowLeft', 'ArrowRight', 'Home', 'End'].includes(e.key)) { e.preventDefault(); const next = e.key === 'Home' ? 'labs' : e.key === 'End' ? 'items' : view === 'labs' ? 'items' : 'labs'; setSearch(''); update({ view: next, sort: 'sales', filter: 'all', q: '' }); document.getElementById(`margin-tab-${next}`)?.focus(); } }}>{view === 'labs' ? 'Labs' : 'Items'}</button>)}</div>

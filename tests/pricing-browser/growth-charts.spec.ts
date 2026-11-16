@@ -19,9 +19,14 @@ const growth = () => ({
   gp: { method: 'average_purchase_cost_to_date', window: { salesPaise: 10000000, knownSalesPaise: 8500000, costPaise: 6000000, gpPaise: 2500000, gpPct: 29.4, coveragePct: 85, unreliableLines: 1 }, halves: [{ half: 'H1', salesPaise: 5000000, knownSalesPaise: 4000000, costPaise: 3000000, gpPaise: 1000000, gpPct: 25, coveragePct: 80 }, { half: 'H2', salesPaise: 5000000, knownSalesPaise: 4500000, costPaise: 3000000, gpPaise: 1500000, gpPct: 33, coveragePct: 90 }], repeat: { salesPaise: 8000000, knownSalesPaise: 7000000, costPaise: 5000000, gpPaise: 2000000, gpPct: 25, coveragePct: 87.5 }, bulk: { salesPaise: 2000000, knownSalesPaise: 1500000, costPaise: 1000000, gpPaise: 500000, gpPct: 25, coveragePct: 75 }, consumables: { salesPaise: 8000000, knownSalesPaise: 7000000, costPaise: 5000000, gpPaise: 2000000, gpPct: 28.1, coveragePct: 87.5 }, instruments: { salesPaise: 2000000, knownSalesPaise: 1500000, costPaise: 1800000, gpPaise: -300000, gpPct: -20, coveragePct: 75 }, months: monthKeys.map(month => ({ month, salesPaise: 1000000, knownSalesPaise: 850000, gpPaise: 250000, consumablesKnownSalesPaise: 1000000, consumablesGpPaise: 280000, instrumentsKnownSalesPaise: 500000, instrumentsGpPaise: -100000 })) },
 });
 const marginList = (p: URLSearchParams) => ({
-  view: p.get('view'), sort: p.get('sort') ?? 'sales', filter: p.get('filter') ?? 'all', q: p.get('q'), page: Number(p.get('page')), pageSize: 20, total: 1, thresholdPct: 14, consumablesMarginPct: 28.1, levers,
+  view: p.get('view'), sort: p.get('sort') ?? 'sales', filter: p.get('filter') ?? 'all', q: p.get('q'), page: Number(p.get('page')), pageSize: 20, total: p.get('view') === 'items' ? 4 : 1, thresholdPct: 14, consumablesMarginPct: 28.1, levers,
   rows: p.get('view') === 'items'
-    ? [{ itemKey: 'item-a', name: 'Cliniquant CRP', salesPaise: 55000000, knownSalesPaise: 55000000, gpPaise: 7000000, marginPct: 13.2, labs: 13, priceLowPaise: 140000, typicalPricePaise: 250000, priceHighPaise: 322000, spreadPaise: 2904900, low: true, belowCost: false }]
+    ? [
+      { itemKey: 'item-a', name: 'Cliniquant CRP', salesPaise: 55000000, knownSalesPaise: 55000000, gpPaise: 7000000, marginPct: 13.2, labs: 13, priceLowPaise: 140000, typicalPricePaise: 250000, priceHighPaise: 322000, spreadPaise: 2904900, low: true, belowCost: false },
+      { itemKey: 'item-b', name: 'Healthy item', salesPaise: 45000000, knownSalesPaise: 45000000, gpPaise: 11250000, marginPct: 25, labs: 9, priceLowPaise: 100000, typicalPricePaise: 120000, priceHighPaise: 140000, spreadPaise: 40000, low: false, belowCost: false },
+      { itemKey: 'item-c', name: 'Below cost item', salesPaise: 35000000, knownSalesPaise: 35000000, gpPaise: -3500000, marginPct: -10, labs: 7, priceLowPaise: 100000, typicalPricePaise: 125000, priceHighPaise: 150000, spreadPaise: 50000, low: true, belowCost: true },
+      { itemKey: 'item-d', name: 'Extreme below cost', salesPaise: 25000000, knownSalesPaise: 25000000, gpPaise: -37500000, marginPct: -150, labs: 5, priceLowPaise: 100000, typicalPricePaise: 125000, priceHighPaise: 150000, spreadPaise: 50000, low: true, belowCost: true },
+    ]
     : [{ labKey: 'ledger-a', customerId: 'customer-a', name: 'Lab A', town: 'Town A', salesPaise: 55000000, knownSalesPaise: 55000000, gpPaise: 7000000, marginPct: 13.2, coveragePct: 100, low: true, totalSalesPaise: 80000000, instrumentSalesPaise: 25000000 }],
 });
 const itemPrices: [string, number][] = [['Lab A', 160800], ['Lab B', 240000], ['Lab C', 250000], ['Lab D', 260000], ['Lab E', 275000]];
@@ -144,6 +149,53 @@ for (const width of [375, 1280]) {
       await under.dispatchEvent('click');
       await expect(panel.locator('li[data-lab-row="selected"]')).toContainText('Lab A');
       if (width === 375) expect(await page.evaluate(() => (document.scrollingElement?.scrollWidth ?? 0) <= window.innerWidth)).toBe(true);
+    });
+    test('item scatter colours healthy, low and below-cost items', async ({ page }) => {
+      await fixture(page);
+      await openTab(page, 'Profit');
+      const section = page.locator('[data-item-scatter]');
+      const ok = section.locator('[data-item-dot="ok"]');
+      const low = section.locator('[data-item-dot="low"]');
+      const below = section.locator('[data-item-dot="below-cost"]');
+      await expect(ok).toHaveCount(1);
+      await expect(low).toHaveCount(1);
+      await expect(below).toHaveCount(2);
+      expect(await fillOf(ok.locator('circle[r="6"]'))).toBe(TEAL);
+      expect(await fillOf(low.locator('circle[r="6"]'))).toBe(ORANGE);
+      expect(await fillOf(below.first().locator('circle[r="6"]'))).toBe(RED);
+      await expect(section.locator('[data-item-threshold]')).toBeAttached();
+      await expect(section.locator('[data-item-average]')).toBeAttached();
+      await expect(section.locator('svg text[y="198"]')).toHaveText(['0', '2', '4', '6', '8']);
+      const extreme = section.locator('[data-item-dot][aria-label^="Extreme below cost"]');
+      await expect(extreme).toHaveAttribute('data-item-clamped');
+      await expect(extreme).toHaveAttribute('aria-label', /-150\.0%/);
+      await expect(section.locator('[data-item-direct-label]')).toContainText('(−150%)');
+      const thresholdY = Number(await section.locator('[data-item-threshold]').getAttribute('y')) + 4;
+      const bottomY = Number(await section.locator('svg > line').last().getAttribute('y1'));
+      expect(Math.abs(thresholdY - bottomY)).toBeGreaterThan(20);
+    });
+    test('tapping an item dot opens its lab prices', async ({ page }) => {
+      await fixture(page);
+      await openTab(page, 'Profit');
+      await page.locator('[data-item-scatter] [data-item-dot="low"]').press('Enter');
+      const panel = page.getByRole('dialog');
+      const strip = panel.locator('[data-price-strip]');
+      await expect(strip).toBeVisible();
+      await expect(strip).toContainText('Typical ₹2,500');
+      await expect(strip).toContainText('Showing 5 of 13 labs · orange = under 90% of typical');
+    });
+    test('item scatter tooltip stays within its section', async ({ page }) => {
+      await fixture(page);
+      await openTab(page, 'Profit');
+      const section = page.locator('[data-item-scatter]');
+      await section.locator('[data-item-dot]').first().hover();
+      const tip = section.locator('[data-chart-tip]');
+      await expect(tip).toBeVisible();
+      const tipBox = await tip.boundingBox();
+      const sectionBox = await section.boundingBox();
+      expect(tipBox).not.toBeNull();
+      expect(sectionBox).not.toBeNull();
+      expect(tipBox!.x + tipBox!.width).toBeLessThanOrEqual(sectionBox!.x + sectionBox!.width);
     });
     test('charts do not overflow the page width', async ({ page }) => {
       await fixture(page);
