@@ -478,6 +478,7 @@ function GroupItemsList({ groupId, groupLabel, members, startFrom, today, canEdi
   scope: { companyId: string; modelId: string; targetId: string }; runCommand: InstrumentAddCommand; countedItem: (productId: string) => boolean; itemState: Map<string, string>; addFrom: (productId: string) => string;
 }) {
   const [pending, setPending] = useState<Map<string, boolean>>(() => new Map());
+  const [query, setQuery] = useState('');
   const [saving, setSaving] = useState(false);
   const savingRef = useRef(false);
   const batchKey = useRef<string | null>(null);
@@ -486,6 +487,15 @@ function GroupItemsList({ groupId, groupLabel, members, startFrom, today, canEdi
     batchKey.current = null;
     setPending(current => { const next = new Map(current); if (desired === countedItem(productId)) next.delete(productId); else next.set(productId, desired); return next; });
   };
+  const setMany = (ids: string[], desired: boolean) => {
+    batchKey.current = null;
+    setPending(current => { const next = new Map(current); for (const productId of ids) { if (desired === countedItem(productId)) next.delete(productId); else next.set(productId, desired); } return next; });
+  };
+  const shownMembers = members.filter(item => !query.trim() || item.name.toLocaleLowerCase().includes(query.trim().toLocaleLowerCase()));
+  const activeQuery = !!query.trim();
+  const everyShownCounted = shownMembers.every(item => pending.get(item.id) ?? countedItem(item.id));
+  const noneShownCounted = shownMembers.every(item => !(pending.get(item.id) ?? countedItem(item.id)));
+  const noneCounted = members.every(item => !(pending.get(item.id) ?? countedItem(item.id)));
   const fromFor = (productId: string, desired: boolean) => desired ? addFrom(productId) : itemState.has(productId) ? today : startFrom;
   const save = async () => {
     if (savingRef.current || !pending.size) return;
@@ -498,13 +508,19 @@ function GroupItemsList({ groupId, groupLabel, members, startFrom, today, canEdi
     } finally { savingRef.current = false; setSaving(false); }
   };
   return <>
-    <ul aria-label={`Items in ${groupLabel}`} className="mt-2 max-h-80 divide-y divide-sf-line-soft overflow-y-auto">{members.map(item => {
+    <div className="mt-2 flex flex-wrap items-center gap-2" data-group-tools={groupId}>
+      {members.length > 8 ? <><label className="sr-only" htmlFor={`find-group-item-${groupId}`}>Find an item in {groupLabel}</label><input id={`find-group-item-${groupId}`} type="search" value={query} onChange={event => setQuery(event.currentTarget.value)} placeholder="Find an item" className="min-h-11 w-full rounded-lg border border-sf-line px-3 text-sm sm:w-64" /></> : null}
+      {canEdit ? <><button type="button" disabled={locked || everyShownCounted} onClick={() => setMany(shownMembers.map(item => item.id), true)} className="min-h-11 rounded-lg border border-sf-line px-3 text-sm font-bold text-sf-brand disabled:opacity-50">{activeQuery ? 'Tick all shown' : 'Tick all'}</button><button type="button" disabled={locked || noneShownCounted} onClick={() => setMany(shownMembers.map(item => item.id), false)} className="min-h-11 rounded-lg border border-sf-line px-3 text-sm font-bold text-sf-brand disabled:opacity-50">{activeQuery ? 'Untick all shown' : 'Untick all'}</button></> : null}
+      {activeQuery ? <output className="w-full text-xs text-sf-muted">{shownMembers.length ? `Showing ${shownMembers.length} of ${members.length} items` : `No items match “${query.trim()}”.`}</output> : null}
+    </div>
+    <ul aria-label={`Items in ${groupLabel}`} className="mt-2 max-h-80 divide-y divide-sf-line-soft overflow-y-auto">{shownMembers.map(item => {
       const changed = pending.has(item.id); const isCounted = pending.get(item.id) ?? countedItem(item.id);
       return <li key={item.id} className="flex min-h-11 items-start gap-3 py-2"><input type="checkbox" aria-label={`Count ${item.name} for this instrument`} checked={isCounted} disabled={locked} onChange={event => toggle(item.id, event.currentTarget.checked)} className="mt-0.5 size-5 shrink-0" />
         <span className="min-w-0"><span className={`block break-words text-sm ${isCounted ? '' : 'text-sf-muted line-through'}`}>{item.name}</span>{changed ? <span className="block text-xs text-sf-muted">{isCounted ? `Will count from ${displayDate(fromFor(item.id, true))}` : `Will stop counting from ${displayDate(fromFor(item.id, false))}`}</span> : null}</span></li>;
     })}</ul>
+    {noneCounted ? <p className="mt-2 text-xs text-sf-warning">Nothing in {groupLabel} will count for this instrument. To stop counting the whole group, remove the group instead.</p> : null}
     {pending.size ? <div className="mt-3 flex flex-wrap items-center gap-2" data-group-save={groupId}><span className="text-xs text-sf-muted">{pending.size} {pending.size === 1 ? 'change' : 'changes'} not saved</span>
-      <button type="button" disabled={locked} onClick={() => void save()} className="min-h-11 rounded-lg bg-sf-brand px-3 text-sm font-bold text-white disabled:opacity-50">Save changes</button>
+      <button type="button" disabled={locked || pending.size > 200} onClick={() => void save()} className="min-h-11 rounded-lg bg-sf-brand px-3 text-sm font-bold text-white disabled:opacity-50">Save changes</button>{pending.size > 200 ? <span className="text-xs text-sf-warning">Save up to 200 changes at a time.</span> : null}
       <button type="button" disabled={locked} onClick={() => { batchKey.current = null; setPending(new Map()); }} className="min-h-11 rounded-lg border border-sf-line px-3 text-sm font-bold text-sf-brand disabled:opacity-50">Cancel</button></div> : null}
   </>;
 }

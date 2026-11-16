@@ -1502,3 +1502,47 @@ test('group item checklist collects ticks and saves them in one batch', async ({
   expect(posts[0].payload.items).toMatchObject([{ productId: 'haem-diluent', effect: 'exclude' }]);
   expect(posts).toHaveLength(1);
 });
+
+test('group checklist can search and untick all items in one batch', async ({ page }) => {
+  const posts: { action: string; payload: Record<string, unknown> }[] = [];
+  const names = ['Alpha reagent', 'Beta reagent', 'Gamma reagent', 'Delta reagent', 'Epsilon reagent', 'Zeta reagent', 'Eta reagent', 'Theta reagent', 'Iota reagent', 'Kappa reagent'];
+  const products = names.map((name, index) => ({ id: `haem-${String(index).padStart(2, '0')}`, name, groupId: 'haem', unit: 'qty' }));
+  const data = economicsData({ targets: [target], sourceLines: [], businessDate: '2026-11-13',
+    itemGroupMappings: [{ id: 'group-map', companyId: 'company-guid', modelId: 'model-1', groupId: 'haem', targetId: target.id, effect: 'include', effectiveFrom: '2026-05-01', effectiveTo: null, catalogId: 'catalog-1', reason: 'Generic haematology group' }],
+    itemGroupCatalogs: [{ id: 'catalog-1', companyId: 'company-guid', sourceVersion: 'v1', observedAt: '2026-10-09T10:00:00Z', current: true, groups: [{ id: 'haem', name: 'Generic haematology', itemCount: 10, parentId: null }], products }] });
+  await page.route('**/api/instrument-economics', route => {
+    if (route.request().method() === 'GET') return route.fulfill({ json: data });
+    posts.push(route.request().postDataJSON()); return route.fulfill({ json: { ok: true } });
+  });
+  await page.goto('/?view=instrument-economics');
+  const checklist = page.locator('details[data-group-items="haem"]');
+  await checklist.locator('summary').click();
+  await checklist.getByRole('button', { name: 'Untick all', exact: true }).click();
+  await expect(checklist.getByText('10 changes not saved', { exact: true })).toBeVisible();
+  await expect(checklist).toContainText('Nothing in Generic haematology will count for this instrument. To stop counting the whole group, remove the group instead.');
+  await checklist.getByRole('button', { name: 'Save changes', exact: true }).click();
+  await expect.poll(() => posts.length).toBe(1);
+  expect(posts[0].action).toBe('set_mappings');
+  expect(posts[0].payload.items).toEqual(products.map(item => ({ productId: item.id, effect: 'exclude', effectiveFrom: '2026-05-01', effectiveTo: '' })).sort((a, b) => a.productId.localeCompare(b.productId)));
+});
+
+test('group checklist search limits tick-all-shown and reports no matches', async ({ page }) => {
+  const names = ['Coag clean', 'Coag control', 'Gamma reagent', 'Delta reagent', 'Epsilon reagent', 'Zeta reagent', 'Eta reagent', 'Theta reagent', 'Iota reagent', 'Kappa reagent'];
+  const products = names.map((name, index) => ({ id: `haem-${String(index).padStart(2, '0')}`, name, groupId: 'haem', unit: 'qty' }));
+  const data = economicsData({ targets: [target], sourceLines: [], itemGroupMappings: [{ id: 'group-map', companyId: 'company-guid', modelId: 'model-1', groupId: 'haem', targetId: target.id, effect: 'include', effectiveFrom: '2026-05-01', effectiveTo: null, catalogId: 'catalog-1', reason: 'Generic haematology group' }], itemGroupCatalogs: [{ id: 'catalog-1', companyId: 'company-guid', sourceVersion: 'v1', observedAt: '2026-10-09T10:00:00Z', current: true, groups: [{ id: 'haem', name: 'Generic haematology', itemCount: 10, parentId: null }], products }] });
+  await mockWorkspace(page, data);
+  await page.setViewportSize({ width: 375, height: 812 });
+  await page.goto('/?view=instrument-economics');
+  const checklist = page.locator('details[data-group-items="haem"]');
+  await checklist.locator('summary').click();
+  await checklist.getByLabel('Find an item in Generic haematology').fill('coag');
+  await expect(checklist.getByRole('status')).toHaveText('Showing 2 of 10 items');
+  await checklist.getByRole('button', { name: 'Untick all shown', exact: true }).click();
+  await expect(checklist.getByText('2 changes not saved', { exact: true })).toBeVisible();
+  await checklist.getByLabel('Find an item in Generic haematology').fill('');
+  for (const name of names.slice(2)) await expect(checklist.getByLabel(`Count ${name} for this instrument`)).toBeChecked();
+  for (const name of names.slice(0, 2)) await expect(checklist.getByLabel(`Count ${name} for this instrument`)).not.toBeChecked();
+  await checklist.getByLabel('Find an item in Generic haematology').fill('zzz');
+  await expect(checklist.getByRole('status')).toHaveText('No items match “zzz”.');
+  expect(await page.evaluate(() => document.documentElement.scrollWidth <= 375)).toBe(true);
+});
