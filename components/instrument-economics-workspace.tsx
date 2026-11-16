@@ -1,7 +1,7 @@
 'use client';
 
 import { PageHeader, pageActionClass } from './page-header';
-import { useCallback, useEffect, useMemo, useRef, useState, type ReactNode, type SubmitEvent } from 'react';
+import { useCallback, useEffect, useId, useMemo, useRef, useState, type ReactNode, type SubmitEvent } from 'react';
 import Link from 'next/link';
 import { LeakageEconomicsVariance } from '@/components/leakage-economics-variance';
 import { EconomicDocumentExclusions } from '@/components/economic-document-exclusions';
@@ -473,12 +473,70 @@ function ItemCommand({ action, fields, label, tone = 'plain', disabled, onSubmit
 }
 // Add or remove reagent items for one instrument. Removing stops counting from today and keeps earlier sales.
 // Ticks are collected locally and saved together, so one save rebuilds economics once.
-function GroupItemsList({ groupId, groupLabel, members, startFrom, today, canEdit, disabled, targetName, scope, runCommand, countedItem, itemState, addFrom }: {
+type ChecklistMember = { id: string; name: string };
+type LabArea = { code: string; name: string };
+type ItemCatalog = NonNullable<EconomicsWorkspaceData['itemGroupCatalogs']>[number];
+
+function catalogGroupMembers(catalog: ItemCatalog | undefined, groupId: string): ChecklistMember[] {
+  const groups = new Map(catalog?.groups.map(group => [group.id, group]) ?? []);
+  return (catalog?.products ?? []).filter(product => {
+    let current: string | null | undefined = product.groupId;
+    const visited = new Set<string>();
+    while (current && !visited.has(current)) {
+      if (current === groupId) return true;
+      visited.add(current); current = groups.get(current)?.parentId;
+    }
+    return false;
+  }).map(({ id, name }) => ({ id, name })).sort((a, b) => a.name.localeCompare(b.name));
+}
+
+function itemAreaLookup(data: EconomicsWorkspaceData, companyId: string) {
+  // Workspace rows already contain only the latest link, including null clears.
+  const links = new Map((data.itemAreas ?? []).filter(row => row.companyId === companyId).map(row => [row.productId, row]));
+  const areas = new Map<string, LabArea>((data.labAreas ?? []).map(area => [area.code, area]));
+  return { links, areaOf: (id: string) => areas.get(links.get(id)?.areaCode ?? '') ?? null };
+}
+
+function ItemChecklist({ members, isCounted, setMany, toggle, locked, canEdit, groupLabel, groupId, areaOf, rowNote, labAreas, tools }: {
+  members: ChecklistMember[]; isCounted: (id: string) => boolean; setMany: (ids: string[], desired: boolean) => void; toggle: (id: string, desired: boolean) => void;
+  locked: boolean; canEdit: boolean; groupLabel: string; groupId: string; areaOf: (id: string) => LabArea | null; rowNote: (id: string) => string | null;
+  labAreas: readonly LabArea[]; tools?: (shown: ChecklistMember[]) => ReactNode;
+}) {
+  const [query, setQuery] = useState('');
+  const [chip, setChip] = useState('ALL');
+  const counts = new Map<string, number>();
+  for (const item of members) { const code = areaOf(item.id)?.code ?? 'NONE'; counts.set(code, (counts.get(code) ?? 0) + 1); }
+  const chips = [{ code: 'ALL', name: 'All', count: members.length }, ...labAreas.filter(area => counts.has(area.code)).map(area => ({ ...area, count: counts.get(area.code)! })), { code: 'NONE', name: 'No area', count: counts.get('NONE') ?? 0 }];
+  const shownMembers = members.filter(item => (!query.trim() || item.name.toLocaleLowerCase().includes(query.trim().toLocaleLowerCase())) && (chip === 'ALL' || (areaOf(item.id)?.code ?? 'NONE') === chip));
+  const activeQuery = !!query.trim() || chip !== 'ALL';
+  const everyShownCounted = shownMembers.every(item => isCounted(item.id));
+  const noneShownCounted = shownMembers.every(item => !isCounted(item.id));
+  const noneCounted = members.every(item => !isCounted(item.id));
+  return <>
+    {members.some(item => areaOf(item.id)) ? <div className="mt-2 flex flex-wrap gap-2">{chips.map(area => <button key={area.code} type="button" data-area-chip={area.code} aria-pressed={chip === area.code} onClick={() => setChip(area.code)} className={`min-h-9 rounded-full border px-3 text-xs font-bold ${chip === area.code ? 'bg-sf-brand text-white border-sf-brand' : 'border-sf-line text-sf-muted'}`}>{area.name} · {area.count}</button>)}</div> : null}
+    <div className="mt-2 flex flex-wrap items-center gap-2" data-group-tools={groupId}>
+      {members.length > 8 ? <><label className="sr-only" htmlFor={`find-group-item-${groupId}`}>Find an item in {groupLabel}</label><input id={`find-group-item-${groupId}`} type="search" value={query} onChange={event => setQuery(event.currentTarget.value)} placeholder="Find an item" className="min-h-11 w-full rounded-lg border border-sf-line px-3 text-sm sm:w-64" /></> : null}
+      {canEdit ? <><button type="button" disabled={locked || everyShownCounted} onClick={() => setMany(shownMembers.map(item => item.id), true)} className="min-h-11 rounded-lg border border-sf-line px-3 text-sm font-bold text-sf-brand disabled:opacity-50">{activeQuery ? 'Tick all shown' : 'Tick all'}</button><button type="button" disabled={locked || noneShownCounted} onClick={() => setMany(shownMembers.map(item => item.id), false)} className="min-h-11 rounded-lg border border-sf-line px-3 text-sm font-bold text-sf-brand disabled:opacity-50">{activeQuery ? 'Untick all shown' : 'Untick all'}</button></> : null}
+    </div>
+    {tools?.(shownMembers)}
+    {activeQuery ? <output className="mt-1 block w-full text-xs text-sf-muted">{shownMembers.length || !query.trim() ? `Showing ${shownMembers.length} of ${members.length} items` : `No items match “${query.trim()}”.`}</output> : null}
+    <ul aria-label={`Items in ${groupLabel}`} className="mt-2 max-h-80 divide-y divide-sf-line-soft overflow-y-auto">{shownMembers.map(item => {
+      const counted = isCounted(item.id); const note = rowNote(item.id); const area = areaOf(item.id);
+      return <li key={item.id} className="flex min-h-11 items-start gap-3 py-2"><input type="checkbox" aria-label={`Count ${item.name} for this instrument`} checked={counted} disabled={locked} onChange={event => toggle(item.id, event.currentTarget.checked)} className="mt-0.5 size-5 shrink-0" />
+        <span className="min-w-0"><span className={`block break-words text-sm ${counted ? '' : 'text-sf-muted line-through'}`}>{item.name}</span>{note ? <span className="block text-xs text-sf-muted">{note}</span> : area ? <span className="block text-xs text-sf-muted">{area.name}</span> : null}</span></li>;
+    })}</ul>
+    {noneCounted ? <p className="mt-2 text-xs text-sf-warning">Nothing in {groupLabel} will count for this instrument. To stop counting the whole group, remove the group instead.</p> : null}
+  </>;
+}
+
+function GroupItemsList({ groupId, groupLabel, members, startFrom, today, canEdit, disabled, targetName, scope, runCommand, countedItem, itemState, addFrom, data }: {
   groupId: string; groupLabel: string; members: { id: string; name: string }[]; startFrom: string; today: string; canEdit: boolean; disabled: boolean; targetName: string;
   scope: { companyId: string; modelId: string; targetId: string }; runCommand: InstrumentAddCommand; countedItem: (productId: string) => boolean; itemState: Map<string, string>; addFrom: (productId: string) => string;
+  data: EconomicsWorkspaceData;
 }) {
+  const areaSelectId = useId();
   const [pending, setPending] = useState<Map<string, boolean>>(() => new Map());
-  const [query, setQuery] = useState('');
+  const [areaCode, setAreaCode] = useState('');
   const [saving, setSaving] = useState(false);
   const savingRef = useRef(false);
   const batchKey = useRef<string | null>(null);
@@ -491,11 +549,7 @@ function GroupItemsList({ groupId, groupLabel, members, startFrom, today, canEdi
     batchKey.current = null;
     setPending(current => { const next = new Map(current); for (const productId of ids) { if (desired === countedItem(productId)) next.delete(productId); else next.set(productId, desired); } return next; });
   };
-  const shownMembers = members.filter(item => !query.trim() || item.name.toLocaleLowerCase().includes(query.trim().toLocaleLowerCase()));
-  const activeQuery = !!query.trim();
-  const everyShownCounted = shownMembers.every(item => pending.get(item.id) ?? countedItem(item.id));
-  const noneShownCounted = shownMembers.every(item => !(pending.get(item.id) ?? countedItem(item.id)));
-  const noneCounted = members.every(item => !(pending.get(item.id) ?? countedItem(item.id)));
+  const { links, areaOf } = itemAreaLookup(data, scope.companyId);
   const fromFor = (productId: string, desired: boolean) => desired ? addFrom(productId) : itemState.has(productId) ? today : startFrom;
   const save = async () => {
     if (savingRef.current || !pending.size) return;
@@ -507,18 +561,15 @@ function GroupItemsList({ groupId, groupLabel, members, startFrom, today, canEdi
       if (result) { batchKey.current = null; setPending(new Map()); }
     } finally { savingRef.current = false; setSaving(false); }
   };
+  const applyArea = async (shown: ChecklistMember[]) => {
+    if (savingRef.current || locked || !shown.length || shown.length > 200) return;
+    savingRef.current = true; setSaving(true);
+    try {
+      await runCommand('set_item_areas', { companyId: scope.companyId, reason: `Area set in ${groupLabel} for ${targetName}`, areaCode: areaCode || null, items: shown.map(item => ({ productId: item.id, expectedLinkId: links.get(item.id)?.linkId ?? null })) }, crypto.randomUUID());
+    } finally { savingRef.current = false; setSaving(false); }
+  };
   return <>
-    <div className="mt-2 flex flex-wrap items-center gap-2" data-group-tools={groupId}>
-      {members.length > 8 ? <><label className="sr-only" htmlFor={`find-group-item-${groupId}`}>Find an item in {groupLabel}</label><input id={`find-group-item-${groupId}`} type="search" value={query} onChange={event => setQuery(event.currentTarget.value)} placeholder="Find an item" className="min-h-11 w-full rounded-lg border border-sf-line px-3 text-sm sm:w-64" /></> : null}
-      {canEdit ? <><button type="button" disabled={locked || everyShownCounted} onClick={() => setMany(shownMembers.map(item => item.id), true)} className="min-h-11 rounded-lg border border-sf-line px-3 text-sm font-bold text-sf-brand disabled:opacity-50">{activeQuery ? 'Tick all shown' : 'Tick all'}</button><button type="button" disabled={locked || noneShownCounted} onClick={() => setMany(shownMembers.map(item => item.id), false)} className="min-h-11 rounded-lg border border-sf-line px-3 text-sm font-bold text-sf-brand disabled:opacity-50">{activeQuery ? 'Untick all shown' : 'Untick all'}</button></> : null}
-      {activeQuery ? <output className="w-full text-xs text-sf-muted">{shownMembers.length ? `Showing ${shownMembers.length} of ${members.length} items` : `No items match “${query.trim()}”.`}</output> : null}
-    </div>
-    <ul aria-label={`Items in ${groupLabel}`} className="mt-2 max-h-80 divide-y divide-sf-line-soft overflow-y-auto">{shownMembers.map(item => {
-      const changed = pending.has(item.id); const isCounted = pending.get(item.id) ?? countedItem(item.id);
-      return <li key={item.id} className="flex min-h-11 items-start gap-3 py-2"><input type="checkbox" aria-label={`Count ${item.name} for this instrument`} checked={isCounted} disabled={locked} onChange={event => toggle(item.id, event.currentTarget.checked)} className="mt-0.5 size-5 shrink-0" />
-        <span className="min-w-0"><span className={`block break-words text-sm ${isCounted ? '' : 'text-sf-muted line-through'}`}>{item.name}</span>{changed ? <span className="block text-xs text-sf-muted">{isCounted ? `Will count from ${displayDate(fromFor(item.id, true))}` : `Will stop counting from ${displayDate(fromFor(item.id, false))}`}</span> : null}</span></li>;
-    })}</ul>
-    {noneCounted ? <p className="mt-2 text-xs text-sf-warning">Nothing in {groupLabel} will count for this instrument. To stop counting the whole group, remove the group instead.</p> : null}
+    <ItemChecklist members={members} isCounted={id => pending.get(id) ?? countedItem(id)} setMany={setMany} toggle={toggle} locked={locked} canEdit={canEdit} groupLabel={groupLabel} groupId={groupId} areaOf={areaOf} labAreas={data.labAreas ?? []} rowNote={id => pending.has(id) ? `${pending.get(id) ? 'Will count from' : 'Will stop counting from'} ${displayDate(fromFor(id, pending.get(id)!))}` : null} tools={canEdit ? shown => <div className="mt-2 flex min-w-0 flex-wrap items-center gap-2"><div className="grid min-w-0 gap-1 text-xs text-sf-muted"><label htmlFor={areaSelectId}>Set area for {shown.length} shown items</label><select id={areaSelectId} value={areaCode} onChange={event => setAreaCode(event.currentTarget.value)} disabled={locked} className="min-h-9 min-w-0 max-w-full rounded-lg border border-sf-line bg-white px-2"><option value="">No area</option>{(data.labAreas ?? []).map(area => <option key={area.code} value={area.code}>{area.name}</option>)}</select></div><button type="button" disabled={locked || !shown.length || shown.length > 200} onClick={() => void applyArea(shown)} className="min-h-9 rounded-lg border border-sf-line px-3 text-xs font-bold disabled:opacity-50">Apply area</button>{shown.length > 200 ? <span className="text-xs text-sf-warning">Narrow the list to 200 items or fewer.</span> : null}</div> : undefined} />
     {pending.size ? <div className="mt-3 flex flex-wrap items-center gap-2" data-group-save={groupId}><span className="text-xs text-sf-muted">{pending.size} {pending.size === 1 ? 'change' : 'changes'} not saved</span>
       <button type="button" disabled={locked || pending.size > 200} onClick={() => void save()} className="min-h-11 rounded-lg bg-sf-brand px-3 text-sm font-bold text-white disabled:opacity-50">Save changes</button>{pending.size > 200 ? <span className="text-xs text-sf-warning">Save up to 200 changes at a time.</span> : null}
       <button type="button" disabled={locked} onClick={() => { batchKey.current = null; setPending(new Map()); }} className="min-h-11 rounded-lg border border-sf-line px-3 text-sm font-bold text-sf-brand disabled:opacity-50">Cancel</button></div> : null}
@@ -581,15 +632,7 @@ function InstrumentItems({ target, data, disabled, onSubmit, runCommand }: { tar
     }
     return false;
   };
-  const groupMembers = (groupId: string) => (catalog?.products ?? []).filter(product => {
-    let current: string | null | undefined = product.groupId;
-    const visited = new Set<string>();
-    while (current && !visited.has(current)) {
-      if (current === groupId) return true;
-      visited.add(current); current = catalogGroups.get(current)?.parentId;
-    }
-    return false;
-  }).map(product => ({ id: product.id, name: product.name })).sort((a, b) => a.name.localeCompare(b.name));
+  const groupMembers = (groupId: string) => catalogGroupMembers(catalog, groupId);
   const addFields = (productId: string) => ({ ...scope, productId, effect: 'include', effectiveFrom: itemState.has(productId) ? today : salesStart ?? '', effectiveTo: '', reason: `Added to ${target.name} from the instrument items list` });
   const canEdit = data.canManage && salesStart !== null;
   return <section aria-label="Instrument items" className="rounded-2xl border border-sf-line-soft bg-white p-4 sm:p-6">
@@ -599,7 +642,7 @@ function InstrumentItems({ target, data, disabled, onSubmit, runCommand }: { tar
       {groups.map(({ groupId, rule }) => { const members = groupMembers(groupId); const counted = members.filter(item => countedItem(item.id)).length; return <li key={groupId} className="py-2"><div className="flex flex-wrap items-center justify-between gap-2"><span className="text-sm"><strong>{groupName(groupId)}</strong> · Tally item group{groupSize(groupId) != null ? ` · ${groupSize(groupId)} items` : ''}</span>{canEdit && catalog ? <ItemCommand action="set_item_group_mapping" label="Remove group" disabled={disabled} onSubmit={onSubmit} fields={{ ...scope, groupId, expectedCatalogId: catalog.id, effect: 'exclude', effectiveFrom: today, effectiveTo: '', reason: `Removed group from ${target.name}` }} /> : null}{rule.effectiveFrom > today ? <span className="text-xs text-sf-muted">from {displayDate(rule.effectiveFrom)}</span> : null}</div>
         {members.length ? <details className="mt-2 rounded-xl bg-sf-soft p-3" data-group-items={groupId}><summary className="-m-3 list-item cursor-pointer p-3 text-sm font-bold">Items in this group · {counted} of {members.length} counted</summary>
           <p className="mt-1 text-xs text-sf-muted">Untick an item that belongs to another machine. Unticking removes it from {displayDate(rule.effectiveFrom)}, when this group started counting; ticking it back counts it from today. Tick or untick items, then Save changes.</p>
-          <GroupItemsList groupId={groupId} groupLabel={groupName(groupId)} members={members} startFrom={rule.effectiveFrom} today={today} canEdit={!!canEdit} disabled={disabled} targetName={target.name} scope={scope} runCommand={runCommand} countedItem={countedItem} itemState={itemState} addFrom={productId => addFields(productId).effectiveFrom} />
+          <GroupItemsList data={data} groupId={groupId} groupLabel={groupName(groupId)} members={members} startFrom={rule.effectiveFrom} today={today} canEdit={!!canEdit} disabled={disabled} targetName={target.name} scope={scope} runCommand={runCommand} countedItem={countedItem} itemState={itemState} addFrom={productId => addFields(productId).effectiveFrom} />
         </details> : null}</li>; })}
       {included.map(item => <li key={item.productId} className="flex flex-wrap items-center justify-between gap-2 py-2"><span className="text-sm"><strong>{item.name}</strong> · single item</span>{canEdit ? <ItemCommand action="set_mapping" label="Remove" disabled={disabled} onSubmit={onSubmit} fields={{ ...scope, productId: item.productId, effect: 'exclude', effectiveFrom: today, effectiveTo: '', reason: `Removed from ${target.name} from the instrument items list` }} /> : null}</li>)}
       {!groups.length && !included.length ? <li className="py-2 text-sm text-sf-muted">No items are counted yet.</li> : null}
@@ -696,9 +739,56 @@ export function AccountsDocumentReview({ data }: { data: EconomicsWorkspaceData 
 function SetupStep({ number, title, body, children }: { number: number; title: string; body: string; children: ReactNode }) {
   return <section aria-label={`Step ${number}: ${title}`} className="rounded-2xl border border-sf-line-soft bg-white p-4 sm:p-6"><h2 className="text-lg font-extrabold"><span className="mr-2 inline-flex size-7 items-center justify-center rounded-full bg-sf-brand text-sm text-white">{number}</span>{title}</h2><p className="mt-1 text-sm text-sf-muted">{body}</p>{children}</section>;
 }
-function PlacementReagents({ target, data, disabled, onSubmit, onOpen }: { target: EconomicTarget; data: EconomicsWorkspaceData; disabled: boolean; onSubmit: SubmitCommand; onOpen: () => Promise<boolean> }) {
+function AddGroupWithItems({ target, data, disabled, runCommand, onSuccess }: { target: EconomicTarget; data: EconomicsWorkspaceData; disabled: boolean; runCommand: InstrumentAddCommand; onSuccess: () => void }) {
+  const formId = useId();
+  const catalog = (data.itemGroupCatalogs ?? []).filter(row => row.companyId === target.companyId && row.current).sort((a, b) => b.observedAt.localeCompare(a.observedAt))[0];
+  const [groupId, setGroupId] = useState('');
+  const [effectiveFrom, setEffectiveFrom] = useState(target.salesFrom ?? target.effectiveFrom);
+  const [testArea, setTestArea] = useState('');
+  const [ticks, setTicks] = useState<Map<string, boolean>>(() => new Map());
+  const [saving, setSaving] = useState(false);
+  const savingRef = useRef(false);
+  const batchKey = useRef<string | null>(null);
+  const group = catalog?.groups.find(row => row.id === groupId);
+  const members = catalogGroupMembers(catalog, groupId);
+  const { areaOf } = itemAreaLookup(data, target.companyId);
+  const isCounted = (id: string) => ticks.get(id) ?? (!testArea || !areaOf(id) || areaOf(id)?.code === testArea);
+  const unticked = members.filter(item => !isCounted(item.id)).map(item => item.id).sort();
+  const counted = members.length - unticked.length;
+  const locked = disabled || saving;
+  const setMany = (ids: string[], desired: boolean) => {
+    batchKey.current = null;
+    setTicks(current => { const next = new Map(current); for (const id of ids) next.set(id, desired); return next; });
+  };
+  const submit = async (event: SubmitEvent<HTMLFormElement>) => {
+    event.preventDefault();
+    if (locked || savingRef.current || !group || !catalog || !counted || unticked.length > 200) return;
+    savingRef.current = true; setSaving(true);
+    try {
+      batchKey.current ??= crypto.randomUUID();
+      const result = await runCommand('set_mappings', {
+        companyId: target.companyId, modelId: target.modelId, targetId: target.id, reason: `Added ${group.name} to ${target.name}`,
+        group: { groupId, expectedCatalogId: catalog.id, effectiveFrom, effectiveTo: '' },
+        items: unticked.map(productId => ({ productId, effect: 'exclude', effectiveFrom, effectiveTo: '' })),
+      }, batchKey.current);
+      if (result) { batchKey.current = null; onSuccess(); }
+    } finally { savingRef.current = false; setSaving(false); }
+  };
+  const inputStyle = 'min-h-11 w-full min-w-0 rounded-lg border border-sf-line bg-white px-3 text-sm font-normal';
+  return <form aria-label="Add group with items" onSubmit={event => void submit(event)} className="mt-3 grid min-w-0 gap-3">
+    <div className="grid min-w-0 gap-1"><label htmlFor={`${formId}-group`} className="text-sm font-bold">Tally item group</label><select id={`${formId}-group`} required value={groupId} disabled={locked || !catalog} onChange={event => { setGroupId(event.currentTarget.value); setTicks(new Map()); batchKey.current = null; }} className={inputStyle}><option value="">{catalog ? 'Select an item group…' : 'No current item group catalog'}</option>{[...(catalog?.groups ?? [])].sort((a, b) => a.name.localeCompare(b.name)).map(row => <option key={row.id} value={row.id}>{row.name} · {row.itemCount} items</option>)}</select></div>
+    <div className="grid min-w-0 gap-1"><label htmlFor={`${formId}-date`} className="text-sm font-bold">Counts from</label><input id={`${formId}-date`} type="date" required value={effectiveFrom} disabled={locked} onChange={event => { setEffectiveFrom(event.currentTarget.value); batchKey.current = null; }} className={inputStyle} /></div>
+    <div className="grid min-w-0 gap-1"><label htmlFor={`${formId}-area`} className="text-sm font-bold">This instrument tests</label><select id={`${formId}-area`} value={testArea} disabled={locked} onChange={event => { setTestArea(event.currentTarget.value); setTicks(new Map()); batchKey.current = null; }} className={inputStyle}><option value="">Not set</option>{(data.labAreas ?? []).map(area => <option key={area.code} value={area.code}>{area.name}</option>)}</select></div>
+    {group ? <ItemChecklist key={groupId} members={members} isCounted={isCounted} setMany={setMany} toggle={(id, desired) => setMany([id], desired)} locked={locked} canEdit={data.canManage} groupLabel={group.name} groupId={`add-${target.id}-${groupId}`} areaOf={areaOf} labAreas={data.labAreas ?? []} rowNote={id => testArea && areaOf(id) && areaOf(id)?.code !== testArea ? `Other area: ${areaOf(id)!.name}` : null} /> : null}
+    {group && !counted ? <p className="text-xs text-sf-warning">Tick at least one item, or don&apos;t add this group.</p> : null}
+    {unticked.length > 200 ? <p className="text-xs text-sf-warning">Save up to 200 exclusions at a time.</p> : null}
+    <button disabled={!group || locked || !counted || unticked.length > 200} className="min-h-11 w-full rounded-lg bg-sf-brand px-3 text-sm font-bold text-white disabled:opacity-50 sm:w-auto sm:justify-self-start">Add group · {counted} of {members.length} items</button>
+  </form>;
+}
+
+function PlacementReagents({ target, data, disabled, onSubmit, onOpen, runCommand }: { target: EconomicTarget; data: EconomicsWorkspaceData; disabled: boolean; onSubmit: SubmitCommand; onOpen: () => Promise<boolean>; runCommand: InstrumentAddCommand }) {
   const [open, setOpen] = useState(false);
-  return data.canManage ? <div className="mt-3"><button type="button" disabled={disabled} className="min-h-11 rounded-lg border border-sf-line px-3 text-sm font-bold" onClick={async () => { if (open) setOpen(false); else if (await onOpen()) setOpen(true); }}>Add reagents</button>{open ? <><CommandForm action="set_item_group_mapping" data={data} disabled={disabled} busy={disabled} onSubmit={onSubmit} defaultTargetId={target.id} label="Add item group" /><details><summary className="min-h-11 cursor-pointer py-3">Add a single item</summary><CommandForm action="set_mapping" data={data} disabled={disabled} busy={disabled} onSubmit={onSubmit} defaultTargetId={target.id} simpleMapping label="Add item" /></details></> : null}</div> : null;
+  return data.canManage ? <div className="mt-3 min-w-0"><button type="button" disabled={disabled} className="min-h-11 rounded-lg border border-sf-line px-3 text-sm font-bold" onClick={async () => { if (open) setOpen(false); else if (await onOpen()) setOpen(true); }}>Add reagents</button>{open ? <><AddGroupWithItems target={target} data={data} disabled={disabled} runCommand={runCommand} onSuccess={() => setOpen(false)} /><details><summary className="min-h-11 cursor-pointer py-3">More options (dates, exclusion, note)</summary><CommandForm action="set_item_group_mapping" data={data} disabled={disabled} busy={disabled} onSubmit={onSubmit} defaultTargetId={target.id} label="Add item group" /></details><details><summary className="min-h-11 cursor-pointer py-3">Add a single item</summary><CommandForm action="set_mapping" data={data} disabled={disabled} busy={disabled} onSubmit={onSubmit} defaultTargetId={target.id} simpleMapping label="Add item" /></details></> : null}</div> : null;
 }
 
 function SetupSteps({ data, disabled, busy, onSubmit, runCommand, onRefresh, onAdvancedOpen }: { data: EconomicsWorkspaceData; disabled: boolean; busy: boolean; onSubmit: SubmitCommand; runCommand: InstrumentAddCommand; onRefresh: () => Promise<unknown>; onAdvancedOpen: () => Promise<void> }) {
@@ -956,7 +1046,7 @@ export function InstrumentEconomicsWorkspace({ embedded = false }: { embedded?: 
     {data && tab === 'Instruments' ? <SalesCoverageCard key={data.actorEmail} roles={data.canAdministrator ? ['administrator'] : data.canManage ? ['management'] : ['accounts']} /> : null}
     {loading && data ? <output className="block text-sm text-sf-muted">Loading economics details…</output> : null}
     {loading && !data ? <div className="rounded-2xl bg-white p-8 text-sm text-sf-muted">Loading economics data…</div> : null}
-    {data && tab === 'Instruments' ? <>{data.targets.length > 2 ? <InstrumentEconomicsPortfolioFilters filters={portfolioFilters} onChange={setPortfolioFilters} total={data.targets.length} matching={visibleTargets.length} /> : null}<section aria-label="Economic targets" className="grid gap-4 xl:grid-cols-2">{visibleTargets.length ? visibleTargets.map(target => <EconomicTargetCard key={target.id} target={target} reagentAction={target.kind === 'placement' ? <PlacementReagents onOpen={() => ensureView('detail')} target={target} data={data} disabled={unresolved || busy} onSubmit={submit} /> : null} pooledInName={data.targets.find(row => row.id === target.pooledIn)?.name} selected={expanded?.id === target.id} expanded={expanded?.id === target.id} onToggle={() => void toggleTarget(target.id)} lifetime={target.reagentLifetime ?? (data.attributionLines ? reagentLifetime(target.id, data.attributionLines) : undefined)} period={reportingPeriodLabel(data.reportingFrom, data.reportingTo)} onReviewCosts={() => void openTab('To do')}>{target.kind === 'placement' && !target.pooledIn ? <InstrumentItems key={`${target.id}:${data.generation}`} target={target} data={data} disabled={unresolved || busy} onSubmit={submit} runCommand={runInstrumentCommand} /> : null}<ReagentSalesList target={target} data={data} /></EconomicTargetCard>) : <Empty title={data.targets.length ? "No matching instruments" : "No instruments yet"} body={data.targets.length ? "Change the search, status or type filters to see more instruments." : "Add an instrument in Set up."} />}</section></> : null}
+    {data && tab === 'Instruments' ? <>{data.targets.length > 2 ? <InstrumentEconomicsPortfolioFilters filters={portfolioFilters} onChange={setPortfolioFilters} total={data.targets.length} matching={visibleTargets.length} /> : null}<section aria-label="Economic targets" className="grid gap-4 xl:grid-cols-2">{visibleTargets.length ? visibleTargets.map(target => <EconomicTargetCard key={target.id} target={target} reagentAction={target.kind === 'placement' ? <PlacementReagents runCommand={runInstrumentCommand} onOpen={() => ensureView('detail')} target={target} data={data} disabled={unresolved || busy} onSubmit={submit} /> : null} pooledInName={data.targets.find(row => row.id === target.pooledIn)?.name} selected={expanded?.id === target.id} expanded={expanded?.id === target.id} onToggle={() => void toggleTarget(target.id)} lifetime={target.reagentLifetime ?? (data.attributionLines ? reagentLifetime(target.id, data.attributionLines) : undefined)} period={reportingPeriodLabel(data.reportingFrom, data.reportingTo)} onReviewCosts={() => void openTab('To do')}>{target.kind === 'placement' && !target.pooledIn ? <InstrumentItems key={target.id} target={target} data={data} disabled={unresolved || busy} onSubmit={submit} runCommand={runInstrumentCommand} /> : null}<ReagentSalesList target={target} data={data} /></EconomicTargetCard>) : <Empty title={data.targets.length ? "No matching instruments" : "No instruments yet"} body={data.targets.length ? "Change the search, status or type filters to see more instruments." : "Add an instrument in Set up."} />}</section></> : null}
     {data && tab === 'To do' ? <TodoPanel data={data} onAccountsReview={() => void openTab('Accounts review')} /> : null}
     {data && tab === 'Accounts review' ? <div className="space-y-3"><button type="button" onClick={() => void openTab('To do')} className="min-h-11 rounded-xl border border-sf-line bg-white px-4 text-sm font-bold text-sf-brand">Back to instrument tasks</button><AccountsDocumentReview data={data} /></div> : null}
     {data && tab === 'Set up' ? <SetupSteps data={data} disabled={unresolved || busy} busy={busy} onSubmit={submit} runCommand={runInstrumentCommand} onRefresh={load} onAdvancedOpen={loadAllSourceLines} /> : null}

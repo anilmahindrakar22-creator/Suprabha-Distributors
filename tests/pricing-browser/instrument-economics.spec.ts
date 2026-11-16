@@ -1011,6 +1011,7 @@ test('mapping forms opened from an instrument show the placement as fixed text',
   });
   await page.goto('/?view=instrument-economics');
   await page.getByRole('button', { name: 'Add reagents', exact: true }).click();
+  await page.getByText('More options (dates, exclusion, note)', { exact: true }).click();
   const groupForm = page.locator('form').filter({ has: page.getByRole('region', { name: 'Item group mapping identity' }) });
   await expect(groupForm.getByLabel('Instrument placement', { exact: true })).toHaveCount(0);
   await expect(groupForm.getByText(`For: ${target.name} · ${target.customerName}`, { exact: true })).toBeVisible();
@@ -1524,6 +1525,131 @@ test('group checklist can search and untick all items in one batch', async ({ pa
   await expect.poll(() => posts.length).toBe(1);
   expect(posts[0].action).toBe('set_mappings');
   expect(posts[0].payload.items).toEqual(products.map(item => ({ productId: item.id, effect: 'exclude', effectiveFrom: '2026-05-01', effectiveTo: '' })).sort((a, b) => a.productId.localeCompare(b.productId)));
+});
+
+const areaProducts = Array.from({ length: 10 }, (_, index) => ({ id: `area-${index}`, name: `${index === 0 || index === 8 ? 'Pair' : 'Item'} ${index}`, groupId: index === 9 ? 'sysmex-child' : 'sysmex', unit: 'qty' }));
+const areaLabAreas = [{ code: 'HAEM', name: 'Haematology' }, { code: 'COAG', name: 'Coagulation' }];
+const areaLinks = areaProducts.slice(0, 8).map((product, index) => ({ companyId: target.companyId, productId: product.id, areaCode: index < 3 ? 'COAG' : 'HAEM', linkId: `00000000-0000-4000-8000-${String(index + 1).padStart(12, '0')}` }));
+function areaWorkspace(existingGroup = true) {
+  return economicsData({ targets: [{ ...target, salesFrom: '2026-07-23' }], sourceLines: [], labAreas: areaLabAreas, itemAreas: areaLinks,
+    itemGroupCatalogs: [{ id: 'area-catalog', companyId: target.companyId, current: true, sourceVersion: 'v1', observedAt: '2026-11-13T10:00:00Z', groups: [{ id: 'sysmex', name: 'Sysmex', parentId: null, itemCount: 10 }, { id: 'sysmex-child', name: 'Sysmex subgroup', parentId: 'sysmex', itemCount: 1 }], products: areaProducts }],
+    itemGroupMappings: existingGroup ? [{ id: 'area-group-map', companyId: target.companyId, modelId: target.modelId, groupId: 'sysmex', targetId: target.id, effect: 'include', effectiveFrom: '2026-05-01', effectiveTo: null, catalogId: 'area-catalog', reason: 'Included Sysmex' }] : [],
+  });
+}
+type AreaPost = { action: string; payload: Record<string, unknown> };
+async function mockAreaWorkspace(page: Page, existingGroup = true, failFirst = false) {
+  const posts: AreaPost[] = [];
+  const data = { ...areaWorkspace(existingGroup), itemAreas: [...areaLinks] };
+  await page.route('**/api/instrument-economics', route => {
+    if (route.request().method() === 'GET') return route.fulfill({ json: data });
+    const post = route.request().postDataJSON() as AreaPost;
+    posts.push(post);
+    if (failFirst && posts.length === 1) return route.fulfill({ status: 409, json: { error: 'Test conflict: retry the group' } });
+    if (post.action === 'set_item_areas') {
+      const ids = new Set((post.payload.items as { productId: string }[]).map(item => item.productId));
+      // Match the metadata command: no economics generation change, latest links refresh.
+      data.itemAreas = areaProducts.filter(product => ids.has(product.id) || areaLinks.some(link => link.productId === product.id)).map((product, index) => ({ companyId: target.companyId, productId: product.id, areaCode: ids.has(product.id) ? String(post.payload.areaCode) : areaLinks.find(link => link.productId === product.id)!.areaCode, linkId: `00000000-0000-4000-9000-${String(index + 1).padStart(12, '0')}` }));
+    }
+    return route.fulfill({ json: { ok: true } });
+  });
+  await page.goto('/?view=instrument-economics');
+  return posts;
+}
+
+test('area chips filter the group list and untick-all-shown acts on the chip', async ({ page }) => {
+  const posts = await mockAreaWorkspace(page);
+  const checklist = page.locator('details[data-group-items="sysmex"]');
+  await checklist.locator('summary').click();
+  for (const name of ['All · 10', 'Haematology · 5', 'Coagulation · 3', 'No area · 2']) await expect(checklist.getByRole('button', { name, exact: true })).toBeVisible();
+  await expect(checklist.locator('[data-area-chip="ALL"]')).toHaveAttribute('aria-pressed', 'true');
+  await checklist.locator('[data-area-chip="COAG"]').click();
+  await expect(checklist.getByRole('checkbox')).toHaveCount(3);
+  await expect(checklist.getByRole('status')).toHaveText('Showing 3 of 10 items');
+  await checklist.getByRole('button', { name: 'Untick all shown', exact: true }).click();
+  await expect(checklist.getByText('3 changes not saved', { exact: true })).toBeVisible();
+  await checklist.getByRole('button', { name: 'Save changes', exact: true }).click();
+  await expect.poll(() => posts.length).toBe(1);
+  expect(posts[0]).toMatchObject({ action: 'set_mappings', payload: { companyId: target.companyId, modelId: target.modelId, targetId: target.id } });
+  expect(posts[0].payload.items).toEqual(areaProducts.slice(0, 3).map(product => ({ productId: product.id, effect: 'exclude', effectiveFrom: '2026-05-01', effectiveTo: '' })));
+});
+
+test('bulk area tagging sends set_item_areas for shown items', async ({ page }) => {
+  const posts = await mockAreaWorkspace(page);
+  const checklist = page.locator('details[data-group-items="sysmex"]');
+  await checklist.locator('summary').click();
+  await checklist.getByLabel('Find an item in Sysmex', { exact: true }).fill('Pair');
+  await checklist.getByRole('button', { name: 'Untick all shown', exact: true }).click();
+  await checklist.getByLabel('Set area for 2 shown items', { exact: true }).selectOption('COAG');
+  await checklist.getByRole('button', { name: 'Apply area', exact: true }).click();
+  await expect.poll(() => posts.length).toBe(1);
+  expect(posts[0]).toMatchObject({ action: 'set_item_areas', payload: { companyId: target.companyId, reason: `Area set in Sysmex for ${target.name}`, areaCode: 'COAG' } });
+  expect(posts[0].payload.items).toEqual([{ productId: 'area-0', expectedLinkId: areaLinks[0].linkId }, { productId: 'area-8', expectedLinkId: null }]);
+  await expect(page.getByText('Saved. Workspace refreshed with the latest records.', { exact: true })).toBeVisible();
+  await expect(checklist.getByText('2 changes not saved', { exact: true })).toBeVisible();
+  await expect(checklist.getByRole('checkbox', { checked: false })).toHaveCount(2);
+  await expect(checklist.locator('[data-area-chip="COAG"]')).toHaveText('Coagulation · 4');
+  expect(posts.filter(post => post.action === 'set_mappings')).toHaveLength(0);
+});
+
+test('adding a group opens its items and saves group and excludes in one command', async ({ page }) => {
+  const posts = await mockAreaWorkspace(page, false);
+  await page.getByRole('button', { name: 'Add reagents', exact: true }).click();
+  const form = page.getByRole('form', { name: 'Add group with items' });
+  await form.getByLabel('Tally item group', { exact: true }).selectOption('sysmex');
+  await expect(form.getByRole('checkbox')).toHaveCount(10);
+  await form.getByLabel('This instrument tests', { exact: true }).selectOption('COAG');
+  await expect(form.getByRole('checkbox', { checked: false })).toHaveCount(5);
+  await expect(form.getByRole('checkbox', { checked: true })).toHaveCount(5);
+  await expect(form.getByText('Other area: Haematology', { exact: true })).toHaveCount(5);
+  for (const product of areaProducts.slice(8)) await expect(form.getByLabel(`Count ${product.name} for this instrument`, { exact: true })).toBeChecked();
+  await expect(form.getByRole('button', { name: 'Apply area', exact: true })).toHaveCount(0);
+  await form.getByRole('button', { name: 'Add group · 5 of 10 items', exact: true }).click();
+  await expect.poll(() => posts.length).toBe(1);
+  expect(posts[0]).toMatchObject({ action: 'set_mappings', payload: { companyId: target.companyId, modelId: target.modelId, targetId: target.id, reason: `Added Sysmex to ${target.name}`, group: { groupId: 'sysmex', expectedCatalogId: 'area-catalog', effectiveFrom: '2026-07-23', effectiveTo: '' } } });
+  expect(posts[0].payload.items).toEqual(areaProducts.slice(3, 8).map(product => ({ productId: product.id, effect: 'exclude', effectiveFrom: '2026-07-23', effectiveTo: '' })));
+  await expect(form).toHaveCount(0);
+  expect(posts).toHaveLength(1);
+});
+
+test('Add group is disabled when nothing is ticked', async ({ page }) => {
+  const posts = await mockAreaWorkspace(page, false);
+  await page.getByRole('button', { name: 'Add reagents', exact: true }).click();
+  const form = page.getByRole('form', { name: 'Add group with items' });
+  await form.getByLabel('Tally item group', { exact: true }).selectOption('sysmex');
+  await form.getByRole('button', { name: 'Untick all', exact: true }).click();
+  await expect(form.getByRole('button', { name: 'Add group · 0 of 10 items', exact: true })).toBeDisabled();
+  await expect(form.getByText("Tick at least one item, or don't add this group.", { exact: true })).toBeVisible();
+  await form.getByLabel('This instrument tests', { exact: true }).selectOption('COAG');
+  await expect(form.getByRole('button', { name: 'Add group · 5 of 10 items', exact: true })).toBeEnabled();
+  expect(posts).toHaveLength(0);
+});
+
+test('adding a group preserves selections and reuses the request key on retry', async ({ page }) => {
+  const posts = await mockAreaWorkspace(page, false, true);
+  await page.getByRole('button', { name: 'Add reagents', exact: true }).click();
+  const form = page.getByRole('form', { name: 'Add group with items' });
+  await form.getByLabel('Tally item group', { exact: true }).selectOption('sysmex');
+  await form.getByLabel('This instrument tests', { exact: true }).selectOption('COAG');
+  await form.getByLabel('Counts from', { exact: true }).fill('2026-08-01');
+  await form.getByRole('button', { name: 'Add group · 5 of 10 items', exact: true }).click();
+  await expect(page.getByRole('alert')).toContainText('Test conflict');
+  await expect(form.getByLabel('Counts from', { exact: true })).toHaveValue('2026-08-01');
+  await form.getByRole('button', { name: 'Add group · 5 of 10 items', exact: true }).click();
+  await expect.poll(() => posts.length).toBe(2);
+  expect(posts[1]).toEqual(posts[0]);
+  await expect(form).toHaveCount(0);
+});
+
+test('area chips and add group form fit a 375 pixel screen', async ({ page }) => {
+  await page.setViewportSize({ width: 375, height: 812 });
+  await mockAreaWorkspace(page);
+  await page.locator('details[data-group-items="sysmex"] > summary').click();
+  await page.getByRole('button', { name: 'Add reagents', exact: true }).click();
+  const form = page.getByRole('form', { name: 'Add group with items' });
+  await form.getByLabel('Tally item group', { exact: true }).selectOption('sysmex');
+  await form.getByLabel('This instrument tests', { exact: true }).selectOption('COAG');
+  await expect(form.locator('[data-area-chip]')).toHaveCount(4);
+  expect(await page.evaluate(() => document.documentElement.scrollWidth <= innerWidth)).toBe(true);
 });
 
 test('group checklist search limits tick-all-shown and reports no matches', async ({ page }) => {
