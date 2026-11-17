@@ -178,6 +178,7 @@ try {
   $salesNames += '20261130170000_growth_lab_months.sql'
   $salesNames += '20261130180000_economic_item_areas.sql'
   $salesNames += '20261130190000_brand_group_inherit.sql'
+  $salesNames += '20261130200000_economic_prune_schedule.sql'
   for ($salesIndex = 1; $salesIndex -lt $salesNames.Count; $salesIndex++) {
     if ([array]::IndexOf($planNames,$salesNames[$salesIndex]) -le [array]::IndexOf($planNames,$salesNames[$salesIndex-1])) { throw 'Full sales replay order is invalid' }
   }
@@ -434,6 +435,7 @@ end$$;
   Invoke-DatabaseCommand $psqlProgram @('-U',$databaseUser,'-X','-q','-v','ON_ERROR_STOP=1','-d',$database,'-f',(Join-Path $repository 'supabase/tests/growth_lab_months.sql'))
   Invoke-DatabaseCommand $psqlProgram @('-U',$databaseUser,'-X','-q','-v','ON_ERROR_STOP=1','-d',$database,'-f',(Join-Path $repository 'supabase/tests/economic_item_areas.sql'))
   Invoke-DatabaseCommand $psqlProgram @('-U',$databaseUser,'-X','-q','-v','ON_ERROR_STOP=1','-d',$database,'-f',(Join-Path $repository 'supabase/tests/brand_group_inherit.sql'))
+  Invoke-DatabaseCommand $psqlProgram @('-U',$databaseUser,'-X','-q','-v','ON_ERROR_STOP=1','-d',$database,'-f',(Join-Path $repository 'supabase/tests/economic_prune_schedule.sql'))
   Invoke-DatabaseCommand $psqlProgram @('-U',$databaseUser,'-X','-q','-v','ON_ERROR_STOP=1','-d',$database,'-f',(Join-Path $repository 'supabase/tests/economics_candidate_rebuild.sql'))
   Write-Output 'PASS: rebuild containment, sales coverage and exact control reconciliation'
   Invoke-DatabaseCommand $psqlProgram @('-U',$databaseUser,'-X','-q','-v','ON_ERROR_STOP=1','-d',$database,'-f',(Join-Path $repository 'supabase/tests/mapped_instrument_cost_scope.sql'))
