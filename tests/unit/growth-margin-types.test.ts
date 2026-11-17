@@ -39,9 +39,22 @@ describe('Growth margin normalizers', () => {
   it('strips incidental gateway fields', () => { expect(normalizeGrowthMargin({ ...list(), secret: 'x', rows: [{ ...lab, cost: 20 }] })).toEqual(list()); });
   it.each([{ rows: [{ ...lab, gpPaise: 1.5 }] }, { rows: [{ ...lab, marginPct: Infinity }] }, { rows: [{ ...lab, coveragePct: 101 }] }, { rows: [{ ...lab, low: 'true' }] }, { rows: [{ ...lab, customerId: undefined }] }, { page: 0 }, { pageSize: 10 }, { total: 0 }, { levers: { ...levers, freeGoods: { lines: -1, costPaise: 20 } } }, { levers: { ...levers, priceSpread: { items: 2, pairs: 3, paise: 0.1 } } }, { sort: 'spread' }, { filter: 'below_cost' }, { q: '' }, { consumablesMarginPct: NaN }])('rejects malformed list %#', patch => { expect(normalizeGrowthMargin({ ...list(), ...patch })).toBeNull(); });
   it('normalizes both detail kinds and strips extra data', () => {
-    expect(normalizeGrowthMarginDetail({ ...detail(), ignored: true })).toEqual(detail());
+    const expectedItemDetail = { ...detail(), pricePolicy: null, rows: [{ ...detailRow, liftToPricePaise: null, minimumPricePaise: null, belowMinimum: null, belowTarget: null }] };
+    expect(normalizeGrowthMarginDetail({ ...detail(), ignored: true })).toEqual(expectedItemDetail);
     const v = { kind: 'lab', labKey: 'l', customerId: null, name: null, town: null, salesPaise: 100, gpPaise: -20, marginPct: -20, page: 1, pageSize: 20, total: 1, rows: [{ itemKey: 'i', name: null, tallyItemKey: null, unitPricePaise: 10, typicalPricePaise: null, quantity: 1.5, salesPaise: 100, gpPaise: -20, marginPct: -20, belowTypical: false, packDifference: true, approvedPricePaise: 0 }] };
     expect(normalizeGrowthMarginDetail(v)).toEqual(v);
+  });
+  it('keeps item target margin pricing fields', () => {
+    const value = { ...detail(), pricePolicy: { minimumMarginPct: 25, targetMarginPct: 30 }, rows: [{ ...detailRow, liftToPricePaise: 1250, minimumPricePaise: 1100, belowMinimum: true, belowTarget: false }] };
+    expect(normalizeGrowthMarginDetail(value)).toEqual(value);
+  });
+  it('defaults missing target margin pricing fields for older servers', () => {
+    const expected = { ...detail(), pricePolicy: null, rows: [{ ...detailRow, liftToPricePaise: null, minimumPricePaise: null, belowMinimum: null, belowTarget: null }] };
+    expect(normalizeGrowthMarginDetail(detail())).toEqual(expected);
+  });
+  it('rejects malformed target margin pricing fields', () => {
+    expect(normalizeGrowthMarginDetail({ ...detail(), rows: [{ ...detailRow, liftToPricePaise: 12.5 }] })).toBeNull();
+    expect(normalizeGrowthMarginDetail({ ...detail(), pricePolicy: { minimumMarginPct: 'x' } })).toBeNull();
   });
   it.each([{ rows: [{ ...detailRow, quantity: NaN }] }, { rows: [{ ...detailRow, unitPricePaise: 1.5 }] }, { rows: [{ ...detailRow, approvedPricePaise: undefined }] }, { rows: [{ ...detailRow, packDifference: 1 }] }, { typicalPricePaise: Infinity }, { labs: -1 }, { tallyItemKey: undefined }, { kind: 'other' }, { pageSize: 0 }, { rows: [item] }])('rejects malformed detail %#', patch => { expect(normalizeGrowthMarginDetail({ ...detail(), ...patch })).toBeNull(); });
 });
