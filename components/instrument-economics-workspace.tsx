@@ -19,6 +19,8 @@ import { readJsonBody } from '@/lib/http-json';
 import { SalesCoverageCard } from '@/components/sales-coverage-card';
 import { InstrumentAdd, type InstrumentAddCommand } from '@/components/instrument-add';
 import { niceTicks } from '@/lib/chart-ticks';
+import { labTotals } from '@/lib/economics-lab-totals';
+import { EconomicsLabTotal } from '@/components/economics-lab-total';
 
 type EconomicsWorkspaceData = BaseEconomicsWorkspaceData & { canAdministrator?: boolean };
 
@@ -880,17 +882,24 @@ export function InstrumentEconomicsWorkspace({ embedded = false }: { embedded?: 
   const measurementElement = useRef<HTMLElement>(null);
   const readView = useRef<EconomicsReadView>('summary');
   const readSequence = useRef(0);
+  const backgroundRead = useRef<{ view: EconomicsReadView; promise: Promise<boolean> } | null>(null);
+  const backgroundReadStarted = useRef(false);
+  const loadRef = useRef<(signal?: AbortSignal, view?: EconomicsReadView, quiet?: boolean) => Promise<boolean>>(async () => false);
   const loadMeasurement = useRef<{ data: EconomicsWorkspaceData; startedAt: number; parsedAt: number; signal?: AbortSignal; details: { serverTiming: string | null; responseBytes: number | null; targetCount: number; sourceLineCount: number | null } } | null>(null);
-  const load = useCallback(async (signal?: AbortSignal, view = readView.current) => {
+  const load = useCallback(async (signal?: AbortSignal, view = readView.current, quiet = false) => {
     const sequence = ++readSequence.current;
-    setLoading(true);
-    loadMeasurement.current = null;
-    try { measurementElement.current?.removeAttribute('data-load-sample'); } catch { /* optional */ }
-    const startedAt = startLoadMeasurement();
+    let accessRevoked = false;
+    if (!quiet) {
+      setLoading(true);
+      loadMeasurement.current = null;
+      try { measurementElement.current?.removeAttribute('data-load-sample'); } catch { /* optional */ }
+    }
+    const startedAt = quiet ? null : startLoadMeasurement();
     try {
       const response = await fetch('/api/instrument-economics', { cache: 'no-store', signal, headers: { 'x-stockflow-economics-view': view } });
       if (signal?.aborted || sequence !== readSequence.current) return false;
       if (response.status === 401 || response.status === 403) {
+        accessRevoked = true;
         setData(null); setSelectedId(''); setExpandedId(''); setNotice('');
         const body = await response.json().catch(() => ({})) as { error?: string };
         throw new Error(body.error || 'Financial access is no longer available. Sign in and refresh.');
@@ -916,11 +925,28 @@ export function InstrumentEconomicsWorkspace({ embedded = false }: { embedded?: 
       setError(savedActor && savedActor !== body.actorEmail ? 'A saved command belongs to another account. Sign in with the original account and refresh before retrying.' : '');
       setSelectedId(current => body.targets.some(row => row.id === current) ? current : body.targets[0]?.id ?? '');
       if (body.readView !== 'summary' && view === 'summary' && body.targets.length === 1) setExpandedId(body.targets[0].id);
+      if (!quiet && body.readView === 'summary' && !backgroundReadStarted.current && !recoveryReference.current) {
+        backgroundReadStarted.current = true;
+        const scheduledAfter = readSequence.current;
+        window.setTimeout(() => {
+          if (readSequence.current !== scheduledAfter || viewRank[readView.current] >= viewRank.detail) return;
+          const promise = loadRef.current(undefined, 'detail', true);
+          backgroundRead.current = { view: 'detail', promise };
+          void promise.finally(() => {
+            if (backgroundRead.current?.promise === promise) backgroundRead.current = null;
+          });
+        }, 0);
+      }
       return true;
     }
-    catch (cause) { if (signal?.aborted || sequence !== readSequence.current) return false; setError(cause instanceof Error ? cause.message : 'Unable to load instrument economics.'); return false; }
-    finally { if (!signal?.aborted && sequence === readSequence.current) setLoading(false); }
+    catch (cause) {
+      if (signal?.aborted || sequence !== readSequence.current) return false;
+      if (quiet && !accessRevoked) return false;
+      setError(cause instanceof Error ? cause.message : 'Unable to load instrument economics.'); return false;
+    }
+    finally { if (!quiet && !signal?.aborted && sequence === readSequence.current) setLoading(false); }
   }, []);
+  useEffect(() => { loadRef.current = load; }, [load]);
   useEffect(() => { const controller = new AbortController(); const timer = window.setTimeout(() => void load(controller.signal), 0); return () => { window.clearTimeout(timer); controller.abort(); }; }, [load]);
   useEffect(() => {
     const sample = loadMeasurement.current;
@@ -943,11 +969,17 @@ export function InstrumentEconomicsWorkspace({ embedded = false }: { embedded?: 
     return () => cancelAnimationFrame(frame);
   }, [data]);
   const visibleTargets = useMemo(() => filterEconomicTargets(data?.targets ?? [], portfolioFilters), [data, portfolioFilters]);
+  const labs = useMemo(() => data?.businessDate ? labTotals(visibleTargets, data.businessDate) : [], [data, visibleTargets]);
   const selected = useMemo(() => visibleTargets.find(row => row.id === selectedId) ?? visibleTargets[0] ?? null, [visibleTargets, selectedId]);
   const expanded = visibleTargets.find(row => row.id === expandedId) ?? null;
   /** Load a richer view only when the screen needs it: detail for tabs, full for invoice-searching forms. */
   async function ensureView(view: EconomicsReadView) {
     if (viewRank[(data?.readView ?? 'full') as EconomicsReadView] >= viewRank[view]) return true;
+    const pending = backgroundRead.current;
+    if (pending && viewRank[pending.view] >= viewRank[view]) {
+      const loaded = await pending.promise;
+      if (loaded && viewRank[readView.current] >= viewRank[view]) return true;
+    }
     return load(undefined, view);
   }
   async function openTab(name: Tab) {
@@ -1099,7 +1131,7 @@ export function InstrumentEconomicsWorkspace({ embedded = false }: { embedded?: 
     {data && tab === 'Instruments' ? <SalesCoverageCard key={data.actorEmail} roles={data.canAdministrator ? ['administrator'] : data.canManage ? ['management'] : ['accounts']} /> : null}
     {loading && data ? <output className="block text-sm text-sf-muted">Loading economics details…</output> : null}
     {loading && !data ? <div className="rounded-2xl bg-white p-8 text-sm text-sf-muted">Loading economics data…</div> : null}
-    {data && tab === 'Instruments' ? <>{data.targets.length > 2 ? <InstrumentEconomicsPortfolioFilters filters={portfolioFilters} onChange={setPortfolioFilters} total={data.targets.length} matching={visibleTargets.length} /> : null}<section aria-label="Economic targets" className="grid gap-4 xl:grid-cols-2">{visibleTargets.length ? visibleTargets.map(target => <EconomicTargetCard key={target.id} target={target} policyWindowMonths={data.policy.forecastWindowMonths} businessDate={data.businessDate} reagentAction={target.kind === 'placement' ? <PlacementReagents runCommand={runInstrumentCommand} onOpen={() => ensureView('detail')} target={target} data={data} disabled={unresolved || busy} onSubmit={submit} /> : null} pooledInName={data.targets.find(row => row.id === target.pooledIn)?.name} selected={expanded?.id === target.id} expanded={expanded?.id === target.id} onToggle={() => void toggleTarget(target.id)} lifetime={target.reagentLifetime ?? (data.attributionLines ? reagentLifetime(target.id, data.attributionLines) : undefined)} period={reportingPeriodLabel(data.reportingFrom, data.reportingTo)} onReviewCosts={() => void openTab('To do')}>{target.kind === 'placement' && !target.pooledIn ? <InstrumentItems key={target.id} target={target} data={data} disabled={unresolved || busy} onSubmit={submit} runCommand={runInstrumentCommand} /> : null}<ReagentSalesList target={target} data={data} /></EconomicTargetCard>) : <Empty title={data.targets.length ? "No matching instruments" : "No instruments yet"} body={data.targets.length ? "Change the search, status or type filters to see more instruments." : "Add an instrument in Set up."} />}</section></> : null}
+    {data && tab === 'Instruments' ? <>{data.targets.length > 2 ? <InstrumentEconomicsPortfolioFilters filters={portfolioFilters} onChange={setPortfolioFilters} total={data.targets.length} matching={visibleTargets.length} /> : null}{labs.length > 0 ? <section aria-label="Lab totals" className="grid gap-4 xl:grid-cols-2">{labs.map(lab => <EconomicsLabTotal key={lab.key} lab={lab} forecastWindowMonths={data.policy.forecastWindowMonths} />)}</section> : null}<section aria-label="Economic targets" className="grid gap-4 xl:grid-cols-2">{visibleTargets.length ? visibleTargets.map(target => <EconomicTargetCard key={target.id} target={target} policyWindowMonths={data.policy.forecastWindowMonths} businessDate={data.businessDate} reagentAction={target.kind === 'placement' ? <PlacementReagents runCommand={runInstrumentCommand} onOpen={() => ensureView('detail')} target={target} data={data} disabled={unresolved || busy} onSubmit={submit} /> : null} pooledInName={data.targets.find(row => row.id === target.pooledIn)?.name} selected={expanded?.id === target.id} expanded={expanded?.id === target.id} onToggle={() => void toggleTarget(target.id)} lifetime={target.reagentLifetime ?? (data.attributionLines ? reagentLifetime(target.id, data.attributionLines) : undefined)} period={reportingPeriodLabel(data.reportingFrom, data.reportingTo)} onReviewCosts={() => void openTab('To do')}>{target.kind === 'placement' && !target.pooledIn ? <InstrumentItems key={target.id} target={target} data={data} disabled={unresolved || busy} onSubmit={submit} runCommand={runInstrumentCommand} /> : null}<ReagentSalesList target={target} data={data} /></EconomicTargetCard>) : <Empty title={data.targets.length ? "No matching instruments" : "No instruments yet"} body={data.targets.length ? "Change the search, status or type filters to see more instruments." : "Add an instrument in Set up."} />}</section></> : null}
     {data && tab === 'To do' ? <TodoPanel data={data} onAccountsReview={() => void openTab('Accounts review')} /> : null}
     {data && tab === 'Accounts review' ? <div className="space-y-3"><button type="button" onClick={() => void openTab('To do')} className="min-h-11 rounded-xl border border-sf-line bg-white px-4 text-sm font-bold text-sf-brand">Back to instrument tasks</button><AccountsDocumentReview data={data} /></div> : null}
     {data && tab === 'Set up' ? <SetupSteps data={data} disabled={unresolved || busy} busy={busy} onSubmit={submit} runCommand={runInstrumentCommand} onRefresh={load} onAdvancedOpen={loadAllSourceLines} /> : null}
