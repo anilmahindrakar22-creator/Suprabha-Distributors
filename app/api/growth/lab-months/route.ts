@@ -11,8 +11,10 @@ export async function GET(request: Request) {
     if (!user) return Response.json({ error: 'Sign in required' }, { status: 401, headers });
     const session = await getStockFlowSession(user.email);
     if (!session || !hasAnyStockFlowRole(session.roles, ['administrator', 'management'])) return Response.json({ error: 'Growth is for management only.' }, { status: 403, headers });
-    if ([...new URL(request.url).searchParams.keys()].length > 0) return Response.json({ error: 'Invalid growth lab months parameters' }, { status: 400, headers });
-    const data = normalizeGrowthLabMonths(await callOrderGateway(session.email, 'get_growth_lab_months', {}));
+    const params = new URL(request.url).searchParams;
+    const lapsing = params.size === 1 && params.get('filter') === 'lapsing';
+    if (params.size > 0 && !lapsing) return Response.json({ error: 'Invalid growth lab months parameters' }, { status: 400, headers });
+    const data = normalizeGrowthLabMonths(await callOrderGateway(session.email, 'get_growth_lab_months', lapsing ? { filter: 'lapsing' } : {}), lapsing ? 'lapsing' : 'top');
     if (!data) throw new Error('Malformed growth lab months response');
     return Response.json(data, { headers });
   } catch (error) {

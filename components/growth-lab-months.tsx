@@ -9,7 +9,7 @@ const muted = 'text-xs text-sf-muted';
 const button = 'min-h-9 rounded-lg border border-sf-line px-3 text-xs text-sf-brand';
 const rowGrid = 'grid grid-cols-[7rem_repeat(12,minmax(0,1fr))] gap-0.5 sm:grid-cols-[12rem_repeat(12,minmax(0,1fr))]';
 const monthNames = ['Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun', 'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec'];
-const heatClasses = ['bg-sf-heat-0', 'bg-sf-heat-1', 'bg-sf-heat-2', 'bg-sf-heat-3', 'bg-sf-heat-4', 'bg-sf-heat-5'];
+const heatClasses = ['bg-transparent border border-dashed border-sf-line', 'bg-sf-heat-1', 'bg-sf-heat-2', 'bg-sf-heat-3', 'bg-sf-heat-4', 'bg-sf-heat-5'];
 
 const labName = (row: GrowthLabMonthRow) => row.name ?? '(unlinked ledger)';
 const monthShort =(key: string) => monthNames[Number(key.slice(5, 7)) - 1] ?? key;
@@ -25,13 +25,12 @@ function heatLevel(value: number, best: number): number {
   return 1;
 }
 
-function goneQuiet(months: number[]): boolean {
-  const early = months.slice(0, 9).filter(v => v > 0).length;
-  return early >= 6 && !(months[10] > 0) && !(months[11] > 0);
+function isLapsing(row: GrowthLabMonthRow): boolean {
+  return row.buyingMonths >= 5 && row.monthsPaise.slice(-3).filter(v => v <= 0).length >= 2;
 }
 
 function Pill() {
-  return <span className="shrink-0 rounded-full bg-sf-chart-2 px-1.5 text-[10px] font-bold leading-4 text-white">Gone quiet</span>;
+  return <span className="shrink-0 rounded-full bg-sf-warning-soft text-sf-warning border border-sf-warning-line px-1.5 text-[10px] font-bold leading-4">Lapsing</span>;
 }
 
 function HeaderRow({ months }: { months: string[] }) {
@@ -41,9 +40,9 @@ function HeaderRow({ months }: { months: string[] }) {
   </div>;
 }
 
-function HeatRow({ row, months }: { row: GrowthLabMonthRow; months: string[] }) {
+function HeatRow({ row, months, filter }: { row: GrowthLabMonthRow; months: string[]; filter: GrowthLabMonthsData['filter'] }) {
   const best = Math.max(0, ...row.monthsPaise);
-  const quiet = goneQuiet(row.monthsPaise);
+  const quiet = filter === 'lapsing' || isLapsing(row);
   return <div data-lab-row className={`${rowGrid} items-center`}>
     <span className="flex min-w-0 items-center gap-1 text-xs">
       <span title={labName(row)} className={`min-w-0 truncate ${quiet ? 'font-bold text-sf-strong' : ''}`}>{labName(row)}</span>
@@ -52,7 +51,7 @@ function HeatRow({ row, months }: { row: GrowthLabMonthRow; months: string[] }) 
     {row.monthsPaise.map((value, i) => {
       const label = `${labName(row)}, ${monthLong(months[i])}: ${formatPaise(value)}`;
       return <span key={months[i]} title={label} data-heat={heatLevel(value, best)}
-        className={`relative h-5 rounded-sm ${heatClasses[heatLevel(value, best)]} ${value < 0 ? 'shadow-[inset_0_0_0_1px_var(--color-sf-chart-down)]' : ''}`}><span className="sr-only">{label}</span></span>;
+        className={`relative h-5 rounded-sm ${value < 0 ? 'bg-transparent shadow-[inset_0_0_0_1px_var(--color-sf-chart-down)]' : heatClasses[heatLevel(value, best)]}`}><span className="sr-only">{label}</span></span>;
     })}
   </div>;
 }
@@ -62,7 +61,7 @@ function Legend() {
     <span className="flex items-center gap-1">
       {heatClasses.map((c, i) => <span key={c} className="flex items-center gap-1">
         {i === 0 && <span>none</span>}
-        <span aria-hidden="true" className={`h-3 w-4 rounded-sm border border-sf-line-soft ${c}`} />
+        <span aria-hidden="true" className={`h-3 w-4 rounded-sm ${c}`} />
         {i === 5 && <span>best month</span>}
       </span>)}
     </span>
@@ -73,7 +72,7 @@ function Legend() {
 function Heatmap({ data }: { data: GrowthLabMonthsData }) {
   return <div className="space-y-0.5">
     <HeaderRow months={data.months} />
-    {data.rows.map(row => <HeatRow key={row.labKey} row={row} months={data.months} />)}
+    {data.rows.map(row => <HeatRow key={row.labKey} row={row} months={data.months} filter={data.filter} />)}
   </div>;
 }
 
@@ -98,36 +97,76 @@ function MonthTable({ data }: { data: GrowthLabMonthsData }) {
   </div>;
 }
 
-function LabMonthsBody({ data }: { data: GrowthLabMonthsData }) {
+type Props = { onOpenCustomer?: (customerId: string) => void };
+
+function CallList({ data, onOpenCustomer }: Props & { data: GrowthLabMonthsData }) {
+  return <ol aria-label="Call list" className="space-y-2">
+    {data.rows.slice(0, 8).map(row => <li key={row.labKey} className="min-w-0 space-y-1.5 rounded-lg border border-sf-line p-3 text-xs">
+      <p className="break-words"><strong>{labName(row)}</strong>{row.town && <span> · {row.town}</span>}</p>
+      <div className="sm:flex sm:items-center sm:justify-between">
+        <div className="flex flex-wrap gap-x-2 gap-y-1.5 text-sf-muted">
+          {row.lastPurchaseOn && <span>Last bought {Number(row.lastPurchaseOn.slice(8, 10))} {monthShort(row.lastPurchaseOn.slice(0, 7))}</span>}
+          {row.lastPurchaseOn && row.usualMonthlyPaise !== undefined && <span aria-hidden="true">·</span>}
+          {row.usualMonthlyPaise !== undefined && <span>Usually {formatPaise(Math.round(row.usualMonthlyPaise / 100000) * 100)}k/month</span>}
+          {!!row.monthsMissed && <><span aria-hidden="true">·</span><span>Missed {row.monthsMissed} {row.monthsMissed === 1 ? 'month' : 'months'}</span></>}
+        </div>
+        <div className="mt-1.5 flex flex-wrap gap-1.5 sm:mt-0 sm:shrink-0 sm:pl-3">
+          {row.phone && <a className={`${button} inline-flex items-center`} href={`tel:${row.phone}`}>Call</a>}
+          {row.customerId && <button type="button" className={button} disabled={!onOpenCustomer} onClick={() => onOpenCustomer?.(row.customerId!)}>Open customer</button>}
+        </div>
+      </div>
+    </li>)}
+  </ol>;
+}
+
+function LabMonthsBody({ data, onOpenCustomer }: Props & { data: GrowthLabMonthsData }) {
   const [table, setTable] = useState(false);
   return <>
+    {data.filter === 'lapsing' && (data.rows.length ? <CallList data={data} onOpenCustomer={onOpenCustomer} /> : <p className={muted}>No lapsing core labs right now.</p>)}
     <div className="flex justify-end">
       <button type="button" className={button} aria-pressed={table} onClick={() => setTable(v => !v)}>{table ? 'View as chart' : 'View as table'}</button>
     </div>
     {table ? <MonthTable data={data} /> : <Heatmap data={data} />}
     <Legend />
-    <p className={muted}>{data.totalLabs} labs bought in these 12 months; showing the top {data.rows.length}. Gone quiet = bought in 6+ of the first 9 months, nothing in the last 2.</p>
+    <p className={muted}>{data.filter === 'lapsing'
+      ? `Lapsing = bought in 5+ of 12 months, nothing for 30+ days, and either 60+ days since the last purchase or 2 of the last 3 months missed.`
+      : `${data.totalLabs} labs bought in these 12 months; showing the top ${data.rows.length}. Lapsing = bought in 5+ months and missed 2 of the last 3 months.`}</p>
+    {data.filter === 'lapsing' && data.totalLabs > data.rows.length && <p className={muted}>Showing {data.rows.length} of {data.totalLabs} lapsing labs.</p>}
   </>;
 }
 
-export function GrowthLabMonths() {
+function useLabMonthsData(filter: GrowthLabMonthsData['filter']) {
   const [data, setData] = useState<GrowthLabMonthsData | null>(null);
   const [error, setError] = useState(false);
   const [revision, setRevision] = useState(0);
   useEffect(() => {
     const controller = new AbortController();
-    void fetch('/api/growth/lab-months', { cache: 'no-store', signal: controller.signal }).then(async response => {
-      const next = response.ok ? normalizeGrowthLabMonths(await response.json()) : null;
+    void fetch(`/api/growth/lab-months${filter === 'lapsing' ? '?filter=lapsing' : ''}`, { cache: 'no-store', signal: controller.signal }).then(async response => {
+      const next = response.ok ? normalizeGrowthLabMonths(await response.json(), filter) : null;
       if (!next) throw new Error('Lab months are unavailable');
       if (!controller.signal.aborted) setData(next);
     }).catch(() => { if (!controller.signal.aborted) setError(true); });
     return () => controller.abort();
-  }, [revision]);
+  }, [revision, filter]);
+  return { data, error, retry: () => { setError(false); setRevision(n => n + 1); } };
+}
+
+export function GrowthLabMonths({ onOpenCustomer }: Props = {}) {
+  const [filter, setFilter] = useState<GrowthLabMonthsData['filter']>('top');
+  const top = useLabMonthsData('top');
+  const lapsing = useLabMonthsData('lapsing');
+  const { data, error, retry } = filter === 'top' ? top : lapsing;
+  const lapsingCount = lapsing.data?.totalLabs;
   return <section className={card} aria-labelledby="growth-lab-months-title">
     <h2 id="growth-lab-months-title" className="text-base font-bold">Who is buying, month by month</h2>
-    <p className={muted}>Top {data?.rows.length ?? 20} labs by sales · 12 months · darker = more of that lab&apos;s usual monthly business</p>
-    {error ? <div role="alert" className="text-xs">Lab months are unavailable. <button type="button" className={button} onClick={() => { setError(false); setRevision(n => n + 1); }}>Retry</button></div>
+    <div className="flex flex-wrap gap-2">
+      {(['top', 'lapsing'] as const).map(value => <button key={value} type="button" className={`${button} ${filter === value ? 'bg-sf-brand text-white border-sf-brand' : ''}`} aria-pressed={filter === value} onClick={() => {
+        setFilter(value);
+      }}>{value === 'top' ? 'Top labs' : `Lapsing core labs${lapsingCount === undefined ? '' : ` (${lapsingCount})`}`}</button>)}
+    </div>
+    <p className={muted}>{filter === 'top' ? `Top ${data?.rows.length ?? 20} labs by sales · ` : ''}12 months · darker = more of that lab&apos;s usual monthly business</p>
+    {error ? <div role="alert" className="text-xs">Lab months are unavailable. <button type="button" className={button} onClick={retry}>Retry</button></div>
       : !data ? <output className="block animate-pulse rounded bg-sf-soft-0 p-4 text-xs">Loading labs…</output>
-      : <LabMonthsBody data={data} />}
+      : <LabMonthsBody key={filter} data={data} onOpenCustomer={onOpenCustomer} />}
   </section>;
 }

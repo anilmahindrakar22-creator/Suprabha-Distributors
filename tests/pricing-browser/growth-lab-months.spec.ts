@@ -28,7 +28,17 @@ const labMonthsSample = () => {
   return { window: { from: '2025-11-01', to: '2026-11-01' }, months, totalLabs: 75, rows };
 };
 
-async function fixture(page: Page, options: { error?: boolean } = {}) {
+const lapsingSample = () => ({
+  ...labMonthsSample(), totalLabs: 3,
+  rows: labMonthsSample().rows.slice(0, 3).map((row, i) => ({
+    ...row, customerId: i === 2 ? null : `customer-${i}`, town: 'Pune',
+    monthsPaise: [...Array<number>(9).fill(3800000), 3800000, 0, 0], buyingMonths: 10,
+    totalPaise: 38000000, lastPurchaseOn: '2026-09-14', usualMonthlyPaise: 3800000,
+    monthsMissed: 2, phone: i === 1 ? null : `+91987654321${i}`,
+  })),
+});
+
+async function fixture(page: Page, options: { error?: boolean; emptyLapsing?: boolean } = {}) {
   await page.route('**/api/me', route => route.fulfill({ json: { roles: ['management'] } }));
   await page.route('**/api/push-subscription**', route => route.fulfill({ json: { enabled: false, publicKey: '' } }));
   await page.route('**/api/wallet?**', route => route.fulfill({ json: { coverage: { certified: true } } }));
@@ -38,7 +48,10 @@ async function fixture(page: Page, options: { error?: boolean } = {}) {
   await page.route('**/api/growth/inbox**', route => route.fulfill({ status: 503, json: { error: 'Unavailable in fixture' } }));
   await page.route('**/api/growth/labs?**', route => route.fulfill({ status: 503, json: { error: 'Unavailable in fixture' } }));
   let requests = 0;
-  await page.route('**/api/growth/lab-months', route => {
+  await page.route('**/api/growth/lab-months*', route => {
+    if (new URL(route.request().url()).searchParams.get('filter') === 'lapsing') {
+      return route.fulfill({ json: options.emptyLapsing ? { ...lapsingSample(), rows: [], totalLabs: 0 } : lapsingSample() });
+    }
     if (options.error && requests++ === 0) return route.fulfill({ status: 503, json: { error: 'Unavailable' } });
     return route.fulfill({ json: labMonthsSample() });
   });
@@ -58,22 +71,64 @@ async function openMonthly(page: Page) {
 for (const width of [375, 1280]) {
   test.describe('Growth lab months heatmap at ' + width, () => {
     test.use({ viewport: { width, height: 900 } });
-    test('renders 20 rows, the gone-quiet flag and the best-month colour', async ({ page }) => {
+    test('renders 20 rows, the Lapsing flag and the best-month colour', async ({ page }) => {
       await fixture(page);
       const section = await openMonthly(page);
       const rows = section.locator('[data-lab-row]');
       await expect(rows).toHaveCount(20);
       await expect(section).toContainText('Top 20 labs by sales · 12 months · darker = more of that lab\'s usual monthly business');
       await expect(section).toContainText('75 labs bought in these 12 months; showing the top 20.');
-      await expect(rows.filter({ hasText: 'Gone quiet' })).toHaveCount(1);
-      await expect(rows.nth(1)).toContainText('Gone quiet');
-      await expect(rows.nth(0)).not.toContainText('Gone quiet');
+      await expect(rows.filter({ hasText: 'Lapsing' })).toHaveCount(1);
+      await expect(rows.nth(1)).toContainText('Lapsing');
+      await expect(rows.nth(0)).not.toContainText('Lapsing');
       const best = rows.nth(0).locator('[data-heat]').nth(5);
-      await expect(best).toHaveCSS('background-color', 'rgb(14, 107, 74)');
+      await expect(best).toHaveCSS('background-color', 'rgb(13, 75, 52)');
+      await expect(rows.nth(1).locator('[data-heat="0"]').first()).toHaveCSS('border-style', 'dashed');
       await expect(best).toHaveAttribute('title', 'Lab 01, Apr 2026: ₹5,000');
       await expect(best).toContainText('Lab 01, Apr 2026: ₹5,000');
       await expect(rows.nth(19)).toContainText('(unlinked ledger)');
       await expect(rows.nth(19).locator('[data-heat]').first()).toHaveAttribute('title', /^\(unlinked ledger\), Nov 2025: /);
+    });
+    test('shows a short lapsing call list and switches back to top labs', async ({ page }) => {
+      const requests = { top: 0, lapsing: 0 };
+      page.on('request', request => {
+        const url = new URL(request.url());
+        if (url.pathname === '/api/growth/lab-months') requests[url.searchParams.get('filter') === 'lapsing' ? 'lapsing' : 'top']++;
+      });
+      await fixture(page);
+      const section = await openMonthly(page);
+      const lapsingChip = section.getByRole('button', { name: 'Lapsing core labs (3)', exact: true });
+      await expect(lapsingChip).toHaveAttribute('aria-pressed', 'false');
+      await lapsingChip.click();
+      await expect(section.getByRole('button', { name: 'Lapsing core labs (3)', exact: true })).toHaveAttribute('aria-pressed', 'true');
+      const list = section.getByRole('list', { name: 'Call list', exact: true });
+      await expect(list.getByRole('listitem')).toHaveCount(3);
+      await expect(list.getByRole('link', { name: 'Call', exact: true })).toHaveCount(2);
+      await expect(list.getByRole('listitem').nth(1).getByRole('link', { name: 'Call', exact: true })).toHaveCount(0);
+      await expect(list.getByRole('link', { name: 'Call', exact: true }).first()).toHaveAttribute('href', 'tel:+919876543210');
+      await expect(list.getByRole('button', { name: 'Open customer', exact: true })).toHaveCount(2);
+      for (const openCustomer of await list.getByRole('button', { name: 'Open customer', exact: true }).all()) {
+        await expect(openCustomer).toBeEnabled();
+      }
+      await expect(list).toContainText('Last bought 14 Sep');
+      await expect(list).toContainText('Usually ₹38k/month');
+      await expect(list).toContainText('Missed 2 months');
+      await expect(section.locator('[data-lab-row]')).toHaveCount(3);
+      expect(await page.evaluate(() => (document.scrollingElement?.scrollWidth ?? 0) <= window.innerWidth)).toBe(true);
+      await section.getByRole('button', { name: 'View as table', exact: true }).click();
+      await expect(section.locator('tbody tr')).toHaveCount(3);
+      expect(await page.evaluate(() => (document.scrollingElement?.scrollWidth ?? 0) <= window.innerWidth)).toBe(true);
+      await section.getByRole('button', { name: 'Top labs', exact: true }).click();
+      await expect(section.locator('[data-lab-row]')).toHaveCount(20);
+      await expect(section.getByRole('list', { name: 'Call list', exact: true })).toHaveCount(0);
+      expect(requests).toEqual({ top: 1, lapsing: 1 });
+    });
+    test('shows the lapsing empty state', async ({ page }) => {
+      await fixture(page, { emptyLapsing: true });
+      const section = await openMonthly(page);
+      await section.getByRole('button', { name: /^Lapsing core labs(?: \(0\))?$/ }).click();
+      await expect(section).toContainText('No lapsing core labs right now.');
+      await expect(section.getByRole('button', { name: 'Lapsing core labs (0)', exact: true })).toBeVisible();
     });
     test('the table view shows the same labs', async ({ page }) => {
       await fixture(page);

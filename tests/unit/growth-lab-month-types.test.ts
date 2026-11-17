@@ -8,7 +8,7 @@ const sample = () => ({ window: { from: '2025-11-01', to: '2026-11-01' }, months
 describe('normalizeGrowthLabMonths', () => {
   it('accepts a valid sample and ignores extra keys', () => {
     const value = { ...sample(), extra: 1, rows: sample().rows.map(r => ({ ...r, more: true })) };
-    expect(normalizeGrowthLabMonths(value)).toEqual(sample());
+    expect(normalizeGrowthLabMonths(value, 'top')).toEqual({ ...sample(), filter: 'top' });
   });
   it('accepts a null name and a labKey ending in a pipe', () => {
     const value = { ...sample(), rows: [{ ...row(), name: null, labKey: 'company|' }] };
@@ -18,6 +18,15 @@ describe('normalizeGrowthLabMonths', () => {
   });
   it('accepts zero rows', () => {
     expect(normalizeGrowthLabMonths({ ...sample(), rows: [], totalLabs: 0 })?.rows).toEqual([]);
+  });
+  it('accepts lapsing fields and up to 50 labs, with the caller choosing the filter', () => {
+    const enriched = { ...row(), lastPurchaseOn: '2026-09-14', usualMonthlyPaise: 3800000, monthsMissed: 2, phone: '+919876543210' };
+    const value = { ...sample(), filter: 'top', totalLabs: 60, rows: Array.from({ length: 50 }, (_, i) => ({ ...enriched, labKey: `c|${i}` })) };
+    const out = normalizeGrowthLabMonths(value, 'lapsing');
+    expect(out?.filter).toBe('lapsing');
+    expect(out?.rows).toEqual(value.rows);
+    expect(normalizeGrowthLabMonths({ ...value, rows: [...value.rows, enriched] }, 'lapsing')).toBeNull();
+    expect(normalizeGrowthLabMonths({ ...sample(), rows: [{ ...enriched, phone: null }] }, 'lapsing')?.rows[0].phone).toBeNull();
   });
   const bad: [string, (s: ReturnType<typeof sample>) => unknown][] = [
     ['null', () => null],
@@ -38,6 +47,13 @@ describe('normalizeGrowthLabMonths', () => {
     ['buyingMonths -1', s => ({ ...s, rows: [{ ...row(), buyingMonths: -1 }] })],
     ['totalLabs below rows', s => ({ ...s, totalLabs: 1 })],
     ['non-integer totalLabs', s => ({ ...s, totalLabs: 2.5 })],
+    ['bad last purchase date', s => ({ ...s, rows: [{ ...row(), lastPurchaseOn: '2026-02-30' }] })],
+    ['non-ISO last purchase date', s => ({ ...s, rows: [{ ...row(), lastPurchaseOn: '14 Sep 2026' }] })],
+    ['negative monthsMissed', s => ({ ...s, rows: [{ ...row(), monthsMissed: -1 }] })],
+    ['fractional monthsMissed', s => ({ ...s, rows: [{ ...row(), monthsMissed: 1.5 }] })],
+    ['negative usual', s => ({ ...s, rows: [{ ...row(), usualMonthlyPaise: -1 }] })],
+    ['fractional usual', s => ({ ...s, rows: [{ ...row(), usualMonthlyPaise: 1.5 }] })],
+    ['numeric phone', s => ({ ...s, rows: [{ ...row(), phone: 123 }] })],
   ];
   it.each(bad)('rejects %s', (_name, make) => {
     expect(normalizeGrowthLabMonths(make(sample()))).toBeNull();

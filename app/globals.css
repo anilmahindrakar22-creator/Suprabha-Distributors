@@ -102,11 +102,11 @@
   --color-sf-chart-grid: #e1e0d9;
   --color-sf-chart-axis: #c3c2b7;
   --color-sf-heat-0: #f1f5f3;
-  --color-sf-heat-1: #c6e9d9;
-  --color-sf-heat-2: #86cfae;
-  --color-sf-heat-3: #3fae82;
-  --color-sf-heat-4: #1a9a6c;
-  --color-sf-heat-5: #0e6b4a;
+  --color-sf-heat-1: #d4efe2;
+  --color-sf-heat-2: #8fd3b3;
+  --color-sf-heat-3: #45ad83;
+  --color-sf-heat-4: #1f7f58;
+  --color-sf-heat-5: #0d4b34;
 }
 
 body {
@@ -177,6 +177,11 @@ button:not([data-slot='button']):focus-visible {
 }
 
 .dark {
+  --color-sf-heat-1: #123a2c;
+  --color-sf-heat-2: #1d6347;
+  --color-sf-heat-3: #2f8f66;
+  --color-sf-heat-4: #5cc196;
+  --color-sf-heat-5: #a6e6c7;
   --background: oklch(0.145 0 0);
   --foreground: oklch(0.985 0 0);
   --card: oklch(0.205 0 0);

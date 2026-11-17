@@ -28,7 +28,7 @@ describe('Growth lab months route', () => {
     expect(await response.json()).toEqual({ error: 'Growth is for management only.' });
     expect(mocks.gateway).not.toHaveBeenCalled();
   });
-  it.each(['a=1', 'page=1', 'q='])('rejects any query parameter %s', async q => {
+  it.each(['a=1', 'page=1', 'q=', 'filter=other', 'filter=lapsing&filter=lapsing', 'filter=lapsing&a=1'])('rejects invalid query parameters %s', async q => {
     const response = await get(q);
     expect(response.status).toBe(400);
     expect(await response.json()).toEqual({ error: 'Invalid growth lab months parameters' });
@@ -39,8 +39,19 @@ describe('Growth lab months route', () => {
     const response = await get();
     expect(response.status).toBe(200);
     expect(response.headers.get('cache-control')).toBe('private, no-store');
-    expect(await response.json()).toEqual(sample);
+    expect(await response.json()).toEqual({ ...sample, filter: 'top' });
     expect(mocks.gateway).toHaveBeenCalledWith('manager@example.test', 'get_growth_lab_months', {});
+  });
+  it('sends the exact lapsing payload', async () => {
+    const response = await get('filter=lapsing');
+    expect(response.status).toBe(200);
+    expect(await response.json()).toEqual({ ...sample, filter: 'lapsing' });
+    expect(mocks.gateway).toHaveBeenCalledWith('manager@example.test', 'get_growth_lab_months', { filter: 'lapsing' });
+  });
+  it('denies lapsing data to non-management', async () => {
+    mocks.session.mockResolvedValue({ email: 'x@example.test', roles: ['sales'] });
+    expect((await get('filter=lapsing')).status).toBe(403);
+    expect(mocks.gateway).not.toHaveBeenCalled();
   });
   it.each([{}, null, { ...sample, rows: [{ ...sample.rows[0], totalPaise: 1.5 }] }])('returns 502 for malformed response %#', async value => {
     mocks.gateway.mockResolvedValue(value);
