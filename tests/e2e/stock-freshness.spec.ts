@@ -25,11 +25,19 @@ async function openStockDashboard(page: import('@playwright/test').Page, payload
 
 test('phone Stock shows unified Requests counts with Groups as the only view and no page overflow', async ({ page }) => {
   await page.setViewportSize({ width: 375, height: 812 });
-  await openStockDashboard(page, stockPayload());
+  const payload = stockPayload();
+  await openStockDashboard(page, payload);
 
-  await expect(page.locator('.metric-chips [data-action="items"] strong')).toHaveText('21 to order');
-  await expect(page.locator('#itemHint')).toHaveText('6 with customers waiting');
-  await expect(page.locator('.metric-chips [data-action="critical"]')).toHaveText('6 customers waiting');
+  const reorderRows = payload.rows.filter((row) => (+row.orderToBePlaced || 0) > 0);
+  const n = reorderRows.length;
+  const c = reorderRows.filter((row) => {
+    const base = Math.max(+row.reorderLevel || 0, +row.minimumOrder || 0, 1);
+    const ratio = (+row.shortfall || +row.orderToBePlaced || 0) / base;
+    return ratio >= 0.75;
+  }).length;
+  await expect(page.locator('.metric-chips [data-action="items"] strong')).toHaveText(`${n} to reorder`);
+  await expect(page.locator('#itemHint')).toHaveText(`${c} critical`);
+  await expect(page.locator('.metric-chips [data-action="critical"]')).toContainText('6 customers waiting');
   await expect(page.locator('.metric-chips [data-action="critical"]')).toHaveClass(/has-critical/);
   await expect(page.getByRole('button', { name: 'Reorder list', exact: true })).toHaveCount(0);
   await expect(page.getByText('Order to be placed', { exact: true })).toHaveCount(0);
@@ -40,7 +48,7 @@ test('phone Stock shows unified Requests counts with Groups as the only view and
   expect(await page.evaluate(() => document.documentElement.scrollWidth <= innerWidth)).toBe(true);
 });
 
-test('both Stock chips open Requests to order from the frame', async ({ page }) => {
+test('customers waiting chip opens Requests to order', async ({ page }) => {
   const messages: unknown[] = [];
   await page.exposeFunction('captureStockMessage', (message: unknown) => messages.push(message));
   await page.addInitScript(() => {
@@ -56,19 +64,42 @@ test('both Stock chips open Requests to order from the frame', async ({ page }) 
   await page.route('**/api/orders?summary=1', (route) => route.fulfill({ json: {} }));
   await page.goto('/requests-link-test');
   const stock = page.frameLocator('iframe');
-  for (const action of ['items', 'critical']) {
-    await stock.locator(`.metric-chips [data-action="${action}"]`).click();
-  }
+  await stock.locator('.metric-chips [data-action="critical"]').click();
   await expect.poll(() => messages).toEqual([
-    { type: 'stockflow-open-requests', section: 'to-order' },
     { type: 'stockflow-open-requests', section: 'to-order' },
   ]);
 });
 
-test('requirements failure leaves both Stock chips available with unknown counts', async ({ page }) => {
+test('to reorder chip expands the reorder list on Stock', async ({ page }) => {
+  await page.route('**/requests-link-test', (route) => route.fulfill({ contentType: 'text/html', body: '<iframe src="/stockflow.html"></iframe>' }));
+  await page.route('**/api/stock?view=dashboard', (route) => route.fulfill({ json: {
+    ...stockPayload(), groups: ['Group A', 'Group B'], rows: [
+      { group: 'Group A', item: 'Item A', closing: 0, reorderLevel: 2, minimumOrder: 1, shortfall: 2, orderToBePlaced: 2 },
+      { group: 'Group B', item: 'Item B', closing: 0, reorderLevel: 2, minimumOrder: 1, shortfall: 2, orderToBePlaced: 2 },
+    ],
+  } }));
+  await page.route('**/api/orders?summary=1', (route) => route.fulfill({ json: {} }));
+  await page.goto('/requests-link-test');
+  const stock = page.frameLocator('iframe');
+  const chip = stock.locator('.metric-chips [data-action="items"]');
+  await expect(chip.locator('strong')).toHaveText('2 to reorder');
+  await expect(stock.locator('#itemHint')).toHaveText('2 critical');
+  await chip.click();
+  await expect(page).toHaveURL(/requests-link-test/);
+  await expect(stock.locator('#groupCards details')).toHaveCount(2);
+  for (const group of await stock.locator('#groupCards details').all()) await expect(group).toHaveAttribute('open', '');
+  await expect(chip).toHaveAttribute('aria-pressed', 'true');
+  await chip.click();
+  for (const group of await stock.locator('#groupCards details').all()) await expect(group).not.toHaveAttribute('open', '');
+  await expect(chip).toHaveAttribute('aria-pressed', 'false');
+});
+
+test("requirements failure leaves the customers waiting count unknown and Stock's reorder count intact", async ({ page }) => {
   await page.route('**/api/requirements?view=to_order&page=1', (route) => route.fulfill({ status: 503, json: {} }));
-  await openStockDashboard(page, stockPayload());
-  await expect(page.locator('#itemCount')).toHaveText('—');
+  const payload = stockPayload();
+  await openStockDashboard(page, payload);
+  const reorderRows = payload.rows.filter((row) => (+row.orderToBePlaced || 0) > 0);
+  await expect(page.locator('#itemCount')).toHaveText(String(reorderRows.length));
   await expect(page.locator('#criticalCount')).toHaveText('—');
   await expect(page.locator('.metric-chips button')).toHaveCount(2);
   for (const chip of await page.locator('.metric-chips button').all()) await expect(chip).toBeEnabled();
