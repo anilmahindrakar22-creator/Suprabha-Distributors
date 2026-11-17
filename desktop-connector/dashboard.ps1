@@ -101,6 +101,22 @@ function Write-ConnectorHealth([string]$Message) {
     }
 }
 
+function Get-ServerTimingFields([string]$Header) {
+    try {
+        if ([string]::IsNullOrWhiteSpace($Header)) { return '' }
+        $serverMatch = [regex]::Match($Header, '(?:^|,)\s*stockflow\s*;\s*dur\s*=\s*([0-9]+(?:\.[0-9]+)?)\s*(?=,|$)', [Text.RegularExpressions.RegexOptions]::IgnoreCase)
+        $databaseMatch = [regex]::Match($Header, '(?:^|,)\s*database\s*;\s*dur\s*=\s*([0-9]+(?:\.[0-9]+)?)\s*(?=,|$)', [Text.RegularExpressions.RegexOptions]::IgnoreCase)
+        if (-not $serverMatch.Success -or -not $databaseMatch.Success) { return '' }
+        $serverMs = 0.0
+        $databaseMs = 0.0
+        $style = [Globalization.NumberStyles]::AllowDecimalPoint
+        $culture = [Globalization.CultureInfo]::InvariantCulture
+        if (-not [double]::TryParse($serverMatch.Groups[1].Value, $style, $culture, [ref]$serverMs) -or
+            -not [double]::TryParse($databaseMatch.Groups[1].Value, $style, $culture, [ref]$databaseMs)) { return '' }
+        return " serverMs=$($serverMatch.Groups[1].Value) databaseMs=$($databaseMatch.Groups[1].Value)"
+    } catch { return '' }
+}
+
 function Remove-PendingSalesCoverage([string]$Reason) {
     if ($script:pendingUpload.economicEvidence.purpose -ne 'sales_coverage') { return }
     if ($script:pendingUpload.economicEvidence.backfillEntry) {
@@ -137,7 +153,7 @@ function Publish-CloudSnapshot([string]$Json) {
     $watch = [Diagnostics.Stopwatch]::StartNew()
     $payloadBytes = [Text.Encoding]::UTF8.GetByteCount($Json)
     try {
-        Invoke-WebRequest -Uri $cloudSyncUrl -Method Post -ContentType 'application/json' -Headers @{ 'x-upload-key' = $cloudUploadKey } -Body $Json -UseBasicParsing -TimeoutSec 35 | Out-Null
+        $uploadResponse = Invoke-WebRequest -Uri $cloudSyncUrl -Method Post -ContentType 'application/json' -Headers @{ 'x-upload-key' = $cloudUploadKey } -Body $Json -UseBasicParsing -TimeoutSec 35
         $watch.Stop()
     } catch {
         $watch.Stop()
@@ -155,7 +171,16 @@ function Publish-CloudSnapshot([string]$Json) {
             try { Save-ConnectorUploadState $uploadStatePath $script:uploadState }
             catch { Write-ConnectorHealth "$([datetimeoffset]::Now.ToString('o')) request=cloud_upload_state status=failed" }
         }
-        Write-ConnectorHealth "$([datetimeoffset]::Now.ToString('o')) request=cloud_upload durationMs=$($watch.ElapsedMilliseconds) bytes=$payloadBytes consecutiveFailures=$($script:cloudUploadFailures) status=failed failure=$failureCode"
+        $serverTimingFields = ''
+        try {
+            $response = $_.Exception.Response
+            if ($response -and $response.Headers) {
+                $timingHeader = $response.Headers['server-timing']
+                if (-not $timingHeader) { $timingHeader = $response.Headers['Server-Timing'] }
+                $serverTimingFields = Get-ServerTimingFields ([string]$timingHeader)
+            }
+        } catch { $serverTimingFields = '' }
+        Write-ConnectorHealth "$([datetimeoffset]::Now.ToString('o')) request=cloud_upload durationMs=$($watch.ElapsedMilliseconds) bytes=$payloadBytes$serverTimingFields consecutiveFailures=$($script:cloudUploadFailures) status=failed failure=$failureCode"
         $failedPurpose = $null
         try { $failedPurpose = ($Json | ConvertFrom-Json -ErrorAction Stop).economicEvidence.purpose } catch { $failedPurpose = $null }
         if ($failedPurpose -eq 'sales_coverage') {
@@ -220,7 +245,23 @@ function Publish-CloudSnapshot([string]$Json) {
     $script:cloudUploadFailures = 0
     $script:uploadAuthBlocked = $false
     $script:uploadPayloadBlocked = $false
-    Write-ConnectorHealth "$([datetimeoffset]::Now.ToString('o')) request=cloud_upload durationMs=$($watch.ElapsedMilliseconds) bytes=$payloadBytes consecutiveFailures=0 status=ok"
+    $serverTimingFields = ''
+    try {
+        if ($uploadResponse -and $uploadResponse.Headers) {
+            $timingHeader = $uploadResponse.Headers['server-timing']
+            if (-not $timingHeader) { $timingHeader = $uploadResponse.Headers['Server-Timing'] }
+            $serverTimingFields = Get-ServerTimingFields ([string]$timingHeader)
+        }
+    } catch { $serverTimingFields = '' }
+    $economicVoucherCount = $null
+    if ($null -ne $uploaded -and $null -ne $uploaded.economicEvidence -and $null -ne $uploaded.economicEvidence.vouchers) {
+        $economicVoucherCount = @($uploaded.economicEvidence.vouchers).Count
+    }
+    $economicVoucherField = if ($null -ne $economicVoucherCount) { " economicVouchers=$economicVoucherCount" } else { '' }
+    Write-ConnectorHealth "$([datetimeoffset]::Now.ToString('o')) request=cloud_upload durationMs=$($watch.ElapsedMilliseconds) bytes=$payloadBytes$serverTimingFields$economicVoucherField consecutiveFailures=0 status=ok"
+    if ($null -ne $economicVoucherCount -and $economicVoucherCount -ge 1900) {
+        Write-ConnectorHealth "$([datetimeoffset]::Now.ToString('o')) request=economic_voucher_headroom status=warning count=$economicVoucherCount limit=2000"
+    }
     Write-Host "Cloud snapshot updated." -ForegroundColor DarkGreen
     return $true
 }
