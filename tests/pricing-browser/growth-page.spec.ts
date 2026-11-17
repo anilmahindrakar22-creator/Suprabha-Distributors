@@ -14,11 +14,12 @@ const marginSample = (p: URLSearchParams) => ({
 });
 const itemDetail = () => ({
   kind: 'item', itemKey: 'item-a', name: 'Cliniquant CRP', typicalPricePaise: 250000, labs: 13, marginPct: 28.1, tallyItemKey: 'tally-a', page: 1, pageSize: 20, total: 4,
+  pricePolicy: { minimumMarginPct: 25, targetMarginPct: 30 },
   rows: [
-    { labKey: 'ledger-a', customerId: 'customer-a', name: 'Lab A', town: 'Town A', unitPricePaise: 160800, quantity: 6, salesPaise: 964800, belowTypical: true, packDifference: false, approvedPricePaise: 170000 },
-    { labKey: 'ledger-pack', customerId: 'customer-pack', name: 'Pack Lab', town: null, unitPricePaise: 50000, quantity: 2, salesPaise: 100000, belowTypical: false, packDifference: true, approvedPricePaise: null },
-    { labKey: 'ledger-unlinked', customerId: null, name: null, town: null, unitPricePaise: 140000, quantity: 4, salesPaise: 560000, belowTypical: true, packDifference: false, approvedPricePaise: null },
-    { labKey: 'ledger-steady', customerId: 'customer-steady', name: 'Steady Lab', town: 'Town B', unitPricePaise: 250000, quantity: 5, salesPaise: 1250000, belowTypical: false, packDifference: false, approvedPricePaise: null },
+    { labKey: 'ledger-a', customerId: 'customer-a', name: 'Lab A', town: 'Town A', unitPricePaise: 160800, quantity: 6, salesPaise: 964800, belowTypical: true, packDifference: false, approvedPricePaise: 170000, belowMinimum: true, minimumPricePaise: 180000, belowTarget: true, liftToPricePaise: 300000 },
+    { labKey: 'ledger-pack', customerId: 'customer-pack', name: 'Pack Lab', town: null, unitPricePaise: 50000, quantity: 2, salesPaise: 100000, belowTypical: false, packDifference: true, approvedPricePaise: null, belowMinimum: null, minimumPricePaise: null, belowTarget: null, liftToPricePaise: null },
+    { labKey: 'ledger-unlinked', customerId: null, name: null, town: null, unitPricePaise: 140000, quantity: 4, salesPaise: 560000, belowTypical: true, packDifference: false, approvedPricePaise: null, belowMinimum: null, minimumPricePaise: null, belowTarget: null, liftToPricePaise: null },
+    { labKey: 'ledger-steady', customerId: 'customer-steady', name: 'Steady Lab', town: 'Town B', unitPricePaise: 250000, quantity: 5, salesPaise: 1250000, belowTypical: false, packDifference: false, approvedPricePaise: null, belowMinimum: null, minimumPricePaise: null, belowTarget: null, liftToPricePaise: null },
   ],
 });
 const inboxSample = (filter = 'all', page = 1, inProgress = false, viewerEmail = 'manager@example.test') => ({
@@ -283,13 +284,30 @@ for (const width of [375, 1280]) {
       await expect(strip.locator('svg')).toHaveAttribute('aria-label', 'Price per unit by lab against typical ₹2,500, band ₹2,250 to ₹2,750');
       await expect(panel.getByRole('button', { name: 'Review prices', exact: true })).toHaveCount(1);
       await expect(panel.getByText(/Approved ₹1,700/)).toBeVisible();
+      const below = panel.getByRole('listitem').filter({ hasText: 'Lab A' });
+      await expect(below.getByText('Below the 25% minimum · minimum ₹1,800', { exact: true })).toBeVisible();
+      await expect(below.getByText('Lift to ₹3,000 for a 30% margin', { exact: true })).toBeVisible();
       const pack = panel.getByRole('listitem').filter({ hasText: 'Pack Lab' });
       await expect(pack.getByText('Probably a different pack · not counted', { exact: true })).toBeVisible();
+      await expect(pack.getByText(/Below the|Lift to/)).toHaveCount(0);
       await expect(pack.getByRole('button', { name: 'Review prices' })).toHaveCount(0);
       await expect(pack.getByRole('button', { name: 'Open', exact: true })).toBeVisible();
       await expect(panel.getByRole('button', { name: 'Link', exact: true })).toBeVisible();
       if (width === 375) expect(await page.evaluate(() => document.documentElement.scrollWidth <= innerWidth)).toBe(true);
       await page.keyboard.press('Escape'); await expect(trigger).toBeFocused();
+    });
+    test('P3 item detail without a target margin explains lift suggestions', async ({ page }) => {
+      await fixture(page);
+      await page.route('**/api/growth/margin?**', route => {
+        const params = new URL(route.request().url()).searchParams;
+        if (params.has('itemKey')) return route.fulfill({ json: { ...itemDetail(), pricePolicy: { minimumMarginPct: 25, targetMarginPct: null } } });
+        return route.fulfill({ json: params.has('labKey') ? {} : marginSample(params) });
+      });
+      await openGrowth(page); await page.getByRole('tab', { name: 'Profit', exact: true }).click();
+      const explorer = page.getByRole('region', { name: 'Margin by lab and item', exact: true });
+      await explorer.getByRole('tab', { name: 'Items', exact: true }).click();
+      await explorer.getByRole('button', { name: 'Cliniquant CRP: open labs and prices', exact: true }).click();
+      await expect(page.getByRole('dialog').getByText('Set a target margin in Pricing → Policy to see lift suggestions.', { exact: true })).toBeVisible();
     });
     test('P3 Review prices hands the exact item, suggested price and sales-only reason to Pricing', async ({ page }) => {
       await fixture(page);
@@ -308,7 +326,7 @@ for (const width of [375, 1280]) {
       const bookRequest = page.waitForRequest(r => r.url().includes('/api/pricing?') && new URL(r.url()).searchParams.get('customerId') === 'customer-a');
       await page.getByRole('dialog').getByRole('button', { name: 'Review prices', exact: true }).click(); await bookRequest;
       const review = page.getByRole('article', { name: 'Price review for Cliniquant CRP', exact: true });
-      await expect(review.getByLabel('Custom rate', { exact: true })).toHaveValue('2500');
+      await expect(review.getByLabel('Custom rate', { exact: true })).toHaveValue('3000');
       await expect(review.getByLabel(/Decision note/)).toHaveValue('Growth review: pays ₹1,608 per unit for 6; typical ₹2,500 across 13 labs.');
       expect(await review.getByLabel(/Decision note/).inputValue()).not.toMatch(/cost|margin|gross profit|GP/i);
       expect(posts).toBe(0);

@@ -13,6 +13,7 @@ const money = (n: number | null) => n === null ? '—' : formatPaise(n);
 type ItemDetail = Extract<Detail, { kind: 'item' }>;
 const jitter = [-8, 0, 8];
 const wholeRupees = (paise: number) => `₹${Math.floor(paise / 100 + 0.5).toLocaleString('en-IN')}`;
+const policyPct = (pct: number) => String(Number(pct.toFixed(4)));
 
 function PriceStrip({ data, onPick }: { data: ItemDetail; onPick: (index: number) => void }) {
   const { tipProps, tip, containerProps } = useChartTip();
@@ -130,7 +131,7 @@ export function GrowthMarginDetail({ selection, navigation, onClose }: { selecti
     return () => controller.abort();
   }, [selection, page, revision]);
   const navigate = (action: () => void) => { onClose(); action(); };
-  const review = async (customerId: string, tallyItemKey: string, typical: number, price: number, quantity: number, itemKey: string | null) => {
+  const review = async (customerId: string, tallyItemKey: string, typical: number, price: number, quantity: number, itemKey: string | null, suggestedPricePaise?: number) => {
     setReviewError(false); setReviewing(true);
     const controller = new AbortController();
     reviewRequest.current = controller;
@@ -144,7 +145,7 @@ export function GrowthMarginDetail({ selection, navigation, onClose }: { selecti
         labs = item.labs;
       }
       if (labs === null) throw new Error();
-      if (!controller.signal.aborted) navigate(() => navigation.onOpenPriceReview?.({ customerId, tallyItemKey, suggestedPricePaise: typical, reason: `Growth review: pays ${money(price)} per unit for ${quantity}; typical ${money(typical)} across ${labs} labs.` }));
+      if (!controller.signal.aborted) navigate(() => navigation.onOpenPriceReview?.({ customerId, tallyItemKey, suggestedPricePaise: suggestedPricePaise ?? typical, reason: `Growth review: pays ${money(price)} per unit for ${quantity}; typical ${money(typical)} across ${labs} labs.` }));
     } catch { if (!controller.signal.aborted) setReviewError(true); }
     finally { if (!controller.signal.aborted) setReviewing(false); }
   };
@@ -157,7 +158,7 @@ export function GrowthMarginDetail({ selection, navigation, onClose }: { selecti
     if (event.shiftKey && document.activeElement === first) { event.preventDefault(); last?.focus(); }
     else if (!event.shiftKey && document.activeElement === last) { event.preventDefault(); first?.focus(); }
   }} className="fixed inset-x-0 bottom-0 top-auto m-0 h-[85dvh] max-h-[85dvh] w-full max-w-full overflow-y-auto overscroll-contain rounded-t-2xl border border-sf-line bg-white p-4 text-sm text-sf-strong [overflow-wrap:anywhere] backdrop:bg-sf-ink/30 md:inset-y-0 md:left-auto md:right-0 md:h-dvh md:max-h-dvh md:w-[420px] md:rounded-none md:p-5">
-    <div className="space-y-2"><div className="flex justify-end"><button className={button} onClick={onClose} aria-label="Close margin detail">Close</button></div><h2 id="growth-margin-detail-title" className="text-base font-bold">{data ? `${data.name ?? (data.kind === 'item' ? 'Unnamed item' : '(unlinked ledger)')} · ${data.kind === 'item' ? 'price per unit by lab' : 'items bought'}` : 'Margin detail'}</h2><p id="growth-margin-detail-explanation" className="text-xs text-sf-muted">{data?.kind === 'item' ? `Typical (median) ${money(data.typicalPricePaise)} across ${data.labs} labs. Labs under 90% of typical are highlighted; prices under 40% are probably a different pack and are not counted.` : 'Consumables bought by this lab · average purchase cost.'}</p></div>
+    <div className="space-y-2"><div className="flex justify-end"><button className={button} onClick={onClose} aria-label="Close margin detail">Close</button></div><h2 id="growth-margin-detail-title" className="text-base font-bold">{data ? `${data.name ?? (data.kind === 'item' ? 'Unnamed item' : '(unlinked ledger)')} · ${data.kind === 'item' ? 'price per unit by lab' : 'items bought'}` : 'Margin detail'}</h2><p id="growth-margin-detail-explanation" className="text-xs text-sf-muted">{data?.kind === 'item' ? `Typical (median) ${money(data.typicalPricePaise)} across ${data.labs} labs. Labs under 90% of typical are highlighted; prices under 40% are probably a different pack and are not counted.` : 'Consumables bought by this lab · average purchase cost.'}</p>{data?.kind === 'item' && data.pricePolicy && data.pricePolicy.targetMarginPct == null && <p className="text-xs text-sf-muted">Set a target margin in Pricing → Policy to see lift suggestions.</p>}</div>
     {loading && <p role="status" className="py-4 text-xs">Loading margin detail…</p>}{error && <p role="alert" className="py-4 text-xs">Margin detail is unavailable. <button className={button} onClick={() => setRevision(n => n + 1)}>Retry</button></p>}
     {reviewError && <p role="alert" className="text-xs">Could not open price review. Try again.</p>}
     {data?.kind === 'item' && <PriceStrip data={data} onPick={index => { setHighlight(index); rowRefs.current[index]?.scrollIntoView({ block: 'nearest' }); }} />}
@@ -166,10 +167,12 @@ export function GrowthMarginDetail({ selection, navigation, onClose }: { selecti
       const customerId = itemRow ? row.customerId : data.kind === 'lab' ? data.customerId : null;
       const tallyItemKey = itemRow ? data.kind === 'item' ? data.tallyItemKey : null : row.tallyItemKey;
       const typical = itemRow ? data.kind === 'item' ? data.typicalPricePaise : null : row.typicalPricePaise;
-      const highlighted = row.belowTypical && !row.packDifference;
+      const highlighted = !row.packDifference && (row.belowTypical || (itemRow && row.belowMinimum === true) || (itemRow && row.belowTarget === true));
       return <li key={index} ref={el => { rowRefs.current[index] = el; }} data-lab-row={highlight === index ? 'selected' : undefined} className={`space-y-1 border-b border-sf-line-soft py-2 ${highlighted ? 'rounded-md bg-sf-warning-soft px-2' : ''} ${highlight === index ? 'outline outline-2 outline-sf-chart-3' : ''}`}><p className="text-sm"><strong>{row.name ?? (itemRow ? '(unlinked ledger)' : 'Unnamed item')}</strong>{itemRow && row.town && <span className="text-xs text-sf-muted"> · {row.town}</span>}</p><p className="text-xs text-sf-muted">{money(row.unitPricePaise)} per unit{!itemRow && ` (typical ${money(typical)})`} · {row.quantity} bought{!itemRow && ` · margin ${row.marginPct === null ? '—' : row.marginPct.toFixed(1) + '%'}`}{row.approvedPricePaise !== null && ` · Approved ${money(row.approvedPricePaise)}`}</p>
       {row.packDifference && <p className="text-xs text-sf-muted">Probably a different pack · not counted</p>}
-      <div className="flex flex-wrap gap-1.5">{highlighted && (customerId === null ? <button className={button} onClick={() => navigate(navigation.onLinkLedger)}>Link</button> : tallyItemKey === null ? <button className={button} disabled>Not in price book</button> : navigation.onOpenPriceReview && typical !== null && <button className={button} disabled={reviewing} onClick={() => void review(customerId, tallyItemKey, typical, row.unitPricePaise, row.quantity, itemRow ? null : row.itemKey)}>Review prices</button>)}{customerId && <button className={button} onClick={() => navigate(() => navigation.onOpenCustomer(customerId))}>Open</button>}</div>
+      {itemRow && data.kind === 'item' && data.pricePolicy && row.belowMinimum === true && <p className="text-xs font-semibold text-sf-warning">Below the {policyPct(data.pricePolicy.minimumMarginPct)}% minimum · minimum {money(row.minimumPricePaise)}</p>}
+      {itemRow && data.kind === 'item' && row.belowTarget === true && row.liftToPricePaise != null && data.pricePolicy?.targetMarginPct != null && <p className="text-xs text-sf-body">Lift to {money(row.liftToPricePaise)} for a {policyPct(data.pricePolicy.targetMarginPct)}% margin</p>}
+      <div className="flex flex-wrap gap-1.5">{highlighted && (customerId === null ? <button className={button} onClick={() => navigate(navigation.onLinkLedger)}>Link</button> : tallyItemKey === null ? <button className={button} disabled>Not in price book</button> : navigation.onOpenPriceReview && typical !== null && <button className={button} disabled={reviewing} onClick={() => { const candidates = itemRow && data.kind === 'item' ? [typical, row.belowTarget ? row.liftToPricePaise : null, row.belowMinimum ? row.minimumPricePaise : null].filter((v): v is number => v != null) : [typical]; void review(customerId, tallyItemKey, typical, row.unitPricePaise, row.quantity, itemRow ? null : row.itemKey, Math.max(...candidates)); }}>Review prices</button>)}{customerId && <button className={button} onClick={() => navigate(() => navigation.onOpenCustomer(customerId))}>Open</button>}</div>
       </li>;
     })}</ul>
     {data && <div className="mt-4 flex flex-wrap items-center justify-between gap-2"><p role="status" className="text-xs text-sf-muted">Showing {data.rows.length} of {data.total}</p>{data.rows.length < data.total && <button className={button} disabled={loading || error} onClick={() => setPage(n => n + 1)}>Load more</button>}</div>}
