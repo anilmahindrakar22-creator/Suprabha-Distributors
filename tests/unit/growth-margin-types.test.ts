@@ -26,9 +26,12 @@ describe('Growth margin payload builders', () => {
     expect(buildGrowthMarginPayload({ view: 'labs', page: 1 })).toEqual({ view: 'labs', page: 1 });
     expect(buildGrowthMarginDetailPayload({ itemKey: 'i', page: 1 })).toEqual({ itemKey: 'i', page: 1 });
     expect(buildGrowthMarginDetailPayload({ labKey: 'l', page: 2 })).toEqual({ labKey: 'l', page: 2 });
+    expect(buildGrowthMarginDetailPayload({ tallyItemKey: 'X', page: 1 })).toEqual({ tallyItemKey: 'X', page: 1 });
+    expect(buildGrowthMarginDetailPayload({ tallyItemKey: 'X'.repeat(240), page: 1 })).toEqual({ tallyItemKey: 'X'.repeat(240), page: 1 });
   });
   it.each([{ view: 'labs', page: 0 }, { view: 'labs', page: 1.5 }, { view: 'labs', page: '1' }, { view: 'labs', page: 1, sort: 'spread' }, { view: 'labs', page: 1, filter: 'below_cost' }, { view: 'items', page: 1, filter: 'unlinked' }, { view: 'items', page: 1, q: '' }, { view: 'items', page: 1, q: ' '.repeat(2) }, { view: 'items', page: 1, q: 'a'.repeat(61) }, { view: 'items', page: 1, cost: true }, { view: 'items', page: 1, sort: undefined }])('rejects invalid list input %#', v => { expect(buildGrowthMarginPayload(v)).toBeNull(); });
   it.each([{ itemKey: '', page: 1 }, { itemKey: 'i', labKey: 'l', page: 1 }, { labKey: 'l', page: 1, q: 'x' }, { itemKey: 'i', page: -1 }, { itemKey: 'i', page: Infinity }])('rejects invalid detail input %#', v => { expect(buildGrowthMarginDetailPayload(v)).toBeNull(); });
+  it.each([{ tallyItemKey: 'X'.repeat(241), page: 1 }, { tallyItemKey: 'X', itemKey: 'i', page: 1 }, { tallyItemKey: 'X', labKey: 'l', page: 1 }, { tallyItemKey: '', page: 1 }, { tallyItemKey: ' ', page: 1 }, { tallyItemKey: 1, page: 1 }])('rejects invalid tally detail input %#', v => { expect(buildGrowthMarginDetailPayload(v)).toBeNull(); });
 });
 describe('Growth margin normalizers', () => {
   it('accepts negative integer paise and nullable figures', () => {

@@ -12,6 +12,40 @@ const get = (q: string) => GET(new Request('https://app.test/api/growth/margin?'
 const billed = { lines: 0, gapPaise: 0, unitMismatchLines: 0, approvedPricesInUse: 0, page: 1, pageSize: 20, total: 0, rows: [] };
 beforeEach(() => { vi.clearAllMocks(); mocks.user.mockResolvedValue({ email: 'manager@example.test' }); mocks.session.mockResolvedValue({ email: 'manager@example.test', roles: ['management'] }); mocks.gateway.mockResolvedValue(sample); });
 describe('Growth margin route', () => {
+  it.each(['management', 'administrator'])('forwards tally item detail for %s', async role => {
+    mocks.session.mockResolvedValue({ email: 'manager@example.test', roles: [role] });
+    mocks.gateway.mockResolvedValue({ ...itemDetail, tallyItemKey: 'X', itemKey: 'company|product|unit', page: 2 });
+    const response = await get('tallyItemKey=X&page=2');
+    expect(response.status).toBe(200);
+    expect(await response.json()).toMatchObject({ kind: 'item', tallyItemKey: 'X', itemKey: 'company|product|unit', page: 2 });
+    expect(response.headers.get('cache-control')).toBe('private, no-store');
+    expect(mocks.gateway).toHaveBeenCalledWith('manager@example.test', 'get_growth_margin_detail', { tallyItemKey: 'X', page: 2 });
+  });
+  it.each([{ ...itemDetail, tallyItemKey: 'other' }, { ...itemDetail, tallyItemKey: 'X', page: 2 }, labDetail])('rejects mismatched tally detail %#', async value => {
+    mocks.gateway.mockResolvedValue(value);
+    expect((await get('tallyItemKey=X&page=1')).status).toBe(502);
+  });
+  it.each(['sales', 'operations'])('denies tally item detail for %s', async role => {
+    mocks.session.mockResolvedValue({ roles: [role] });
+    expect((await get('tallyItemKey=X&page=1')).status).toBe(403);
+    expect(mocks.gateway).not.toHaveBeenCalled();
+  });
+  it.each([400, 422])('maps unknown tally item gateway status %s to 404 only for tally detail', async status => {
+    mocks.gateway.mockRejectedValue(new OrderGatewayError('Unknown margin key', status));
+    const response = await get('tallyItemKey=X&page=1');
+    expect(response.status).toBe(404);
+    expect(await response.json()).toEqual({ error: 'No Growth prices for this item yet.' });
+    expect(response.headers.get('cache-control')).toBe('private, no-store');
+    for (const query of ['itemKey=i&page=1', 'labKey=l&page=1', 'view=labs&page=1', 'billedBelow=1&page=1']) expect((await get(query)).status).toBe(status);
+  });
+  it.each([403, 500, 503])('preserves other tally item gateway status %s', async status => {
+    mocks.gateway.mockRejectedValue(new OrderGatewayError('Unavailable', status));
+    expect((await get('tallyItemKey=X&page=1')).status).toBe(status);
+  });
+  it.each(['tallyItemKey=&page=1', 'tallyItemKey=X&itemKey=i&page=1', 'tallyItemKey=X&labKey=l&page=1', 'tallyItemKey=X&page=1&view=items', 'tallyItemKey=' + 'X'.repeat(241) + '&page=1'])('rejects invalid tally query %s', async query => {
+    expect((await get(query)).status).toBe(400);
+    expect(mocks.gateway).not.toHaveBeenCalled();
+  });
   it.each(['management', 'administrator'])('forwards billed below with only page for %s', async role => {
     mocks.session.mockResolvedValue({ email: 'manager@example.test', roles: [role] });
     mocks.gateway.mockResolvedValue({ ...billed, page: 2 });

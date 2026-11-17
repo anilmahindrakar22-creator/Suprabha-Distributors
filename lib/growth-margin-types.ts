@@ -2,7 +2,7 @@ export type GrowthMarginView = 'labs' | 'items';
 export type GrowthMarginSort = 'sales' | 'gp' | 'margin' | 'margin_asc' | 'spread';
 export type GrowthMarginFilter = 'all' | 'low' | 'unlinked' | 'below_cost' | 'spread';
 export type GrowthMarginPayload = { view: GrowthMarginView; page: number; sort?: GrowthMarginSort; filter?: GrowthMarginFilter; q?: string };
-export type GrowthMarginDetailPayload = { itemKey: string; page: number } | { labKey: string; page: number };
+export type GrowthMarginDetailPayload = { itemKey: string; page: number } | { labKey: string; page: number } | { tallyItemKey: string; page: number };
 export type GrowthBilledBelowPayload = { page: number };
 export type GrowthBilledBelow = {
   lines: number; gapPaise: number; unitMismatchLines: number; approvedPricesInUse: number;
@@ -53,6 +53,7 @@ export function buildGrowthMarginDetailPayload(value: unknown): GrowthMarginDeta
   if (!object(value) || !count(value.page) || value.page < 1) return null;
   if (keys(value, ['itemKey', 'page']) && text(value.itemKey)) return { itemKey: value.itemKey, page: value.page };
   if (keys(value, ['labKey', 'page']) && text(value.labKey)) return { labKey: value.labKey, page: value.page };
+  if (keys(value, ['tallyItemKey', 'page']) && text(value.tallyItemKey) && value.tallyItemKey.length <= 240) return { tallyItemKey: value.tallyItemKey, page: value.page };
   return null;
 }
 

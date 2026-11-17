@@ -23,13 +23,19 @@ export async function GET(request: Request) {
       if (!data || data.page !== payload.page) throw new Error('Malformed growth billed below response');
       return Response.json(data, { headers });
     }
-    const detail = params.has('itemKey') || params.has('labKey');
+    const detail = params.has('itemKey') || params.has('labKey') || params.has('tallyItemKey');
     const payload = detail ? buildGrowthMarginDetailPayload(input) : buildGrowthMarginPayload(input);
     if (!payload) return Response.json({ error: 'Invalid growth margin parameters' }, { status: 400, headers });
-    const raw = await callOrderGateway(session.email, detail ? 'get_growth_margin_detail' : 'get_growth_margin', payload);
+    let raw: unknown;
+    try {
+      raw = await callOrderGateway(session.email, detail ? 'get_growth_margin_detail' : 'get_growth_margin', payload);
+    } catch (error) {
+      if ('tallyItemKey' in payload && error instanceof OrderGatewayError && (error.status === 400 || error.status === 422)) return Response.json({ error: 'No Growth prices for this item yet.' }, { status: 404, headers });
+      throw error;
+    }
     if (detail) {
       const data = normalizeGrowthMarginDetail(raw);
-      if (!data || data.page !== payload.page || ('itemKey' in payload ? data.kind !== 'item' || data.itemKey !== payload.itemKey : !('labKey' in payload) || data.kind !== 'lab' || data.labKey !== payload.labKey)) throw new Error('Malformed growth margin detail response');
+      if (!data || data.page !== payload.page || ('tallyItemKey' in payload ? data.kind !== 'item' || data.tallyItemKey !== payload.tallyItemKey : 'itemKey' in payload ? data.kind !== 'item' || data.itemKey !== payload.itemKey : !('labKey' in payload) || data.kind !== 'lab' || data.labKey !== payload.labKey)) throw new Error('Malformed growth margin detail response');
       return Response.json(data, { headers });
     }
     const data = normalizeGrowthMargin(raw);
