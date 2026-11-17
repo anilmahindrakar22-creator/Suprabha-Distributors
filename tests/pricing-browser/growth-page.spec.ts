@@ -13,11 +13,12 @@ const marginSample = (p: URLSearchParams) => ({
   rows: p.get('view') === 'items' ? [{ itemKey: 'item-a', name: 'Cliniquant CRP', salesPaise: 55000000, knownSalesPaise: 55000000, gpPaise: 7000000, marginPct: 13.2, labs: 13, priceLowPaise: 140000, typicalPricePaise: 250000, priceHighPaise: 322000, spreadPaise: 2904900, low: true, belowCost: false }] : [{ labKey: 'ledger-a', customerId: 'customer-a', name: 'Lab A', town: 'Town A', salesPaise: 55000000, knownSalesPaise: 55000000, gpPaise: 7000000, marginPct: 13.2, coveragePct: 100, low: true, totalSalesPaise: 80000000, instrumentSalesPaise: 25000000 }],
 });
 const itemDetail = () => ({
-  kind: 'item', itemKey: 'item-a', name: 'Cliniquant CRP', typicalPricePaise: 250000, labs: 13, marginPct: 28.1, tallyItemKey: 'tally-a', page: 1, pageSize: 20, total: 3,
+  kind: 'item', itemKey: 'item-a', name: 'Cliniquant CRP', typicalPricePaise: 250000, labs: 13, marginPct: 28.1, tallyItemKey: 'tally-a', page: 1, pageSize: 20, total: 4,
   rows: [
     { labKey: 'ledger-a', customerId: 'customer-a', name: 'Lab A', town: 'Town A', unitPricePaise: 160800, quantity: 6, salesPaise: 964800, belowTypical: true, packDifference: false, approvedPricePaise: 170000 },
     { labKey: 'ledger-pack', customerId: 'customer-pack', name: 'Pack Lab', town: null, unitPricePaise: 50000, quantity: 2, salesPaise: 100000, belowTypical: false, packDifference: true, approvedPricePaise: null },
     { labKey: 'ledger-unlinked', customerId: null, name: null, town: null, unitPricePaise: 140000, quantity: 4, salesPaise: 560000, belowTypical: true, packDifference: false, approvedPricePaise: null },
+    { labKey: 'ledger-steady', customerId: 'customer-steady', name: 'Steady Lab', town: 'Town B', unitPricePaise: 250000, quantity: 5, salesPaise: 1250000, belowTypical: false, packDifference: false, approvedPricePaise: null },
   ],
 });
 const inboxSample = (filter = 'all', page = 1, inProgress = false, viewerEmail = 'manager@example.test') => ({
@@ -275,6 +276,11 @@ for (const width of [375, 1280]) {
       const panel = page.getByRole('dialog');
       await expect(panel.getByRole('heading', { name: 'Cliniquant CRP · price per unit by lab' })).toBeVisible();
       await expect(panel.getByText(/Typical \(median\) ₹2,500 across 13 labs/)).toBeVisible();
+      const strip = panel.locator('[data-price-strip]');
+      await expect(strip.getByText('Lower ₹2,250', { exact: true })).toBeVisible();
+      await expect(strip.getByText('Upper ₹2,750', { exact: true })).toBeVisible();
+      await expect(strip.getByText('Showing 3 of 4 labs · band ₹2,250–₹2,750 (90–110% of typical) · orange = below the band', { exact: true })).toBeVisible();
+      await expect(strip.locator('svg')).toHaveAttribute('aria-label', 'Price per unit by lab against typical ₹2,500, band ₹2,250 to ₹2,750');
       await expect(panel.getByRole('button', { name: 'Review prices', exact: true })).toHaveCount(1);
       await expect(panel.getByText(/Approved ₹1,700/)).toBeVisible();
       const pack = panel.getByRole('listitem').filter({ hasText: 'Pack Lab' });

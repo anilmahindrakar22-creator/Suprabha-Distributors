@@ -23,13 +23,15 @@ function PriceStrip({ data, onPick }: { data: ItemDetail; onPick: (index: number
   const lo = Math.min(...prices, typical * 0.6), hi = Math.max(...prices, typical * 1.2);
   const px = (price: number) => 4 + (price - lo) / (hi - lo) * 92;
   return <div className="mt-3"><div data-price-strip {...containerProps}>
-    <svg className="block h-[72px] w-full overflow-visible" role="group" aria-label={`Price per unit by lab against typical ${money(typical)}`}>
+    <svg className="block h-[72px] w-full overflow-visible" role="group" aria-label={`Price per unit by lab against typical ${money(typical)}, band ${money(typical * 0.9)} to ${money(typical * 1.1)}`}>
       <rect x={`${px(typical * 0.9)}%`} width={`${px(typical * 1.1) - px(typical * 0.9)}%`} y="16" height="38" fill="var(--color-sf-chart-grid)" />
       <line x1="4%" x2="96%" y1="58" y2="58" stroke="var(--color-sf-chart-axis)" />
+      <line x1={`${px(typical * 0.9)}%`} x2={`${px(typical * 0.9)}%`} y1="54" y2="62" stroke="var(--color-sf-chart-axis)" />
+      <line x1={`${px(typical * 1.1)}%`} x2={`${px(typical * 1.1)}%`} y1="54" y2="62" stroke="var(--color-sf-chart-axis)" />
       <line x1={`${px(typical)}%`} x2={`${px(typical)}%`} y1="12" y2="58" stroke="var(--color-sf-chart-axis)" strokeWidth="2" />
       <text x={`${px(typical)}%`} y="8" textAnchor="middle" className="fill-sf-label text-[10px]">Typical {wholeRupees(typical)}</text>
-      <text x="4%" y="70" textAnchor="start" className="fill-sf-muted text-[10px]">{wholeRupees(lo)}</text>
-      <text x="96%" y="70" textAnchor="end" className="fill-sf-muted text-[10px]">{wholeRupees(hi)}</text>
+      <text x={`${px(typical * 0.9)}%`} y="70" textAnchor="middle" className="fill-sf-label text-[10px]">Lower {wholeRupees(typical * 0.9)}</text>
+      <text x={`${px(typical * 1.1)}%`} y="70" textAnchor="middle" className="fill-sf-label text-[10px]">Upper {wholeRupees(typical * 1.1)}</text>
       {dots.map(({ row, index }, i) => {
         const under = row.unitPricePaise < typical * 0.9, share = Math.round(row.unitPricePaise / typical * 100);
         const label = `${row.name ?? 'Unlinked lab'}: ${money(row.unitPricePaise)}, ${share}% of typical`;
@@ -39,7 +41,7 @@ function PriceStrip({ data, onPick }: { data: ItemDetail; onPick: (index: number
         </g>;
       })}
     </svg>
-    <p className="text-xs text-sf-muted">Showing {dots.length} of {data.total} labs · orange = under 90% of typical</p>
+    <p className="text-xs text-sf-muted">Showing {dots.length} of {data.total} labs · band {wholeRupees(typical * 0.9)}–{wholeRupees(typical * 1.1)} (90–110% of typical) · orange = below the band</p>
     {tip}
   </div></div>;
 }
