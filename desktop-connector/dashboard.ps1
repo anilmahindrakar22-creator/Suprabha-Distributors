@@ -9,6 +9,8 @@ $companyName = 'SUPRABHA DISTRIBUTORS'
 $script:nextEconomicRead=Get-Date
 $script:lastEconomicEvidence=$null
 $script:economicEvidenceAckedVersion=$null
+$script:pricingHistoryAckedHash=$null
+$script:pendingPricingHistoryHash=$null
 $script:economicSyncError=$null
 $script:economicSyncDomain=$null
 $stateDirectory = Join-Path ([Environment]::GetFolderPath('LocalApplicationData')) 'SuprabhaStockFlow'
@@ -108,6 +110,11 @@ function Select-UploadEconomicEvidence($Coverage, $LastEvidence, [string]$AckedV
     $sourceVersion = [string]$LastEvidence.sourceVersion
     if (-not [string]::IsNullOrEmpty($sourceVersion) -and [string]::Equals($sourceVersion, $AckedVersion, [StringComparison]::Ordinal)) { return $null }
     return $LastEvidence
+}
+
+function Get-PricingHistoryHash($PricingHistory) {
+    if ($null -eq $PricingHistory) { return $null }
+    return Get-StableEvidenceVersion ($PricingHistory | ConvertTo-Json -Depth 12 -Compress)
 }
 
 function Get-ServerTimingFields([string]$Header) {
@@ -268,11 +275,15 @@ function Publish-CloudSnapshot([string]$Json) {
     }
     $economicVoucherField = if ($null -ne $economicVoucherCount) { " economicVouchers=$economicVoucherCount" } else { '' }
     $economicEvidenceAckedField = if ($null -eq $uploaded.economicEvidence -and $null -ne $script:lastEconomicEvidence -and -not [string]::IsNullOrEmpty([string]$script:lastEconomicEvidence.sourceVersion) -and [string]::Equals([string]$script:lastEconomicEvidence.sourceVersion, $script:economicEvidenceAckedVersion, [StringComparison]::Ordinal)) { ' economicEvidence=acked' } else { '' }
+    $pricingHistoryAckedField = if ($null -ne $uploaded -and $null -eq $uploaded.pricingHistory -and $null -ne $script:pricingHistoryAckedHash) { ' pricingHistory=acked' } else { '' }
+    if ($null -ne $uploaded -and $null -ne $uploaded.pricingHistory -and $null -ne $script:pendingPricingHistoryHash) {
+        $script:pricingHistoryAckedHash = $script:pendingPricingHistoryHash
+    }
     if ($null -ne $uploaded.economicEvidence -and $uploaded.economicEvidence.purpose -ne 'sales_coverage' -and -not [string]::IsNullOrEmpty([string]$uploaded.economicEvidence.sourceVersion)) {
         $script:economicEvidenceAckedVersion = [string]$uploaded.economicEvidence.sourceVersion
     }
-    if ($economicEvidenceAckedField) {
-        Write-ConnectorHealth "$([datetimeoffset]::Now.ToString('o')) request=cloud_upload durationMs=$($watch.ElapsedMilliseconds) bytes=$payloadBytes$serverTimingFields$economicVoucherField$economicEvidenceAckedField consecutiveFailures=0 status=ok"
+    if ($economicEvidenceAckedField -or $pricingHistoryAckedField) {
+        Write-ConnectorHealth "$([datetimeoffset]::Now.ToString('o')) request=cloud_upload durationMs=$($watch.ElapsedMilliseconds) bytes=$payloadBytes$serverTimingFields$economicVoucherField$economicEvidenceAckedField$pricingHistoryAckedField consecutiveFailures=0 status=ok"
     } else {
         Write-ConnectorHealth "$([datetimeoffset]::Now.ToString('o')) request=cloud_upload durationMs=$($watch.ElapsedMilliseconds) bytes=$payloadBytes$serverTimingFields$economicVoucherField consecutiveFailures=0 status=ok"
     }
@@ -689,7 +700,7 @@ function Read-ReorderData {
     Write-ConnectorHealth "$([datetimeoffset]::Now.ToString('o')) domain=reorder rows=$($sorted.Count) catalog=$($catalog.Count) customers=$($customers.Count) status=accepted"
     $fetchedAtIso = (Get-Date).ToUniversalTime().ToString('o')
     $sourceFetchedAtIso = Get-ConnectorSourceFetchedAt $fetchedAtIso $script:lastCatalogData $script:lastCustomerData $salesData.fetchedAtIso $script:lastPurchaseData.fetchedAtIso
-    return [ordered]@{
+    $snapshot = [ordered]@{
         company = $companyName
         fetchedAt = (Get-Date).ToString('dd MMM yyyy, hh:mm:ss tt')
         fetchedAtShort = (Get-Date).ToString('dd MMM, hh:mm tt')
@@ -729,6 +740,14 @@ function Read-ReorderData {
         economicSyncError = $script:economicSyncError
         economicSyncDomain = $script:economicSyncDomain
     }
+    $hash = Get-PricingHistoryHash $snapshot.pricingHistory
+    if ($null -ne $hash -and $null -ne $script:pricingHistoryAckedHash -and [string]::Equals([string]$hash, [string]$script:pricingHistoryAckedHash, [StringComparison]::Ordinal)) {
+        $snapshot.Remove('pricingHistory')
+        $script:pendingPricingHistoryHash = $null
+    } else {
+        $script:pendingPricingHistoryHash = $hash
+    }
+    return $snapshot
 }
 
 function Send-Response($Client, [int]$Status, [string]$ContentType, [byte[]]$Body) {
