@@ -138,7 +138,9 @@ for (const width of [375, 1280]) {
       const strip = panel.locator('[data-price-strip]');
       await expect(strip).toBeVisible();
       await expect(strip).toContainText('Typical ₹2,500');
-      await expect(strip).toContainText('Showing 5 of 13 labs · orange = under 90% of typical');
+      await expect(strip).toContainText('Showing 5 of 13 labs · band ₹2,250–₹2,750 (90–110% of typical) · orange = below the band');
+      await expect(strip).toContainText('Lower ₹2,250');
+      await expect(strip).toContainText('Upper ₹2,750');
       await expect(strip.locator('[data-price-dot]')).toHaveCount(5);
       const under = strip.locator('[data-price-dot="under"]');
       await expect(under).toHaveCount(1);
@@ -182,7 +184,7 @@ for (const width of [375, 1280]) {
       const strip = panel.locator('[data-price-strip]');
       await expect(strip).toBeVisible();
       await expect(strip).toContainText('Typical ₹2,500');
-      await expect(strip).toContainText('Showing 5 of 13 labs · orange = under 90% of typical');
+      await expect(strip).toContainText('Showing 5 of 13 labs · band ₹2,250–₹2,750 (90–110% of typical) · orange = below the band');
     });
     test('item scatter tooltip stays within its section', async ({ page }) => {
       await fixture(page);
