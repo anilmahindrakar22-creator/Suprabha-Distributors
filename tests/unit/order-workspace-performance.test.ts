@@ -7,7 +7,7 @@ const route = readFileSync('app/api/orders/route.ts', 'utf8');
 
 describe('lightweight workspace boundaries', () => {
   it('loads deferred service and administrator sections only when opened', () => {
-    expect(frame).toContain("const OrderWorkspace = lazy(loadOrderWorkspace)");
+    expect(frame).toContain("const OrderWorkspace = lazy(() => loadOrderWorkspace().catch(reloadOnStaleChunk))");
     expect(frame).toContain("lazy(() => import('./service-workspace')");
     expect(frame).toContain("lazy(() => import('./user-management')");
     expect(frame).not.toContain("import { ServiceWorkspace } from './service-workspace'");

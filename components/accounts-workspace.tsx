@@ -8,15 +8,16 @@ import { ArrowLeft, Ban, CalendarCheck, CalendarClock, CalendarPlus, CalendarX, 
 import { isInsideMarketArea, MARKET_AREA, parseLocationInput, powerAlerts, socialStyles, styleCues, withAccountContacts, type ContactStyle, type SocialStyle, type StyleCue, type AppContact, type ContactAssessment, type PowerAlert, type AccountRow, type AccountsResponse, type VisitOutcome } from '@/lib/account-types';
 import { walletPowerAlertLabels, walletRoleLabels, walletCurrentRoleLabels, walletRoleMeanings, walletStanceLabels, walletStanceMeanings } from '@/lib/wallet-labels';
 import { readJsonBody } from '@/lib/http-json';
+import { reloadOnStaleChunk } from '../lib/stale-chunk-reload';
 import { VisitReasonPicker, emptyVisitReason, visitReasonMissingSource, visitReasonPayload, type VisitReasonPickerValue } from '@/components/visit-reason-picker';
 
 type Mode = 'mine' | 'all';
-const CustomerLinks = lazy(() => import('./customer-links').then(module => ({ default: module.CustomerLinks })));
-const WalletWorkspace = lazy(() => import('./wallet-workspace').then(module => ({ default: module.WalletWorkspace })));
-const MyActions = lazy(() => import('./my-actions').then(module => ({ default: module.MyActions })));
-const CustomerMap = lazy(() => import('./customer-map').then(module => ({ default: module.CustomerMap })));
-const ProspectsView = lazy(() => import('./prospects-view').then(module => ({ default: module.ProspectsView })));
-const PowerMapInfluence = lazy(() => import('./power-map-influence').then(module => ({ default: module.PowerMapInfluence })));
+const CustomerLinks = lazy(() => import('./customer-links').then(module => ({ default: module.CustomerLinks })).catch(reloadOnStaleChunk));
+const WalletWorkspace = lazy(() => import('./wallet-workspace').then(module => ({ default: module.WalletWorkspace })).catch(reloadOnStaleChunk));
+const MyActions = lazy(() => import('./my-actions').then(module => ({ default: module.MyActions })).catch(reloadOnStaleChunk));
+const CustomerMap = lazy(() => import('./customer-map').then(module => ({ default: module.CustomerMap })).catch(reloadOnStaleChunk));
+const ProspectsView = lazy(() => import('./prospects-view').then(module => ({ default: module.ProspectsView })).catch(reloadOnStaleChunk));
+const PowerMapInfluence = lazy(() => import('./power-map-influence').then(module => ({ default: module.PowerMapInfluence })).catch(reloadOnStaleChunk));
 type FormKind = 'visit' | 'location' | 'owner';
 const inputClass = 'min-h-11 w-full min-w-0 max-w-full rounded-xl border border-sf-line bg-sf-soft-0 px-3 text-sm text-sf-body outline-none focus:border-sf-mint';
 const buttonClass = 'min-h-11 rounded-xl border border-sf-line px-3 text-sm font-bold text-sf-body disabled:opacity-50';

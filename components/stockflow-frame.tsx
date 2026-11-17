@@ -18,17 +18,18 @@ import { hasAnyStockFlowRole, type StockFlowRole } from '@/lib/user-types';
 import { revokeOfflineVault } from '@/lib/offline-vault-storage';
 import { checkStaffSession, withStaffSessionLock } from '@/lib/staff-session-client';
 import { hasUnsavedInput, sameRoles } from '@/lib/role-refresh';
+import { reloadOnStaleChunk } from '../lib/stale-chunk-reload';
 
 const loadOrderWorkspace = () => import('./order-workspace').then((module) => ({ default: module.OrderWorkspace }));
-const OrderWorkspace = lazy(loadOrderWorkspace);
-const NewOrderCapture = lazy(() => import('./order-workspace').then(module => ({ default: module.HydratedNewOrderPanel })));
-const ServiceWorkspace = lazy(() => import('./service-workspace').then((module) => ({ default: module.ServiceWorkspace })));
-const InstrumentEconomicsWorkspace = lazy(() => import('./instrument-economics-workspace').then((module) => ({ default: module.InstrumentEconomicsWorkspace })));
-const GrowthPage = lazy(() => import('./growth-page').then(module => ({ default: module.GrowthPage })));
-const UserManagement = lazy(() => import('./user-management').then((module) => ({ default: module.UserManagement })));
-const PricingWorkspace = lazy(() => import('./pricing-workspace').then((module) => ({ default: module.PricingWorkspace })));
-const RequestsWorkspace = lazy(() => import('./requests-workspace').then((module) => ({ default: module.RequestsWorkspace })));
-const AccountsWorkspace = lazy(() => import('./accounts-workspace').then((module) => ({ default: module.AccountsWorkspace })));
+const OrderWorkspace = lazy(() => loadOrderWorkspace().catch(reloadOnStaleChunk));
+const NewOrderCapture = lazy(() => import('./order-workspace').then(module => ({ default: module.HydratedNewOrderPanel })).catch(reloadOnStaleChunk));
+const ServiceWorkspace = lazy(() => import('./service-workspace').then((module) => ({ default: module.ServiceWorkspace })).catch(reloadOnStaleChunk));
+const InstrumentEconomicsWorkspace = lazy(() => import('./instrument-economics-workspace').then((module) => ({ default: module.InstrumentEconomicsWorkspace })).catch(reloadOnStaleChunk));
+const GrowthPage = lazy(() => import('./growth-page').then(module => ({ default: module.GrowthPage })).catch(reloadOnStaleChunk));
+const UserManagement = lazy(() => import('./user-management').then((module) => ({ default: module.UserManagement })).catch(reloadOnStaleChunk));
+const PricingWorkspace = lazy(() => import('./pricing-workspace').then((module) => ({ default: module.PricingWorkspace })).catch(reloadOnStaleChunk));
+const RequestsWorkspace = lazy(() => import('./requests-workspace').then((module) => ({ default: module.RequestsWorkspace })).catch(reloadOnStaleChunk));
+const AccountsWorkspace = lazy(() => import('./accounts-workspace').then((module) => ({ default: module.AccountsWorkspace })).catch(reloadOnStaleChunk));
 
 type Surface = 'today' | 'stock' | 'orders' | 'requests' | 'accounts' | 'pricing' | 'economics' | 'growth' | 'service' | 'users';
 const surfaceIcons = { today: LayoutDashboard, stock: Boxes, orders: ShoppingCart, requests: Inbox, accounts: Building2, pricing: Tags, economics: TrendingUp, growth: LineChart, service: Wrench, users: Users };
