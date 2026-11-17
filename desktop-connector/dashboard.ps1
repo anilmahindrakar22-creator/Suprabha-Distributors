@@ -8,6 +8,7 @@ $companyName = 'SUPRABHA DISTRIBUTORS'
 . (Join-Path $dashboardRoot 'economics.ps1')
 $script:nextEconomicRead=Get-Date
 $script:lastEconomicEvidence=$null
+$script:economicEvidenceAckedVersion=$null
 $script:economicSyncError=$null
 $script:economicSyncDomain=$null
 $stateDirectory = Join-Path ([Environment]::GetFolderPath('LocalApplicationData')) 'SuprabhaStockFlow'
@@ -99,6 +100,14 @@ function Write-ConnectorHealth([string]$Message) {
         # Health telemetry must never interrupt Tally extraction or cloud delivery.
         Write-Host 'Connector health log could not be updated.' -ForegroundColor DarkYellow
     }
+}
+
+function Select-UploadEconomicEvidence($Coverage, $LastEvidence, [string]$AckedVersion) {
+    if ($null -ne $Coverage) { return $Coverage.economicEvidence }
+    if ($null -eq $LastEvidence) { return $null }
+    $sourceVersion = [string]$LastEvidence.sourceVersion
+    if (-not [string]::IsNullOrEmpty($sourceVersion) -and [string]::Equals($sourceVersion, $AckedVersion, [StringComparison]::Ordinal)) { return $null }
+    return $LastEvidence
 }
 
 function Get-ServerTimingFields([string]$Header) {
@@ -258,7 +267,15 @@ function Publish-CloudSnapshot([string]$Json) {
         $economicVoucherCount = @($uploaded.economicEvidence.vouchers).Count
     }
     $economicVoucherField = if ($null -ne $economicVoucherCount) { " economicVouchers=$economicVoucherCount" } else { '' }
-    Write-ConnectorHealth "$([datetimeoffset]::Now.ToString('o')) request=cloud_upload durationMs=$($watch.ElapsedMilliseconds) bytes=$payloadBytes$serverTimingFields$economicVoucherField consecutiveFailures=0 status=ok"
+    $economicEvidenceAckedField = if ($null -eq $uploaded.economicEvidence -and $null -ne $script:lastEconomicEvidence -and -not [string]::IsNullOrEmpty([string]$script:lastEconomicEvidence.sourceVersion) -and [string]::Equals([string]$script:lastEconomicEvidence.sourceVersion, $script:economicEvidenceAckedVersion, [StringComparison]::Ordinal)) { ' economicEvidence=acked' } else { '' }
+    if ($null -ne $uploaded.economicEvidence -and $uploaded.economicEvidence.purpose -ne 'sales_coverage' -and -not [string]::IsNullOrEmpty([string]$uploaded.economicEvidence.sourceVersion)) {
+        $script:economicEvidenceAckedVersion = [string]$uploaded.economicEvidence.sourceVersion
+    }
+    if ($economicEvidenceAckedField) {
+        Write-ConnectorHealth "$([datetimeoffset]::Now.ToString('o')) request=cloud_upload durationMs=$($watch.ElapsedMilliseconds) bytes=$payloadBytes$serverTimingFields$economicVoucherField$economicEvidenceAckedField consecutiveFailures=0 status=ok"
+    } else {
+        Write-ConnectorHealth "$([datetimeoffset]::Now.ToString('o')) request=cloud_upload durationMs=$($watch.ElapsedMilliseconds) bytes=$payloadBytes$serverTimingFields$economicVoucherField consecutiveFailures=0 status=ok"
+    }
     if ($null -ne $economicVoucherCount -and $economicVoucherCount -ge 1900) {
         Write-ConnectorHealth "$([datetimeoffset]::Now.ToString('o')) request=economic_voucher_headroom status=warning count=$economicVoucherCount limit=2000"
     }
@@ -706,7 +723,7 @@ function Read-ReorderData {
         customers = $customers
         tallyInvoices = @($salesData.invoices)
         pricingHistory = [ordered]@{ sales = $pricingSales; purchaseCosts = $pricingPurchaseCosts; supplierPrices = $supplierPrices }
-        economicEvidence = if($coverage){$coverage.economicEvidence}else{$script:lastEconomicEvidence}
+        economicEvidence = Select-UploadEconomicEvidence $coverage $script:lastEconomicEvidence $script:economicEvidenceAckedVersion
         salesControlTotals = if($coverage){$coverage.salesControlTotals}else{$null}
         salesCoverageDate = $coverageDate
         economicSyncError = $script:economicSyncError
