@@ -238,6 +238,22 @@ for (const action of ['approve_price_contract', 'reject_price_contract', 'create
   });
 }
 
+test('new commercial policy explains fields, prefills current values, and validates target margin', async ({ page }) => {
+  const currentPolicy = { id: 'policy-1', policyVersion: 'current', minimumMarginPercent: 25, targetMarginPercent: null, overrideApprovalPercent: 0, roundingIncrement: 1, roundingRuleVersion: 'ceil-rupee-v1', effectiveFrom: '2026-01-01', effectiveTo: null, active: true, createdBy: 'manager@example.com', createdAt: '2026-01-01T00:00:00Z' };
+  await page.route('**/api/pricing**', route => route.fulfill({ json: new URL(route.request().url()).searchParams.has('policies') ? { policies: [currentPolicy] } : { contracts: [] } }));
+  await page.goto('/?view=workspace');
+  await page.getByText('Pricing administration', { exact: true }).click();
+  await page.getByRole('button', { name: 'New policy', exact: true }).click();
+  await expect(page.getByLabel('Minimum gross margin %', { exact: true })).toHaveValue('25');
+  await expect(page.getByLabel('Override approval threshold %', { exact: true })).toHaveValue('0');
+  await expect(page.getByLabel('Round-up increment ₹', { exact: true })).toHaveValue('1');
+  await expect(page.getByText('0 means every change needs a decision')).toBeVisible();
+  await expect(page.getByLabel('Rounding rule version')).toHaveCount(0);
+  await page.getByLabel('Target gross margin % (optional)', { exact: true }).fill('20');
+  await expect(page.getByText('Target must be at least the minimum.')).toBeVisible();
+  await expect(page.getByRole('button', { name: 'Activate policy', exact: true })).toBeDisabled();
+});
+
 test('reload recovery stores only a receipt and checks the server without resubmitting', async ({ page }) => {
   let posts = 0;
   let status = 'unresolved';
