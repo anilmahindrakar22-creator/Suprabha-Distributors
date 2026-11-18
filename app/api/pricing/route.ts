@@ -20,6 +20,15 @@ export async function GET(request: Request) {
   try {
     const email = await actorEmail();
     const parameters = new URL(request.url).searchParams;
+    if (parameters.has('outcomes')) {
+      const pageValue = parameters.get('page') ?? '1';
+      const page = Number(pageValue);
+      const state = parameters.get('state');
+      if (parameters.get('outcomes') !== '1' || [...parameters.keys()].some(key => !['outcomes', 'page', 'state'].includes(key) || parameters.getAll(key).length !== 1)
+        || !/^[1-9][0-9]{0,5}$/.test(pageValue) || page > 100000
+        || (state !== null && !['different', 'not_billed', 'matches', 'cannot_match'].includes(state))) return failure('Invalid price outcome filters', 400);
+      return Response.json(await callOrderGateway(email, 'get_order_pricing', { view: 'price_outcomes', page, ...(state ? { state } : {}) }), { headers: privateHeaders });
+    }
     if (parameters.has('recoveryKey')) {
       const idempotencyKey = parameters.get('recoveryKey') || '';
       const pricingAction = parameters.get('pricingAction') || '';

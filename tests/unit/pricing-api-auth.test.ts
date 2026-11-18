@@ -2,6 +2,7 @@ import { beforeEach, afterEach, describe, expect, it, vi } from 'vitest';
 const identity = vi.hoisted(() => ({ headers: new Headers() }));
 vi.mock('next/headers', () => ({ headers: async () => identity.headers }));
 import { GET, POST } from '../../app/api/pricing/route';
+import { normalizePriceOutcomes, type PriceOutcomes } from '../../lib/price-outcome-types';
 
 const network = vi.fn<typeof fetch>();
 const key = '11111111-1111-4111-8111-111111111111';
@@ -13,9 +14,52 @@ beforeEach(() => {
   network.mockReset();
   network.mockResolvedValue(Response.json({ status: 'accepted' }));
 });
+
+describe('price outcome response boundary', () => {
+  const valid: PriceOutcomes = {
+    view: 'price_outcomes', asOf: '2026-11-18', toleranceRupees: 1, page: 1, pageSize: 10, total: 1,
+    counts: { different: 1, not_billed: 0, matches: 0, cannot_match: 0 }, salesThrough: '2026-11-14', matureCount: 0,
+    rows: [{ priceId: key, customerId: key, customerName: 'Test Customer', itemKey: 'Reagent', approvedPaise: 10000,
+      effectiveFrom: '2026-10-27', validTo: null, state: 'different', reason: null, lines: 1, packLines: 0,
+      lastBilledOn: '2026-11-14', lastBilledPaise: 9500, worstDiffPaise: -500, differentLines: 1 }],
+  };
+  it('accepts the complete rates-only response and nullable dates', () => {
+    expect(normalizePriceOutcomes(valid)).toEqual(valid);
+    expect(normalizePriceOutcomes({ ...valid, salesThrough: null, total: 0, rows: [] })).not.toBeNull();
+  });
+  it.each([
+    ['priceId', 'unknown'], ['customerId', null], ['customerName', ''], ['itemKey', 1],
+    ['approvedPaise', 100.5], ['effectiveFrom', '2026-02-30'], ['validTo', 'unknown'],
+    ['state', 'unknown'], ['reason', 'unknown'], ['lines', -1], ['packLines', 0.5],
+    ['lastBilledOn', '2026-13-01'], ['lastBilledPaise', Number.NaN], ['worstDiffPaise', -0.5], ['differentLines', 2],
+  ])('fails closed for invalid row %s', (field, value) => {
+    expect(normalizePriceOutcomes({ ...valid, rows: [{ ...valid.rows[0], [field]: value }] })).toBeNull();
+  });
+  it.each([
+    ['view', 'unknown'], ['asOf', '2026-02-30'], ['toleranceRupees', 2], ['page', 0], ['pageSize', 20],
+    ['total', -1], ['counts', { different: 0.5, not_billed: 0, matches: 0, cannot_match: 0 }],
+    ['salesThrough', 'yesterday'], ['matureCount', 0.5], ['rows', null],
+  ])('fails closed for invalid response %s', (field, value) => {
+    expect(normalizePriceOutcomes({ ...valid, [field]: value })).toBeNull();
+  });
+  it('requires an enumerated reason for cannot-match rows', () => {
+    expect(normalizePriceOutcomes({ ...valid, rows: [{ ...valid.rows[0], state: 'cannot_match', reason: null }] })).toBeNull();
+    expect(normalizePriceOutcomes({ ...valid, rows: [{ ...valid.rows[0], state: 'cannot_match', reason: 'item_not_in_tally' }] })).not.toBeNull();
+  });
+});
 afterEach(() => { vi.unstubAllGlobals(); vi.unstubAllEnvs(); });
 
 describe('authenticated pricing API boundary (gateway responses simulated)', () => {
+  it.each(['', '&page=2&state=different'])('forwards the exact outcomes payload %s', async query => {
+    const result = await GET(new Request(`http://local/api/pricing?outcomes=1${query}`));
+    expect(result.status).toBe(200);
+    expect(JSON.parse(network.mock.calls[0][1]?.body as string)).toEqual({ actorEmail: 'accounts@example.test', action: 'get_order_pricing', payload: { view: 'price_outcomes', page: query ? 2 : 1, ...(query ? { state: 'different' } : {}) } });
+    expect(result.headers.get('cache-control')).toBe('private, no-store');
+  });
+  it.each(['&state=unknown', '&state=', '&contracts=1', '&page=0', '&page=100001', '&page=1.5', '&page=1&page=2'])('rejects invalid outcomes filters %s', async query => {
+    expect((await GET(new Request(`http://local/api/pricing?outcomes=1${query}`))).status).toBe(400);
+    expect(network).not.toHaveBeenCalled();
+  });
   it('denies unauthenticated reads and writes without contacting the gateway', async () => {
     identity.headers = new Headers();
     expect((await GET(new Request('http://local/api/pricing?policies=1'))).status).toBe(401);

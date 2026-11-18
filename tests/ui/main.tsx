@@ -72,7 +72,7 @@ function Fixture() {
   if (parameters.get('view') === 'order-entry') {
     return <HydratedNewOrderPanel data={data} templateOrder={null} onClose={() => undefined} onCreated={() => undefined} onViewCustomer={() => undefined} />;
   }
-  if (parameters.get('view') === 'workspace') return <PricingWorkspace actorEmail="fixture@example.test" actorRole="management"/>;
+  if (parameters.get('view') === 'workspace') return <PricingWorkspace actorEmail="fixture@example.test" actorRole={parameters.get('role') || 'management'}/>;
   return <main className="mx-auto max-w-5xl p-4"><h1>Pricing test fixture</h1>{parameters.get('view') === 'order'
     ? <PricingOptions line={{ ...row, fixed: parameters.has('fixed'), ...(parameters.has('noHistory') ? { lastRate: null, historicCost: null, continuityPrice: null, recommendedPrice: null, proposedRate: null, targetMarginPrice: null } : {}) }} entry={entry} onChange={setEntry}/>
     : <CustomerPriceBook actorEmail="fixture@example.test" actorRole={parameters.get('role') || 'management'}/>}</main>;
