@@ -11,9 +11,57 @@ const stockPayload = (sourceFetchedAtIso?: Record<string, unknown>) => ({
 });
 
 test.beforeEach(async ({ page }) => {
+  await page.route('**/api/requirements?view=cover', (route) => route.fulfill({
+    json: { view: 'cover', leadTimeDays: 7, salesThrough: null, runsOutCount: 0, items: [] },
+  }));
   await page.route('**/api/requirements?view=to_order&page=1', (route) => route.fulfill({
     json: { view: 'to_order', total: 21, waitingCount: 6, unknownCount: 0, page: 1, pageSize: 25, items: [] },
   }));
+});
+
+const coverStockPayload = () => ({
+  ...stockPayload(), groups: ['Test group'], rows: [
+    { group: 'Test group', item: 'Test reagent B', closing: 30, reorderLevel: 50, minimumOrder: 1, shortfall: 20, orderToBePlaced: 20 },
+    { group: 'Test group', item: 'Test reagent C', closing: 5, reorderLevel: 10, minimumOrder: 1, shortfall: 5, orderToBePlaced: 5 },
+    { group: 'Test group', item: 'Test reagent A', closing: 2, reorderLevel: 3, minimumOrder: 1, shortfall: 1, orderToBePlaced: 1 },
+  ],
+});
+
+test('stock cover puts items that run out first and explains the delivery comparison on a phone', async ({ page }) => {
+  await page.setViewportSize({ width: 375, height: 812 });
+  await page.route('**/api/requirements?view=cover', (route) => route.fulfill({ json: {
+    view: 'cover', leadTimeDays: 7, salesThrough: '2026-11-18', runsOutCount: 1,
+    items: [
+      { itemKey: 'Test reagent A', daysLeft: 5, state: 'runs_out' },
+      { itemKey: 'Test reagent B', daysLeft: 300, state: 'covered' },
+      { itemKey: 'Test reagent C', daysLeft: null, state: 'no_recent_use' },
+    ],
+  } }));
+  await openStockDashboard(page, coverStockPayload());
+  await page.locator('#groupCards summary').click();
+  await expect(page.locator('.gi-cover[data-cover="runs_out"]')).toHaveText('Runs out in 5 days · 7-day delivery');
+  await expect(page.locator('.group-item[data-cover="runs_out"] .gi-order')).toHaveCSS('background-color', 'rgb(253, 236, 234)');
+  await expect(page.locator('.gi-cover[data-cover="covered"]')).toHaveText('300 days left');
+  await expect(page.locator('.gi-cover[data-cover="no_recent_use"]')).toHaveText('No sales in 90 days');
+  await expect(page.locator('.group-item').first().locator('.gi-name')).toHaveText('Test reagent A');
+  await expect(page.locator('#itemHint')).toContainText('1 run out before delivery');
+  await expect(page.locator('#coverCaption')).toContainText('Delivery lead time: 7 days');
+  await expect(page.locator('#coverCaption')).toContainText('Sales up to 18 Nov.');
+  expect(await page.evaluate(() => document.documentElement.scrollWidth <= innerWidth)).toBe(true);
+});
+
+test('cover failure leaves reorder rows visible in their original order without cover lines', async ({ page }) => {
+  await page.setViewportSize({ width: 375, height: 812 });
+  await page.route('**/api/requirements?view=cover', (route) => route.fulfill({ status: 500, json: {} }));
+  await openStockDashboard(page, coverStockPayload());
+  await expect(page.locator('#refresh')).toBeEnabled();
+  await page.locator('#groupCards summary').click();
+  await expect(page.locator('.group-item')).toHaveCount(3);
+  await expect(page.locator('.group-item').first().locator('.gi-name')).toHaveText('Test reagent B');
+  await expect(page.locator('.gi-cover')).toHaveCount(0);
+  await expect(page.locator('#coverCaption')).toBeHidden();
+  await expect(page.locator('#itemHint')).not.toContainText('run out before delivery');
+  expect(await page.evaluate(() => document.documentElement.scrollWidth <= innerWidth)).toBe(true);
 });
 
 async function openStockDashboard(page: import('@playwright/test').Page, payload: ReturnType<typeof stockPayload>) {

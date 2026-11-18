@@ -11,6 +11,10 @@ export async function GET(request: Request) {
     const params = new URL(request.url).searchParams;
     const view = params.get('view');
     if (view !== null) {
+      if (view === 'cover') {
+        if ([...params.keys()].some((key) => key !== 'view')) return Response.json({ error: 'Invalid requirements view' }, { status: 400, headers });
+        return Response.json(await callOrderGateway(user.email, 'get_requirements', { view: 'cover' }), { headers });
+      }
       if (view !== 'to_order' || !params.get('page')?.trim() || params.has('alerts') || params.has('itemKey')) return Response.json({ error: 'Invalid requirements view' }, { status: 400, headers });
       return Response.json(await callOrderGateway(user.email, 'get_requirements', { page, view: 'to_order' }), { headers });
     }

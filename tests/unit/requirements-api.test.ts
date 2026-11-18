@@ -23,6 +23,20 @@ it('uses the authenticated actor and private read action', async () => {
   expect(response.headers.get('cache-control')).toBe('private, no-store');
   expect(JSON.parse(network.mock.calls[0][1]?.body as string)).toEqual({ actorEmail: 'sales@example.test', action: 'get_requirements', payload: { page: 2 } });
 });
+it('reads stock cover without pagination', async () => {
+  const response = await GET(new Request('http://local/api/requirements?view=cover'));
+  expect(response.status).toBe(200);
+  expect(response.headers.get('cache-control')).toBe('private, no-store');
+  expect(JSON.parse(network.mock.calls[0][1]?.body as string)).toEqual({ actorEmail: 'sales@example.test', action: 'get_requirements', payload: { view: 'cover' } });
+});
+it.each(['view=cover&page=1', 'view=cover&alerts=1', 'view=cover&itemKey=kit', 'view=cover&extra=1', 'view=other'])('rejects invalid cover/view query %s', async (query) => {
+  expect((await GET(new Request(`http://local/api/requirements?${query}`))).status).toBe(400);
+  expect(network).not.toHaveBeenCalled();
+});
+it('keeps the paginated to-order contract', async () => {
+  expect((await GET(new Request('http://local/api/requirements?view=to_order&page=2'))).status).toBe(200);
+  expect(JSON.parse(network.mock.calls[0][1]?.body as string)).toEqual({ actorEmail: 'sales@example.test', action: 'get_requirements', payload: { page: 2, view: 'to_order' } });
+});
 it('uses an exact encoded item key for the bounded waiting-order read', async () => {
   const key = 'Diasys / reagent & kit';
   const response = await GET(new Request(`http://local/api/requirements?itemKey=${encodeURIComponent(key)}&page=2&actorEmail=attacker`));
