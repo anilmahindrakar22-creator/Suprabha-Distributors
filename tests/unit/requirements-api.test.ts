@@ -37,6 +37,16 @@ it('keeps the paginated to-order contract', async () => {
   expect((await GET(new Request('http://local/api/requirements?view=to_order&page=2'))).status).toBe(200);
   expect(JSON.parse(network.mock.calls[0][1]?.body as string)).toEqual({ actorEmail: 'sales@example.test', action: 'get_requirements', payload: { page: 2, view: 'to_order' } });
 });
+it('reads the paginated idle view for the authenticated actor', async () => {
+  const response = await GET(new Request('http://local/api/requirements?view=idle&page=2'));
+  expect(response.status).toBe(200);
+  expect(response.headers.get('cache-control')).toBe('private, no-store');
+  expect(JSON.parse(network.mock.calls[0][1]?.body as string)).toEqual({ actorEmail: 'sales@example.test', action: 'get_requirements', payload: { view: 'idle', page: 2 } });
+});
+it.each(['view=idle&page=0', 'view=idle&page=101', 'view=idle', 'view=idle&page=1&itemKey=kit', 'view=idle&page=1.5', 'view=idle&page='])('rejects invalid idle query %s', async (query) => {
+  expect((await GET(new Request(`http://local/api/requirements?${query}`))).status).toBe(400);
+  expect(network).not.toHaveBeenCalled();
+});
 it('uses an exact encoded item key for the bounded waiting-order read', async () => {
   const key = 'Diasys / reagent & kit';
   const response = await GET(new Request(`http://local/api/requirements?itemKey=${encodeURIComponent(key)}&page=2&actorEmail=attacker`));

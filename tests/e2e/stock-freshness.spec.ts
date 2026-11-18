@@ -11,12 +11,83 @@ const stockPayload = (sourceFetchedAtIso?: Record<string, unknown>) => ({
 });
 
 test.beforeEach(async ({ page }) => {
+  await page.route('**/api/requirements?view=idle&page=*', (route) => route.fulfill({
+    json: idlePayload(Number(new URL(route.request().url()).searchParams.get('page'))),
+  }));
   await page.route('**/api/requirements?view=cover', (route) => route.fulfill({
     json: { view: 'cover', leadTimeDays: 7, salesThrough: null, runsOutCount: 0, items: [] },
   }));
   await page.route('**/api/requirements?view=to_order&page=1', (route) => route.fulfill({
     json: { view: 'to_order', total: 21, waitingCount: 6, unknownCount: 0, page: 1, pageSize: 25, items: [] },
   }));
+});
+
+const idlePayload = (page: number) => ({
+  view: 'idle', asOf: '2026-11-18', windowDays: 180, historyFrom: '2025-01-01', salesThrough: '2026-11-18',
+  idleCount: 51, inStockCount: 900, page, pageSize: 50,
+  items: Array.from({ length: page === 1 ? 50 : 1 }, (_, index) => ({
+    itemKey: `Idle Item ${String((page - 1) * 50 + index + 1).padStart(2, '0')}`,
+    group: index === 0 ? 'Other group' : index === 1 ? null : 'Test group', closing: 3.125, baseUnit: 'Nos',
+    lastSoldOn: index === 0 ? null : '2026-05-02',
+  })),
+});
+
+test('idle stock is paginated, searchable and returns to groups on a phone', async ({ page }) => {
+  await page.setViewportSize({ width: 375, height: 812 });
+  await openStockDashboard(page, { ...coverStockPayload(), groups: ['Test group', 'Other group'] });
+  const chip = page.locator('[data-action="idle"]');
+  await expect(chip.locator('strong')).toHaveText('51 not selling');
+  await expect(chip.locator('small')).toHaveText('no sale in 6 months');
+  await expect(chip).toHaveAttribute('aria-label', 'Show items with no sale in 6 months');
+  await chip.click();
+  await expect(chip).toHaveAttribute('aria-pressed', 'true');
+  await expect(page.getByRole('heading', { name: 'Not sold in 6 months', exact: true })).toBeVisible();
+  await expect(page.locator('#groupCards')).toBeHidden();
+  await expect(page.locator('.idle-row')).toHaveCount(50);
+  await expect(page.locator('.idle-row').first().locator('.idle-meta')).toHaveText('Other group · No sale since 1 Jan 2025');
+  await expect(page.locator('.idle-row').nth(1).locator('.idle-meta')).toHaveText('Last sold 2 May 2026');
+  await expect(page.locator('#idleView .panel-head')).toContainText('no sale since 22 May 2026');
+  await page.getByRole('button', { name: 'Show more', exact: true }).click();
+  await expect(page.locator('.idle-row')).toHaveCount(51);
+  await expect(page.getByRole('button', { name: 'Show more', exact: true })).toHaveCount(0);
+  expect(await page.evaluate(() => document.documentElement.scrollWidth <= innerWidth)).toBe(true);
+  await page.locator('#search').fill('idle ITEM 51');
+  await expect(page.locator('.idle-row')).toHaveCount(1);
+  await expect(page.locator('.idle-row')).toContainText('Idle Item 51');
+  await page.locator('#search').fill('');
+  await page.locator('#group').selectOption('Other group');
+  await expect(page.locator('.idle-row')).toHaveCount(2);
+  await page.locator('#group').selectOption('All Groups');
+  await chip.click();
+  await expect(chip).toHaveAttribute('aria-pressed', 'false');
+  await expect(page.locator('#idleView')).toBeHidden();
+  await expect(page.locator('#groupCards')).toBeVisible();
+  await expect(page.locator('#groupCards details')).toHaveCount(2);
+});
+
+test('idle and reorder chip selections clear each other', async ({ page }) => {
+  await openStockDashboard(page, coverStockPayload());
+  const reorder = page.locator('[data-action="items"]'), idle = page.locator('[data-action="idle"]');
+  await expect(idle).toBeVisible();
+  await reorder.click();
+  await expect(reorder).toHaveAttribute('aria-pressed', 'true');
+  await idle.click();
+  await expect(reorder).toHaveAttribute('aria-pressed', 'false');
+  await expect(idle).toHaveAttribute('aria-pressed', 'true');
+  await reorder.click();
+  await expect(idle).toHaveAttribute('aria-pressed', 'false');
+  await expect(page.locator('#groupCards')).toBeVisible();
+});
+
+test('idle failure hides its chip and leaves Stock groups available', async ({ page }) => {
+  await page.setViewportSize({ width: 375, height: 812 });
+  await page.route('**/api/requirements?view=idle&page=*', (route) => route.fulfill({ status: 500, json: {} }));
+  await openStockDashboard(page, coverStockPayload());
+  await expect(page.locator('#refresh')).toBeEnabled();
+  await expect(page.locator('[data-action="idle"]')).toBeHidden();
+  await expect(page.locator('#groupCards')).toBeVisible();
+  await expect(page.locator('#groupCards summary')).toContainText('Test group');
+  expect(await page.evaluate(() => document.documentElement.scrollWidth <= innerWidth)).toBe(true);
 });
 
 const coverStockPayload = () => ({
@@ -149,7 +220,7 @@ test("requirements failure leaves the customers waiting count unknown and Stock'
   const reorderRows = payload.rows.filter((row) => (+row.orderToBePlaced || 0) > 0);
   await expect(page.locator('#itemCount')).toHaveText(String(reorderRows.length));
   await expect(page.locator('#criticalCount')).toHaveText('—');
-  await expect(page.locator('.metric-chips button')).toHaveCount(2);
+  await expect(page.locator('.metric-chips button')).toHaveCount(3);
   for (const chip of await page.locator('.metric-chips button').all()) await expect(chip).toBeEnabled();
 });
 

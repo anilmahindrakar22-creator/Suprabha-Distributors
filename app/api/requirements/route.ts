@@ -15,6 +15,10 @@ export async function GET(request: Request) {
         if ([...params.keys()].some((key) => key !== 'view')) return Response.json({ error: 'Invalid requirements view' }, { status: 400, headers });
         return Response.json(await callOrderGateway(user.email, 'get_requirements', { view: 'cover' }), { headers });
       }
+      if (view === 'idle') {
+        if ([...params.keys()].some((key) => key !== 'view' && key !== 'page') || !params.get('page')?.trim() || page > 100) return Response.json({ error: 'Invalid requirements view' }, { status: 400, headers });
+        return Response.json(await callOrderGateway(user.email, 'get_requirements', { view: 'idle', page }), { headers });
+      }
       if (view !== 'to_order' || !params.get('page')?.trim() || params.has('alerts') || params.has('itemKey')) return Response.json({ error: 'Invalid requirements view' }, { status: 400, headers });
       return Response.json(await callOrderGateway(user.email, 'get_requirements', { page, view: 'to_order' }), { headers });
     }
