@@ -47,6 +47,7 @@ export type GatewayAction =
   | 'get_instrument_economics'
   | 'get_sales_coverage'
   | 'get_link_suggestions'
+  | 'get_data_checks'
   | 'get_wallet_workspace'
   | 'get_wallet_account'
   | 'record_wallet_snapshot'
