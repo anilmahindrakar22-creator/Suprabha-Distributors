@@ -1585,6 +1585,34 @@
       "remoteVersion": null,
       "remoteSha256": null,
       "status": "not_deployed"
+    },
+    {
+      "localFile": "20261206090000_stock_cover.sql",
+      "localSha256": "5567c32554e883bbc81824694384e0b77b4f44b7bf70a00ce8b7b04bbe3c263b",
+      "remoteVersion": null,
+      "remoteSha256": null,
+      "status": "not_deployed"
+    },
+    {
+      "localFile": "20261206100000_price_outcomes.sql",
+      "localSha256": "e963bcbad4cd00b0458252f287b099e9317816630aa6df689ec9a4b72cd08fa9",
+      "remoteVersion": null,
+      "remoteSha256": null,
+      "status": "not_deployed"
+    },
+    {
+      "localFile": "20261206110000_data_checks.sql",
+      "localSha256": "5c0abf61efdb5d289ec14bdda441f1866de1723e056934c7859983d511a942fd",
+      "remoteVersion": null,
+      "remoteSha256": null,
+      "status": "not_deployed"
+    },
+    {
+      "localFile": "20261206120000_idle_stock.sql",
+      "localSha256": "89a196131bc72e7d21af7569394a39a5f731adea57fc01c44fd160be503f31f9",
+      "remoteVersion": null,
+      "remoteSha256": null,
+      "status": "not_deployed"
     }
   ],
   "liveCheck": {

@@ -85,5 +85,6 @@ end $$;
 revoke all on function public.stockflow_economics_gateway_before_data_checks(text,text,text,jsonb) from public,anon,authenticated;
 revoke all on function public.stockflow_economics_gateway(text,text,text,jsonb) from public,anon,authenticated;
 grant execute on function public.stockflow_economics_gateway(text,text,text,jsonb) to service_role;
+alter function public.stockflow_economics_gateway(text,text,text,jsonb) set statement_timeout='20s';
 notify pgrst, 'reload schema';
 commit;

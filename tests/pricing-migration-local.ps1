@@ -182,6 +182,10 @@ try {
   $salesNames += '20261201090000_growth_target_margin_lift.sql'
   $salesNames += '20261201100000_growth_detail_by_tally_item.sql'
   $salesNames += '20261201110000_growth_lapsing_labs.sql'
+  $salesNames += '20261206090000_stock_cover.sql'
+  $salesNames += '20261206100000_price_outcomes.sql'
+  $salesNames += '20261206110000_data_checks.sql'
+  $salesNames += '20261206120000_idle_stock.sql'
   for ($salesIndex = 1; $salesIndex -lt $salesNames.Count; $salesIndex++) {
     if ([array]::IndexOf($planNames,$salesNames[$salesIndex]) -le [array]::IndexOf($planNames,$salesNames[$salesIndex-1])) { throw 'Full sales replay order is invalid' }
   }
@@ -442,6 +446,10 @@ end$$;
   Invoke-DatabaseCommand $psqlProgram @('-U',$databaseUser,'-X','-q','-v','ON_ERROR_STOP=1','-d',$database,'-f',(Join-Path $repository 'supabase/tests/growth_target_margin_lift.sql'))
   Invoke-DatabaseCommand $psqlProgram @('-U',$databaseUser,'-X','-q','-v','ON_ERROR_STOP=1','-d',$database,'-f',(Join-Path $repository 'supabase/tests/growth_detail_by_tally_item.sql'))
   Invoke-DatabaseCommand $psqlProgram @('-U',$databaseUser,'-X','-q','-v','ON_ERROR_STOP=1','-d',$database,'-f',(Join-Path $repository 'supabase/tests/growth_lapsing_labs.sql'))
+  Invoke-DatabaseCommand $psqlProgram @('-U',$databaseUser,'-X','-q','-v','ON_ERROR_STOP=1','-d',$database,'-f',(Join-Path $repository 'supabase/tests/stock_cover.sql'))
+  Invoke-DatabaseCommand $psqlProgram @('-U',$databaseUser,'-X','-q','-v','ON_ERROR_STOP=1','-d',$database,'-f',(Join-Path $repository 'supabase/tests/price_outcomes.sql'))
+  Invoke-DatabaseCommand $psqlProgram @('-U',$databaseUser,'-X','-q','-v','ON_ERROR_STOP=1','-d',$database,'-f',(Join-Path $repository 'supabase/tests/data_checks.sql'))
+  Invoke-DatabaseCommand $psqlProgram @('-U',$databaseUser,'-X','-q','-v','ON_ERROR_STOP=1','-d',$database,'-f',(Join-Path $repository 'supabase/tests/idle_stock.sql'))
   Invoke-DatabaseCommand $psqlProgram @('-U',$databaseUser,'-X','-q','-v','ON_ERROR_STOP=1','-d',$database,'-f',(Join-Path $repository 'supabase/tests/economics_candidate_rebuild.sql'))
   Write-Output 'PASS: rebuild containment, sales coverage and exact control reconciliation'
   Invoke-DatabaseCommand $psqlProgram @('-U',$databaseUser,'-X','-q','-v','ON_ERROR_STOP=1','-d',$database,'-f',(Join-Path $repository 'supabase/tests/mapped_instrument_cost_scope.sql'))
