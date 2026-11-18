@@ -1,4 +1,4 @@
-import { expect, test } from '@playwright/test';
+import { expect, test, type Page } from '@playwright/test';
 
 const measures = { revenuePaise: 100000, repeatPaise: 100000, bulkPaise: 0, bulkInvoices: 0, labsBuying: 1, buyingMonths: 12, perBuyingMonthPaise: 8333 };
 const summary = {
@@ -20,11 +20,21 @@ const priceRow = {
   differenceToCustomer: 0, additionalGP: null, status: 'REVIEW', warnings: [],
 };
 
-test('Growth Review prices opens a focused proposal and waits for the person to submit', async ({ page }) => {
-  const posts: unknown[] = [];
+async function mockPriceBook(page: Page, posts: unknown[], row: Omit<typeof priceRow, 'target'> & { target: number | null } = priceRow, additionalRows: typeof row[] = []) {
   await page.route('**/api/me', route => route.fulfill({ json: { roles: ['management'] } }));
   await page.route('**/api/push-subscription**', route => route.fulfill({ json: { enabled: false, publicKey: '' } }));
   await page.route('**/api/today**', route => route.fulfill({ json: { policyVersion: 'today-v1', generatedAt: '2026-11-09T06:00:00Z', coverageCertified: true, unblock: { total: 0, rows: [] }, grow: { total: 0, rows: [] } } }));
+  await page.route('**/api/orders?customers=1', route => route.fulfill({ json: { customerVersion: 'review-test', customers: [{ id: row.customerId, name: row.customerName }] } }));
+  await page.route('**/api/pricing**', route => {
+    if (route.request().method() === 'POST') { posts.push(route.request().postDataJSON()); return route.fulfill({ json: { applied: 1 } }); }
+    const params = new URL(route.request().url()).searchParams;
+    return route.fulfill({ json: params.has('book') ? { rows: [row, ...additionalRows], offset: 0, hasMore: false, bulkEligibleKeys: [] } : params.has('contracts') ? { contracts: [] } : params.has('policies') ? { policies: [] } : { rows: [], total: 0 } });
+  });
+}
+
+test('Growth Review prices opens a focused proposal and waits for the person to submit', async ({ page }) => {
+  const posts: unknown[] = [];
+  await mockPriceBook(page, posts);
   await page.route('**/api/growth', route => route.fulfill({ json: summary }));
   await page.route('**/api/growth/inbox**', route => route.fulfill({ status: 503, json: { error: 'Unavailable' } }));
   await page.route('**/api/growth/margin?**', route => {
@@ -37,12 +47,6 @@ test('Growth Review prices opens a focused proposal and waits for the person to 
     return route.fulfill({ json: { view, sort: params.get('sort') ?? 'sales', filter: params.get('filter') ?? 'all', q: null, page: 1, pageSize: 20, total: view === 'items' ? 1 : 0, thresholdPct: 14, consumablesMarginPct: 20, levers,
       rows: view === 'items' ? [{ itemKey: 'item-1', name: 'Reagent', salesPaise: 100000, knownSalesPaise: 100000, gpPaise: 20000, marginPct: 20, low: false, labs: 3, priceLowPaise: 8000, typicalPricePaise: 10000, priceHighPaise: 11000, spreadPaise: 10000, belowCost: false }] : [],
     } });
-  });
-  await page.route('**/api/orders?customers=1', route => route.fulfill({ json: { customerVersion: 'review-test', customers: [{ id: 'lab-1', name: 'Lab One' }] } }));
-  await page.route('**/api/pricing**', route => {
-    if (route.request().method() === 'POST') { posts.push(route.request().postDataJSON()); return route.fulfill({ json: { applied: 1 } }); }
-    const params = new URL(route.request().url()).searchParams;
-    return route.fulfill({ json: params.has('book') ? { rows: [priceRow], offset: 0, hasMore: false, bulkEligibleKeys: [] } : params.has('contracts') ? { contracts: [] } : params.has('policies') ? { policies: [] } : { rows: [], total: 0 } });
   });
   await page.goto('/?view=frame&role=management&roles=management');
   const growth = page.getByRole('button', { name: /^growth$/i });
@@ -66,4 +70,99 @@ test('Growth Review prices opens a focused proposal and waits for the person to 
   await row.getByRole('button', { name: 'Approve custom', exact: true }).click();
   await expect.poll(() => posts.length).toBe(1);
   expect(posts[0]).toEqual({ action: 'apply_price_book', payload: { customerId: 'lab-1', expectedDecisionId: null, tallyKey, evidenceHash: 'price-book-evidence', choice: 'custom', price: 101, reason: 'Reviewed selling price', idempotencyKey: expect.any(String) } });
+});
+
+async function openPriceBook(page: Page) {
+  await page.goto('/?view=frame&role=management&roles=management');
+  const pricing = page.getByRole('button', { name: /^pricing$/i });
+  if (!await pricing.isVisible()) await page.getByRole('button', { name: 'More', exact: true }).click();
+  await pricing.click();
+  await page.getByRole('button', { name: 'Customer prices', exact: true }).click();
+  await page.getByLabel('Select customer', { exact: true }).fill('Lab One');
+  await page.getByRole('button', { name: 'Lab One', exact: true }).click();
+}
+
+async function openPriceReview(page: Page) {
+  await openPriceBook(page);
+  await page.getByRole('button', { name: 'Review item', exact: true }).click();
+  return page.getByRole('article', { name: 'Price review for Reagent', exact: true });
+}
+
+test('price review compares the lab with Target and a live Proposed rate', async ({ page }) => {
+  await mockPriceBook(page, [], { ...priceRow, customerId: 'customer-a', target: 2400, recommended: 2300 });
+  const comparisonRequests: string[] = [];
+  await page.route('**/api/growth/margin?tallyItemKey=**', route => {
+    comparisonRequests.push(route.request().url());
+    return route.fulfill({ json: {
+      kind: 'item', itemKey: 'item-1', name: 'Reagent', typicalPricePaise: 250000, labs: 4, marginPct: null, tallyItemKey: tallyKey, pricePolicy: null, page: 1, pageSize: 20, total: 4,
+      rows: [230000, 240000, 250000, 260000].map((unitPricePaise, index) => ({
+        labKey: `ledger-${index}`, customerId: index === 0 ? 'customer-a' : `customer-${index}`, name: index === 0 ? 'Lab One' : `Lab ${index}`, town: null,
+        unitPricePaise, quantity: 10, salesPaise: unitPricePaise * 10, belowTypical: false, packDifference: false, approvedPricePaise: null,
+        liftToPricePaise: null, minimumPricePaise: null, belowMinimum: null, belowTarget: null,
+      })),
+    } });
+  });
+  const article = await openPriceReview(page);
+  await article.getByRole('button', { name: 'Compare with other labs', exact: true }).click();
+  await expect(article.getByRole('heading', { name: "Where this lab's price sits", exact: true })).toBeVisible();
+  const strip = article.locator('[data-price-strip]');
+  await expect(strip).toContainText('Target ₹2,400');
+  await expect(strip).toContainText('Proposed ₹2,300');
+  await expect(strip).toContainText('Lower ₹2,250');
+  await expect(strip).toContainText('Upper ₹2,750');
+  const viewport = page.viewportSize();
+  if (viewport && viewport.width < 640) {
+    const bounds = await article.boundingBox();
+    expect(bounds).not.toBeNull();
+    expect(bounds!.x + bounds!.width).toBeLessThanOrEqual(viewport.width + 1);
+    const dots = strip.locator('[data-price-dot]');
+    await expect(dots).toHaveCount(4);
+    for (const dot of await dots.all()) {
+      await expect(dot).toBeVisible();
+      await expect(dot).toBeInViewport();
+    }
+  }
+  const highlighted = strip.locator('[data-price-dot][aria-label*="(this lab)"]');
+  await expect(highlighted).toHaveAttribute('aria-label', /Lab One:.*\(this lab\)/);
+  await expect(highlighted.locator('circle[r="7"]')).toHaveAttribute('stroke', 'var(--color-sf-strong)');
+  await expect(highlighted.locator('circle[r="7"]')).toHaveAttribute('stroke-width', '2');
+  await article.getByLabel('Custom rate', { exact: true }).fill('2600');
+  await expect(strip).toContainText('Proposed ₹2,600');
+  expect(comparisonRequests).toHaveLength(1);
+  const params = new URL(comparisonRequests[0]).searchParams;
+  expect(params.get('tallyItemKey')).toBe(tallyKey);
+  expect(params.get('page')).toBe('1');
+});
+
+test('price review quietly handles missing Growth prices', async ({ page }) => {
+  await mockPriceBook(page, [], { ...priceRow, customerId: 'customer-a', target: 2400, recommended: 2300 });
+  await page.route('**/api/growth/margin?tallyItemKey=**', route => route.fulfill({ status: 404, json: { error: 'No Growth prices for this item yet.' } }));
+  const article = await openPriceReview(page);
+  await article.getByRole('button', { name: 'Compare with other labs', exact: true }).click();
+  await expect(article.getByText('No lab price comparison for this item yet.', { exact: true })).toBeVisible();
+  await expect(article.locator('[data-price-strip]')).toHaveCount(0);
+  await expect(article.getByRole('alert')).toHaveCount(0);
+});
+
+test('a multi-row price book loads comparisons only when requested', async ({ page }) => {
+  const comparisonRequests: string[] = [];
+  page.on('request', request => {
+    if (new URL(request.url()).pathname === '/api/growth/margin') comparisonRequests.push(request.url());
+  });
+  await mockPriceBook(page, [], priceRow, [{ ...priceRow, tallyKey: 'other-item', itemName: 'Other reagent' }]);
+  await page.route('**/api/growth/margin?**', route => route.fulfill({ status: 404, json: { error: 'No Growth prices for this item yet.' } }));
+  await openPriceBook(page);
+  await page.getByRole('button', { name: 'Browse all products', exact: true }).click();
+  const articles = page.getByRole('article', { name: /^Price review for / });
+  await expect(articles).toHaveCount(2);
+  await expect(page.getByRole('button', { name: 'Compare with other labs', exact: true })).toHaveCount(2);
+  expect(comparisonRequests).toHaveLength(0);
+  const article = page.getByRole('article', { name: 'Price review for Reagent', exact: true });
+  await article.getByRole('button', { name: 'Compare with other labs', exact: true }).click();
+  await expect(article.getByText('No lab price comparison for this item yet.', { exact: true })).toBeVisible();
+  expect(comparisonRequests).toHaveLength(1);
+  await article.getByLabel('Custom rate', { exact: true }).fill('2600');
+  await expect(article.getByRole('button', { name: 'Compare with other labs', exact: true })).toHaveCount(0);
+  expect(comparisonRequests).toHaveLength(1);
+  await expect(page.getByRole('article', { name: 'Price review for Other reagent', exact: true }).getByRole('button', { name: 'Compare with other labs', exact: true })).toBeVisible();
 });

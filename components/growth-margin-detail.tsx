@@ -4,48 +4,13 @@ import { useEffect, useRef, useState } from 'react';
 import { normalizeGrowthMarginDetail, normalizeGrowthBilledBelow, type GrowthBilledBelow, type GrowthMarginDetail as Detail } from '@/lib/growth-margin-types';
 import { formatPaise } from '@/lib/wallet-format';
 import type { GrowthNavigation } from './growth-drilldown';
-import { chartTipText, useChartTip } from './growth-chart-tip';
+import { PriceStrip } from './price-strip';
 
 export type MarginSelection = { itemKey: string } | { labKey: string };
 const button = 'min-h-9 rounded-lg border border-sf-line px-3 text-xs text-sf-brand disabled:text-sf-muted';
 const money = (n: number | null) => n === null ? '—' : formatPaise(n);
 
-type ItemDetail = Extract<Detail, { kind: 'item' }>;
-const jitter = [-8, 0, 8];
-const wholeRupees = (paise: number) => `₹${Math.floor(paise / 100 + 0.5).toLocaleString('en-IN')}`;
 const policyPct = (pct: number) => String(Number(pct.toFixed(4)));
-
-function PriceStrip({ data, onPick }: { data: ItemDetail; onPick: (index: number) => void }) {
-  const { tipProps, tip, containerProps } = useChartTip();
-  const typical = data.typicalPricePaise;
-  const dots = data.rows.map((row, index) => ({ row, index })).filter(({ row }) => row.unitPricePaise > 0 && !row.packDifference);
-  if (typical === null || typical <= 0 || dots.length < 3) return null;
-  const prices = dots.map(({ row }) => row.unitPricePaise);
-  const lo = Math.min(...prices, typical * 0.6), hi = Math.max(...prices, typical * 1.2);
-  const px = (price: number) => 4 + (price - lo) / (hi - lo) * 92;
-  return <div className="mt-3"><div data-price-strip {...containerProps}>
-    <svg className="block h-[72px] w-full overflow-visible" role="group" aria-label={`Price per unit by lab against typical ${money(typical)}, band ${money(typical * 0.9)} to ${money(typical * 1.1)}`}>
-      <rect x={`${px(typical * 0.9)}%`} width={`${px(typical * 1.1) - px(typical * 0.9)}%`} y="16" height="38" fill="var(--color-sf-chart-grid)" />
-      <line x1="4%" x2="96%" y1="58" y2="58" stroke="var(--color-sf-chart-axis)" />
-      <line x1={`${px(typical * 0.9)}%`} x2={`${px(typical * 0.9)}%`} y1="54" y2="62" stroke="var(--color-sf-chart-axis)" />
-      <line x1={`${px(typical * 1.1)}%`} x2={`${px(typical * 1.1)}%`} y1="54" y2="62" stroke="var(--color-sf-chart-axis)" />
-      <line x1={`${px(typical)}%`} x2={`${px(typical)}%`} y1="12" y2="58" stroke="var(--color-sf-chart-axis)" strokeWidth="2" />
-      <text x={`${px(typical)}%`} y="8" textAnchor="middle" className="fill-sf-label text-[10px]">Typical {wholeRupees(typical)}</text>
-      <text x={`${px(typical * 0.9)}%`} y="70" textAnchor="middle" className="fill-sf-label text-[10px]">Lower {wholeRupees(typical * 0.9)}</text>
-      <text x={`${px(typical * 1.1)}%`} y="70" textAnchor="middle" className="fill-sf-label text-[10px]">Upper {wholeRupees(typical * 1.1)}</text>
-      {dots.map(({ row, index }, i) => {
-        const under = row.unitPricePaise < typical * 0.9, share = Math.round(row.unitPricePaise / typical * 100);
-        const label = `${row.name ?? 'Unlinked lab'}: ${money(row.unitPricePaise)}, ${share}% of typical`;
-        return <g key={index} role="button" tabIndex={0} aria-label={label} data-price-dot={under ? 'under' : 'ok'} {...tipProps(chartTipText(label))} className="cursor-pointer focus-visible:outline-2 focus-visible:outline-sf-ink" onClick={() => onPick(index)} onKeyDown={e => { if (e.key === 'Enter' || e.key === ' ') { e.preventDefault(); onPick(index); } }}>
-          <circle cx={`${px(row.unitPricePaise)}%`} cy={36 + jitter[i % 3]} r="18" fill="transparent" />
-          <circle cx={`${px(row.unitPricePaise)}%`} cy={36 + jitter[i % 3]} r="5" fill={under ? 'var(--color-sf-chart-2)' : 'var(--color-sf-chart-3)'} stroke={under ? 'var(--color-sf-chart-down)' : undefined} strokeWidth={under ? 2 : undefined} />
-        </g>;
-      })}
-    </svg>
-    <p className="text-xs text-sf-muted">Showing {dots.length} of {data.total} labs · band {wholeRupees(typical * 0.9)}–{wholeRupees(typical * 1.1)} (90–110% of typical) · orange = below the band</p>
-    {tip}
-  </div></div>;
-}
 
 export function GrowthBilledBelowDetail({ navigation, onClose }: { navigation: GrowthNavigation; onClose: () => void }) {
   const dialog = useRef<HTMLDialogElement>(null);
