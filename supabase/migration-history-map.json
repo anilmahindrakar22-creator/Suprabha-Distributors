@@ -1564,6 +1564,27 @@
       "remoteVersion": null,
       "remoteSha256": null,
       "status": "not_deployed"
+    },
+    {
+      "localFile": "20261201090000_growth_target_margin_lift.sql",
+      "localSha256": "fdb9117301e68537c66754556c5cc958b27858740bf04021c5bcf47b66a2923d",
+      "remoteVersion": null,
+      "remoteSha256": null,
+      "status": "not_deployed"
+    },
+    {
+      "localFile": "20261201100000_growth_detail_by_tally_item.sql",
+      "localSha256": "349d4c99762528de2a4481c6e70fa73170e6501f345731c81e72ac2749fe1963",
+      "remoteVersion": null,
+      "remoteSha256": null,
+      "status": "not_deployed"
+    },
+    {
+      "localFile": "20261201110000_growth_lapsing_labs.sql",
+      "localSha256": "7df6c9ca18b4f60bb57787adcb23ae1fd6a99f2a663e31ccbbd98a531ba5ad88",
+      "remoteVersion": null,
+      "remoteSha256": null,
+      "status": "not_deployed"
     }
   ],
   "liveCheck": {

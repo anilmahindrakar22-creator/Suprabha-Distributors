@@ -60,6 +60,9 @@ const pricingReleaseFiles = new Set([
   '20261130180000_economic_item_areas.sql',
   '20261130190000_brand_group_inherit.sql',
   '20261130200000_economic_prune_schedule.sql',
+  '20261201090000_growth_target_margin_lift.sql',
+  '20261201100000_growth_detail_by_tally_item.sql',
+  '20261201110000_growth_lapsing_labs.sql',
   '20261102090000_po_tally_receipts.sql',
   '20261031140000_power_map_enhancement.sql',
   '20261030090000_instrument_register.sql',
@@ -232,6 +235,9 @@ export const pricingReleaseSqlTests = [
   'supabase/tests/economic_item_areas.sql',
   'supabase/tests/brand_group_inherit.sql',
   'supabase/tests/economic_prune_schedule.sql',
+  'supabase/tests/growth_target_margin_lift.sql',
+  'supabase/tests/growth_detail_by_tally_item.sql',
+  'supabase/tests/growth_lapsing_labs.sql',
 ];
 
 export function pricingReleasePreflight(evidence, files) {
