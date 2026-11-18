@@ -218,6 +218,9 @@ test('Stock makes no order request and shows tappable groups', async ({ page }) 
   await expect(firstGroup).toBeVisible();
   await firstGroup.locator('summary').click();
   await expect(firstGroup.locator('.group-item').first()).toBeVisible();
+  await expect(firstGroup.locator('.gi-order').first()).toBeVisible();
+  await expect(firstGroup.locator('.gi-order').first()).toHaveText(/^Order \d/);
+  await expect(firstGroup.locator('.group-meta .gi-order-total')).toBeVisible();
   await page.getByRole('button', { name: 'Refresh' }).click();
   await expect(page.locator('#refresh')).toBeEnabled();
   expect(orderRequests).toEqual([]);
