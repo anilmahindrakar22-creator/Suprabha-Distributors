@@ -264,7 +264,7 @@ it('registers billed-below after margin with guarded read-only dispatch', () => 
     expect(fixture).toContain('PASS economic prune schedule (pg_cron absent; schedule not asserted)');
     expect(fixture.trimEnd()).toMatch(/rollback;$/);
   });
-  it('records all 194 live migrations and twenty three pending migrations including economic prune rescheduling', () => {
+  it('records all 214 live migrations and the four pending migrations ending with economic prune rescheduling', () => {
     const result = pricingReleasePreflight(current, source);
     expect(result.pending.at(-1)).toBe('20261130200000_economic_prune_schedule.sql');
     expect(result.pending.at(-2)).toBe('20261130190000_brand_group_inherit.sql');
@@ -285,8 +285,7 @@ it('registers billed-below after margin with guarded read-only dispatch', () => 
     const growthLabMonthsFixture = readFileSync(new URL('../../supabase/tests/growth_lab_months.sql', import.meta.url), 'utf8');
     expect(growthLabMonthsFixture.trimEnd()).toContain('PASS growth lab months L1-L11');
     expect(result.sqlTests.at(-4)).toBe('supabase/tests/growth_lab_months.sql');
-    expect(result.pending.at(-5)).toBe('20261130160000_economic_covered_segments.sql');
-    expect(result.pending.at(-6)).toBe('20261130150000_growth_brands.sql');
+    expect(result.pending.at(-4)).toBe('20261130160000_economic_covered_segments.sql');
     const growthBrands = source.get('20261130150000_growth_brands.sql')!;
     expect(growthBrands.match(/is distinct from '[0-9a-f]{32}' then/g)).toHaveLength(3);
     expect(growthBrands).toContain("anchor text:='if p_action=''get_growth_margin'' then'");
@@ -295,10 +294,8 @@ it('registers billed-below after margin with guarded read-only dispatch', () => 
     const growthBrandsFixture = readFileSync(new URL('../../supabase/tests/growth_brands.sql', import.meta.url), 'utf8');
     expect(growthBrandsFixture.trimEnd()).toContain('PASS growth brands B1-B12');
     expect(result.sqlTests.at(-5)).toBe('supabase/tests/growth_brands.sql');
-    expect(result.pending.at(-7)).toBe('20261130140000_brand_line_tree.sql');
     const brandLine = source.get('20261130140000_brand_line_tree.sql')!;
     expect(brandLine.match(/stockflow_brand_line_seam\(f,/g)).toHaveLength(10);
-    expect(result.pending.at(-8)).toBe('20261130130000_batch_item_mappings.sql');
     const batch = source.get('20261130130000_batch_item_mappings.sql')!;
     expect(batch.match(/stockflow_batch_seam\(definition,/g)).toHaveLength(3);
     expect(batch).toContain("'set_mappings'");
@@ -306,15 +303,10 @@ it('registers billed-below after margin with guarded read-only dispatch', () => 
     const batchFixture = readFileSync(new URL('../../supabase/tests/batch_item_mappings.sql', import.meta.url), 'utf8');
     expect(batchFixture.trimEnd()).toMatch(/rollback;$/);
     expect(batchFixture).toContain('PASS BM7 recovery accepts set_mappings');
-    expect(result.pending.at(-9)).toBe('20261130120000_contact_decision_roles.sql');
     const roles = source.get('20261130120000_contact_decision_roles.sql')!;
     expect(roles.match(/stockflow_roles_seam\(definition,/g)).toHaveLength(11);
     expect(roles).toContain('shares_inside_info boolean not null default false');
     expect(roles).toContain('A latest contact assessment still has a legacy role');
-    expect(result.pending.at(-10)).toBe('20261130110000_growth_lab_total_business.sql');
-    expect(result.pending.at(-11)).toBe('20261130100000_coverage_exception_date.sql');
-    expect(result.pending.at(-12)).toBe('20261130091000_growth_lab_coverage.sql');
-    expect(result.pending.at(-13)).toBe('20261130090000_growth_integer_paise.sql');
     expect(result.sqlTests.indexOf('supabase/tests/growth_lab_coverage.sql')).toBe(result.sqlTests.indexOf('supabase/tests/growth_integer_paise.sql') + 1);
     expect(result.sqlTests.indexOf('supabase/tests/coverage_exception_date.sql')).toBe(result.sqlTests.indexOf('supabase/tests/growth_lab_coverage.sql') + 1);
     expect(result.sqlTests.indexOf('supabase/tests/growth_lab_total_business.sql')).toBe(result.sqlTests.indexOf('supabase/tests/coverage_exception_date.sql') + 1);
@@ -322,35 +314,15 @@ it('registers billed-below after margin with guarded read-only dispatch', () => 
     const exceptionDate = source.get('20261130100000_coverage_exception_date.sql')!;
     expect(exceptionDate.match(/Unexpected sales coverage exception-date definition/g)).toHaveLength(2);
     expect(exceptionDate).toContain("replace(definition,needle,'e.evidence_sales_date')");
-    expect(result.deployed).toHaveLength(194);
-    expect(result.deployed.at(-1)?.remoteVersion).toBe('20261111140857');
+    expect(result.deployed).toHaveLength(214);
+    expect(result.deployed.at(-1)?.remoteVersion).toBe('20261115111119');
     expect(result.pending).toEqual([
-      '20261129090000_visit_reasons.sql',
-      '20261129100000_accounts_no_territory.sql',
-      '20261129110000_growth_read.sql',
-      '20261129120000_growth_p1b.sql',
-      '20261129130000_growth_tree_lists.sql',
-      '20261129140000_growth_inbox.sql',
-      '20261129150000_growth_gp.sql',
-      '20261129160000_growth_item_kind.sql',
-      '20261129170000_growth_margin.sql',
-      '20261129180000_growth_billed_below.sql',
-      '20261129190000_growth_price_cards.sql',
-      '20261130090000_growth_integer_paise.sql',
-      '20261130091000_growth_lab_coverage.sql',
-      '20261130100000_coverage_exception_date.sql',
-      '20261130110000_growth_lab_total_business.sql',
-      '20261130120000_contact_decision_roles.sql',
-      '20261130130000_batch_item_mappings.sql',
-      '20261130140000_brand_line_tree.sql',
-      '20261130150000_growth_brands.sql',
       '20261130160000_economic_covered_segments.sql',
-      '20261130170000_growth_lab_months.sql',
       '20261130180000_economic_item_areas.sql',
       '20261130190000_brand_group_inherit.sql',
       '20261130200000_economic_prune_schedule.sql',
     ]);
-    expect(current.liveCheck.matchedMigrationHashes).toBe(194);
+    expect(current.liveCheck.matchedMigrationHashes).toBe(214);
     expect(result.releaseReady).toBe(false);
   });
   it('registers the isolated company GP model and its guarded gateway read', () => {
