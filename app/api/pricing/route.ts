@@ -20,6 +20,17 @@ export async function GET(request: Request) {
   try {
     const email = await actorEmail();
     const parameters = new URL(request.url).searchParams;
+    if (parameters.has('observed')) {
+      const pageValue = parameters.get('page') ?? '1';
+      const page = Number(pageValue);
+      const direction = parameters.get('direction');
+      const volume = parameters.get('volume');
+      if (parameters.get('observed') !== '1' || [...parameters.keys()].some(key => !['observed', 'page', 'direction', 'volume'].includes(key) || parameters.getAll(key).length !== 1)
+        || !/^[1-9][0-9]{0,2}$/.test(pageValue) || page > 100
+        || (direction !== null && !['up', 'down'].includes(direction))
+        || (volume !== null && !['fell', 'held', 'rose'].includes(volume))) return failure('Invalid observed change filters', 400);
+      return Response.json(await callOrderGateway(email, 'get_order_pricing', { view: 'observed_changes', page, ...(direction ? { direction } : {}), ...(volume ? { volume } : {}) }), { headers: privateHeaders });
+    }
     if (parameters.has('outcomes')) {
       const pageValue = parameters.get('page') ?? '1';
       const page = Number(pageValue);

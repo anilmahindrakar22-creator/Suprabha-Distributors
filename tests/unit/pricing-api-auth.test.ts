@@ -50,6 +50,37 @@ describe('price outcome response boundary', () => {
 afterEach(() => { vi.unstubAllGlobals(); vi.unstubAllEnvs(); });
 
 describe('authenticated pricing API boundary (gateway responses simulated)', () => {
+  it.each([
+    ['', { page: 1 }],
+    ['&page=2&direction=up&volume=fell', { page: 2, direction: 'up', volume: 'fell' }],
+    ['&page=100&direction=down&volume=rose', { page: 100, direction: 'down', volume: 'rose' }],
+    ['&volume=held', { page: 1, volume: 'held' }],
+  ])('forwards the exact observed changes payload %s', async (query, payload) => {
+    const result = await GET(new Request(`http://local/api/pricing?observed=1${query}`));
+    expect(result.status).toBe(200);
+    expect(JSON.parse(network.mock.calls[0][1]?.body as string)).toEqual({ actorEmail: 'accounts@example.test', action: 'get_order_pricing', payload: { view: 'observed_changes', ...payload } });
+    expect(result.headers.get('cache-control')).toBe('private, no-store');
+  });
+  it.each(['observed=0', 'observed=', 'observed=1&page=0', 'observed=1&page=101', 'observed=1&page=1.5',
+    'observed=1&page=01', 'observed=1&unknown=1', 'observed=1&outcomes=1', 'observed=1&observed=1',
+    'observed=1&page=1&page=2', 'observed=1&direction=up&direction=down', 'observed=1&volume=fell&volume=held',
+    'observed=1&direction=unknown', 'observed=1&direction=', 'observed=1&volume=unknown', 'observed=1&volume='])('rejects invalid observed filters %s', async query => {
+    const result = await GET(new Request(`http://local/api/pricing?${query}`));
+    expect(result.status).toBe(400);
+    expect(await result.json()).toEqual({ error: 'Invalid observed change filters' });
+    expect(network).not.toHaveBeenCalled();
+  });
+  it('denies unauthenticated observed changes without contacting the gateway', async () => {
+    identity.headers = new Headers();
+    expect((await GET(new Request('http://local/api/pricing?observed=1'))).status).toBe(401);
+    expect(network).not.toHaveBeenCalled();
+  });
+  it('preserves gateway denial for observed changes', async () => {
+    network.mockResolvedValue(Response.json({ code: '42501', message: 'Pricing access denied' }, { status: 403 }));
+    const result = await GET(new Request('http://local/api/pricing?observed=1'));
+    expect(result.status).toBe(403);
+    expect(result.headers.get('cache-control')).toBe('private, no-store');
+  });
   it.each(['', '&page=2&state=different'])('forwards the exact outcomes payload %s', async query => {
     const result = await GET(new Request(`http://local/api/pricing?outcomes=1${query}`));
     expect(result.status).toBe(200);

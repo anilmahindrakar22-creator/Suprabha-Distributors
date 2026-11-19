@@ -50,9 +50,16 @@ on conflict(name) do update set secret_sha256=excluded.secret_sha256;
 insert into public.stockflow_members(email,role,roles,status)
 select 'outcome-'||r||'@test.local',r,array[r],'active'
 from unnest(array['administrator','management','accounts','operations']) r;
-do $$declare definition text; begin
- select pg_get_functiondef('public.stockflow_pricing_gateway(text,text,text,jsonb)'::regprocedure) into definition;
- execute replace(definition,'(now() at time zone ''Asia/Kolkata'')::date','''2031-07-15''::date');
+do $$declare target record; patched integer:=0; begin
+ for target in
+  select p.oid from pg_proc p join pg_namespace n on n.oid=p.pronamespace
+  where n.nspname='public' and p.proname like 'stockflow_pricing_gateway%'
+   and p.prosrc like '%private.stockflow_price_outcomes(%'
+ loop
+  execute replace(pg_get_functiondef(target.oid), '(now() at time zone ''Asia/Kolkata'')::date', '''2031-07-15''::date');
+  patched:=patched+1;
+ end loop;
+ perform pg_temp.outcome_assert(patched=1,'one price outcomes gateway patched');
 end$$;
 
 do $tests$

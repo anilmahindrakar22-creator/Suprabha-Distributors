@@ -1613,6 +1613,13 @@
       "remoteVersion": null,
       "remoteSha256": null,
       "status": "not_deployed"
+    },
+    {
+      "localFile": "20261213090000_observed_price_changes.sql",
+      "localSha256": "77c3061041abcfefa519c441e43264297403a9fa93b07a8149c61797e4a45974",
+      "remoteVersion": null,
+      "remoteSha256": null,
+      "status": "not_deployed"
     }
   ],
   "liveCheck": {
