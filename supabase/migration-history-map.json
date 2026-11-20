@@ -1,9 +1,9 @@
 {
   "projectId": "aormuidjbdqruglmyseh",
-  "checkedAt": "2026-11-11T14:12:50.758Z",
+  "checkedAt": "2026-11-17T10:57:56.377Z",
   "purpose": "Read-only release evidence; NOT an executable migration plan or authority to repair history.",
   "normalization": "Remove CR characters and trim surrounding whitespace only; SHA-256 over UTF-8.",
-  "localGitHead": "9a41ab6037924e1fdc52668c3b70deda34412089",
+  "localGitHead": "5c17f84993620a96e4b5311e0d7d441eff58deaf",
   "remoteOnly": [
     {
       "localFile": "20260829054025_create_stockflow_private_snapshots.sql",
@@ -1400,135 +1400,135 @@
     {
       "localFile": "20261129090000_visit_reasons.sql",
       "localSha256": "c9312cf892a41589a6b7683c63e56972ed3344eba78632a98a98625ce98d42e5",
-      "remoteVersion": null,
-      "remoteSha256": null,
-      "status": "not_deployed"
+      "remoteVersion": "20261111150452",
+      "remoteSha256": "c9312cf892a41589a6b7683c63e56972ed3344eba78632a98a98625ce98d42e5",
+      "status": "exact_normalized_match"
     },
     {
       "localFile": "20261129100000_accounts_no_territory.sql",
       "localSha256": "a1726a94c386cfd42663e845e7b0406690a3f096ecd764e755dc097d74119399",
-      "remoteVersion": null,
-      "remoteSha256": null,
-      "status": "not_deployed"
+      "remoteVersion": "20261111150457",
+      "remoteSha256": "a1726a94c386cfd42663e845e7b0406690a3f096ecd764e755dc097d74119399",
+      "status": "exact_normalized_match"
     },
     {
       "localFile": "20261129130000_growth_tree_lists.sql",
       "localSha256": "b67a31c63a707aca330402206572dbae33a9cb9d38b2833347a56356b79a914e",
-      "remoteVersion": null,
-      "remoteSha256": null,
-      "status": "not_deployed"
+      "remoteVersion": "20261111150507",
+      "remoteSha256": "b67a31c63a707aca330402206572dbae33a9cb9d38b2833347a56356b79a914e",
+      "status": "exact_normalized_match"
     },
     {
       "localFile": "20261129190000_growth_price_cards.sql",
       "localSha256": "59a2509e8789198ddd2fe2ac0d93f076cad3b2ad10d5686c2341253e0ffc5746",
-      "remoteVersion": null,
-      "remoteSha256": null,
-      "status": "not_deployed"
+      "remoteVersion": "20261111150530",
+      "remoteSha256": "59a2509e8789198ddd2fe2ac0d93f076cad3b2ad10d5686c2341253e0ffc5746",
+      "status": "exact_normalized_match"
     },
     {
       "localFile": "20261129180000_growth_billed_below.sql",
       "localSha256": "53dfea42d9063b0acf79737c09a05c78925e81fc1c963ba24a6a65ec69f4376b",
-      "remoteVersion": null,
-      "remoteSha256": null,
-      "status": "not_deployed"
+      "remoteVersion": "20261111150526",
+      "remoteSha256": "53dfea42d9063b0acf79737c09a05c78925e81fc1c963ba24a6a65ec69f4376b",
+      "status": "exact_normalized_match"
     },
     {
       "localFile": "20261129170000_growth_margin.sql",
       "localSha256": "b73193290c7b853d8685c63f18073ef08ef6cbbaa6507cfd0b1dc58d39c96720",
-      "remoteVersion": null,
-      "remoteSha256": null,
-      "status": "not_deployed"
+      "remoteVersion": "20261111150523",
+      "remoteSha256": "b73193290c7b853d8685c63f18073ef08ef6cbbaa6507cfd0b1dc58d39c96720",
+      "status": "exact_normalized_match"
     },
     {
       "localFile": "20261129160000_growth_item_kind.sql",
       "localSha256": "1b7f2a5064739c311896b0487a63b196181591f5d5fb90f01a996b571a312a65",
-      "remoteVersion": null,
-      "remoteSha256": null,
-      "status": "not_deployed"
+      "remoteVersion": "20261111150520",
+      "remoteSha256": "1b7f2a5064739c311896b0487a63b196181591f5d5fb90f01a996b571a312a65",
+      "status": "exact_normalized_match"
     },
     {
       "localFile": "20261129150000_growth_gp.sql",
       "localSha256": "24b966b1a4a4fce9032c267bf10b0be60c6f1ee2efa3ccee139690864c59f1f1",
-      "remoteVersion": null,
-      "remoteSha256": null,
-      "status": "not_deployed"
+      "remoteVersion": "20261111150517",
+      "remoteSha256": "24b966b1a4a4fce9032c267bf10b0be60c6f1ee2efa3ccee139690864c59f1f1",
+      "status": "exact_normalized_match"
     },
     {
       "localFile": "20261129140000_growth_inbox.sql",
       "localSha256": "114d1bf708869a2d5a6549d2b4d628e38f7f3748b62a4ec82a534e4b5f2082d5",
-      "remoteVersion": null,
-      "remoteSha256": null,
-      "status": "not_deployed"
+      "remoteVersion": "20261111150513",
+      "remoteSha256": "114d1bf708869a2d5a6549d2b4d628e38f7f3748b62a4ec82a534e4b5f2082d5",
+      "status": "exact_normalized_match"
     },
     {
       "localFile": "20261129120000_growth_p1b.sql",
       "localSha256": "e6b39523549251ef2d5b4e4970f686384d2f2bcc906f732fc9013e0924f3d67e",
-      "remoteVersion": null,
-      "remoteSha256": null,
-      "status": "not_deployed"
+      "remoteVersion": "20261111150504",
+      "remoteSha256": "e6b39523549251ef2d5b4e4970f686384d2f2bcc906f732fc9013e0924f3d67e",
+      "status": "exact_normalized_match"
     },
     {
       "localFile": "20261129110000_growth_read.sql",
       "localSha256": "7e0627f2fe1b6fbf705799df513ad849e0037459ad57bacc495ef9bf22d74273",
-      "remoteVersion": null,
-      "remoteSha256": null,
-      "status": "not_deployed"
+      "remoteVersion": "20261111150500",
+      "remoteSha256": "7e0627f2fe1b6fbf705799df513ad849e0037459ad57bacc495ef9bf22d74273",
+      "status": "exact_normalized_match"
     },
     {
       "localFile": "20261130090000_growth_integer_paise.sql",
       "localSha256": "c06327cf56c3acbeae8efabcf800849b182dd8be37ba95ca11d17e3226b99310",
-      "remoteVersion": null,
-      "remoteSha256": null,
-      "status": "not_deployed"
+      "remoteVersion": "20261113072917",
+      "remoteSha256": "c06327cf56c3acbeae8efabcf800849b182dd8be37ba95ca11d17e3226b99310",
+      "status": "exact_normalized_match"
     },
     {
       "localFile": "20261130091000_growth_lab_coverage.sql",
       "localSha256": "8cbd7ee854cb89504484f0f2836b16c0b13d48fba227e91bca0d2636b5bff8f1",
-      "remoteVersion": null,
-      "remoteSha256": null,
-      "status": "not_deployed"
+      "remoteVersion": "20261113072936",
+      "remoteSha256": "8cbd7ee854cb89504484f0f2836b16c0b13d48fba227e91bca0d2636b5bff8f1",
+      "status": "exact_normalized_match"
     },
     {
       "localFile": "20261130100000_coverage_exception_date.sql",
       "localSha256": "632aa5a9e8b51c40aa20ab5ae1c268c4e1155b109b13fb94329bef01b86818d8",
-      "remoteVersion": null,
-      "remoteSha256": null,
-      "status": "not_deployed"
+      "remoteVersion": "20261113122606",
+      "remoteSha256": "632aa5a9e8b51c40aa20ab5ae1c268c4e1155b109b13fb94329bef01b86818d8",
+      "status": "exact_normalized_match"
     },
     {
       "localFile": "20261130110000_growth_lab_total_business.sql",
       "localSha256": "5e2ca09c7454e7e8b762bf6291a6b9cac89c80d63d74a54ee89775aef5cc3d05",
-      "remoteVersion": null,
-      "remoteSha256": null,
-      "status": "not_deployed"
+      "remoteVersion": "20261113145813",
+      "remoteSha256": "5e2ca09c7454e7e8b762bf6291a6b9cac89c80d63d74a54ee89775aef5cc3d05",
+      "status": "exact_normalized_match"
     },
     {
       "localFile": "20261130120000_contact_decision_roles.sql",
       "localSha256": "0112379c6a5f792a790d233b0ce41f64dc4fae2e00148d7a89b60cb7144746a0",
-      "remoteVersion": null,
-      "remoteSha256": null,
-      "status": "not_deployed"
+      "remoteVersion": "20261114081600",
+      "remoteSha256": "0112379c6a5f792a790d233b0ce41f64dc4fae2e00148d7a89b60cb7144746a0",
+      "status": "exact_normalized_match"
     },
     {
       "localFile": "20261130130000_batch_item_mappings.sql",
       "localSha256": "e180e0e80dbcc513428bc0ba527efd46d3d990463845d9aa609dad9640ae0a4e",
-      "remoteVersion": null,
-      "remoteSha256": null,
-      "status": "not_deployed"
+      "remoteVersion": "20261114133126",
+      "remoteSha256": "e180e0e80dbcc513428bc0ba527efd46d3d990463845d9aa609dad9640ae0a4e",
+      "status": "exact_normalized_match"
     },
     {
       "localFile": "20261130140000_brand_line_tree.sql",
       "localSha256": "8930765076d666d23e5553aab7bbf24ad461dd79a6315e6117673ffb3d09df1c",
-      "remoteVersion": null,
-      "remoteSha256": null,
-      "status": "not_deployed"
+      "remoteVersion": "20261115054528",
+      "remoteSha256": "8930765076d666d23e5553aab7bbf24ad461dd79a6315e6117673ffb3d09df1c",
+      "status": "exact_normalized_match"
     },
     {
       "localFile": "20261130150000_growth_brands.sql",
       "localSha256": "cb979114fb97c983091b07595b60e173ee400d03f55808188e6e93a38cef3a1e",
-      "remoteVersion": null,
-      "remoteSha256": null,
-      "status": "not_deployed"
+      "remoteVersion": "20261115063256",
+      "remoteSha256": "cb979114fb97c983091b07595b60e173ee400d03f55808188e6e93a38cef3a1e",
+      "status": "exact_normalized_match"
     },
     {
       "localFile": "20261130160000_economic_covered_segments.sql",
@@ -1540,9 +1540,9 @@
     {
       "localFile": "20261130170000_growth_lab_months.sql",
       "localSha256": "e73174229e8d890b7928cbceba8e29ab11cdb4a3f4627e3f7d41387e3459ef1f",
-      "remoteVersion": null,
-      "remoteSha256": null,
-      "status": "not_deployed"
+      "remoteVersion": "20261115111119",
+      "remoteSha256": "e73174229e8d890b7928cbceba8e29ab11cdb4a3f4627e3f7d41387e3459ef1f",
+      "status": "exact_normalized_match"
     },
     {
       "localFile": "20261130180000_economic_item_areas.sql",
@@ -1623,10 +1623,10 @@
     }
   ],
   "liveCheck": {
-    "method": "Read-only full migration version/hash comparison after deployment; normalized SQL removes CR and trims ASCII whitespace",
-    "remoteMigrationCount": 194,
-    "matchedMigrationHashes": 194,
-    "latestRemoteVersion": "20261111140857",
-    "checkedAt": "2026-11-11T14:12:50.758Z"
+    "method": "Read-only full migration version/hash comparison; normalized SQL removes CR and trims ASCII whitespace",
+    "remoteMigrationCount": 214,
+    "matchedMigrationHashes": 214,
+    "latestRemoteVersion": "20261115111119",
+    "checkedAt": "2026-11-17T10:57:56.377Z"
   }
 }
