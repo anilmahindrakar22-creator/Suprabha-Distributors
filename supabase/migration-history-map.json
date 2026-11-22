@@ -1620,6 +1620,13 @@
       "remoteVersion": null,
       "remoteSha256": null,
       "status": "not_deployed"
+    },
+    {
+      "localFile": "20261214090000_unlinked_po_receipts.sql",
+      "localSha256": "6da4d32bf723c3855b28c4e09fe8c3942f9eb839d602e882346a6553e53c52c6",
+      "remoteVersion": null,
+      "remoteSha256": null,
+      "status": "not_deployed"
     }
   ],
   "liveCheck": {

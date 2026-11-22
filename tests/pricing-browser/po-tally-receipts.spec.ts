@@ -85,7 +85,7 @@ for (const width of [375, 1280]) test.describe(`${width}px`, () => {
     const { commands } = await setup(page, width);
     const sheet = await openSheet(page);
     await expect(sheet.getByRole('checkbox', { name: '29 Oct · Purchase 1234 · 10 Nos' })).toBeChecked();
-    await expect(sheet.getByLabel('Received quantity for Test item')).toHaveCount(0);
+    await expect(sheet.getByLabel('Received now for Test item')).toHaveCount(0);
     await sheet.getByRole('checkbox').uncheck();
     await expect(sheet.getByRole('button', { name: 'Record Tally receipt' })).toBeDisabled();
     await sheet.getByRole('checkbox').check();
@@ -102,7 +102,7 @@ for (const width of [375, 1280]) test.describe(`${width}px`, () => {
     await expect(sheet.getByRole('checkbox')).toHaveCount(0);
     await expect(sheet.getByRole('button', { name: 'Record Tally receipt' })).toBeDisabled();
     await sheet.getByRole('button', { name: 'Enter quantities by hand' }).click();
-    await expect(sheet.getByLabel('Received quantity for Test item')).toHaveValue('13');
+    await expect(sheet.getByLabel('Received now for Test item')).toHaveValue('');
   });
 
   test('manual form toggle changes to Use Tally receipts', async ({ page }) => {
@@ -139,7 +139,7 @@ for (const width of [375, 1280]) test.describe(`${width}px`, () => {
   test('no candidates shows the existing manual form', async ({ page }) => {
     await setup(page, width, { candidates: [] });
     const sheet = await openSheet(page);
-    await expect(sheet.getByLabel('Received quantity for Test item')).toHaveValue('13');
+    await expect(sheet.getByLabel('Received now for Test item')).toHaveValue('');
     await expect(sheet.getByRole('button', { name: 'Confirm received' })).toBeEnabled();
     await expect(sheet.getByText('From Tally', { exact: true })).toHaveCount(0);
   });
@@ -157,7 +157,7 @@ for (const width of [375, 1280]) test.describe(`${width}px`, () => {
     await setup(page, width, { receiptsFail: true });
     const sheet = await openSheet(page);
     await expect(sheet.getByText('Tally receipts could not load', { exact: true })).toBeVisible();
-    await expect(sheet.getByLabel('Received quantity for Test item')).toHaveValue('13');
+    await expect(sheet.getByLabel('Received now for Test item')).toHaveValue('');
   });
 
   for (const failure of [502, 408, 429]) test(`retry after ${failure} retains the exact command and locks selection`, async ({ page }) => {

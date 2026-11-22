@@ -187,6 +187,7 @@ try {
   $salesNames += '20261206110000_data_checks.sql'
   $salesNames += '20261206120000_idle_stock.sql'
   $salesNames += '20261213090000_observed_price_changes.sql'
+  $salesNames += '20261214090000_unlinked_po_receipts.sql'
   for ($salesIndex = 1; $salesIndex -lt $salesNames.Count; $salesIndex++) {
     if ([array]::IndexOf($planNames,$salesNames[$salesIndex]) -le [array]::IndexOf($planNames,$salesNames[$salesIndex-1])) { throw 'Full sales replay order is invalid' }
   }
@@ -452,6 +453,7 @@ end$$;
   Invoke-DatabaseCommand $psqlProgram @('-U',$databaseUser,'-X','-q','-v','ON_ERROR_STOP=1','-d',$database,'-f',(Join-Path $repository 'supabase/tests/data_checks.sql'))
   Invoke-DatabaseCommand $psqlProgram @('-U',$databaseUser,'-X','-q','-v','ON_ERROR_STOP=1','-d',$database,'-f',(Join-Path $repository 'supabase/tests/idle_stock.sql'))
   Invoke-DatabaseCommand $psqlProgram @('-U',$databaseUser,'-X','-q','-v','ON_ERROR_STOP=1','-d',$database,'-f',(Join-Path $repository 'supabase/tests/observed_price_changes.sql'))
+  Invoke-DatabaseCommand $psqlProgram @('-U',$databaseUser,'-X','-q','-v','ON_ERROR_STOP=1','-d',$database,'-f',(Join-Path $repository 'supabase/tests/unlinked_po_receipts.sql'))
   Invoke-DatabaseCommand $psqlProgram @('-U',$databaseUser,'-X','-q','-v','ON_ERROR_STOP=1','-d',$database,'-f',(Join-Path $repository 'supabase/tests/economics_candidate_rebuild.sql'))
   Write-Output 'PASS: rebuild containment, sales coverage and exact control reconciliation'
   Invoke-DatabaseCommand $psqlProgram @('-U',$databaseUser,'-X','-q','-v','ON_ERROR_STOP=1','-d',$database,'-f',(Join-Path $repository 'supabase/tests/mapped_instrument_cost_scope.sql'))

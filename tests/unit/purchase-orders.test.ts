@@ -1,5 +1,37 @@
 import { expect, it } from 'vitest';
-import { parsePurchaseOrderTallyQuery, purchaseOrderShareText, validatePurchaseOrderCommand, type PurchaseOrder } from '../../lib/purchase-orders';
+import { batchReceiptTotals, parsePurchaseOrderTallyQuery, purchaseOrderShareText, stillDue, validatePurchaseOrderCommand, type PurchaseOrder, type PurchaseOrderLine } from '../../lib/purchase-orders';
+
+const batchLine: PurchaseOrderLine = { itemKey: 'kit-1', itemName: 'Kit', quantity: 10, receivedQuantity: 6, unit: 'kit' };
+it('adds this delivery to the previously received quantity', () => {
+  expect(batchReceiptTotals([batchLine], { 'kit-1': '4' })).toEqual({ ok: true, lines: [{ itemKey: 'kit-1', receivedQuantity: 10 }] });
+});
+it('rejects a delivery larger than the quantity still due', () => {
+  expect(batchReceiptTotals([batchLine], { 'kit-1': '5' })).toEqual({ ok: false, errors: { 'kit-1': 'More than still due (4)' } });
+});
+it('requires something to have arrived, treating blank, whitespace and missing inputs as zero', () => {
+  const inputs: Record<string, string>[] = [{ 'kit-1': '' }, { 'kit-1': '   ' }, {}, { 'kit-1': '0' }];
+  for (const now of inputs) {
+    expect(batchReceiptTotals([batchLine], now)).toEqual({ ok: false, errors: { _: 'Enter what arrived in this delivery' } });
+  }
+});
+it('rejects negative and non-finite delivery quantities', () => {
+  for (const value of ['-1', 'Infinity', 'NaN', 'invalid']) {
+    expect(batchReceiptTotals([batchLine], { 'kit-1': value })).toEqual({ ok: false, errors: { 'kit-1': 'Enter 0 or more' } });
+  }
+});
+it('rounds fractional receipt totals to three decimal places', () => {
+  expect(batchReceiptTotals([{ ...batchLine, quantity: 0.3, receivedQuantity: 0.1 }], { 'kit-1': '0.2' })).toEqual({ ok: true, lines: [{ itemKey: 'kit-1', receivedQuantity: 0.3 }] });
+});
+it('rounds the remaining quantity and reports fractional over-delivery cleanly', () => {
+  const line = { ...batchLine, quantity: 0.3, receivedQuantity: 0.1 };
+  expect(stillDue(line)).toBe(0.2);
+  expect(batchReceiptTotals([line], { 'kit-1': '0.3' })).toEqual({ ok: false, errors: { 'kit-1': 'More than still due (0.2)' } });
+});
+it('returns untouched lines with unchanged totals in purchase order line order', () => {
+  expect(batchReceiptTotals([batchLine, { ...batchLine, itemKey: 'kit-2', receivedQuantity: 2 }], { 'kit-1': '4' })).toEqual({
+    ok: true, lines: [{ itemKey: 'kit-1', receivedQuantity: 10 }, { itemKey: 'kit-2', receivedQuantity: 2 }],
+  });
+});
 
 const id = '35000000-0000-4000-8000-000000000001';
 const create = { action: 'create_purchase_orders', payload: { idempotencyKey: id, lines: [{ itemKey: 'kit-1', quantity: 2, supplierName: 'Supplier A' }] } };

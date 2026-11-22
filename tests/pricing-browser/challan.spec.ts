@@ -71,7 +71,7 @@ for (const failure of [500, 408, 429, 409, 400, 403]) test(`challan retry key af
   await bar.getByLabel(/^Tally delivery challan number/).fill('DC-101');
   const send = bar.getByRole('button', { name: 'Send on challan', exact: true });
   await send.click();
-  await expect(bar.getByRole('alert')).toContainText('Please retry');
+  await expect(bar.getByRole('alert')).toContainText(failure === 429 ? 'Wait a moment and try again.' : failure === 409 ? 'Someone else changed this order. Refresh and try again.' : 'Please retry');
   await send.click();
   await expect.poll(() => commands.length).toBe(2);
   if ([500, 408, 429].includes(failure)) expect(commands[1]).toEqual(commands[0]);

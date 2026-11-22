@@ -24,6 +24,7 @@ import { loadOrderBootstrap } from '@/lib/order-bootstrap-cache';
 import { startOrderLiveRefresh } from '@/lib/order-live-refresh';
 import { retryPendingOfflineOrder } from '@/lib/offline-order-retry';
 import { acknowledgeOrderCommand, prepareOrderCommandRetry } from '@/lib/order-command-idempotency';
+import { orderCommandErrorMessage } from '@/lib/order-command-error';
 import { loadOrderCatalog, loadOrderCustomers } from '@/lib/order-capture-masters';
 import { recordOrderClientTiming } from '@/lib/order-client-timing';
 import { PRICE_CHANGE_ROLES, type OrderPricingWorkspace, type PricingLineResolution } from '@/lib/pricing-types';
@@ -154,7 +155,7 @@ const queueNames: Record<string, string> = {
 
 async function readResponse<T>(response: Response): Promise<T> {
   const body = await readJsonBody<T & { error?: string }>(response);
-  if (!response.ok) throw new Error(body.error || 'Unable to complete the request');
+  if (!response.ok) throw new Error(orderCommandErrorMessage(response.status, body.error));
   return body;
 }
 
@@ -173,6 +174,7 @@ export function OrderWorkspace({ actorEmail, initialStatus = 'open', initialQuer
   const [loading, setLoading] = useState(true);
   const [refreshing, setRefreshing] = useState(false);
   const [error, setError] = useState('');
+  const lastCommandErrorRef = useRef('');
   const [focusNotice, setFocusNotice] = useState('');
   const [notice, setNotice] = useState('');
   const [noticeOrderNumber, setNoticeOrderNumber] = useState('');
@@ -530,6 +532,7 @@ export function OrderWorkspace({ actorEmail, initialStatus = 'open', initialQuer
   }
 
   async function runCommand(command: OrderCommand, success: string) {
+    lastCommandErrorRef.current = '';
     mutationInFlightRef.current = true;
     // A list read started before this command must not overwrite its acknowledgement.
     latestListRequestRef.current += 1;
@@ -584,7 +587,9 @@ export function OrderWorkspace({ actorEmail, initialStatus = 'open', initialQuer
        });
        return true;
      } catch (cause) {
-       setError(cause instanceof Error ? cause.message : 'Unable to update order');
+       const message = cause instanceof Error ? cause.message : 'Unable to update order';
+       lastCommandErrorRef.current = message;
+       setError(message);
        return false;
      } finally {
        mutationInFlightRef.current = false;
@@ -607,7 +612,7 @@ export function OrderWorkspace({ actorEmail, initialStatus = 'open', initialQuer
       },
       `${order.orderNumber} moved to ${statusLabel(action.status)}.`,
     );
-    if (!completed) throw new Error('Order could not be moved. Please try again.');
+    if (!completed) throw new Error(lastCommandErrorRef.current || 'Order could not be moved. Please try again.');
     if (completed) moveDesktopSelectionAfter(order.id);
   }
 
@@ -644,7 +649,7 @@ export function OrderWorkspace({ actorEmail, initialStatus = 'open', initialQuer
 
   async function updateDelivery(order: OrderSummary, command: Extract<OrderCommand, { action: 'save_dispatch' | 'confirm_delivery' }>) {
     const completed = await runCommand(command, command.action === 'save_dispatch' ? `${order.orderNumber} marked dispatched.` : `${order.orderNumber} delivery confirmed.`);
-    if (!completed) throw new Error('Delivery details could not be saved. Please try again.');
+    if (!completed) throw new Error(lastCommandErrorRef.current || 'Delivery details could not be saved. Please try again.');
   }
   async function updateException(order: OrderSummary, command: Extract<OrderCommand, { action: 'create_exception' | 'resolve_exception' }>) {
     await runCommand(command, `${order.orderNumber} delivery exception updated.`);

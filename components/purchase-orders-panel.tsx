@@ -3,9 +3,10 @@
 import { useEffect, useEffectEvent, useRef, useState, type ReactNode } from 'react';
 import { Sheet, SheetContent, SheetTitle } from './ui/sheet';
 import { readJsonBody } from '@/lib/http-json';
-import { purchaseOrderShareText, type PurchaseOrder, type SupplierOption } from '@/lib/purchase-orders';
+import { batchReceiptTotals, purchaseOrderShareText, stillDue, type PurchaseOrder, type SupplierOption } from '@/lib/purchase-orders';
 import type { ToOrderItem } from '@/lib/to-order';
 import { defaultSelection, parseTallyReceiptCounts, parseTallyReceipts, type TallyReceipts, type TallyReceiptLink } from '@/lib/po-tally-receipts';
+import { UnlinkedReceipts } from './po-unlinked-receipts';
 
 const button = 'min-h-11 rounded-lg border border-sf-line bg-sf-soft-0 px-3 text-sm font-semibold text-sf-body disabled:opacity-50';
 const primary = 'min-h-12 rounded-lg bg-sf-ink px-3 text-sm font-semibold text-sf-soft-0 disabled:opacity-50';
@@ -124,7 +125,8 @@ function TallyReceiveSheet({ po, onClose, onRefresh, onConflict }: { po: Purchas
   const [attempt, setAttempt] = useState(0);
   const [manual, setManual] = useState(false);
   const [selected, setSelected] = useState<TallyReceiptLink[]>([]);
-  const [received, setReceived] = useState<Record<string, string>>(() => Object.fromEntries(po.lines.map((line) => [line.itemKey, String(line.quantity)])));
+  const [now, setNow] = useState<Record<string, string>>(() => Object.fromEntries(po.lines.map((line) => [line.itemKey, ''])));
+  const [errors, setErrors] = useState<Record<string, string>>({});
   const hasCandidates = receipts?.lines.some((line) => line.candidates.length > 0) ?? false;
   const fromTally = hasCandidates && !manual;
   const command = usePurchaseOrderWrite(() => {
@@ -149,12 +151,15 @@ function TallyReceiveSheet({ po, onClose, onRefresh, onConflict }: { po: Purchas
   }, [po.id, attempt]);
   const sameLink = (a: TallyReceiptLink, b: TallyReceiptLink) => a.itemKey === b.itemKey && a.sourceId === b.sourceId && a.lineKey === b.lineKey;
   return <PurchaseOrderSheet title={`Mark received ${po.poNumber}`} locked={command.locked} onClose={onClose}>
-    <form className="min-w-0 space-y-3" onSubmit={async (event) => {
+    <form className="min-w-0 space-y-3" noValidate={!fromTally} onSubmit={async (event) => {
       event.preventDefault();
       if (loading || (fromTally && !selected.length)) return;
+      const result = fromTally ? null : batchReceiptTotals(po.lines, now);
+      if (result && !result.ok) { setErrors(result.errors); return; }
+      setErrors({});
       const body = await command.write(fromTally ? 'receive_from_tally' : 'receive_purchase_order', {
         id: po.id, expectedVersion: fromTally ? receipts!.version : po.version,
-        ...(fromTally ? { links: selected } : { lines: po.lines.map((line) => ({ itemKey: line.itemKey, receivedQuantity: Number(received[line.itemKey]) })) }),
+        ...(fromTally ? { links: selected } : { lines: result?.ok ? result.lines : [] }),
       });
       if (body) { onClose(); onRefresh(); }
     }}>
@@ -178,23 +183,41 @@ function TallyReceiveSheet({ po, onClose, onRefresh, onConflict }: { po: Purchas
         </> : null}
         {failed ? <p className="text-sm text-sf-muted">Tally receipts could not load</p> : null}
         {!fromTally ? <fieldset disabled={command.locked} className="min-w-0 space-y-3">
-          {po.lines.map((line, index) => <div key={line.itemKey}><label className="block text-sm" htmlFor={`receive-${po.id}-${index}`}>Received quantity for {line.itemName}</label><input className={input} id={`receive-${po.id}-${index}`} type="number" min={0} max={line.quantity} step="any" required value={received[line.itemKey] ?? ''} onChange={(event) => setReceived({ ...received, [line.itemKey]: event.target.value })} /></div>)}
+          {po.lines.map((line, index) => {
+            const still = stillDue(line);
+            return <div key={line.itemKey} className="space-y-2">
+              <p className="break-words text-sm font-semibold">{line.itemName}</p>
+              <p className="text-sm text-sf-muted">Ordered {line.quantity}{line.unit ? ` ${line.unit}` : ''} · received {line.receivedQuantity} · still due {still}</p>
+              {still > 0 ? <>
+                <label className="block text-sm" htmlFor={`receive-${po.id}-${index}`}>Received now for {line.itemName}</label>
+                <input className={input} id={`receive-${po.id}-${index}`} type="number" min={0} max={still} step="any" value={now[line.itemKey] ?? ''} onChange={(event) => setNow({ ...now, [line.itemKey]: event.target.value })} />
+                {errors[line.itemKey] ? <p role="alert" className="text-sm text-sf-danger">{errors[line.itemKey]}</p> : null}
+              </> : <p className="text-sm text-sf-muted">Fully received</p>}
+            </div>;
+          })}
         </fieldset> : null}
       </>}
       {command.error ? <p role="alert" className="text-sm text-sf-danger">{command.error}</p> : null}
       {command.locked && !command.busy ? <p className="text-sm text-sf-muted">Inputs are locked. Retry to confirm this request.</p> : null}
+      {!fromTally && errors._ ? <p role="alert" className="text-sm text-sf-danger">{errors._}</p> : null}
       <div className="sticky bottom-0 bg-sf-page py-2"><button type="submit" className={`${primary} w-full`} disabled={loading || command.busy || (fromTally && selected.length === 0)}>{command.busy ? 'Saving…' : fromTally ? 'Record Tally receipt' : command.locked ? 'Retry' : 'Confirm received'}</button></div>
     </form>
   </PurchaseOrderSheet>;
 }
 
-function PurchaseOrderCard({ po, tallyCount, onRefresh, onConflict }: { po: PurchaseOrder; tallyCount: number; onRefresh: () => void; onConflict: () => void }) {
+function PurchaseOrderCard({ po, tallyCount, onRefresh, onConflict, autoReceive, onAutoReceiveDone }: { po: PurchaseOrder; tallyCount: number; onRefresh: () => void; onConflict: () => void; autoReceive?: boolean; onAutoReceiveDone: () => void }) {
   const [expanded, setExpanded] = useState(false);
   const [mode, setMode] = useState<'receive' | 'cancel' | null>(null);
   const [reason, setReason] = useState('');
   const [note, setNote] = useState('');
   const command = usePurchaseOrderWrite(onConflict);
   const sharing = usePurchaseOrderWrite(onConflict);
+  const autoReceiveDone = useEffectEvent(onAutoReceiveDone);
+  useEffect(() => {
+    if (!autoReceive) return;
+    const timer = setTimeout(() => { setMode('receive'); autoReceiveDone(); }, 0);
+    return () => clearTimeout(timer);
+  }, [autoReceive]);
   return <article className="min-w-0 space-y-2 rounded-lg border border-sf-line bg-sf-soft-0 p-3" aria-label={po.poNumber}>
     <button className="min-h-11 w-full min-w-0 text-left" aria-label={`Details for ${po.poNumber}`} aria-expanded={expanded} onClick={() => setExpanded(!expanded)}><strong className="break-words">{po.poNumber}</strong><span className="mt-1 block break-words">{po.supplierName}</span></button>
     <div className="flex flex-wrap items-center gap-2 text-xs text-sf-muted"><span className="rounded-full bg-sf-soft-2 px-2 py-1">{po.status[0].toUpperCase() + po.status.slice(1)}</span><span>Created {date(po.createdAt)}</span><span>{po.lines.length} {po.lines.length === 1 ? 'item' : 'items'}</span></div>
@@ -247,6 +270,8 @@ export function PurchaseOrdersPanel({ refreshKey, onChanged }: { refreshKey: num
   const [error, setError] = useState('');
   const [reload, setReload] = useState(0);
   const [conflict, setConflict] = useState('');
+  const [focusPo, setFocusPo] = useState<{ id: string; poNumber: string } | null>(null);
+  const [poNotice, setPoNotice] = useState('');
   const request = useRef<AbortController | null>(null);
   async function load(nextPage: number, filter: PurchaseOrder['status']) {
     request.current?.abort();
@@ -279,13 +304,32 @@ export function PurchaseOrdersPanel({ refreshKey, onChanged }: { refreshKey: num
     const timer = setTimeout(() => loadInitial(status), 0);
     return () => { clearTimeout(timer); request.current?.abort(); };
   }, [status, refreshKey, reload]);
+  function openPo(id: string, poNumber: string) {
+    setPoNotice('');
+    if (items.some((po) => po.id === id && po.status === 'open')) setFocusPo({ id, poNumber });
+    else if (status !== 'open') {
+      request.current?.abort(); setLoading(true); setPage(1); setItems([]); setMore(false); setConflict(''); setStatus('open');
+      setFocusPo({ id, poNumber });
+    } else setPoNotice(`Find ${poNumber} in Open and use Mark received.`);
+  }
+  useEffect(() => {
+    if (!loading && focusPo && !items.some((po) => po.id === focusPo.id)) {
+      const timer = setTimeout(() => {
+        setPoNotice(`Find ${focusPo.poNumber} in Open and use Mark received.`);
+        setFocusPo(null);
+      }, 0);
+      return () => clearTimeout(timer);
+    }
+  }, [loading, focusPo, items]);
   function refresh() { setReload((value) => value + 1); onChanged(); }
   return <section aria-label="Purchase orders" className="mt-3 min-w-0 space-y-3 rounded-xl border border-sf-line-soft bg-sf-soft p-3 text-sf-body">
     <div className="flex flex-wrap items-center justify-between gap-2"><h2 className="text-sm font-bold">Purchase orders</h2><button className={button} aria-label={'Refresh\u0020purchase orders'} disabled={loading} onClick={() => setReload((value) => value + 1)}>Refresh</button></div>
     <div className="flex flex-wrap gap-2">{(['open', 'received', 'cancelled'] as const).map((value) => <button key={value} className={status === value ? 'min-h-11 rounded-lg border border-sf-ink bg-sf-ink px-3 text-sm font-semibold text-sf-soft-0' : button} aria-pressed={status === value} onClick={() => { if (status !== value) { request.current?.abort(); setLoading(true); setPage(1); setItems([]); setMore(false); setConflict(''); setStatus(value); } }}>{value[0].toUpperCase() + value.slice(1)}</button>)}</div>
+    <UnlinkedReceipts refreshKey={refreshKey + reload} onOpenPo={openPo} />
+    {poNotice ? <p className="text-sm text-sf-muted">{poNotice}</p> : null}
     {error ? <p role="alert" className="text-sm text-sf-danger">{error}</p> : null}
     {conflict ? <p role="alert" className="text-sm text-sf-danger">{conflict}</p> : null}
-    {items.map((po) => <PurchaseOrderCard key={po.id} po={po} tallyCount={tallyCounts[po.id] ?? 0} onRefresh={refresh} onConflict={() => { setConflict('This purchase order changed. Reload.'); refresh(); }} />)}
+    {items.map((po) => <PurchaseOrderCard key={po.id} po={po} tallyCount={tallyCounts[po.id] ?? 0} autoReceive={focusPo?.id === po.id} onAutoReceiveDone={() => setFocusPo(null)} onRefresh={refresh} onConflict={() => { setConflict('This purchase order changed. Reload.'); refresh(); }} />)}
     {loading ? <p className="text-sm text-sf-muted">Loading purchase orders…</p> : !items.length && !error ? <p className="text-sm text-sf-muted">No {status} purchase orders.</p> : null}
     {more ? <button className={button} disabled={loading} onClick={() => void load(page + 1, status)}>Load more</button> : null}
   </section>;

@@ -2,6 +2,31 @@ export type PurchaseOrderLine = { itemKey: string; itemName: string; quantity: n
 export type PurchaseOrder = { id: string; poNumber: string; supplierName: string; status: 'open' | 'received' | 'cancelled'; sharedAt: string | null; version: number; createdAt: string; createdByEmail: string; lines: PurchaseOrderLine[]; totalValue?: number | null };
 export type SupplierOption = { supplierName: string; effectiveAt: string; lowest: boolean; rate?: number };
 
+export type BatchReceiptResult =
+  | { ok: true; lines: Array<{ itemKey: string; receivedQuantity: number }> }
+  | { ok: false; errors: Record<string, string> };
+
+export function stillDue(line: PurchaseOrderLine): number {
+  return Math.round((line.quantity - line.receivedQuantity) * 1000) / 1000;
+}
+
+export function batchReceiptTotals(lines: PurchaseOrderLine[], now: Record<string, string>): BatchReceiptResult {
+  const errors: Record<string, string> = {};
+  let allZero = true;
+  const totals = lines.map((line) => {
+    const still = stillDue(line);
+    const value = Number(now[line.itemKey]?.trim() || 0);
+    if (value !== 0) allZero = false;
+    const total = Math.round((line.receivedQuantity + value) * 1000) / 1000;
+    if (!Number.isFinite(value) || value < 0) errors[line.itemKey] = 'Enter 0 or more';
+    else if (total > line.quantity) errors[line.itemKey] = `More than still due (${still})`;
+    return { itemKey: line.itemKey, receivedQuantity: total };
+  });
+  if (Object.keys(errors).length) return { ok: false, errors };
+  if (allZero) return { ok: false, errors: { _: 'Enter what arrived in this delivery' } };
+  return { ok: true, lines: totals };
+}
+
 const uuid = /^[0-9a-f]{8}-[0-9a-f]{4}-[1-8][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i;
 const isUuid = (value: unknown) => typeof value === 'string' && uuid.test(value);
 const record = (v: unknown): v is Record<string, unknown> => !!v && typeof v === 'object' && !Array.isArray(v);

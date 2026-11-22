@@ -11,7 +11,17 @@ export async function GET(request: Request) {
     const user = await getChatGPTUser();
     if (!user) return failure('Sign in required', 401);
     const params = new URL(request.url).searchParams;
-    if ([...params.keys()].some((key) => !['page', 'status', 'supplierOptions', 'tallyReceipts', 'tallyReceiptCounts'].includes(key))) return failure('Invalid purchase order query', 400);
+    if (params.has('unlinked')) {
+      const raw = params.get('page');
+      const page = raw === null ? 1 : Number(raw);
+      if (params.getAll('unlinked').length !== 1 || params.get('unlinked') !== '1' ||
+        [...params.keys()].some(key => !['unlinked', 'page'].includes(key)) || params.getAll('page').length > 1 ||
+        (raw !== null && !/^[0-9]+$/.test(raw)) || !Number.isInteger(page) || page < 1 || page > 100) {
+        return failure('Invalid unlinked receipts query', 400);
+      }
+      return Response.json(await callOrderGateway(user.email, 'get_unlinked_receipts', { page }), { headers });
+    }
+    if ([...params.keys()].some((key) => !['page', 'status', 'supplierOptions', 'tallyReceipts', 'tallyReceiptCounts', 'unlinked'].includes(key))) return failure('Invalid purchase order query', 400);
     const tallyReceipts = params.get('tallyReceipts');
     const tallyReceiptCounts = params.get('tallyReceiptCounts');
     if (tallyReceipts !== null || tallyReceiptCounts !== null) {

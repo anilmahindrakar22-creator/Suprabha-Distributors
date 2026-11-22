@@ -107,11 +107,11 @@ test('receive submits entered quantities and cancellation requires a reason', as
   const { commands } = await setup(page);
   await page.getByRole('button', { name: 'Mark received PO/26-27/0001' }).click();
   const received = page.getByRole('dialog', { name: 'Mark received PO/26-27/0001' });
-  await expect(received.getByLabel('Received quantity for Test item')).toHaveValue('13');
-  await received.getByLabel('Received quantity for Test item').fill('7');
+  await expect(received.getByLabel('Received now for Test item')).toHaveValue('');
+  await received.getByLabel('Received now for Test item').fill('7');
   await received.getByRole('button', { name: 'Confirm received' }).click();
   await expect(received).toBeHidden();
-  expect(commands[0]).toMatchObject({ action: 'receive_purchase_order', payload: { lines: [{ itemKey: 'TEST-ITEM', receivedQuantity: 7 }] } });
+  expect(commands[0]).toMatchObject({ action: 'receive_purchase_order', payload: { lines: [{ itemKey: 'TEST-ITEM', receivedQuantity: purchaseOrder().lines[0].receivedQuantity + 7 }] } });
   await page.getByRole('button', { name: 'Cancel PO PO/26-27/0001' }).click();
   const cancelled = page.getByRole('dialog', { name: 'Cancel PO PO/26-27/0001' });
   await expect(cancelled.getByRole('button', { name: 'Confirm cancellation' })).toBeDisabled();
@@ -119,6 +119,17 @@ test('receive submits entered quantities and cancellation requires a reason', as
   await cancelled.getByRole('button', { name: 'Confirm cancellation' }).click();
   await expect(cancelled).toBeHidden();
   expect(commands[1]).toMatchObject({ action: 'cancel_purchase_order', payload: { reason: 'Duplicate purchase order' } });
+});
+
+test('manual receipt shows still due and rejects a delivery larger than the remainder', async ({ page }) => {
+  const { commands } = await setup(page, { orders: [purchaseOrder({ lines: [purchaseOrderLine({ quantity: 10, receivedQuantity: 6 })] })] });
+  await page.getByRole('button', { name: 'Mark received PO/26-27/0001' }).click();
+  const sheet = page.getByRole('dialog', { name: 'Mark received PO/26-27/0001' });
+  await expect(sheet.getByText('Ordered 10 Nos · received 6 · still due 4', { exact: true })).toBeVisible();
+  await sheet.getByLabel('Received now for Test item').fill('5');
+  await sheet.getByRole('button', { name: 'Confirm received' }).click();
+  await expect(sheet.getByText('More than still due (4)', { exact: true })).toBeVisible();
+  expect(commands).toHaveLength(0);
 });
 
 test('warehouse sees neither selection controls nor purchase orders', async ({ page }) => {
@@ -203,14 +214,14 @@ test('receive keeps quantities locked and retries with the same command', async 
   const { commands } = await setup(page, { failures: [502] });
   await page.getByRole('button', { name: 'Mark received PO/26-27/0001' }).click();
   const sheet = page.getByRole('dialog', { name: 'Mark received PO/26-27/0001' });
-  await sheet.getByLabel('Received quantity for Test item').fill('0');
+  await sheet.getByLabel('Received now for Test item').fill('2');
   await sheet.getByRole('button', { name: 'Confirm received' }).click();
-  await expect(sheet.getByLabel('Received quantity for Test item')).toBeDisabled();
+  await expect(sheet.getByLabel('Received now for Test item')).toBeDisabled();
   await expect(sheet.getByRole('button', { name: 'Close', exact: true })).toBeDisabled();
   await sheet.getByRole('button', { name: 'Retry', exact: true }).click();
   await expect(sheet).toBeHidden();
   expect(commands[0]).toEqual(commands[1]);
-  expect(commands[1].payload.lines![0].receivedQuantity).toBe(0);
+  expect(commands[1].payload.lines![0].receivedQuantity).toBe(purchaseOrder().lines[0].receivedQuantity + 2);
 });
 
 test('PO conflict shows the reload message and refreshes the list', async ({ page }) => {
