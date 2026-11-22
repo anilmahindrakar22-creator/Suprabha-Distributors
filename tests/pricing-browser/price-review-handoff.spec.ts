@@ -1,4 +1,5 @@
 import { expect, test, type Page } from '@playwright/test';
+import { openGrowthArea } from './growth-helpers';
 
 const measures = { revenuePaise: 100000, repeatPaise: 100000, bulkPaise: 0, bulkInvoices: 0, labsBuying: 1, buyingMonths: 12, perBuyingMonthPaise: 8333 };
 const summary = {
@@ -52,7 +53,7 @@ test('Growth Review prices opens a focused proposal and waits for the person to 
   const growth = page.getByRole('button', { name: /^growth$/i });
   if (!await growth.isVisible()) await page.getByRole('button', { name: 'More', exact: true }).click();
   await growth.click();
-  await page.getByRole('tab', { name: 'Profit', exact: true }).click();
+  await openGrowthArea(page, 'profit');
   await page.getByRole('tab', { name: 'Items', exact: true }).click();
   await page.getByRole('button', { name: 'Reagent: open labs and prices', exact: true }).click();
   await page.getByRole('button', { name: 'Review prices', exact: true }).click();
