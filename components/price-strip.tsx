@@ -25,7 +25,7 @@ export function PriceStrip({ data, onPick, marks = [], highlightCustomerId }: {
   const lo = Math.min(...prices, typical * 0.6, ...markPrices), hi = Math.max(...prices, typical * 1.2, ...markPrices);
   const px = (price: number) => 4 + (price - lo) / (hi - lo) * 92;
   return <div className="mt-3"><div data-price-strip {...containerProps}>
-    <svg className="block h-[72px] w-full overflow-visible" role="group" aria-label={`Price per unit by lab against typical ${money(typical)}, band ${money(typical * 0.9)} to ${money(typical * 1.1)}`}>
+    <svg className="block h-[72px] w-full overflow-visible" role="group" aria-label={`Price per unit by lab against typical ${money(typical)}, band ${money(Math.round(typical * 0.9))} to ${money(Math.round(typical * 1.1))}`}>
       <rect x={`${px(typical * 0.9)}%`} width={`${px(typical * 1.1) - px(typical * 0.9)}%`} y="16" height="38" fill="var(--color-sf-chart-grid)" />
       <line x1="4%" x2="96%" y1="58" y2="58" stroke="var(--color-sf-chart-axis)" />
       <line x1={`${px(typical * 0.9)}%`} x2={`${px(typical * 0.9)}%`} y1="54" y2="62" stroke="var(--color-sf-chart-axis)" />
