@@ -18,6 +18,22 @@ function fixture() {
 }
 
 describe('purchase order Edge routing', () => {
+  it.each(['get_letterhead', 'set_letterhead'])('routes %s through the letterhead gateway', async action => {
+    const { send, fetcher } = fixture();
+    expect((await send(action)).status).toBe(200);
+    expect(fetcher.mock.calls[0][0]).toBe('https://database.example.test/rest/v1/rpc/stockflow_letterhead_gateway');
+    expect(JSON.parse(fetcher.mock.calls[0][1].body)).toMatchObject({ p_action: action, p_actor_email: 'sales@example.test' });
+  });
+  it('admits letterhead writes as commands', async () => {
+    const begin = vi.spyOn(RequestGate.prototype, 'begin');
+    const finish = vi.spyOn(RequestGate.prototype, 'finish');
+    try {
+      const { send } = fixture();
+      expect((await send('set_letterhead')).status).toBe(200);
+      expect(begin).toHaveBeenCalledOnce();
+      expect(finish).toHaveBeenCalledOnce();
+    } finally { begin.mockRestore(); finish.mockRestore(); }
+  });
   it.each(['supplier_options', 'create_purchase_orders', 'list_purchase_orders', 'mark_purchase_order_shared', 'receive_purchase_order', 'cancel_purchase_order'])('routes %s through the purchase gateway', async action => {
     const { send, fetcher } = fixture();
     expect((await send(action)).status).toBe(200);
@@ -46,7 +62,7 @@ describe('purchase order Edge routing', () => {
     const finish = vi.spyOn(RequestGate.prototype, 'finish');
     try {
       const { send } = fixture();
-      for (const action of ['supplier_options', 'list_purchase_orders', 'get_tally_receipts', 'get_tally_receipt_counts', 'get_unlinked_receipts']) {
+      for (const action of ['supplier_options', 'list_purchase_orders', 'get_tally_receipts', 'get_tally_receipt_counts', 'get_unlinked_receipts', 'get_letterhead']) {
         expect((await send(action)).status).toBe(200);
         expect((await send(action)).status).toBe(200);
       }
