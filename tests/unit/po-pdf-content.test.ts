@@ -20,10 +20,47 @@ const letterhead: Letterhead = {
 };
 
 describe('buildPoPdfContent', () => {
+  it('adds serials, words, GST, footer and optional logo', () => {
+    const logo = { type: 'image/png' as const, bytes: new Uint8Array([1, 2]) };
+    const content = buildPoPdfContent(basePo(managementLines, 990.05), letterhead, { logo, terms: [] });
+    expect(content.rows.map(row => row.serial)).toEqual(['1', '2']);
+    expect(content.columns[0]).toBe('#');
+    expect(content.amountInWords).toBe('Rupees Nine Hundred Ninety and Five Paise Only');
+    expect(content.logo).toBe(logo);
+    expect(content.gstNote).toBe('Rates are exclusive of GST; GST as applicable.');
+    expect(content.footer).toBe('Computer-generated purchase order · PO/26-27/0001');
+    expect(content.signature).toBe('For Suprabha Distributors');
+    expect(buildPoPdfContent(basePo(managementLines), null, null).logo).toBeNull();
+    expect(buildPoPdfContent(basePo(managementLines), null)).not.toHaveProperty('amountInWords');
+  });
+
+  it('keeps the fixed instruction first and takes five nonempty trimmed terms', () => {
+    const content = buildPoPdfContent(basePo(managementLines), null, {
+      logo: null, terms: ['  First  ', '', '  ', 'Second', '\nThird\n', 'Fourth', 'Fifth', 'Sixth'],
+    });
+    expect(content.instructions).toEqual([
+      'Please quote PO/26-27/0001 on your invoice and delivery challan.', 'First', 'Second', 'Third', 'Fourth', 'Fifth',
+    ]);
+    expect(buildPoPdfContent(basePo(managementLines), null).instructions).toEqual([content.instructions[0]]);
+  });
+
+  it('keeps operations free of monetary fields even when the order has a total', () => {
+    const content = buildPoPdfContent(basePo([line('Widget', 1)], 990.05), null);
+    expect(content.columns).toEqual(['#', 'Item', 'Qty', 'Unit']);
+    expect(content.gstNote).toBe('Rates are exclusive of GST; GST as applicable.');
+    expect(content).not.toHaveProperty('total');
+    expect(JSON.stringify(content)).not.toContain('amountInWords');
+    expect(JSON.stringify(content)).not.toContain('₹');
+  });
+
+  it('uses the explicit delivery address when present', () => {
+    expect(buildPoPdfContent(basePo(managementLines), { ...letterhead, deliveryAddress: ' Warehouse \n Dock 2 ' }).deliveryTo)
+      .toEqual(['Warehouse', 'Dock 2']);
+  });
   it('builds management rows and totals using integer paise formatting', () => {
     const content = buildPoPdfContent(basePo(managementLines, 1678.965), null);
     expect(content.showRates).toBe(true);
-    expect(content.columns).toEqual(['Item', 'Qty', 'Unit', 'Rate', 'Amount']);
+    expect(content.columns).toEqual(['#', 'Item', 'Qty', 'Unit', 'Rate', 'Amount']);
     expect(content.rows[0].rate).toBe(formatPaise(45678));
     expect(content.rows[0].amount).toBe(formatPaise(Math.round(3 * 456.78 * 100)));
     expect(content.rows[1].amount).toBe(formatPaise(Math.round(2.5 * 123.45 * 100)));

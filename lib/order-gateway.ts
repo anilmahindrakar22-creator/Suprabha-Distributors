@@ -26,6 +26,8 @@ export type GatewayAction =
   | 'get_unlinked_receipts'
   | 'get_letterhead'
   | 'set_letterhead'
+  | 'get_letterhead_extras'
+  | 'set_letterhead_extras'
   | 'get_tally_receipt_counts'
   | 'receive_from_tally'
   | 'cancel_purchase_order'

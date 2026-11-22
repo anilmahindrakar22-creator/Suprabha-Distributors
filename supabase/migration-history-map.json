@@ -1641,6 +1641,13 @@
       "remoteVersion": null,
       "remoteSha256": null,
       "status": "not_deployed"
+    },
+    {
+      "localFile": "20261215100000_letterhead_extras.sql",
+      "localSha256": "7579e542399ee56690ba9726b5902e57e125aad5a92922cb5673f47e5d2f61bc",
+      "remoteVersion": null,
+      "remoteSha256": null,
+      "status": "not_deployed"
     }
   ],
   "liveCheck": {

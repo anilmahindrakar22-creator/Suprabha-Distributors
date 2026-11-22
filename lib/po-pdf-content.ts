@@ -1,18 +1,21 @@
 import type { PurchaseOrder } from './purchase-orders';
 import type { Letterhead } from './letterhead';
 import { formatPaise } from './wallet-format';
+import { rupeesInWords } from './amount-in-words';
 
-export type PoPdfRow = { item: string; quantity: string; unit: string; rate?: string; amount?: string };
+export type PoPdfExtras = { logo: { type: 'image/png' | 'image/jpeg'; bytes: Uint8Array } | null; terms: string[] };
+export type PoPdfRow = { serial: string; item: string; quantity: string; unit: string; rate?: string; amount?: string };
 export type PoPdfContent = {
   companyName: string; letterheadLines: string[]; title: 'Purchase order';
   poNumber: string; date: string; supplier: string; showRates: boolean;
   columns: string[]; rows: PoPdfRow[]; total?: string;
   deliveryTo: string[]; signature: string; fileName: string;
+  logo: PoPdfExtras['logo']; amountInWords?: string; gstNote: string; instructions: string[]; footer: string;
 };
 
 const lines = (value: string) => value.split('\n').map((line) => line.trim()).filter(Boolean);
 
-export function buildPoPdfContent(po: PurchaseOrder, letterhead: Letterhead | null): PoPdfContent {
+export function buildPoPdfContent(po: PurchaseOrder, letterhead: Letterhead | null, extras?: PoPdfExtras | null): PoPdfContent {
   const companyName = letterhead?.companyName || 'Suprabha Distributors';
   const letterheadLines = letterhead ? [
     ...lines(letterhead.address),
@@ -24,9 +27,10 @@ export function buildPoPdfContent(po: PurchaseOrder, letterhead: Letterhead | nu
     ? new Intl.DateTimeFormat('en-IN', { timeZone: 'Asia/Kolkata', day: '2-digit', month: 'short', year: 'numeric' }).format(parsedDate)
     : '';
   const showRates = po.lines.length > 0 && po.lines.every((line) => Object.hasOwn(line, 'rate'));
-  const columns = ['Item', 'Qty', 'Unit', ...(showRates ? ['Rate', 'Amount'] : [])];
-  const rows = po.lines.map((line): PoPdfRow => {
+  const columns = ['#', 'Item', 'Qty', 'Unit', ...(showRates ? ['Rate', 'Amount'] : [])];
+  const rows = po.lines.map((line, index): PoPdfRow => {
     const row: PoPdfRow = {
+      serial: String(index + 1),
       item: line.itemName,
       quantity: String(Math.round(line.quantity * 1000) / 1000),
       unit: line.unit ?? '',
@@ -48,9 +52,15 @@ export function buildPoPdfContent(po: PurchaseOrder, letterhead: Letterhead | nu
     deliveryTo: letterhead ? (lines(letterhead.deliveryAddress).length ? lines(letterhead.deliveryAddress) : lines(letterhead.address)) : [],
     signature: `For ${companyName}`,
     fileName: `${po.poNumber.replaceAll('/', '-')}.pdf`,
+    logo: extras?.logo ?? null,
+    gstNote: 'Rates are exclusive of GST; GST as applicable.',
+    instructions: [`Please quote ${po.poNumber} on your invoice and delivery challan.`,
+      ...(extras?.terms ?? []).map(term => term.trim()).filter(Boolean).slice(0, 5)],
+    footer: `Computer-generated purchase order · ${po.poNumber}`,
   };
   if (showRates && typeof po.totalValue === 'number' && Number.isFinite(po.totalValue)) {
     content.total = formatPaise(Math.round(po.totalValue * 100));
+    content.amountInWords = rupeesInWords(Math.round(po.totalValue * 100));
   }
   return content;
 }

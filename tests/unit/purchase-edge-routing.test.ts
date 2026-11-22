@@ -18,6 +18,24 @@ function fixture() {
 }
 
 describe('purchase order Edge routing', () => {
+  it.each(['get_letterhead_extras', 'set_letterhead_extras'])('routes %s through the extras gateway with the correct admission', async action => {
+    const begin = vi.spyOn(RequestGate.prototype, 'begin');
+    const finish = vi.spyOn(RequestGate.prototype, 'finish');
+    try {
+      const { send, fetcher } = fixture();
+      expect((await send(action)).status).toBe(200);
+      expect(fetcher.mock.calls[0][0]).toBe('https://database.example.test/rest/v1/rpc/stockflow_letterhead_extras_gateway');
+      expect(JSON.parse(fetcher.mock.calls[0][1].body)).toMatchObject({ p_action: action, p_actor_email: 'sales@example.test' });
+      if (action === 'get_letterhead_extras') {
+        expect((await send(action)).status).toBe(200);
+        expect(begin).not.toHaveBeenCalled();
+        expect(finish).not.toHaveBeenCalled();
+      } else {
+        expect(begin).toHaveBeenCalledOnce();
+        expect(finish).toHaveBeenCalledOnce();
+      }
+    } finally { begin.mockRestore(); finish.mockRestore(); }
+  });
   it('routes get_growth_stopped_items through its gateway as a read', async () => {
     const begin = vi.spyOn(RequestGate.prototype, 'begin');
     const finish = vi.spyOn(RequestGate.prototype, 'finish');
