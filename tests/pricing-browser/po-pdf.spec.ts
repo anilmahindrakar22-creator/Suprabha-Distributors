@@ -51,6 +51,7 @@ async function setup(page: Page, { role = 'operations', orders = [purchaseOrder(
   await page.route('**/fonts/noto-sans-po-subset.ttf', (route) => route.fulfill({
     body: readFileSync(path.resolve('public/fonts/noto-sans-po-subset.ttf')), contentType: 'font/ttf',
   }));
+  await page.route('**/fonts/noto-sans-po-bold-subset.ttf', (route) => route.fulfill({ status: 404, body: 'Not found' }));
   await page.goto(`/?view=frame&role=${role}`);
   await page.getByRole('button', { name: /^requests$/i }).click();
   await expect(page.getByRole('heading', { name: 'To order', exact: true })).toBeVisible();
@@ -75,7 +76,7 @@ async function downloadPdf(page: Page) {
   await checkDownload(await downloaded);
 }
 
-test('desktop management downloads the PO PDF without recording text sharing', async ({ page }) => {
+test('desktop management downloads the PO PDF with a missing bold font without recording text sharing', async ({ page }) => {
   const { commands } = await setup(page, { role: 'management', orders: [purchaseOrder({ totalValue: 546, lines: [purchaseOrderLine({ rate: 42 })] })] });
   await desktop(page);
   await downloadPdf(page);

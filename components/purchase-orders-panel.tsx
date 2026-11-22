@@ -11,6 +11,12 @@ import { buildPoPdfContent } from '@/lib/po-pdf-content';
 import { parseLetterhead } from '@/lib/letterhead';
 
 let pdfFont: Promise<ArrayBuffer> | undefined;
+let pdfBoldFont: Promise<ArrayBuffer | null> | undefined;
+function loadPdfBoldFont() {
+  return pdfBoldFont ??= fetch('/fonts/noto-sans-po-bold-subset.ttf').then((response) => {
+    return response.ok ? response.arrayBuffer() : null;
+  }).catch(() => null);
+}
 function loadPdfFont() {
   return pdfFont ??= fetch('/fonts/noto-sans-po-subset.ttf').then((response) => {
     if (!response.ok) throw new Error('Font could not be loaded');
@@ -241,11 +247,11 @@ function PurchaseOrderCard({ po, tallyCount, onRefresh, onConflict, autoReceive,
     setPdfBusy(true);
     setNote('');
     try {
-      const [{ renderPoPdf }, font, letterhead] = await Promise.all([
-        import('@/lib/po-pdf-render'), loadPdfFont(), loadPdfLetterhead(),
+      const [{ renderPoPdf }, font, letterhead, boldFont] = await Promise.all([
+        import('@/lib/po-pdf-render'), loadPdfFont(), loadPdfLetterhead(), loadPdfBoldFont(),
       ]);
       const content = buildPoPdfContent(po, letterhead);
-      const bytes = await renderPoPdf(content, font);
+      const bytes = await renderPoPdf(content, font, boldFont);
       const file = new File([new Uint8Array(bytes)], content.fileName, { type: 'application/pdf' });
       try {
         if (navigator.canShare?.({ files: [file] })) {
