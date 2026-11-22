@@ -121,6 +121,32 @@ test('stock cover puts items that run out first and explains the delivery compar
   expect(await page.evaluate(() => document.documentElement.scrollWidth <= innerWidth)).toBe(true);
 });
 
+test('long reorder names keep the order and stock on the right on a phone', async ({ page }) => {
+  await page.setViewportSize({ width: 375, height: 812 });
+  await page.route('**/api/requirements?view=cover', (route) => route.fulfill({ json: {
+    view: 'cover', leadTimeDays: 7, salesThrough: '2026-11-18', runsOutCount: 0,
+    items: [
+      { itemKey: 'Stromatolyser WH 500 Ml 3 Part Sysmex Long Name Pack', daysLeft: 300, state: 'covered' },
+      { itemKey: 'Short item', daysLeft: 300, state: 'covered' },
+    ],
+  } }));
+  await openStockDashboard(page, { ...stockPayload(), groups: ['Test group'], rows: [
+    { group: 'Test group', item: 'Stromatolyser WH 500 Ml 3 Part Sysmex Long Name Pack', closing: 2, reorderLevel: 3, minimumOrder: 1, shortfall: 1, orderToBePlaced: 1 },
+    { group: 'Test group', item: 'Short item', closing: 2, reorderLevel: 3, minimumOrder: 1, shortfall: 1, orderToBePlaced: 1 },
+  ] });
+  await page.locator('#groupCards summary').click();
+  const row = page.locator('.group-item').filter({ hasText: 'Stromatolyser WH 500 Ml 3 Part Sysmex Long Name Pack' });
+  const name = row.locator('.gi-name'), order = row.locator('.gi-order'), qty = row.locator('.gi-qty');
+  const nameBox = await name.boundingBox(), orderBox = await order.boundingBox(), qtyBox = await qty.boundingBox(), rowBox = await row.boundingBox();
+  expect(nameBox && orderBox && qtyBox && rowBox).toBeTruthy();
+  const mid = orderBox!.y + orderBox!.height / 2;
+  expect(mid).toBeGreaterThanOrEqual(nameBox!.y);
+  expect(mid).toBeLessThanOrEqual(nameBox!.y + 26);
+  expect(Math.abs((qtyBox!.x + qtyBox!.width) - (rowBox!.x + rowBox!.width))).toBeLessThanOrEqual(4);
+  expect(nameBox!.height).toBeGreaterThan(30);
+  expect(await page.evaluate(() => document.documentElement.scrollWidth <= innerWidth)).toBe(true);
+});
+
 test('cover failure leaves reorder rows visible in their original order without cover lines', async ({ page }) => {
   await page.setViewportSize({ width: 375, height: 812 });
   await page.route('**/api/requirements?view=cover', (route) => route.fulfill({ status: 500, json: {} }));
