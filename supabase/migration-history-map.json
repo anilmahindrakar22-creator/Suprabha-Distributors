@@ -1634,6 +1634,13 @@
       "remoteVersion": null,
       "remoteSha256": null,
       "status": "not_deployed"
+    },
+    {
+      "localFile": "20261215090000_growth_declining_labs.sql",
+      "localSha256": "19a701cefe57b391d803678aefa9efe902c4f801c69dcc41f22ae6f525a01fcc",
+      "remoteVersion": null,
+      "remoteSha256": null,
+      "status": "not_deployed"
     }
   ],
   "liveCheck": {

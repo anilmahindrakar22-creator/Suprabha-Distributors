@@ -18,6 +18,19 @@ function fixture() {
 }
 
 describe('purchase order Edge routing', () => {
+  it('routes get_growth_stopped_items through its gateway as a read', async () => {
+    const begin = vi.spyOn(RequestGate.prototype, 'begin');
+    const finish = vi.spyOn(RequestGate.prototype, 'finish');
+    try {
+      const { send, fetcher } = fixture();
+      expect((await send('get_growth_stopped_items')).status).toBe(200);
+      expect((await send('get_growth_stopped_items')).status).toBe(200);
+      expect(fetcher.mock.calls[0][0]).toBe('https://database.example.test/rest/v1/rpc/stockflow_growth_stopped_items_gateway');
+      expect(JSON.parse(fetcher.mock.calls[0][1].body)).toMatchObject({ p_action: 'get_growth_stopped_items', p_actor_email: 'sales@example.test' });
+      expect(begin).not.toHaveBeenCalled();
+      expect(finish).not.toHaveBeenCalled();
+    } finally { begin.mockRestore(); finish.mockRestore(); }
+  });
   it.each(['get_letterhead', 'set_letterhead'])('routes %s through the letterhead gateway', async action => {
     const { send, fetcher } = fixture();
     expect((await send(action)).status).toBe(200);
