@@ -11,6 +11,7 @@ const gstinMessage = 'Enter a 15-character GSTIN, for example 29ABCDE1234F1Z5';
 export function CompanyDetailsCard() {
   const [loaded, setLoaded] = useState<Letterhead | null>(null);
   const [draft, setDraft] = useState({ companyName: '', address: '', gstin: '', phone: '', deliveryAddress: '' });
+  const [sameDelivery, setSameDelivery] = useState(true);
   const [loadState, setLoadState] = useState<'idle' | 'loading' | 'ready' | 'error'>('idle');
   const [busy, setBusy] = useState(false);
   const [pendingBody, setPendingBody] = useState<string | null>(null);
@@ -21,10 +22,12 @@ export function CompanyDetailsCard() {
   const inFlight = useRef(false);
   const normalizedGstin = normalizeGstin(draft.gstin);
   const invalidGstin = normalizedGstin !== null && !GSTIN_PATTERN.test(normalizedGstin);
+  const invalidDelivery = !sameDelivery && !draft.deliveryAddress.trim();
 
   function replaceValues(value: Letterhead) {
     setLoaded(value);
     setDraft({ companyName: value.companyName, address: value.address, gstin: value.gstin ?? '', phone: value.phone, deliveryAddress: value.deliveryAddress });
+    setSameDelivery(value.deliveryAddress.trim() === '');
     setGstinChecked(false);
     setSubmitted(false);
   }
@@ -51,9 +54,9 @@ export function CompanyDetailsCard() {
     setSubmitted(true);
     const command = pendingBody ? null : validateLetterheadCommand({
       action: 'set_letterhead',
-      payload: { idempotencyKey: crypto.randomUUID(), expectedVersion: loaded.version, ...draft, gstin: normalizedGstin },
+      payload: { idempotencyKey: crypto.randomUUID(), expectedVersion: loaded.version, ...draft, gstin: normalizedGstin, deliveryAddress: sameDelivery ? '' : draft.deliveryAddress },
     });
-    if (!pendingBody && !command) {
+    if (!pendingBody && (!command || invalidDelivery)) {
       setMessage('Check the highlighted fields');
       return;
     }
@@ -100,8 +103,9 @@ export function CompanyDetailsCard() {
         <div><label htmlFor="company-gstin" className="font-bold">GSTIN</label><input id="company-gstin" maxLength={15} autoCapitalize="characters" spellCheck={false} value={draft.gstin} onChange={event => field('gstin', event.target.value)} onBlur={() => setGstinChecked(true)} aria-invalid={gstinChecked && invalidGstin} aria-describedby={gstinChecked && invalidGstin ? 'company-gstin-error' : undefined} className={inputClass} />
           {gstinChecked && invalidGstin && <p id="company-gstin-error" className="mt-1 font-normal text-sf-danger">{gstinMessage}</p>}</div>
         <div><label htmlFor="company-phone" className="font-bold">Phone</label><input id="company-phone" maxLength={40} inputMode="tel" value={draft.phone} onChange={event => field('phone', event.target.value)} className={inputClass} /></div>
-        <div><label htmlFor="company-delivery-address" className="font-bold">Delivery address</label><textarea id="company-delivery-address" maxLength={400} value={draft.deliveryAddress} onChange={event => field('deliveryAddress', event.target.value)} aria-describedby="company-delivery-hint" className={inputClass} /></div>
-        <p id="company-delivery-hint" className="font-normal text-sf-subtle">Leave empty to use the address above.</p>
+        <label htmlFor="company-delivery-same" className="flex min-h-11 items-center gap-2 font-normal"><input type="checkbox" id="company-delivery-same" checked={sameDelivery} onChange={event => { setSameDelivery(event.target.checked); setMessage(''); }} className="size-4 accent-sf-accent" />Delivery address same as company address</label>
+        {!sameDelivery && <div><label htmlFor="company-delivery-address" className="font-bold">Delivery address</label><textarea id="company-delivery-address" maxLength={400} value={draft.deliveryAddress} onChange={event => field('deliveryAddress', event.target.value)} aria-invalid={submitted && invalidDelivery} aria-describedby={submitted && invalidDelivery ? 'company-delivery-error' : undefined} className={inputClass} />
+          {submitted && invalidDelivery && <p id="company-delivery-error" className="mt-1 font-normal text-sf-danger">Enter the delivery address, or tick &quot;same as company address&quot;</p>}</div>}
       </fieldset>
       <p className="text-sm text-sf-subtle">Last saved {new Intl.DateTimeFormat('en-IN', { timeZone: 'Asia/Kolkata', day: 'numeric', month: 'long', year: 'numeric', hour: '2-digit', minute: '2-digit' }).format(new Date(loaded.updatedAt))}</p>
       {message && (message === 'Company details saved' ? <output className="text-sm">{message}</output> : <p role="alert" className="text-sm [overflow-wrap:anywhere]">{message}</p>)}

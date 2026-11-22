@@ -45,6 +45,8 @@ test('save normalizes GSTIN and sends the loaded version', async ({ page }) => {
   await card.locator('summary').click();
   await card.getByLabel('Company name', { exact: true }).fill('Updated Company');
   await card.getByLabel('GSTIN', { exact: true }).fill('29abcde1234f1z5');
+  await expect(card.getByLabel('Delivery address same as company address', { exact: true })).toBeChecked();
+  await expect(card.getByLabel('Delivery address', { exact: true })).toHaveCount(0);
   await card.getByRole('button', { name: 'Save company details' }).click();
   await expect(card.getByRole('status')).toHaveText('Company details saved');
   expect(posts).toEqual([{ action: 'set_letterhead', payload: {
@@ -79,11 +81,14 @@ test('503 locks every field and Retry sends the identical request body', async (
     } else await route.fulfill({ json: letterhead });
   });
   await card.locator('summary').click();
+  await card.getByLabel('Delivery address same as company address', { exact: true }).uncheck();
+  await card.getByLabel('Delivery address', { exact: true }).fill('Warehouse 2, Peenya');
   await card.getByRole('button', { name: 'Save company details' }).click();
   await expect(card.getByRole('button', { name: 'Retry', exact: true })).toBeVisible();
   for (const name of ['Company name', 'Address', 'GSTIN', 'Phone', 'Delivery address']) {
     await expect(card.getByLabel(name, { exact: true })).toBeDisabled();
   }
+  await expect(card.getByLabel('Delivery address same as company address', { exact: true })).toBeDisabled();
   await card.getByRole('button', { name: 'Retry', exact: true }).click();
   await expect(card.getByRole('status')).toHaveText('Company details saved');
   expect(bodies).toHaveLength(2);
@@ -116,5 +121,57 @@ test('open company details fit a 375px viewport', async ({ page }) => {
   const card = await usersScreen(page, route => route.fulfill({ json: letterhead }));
   await card.locator('summary').click();
   await expect(card.getByText(/Last saved/)).toBeVisible();
+  await card.getByLabel('Delivery address same as company address', { exact: true }).uncheck();
+  await expect(card.getByLabel('Delivery address', { exact: true })).toBeVisible();
   expect(await page.evaluate(() => document.documentElement.scrollWidth <= innerWidth)).toBe(true);
+});
+
+test('separate delivery address preserves its draft when toggled and stays unticked after saving', async ({ page }) => {
+  const posts: unknown[] = [];
+  const card = await usersScreen(page, async route => {
+    if (route.request().method() === 'POST') {
+      const body = route.request().postDataJSON();
+      posts.push(body);
+      await route.fulfill({ json: { ...letterhead, deliveryAddress: body.payload.deliveryAddress, version: 2 } });
+    } else await route.fulfill({ json: letterhead });
+  });
+  await card.locator('summary').click();
+  const sameDelivery = card.getByLabel('Delivery address same as company address', { exact: true });
+  await sameDelivery.uncheck();
+  const delivery = card.getByLabel('Delivery address', { exact: true });
+  await delivery.fill('Warehouse 2, Peenya');
+  await sameDelivery.check();
+  await expect(delivery).toHaveCount(0);
+  await sameDelivery.uncheck();
+  await expect(delivery).toHaveValue('Warehouse 2, Peenya');
+  await expect(card.getByText('Leave empty to use the address above.')).toHaveCount(0);
+  await card.getByRole('button', { name: 'Save company details' }).click();
+  await expect(card.getByRole('status')).toHaveText('Company details saved');
+  expect(posts).toEqual([expect.objectContaining({ payload: expect.objectContaining({ deliveryAddress: 'Warehouse 2, Peenya' }) })]);
+  await expect(sameDelivery).not.toBeChecked();
+  await expect(delivery).toHaveValue('Warehouse 2, Peenya');
+});
+
+for (const deliveryAddress of ['', '   ']) {
+  test(`unticked ${deliveryAddress ? 'whitespace' : 'empty'} delivery address prevents saving`, async ({ page }) => {
+    let posts = 0;
+    const card = await usersScreen(page, async route => {
+      if (route.request().method() === 'POST') posts++;
+      await route.fulfill({ json: letterhead });
+    });
+    await card.locator('summary').click();
+    await card.getByLabel('Delivery address same as company address', { exact: true }).uncheck();
+    await card.getByLabel('Delivery address', { exact: true }).fill(deliveryAddress);
+    await card.getByRole('button', { name: 'Save company details' }).click();
+    await expect(card.getByText('Enter the delivery address, or tick "same as company address"', { exact: true })).toBeVisible();
+    await expect(card.getByLabel('Delivery address', { exact: true })).toHaveAttribute('aria-invalid', 'true');
+    expect(posts).toBe(0);
+  });
+}
+
+test('a loaded separate delivery address starts unticked and displays the value', async ({ page }) => {
+  const card = await usersScreen(page, route => route.fulfill({ json: { ...letterhead, deliveryAddress: 'Warehouse 2, Peenya' } }));
+  await card.locator('summary').click();
+  await expect(card.getByLabel('Delivery address same as company address', { exact: true })).not.toBeChecked();
+  await expect(card.getByLabel('Delivery address', { exact: true })).toHaveValue('Warehouse 2, Peenya');
 });
