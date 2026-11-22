@@ -1,4 +1,5 @@
 import { expect, test, type Page } from '@playwright/test';
+import { openGrowthArea } from './growth-helpers';
 const marginLevers = { priceSpread: { items: 76, pairs: 164, paise: 19000000 }, lowMargin: { items: 12, paiseToThreshold: 7000000, examples: [{ name: 'HIV Tridot', marginPct: 13.2, salesPaise: 55000000, labs: 35 }] }, freeGoods: { lines: 9, costPaise: 3500000 }, instrumentsGpPaise: -30000000 };
 const marginSample = (p: URLSearchParams) => ({
   view: p.get('view'), sort: p.get('sort') ?? 'sales', filter: p.get('filter') ?? 'all', q: p.get('q'), page: Number(p.get('page')), pageSize: 20, total: 1, thresholdPct: 14, consumablesMarginPct: 28.1, levers: marginLevers,
@@ -62,7 +63,7 @@ async function openProfit(page: Page) {
   if (!await entry.isVisible()) await page.getByRole('button', { name: 'More', exact: true }).click();
   await expect(entry).toBeVisible();
   await entry.click();
-  await page.getByRole('tab', { name: 'Profit', exact: true }).click();
+  await openGrowthArea(page, 'brands');
   const section = page.getByRole('region', { name: 'Sales by principal', exact: true });
   return section;
 }

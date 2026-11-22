@@ -1,4 +1,5 @@
 import { expect, test, type Page } from '@playwright/test';
+import { openGrowthArea } from './growth-helpers';
 
 const months = Array.from({ length: 12 }, (_, i) => new Date(Date.UTC(2025, 10 + i, 1)).toISOString().slice(0, 7));
 const growthSample = () => ({
@@ -47,12 +48,19 @@ async function fixture(page: Page, options: { error?: boolean; emptyLapsing?: bo
   await page.route('**/api/growth', route => route.fulfill({ json: growthSample() }));
   await page.route('**/api/growth/inbox**', route => route.fulfill({ status: 503, json: { error: 'Unavailable in fixture' } }));
   await page.route('**/api/growth/labs?**', route => route.fulfill({ status: 503, json: { error: 'Unavailable in fixture' } }));
-  let requests = 0;
+  let requests = { top: 0, lapsing: 0, declining: 0 };
   await page.route('**/api/growth/lab-months*', route => {
-    if (new URL(route.request().url()).searchParams.get('filter') === 'lapsing') {
+    const filter = new URL(route.request().url()).searchParams.get('filter');
+    if (filter === 'lapsing') {
+      requests.lapsing++;
       return route.fulfill({ json: options.emptyLapsing ? { ...lapsingSample(), rows: [], totalLabs: 0 } : lapsingSample() });
     }
-    if (options.error && requests++ === 0) return route.fulfill({ status: 503, json: { error: 'Unavailable' } });
+    if (filter === 'declining') {
+      requests.declining++;
+      return route.fulfill({ json: { ...lapsingSample(), rows: [], totalLabs: 0 } });
+    }
+    requests.top++;
+    if (options.error && requests.top === 1) return route.fulfill({ status: 503, json: { error: 'Unavailable' } });
     return route.fulfill({ json: labMonthsSample() });
   });
   await page.goto('/?view=frame&role=management&roles=management');
@@ -62,7 +70,7 @@ async function openMonthly(page: Page) {
   if (!await entry.isVisible()) await page.getByRole('button', { name: 'More', exact: true }).click();
   await expect(entry).toBeVisible();
   await entry.click();
-  await page.getByRole('tab', { name: 'Monthly', exact: true }).click();
+  await openGrowthArea(page, 'labs');
   const section = page.getByRole('region', { name: 'Who is buying, month by month', exact: true });
   await expect(page.getByRole('heading', { name: 'Who is buying, month by month' })).toBeVisible();
   return section;
@@ -90,10 +98,13 @@ for (const width of [375, 1280]) {
       await expect(rows.nth(19).locator('[data-heat]').first()).toHaveAttribute('title', /^\(unlinked ledger\), Nov 2025: /);
     });
     test('shows a short lapsing call list and switches back to top labs', async ({ page }) => {
-      const requests = { top: 0, lapsing: 0 };
+      const requests = { top: 0, lapsing: 0, declining: 0 };
       page.on('request', request => {
         const url = new URL(request.url());
-        if (url.pathname === '/api/growth/lab-months') requests[url.searchParams.get('filter') === 'lapsing' ? 'lapsing' : 'top']++;
+        if (url.pathname === '/api/growth/lab-months') {
+          const filter = url.searchParams.get('filter');
+          requests[filter === 'lapsing' ? 'lapsing' : filter === 'declining' ? 'declining' : 'top']++;
+        }
       });
       await fixture(page);
       const section = await openMonthly(page);
@@ -121,7 +132,7 @@ for (const width of [375, 1280]) {
       await section.getByRole('button', { name: 'Top labs', exact: true }).click();
       await expect(section.locator('[data-lab-row]')).toHaveCount(20);
       await expect(section.getByRole('list', { name: 'Call list', exact: true })).toHaveCount(0);
-      expect(requests).toEqual({ top: 1, lapsing: 1 });
+      expect(requests).toEqual({ top: 1, lapsing: 1, declining: 1 });
     });
     test('shows the lapsing empty state', async ({ page }) => {
       await fixture(page, { emptyLapsing: true });

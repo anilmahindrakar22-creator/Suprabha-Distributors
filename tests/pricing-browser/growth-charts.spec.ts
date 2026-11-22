@@ -1,4 +1,5 @@
 import { expect, test, type Page } from '@playwright/test';
+import { openGrowthArea, type GrowthArea } from './growth-helpers';
 
 const TEAL = 'rgb(26, 154, 108)';
 const ORANGE = 'rgb(235, 104, 52)';
@@ -63,12 +64,12 @@ async function fixture(page: Page) {
   await page.route('**/api/growth/brands', route => route.fulfill({ json: brands() }));
   await page.goto('/?view=frame&role=management&roles=management');
 }
-async function openTab(page: Page, tab: string) {
+async function openTab(page: Page, area: GrowthArea) {
   const entry = page.getByRole('button', { name: /^growth$/i });
   if (!await entry.isVisible()) await page.getByRole('button', { name: 'More', exact: true }).click();
   await expect(entry).toBeVisible();
   await entry.click();
-  await page.getByRole('tab', { name: tab, exact: true }).click();
+  await openGrowthArea(page, area);
 }
 const fillOf = (locator: ReturnType<Page['locator']>) => locator.evaluate(element => getComputedStyle(element).fill);
 const blackMarks = (page: Page) => page.evaluate(() => [...document.querySelectorAll('svg rect, svg circle')].filter(el => getComputedStyle(el).fill === 'rgb(0, 0, 0)').length);
@@ -78,7 +79,7 @@ for (const width of [375, 1280]) {
     test.use({ viewport: { width, height: 900 } });
     test('gross profit bars use the chart palette', async ({ page }) => {
       await fixture(page);
-      await openTab(page, 'Profit');
+      await openTab(page, 'profit');
       const section = page.getByRole('region', { name: 'Gross profit by month', exact: true });
       await expect(section.locator('rect[aria-label*="consumables gross profit"]').first()).toBeAttached();
       expect(await fillOf(section.locator('rect[aria-label*="consumables gross profit"]').first())).toBe(TEAL);
@@ -88,7 +89,7 @@ for (const width of [375, 1280]) {
     });
     test('no chart mark in Growth is black', async ({ page }) => {
       await fixture(page);
-      for (const tab of ['Monthly', 'H1 → H2', 'Profit']) {
+      for (const tab of ['monthly', 'purchases', 'bridge', 'profit', 'brands'] as const) {
         await openTab(page, tab);
         await expect(page.locator('svg rect, svg circle').first()).toBeAttached();
         expect(await blackMarks(page), tab).toBe(0);
@@ -96,20 +97,20 @@ for (const width of [375, 1280]) {
     });
     test('monthly and bridge charts use the palette', async ({ page }) => {
       await fixture(page);
-      await openTab(page, 'Monthly');
+      await openTab(page, 'purchases');
       const purchases = page.locator('#purchases-chart');
       await expect(purchases.locator('rect[aria-label*="sales"]').first()).toBeAttached();
       expect(await fillOf(purchases.locator('rect[aria-label*="sales"]').first())).toBe(TEAL);
       expect(await fillOf(purchases.locator('rect[aria-label*="large purchases"]').first())).toBe(ORANGE);
       expect(await fillOf(purchases.locator('rect[aria-label*="regular purchases"]').first())).toBe('rgb(42, 120, 214)');
-      await openTab(page, 'H1 → H2');
+      await openTab(page, 'bridge');
       const bridge = page.locator('#bridge-chart');
       expect(await fillOf(bridge.locator('rect[data-growth-bar="up"]').first())).toBe('rgb(12, 163, 12)');
       expect(await fillOf(bridge.locator('rect[data-growth-bar="down"]').first())).toBe(RED);
     });
     test('principal scatter shows one dot per brand and clicking expands its lines', async ({ page }) => {
       await fixture(page);
-      await openTab(page, 'Profit');
+      await openTab(page, 'brands');
       const section = page.getByRole('region', { name: 'Sales by principal', exact: true });
       const dots = section.locator('[data-scatter-dot]');
       await expect(dots).toHaveCount(4);
@@ -130,7 +131,7 @@ for (const width of [375, 1280]) {
     });
     test('item detail shows the price strip with an orange dot under 90 percent', async ({ page }) => {
       await fixture(page);
-      await openTab(page, 'Profit');
+      await openTab(page, 'profit');
       const explorer = page.getByRole('region', { name: 'Margin by lab and item', exact: true });
       await explorer.getByRole('tab', { name: 'Items', exact: true }).click();
       await explorer.getByRole('button', { name: 'Cliniquant CRP: open labs and prices', exact: true }).click();
@@ -154,7 +155,7 @@ for (const width of [375, 1280]) {
     });
     test('item scatter colours healthy, low and below-cost items', async ({ page }) => {
       await fixture(page);
-      await openTab(page, 'Profit');
+      await openTab(page, 'profit');
       const section = page.locator('[data-item-scatter]');
       const ok = section.locator('[data-item-dot="ok"]');
       const low = section.locator('[data-item-dot="low"]');
@@ -178,7 +179,7 @@ for (const width of [375, 1280]) {
     });
     test('tapping an item dot opens its lab prices', async ({ page }) => {
       await fixture(page);
-      await openTab(page, 'Profit');
+      await openTab(page, 'profit');
       await page.locator('[data-item-scatter] [data-item-dot="low"]').press('Enter');
       const panel = page.getByRole('dialog');
       const strip = panel.locator('[data-price-strip]');
@@ -188,7 +189,7 @@ for (const width of [375, 1280]) {
     });
     test('item scatter tooltip stays within its section', async ({ page }) => {
       await fixture(page);
-      await openTab(page, 'Profit');
+      await openTab(page, 'profit');
       const section = page.locator('[data-item-scatter]');
       await section.locator('[data-item-dot]').first().hover();
       const tip = section.locator('[data-chart-tip]');
@@ -201,7 +202,7 @@ for (const width of [375, 1280]) {
     });
     test('charts do not overflow the page width', async ({ page }) => {
       await fixture(page);
-      for (const tab of ['Monthly', 'H1 → H2', 'Profit']) {
+      for (const tab of ['monthly', 'purchases', 'bridge', 'profit', 'brands'] as const) {
         await openTab(page, tab);
         await expect(page.locator('svg').first()).toBeAttached();
         expect(await page.evaluate(() => (document.scrollingElement?.scrollWidth ?? 0) <= window.innerWidth), tab).toBe(true);
