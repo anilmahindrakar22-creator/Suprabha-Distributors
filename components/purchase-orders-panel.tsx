@@ -7,6 +7,32 @@ import { batchReceiptTotals, purchaseOrderShareText, stillDue, type PurchaseOrde
 import type { ToOrderItem } from '@/lib/to-order';
 import { defaultSelection, parseTallyReceiptCounts, parseTallyReceipts, type TallyReceipts, type TallyReceiptLink } from '@/lib/po-tally-receipts';
 import { UnlinkedReceipts } from './po-unlinked-receipts';
+import { buildPoPdfContent } from '@/lib/po-pdf-content';
+import { parseLetterhead } from '@/lib/letterhead';
+
+let pdfFont: Promise<ArrayBuffer> | undefined;
+function loadPdfFont() {
+  return pdfFont ??= fetch('/fonts/noto-sans-po-subset.ttf').then((response) => {
+    if (!response.ok) throw new Error('Font could not be loaded');
+    return response.arrayBuffer();
+  }).catch((cause) => { pdfFont = undefined; throw cause; });
+}
+function loadPdfLetterhead() {
+  return fetch('/api/letterhead', { cache: 'no-store' }).then(async (response) => {
+    if (!response.ok) throw new Error('Letterhead could not be loaded');
+    return parseLetterhead(await response.json());
+  }).catch(() => null);
+}
+function downloadPdf(file: File) {
+  const url = URL.createObjectURL(file);
+  const anchor = document.createElement('a');
+  anchor.href = url;
+  anchor.download = file.name;
+  document.body.appendChild(anchor);
+  anchor.click();
+  anchor.remove();
+  setTimeout(() => URL.revokeObjectURL(url), 10_000);
+}
 
 const button = 'min-h-11 rounded-lg border border-sf-line bg-sf-soft-0 px-3 text-sm font-semibold text-sf-body disabled:opacity-50';
 const primary = 'min-h-12 rounded-lg bg-sf-ink px-3 text-sm font-semibold text-sf-soft-0 disabled:opacity-50';
@@ -210,6 +236,30 @@ function PurchaseOrderCard({ po, tallyCount, onRefresh, onConflict, autoReceive,
   const [mode, setMode] = useState<'receive' | 'cancel' | null>(null);
   const [reason, setReason] = useState('');
   const [note, setNote] = useState('');
+  const [pdfBusy, setPdfBusy] = useState(false);
+  async function preparePdf() {
+    setPdfBusy(true);
+    setNote('');
+    try {
+      const [{ renderPoPdf }, font, letterhead] = await Promise.all([
+        import('@/lib/po-pdf-render'), loadPdfFont(), loadPdfLetterhead(),
+      ]);
+      const content = buildPoPdfContent(po, letterhead);
+      const bytes = await renderPoPdf(content, font);
+      const file = new File([new Uint8Array(bytes)], content.fileName, { type: 'application/pdf' });
+      try {
+        if (navigator.canShare?.({ files: [file] })) {
+          await navigator.share({ files: [file], title: po.poNumber });
+          return;
+        }
+      } catch (cause) {
+        if (cause instanceof Error && cause.name === 'AbortError') return;
+      }
+      downloadPdf(file);
+    } catch { setNote('PDF could not be prepared. Try again.'); }
+    finally { setPdfBusy(false); }
+  }
+  const pdfButton = <button className={button} aria-label={`PDF ${po.poNumber}`} disabled={pdfBusy} onClick={preparePdf}>{pdfBusy ? 'Preparing…' : 'PDF'}</button>;
   const command = usePurchaseOrderWrite(onConflict);
   const sharing = usePurchaseOrderWrite(onConflict);
   const autoReceiveDone = useEffectEvent(onAutoReceiveDone);
@@ -237,9 +287,11 @@ function PurchaseOrderCard({ po, tallyCount, onRefresh, onConflict, autoReceive,
           if (body) onRefresh();
         } catch (cause) { setNote(cause instanceof Error ? cause.message : 'Sharing failed.'); }
       }}>{sharing.locked ? 'Retry share record' : 'Share'}</button>
+      {pdfButton}
       <button className={button} aria-label={`Mark received ${po.poNumber}`} disabled={sharing.locked || command.locked} onClick={() => setMode('receive')}>Mark received</button>
       <button className="min-h-11 px-3 text-sm font-semibold text-sf-danger disabled:opacity-50" aria-label={`Cancel PO ${po.poNumber}`} disabled={sharing.locked || command.locked} onClick={() => { setReason(''); setMode('cancel'); }}>Cancel PO</button>
     </div> : null}
+    {po.status === 'received' ? <div className="flex flex-wrap gap-2">{pdfButton}</div> : null}
     {note ? <output className="block text-xs text-sf-muted">{note}</output> : null}
     {sharing.error ? <output className="block text-xs text-sf-muted">Share record: {sharing.error}</output> : null}
     {mode === 'receive' ? <TallyReceiveSheet po={po} onClose={() => setMode(null)} onRefresh={onRefresh} onConflict={onConflict} /> : null}
