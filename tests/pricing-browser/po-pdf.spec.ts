@@ -48,6 +48,7 @@ async function setup(page: Page, { role = 'operations', orders = [purchaseOrder(
     companyName: (letterheadRequests++, companyName), address: '12 Market Road\nKolkata', gstin: '19ABCDE1234F1Z5',
     phone: '9876543210', deliveryAddress: 'Warehouse\nKolkata', version: 1, updatedAt: '2026-11-01T00:00:00Z',
   } }));
+  await page.route('**/api/letterhead/extras', route => route.fulfill({ json: { logo: null, terms: [], version: 1 } }));
   await page.route('**/fonts/noto-sans-po-subset.ttf', (route) => route.fulfill({
     body: readFileSync(path.resolve('public/fonts/noto-sans-po-subset.ttf')), contentType: 'font/ttf',
   }));
@@ -96,6 +97,26 @@ test('letterhead 500 still downloads a PDF', async ({ page }) => {
   await setup(page);
   await desktop(page);
   await page.route('**/api/letterhead', (route) => route.fulfill({ status: 500, json: { error: 'Unavailable' } }));
+  await downloadPdf(page);
+});
+
+test('extras with two terms download a valid PDF and are fetched for every download', async ({ page }) => {
+  await setup(page);
+  await desktop(page);
+  let gets = 0;
+  await page.route('**/api/letterhead/extras', route => {
+    gets++;
+    return route.fulfill({ json: { logo: null, terms: ['Payment within 30 days.', 'Confirm the delivery date.'], version: gets } });
+  });
+  await downloadPdf(page);
+  await downloadPdf(page);
+  expect(gets).toBe(2);
+});
+
+test('extras 500 still downloads a PDF', async ({ page }) => {
+  await setup(page);
+  await desktop(page);
+  await page.route('**/api/letterhead/extras', route => route.fulfill({ status: 500, json: { error: 'Unavailable' } }));
   await downloadPdf(page);
 });
 

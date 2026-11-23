@@ -1,13 +1,139 @@
 import { expect, test, type Page, type Route } from '@playwright/test';
 
+async function canvasPng(page: Page, width: number, height: number) {
+  const dataUrl = await page.evaluate(({ width, height }) => {
+    const canvas = document.createElement('canvas');
+    canvas.width = width;
+    canvas.height = height;
+    const context = canvas.getContext('2d')!;
+    context.fillStyle = '#ffffff';
+    context.fillRect(0, 0, width, height);
+    context.fillStyle = '#093f46';
+    context.fillRect(width / 4, height / 4, width / 2, height / 2);
+    return canvas.toDataURL('image/png');
+  }, { width, height });
+  return Buffer.from(dataUrl.split(',')[1], 'base64');
+}
+
 const letterhead = {
   companyName: 'Example Company', address: '12 Market Road, Bengaluru', gstin: null,
   phone: '080 1234 5678', deliveryAddress: '', version: 1, updatedAt: '2026-11-20T10:30:00.000Z',
 };
 
+test('extras load on first open and save the uploaded logo and trimmed terms', async ({ page }) => {
+  const card = await usersScreen(page, route => route.fulfill({ json: letterhead }));
+  let gets = 0;
+  let posted: { action: string; payload: { logo: { type: string; base64: string }; terms: string[]; expectedVersion: number } } | undefined;
+  await page.route('**/api/letterhead/extras', async route => {
+    if (route.request().method() === 'POST') {
+      posted = route.request().postDataJSON();
+      await route.fulfill({ json: { logo: posted!.payload.logo, terms: posted!.payload.terms, version: 8 } });
+    } else {
+      gets++;
+      await route.fulfill({ json: { logo: null, terms: [], version: 7 } });
+    }
+  });
+  expect(gets).toBe(0);
+  await card.locator('summary').click();
+  const extras = card.getByRole('region', { name: 'Logo and PO terms', exact: true });
+  await expect(extras.getByRole('button', { name: 'Choose logo', exact: true })).toBeVisible();
+  expect(gets).toBe(1);
+  await extras.getByLabel('Choose logo file', { exact: true }).setInputFiles({ name: 'logo.png', mimeType: 'image/png', buffer: await canvasPng(page, 900, 300) });
+  await expect(extras.locator('img[alt="Company logo"]')).toBeVisible();
+  await extras.getByRole('button', { name: 'Add term', exact: true }).click();
+  await extras.getByLabel('Term 1', { exact: true }).fill('  Payment within 30 days.  ');
+  await extras.getByRole('button', { name: 'Add term', exact: true }).click();
+  await extras.getByLabel('Term 2', { exact: true }).fill('  Confirm delivery date.  ');
+  await extras.getByRole('button', { name: 'Save logo and terms', exact: true }).click();
+  await expect(extras.getByRole('status')).toHaveText('Logo and terms saved');
+  expect(posted).toMatchObject({ action: 'set_letterhead_extras', payload: { expectedVersion: 7, terms: ['Payment within 30 days.', 'Confirm delivery date.'] } });
+  const bytes = Buffer.from(posted!.payload.logo.base64, 'base64');
+  expect(bytes.length).toBeLessThanOrEqual(40960);
+  expect(bytes.length).toBeGreaterThanOrEqual(100);
+  expect(posted!.payload.logo.type).toBe('image/png');
+  expect([...bytes.subarray(0, 8)]).toEqual([137, 80, 78, 71, 13, 10, 26, 10]);
+  expect(bytes.subarray(12, 16).toString('ascii')).toBe('IHDR');
+  expect(bytes.readUInt32BE(16)).toBeLessThanOrEqual(600);
+  expect(bytes.readUInt32BE(20)).toBeLessThanOrEqual(200);
+  await card.locator('summary').click();
+  await card.locator('summary').click();
+  expect(gets).toBe(1);
+});
+
+test('a non-image logo file shows an alert without a preview', async ({ page }) => {
+  const card = await usersScreen(page, route => route.fulfill({ json: letterhead }));
+  await card.locator('summary').click();
+  const extras = card.getByRole('region', { name: 'Logo and PO terms', exact: true });
+  await expect(extras.getByRole('button', { name: 'Choose logo', exact: true })).toBeVisible();
+  await extras.getByLabel('Choose logo file', { exact: true }).setInputFiles({ name: 'notes.txt', mimeType: 'text/plain', buffer: Buffer.from('Company notes') });
+  await expect(extras.getByRole('alert')).toHaveText('Choose a PNG or JPEG image under 5 MB');
+  await expect(extras.locator('img[alt="Company logo"]')).toHaveCount(0);
+});
+
+test('five terms hide Add term and removal makes it available again', async ({ page }) => {
+  const card = await usersScreen(page, route => route.fulfill({ json: letterhead }));
+  await card.locator('summary').click();
+  for (let index = 1; index <= 5; index++) {
+    await card.getByRole('button', { name: 'Add term', exact: true }).click();
+    await card.getByLabel(`Term ${index}`, { exact: true }).fill(`Term ${index} text`);
+  }
+  await expect(card.getByRole('button', { name: 'Add term', exact: true })).toHaveCount(0);
+  await card.getByRole('button', { name: 'Remove term 3', exact: true }).click();
+  await expect(card.getByLabel('Term 3', { exact: true })).toHaveValue('Term 4 text');
+  await expect(card.getByRole('button', { name: 'Add term', exact: true })).toBeVisible();
+});
+
+test('extras conflict offers Reload and loads the latest terms', async ({ page }) => {
+  const card = await usersScreen(page, route => route.fulfill({ json: letterhead }));
+  let gets = 0;
+  await page.route('**/api/letterhead/extras', async route => {
+    if (route.request().method() === 'POST') await route.fulfill({ status: 409, json: { error: 'Version conflict' } });
+    else await route.fulfill({ json: { logo: null, terms: ++gets === 1 ? [] : ['Latest term'], version: gets } });
+  });
+  await card.locator('summary').click();
+  const extras = card.getByRole('region', { name: 'Logo and PO terms', exact: true });
+  await extras.getByRole('button', { name: 'Save logo and terms', exact: true }).click();
+  await expect(extras.getByRole('alert')).toHaveText('Someone else changed the logo or terms. Reload to see them.');
+  await extras.getByRole('button', { name: 'Reload', exact: true }).click();
+  await expect(extras.getByLabel('Term 1', { exact: true })).toHaveValue('Latest term');
+  expect(gets).toBe(2);
+});
+
+test('extras load failure leaves the company form able to save', async ({ page }) => {
+  const card = await usersScreen(page, route => route.fulfill({ json: letterhead }));
+  await page.route('**/api/letterhead/extras', route => route.fulfill({ status: 500, json: { error: 'Unavailable' } }));
+  await card.locator('summary').click();
+  await expect(card.getByText('Logo and terms could not load', { exact: true })).toBeVisible();
+  await expect(card.getByRole('region', { name: 'Logo and PO terms', exact: true }).getByRole('button', { name: 'Retry', exact: true })).toBeVisible();
+  await card.getByRole('button', { name: 'Save company details', exact: true }).click();
+  await expect(card.getByRole('status')).toHaveText('Company details saved');
+});
+
+test('extras retry preserves the request body and locks inputs', async ({ page }) => {
+  const card = await usersScreen(page, route => route.fulfill({ json: letterhead }));
+  const bodies: string[] = [];
+  await page.route('**/api/letterhead/extras', async route => {
+    if (route.request().method() === 'POST') {
+      bodies.push(route.request().postData()!);
+      await route.fulfill(bodies.length === 1 ? { status: 503, json: { error: 'Unavailable' } } : { json: { logo: null, terms: ['Delivery term'], version: 8 } });
+    } else await route.fulfill({ json: { logo: null, terms: [], version: 7 } });
+  });
+  await card.locator('summary').click();
+  const extras = card.getByRole('region', { name: 'Logo and PO terms', exact: true });
+  await extras.getByRole('button', { name: 'Add term', exact: true }).click();
+  await extras.getByLabel('Term 1', { exact: true }).fill('Delivery term');
+  await extras.getByRole('button', { name: 'Save logo and terms', exact: true }).click();
+  await expect(extras.getByLabel('Term 1', { exact: true })).toBeDisabled();
+  await extras.getByRole('button', { name: 'Retry', exact: true }).click();
+  await expect(extras.getByRole('status')).toHaveText('Logo and terms saved');
+  expect(bodies).toHaveLength(2);
+  expect(bodies[1]).toBe(bodies[0]);
+});
+
 async function usersScreen(page: Page, handler: (route: Route) => Promise<void>) {
   await page.route('**/api/users', route => route.fulfill({ json: { users: [] } }));
   await page.route('**/api/letterhead', handler);
+  await page.route('**/api/letterhead/extras', route => route.fulfill({ json: { logo: null, terms: [], version: 7 } }));
   await page.goto('/?view=staff-users');
   return page.locator('details').filter({ has: page.locator('summary').filter({ hasText: 'Company details' }) });
 }
@@ -123,6 +249,11 @@ test('open company details fit a 375px viewport', async ({ page }) => {
   await expect(card.getByText(/Last saved/)).toBeVisible();
   await card.getByLabel('Delivery address same as company address', { exact: true }).uncheck();
   await expect(card.getByLabel('Delivery address', { exact: true })).toBeVisible();
+  await card.getByRole('button', { name: 'Add term', exact: true }).click();
+  await card.getByLabel('Term 1', { exact: true }).fill('A'.repeat(200));
+  await card.getByLabel('Choose logo file', { exact: true }).setInputFiles({ name: 'logo.png', mimeType: 'image/png', buffer: await canvasPng(page, 900, 300) });
+  await expect(card.locator('img[alt="Company logo"]')).toBeVisible();
+  expect(await page.evaluate(() => document.documentElement.scrollWidth <= 375)).toBe(true);
   expect(await page.evaluate(() => document.documentElement.scrollWidth <= innerWidth)).toBe(true);
 });
 

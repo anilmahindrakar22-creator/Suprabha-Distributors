@@ -108,6 +108,7 @@ describe('renderPoPdf', () => {
   it('renders operations without rate or total keys', async () => {
     const order: PurchaseOrder = { ...po, lines: [{ itemKey: 'A', itemName: 'Reagent A', quantity: 3, unit: 'pcs', receivedQuantity: 0 }] };
     delete order.totalValue;
+    expect(buildPoPdfContent(order, null).gstNote).toBeNull();
     const doc = await render('operations', order);
     expect(doc.getPageCount()).toBe(1);
     const text = pageTexts(doc).join('\n');
@@ -115,6 +116,7 @@ describe('renderPoPdf', () => {
     expect(text).not.toContain('₹');
     expect(text).not.toContain('1,370.34');
     expect(text).not.toContain('per pcs');
+    expect(text).not.toContain('exclusive of GST');
   });
   it('paginates sixty lines', async () => {
     const order = { ...po, lines: Array.from({ length: 60 }, (_, index) => ({ ...po.lines[0], itemKey: String(index), itemName: `Reagent ${index}` })) };

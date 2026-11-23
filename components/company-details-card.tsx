@@ -3,12 +3,14 @@
 import { useRef, useState } from 'react';
 import { GSTIN_PATTERN, normalizeGstin, parseLetterhead, validateLetterheadCommand, type Letterhead } from '@/lib/letterhead';
 import { readJsonResponse } from '@/lib/http-json';
+import { LetterheadExtrasSection } from './letterhead-extras-section';
 
 const inputClass = 'mt-2 min-h-11 w-full rounded-xl border border-sf-line px-3 font-normal';
 const primaryClass = 'min-h-11 rounded-xl bg-sf-ink px-5 font-bold text-white disabled:opacity-50';
 const gstinMessage = 'Enter a 15-character GSTIN, for example 29ABCDE1234F1Z5';
 
 export function CompanyDetailsCard() {
+  const [opened, setOpened] = useState(false);
   const [loaded, setLoaded] = useState<Letterhead | null>(null);
   const [draft, setDraft] = useState({ companyName: '', address: '', gstin: '', phone: '', deliveryAddress: '' });
   const [sameDelivery, setSameDelivery] = useState(true);
@@ -91,7 +93,7 @@ export function CompanyDetailsCard() {
     setMessage('');
   }
 
-  return <details className="mt-4 rounded-xl border bg-white p-4" onToggle={event => { if (event.currentTarget.open && loadState === 'idle') void load(); }}>
+  return <details className="mt-4 rounded-xl border bg-white p-4" onToggle={event => { if (event.currentTarget.open) { setOpened(true); if (loadState === 'idle') void load(); } }}>
     <summary className="cursor-pointer font-bold text-sf-label">Company details <span className="block text-sm font-normal text-sf-subtle">Printed on purchase order PDFs</span></summary>
     {loadState === 'loading' && <output className="mt-3 block text-sm">Loading company details…</output>}
     {loadState === 'error' && <div className="mt-3"><p role="alert">Company details could not load</p><button type="button" className={primaryClass} onClick={() => void load()}>Retry</button></div>}
@@ -111,5 +113,6 @@ export function CompanyDetailsCard() {
       {message && (message === 'Company details saved' ? <output className="text-sm">{message}</output> : <p role="alert" className="text-sm [overflow-wrap:anywhere]">{message}</p>)}
       {conflict ? <button type="button" className={primaryClass} onClick={() => void load()}>Reload</button> : <button type="submit" disabled={busy} className={primaryClass}>{busy ? 'Saving…' : pendingBody ? 'Retry' : 'Save company details'}</button>}
     </form>}
+    {opened && <LetterheadExtrasSection />}
   </details>;
 }

@@ -10,7 +10,7 @@ export type PoPdfContent = {
   poNumber: string; date: string; supplier: string; showRates: boolean;
   columns: string[]; rows: PoPdfRow[]; total?: string;
   deliveryTo: string[]; signature: string; fileName: string;
-  logo: PoPdfExtras['logo']; amountInWords?: string; gstNote: string; instructions: string[]; footer: string;
+  logo: PoPdfExtras['logo']; amountInWords?: string; gstNote: string | null; instructions: string[]; footer: string;
 };
 
 const lines = (value: string) => value.split('\n').map((line) => line.trim()).filter(Boolean);
@@ -53,7 +53,7 @@ export function buildPoPdfContent(po: PurchaseOrder, letterhead: Letterhead | nu
     signature: `For ${companyName}`,
     fileName: `${po.poNumber.replaceAll('/', '-')}.pdf`,
     logo: extras?.logo ?? null,
-    gstNote: 'Rates are exclusive of GST; GST as applicable.',
+    gstNote: showRates ? 'Rates are exclusive of GST; GST as applicable.' : null,
     instructions: [`Please quote ${po.poNumber} on your invoice and delivery challan.`,
       ...(extras?.terms ?? []).map(term => term.trim()).filter(Boolean).slice(0, 5)],
     footer: `Computer-generated purchase order · ${po.poNumber}`,

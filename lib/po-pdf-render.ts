@@ -195,11 +195,13 @@ export async function renderPoPdf(content: PoPdfContent, fontBytes: Uint8Array |
     text(content.total, width - margin - 14, y - totalHeight / 2 - 6, 18, bold, white, 'right');
     y -= totalHeight;
   }
-  y -= 6;
-  for (const value of wrap(content.gstNote, 8.5, usable)) {
-    ensure(12); y -= 12; text(value, margin + 2, y, 8.5, font, muted);
+  if (content.gstNote !== null) {
+    y -= 6;
+    for (const value of wrap(content.gstNote, 8.5, usable)) {
+      ensure(12); y -= 12; text(value, margin + 2, y, 8.5, font, muted);
+    }
+    y -= 14;
   }
-  y -= 14;
   const instructions = content.instructions.flatMap((value, index) => wrap(`${index + 1}. ${value}`, 9, usable - 24));
   const signatureLines = wrap(content.signature, 9.5, 190);
   const signatureExtra = (signatureLines.length - 1) * 14;

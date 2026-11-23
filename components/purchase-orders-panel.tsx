@@ -9,6 +9,7 @@ import { defaultSelection, parseTallyReceiptCounts, parseTallyReceipts, type Tal
 import { UnlinkedReceipts } from './po-unlinked-receipts';
 import { buildPoPdfContent } from '@/lib/po-pdf-content';
 import { parseLetterhead } from '@/lib/letterhead';
+import { logoBytes, parseLetterheadExtras } from '@/lib/letterhead-extras';
 
 let pdfFont: Promise<ArrayBuffer> | undefined;
 let pdfBoldFont: Promise<ArrayBuffer | null> | undefined;
@@ -27,6 +28,14 @@ function loadPdfLetterhead() {
   return fetch('/api/letterhead', { cache: 'no-store' }).then(async (response) => {
     if (!response.ok) throw new Error('Letterhead could not be loaded');
     return parseLetterhead(await response.json());
+  }).catch(() => null);
+}
+function loadPdfExtras() {
+  return fetch('/api/letterhead/extras', { cache: 'no-store', signal: AbortSignal.timeout(15000) }).then(async response => {
+    if (!response.ok) throw new Error('Logo and terms could not be loaded');
+    const extras = parseLetterheadExtras(await response.json());
+    const bytes = logoBytes(extras);
+    return { logo: extras.logo && bytes ? { type: extras.logo.type, bytes } : null, terms: extras.terms };
   }).catch(() => null);
 }
 function downloadPdf(file: File) {
@@ -247,10 +256,10 @@ function PurchaseOrderCard({ po, tallyCount, onRefresh, onConflict, autoReceive,
     setPdfBusy(true);
     setNote('');
     try {
-      const [{ renderPoPdf }, font, letterhead, boldFont] = await Promise.all([
-        import('@/lib/po-pdf-render'), loadPdfFont(), loadPdfLetterhead(), loadPdfBoldFont(),
+      const [{ renderPoPdf }, font, letterhead, boldFont, extras] = await Promise.all([
+        import('@/lib/po-pdf-render'), loadPdfFont(), loadPdfLetterhead(), loadPdfBoldFont(), loadPdfExtras(),
       ]);
-      const content = buildPoPdfContent(po, letterhead);
+      const content = buildPoPdfContent(po, letterhead, extras);
       const bytes = await renderPoPdf(content, font, boldFont);
       const file = new File([new Uint8Array(bytes)], content.fileName, { type: 'application/pdf' });
       try {
