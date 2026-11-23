@@ -1,6 +1,8 @@
 import { getChatGPTUser } from '@/app/chatgpt-auth';
 import { callOrderGateway, OrderGatewayError } from '@/lib/order-gateway';
 import { growthLabLists, isGrowthMonth, normalizeGrowthLabs, type GrowthLabList } from '@/lib/growth-types';
+import { parseGrowthPeriodParam } from '@/lib/growth-period-types';
+import { growthPeriodLabLists, normalizeGrowthPeriodLabs, type GrowthPeriodLabList } from '@/lib/growth-period-labs-types';
 import { getStockFlowSession } from '@/lib/stockflow-session';
 import { hasAnyStockFlowRole } from '@/lib/user-types';
 
@@ -12,6 +14,27 @@ export async function GET(request: Request) {
     const session = await getStockFlowSession(user.email);
     if (!session || !hasAnyStockFlowRole(session.roles, ['administrator', 'management'])) return Response.json({ error: 'Growth is for management only.' }, { status: 403, headers });
     const params = new URL(request.url).searchParams;
+    if (params.has('period')) {
+      const period = parseGrowthPeriodParam(params.get('period'));
+      const list = params.get('list'), pageText = params.get('page'), comparison = params.get('comparison'), regularOnly = params.get('regularOnly');
+      const page = Number(pageText);
+      if ([...params.keys()].some(k => !['period', 'list', 'page', 'comparison', 'regularOnly'].includes(k) || params.getAll(k).length !== 1)
+        || !period || period === 'rolling12' || !growthPeriodLabLists.includes(list as GrowthPeriodLabList)
+        || pageText === null || !/^[1-9]\d*$/.test(pageText) || !Number.isSafeInteger(page) || page > 1000
+        || (list === 'window_labs' ? comparison !== null : !['last_year', 'previous'].includes(String(comparison)))
+        || (comparison === 'previous' && period.kind !== 'quarter')
+        || (regularOnly !== null && (list !== 'bridge_stopped' || !['true', 'false'].includes(regularOnly)))) {
+        return Response.json({ error: 'Invalid growth labs request' }, { status: 400, headers });
+      }
+      const payload: Record<string, unknown> = { period, list, page };
+      if (comparison !== null) payload.comparison = comparison;
+      if (regularOnly !== null) payload.regularOnly = regularOnly === 'true';
+      const data = normalizeGrowthPeriodLabs(await callOrderGateway(session.email, 'get_growth_labs_period', payload));
+      if (!data || data.list !== list || data.page !== page || data.comparison !== comparison
+        || data.period.kind !== period.kind || data.period.fy !== period.fy
+        || (period.kind === 'quarter' && data.period.quarter !== period.quarter)) throw new Error('Malformed growth labs response');
+      return Response.json(data, { headers });
+    }
     const list = params.get('list'), pageText = params.get('page'), sort = params.get('sort');
     const month = params.get('month'), regularOnly = params.get('regularOnly');
     const half = params.get('half');
