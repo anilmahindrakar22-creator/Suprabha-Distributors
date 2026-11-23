@@ -47,7 +47,7 @@ describe('buildPoPdfContent', () => {
   it('keeps operations free of monetary fields even when the order has a total', () => {
     const content = buildPoPdfContent(basePo([line('Widget', 1)], 990.05), null);
     expect(content.columns).toEqual(['#', 'Item', 'Qty', 'Unit']);
-    expect(content.gstNote).toBe('Rates are exclusive of GST; GST as applicable.');
+    expect(content.gstNote).toBeNull();
     expect(content).not.toHaveProperty('total');
     expect(JSON.stringify(content)).not.toContain('amountInWords');
     expect(JSON.stringify(content)).not.toContain('₹');
@@ -60,6 +60,7 @@ describe('buildPoPdfContent', () => {
   it('builds management rows and totals using integer paise formatting', () => {
     const content = buildPoPdfContent(basePo(managementLines, 1678.965), null);
     expect(content.showRates).toBe(true);
+    expect(content.gstNote).toBe('Rates are exclusive of GST; GST as applicable.');
     expect(content.columns).toEqual(['#', 'Item', 'Qty', 'Unit', 'Rate', 'Amount']);
     expect(content.rows[0].rate).toBe(formatPaise(45678));
     expect(content.rows[0].amount).toBe(formatPaise(Math.round(3 * 456.78 * 100)));
