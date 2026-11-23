@@ -195,6 +195,140 @@ test('cover failure leaves reorder rows visible in their original order without 
   expect(await page.evaluate(() => document.documentElement.scrollWidth <= innerWidth)).toBe(true);
 });
 
+const itemDetailPayload = (itemKey = 'Test reagent A') => ({
+  view: 'item_detail', itemKey, asOf: '2026-11-23',
+  months: ['06', '07', '08', '09', '10', '11'].map((month, i) => ({ month: '2026-' + month, sold: i * 2 })),
+  openPos: [
+    { poNumber: 'PO/26-27/0007', due: 10, createdAt: onPoItem(itemKey).latestCreatedAt },
+    { poNumber: 'PO/26-27/0006', due: 3, createdAt: onPoItem(itemKey).latestCreatedAt },
+  ],
+  openPoCount: 12, waiting: { orders: 2, quantity: 7 },
+  supplierPrice: { name: 'Test supplier', unit: 'kit', effectiveAt: '2026-11-22', rate: 1234.56 },
+});
+
+async function tapStockItem(page: import('@playwright/test').Page, name = 'Test reagent A') {
+  await expect(page.locator('#refresh')).toBeEnabled();
+  if ((await page.locator('#groupCards details').first().getAttribute('open')) === null) {
+    await page.locator('#groupCards summary').first().click();
+  }
+  await page.getByRole('button', { name, exact: true }).click();
+}
+
+test('item detail reads only on tap and shows monthly sales, POs, waiting orders and the supplied rate', async ({ page }) => {
+  let reads = 0;
+  await page.route('**/api/requirements?view=item_detail*', (route) => {
+    reads++;
+    return route.fulfill({ json: itemDetailPayload() });
+  });
+  await openStockDashboard(page, coverStockPayload());
+  await expect(page.locator('#refresh')).toBeEnabled();
+  expect(reads).toBe(0);
+  await tapStockItem(page);
+  const sheet = page.getByRole('dialog', { name: 'Test reagent A' });
+  await expect(sheet).toBeVisible();
+  await expect(sheet.locator('#itemSheetTitle')).toHaveText('Test reagent A');
+  await expect(sheet.locator('.item-month-bar')).toHaveCount(6);
+  await expect(sheet.locator('.item-month-value')).toHaveText(['0', '2', '4', '6', '8', '10']);
+  await expect(sheet.locator('.item-month-label').last()).toHaveText('Nov (so far)');
+  await expect(sheet).toContainText('PO/26-27/0007 · 10 due · 4 days ago');
+  await expect(sheet).toContainText('PO/26-27/0006 · 3 due · 4 days ago');
+  await expect(sheet).toContainText('and 10 more');
+  await expect(sheet).toContainText('2 orders · 7 to deliver');
+  await expect(sheet).toContainText('Test supplier');
+  await expect(sheet).toContainText('₹1,234.56 per kit');
+  await expect(sheet).toContainText('as of 22 Nov 2026');
+  expect(reads).toBe(1);
+});
+
+test('item detail without a rate shows the supplier without any money', async ({ page }) => {
+  const payload = itemDetailPayload();
+  const { rate: _rate, ...supplierPrice } = payload.supplierPrice;
+  await page.route('**/api/requirements?view=item_detail*', (route) => route.fulfill({ json: { ...payload, supplierPrice } }));
+  await openStockDashboard(page, coverStockPayload());
+  await tapStockItem(page);
+  await expect(page.locator('#itemSheetBody')).toContainText('Test supplier');
+  await expect(page.locator('#itemSheetBody')).not.toContainText('₹');
+});
+
+test('item detail without supplierPrice has no Supplier price heading', async ({ page }) => {
+  const { supplierPrice: _supplierPrice, ...payload } = itemDetailPayload();
+  await page.route('**/api/requirements?view=item_detail*', (route) => route.fulfill({ json: payload }));
+  await openStockDashboard(page, coverStockPayload());
+  await tapStockItem(page);
+  await expect(page.locator('#itemSheetBody')).toContainText('Waiting customer orders');
+  await expect(page.locator('#itemSheetBody').getByRole('heading', { name: 'Supplier price' })).toHaveCount(0);
+});
+
+test('item detail server failure offers Retry and recovers', async ({ page }) => {
+  let reads = 0;
+  await page.route('**/api/requirements?view=item_detail*', (route) => {
+    reads++;
+    return route.fulfill(reads === 1 ? { status: 500, json: {} } : { json: itemDetailPayload() });
+  });
+  await openStockDashboard(page, coverStockPayload());
+  await tapStockItem(page);
+  await expect(page.locator('#itemSheetBody')).toContainText('Item details could not load');
+  await page.getByRole('button', { name: 'Retry', exact: true }).click();
+  await expect(page.locator('#itemSheetBody')).toContainText('Test supplier');
+  expect(reads).toBe(2);
+});
+
+test('a delayed item A response cannot replace the newly opened item B detail', async ({ page }) => {
+  let releaseA!: () => void;
+  const gate = new Promise<void>((resolve) => { releaseA = resolve; });
+  let requestedA = false;
+  await page.route('**/api/requirements?view=item_detail*', async (route) => {
+    const key = new URL(route.request().url()).searchParams.get('itemKey')!;
+    if (key === 'Test reagent A') { requestedA = true; await gate; }
+    await route.fulfill({ json: { ...itemDetailPayload(key), supplierPrice: { ...itemDetailPayload().supplierPrice, name: key + ' supplier' } } });
+  });
+  await openStockDashboard(page, coverStockPayload());
+  await tapStockItem(page);
+  await expect.poll(() => requestedA).toBe(true);
+  await page.keyboard.press('Escape');
+  await tapStockItem(page, 'Test reagent B');
+  await expect(page.locator('#itemSheetBody')).toContainText('Test reagent B supplier');
+  const aResponse = page.waitForResponse((response) => response.url().includes('view=item_detail') && response.url().includes('Test%20reagent%20A'));
+  releaseA();
+  await aResponse;
+  await expect(page.locator('#itemSheetTitle')).toHaveText('Test reagent B');
+  await expect(page.locator('#itemSheetBody')).toContainText('Test reagent B supplier');
+  await expect(page.locator('#itemSheetBody')).not.toContainText('Test reagent A supplier');
+});
+
+test('Esc closes the item detail and returns focus to its item name', async ({ page }) => {
+  await page.route('**/api/requirements?view=item_detail*', (route) => route.fulfill({ json: itemDetailPayload() }));
+  await openStockDashboard(page, coverStockPayload());
+  await tapStockItem(page);
+  await expect(page.locator('#itemSheet')).toBeVisible();
+  await page.keyboard.press('Escape');
+  await expect(page.locator('#itemSheet')).not.toBeVisible();
+  await expect(page.getByRole('button', { name: 'Test reagent A', exact: true })).toBeFocused();
+});
+
+test('phone item sheet fits 375px, has a large Close button and preserves the long-name order layout', async ({ page }) => {
+  const name = 'Stromatolyser WH 500 Ml 3 Part Sysmex Long Name Pack';
+  await page.setViewportSize({ width: 375, height: 812 });
+  await page.route('**/api/requirements?view=item_detail*', (route) => route.fulfill({ json: itemDetailPayload(name) }));
+  await openStockDashboard(page, { ...stockPayload(), groups: ['Test group'], rows: [
+    { group: 'Test group', item: name, closing: 2, reorderLevel: 3, minimumOrder: 1, shortfall: 1, orderToBePlaced: 1 },
+  ] });
+  await tapStockItem(page, name);
+  await expect(page.locator('#itemSheet')).toBeVisible();
+  await expect(page.locator('#itemSheetBody')).toContainText('Test supplier');
+  const closeBox = await page.locator('#itemSheetClose').boundingBox(), sheetBox = await page.locator('#itemSheet').boundingBox();
+  expect(closeBox!.height).toBeGreaterThanOrEqual(44);
+  expect(sheetBox!.width).toBe(375);
+  expect(sheetBox!.height).toBeLessThanOrEqual(812 * 0.85 + 1);
+  expect(await page.evaluate(() => document.documentElement.scrollWidth <= innerWidth)).toBe(true);
+  await page.locator('#itemSheetClose').click();
+  const row = page.locator('.group-item').filter({ hasText: name });
+  const nameBox = await row.locator('.gi-name').boundingBox(), orderBox = await row.locator('.gi-order').boundingBox();
+  expect(nameBox!.height).toBeGreaterThan(30);
+  expect(orderBox!.y + orderBox!.height / 2).toBeGreaterThanOrEqual(nameBox!.y);
+  expect(orderBox!.y + orderBox!.height / 2).toBeLessThanOrEqual(nameBox!.y + 26);
+});
+
 async function openStockDashboard(page: import('@playwright/test').Page, payload: ReturnType<typeof stockPayload>) {
   await page.route('**/api/stock?view=dashboard', (route) => route.fulfill({ json: payload }));
   await page.route('**/api/orders?summary=1', (route) => route.fulfill({ json: {} }));

@@ -6,10 +6,15 @@ export async function GET(request: Request) {
   try {
     const user = await getChatGPTUser();
     if (!user) return Response.json({ error: 'Sign in required' }, { status: 401, headers });
-    const page = Number(new URL(request.url).searchParams.get('page') || 1);
-    if (!Number.isInteger(page) || page < 1 || page > 4000) return Response.json({ error: 'Invalid requirements page' }, { status: 400, headers });
     const params = new URL(request.url).searchParams;
     const view = params.get('view');
+    if (view === 'item_detail') {
+      const itemKey = params.get('itemKey');
+      if ([...params.keys()].some((key) => key !== 'view' && key !== 'itemKey') || itemKey === null || !itemKey.length || itemKey.length > 220 || !itemKey.trim()) return Response.json({ error: 'Invalid requirements view' }, { status: 400, headers });
+      return Response.json(await callOrderGateway(user.email, 'get_requirements', { view: 'item_detail', itemKey }), { headers });
+    }
+    const page = Number(params.get('page') || 1);
+    if (!Number.isInteger(page) || page < 1 || page > 4000) return Response.json({ error: 'Invalid requirements page' }, { status: 400, headers });
     if (view !== null) {
       if (view === 'cover' || view === 'on_po') {
         if ([...params.keys()].some((key) => key !== 'view')) return Response.json({ error: 'Invalid requirements view' }, { status: 400, headers });

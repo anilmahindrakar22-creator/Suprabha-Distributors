@@ -29,6 +29,30 @@ it.each(['cover', 'on_po'])('reads stock %s without pagination', async (view) =>
   expect(response.headers.get('cache-control')).toBe('private, no-store');
   expect(JSON.parse(network.mock.calls[0][1]?.body as string)).toEqual({ actorEmail: 'sales@example.test', action: 'get_requirements', payload: { view } });
 });
+it.each(['Diasys / reagent & kit', 'Diasys kit '])('reads item detail with the exact key %j and never the waiting-order action', async (itemKey) => {
+  const detail = { view: 'item_detail', itemKey, months: [] };
+  network.mockResolvedValueOnce(Response.json(detail));
+  const response = await GET(new Request(`http://local/api/requirements?view=item_detail&itemKey=${encodeURIComponent(itemKey)}`));
+  expect(response.status).toBe(200);
+  expect(response.headers.get('cache-control')).toBe('private, no-store');
+  expect(await response.json()).toEqual(detail);
+  expect(network).toHaveBeenCalledTimes(1);
+  expect(JSON.parse(network.mock.calls[0][1]?.body as string)).toEqual({ actorEmail: 'sales@example.test', action: 'get_requirements', payload: { view: 'item_detail', itemKey } });
+});
+it.each([
+  'view=item_detail',
+  'view=item_detail&itemKey=',
+  'view=item_detail&itemKey=%20%20',
+  `view=item_detail&itemKey=${'x'.repeat(221)}`,
+  'view=item_detail&itemKey=kit&page=1',
+  'view=item_detail&itemKey=kit&page=0',
+  'view=item_detail&itemKey=kit&extra=1',
+])('rejects invalid item-detail query %s', async (query) => {
+  const response = await GET(new Request(`http://local/api/requirements?${query}`));
+  expect(response.status).toBe(400);
+  expect(await response.json()).toEqual({ error: 'Invalid requirements view' });
+  expect(network).not.toHaveBeenCalled();
+});
 it.each(['view=on_po&page=1', 'view=cover&page=1', 'view=cover&alerts=1', 'view=cover&itemKey=kit', 'view=cover&extra=1', 'view=other'])('rejects invalid cover/view query %s', async (query) => {
   expect((await GET(new Request(`http://local/api/requirements?${query}`))).status).toBe(400);
   expect(network).not.toHaveBeenCalled();
