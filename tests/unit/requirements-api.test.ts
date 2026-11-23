@@ -23,13 +23,13 @@ it('uses the authenticated actor and private read action', async () => {
   expect(response.headers.get('cache-control')).toBe('private, no-store');
   expect(JSON.parse(network.mock.calls[0][1]?.body as string)).toEqual({ actorEmail: 'sales@example.test', action: 'get_requirements', payload: { page: 2 } });
 });
-it('reads stock cover without pagination', async () => {
-  const response = await GET(new Request('http://local/api/requirements?view=cover'));
+it.each(['cover', 'on_po'])('reads stock %s without pagination', async (view) => {
+  const response = await GET(new Request(`http://local/api/requirements?view=${view}`));
   expect(response.status).toBe(200);
   expect(response.headers.get('cache-control')).toBe('private, no-store');
-  expect(JSON.parse(network.mock.calls[0][1]?.body as string)).toEqual({ actorEmail: 'sales@example.test', action: 'get_requirements', payload: { view: 'cover' } });
+  expect(JSON.parse(network.mock.calls[0][1]?.body as string)).toEqual({ actorEmail: 'sales@example.test', action: 'get_requirements', payload: { view } });
 });
-it.each(['view=cover&page=1', 'view=cover&alerts=1', 'view=cover&itemKey=kit', 'view=cover&extra=1', 'view=other'])('rejects invalid cover/view query %s', async (query) => {
+it.each(['view=on_po&page=1', 'view=cover&page=1', 'view=cover&alerts=1', 'view=cover&itemKey=kit', 'view=cover&extra=1', 'view=other'])('rejects invalid cover/view query %s', async (query) => {
   expect((await GET(new Request(`http://local/api/requirements?${query}`))).status).toBe(400);
   expect(network).not.toHaveBeenCalled();
 });

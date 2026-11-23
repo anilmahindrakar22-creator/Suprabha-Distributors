@@ -11,6 +11,7 @@ const stockPayload = (sourceFetchedAtIso?: Record<string, unknown>) => ({
 });
 
 test.beforeEach(async ({ page }) => {
+  await page.route('**/api/requirements?view=on_po', (route) => route.fulfill({ json: { view: 'on_po', items: [] } }));
   await page.route('**/api/requirements?view=idle&page=*', (route) => route.fulfill({
     json: idlePayload(Number(new URL(route.request().url()).searchParams.get('page'))),
   }));
@@ -120,8 +121,40 @@ test('stock cover puts items that run out first and explains the delivery compar
   await expect(page.locator('#coverCaption')).toContainText('Sales up to 18 Nov.');
   expect(await page.evaluate(() => document.documentElement.scrollWidth <= innerWidth)).toBe(true);
 });
+const onPoItem = (itemKey: string, poCount = 1, dueQuantity = 10) => ({
+  itemKey, poCount, dueQuantity, latestPoNumber: 'PO/26-27/0007',
+  // Noon IST four calendar days earlier avoids a midnight boundary in the assertion.
+  latestCreatedAt: new Date((Math.floor((Date.now() + 19_800_000) / 86_400_000) - 4) * 86_400_000 + 43_200_000 - 19_800_000).toISOString(),
+});
+
+test('Stock shows one PO with age, multiple POs with count, and no line for absent items', async ({ page }) => {
+  await page.route('**/api/requirements?view=on_po', (route) => route.fulfill({ json: {
+    view: 'on_po', items: [onPoItem('Test reagent A'), onPoItem('Test reagent B', 2, 15)],
+  } }));
+  await openStockDashboard(page, coverStockPayload());
+  await expect(page.locator('#refresh')).toBeEnabled();
+  await page.locator('#groupCards summary').click();
+  await expect(page.locator('.group-item').filter({ hasText: 'Test reagent A' }).locator('.gi-onpo')).toHaveText('On PO 10 · PO/26-27/0007 · 4 days ago');
+  await expect(page.locator('.group-item').filter({ hasText: 'Test reagent B' }).locator('.gi-onpo')).toHaveText('On PO 15 · 2 POs');
+  await expect(page.locator('.group-item').filter({ hasText: 'Test reagent C' }).locator('.gi-onpo')).toHaveCount(0);
+});
+
+for (const invalid of ['server failure', 'invalid body']) {
+  test(`on-PO ${invalid} silently leaves Stock rows available`, async ({ page }) => {
+    await page.route('**/api/requirements?view=on_po', (route) => route.fulfill({
+      status: invalid === 'server failure' ? 500 : 200, json: { view: 'on_po', items: 'x' },
+    }));
+    await openStockDashboard(page, coverStockPayload());
+    await expect(page.locator('#refresh')).toBeEnabled();
+    await page.locator('#groupCards summary').click();
+    await expect(page.locator('.group-item')).toHaveCount(3);
+    await expect(page.locator('.gi-onpo')).toHaveCount(0);
+    await expect(page.locator('#error')).toBeHidden();
+  });
+}
 
 test('long reorder names keep the order and stock on the right on a phone', async ({ page }) => {
+  await page.route('**/api/requirements?view=on_po', (route) => route.fulfill({ json: { view: 'on_po', items: [onPoItem('Stromatolyser WH 500 Ml 3 Part Sysmex Long Name Pack')] } }));
   await page.setViewportSize({ width: 375, height: 812 });
   await page.route('**/api/requirements?view=cover', (route) => route.fulfill({ json: {
     view: 'cover', leadTimeDays: 7, salesThrough: '2026-11-18', runsOutCount: 0,
@@ -136,6 +169,7 @@ test('long reorder names keep the order and stock on the right on a phone', asyn
   ] });
   await page.locator('#groupCards summary').click();
   const row = page.locator('.group-item').filter({ hasText: 'Stromatolyser WH 500 Ml 3 Part Sysmex Long Name Pack' });
+  await expect(row.locator('.gi-onpo')).toHaveText('On PO 10 · PO/26-27/0007 · 4 days ago');
   const name = row.locator('.gi-name'), order = row.locator('.gi-order'), qty = row.locator('.gi-qty');
   const nameBox = await name.boundingBox(), orderBox = await order.boundingBox(), qtyBox = await qty.boundingBox(), rowBox = await row.boundingBox();
   expect(nameBox && orderBox && qtyBox && rowBox).toBeTruthy();

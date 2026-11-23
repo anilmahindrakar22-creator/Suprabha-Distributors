@@ -1648,6 +1648,13 @@
       "remoteVersion": null,
       "remoteSha256": null,
       "status": "not_deployed"
+    },
+    {
+      "localFile": "20261216090000_stock_on_po.sql",
+      "localSha256": "5f9e4691e1ca35576b76fa3f2a51c4537c397ba1df32e8cdf035b3f28024cf9b",
+      "remoteVersion": null,
+      "remoteSha256": null,
+      "status": "not_deployed"
     }
   ],
   "liveCheck": {

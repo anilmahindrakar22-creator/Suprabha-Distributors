@@ -11,9 +11,9 @@ export async function GET(request: Request) {
     const params = new URL(request.url).searchParams;
     const view = params.get('view');
     if (view !== null) {
-      if (view === 'cover') {
+      if (view === 'cover' || view === 'on_po') {
         if ([...params.keys()].some((key) => key !== 'view')) return Response.json({ error: 'Invalid requirements view' }, { status: 400, headers });
-        return Response.json(await callOrderGateway(user.email, 'get_requirements', { view: 'cover' }), { headers });
+        return Response.json(await callOrderGateway(user.email, 'get_requirements', { view }), { headers });
       }
       if (view === 'idle') {
         if ([...params.keys()].some((key) => key !== 'view' && key !== 'page') || !params.get('page')?.trim() || page > 100) return Response.json({ error: 'Invalid requirements view' }, { status: 400, headers });
