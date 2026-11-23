@@ -56,7 +56,7 @@ select jsonb_build_object('view','idle','asOf',p_today,'windowDays',180,
 $$;
 revoke all on function private.stockflow_idle_stock(date,integer) from public,anon,authenticated,service_role;
 
-create function private.stockflow_idle_buyers(p_item_key text,p_scope_email text) returns jsonb
+create function private.stockflow_idle_buyers(p_item_key text) returns jsonb
 language sql stable security definer set search_path=pg_catalog,private,public,extensions as $$
 with latest as materialized (
   select distinct on(v.company_id,v.source_id) v.*
@@ -80,30 +80,28 @@ with latest as materialized (
   where exists(select 1 from names n where n.company_id=w.company_id and n.product_id=w.product_id)
 ), customers as (
   select c.id as customer_id,c.name as customer_name,max(w.business_date) as last_bought_on,
-    round(sum(w.quantity),3) as quantity,count(distinct w.voucher_id) as bills,
-    p_scope_email is null or exists(select 1 from private.stockflow_customer_assignments a
-      where a.customer_id=c.id and a.effective_to is null and a.owner_email=p_scope_email) as in_scope
+    round(sum(w.quantity),3) as quantity,count(distinct w.voucher_id) as bills
   from item_lines w
   join private.stockflow_economic_customer_identities ci on ci.company_id=w.company_id and ci.source_id=w.customer_source_id
   join private.stockflow_customers c on c.id=ci.customer_id
   group by c.id,c.name
 ), selected as (
-  select * from customers where in_scope order by last_bought_on desc,customer_name limit 3
+  select * from customers order by last_bought_on desc,customer_name limit 3
 )
 select jsonb_build_object('view','idle_buyers','itemKey',p_item_key,
   'buyers',coalesce((select jsonb_agg(jsonb_build_object('customerId',customer_id,'customerName',customer_name,
     'lastBoughtOn',last_bought_on,'quantity',quantity,'bills',bills) order by last_bought_on desc,customer_name)
     from selected),'[]'::jsonb),
-  'totalInScope',(select count(*) from customers where in_scope),
-  'otherBuyers',(select count(*) from customers where not in_scope))
+  'totalInScope',(select count(*) from customers),
+  'otherBuyers',0)
 $$;
-revoke all on function private.stockflow_idle_buyers(text,text) from public,anon,authenticated,service_role;
+revoke all on function private.stockflow_idle_buyers(text) from public,anon,authenticated,service_role;
 
 alter function public.stockflow_requirements_gateway(text,text,text,jsonb)
   rename to stockflow_requirements_gateway_before_idle_buyers;
 create function public.stockflow_requirements_gateway(p_gateway_key text,p_actor_email text,p_action text,p_payload jsonb default '{}'::jsonb)
 returns jsonb language plpgsql security definer set search_path=pg_catalog,public,private,extensions as $$
-declare v_hash text; v_roles text[]; v_email text:=lower(btrim(coalesce(p_actor_email,''))); v_scope text;
+declare v_hash text; v_roles text[]; v_email text:=lower(btrim(coalesce(p_actor_email,'')));
 begin
   if p_action='get_requirements' and coalesce(p_payload->>'view','')='idle_buyers' then
     select secret_sha256 into v_hash from private.stockflow_gateway_config where name='orders';
@@ -119,14 +117,11 @@ begin
       or char_length(p_payload->>'itemKey') not between 1 and 220 or btrim(p_payload->>'itemKey')='' then
       raise exception 'Invalid requirements view' using errcode='22023';
     end if;
-    if coalesce(private.stockflow_valid_roles(v_roles) and v_roles && array['administrator','management','operations'],false) then
-      v_scope:=null;
-    elsif coalesce(private.stockflow_valid_roles(v_roles) and v_roles && array['sales'],false) then
-      v_scope:=v_email;
+    if coalesce(private.stockflow_valid_roles(v_roles) and v_roles && array['administrator','management','operations','sales'],false) then
+      return private.stockflow_idle_buyers(p_payload->>'itemKey');
     else
       raise exception 'Role cannot see buyers' using errcode='42501';
     end if;
-    return private.stockflow_idle_buyers(p_payload->>'itemKey',v_scope);
   end if;
   return public.stockflow_requirements_gateway_before_idle_buyers(p_gateway_key,p_actor_email,p_action,p_payload);
 end $$;

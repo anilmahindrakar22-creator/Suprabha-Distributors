@@ -56,14 +56,12 @@ begin
     or (r->'buyers'->2->>'quantity')::numeric<>3.580 then raise exception 'Management history: %',r; end if;
   if r::text like '%rate%' then raise exception 'Private monetary field: %',r; end if;
   r:=public.stockflow_requirements_gateway('idle-buyers-key',' IDLE-SALES@test.local ','get_requirements','{"view":"idle_buyers","itemKey":"Idle X"}');
-  if r->>'totalInScope'<>'1' or r->>'otherBuyers'<>'2' or jsonb_array_length(r->'buyers')<>1
-    or r->'buyers'->0->>'customerId'<>l1::text or r::text like '%Idle Lab 2%' or r::text like '%Idle Lab 3%' then
-    raise exception 'Sales scope: %',r;
+  if r->>'totalInScope'<>'3' or r->>'otherBuyers'<>'0' or jsonb_array_length(r->'buyers')<>3
+    or r->'buyers'->0->>'customerId'<>l3::text or r->'buyers'->1->>'customerId'<>l2::text
+    or r->'buyers'->2->>'customerId'<>l1::text then
+    raise exception 'Sales buyer history: %',r;
   end if;
-  update private.stockflow_customer_assignments set effective_to='2026-01-01' where customer_id=l1;
-  r:=private.stockflow_idle_buyers('Idle X','idle-sales@test.local');
-  if r->'buyers'<>'[]' or r->>'totalInScope'<>'0' or r->>'otherBuyers'<>'3' then raise exception 'Ended assignment: %',r; end if;
-  r:=private.stockflow_idle_buyers('Idle Y',null);
+  r:=private.stockflow_idle_buyers('Idle Y');
   if r<> '{"view":"idle_buyers","itemKey":"Idle Y","buyers":[],"totalInScope":0,"otherBuyers":0}'::jsonb then raise exception 'No buyers: %',r; end if;
   for fixture in select * from (values
     ('wrong-key','idle-management@test.local'),

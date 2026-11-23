@@ -193,6 +193,7 @@ try {
   $salesNames += '20261215100000_letterhead_extras.sql'
   $salesNames += '20261216090000_stock_on_po.sql'
   $salesNames += '20261216100000_stock_item_detail.sql'
+  $salesNames += '20261216110000_idle_stock_speed.sql'
   $salesNames += '20261217090000_late_pos.sql'
   $salesNames += '20261217100000_reorder_check.sql'
   $salesNames += '20261217110000_idle_buyers.sql'
@@ -225,6 +226,9 @@ create table public.test_upgrade_expected as select to_jsonb(o) as order_data,(s
       Invoke-DatabaseCommand $psqlProgram @('-U',$databaseUser,'-X','-q','-v','ON_ERROR_STOP=1','-d',$database,'-c',$seed)
     }
     if ($migration.Name -ge '20260913130000_customer_price_book.sql' -and (Get-FileHash $migration.FullName).Hash -ne (Get-FileHash (Join-Path $migrationSource $migration.Name)).Hash) { throw "Pricing migration copy changed: $($migration.Name)" }
+    # The speed fixture checks the idle item keys before buyerCount was added.
+    # Apply this final migration after that historical fixture below.
+    if ($migration.Name -eq '20261217110000_idle_buyers.sql') { continue }
     if ($migration.Name -eq '20261129160000_growth_item_kind.sql') {
       # Retain actual pre-patch definitions for byte-for-byte read comparisons.
       $baselineSql = @'
@@ -467,6 +471,8 @@ end$$;
   Invoke-DatabaseCommand $psqlProgram @('-U',$databaseUser,'-X','-q','-v','ON_ERROR_STOP=1','-d',$database,'-f',(Join-Path $repository 'supabase/tests/letterhead_extras.sql'))
   Invoke-DatabaseCommand $psqlProgram @('-U',$databaseUser,'-X','-q','-v','ON_ERROR_STOP=1','-d',$database,'-f',(Join-Path $repository 'supabase/tests/stock_on_po.sql'))
   Invoke-DatabaseCommand $psqlProgram @('-U',$databaseUser,'-X','-q','-v','ON_ERROR_STOP=1','-d',$database,'-f',(Join-Path $repository 'supabase/tests/stock_item_detail.sql'))
+  Invoke-DatabaseCommand $psqlProgram @('-U',$databaseUser,'-X','-q','-v','ON_ERROR_STOP=1','-d',$database,'-f',(Join-Path $repository 'supabase/tests/idle_stock_speed.sql'))
+  Invoke-DatabaseCommand $psqlProgram @('-U',$databaseUser,'-X','-q','-v','ON_ERROR_STOP=1','-d',$database,'-f',(Join-Path $work '20261217110000_idle_buyers.sql'))
   Invoke-DatabaseCommand $psqlProgram @('-U',$databaseUser,'-X','-q','-v','ON_ERROR_STOP=1','-d',$database,'-f',(Join-Path $repository 'supabase/tests/late_pos.sql'))
   Invoke-DatabaseCommand $psqlProgram @('-U',$databaseUser,'-X','-q','-v','ON_ERROR_STOP=1','-d',$database,'-f',(Join-Path $repository 'supabase/tests/reorder_check.sql'))
   Invoke-DatabaseCommand $psqlProgram @('-U',$databaseUser,'-X','-q','-v','ON_ERROR_STOP=1','-d',$database,'-f',(Join-Path $repository 'supabase/tests/idle_buyers.sql'))

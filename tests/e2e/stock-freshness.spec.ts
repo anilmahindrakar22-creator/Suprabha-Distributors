@@ -298,7 +298,7 @@ test('idle buyers toggle loads the exact key once and reopens from cache', async
   expect(requests).toHaveLength(1);
 });
 
-test('idle buyers sales scope shows only the allowed lab and colleague count', async ({ page }) => {
+test('idle buyers colleague count line (legacy payload)', async ({ page }) => {
   const { stock } = await idleBuyersHarness(page, { allowed: true, sales: true });
   await stock.locator('.idle-buyers-toggle').click();
   await expect(stock.locator('.idle-buyer')).toHaveCount(1);

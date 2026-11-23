@@ -1664,6 +1664,13 @@
       "status": "not_deployed"
     },
     {
+      "localFile": "20261216110000_idle_stock_speed.sql",
+      "localSha256": "9f976447407fac17d57fd9d616cbb7750375b6bafb5883532d3f0125ff1876bc",
+      "remoteVersion": null,
+      "remoteSha256": null,
+      "status": "not_deployed"
+    },
+    {
       "localFile": "20261217090000_late_pos.sql",
       "localSha256": "eb956fbadff4ff48e83712a2ff095621f0437eac4c476f7257e0cc8cc82d64c2",
       "remoteVersion": null,
@@ -1679,7 +1686,7 @@
     },
     {
       "localFile": "20261217110000_idle_buyers.sql",
-      "localSha256": "c1d7b10e59ed1a2e4fb17cf783e73e7469445c5579e1539979b935d04e06e013",
+      "localSha256": "cddf3b11a0d8b92dbda31f8c482fc9c1f4b6d3ed703eaa9de795bdb4f2d61dbb",
       "remoteVersion": null,
       "remoteSha256": null,
       "status": "not_deployed"
