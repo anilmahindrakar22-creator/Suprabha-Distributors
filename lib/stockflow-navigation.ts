@@ -41,6 +41,16 @@ export type StockPoDraftItem = { itemKey: string; quantity: number };
 export type StockPoDraftMessage = { type: 'stockflow-create-po'; items: StockPoDraftItem[] };
 export const STOCK_PO_DRAFT_MAX = 50;
 
+export function readOpenCustomerMessage(value: unknown): { type: 'stockflow-open-customer'; customerId: string } | null {
+  if (!value || typeof value !== 'object' ||
+    (Object.getPrototypeOf(value) !== Object.prototype && Object.getPrototypeOf(value) !== null)) return null;
+  const message = value as Record<string, unknown>;
+  if (Reflect.ownKeys(message).length !== 2 || !Object.hasOwn(message, 'type') || !Object.hasOwn(message, 'customerId') ||
+    message.type !== 'stockflow-open-customer' || typeof message.customerId !== 'string' ||
+    !/^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/.test(message.customerId)) return null;
+  return { type: 'stockflow-open-customer', customerId: message.customerId };
+}
+
 export function readStockPoDraftMessage(value: unknown): StockPoDraftMessage | null {
   const plain = (input: unknown): input is Record<string, unknown> => !!input && typeof input === 'object'
     && (Object.getPrototypeOf(input) === Object.prototype || Object.getPrototypeOf(input) === null);

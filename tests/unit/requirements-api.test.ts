@@ -67,6 +67,17 @@ it('reads the paginated idle view for the authenticated actor', async () => {
   expect(response.headers.get('cache-control')).toBe('private, no-store');
   expect(JSON.parse(network.mock.calls[0][1]?.body as string)).toEqual({ actorEmail: 'sales@example.test', action: 'get_requirements', payload: { view: 'idle', page: 2 } });
 });
+it('reads idle buyers with the exact item key', async () => {
+  const itemKey = 'Reagent / X & kit ';
+  expect((await GET(new Request('http://local/api/requirements?view=idle_buyers&itemKey=' + encodeURIComponent(itemKey)))).status).toBe(200);
+  expect(JSON.parse(network.mock.calls[0][1]?.body as string)).toEqual({
+    actorEmail: 'sales@example.test', action: 'get_requirements', payload: { view: 'idle_buyers', itemKey },
+  });
+});
+it.each(['view=idle_buyers', 'view=idle_buyers&itemKey=X&page=1', 'view=idle_buyers&itemKey=%20%20', 'view=idle_buyers&itemKey=' + 'x'.repeat(221)])('rejects invalid idle buyers query %s', async query => {
+  expect((await GET(new Request('http://local/api/requirements?' + query))).status).toBe(400);
+  expect(network).not.toHaveBeenCalled();
+});
 it.each(['view=idle&page=0', 'view=idle&page=101', 'view=idle', 'view=idle&page=1&itemKey=kit', 'view=idle&page=1.5', 'view=idle&page='])('rejects invalid idle query %s', async (query) => {
   expect((await GET(new Request(`http://local/api/requirements?${query}`))).status).toBe(400);
   expect(network).not.toHaveBeenCalled();

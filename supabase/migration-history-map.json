@@ -1676,6 +1676,13 @@
       "remoteVersion": null,
       "remoteSha256": null,
       "status": "not_deployed"
+    },
+    {
+      "localFile": "20261217110000_idle_buyers.sql",
+      "localSha256": "c1d7b10e59ed1a2e4fb17cf783e73e7469445c5579e1539979b935d04e06e013",
+      "remoteVersion": null,
+      "remoteSha256": null,
+      "status": "not_deployed"
     }
   ],
   "liveCheck": {

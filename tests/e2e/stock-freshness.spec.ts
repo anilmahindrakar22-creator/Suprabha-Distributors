@@ -225,6 +225,136 @@ const idlePayload = (page: number) => ({
   })),
 });
 
+const idleBuyerKey = 'Idle X / reagent & kit';
+const buyerHistory = () => ({
+  view: 'idle_buyers', itemKey: idleBuyerKey, totalInScope: 3, otherBuyers: 0,
+  buyers: [
+    { customerId: 'abcdef01-1234-5678-90ab-abcdef012341', customerName: 'Lab Three', lastBoughtOn: '2026-04-01', quantity: 5, bills: 1 },
+    { customerId: 'abcdef01-1234-5678-90ab-abcdef012342', customerName: 'Lab Two', lastBoughtOn: '2026-03-01', quantity: 4, bills: 1 },
+    { customerId: 'abcdef01-1234-5678-90ab-abcdef012343', customerName: 'Lab One', lastBoughtOn: '2026-02-01', quantity: 3.58, bills: 2 },
+  ],
+});
+
+async function idleBuyersHarness(page: Page, options: { allowed?: boolean; older?: boolean; longName?: boolean; status?: number; sales?: boolean } = {}) {
+  const messages: unknown[] = [], requests: string[] = [];
+  const history = buyerHistory();
+  if (options.sales) { history.buyers = history.buyers.slice(2); history.totalInScope = 1; history.otherBuyers = 2; }
+  if (options.longName) history.buyers[0].customerName = 'L'.repeat(120);
+  let status = options.status ?? 200;
+  await page.exposeFunction('captureIdleLab', (value: unknown) => messages.push(value));
+  await page.addInitScript(() => {
+    if (parent !== window) return;
+    addEventListener('message', event => {
+      if (event.origin === location.origin && event.data?.type === 'stockflow-open-customer') {
+        void (window as unknown as { captureIdleLab: (value: unknown) => Promise<void> }).captureIdleLab(event.data);
+      }
+    });
+  });
+  await page.route('**/idle-buyers-test', route => route.fulfill({ contentType: 'text/html', body:
+    '<meta name="viewport" content="width=device-width,initial-scale=1"><style>html,body{margin:0;height:100%;overflow:hidden}iframe{width:100%;height:100%;border:0;display:block}</style><iframe src="/stockflow.html"></iframe>',
+  }));
+  await page.route('**/api/stock?view=dashboard', route => route.fulfill({ json: stockPayload() }));
+  await page.route('**/api/orders?summary=1', route => route.fulfill({ json: {} }));
+  await page.route('**/api/requirements?view=idle&page=*', route => route.fulfill({ json: {
+    ...idlePayload(1), idleCount: 2,
+    items: [
+      { itemKey: idleBuyerKey, group: 'Test', closing: 2, baseUnit: 'Nos', lastSoldOn: '2026-05-01', ...(!options.older ? { buyerCount: 3 } : {}) },
+      { itemKey: 'Idle Y', group: 'Test', closing: 3, baseUnit: 'Nos', lastSoldOn: null, ...(!options.older ? { buyerCount: 0 } : {}) },
+    ],
+  } }));
+  await page.route('**/api/requirements?view=idle_buyers&itemKey=*', route => {
+    requests.push(route.request().url());
+    return route.fulfill({ status, json: status === 200 ? history : { error: 'Unavailable' } });
+  });
+  await page.goto('/idle-buyers-test');
+  const stock = page.frameLocator('iframe');
+  await expect(stock.locator('#refresh')).toBeEnabled();
+  await expect(stock.locator('[data-action="idle"]')).toBeVisible();
+  await page.evaluate(allowed => document.querySelector('iframe')?.contentWindow?.postMessage({
+    type: 'stockflow-cache-account', email: 'idle@example.test', ...(allowed === undefined ? {} : { canSeeBuyers: allowed }),
+  }, location.origin), options.allowed);
+  await stock.locator('[data-action="idle"]').click();
+  await expect(stock.locator('.idle-row')).toHaveCount(2);
+  return { stock, requests, history, messages, recover: () => { status = 200; } };
+}
+
+test('idle buyers toggle loads the exact key once and reopens from cache', async ({ page }) => {
+  const { stock, requests } = await idleBuyersHarness(page, { allowed: true });
+  const toggle = stock.getByRole('button', { name: 'Bought before by 3 labs ›', exact: true });
+  await expect(stock.locator('.idle-buyers-toggle')).toHaveCount(1);
+  await expect(stock.locator('.idle-row').filter({ hasText: 'Idle Y' }).locator('.idle-buyers-toggle')).toHaveCount(0);
+  await toggle.click();
+  await expect(stock.locator('.idle-buyer')).toHaveCount(3);
+  await expect(stock.locator('.idle-buyer > span:first-child')).toHaveText(['Lab Three', 'Lab Two', 'Lab One']);
+  await expect(stock.locator('.idle-buyer .idle-meta')).toHaveText([
+    'Last bought 1 Apr 2026 · 5 Nos · 1 bill', 'Last bought 1 Mar 2026 · 4 Nos · 1 bill', 'Last bought 1 Feb 2026 · 3.58 Nos · 2 bills',
+  ]);
+  expect(requests).toHaveLength(1);
+  expect(requests[0]).toContain('view=idle_buyers&itemKey=' + encodeURIComponent(idleBuyerKey));
+  await toggle.click();
+  await expect(stock.locator('.idle-buyer').first()).toBeHidden();
+  await toggle.click();
+  await expect(stock.locator('.idle-buyer').first()).toBeVisible();
+  expect(requests).toHaveLength(1);
+});
+
+test('idle buyers sales scope shows only the allowed lab and colleague count', async ({ page }) => {
+  const { stock } = await idleBuyersHarness(page, { allowed: true, sales: true });
+  await stock.locator('.idle-buyers-toggle').click();
+  await expect(stock.locator('.idle-buyer')).toHaveCount(1);
+  await expect(stock.locator('.idle-buyer > span:first-child')).toHaveText(['Lab One']);
+  await expect(stock.getByText('2 other labs (assigned to colleagues)', { exact: true })).toBeVisible();
+  await expect(stock.getByText('Lab Two', { exact: true })).toHaveCount(0);
+});
+
+test('idle buyers retries a failed request', async ({ page }) => {
+  const { stock, recover, requests } = await idleBuyersHarness(page, { allowed: true, status: 500 });
+  await stock.locator('.idle-buyers-toggle').click();
+  await expect(stock.getByText("Couldn't load buyers.", { exact: false })).toBeVisible();
+  recover();
+  await stock.getByRole('button', { name: 'Retry', exact: true }).click();
+  await expect(stock.locator('.idle-buyer')).toHaveCount(3);
+  expect(requests).toHaveLength(2);
+});
+
+test('idle buyers hides a forbidden lookup', async ({ page }) => {
+  const { stock } = await idleBuyersHarness(page, { allowed: true, status: 403 });
+  await stock.locator('.idle-buyers-toggle').click();
+  await expect(stock.locator('.idle-buyers-toggle')).toBeHidden();
+  await expect(stock.locator('.idle-buyer')).toHaveCount(0);
+  await expect(stock.getByText("Couldn't load buyers.", { exact: false })).toHaveCount(0);
+});
+
+test('idle buyers opens a lab through the iframe parent', async ({ page }) => {
+  const { stock, messages, history } = await idleBuyersHarness(page, { allowed: true });
+  await stock.locator('.idle-buyers-toggle').click();
+  await stock.getByRole('button', { name: 'Open lab', exact: true }).first().click();
+  await expect.poll(() => messages).toEqual([{ type: 'stockflow-open-customer', customerId: history.buyers[0].customerId }]);
+});
+
+test('idle buyers long lab name fits a 375px phone', async ({ page }) => {
+  await page.setViewportSize({ width: 375, height: 812 });
+  const { stock } = await idleBuyersHarness(page, { allowed: true, longName: true });
+  await stock.locator('.idle-buyers-toggle').click();
+  await expect(stock.getByText('L'.repeat(120), { exact: true })).toBeVisible();
+  expect(await stock.locator('body').evaluate(() => document.documentElement.scrollWidth <= innerWidth)).toBe(true);
+});
+
+test('idle buyers accepts older idle payloads without toggles', async ({ page }) => {
+  const { stock, requests } = await idleBuyersHarness(page, { allowed: true, older: true });
+  await expect(stock.locator('.idle-row')).toHaveCount(2);
+  await expect(stock.locator('.idle-buyers-toggle')).toHaveCount(0);
+  expect(requests).toHaveLength(0);
+});
+
+for (const allowed of [false, undefined]) {
+  test('idle buyers has no toggle without access ' + String(allowed), async ({ page }) => {
+    const { stock, requests } = await idleBuyersHarness(page, { allowed });
+    await expect(stock.locator('.idle-buyers-toggle')).toHaveCount(0);
+    expect(requests).toHaveLength(0);
+  });
+}
+
 test('idle stock is paginated, searchable and returns to groups on a phone', async ({ page }) => {
   await page.setViewportSize({ width: 375, height: 812 });
   await openStockDashboard(page, { ...coverStockPayload(), groups: ['Test group', 'Other group'] });

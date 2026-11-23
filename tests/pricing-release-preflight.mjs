@@ -76,6 +76,7 @@ const pricingReleaseFiles = new Set([
   '20261216100000_stock_item_detail.sql',
   '20261217090000_late_pos.sql',
   '20261217100000_reorder_check.sql',
+  '20261217110000_idle_buyers.sql',
   '20261102090000_po_tally_receipts.sql',
   '20261031140000_power_map_enhancement.sql',
   '20261030090000_instrument_register.sql',
@@ -264,6 +265,7 @@ export const pricingReleaseSqlTests = [
   'supabase/tests/stock_item_detail.sql',
   'supabase/tests/late_pos.sql',
   'supabase/tests/reorder_check.sql',
+  'supabase/tests/idle_buyers.sql',
 ];
 
 export function pricingReleasePreflight(evidence, files) {
