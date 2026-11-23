@@ -8,9 +8,10 @@ const orderItems = [
   toOrderItem({ itemKey: 'B', itemName: 'Reagent B', lowestSupplier: { supplierName: 'Supplier B' } }),
 ];
 
-async function setup(page: Page, { role = 'operations', orders = [purchaseOrder()], failures = [] as number[], noSuppliers = false }: { role?: string; orders?: PurchaseOrder[]; failures?: number[]; noSuppliers?: boolean } = {}) {
+async function setup(page: Page, { role = 'operations', orders = [purchaseOrder()], failures = [] as number[], noSuppliers = false, lateBody = { view: 'late_pos', leadTimeDays: 7, total: 0, items: [] }, lateStatus = 200 }: { role?: string; orders?: PurchaseOrder[]; failures?: number[]; noSuppliers?: boolean; lateBody?: unknown; lateStatus?: number } = {}) {
   const commands: Command[] = [];
   const reads: string[] = [];
+  const lateReads: string[] = [];
   await page.setViewportSize({ width: 375, height: 812 });
   await page.route('**/stockflow.html*', (route) => route.fulfill({ contentType: 'text/html', body: '<p>Stock fixture</p>' }));
   await page.route('**/api/product-requests*', (route) => route.fulfill({ json: { requests: [] } }));
@@ -20,6 +21,7 @@ async function setup(page: Page, { role = 'operations', orders = [purchaseOrder(
       ? { windowDays: 7, alerts: [], pagination: { page: 1, pageCount: 1, total: 0 } }
       : toOrderResponse({ total: 2, items: orderItems }) });
   });
+  await page.route('**/api/requirements?view=late_pos', (route) => { lateReads.push(route.request().url()); return route.fulfill({ status: lateStatus, json: lateBody }); });
   await page.route('**/api/purchase-orders*', async (route) => {
     const request = route.request();
     const url = new URL(request.url());
@@ -42,7 +44,7 @@ async function setup(page: Page, { role = 'operations', orders = [purchaseOrder(
   await page.goto(`/?view=frame&role=${role}`);
   await page.getByRole('button', { name: /^requests$/i }).click();
   await expect(page.getByRole('heading', { name: 'To order', exact: true })).toBeVisible();
-  return { commands, reads };
+  return { commands, reads, lateReads };
 }
 
 async function review(page: Page) {
@@ -55,6 +57,76 @@ async function review(page: Page) {
   await expect(sheet.getByRole('combobox', { name: 'Supplier for Reagent B' })).toHaveValue('Supplier B');
   return sheet;
 }
+
+const latePurchaseOrders = {
+  view: 'late_pos', leadTimeDays: 7, total: 2,
+  items: [
+    { poNumber: 'PO/26-27/0001', supplierName: 'Test supplier', createdAt: '2026-12-01T00:00:00+05:30', lateDays: 3, dueLines: 2, dueQuantity: 13 },
+    { poNumber: 'PO/26-27/0002', supplierName: 'Other supplier', createdAt: '2026-12-03T00:00:00+05:30', lateDays: 1, dueLines: 1, dueQuantity: 5 },
+  ],
+};
+
+test('late chip opens the late list, tags the open card and copies the supplier and PO', async ({ page }) => {
+  await page.addInitScript(() => {
+    Object.defineProperty(navigator, 'clipboard', { configurable: true, value: { writeText: async (text: string) => { (window as unknown as { copied: string }).copied = text; } } });
+  });
+  await setup(page, { lateBody: latePurchaseOrders });
+  const section = page.getByRole('region', { name: 'Purchase orders', exact: true });
+  const chip = section.getByRole('button', { name: '2 late', exact: true });
+  await expect(chip).toHaveAttribute('aria-pressed', 'false');
+  await expect(section.getByRole('article', { name: 'PO/26-27/0001', exact: true }).getByText('3 days late', { exact: true })).toBeVisible();
+  await chip.click();
+  await expect(chip).toHaveAttribute('aria-pressed', 'true');
+  const late = section.getByRole('region', { name: 'Late purchase orders', exact: true });
+  await expect(late.getByRole('heading', { name: 'Late purchase orders', exact: true })).toBeVisible();
+  await expect(late.getByText('Open longer than the 7-day delivery time.', { exact: true })).toBeVisible();
+  await expect(late.getByText('PO/26-27/0001 · Test supplier', { exact: true })).toBeVisible();
+  await expect(late.getByText('PO/26-27/0002 · Other supplier', { exact: true })).toBeVisible();
+  await expect(late.getByText('3 days late · 2 lines due', { exact: true })).toBeVisible();
+  await expect(late.getByText('1 day late · 1 line due', { exact: true })).toBeVisible();
+  await late.getByRole('button', { name: 'Copy supplier and PO', exact: true }).first().click();
+  await expect.poll(() => page.evaluate(() => (window as unknown as { copied: string }).copied)).toBe('Test supplier – PO/26-27/0001, 3 days late');
+  await expect(late.getByRole('button', { name: 'Copied', exact: true }).first()).toBeVisible();
+  await chip.click();
+  await expect(late).toHaveCount(0);
+});
+
+for (const failure of [500, 'invalid'] as const) {
+  test(`late purchase order ${failure} response is silent and leaves the list usable`, async ({ page }) => {
+    await setup(page, { lateStatus: failure === 500 ? 500 : 200, lateBody: failure === 'invalid' ? { ...latePurchaseOrders, items: [{ ...latePurchaseOrders.items[0], lateDays: -1 }] } : { error: 'Unavailable' } });
+    const section = page.getByRole('region', { name: 'Purchase orders', exact: true });
+    await expect(section.getByRole('button', { name: 'Details for PO/26-27/0001', exact: true })).toBeVisible();
+    await expect(section.getByRole('button', { name: /^\d+ late$/ })).toHaveCount(0);
+    await expect(section.getByRole('alert')).toHaveCount(0);
+    await section.getByRole('button', { name: 'Details for PO/26-27/0001', exact: true }).click();
+    await expect(section.getByText('Test item — 13 Nos', { exact: true })).toBeVisible();
+  });
+}
+
+test('operations late list contains no currency', async ({ page }) => {
+  await setup(page, { lateBody: latePurchaseOrders });
+  await page.getByRole('button', { name: '2 late', exact: true }).click();
+  const late = page.getByRole('region', { name: 'Late purchase orders', exact: true });
+  await expect(late).toBeVisible();
+  await expect(late.getByText(/₹/)).toHaveCount(0);
+});
+
+test('phone late list has no horizontal scroll', async ({ page }) => {
+  await setup(page, { lateBody: { ...latePurchaseOrders, items: latePurchaseOrders.items.map((po) => ({ ...po, supplierName: 'A supplier with a very long name and a long unbroken reference ABCDEFGHIJKLMNOPQRSTUVWXYZABCDEFGHIJKLMNOPQRSTUVWXYZ' })) } });
+  await page.getByRole('button', { name: '2 late', exact: true }).click();
+  await expect(page.getByRole('region', { name: 'Late purchase orders', exact: true })).toBeVisible();
+  expect(await page.evaluate(() => document.documentElement.scrollWidth <= innerWidth)).toBe(true);
+});
+
+test('loading another purchase order page does not fetch late purchase orders again', async ({ page }) => {
+  const orders = Array.from({ length: 21 }, (_, index) => purchaseOrder({ id: String(index), poNumber: `PO/26-27/${index + 1}` }));
+  const { lateReads } = await setup(page, { orders, lateBody: { view: 'late_pos', leadTimeDays: 7, total: 1, items: [{ ...latePurchaseOrders.items[0], dueLines: 1 }] } });
+  await expect.poll(() => lateReads.length).toBe(1);
+  const section = page.getByRole('region', { name: 'Purchase orders', exact: true });
+  await section.getByRole('button', { name: 'Load more', exact: true }).click();
+  await expect(section.getByRole('article')).toHaveCount(21);
+  expect(lateReads).toHaveLength(1);
+});
 
 test('operations groups two suppliers, creates both POs and never sees rates', async ({ page }) => {
   const { commands } = await setup(page);

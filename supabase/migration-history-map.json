@@ -1662,6 +1662,13 @@
       "remoteVersion": null,
       "remoteSha256": null,
       "status": "not_deployed"
+    },
+    {
+      "localFile": "20261217090000_late_pos.sql",
+      "localSha256": "eb956fbadff4ff48e83712a2ff095621f0437eac4c476f7257e0cc8cc82d64c2",
+      "remoteVersion": null,
+      "remoteSha256": null,
+      "status": "not_deployed"
     }
   ],
   "liveCheck": {

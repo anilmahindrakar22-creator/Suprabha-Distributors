@@ -16,7 +16,7 @@ export async function GET(request: Request) {
     const page = Number(params.get('page') || 1);
     if (!Number.isInteger(page) || page < 1 || page > 4000) return Response.json({ error: 'Invalid requirements page' }, { status: 400, headers });
     if (view !== null) {
-      if (view === 'cover' || view === 'on_po') {
+      if (view === 'cover' || view === 'on_po' || view === 'late_pos') {
         if ([...params.keys()].some((key) => key !== 'view')) return Response.json({ error: 'Invalid requirements view' }, { status: 400, headers });
         return Response.json(await callOrderGateway(user.email, 'get_requirements', { view }), { headers });
       }

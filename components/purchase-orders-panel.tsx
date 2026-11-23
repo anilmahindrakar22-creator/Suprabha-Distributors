@@ -54,6 +54,42 @@ const primary = 'min-h-12 rounded-lg bg-sf-ink px-3 text-sm font-semibold text-s
 const input = 'min-h-11 w-full min-w-0 rounded-lg border border-sf-line bg-sf-soft-0 p-2 text-sf-body';
 const date = (value: string) => new Date(value).toLocaleDateString('en-IN', { timeZone: 'Asia/Kolkata', dateStyle: 'medium' });
 
+type LatePo = { poNumber: string; supplierName: string; createdAt: string; lateDays: number; dueLines: number };
+type LatePos = { view: 'late_pos'; leadTimeDays: number | null; total: number; items: LatePo[] };
+function parseLatePos(value: unknown): LatePos {
+  if (!value || typeof value !== 'object') throw new Error('Invalid late purchase orders');
+  const body = value as Record<string, unknown>;
+  if (body.view !== 'late_pos' || !Number.isInteger(body.total) || (body.total as number) < 0
+    || !(body.leadTimeDays === null || (Number.isInteger(body.leadTimeDays) && (body.leadTimeDays as number) >= 1))
+    || ((body.total as number) > 0 && body.leadTimeDays === null)
+    || !Array.isArray(body.items) || body.items.length > 100 || !body.items.every((item: unknown) => {
+      if (!item || typeof item !== 'object') return false;
+      const row = item as Record<string, unknown>;
+      return typeof row.poNumber === 'string' && row.poNumber.trim().length > 0 && row.poNumber.length <= 40
+        && typeof row.supplierName === 'string' && typeof row.createdAt === 'string' && Number.isFinite(Date.parse(row.createdAt))
+        && Number.isInteger(row.lateDays) && (row.lateDays as number) >= 1
+        && Number.isInteger(row.dueLines) && (row.dueLines as number) >= 1;
+    })) throw new Error('Invalid late purchase orders');
+  return body as LatePos;
+}
+
+async function copyLatePo(po: LatePo): Promise<boolean> {
+  const text = `${po.supplierName} – ${po.poNumber}, ${po.lateDays} ${po.lateDays === 1 ? 'day' : 'days'} late`;
+  try { await navigator.clipboard.writeText(text); return true; } catch { /* Try the older clipboard API. */ }
+  const field = document.createElement('textarea');
+  try {
+    field.value = text;
+    field.style.position = 'fixed';
+    field.style.opacity = '0';
+    document.body.appendChild(field);
+    field.select();
+    // oxlint-disable-next-line typescript/no-deprecated -- Fallback when the clipboard API is unavailable.
+    if (document.execCommand('copy')) return true;
+  } catch { /* Copying is optional. */ }
+  finally { field.remove(); }
+  return false;
+}
+
 // Keep the exact command as well as its key until the server gives a definite result.
 function usePurchaseOrderWrite(onConflict: () => void, conflictMessage = 'This purchase order changed. Reload.') {
   const pending = useRef<{ action: string; payload: Record<string, unknown> } | null>(null);
@@ -246,7 +282,7 @@ function TallyReceiveSheet({ po, onClose, onRefresh, onConflict }: { po: Purchas
   </PurchaseOrderSheet>;
 }
 
-function PurchaseOrderCard({ po, tallyCount, onRefresh, onConflict, autoReceive, onAutoReceiveDone }: { po: PurchaseOrder; tallyCount: number; onRefresh: () => void; onConflict: () => void; autoReceive?: boolean; onAutoReceiveDone: () => void }) {
+function PurchaseOrderCard({ po, tallyCount, lateDays, onRefresh, onConflict, autoReceive, onAutoReceiveDone }: { po: PurchaseOrder; tallyCount: number; lateDays?: number; onRefresh: () => void; onConflict: () => void; autoReceive?: boolean; onAutoReceiveDone: () => void }) {
   const [expanded, setExpanded] = useState(false);
   const [mode, setMode] = useState<'receive' | 'cancel' | null>(null);
   const [reason, setReason] = useState('');
@@ -285,7 +321,7 @@ function PurchaseOrderCard({ po, tallyCount, onRefresh, onConflict, autoReceive,
   }, [autoReceive]);
   return <article className="min-w-0 space-y-2 rounded-lg border border-sf-line bg-sf-soft-0 p-3" aria-label={po.poNumber}>
     <button className="min-h-11 w-full min-w-0 text-left" aria-label={`Details for ${po.poNumber}`} aria-expanded={expanded} onClick={() => setExpanded(!expanded)}><strong className="break-words">{po.poNumber}</strong><span className="mt-1 block break-words">{po.supplierName}</span></button>
-    <div className="flex flex-wrap items-center gap-2 text-xs text-sf-muted"><span className="rounded-full bg-sf-soft-2 px-2 py-1">{po.status[0].toUpperCase() + po.status.slice(1)}</span><span>Created {date(po.createdAt)}</span><span>{po.lines.length} {po.lines.length === 1 ? 'item' : 'items'}</span></div>
+    <div className="flex flex-wrap items-center gap-2 text-xs text-sf-muted"><span className="rounded-full bg-sf-soft-2 px-2 py-1">{po.status[0].toUpperCase() + po.status.slice(1)}</span>{po.status === 'open' && lateDays ? <span className="rounded-full border border-sf-danger px-2 py-1 text-sf-danger">{lateDays} {lateDays === 1 ? 'day' : 'days'} late</span> : null}<span>Created {date(po.createdAt)}</span><span>{po.lines.length} {po.lines.length === 1 ? 'item' : 'items'}</span></div>
     {po.status === 'open' && tallyCount > 0 ? <span className="inline-block rounded-full bg-sf-soft-2 px-2 py-1 text-xs text-sf-muted">Tally shows a receipt</span> : null}
     {po.sharedAt ? <p className="text-xs text-sf-muted">Shared {date(po.sharedAt)}</p> : null}
     {expanded ? <ul className="space-y-2 text-sm">{po.lines.map((line) => <li key={line.itemKey} className="break-words">{line.itemName} — {line.quantity} {line.unit}{line.receivedQuantity > 0 ? ` · received ${line.receivedQuantity}` : ''}{Object.hasOwn(line, 'rate') ? ` · ₹${line.rate ?? '—'}` : ''}</li>)}</ul> : null}
@@ -331,6 +367,10 @@ export function PurchaseOrdersPanel({ refreshKey, onChanged }: { refreshKey: num
   const [status, setStatus] = useState<PurchaseOrder['status']>('open');
   const [items, setItems] = useState<PurchaseOrder[]>([]);
   const [tallyCounts, setTallyCounts] = useState<Record<string, number>>({});
+  const [latePos, setLatePos] = useState<LatePos | null>(null);
+  const [showLate, setShowLate] = useState(false);
+  const [copiedPo, setCopiedPo] = useState<string | null>(null);
+  const copiedTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
   const [page, setPage] = useState(1);
   const [more, setMore] = useState(false);
   const [loading, setLoading] = useState(false);
@@ -344,6 +384,19 @@ export function PurchaseOrdersPanel({ refreshKey, onChanged }: { refreshKey: num
     request.current?.abort();
     const controller = new AbortController(); request.current = controller;
     setLoading(true); setError('');
+    if (nextPage === 1) {
+      setLatePos(null);
+      void (async () => {
+      try {
+        const response = await fetch('/api/requirements?view=late_pos', { cache: 'no-store', signal: controller.signal });
+        if (!response.ok) throw new Error('Late purchase orders unavailable');
+        const body = parseLatePos(await readJsonBody<unknown>(response));
+        if (!controller.signal.aborted) setLatePos(body);
+      } catch {
+        if (!controller.signal.aborted) setLatePos(null);
+      }
+      })();
+    }
     try {
       const response = await fetch(`/api/purchase-orders?page=${nextPage}&status=${filter}`, { cache: 'no-store', signal: controller.signal });
       const body = await readJsonBody<{ items: PurchaseOrder[]; total?: number; error?: string }>(response);
@@ -391,12 +444,28 @@ export function PurchaseOrdersPanel({ refreshKey, onChanged }: { refreshKey: num
   function refresh() { setReload((value) => value + 1); onChanged(); }
   return <section aria-label="Purchase orders" className="mt-3 min-w-0 space-y-3 rounded-xl border border-sf-line-soft bg-sf-soft p-3 text-sf-body">
     <div className="flex flex-wrap items-center justify-between gap-2"><h2 className="text-sm font-bold">Purchase orders</h2><button className={button} aria-label={'Refresh\u0020purchase orders'} disabled={loading} onClick={() => setReload((value) => value + 1)}>Refresh</button></div>
-    <div className="flex flex-wrap gap-2">{(['open', 'received', 'cancelled'] as const).map((value) => <button key={value} className={status === value ? 'min-h-11 rounded-lg border border-sf-ink bg-sf-ink px-3 text-sm font-semibold text-sf-soft-0' : button} aria-pressed={status === value} onClick={() => { if (status !== value) { request.current?.abort(); setLoading(true); setPage(1); setItems([]); setMore(false); setConflict(''); setStatus(value); } }}>{value[0].toUpperCase() + value.slice(1)}</button>)}</div>
+    <div className="flex flex-wrap gap-2">{(['open', 'received', 'cancelled'] as const).map((value) => <button key={value} className={status === value ? 'min-h-11 rounded-lg border border-sf-ink bg-sf-ink px-3 text-sm font-semibold text-sf-soft-0' : button} aria-pressed={status === value} onClick={() => { if (status !== value) { request.current?.abort(); setLoading(true); setPage(1); setItems([]); setMore(false); setConflict(''); setStatus(value); } }}>{value[0].toUpperCase() + value.slice(1)}</button>)}{latePos && latePos.total > 0 ? <button className={button.replace('text-sf-body', 'text-sf-danger').replace('border-sf-line', showLate ? 'border-sf-danger' : 'border-sf-line')} aria-pressed={showLate} onClick={() => setShowLate(!showLate)}>{latePos.total} late</button> : null}</div>
+    {latePos && latePos.total > 0 && showLate ? <section aria-label="Late purchase orders" className="min-w-0 space-y-3 rounded-lg border border-sf-line p-3">
+      <div><h3 className="text-sm font-bold">Late purchase orders</h3><p className="text-sm text-sf-muted">Open longer than the {latePos.leadTimeDays}-day delivery time.</p></div>
+      <ul className="min-w-0 space-y-3">{latePos.items.map((po) => <li key={po.poNumber} className="min-w-0 space-y-1">
+        <p className="break-words text-sm [overflow-wrap:anywhere]">{po.poNumber} · {po.supplierName}</p>
+        <p className="text-sm text-sf-muted">{po.lateDays} {po.lateDays === 1 ? 'day' : 'days'} late · {po.dueLines} {po.dueLines === 1 ? 'line' : 'lines'} due</p>
+        <button className={button} onClick={async () => {
+          const copied = await copyLatePo(po);
+          if (!copied) return;
+          setCopiedPo(po.poNumber);
+          if (copiedTimer.current) clearTimeout(copiedTimer.current);
+          copiedTimer.current = setTimeout(() => setCopiedPo((current) => current === po.poNumber ? null : current), 2000);
+        }}>{copiedPo === po.poNumber ? 'Copied' : 'Copy supplier and PO'}</button>
+        {copiedPo === po.poNumber ? <span className="sr-only" aria-live="polite">Copied supplier and purchase order.</span> : null}
+      </li>)}</ul>
+      {latePos.total > latePos.items.length ? <p className="text-sm text-sf-muted">Showing the 100 most late</p> : null}
+    </section> : null}
     <UnlinkedReceipts refreshKey={refreshKey + reload} onOpenPo={openPo} />
     {poNotice ? <p className="text-sm text-sf-muted">{poNotice}</p> : null}
     {error ? <p role="alert" className="text-sm text-sf-danger">{error}</p> : null}
     {conflict ? <p role="alert" className="text-sm text-sf-danger">{conflict}</p> : null}
-    {items.map((po) => <PurchaseOrderCard key={po.id} po={po} tallyCount={tallyCounts[po.id] ?? 0} autoReceive={focusPo?.id === po.id} onAutoReceiveDone={() => setFocusPo(null)} onRefresh={refresh} onConflict={() => { setConflict('This purchase order changed. Reload.'); refresh(); }} />)}
+    {items.map((po) => <PurchaseOrderCard key={po.id} po={po} tallyCount={tallyCounts[po.id] ?? 0} lateDays={latePos?.items.find((late) => late.poNumber === po.poNumber)?.lateDays} autoReceive={focusPo?.id === po.id} onAutoReceiveDone={() => setFocusPo(null)} onRefresh={refresh} onConflict={() => { setConflict('This purchase order changed. Reload.'); refresh(); }} />)}
     {loading ? <p className="text-sm text-sf-muted">Loading purchase orders…</p> : !items.length && !error ? <p className="text-sm text-sf-muted">No {status} purchase orders.</p> : null}
     {more ? <button className={button} disabled={loading} onClick={() => void load(page + 1, status)}>Load more</button> : null}
   </section>;

@@ -231,6 +231,50 @@ test('Stock shows one PO with age, multiple POs with count, and no line for abse
   await expect(page.locator('.group-item').filter({ hasText: 'Test reagent C' }).locator('.gi-onpo')).toHaveCount(0);
 });
 
+for (const [lateDays, poCount, latePoNumber, expected] of [
+  [3, 1, 'PO/26-27/0007', 'On PO 10 · PO/26-27/0007 · 3 days late'],
+  [1, 1, 'PO/26-27/0007', 'On PO 10 · PO/26-27/0007 · 1 day late'],
+  [3, 2, 'PO/26-27/0005', 'On PO 15 · 2 POs · PO/26-27/0005 3 days late'],
+  [0, 1, null, 'On PO 10 · PO/26-27/0007 · 4 days ago'],
+] as const) {
+  test(`Stock shows ${lateDays} late days for ${poCount} POs`, async ({ page }) => {
+    await page.route('**/api/requirements?view=on_po', (route) => route.fulfill({ json: {
+      view: 'on_po', items: [{ ...onPoItem('Test reagent A', poCount, poCount === 2 ? 15 : 10), lateDays, latePoNumber }],
+    } }));
+    await openStockDashboard(page, coverStockPayload());
+    await expect(page.locator('#refresh')).toBeEnabled();
+    await page.locator('#groupCards summary').click();
+    const line = page.locator('.group-item').filter({ hasText: 'Test reagent A' }).locator('.gi-onpo');
+    await expect(line).toHaveText(expected);
+    if (lateDays > 0) await expect(line).toHaveClass('gi-onpo late');
+    else await expect(line).not.toHaveClass(/late/);
+  });
+}
+
+for (const lateDays of [-1, 'x']) {
+  test(`Stock rejects invalid lateDays ${lateDays} for the whole on-PO body`, async ({ page }) => {
+    await page.route('**/api/requirements?view=on_po', (route) => route.fulfill({ json: {
+      view: 'on_po', items: [onPoItem('Test reagent B'), { ...onPoItem('Test reagent A'), lateDays, latePoNumber: 'PO/26-27/0007' }],
+    } }));
+    await openStockDashboard(page, coverStockPayload());
+    await expect(page.locator('#refresh')).toBeEnabled();
+    await page.locator('#groupCards summary').click();
+    await expect(page.locator('.group-item')).toHaveCount(3);
+    await expect(page.locator('.gi-onpo')).toHaveCount(0);
+  });
+}
+
+test('Stock rejects lateDays without a valid late PO number', async ({ page }) => {
+  await page.route('**/api/requirements?view=on_po', (route) => route.fulfill({ json: {
+    view: 'on_po', items: [{ ...onPoItem('Test reagent A'), lateDays: 2, latePoNumber: null }],
+  } }));
+  await openStockDashboard(page, coverStockPayload());
+  await expect(page.locator('#refresh')).toBeEnabled();
+  await page.locator('#groupCards summary').click();
+  await expect(page.locator('.group-item')).toHaveCount(3);
+  await expect(page.locator('.gi-onpo')).toHaveCount(0);
+});
+
 for (const invalid of ['server failure', 'invalid body']) {
   test(`on-PO ${invalid} silently leaves Stock rows available`, async ({ page }) => {
     await page.route('**/api/requirements?view=on_po', (route) => route.fulfill({
