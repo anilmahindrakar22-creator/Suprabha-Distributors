@@ -6,6 +6,7 @@ import { readJsonBody } from '@/lib/http-json';
 import { canManagePurchaseOrders } from '@/lib/order-permissions';
 import type { StockFlowRole } from '@/lib/user-types';
 import { PurchaseOrderReview } from './purchase-orders-panel';
+import type { StockPoDraftItem } from '@/lib/stockflow-navigation';
 
 import { toOrderReasonText, toOrderStockText, type ToOrderItem, type ToOrderResponse } from '@/lib/to-order';
 
@@ -54,12 +55,29 @@ function displayDate(value: string | null) {
   return date.toLocaleString('en-IN', { dateStyle: 'medium', timeStyle: 'short', timeZone: 'Asia/Kolkata' });
 }
 
-export function ProcurementRequirements({ onOpenOrder, roles = [], refreshKey = 0, onPurchaseOrdersCreated }: { onOpenOrder?: (orderId: string, orderNumber: string) => void; roles?: readonly StockFlowRole[]; refreshKey?: number; onPurchaseOrdersCreated?: () => void } = {}) {
+function toStockDraftItem({ itemKey, quantity }: StockPoDraftItem): ToOrderItem {
+  return { itemKey, itemName: itemKey, group: null, closing: null, reorderLevel: null, minimumOrder: null,
+    tallyOpenPurchase: null, openDemand: 0, waitingOrders: 0, oldestOrderAt: null, reasons: [],
+    state: 'order', suggestedQty: Math.max(1, Math.ceil(quantity)), lowestSupplier: null };
+}
+
+export function ProcurementRequirements({ onOpenOrder, roles = [], refreshKey = 0, onPurchaseOrdersCreated, stockPoDraft, onStockPoDraftUsed }: { onOpenOrder?: (orderId: string, orderNumber: string) => void; roles?: readonly StockFlowRole[]; refreshKey?: number; onPurchaseOrdersCreated?: () => void; stockPoDraft?: { nonce: number; items: StockPoDraftItem[] } | null; onStockPoDraftUsed?: () => void } = {}) {
   const permitted = canManagePurchaseOrders(roles);
   const [selected, setSelected] = useState<ToOrderItem[]>([]);
   const [review, setReview] = useState(false);
-  const [openGroups, setOpenGroups] = useState<Set<string>>(() => new Set());
   const [success, setSuccess] = useState('');
+  const [fromStock, setFromStock] = useState(false);
+  const handledStockNonce = useRef<number | null>(null);
+  useEffect(() => {
+    if (!permitted || !stockPoDraft?.items.length || handledStockNonce.current === stockPoDraft.nonce) return;
+    handledStockNonce.current = stockPoDraft.nonce;
+    setSelected(stockPoDraft.items.map(toStockDraftItem));
+    setFromStock(true);
+    setSuccess('');
+    setReview(true);
+    onStockPoDraftUsed?.();
+  }, [stockPoDraft, permitted, onStockPoDraftUsed]);
+  const [openGroups, setOpenGroups] = useState<Set<string>>(() => new Set());
   const [page, setPage] = useState(1);
   const [result, setResult] = useState<ToOrderResponse | null>(null);
   const [loading, setLoading] = useState(false);
@@ -283,9 +301,9 @@ export function ProcurementRequirements({ onOpenOrder, roles = [], refreshKey = 
       <span className="text-sm font-semibold text-sf-body">{selected.length} selected</span>
       <button type="button" className="min-h-12 rounded-lg bg-sf-ink px-3 text-sm font-bold text-sf-soft-0" onClick={() => setReview(true)}>Create purchase order{new Set(selected.map((item) => item.lowestSupplier?.supplierName ?? '')).size > 1 ? 's' : ''}</button>
     </div> : null}
-    {permitted && review ? <PurchaseOrderReview items={selected} onClose={() => setReview(false)} onConflict={() => { void load(1); onPurchaseOrdersCreated?.(); }} onCreated={(orders) => {
+    {permitted && review ? <PurchaseOrderReview items={selected} preferLowest={fromStock} onClose={() => { setReview(false); if (fromStock) { setSelected([]); setFromStock(false); } }} onConflict={() => { void load(1); onPurchaseOrdersCreated?.(); }} onCreated={(orders) => {
       setSuccess(`Created ${orders.map((order) => order.poNumber).join(', ')}`);
-      setReview(false); setSelected([]); void load(1); onPurchaseOrdersCreated?.();
+      setReview(false); setSelected([]); setFromStock(false); void load(1); onPurchaseOrdersCreated?.();
     }} /> : null}
     {result ? <div className="mt-3 flex flex-wrap gap-2 text-xs font-semibold text-sf-label">
       <span className="rounded-full bg-sf-soft-2 px-3 py-2">{result.total} to order</span>

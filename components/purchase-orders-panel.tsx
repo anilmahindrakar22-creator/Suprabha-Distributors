@@ -99,7 +99,7 @@ function PurchaseOrderSheet({ title, locked, onClose, children }: { title: strin
 }
 
 type ReviewLine = { item: ToOrderItem; quantity: string; supplierName: string; options: SupplierOption[] | null; error: string };
-export function PurchaseOrderReview({ items, onClose, onCreated, onConflict }: { items: ToOrderItem[]; onClose: () => void; onCreated: (orders: PurchaseOrder[]) => void; onConflict: () => void }) {
+export function PurchaseOrderReview({ items, onClose, onCreated, onConflict, preferLowest }: { items: ToOrderItem[]; onClose: () => void; onCreated: (orders: PurchaseOrder[]) => void; onConflict: () => void; preferLowest?: boolean }) {
   const [lines, setLines] = useState<ReviewLine[]>(() => items.map((item) => ({ item, quantity: String(item.suggestedQty ?? 1), supplierName: item.lowestSupplier?.supplierName ?? '', options: null, error: '' })));
   const command = usePurchaseOrderWrite(onConflict);
   const [attempt, setAttempt] = useState(0);
@@ -111,13 +111,13 @@ export function PurchaseOrderReview({ items, onClose, onCreated, onConflict }: {
         const body = await readJsonBody<{ suppliers: SupplierOption[]; error?: string }>(response);
         if (!response.ok || !Array.isArray(body.suppliers)) throw new Error(body.error || 'Suppliers could not be loaded.');
         const options = [...body.suppliers].sort((a, b) => Number(b.lowest) - Number(a.lowest));
-        if (!controller.signal.aborted) setLines((previous) => previous.map((line) => line.item.itemKey === item.itemKey ? { ...line, options, error: '', supplierName: options.some((option) => option.supplierName === line.supplierName) ? line.supplierName : item.lowestSupplier ? options[0]?.supplierName ?? '' : '' } : line));
+        if (!controller.signal.aborted) setLines((previous) => previous.map((line) => line.item.itemKey === item.itemKey ? { ...line, options, error: '', supplierName: preferLowest ? line.supplierName || options.find((option) => option.lowest === true)?.supplierName || '' : options.some((option) => option.supplierName === line.supplierName) ? line.supplierName : item.lowestSupplier ? options[0]?.supplierName ?? '' : '' } : line));
       } catch (cause) {
         if (!controller.signal.aborted) setLines((previous) => previous.map((line) => line.item.itemKey === item.itemKey ? { ...line, error: cause instanceof Error ? cause.message : 'Suppliers could not be loaded.' } : line));
       }
     }));
     return () => controller.abort();
-  }, [items, attempt]);
+  }, [items, attempt, preferLowest]);
   function update(key: string, change: Partial<ReviewLine>) { setLines((previous) => previous.map((line) => line.item.itemKey === key ? { ...line, ...change } : line)); }
   const eligible = lines.filter((line) => line.options?.length && line.supplierName);
   const count = new Set(eligible.map((line) => line.supplierName)).size;

@@ -52,6 +52,7 @@ function Fixture() {
   if (parameters.get('view') === 'product-requests') return <ProductRequestInbox />;
   if (parameters.get('view') === 'product-request-recovery') return <ProductRequest actorEmail={parameters.get('actor') || 'sales@example.test'} productName="Missing reagent" visible />;
   if (parameters.get('view') === 'requirements') return <ProcurementRequirements />;
+  if (parameters.get('view') === 'requirements-stock-draft') return <ProcurementRequirements roles={['management']} stockPoDraft={{ nonce: 1, items: [{ itemKey: 'Test Reagent A', quantity: 4.2 }, { itemKey: 'Test Reagent B', quantity: 2 }] }} onStockPoDraftUsed={() => { const target = window as typeof window & { __stockDraftUsed?: number }; target.__stockDraftUsed = (target.__stockDraftUsed ?? 0) + 1; }} />;
   const data: OrderBootstrap = {
       actor: { email: parameters.get('actor') || 'order-desk@example.test', role: 'sales' },
       snapshot: { company: 'TEST', fetchedAt: new Date().toISOString(), catalog: [

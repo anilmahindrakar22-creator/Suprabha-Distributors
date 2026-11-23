@@ -1,4 +1,4 @@
-import { expect, test } from '@playwright/test';
+import { expect, test, type Page } from '@playwright/test';
 
 const stockPayload = (sourceFetchedAtIso?: Record<string, unknown>) => ({
   company: 'Test company',
@@ -8,6 +8,98 @@ const stockPayload = (sourceFetchedAtIso?: Record<string, unknown>) => ({
   rows: [] as Array<{ group: string; item: string; closing: number; reorderLevel: number; minimumOrder: number; shortfall: number; orderToBePlaced: number; lastSuppliedParty?: string; lastSuppliedQty?: number | null; lastSuppliedDate?: string }>,
   groups: [] as string[],
   ...(sourceFetchedAtIso ? { sourceFetchedAtIso } : {}),
+});
+
+async function stockPoHarness(page: Page, canCreatePo?: boolean, longName = false) {
+  const messages: unknown[] = [];
+  const payload = coverStockPayload();
+  payload.rows[0].orderToBePlaced = 4.2;
+  if (longName) payload.rows[0].item = 'Very long reagent name that wraps across several lines on a small phone screen';
+  await page.exposeFunction('captureStockPoMessage', (message: unknown) => messages.push(message));
+  await page.addInitScript(() => {
+    if (window.parent !== window) return;
+    window.addEventListener('message', event => {
+      if (event.origin === location.origin && event.data?.type === 'stockflow-create-po') {
+        void (window as unknown as { captureStockPoMessage: (message: unknown) => Promise<void> }).captureStockPoMessage(event.data);
+      }
+    });
+  });
+  await page.route('**/stock-po-test', route => route.fulfill({ contentType: 'text/html', body:
+    '<meta name="viewport" content="width=device-width,initial-scale=1"><style>html,body{margin:0;height:100%;overflow:hidden}iframe{width:100%;height:100%;border:0;display:block}</style><iframe src="/stockflow.html"></iframe>',
+  }));
+  await page.route('**/api/stock?view=dashboard', route => route.fulfill({ json: payload }));
+  await page.route('**/api/orders?summary=1', route => route.fulfill({ json: {} }));
+  await page.route('**/api/requirements?view=cover', route => route.fulfill({ json: {
+    view: 'cover', leadTimeDays: 7, salesThrough: '2026-11-18', runsOutCount: 2,
+    items: payload.rows.map((row, index) => ({ itemKey: row.item, state: index < 2 ? 'runs_out' : 'ok', daysLeft: index + 1 })),
+  } }));
+  await page.goto('/stock-po-test');
+  const stock = page.frameLocator('iframe');
+  await expect(stock.locator('#refresh')).toBeEnabled();
+  await expect(stock.locator('#company')).toHaveText('Test company');
+  await page.evaluate(allowed => document.querySelector('iframe')?.contentWindow?.postMessage({
+    type: 'stockflow-cache-account', email: 'stock-po@example.test', ...(allowed === undefined ? {} : { canCreatePo: allowed }),
+  }, location.origin), canCreatePo);
+  if (canCreatePo) await expect(stock.locator('.gi-pick')).toHaveCount(3);
+  await stock.locator('#groupCards summary').click();
+  return { stock, payload, messages };
+}
+
+for (const allowed of [false, undefined]) {
+  test(`Stock has no PO controls when access is ${String(allowed)}`, async ({ page }) => {
+    const { stock } = await stockPoHarness(page, allowed);
+    await expect(stock.locator('.gi-pick')).toHaveCount(0);
+    await expect(stock.locator('#poBar')).toBeHidden();
+    await expect(stock.locator('#pickRunsOut')).toHaveCount(0);
+  });
+}
+
+test('Stock creates a draft from two ticks and clears the bar', async ({ page }) => {
+  const { stock, payload, messages } = await stockPoHarness(page, true);
+  for (const row of payload.rows.slice(0, 2)) await stock.getByRole('checkbox', { name: `Select ${row.item} for a purchase order`, exact: true }).check();
+  await expect(stock.locator('#poCount')).toHaveText('2 selected');
+  await stock.getByRole('button', { name: 'Create PO', exact: true }).click();
+  await expect.poll(() => messages).toEqual([{ type: 'stockflow-create-po', items: payload.rows.slice(0, 2).map(row => ({ itemKey: row.item, quantity: Math.ceil(row.orderToBePlaced) })) }]);
+  await expect(stock.locator('#poBar')).toBeHidden();
+  await expect(stock.locator('input[data-pick]:checked')).toHaveCount(0);
+});
+
+test('Stock selects exactly the rows that run out before delivery', async ({ page }) => {
+  const { stock, payload } = await stockPoHarness(page, true);
+  await stock.getByRole('button', { name: 'Select all that run out before delivery', exact: true }).click();
+  await expect(stock.locator('input[data-pick]:checked')).toHaveCount(2);
+  for (const row of payload.rows.slice(0, 2)) await expect(stock.getByRole('checkbox', { name: `Select ${row.item} for a purchase order`, exact: true })).toBeChecked();
+  await expect(stock.locator('#poCount')).toHaveText('2 selected');
+});
+
+test('Stock Clear empties the ticks and hides the bar', async ({ page }) => {
+  const { stock } = await stockPoHarness(page, true);
+  await stock.locator('input[data-pick]').first().check();
+  await stock.getByRole('button', { name: 'Clear', exact: true }).click();
+  await expect(stock.locator('input[data-pick]:checked')).toHaveCount(0);
+  await expect(stock.locator('#poBar')).toBeHidden();
+});
+
+test('Stock PO controls fit a phone and the bar leaves the last row reachable', async ({ page }) => {
+  await page.setViewportSize({ width: 375, height: 812 });
+  const { stock, payload } = await stockPoHarness(page, true, true);
+  expect(await stock.locator('body').evaluate(() => innerWidth)).toBeLessThanOrEqual(375);
+  const row = stock.locator('.group-item').filter({ has: stock.getByRole('button', { name: payload.rows[0].item, exact: true }) });
+  await row.locator('input').check();
+  const name = await row.locator('.gi-name').boundingBox();
+  const pill = await row.locator('.gi-order').boundingBox();
+  const tick = await row.locator('.gi-pick input').boundingBox();
+  expect(Math.abs(pill!.y - name!.y)).toBeLessThanOrEqual(4);
+  expect(tick!.x + tick!.width).toBeLessThanOrEqual(name!.x);
+  expect(pill!.x).toBeGreaterThan(name!.x);
+  expect(name!.height).toBeGreaterThan(pill!.height);
+  expect(Math.abs(tick!.y + tick!.height / 2 - (name!.y + 10))).toBeLessThanOrEqual(4);
+  const last = stock.locator('.group-item').last();
+  await last.evaluate(() => window.scrollTo(0, document.documentElement.scrollHeight));
+  await expect(last).toBeInViewport();
+  const lastBox = await last.boundingBox(), barBox = await stock.locator('#poBar').boundingBox();
+  expect(lastBox!.y + lastBox!.height).toBeLessThanOrEqual(barBox!.y);
+  expect(await stock.locator('body').evaluate(() => document.documentElement.scrollWidth <= innerWidth)).toBe(true);
 });
 
 test.beforeEach(async ({ page }) => {

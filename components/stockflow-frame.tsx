@@ -12,7 +12,8 @@ import { BellIcon } from './order-list';
 import { startWorkNotifications, workQueuesForRoles, type WorkItem, type WorkNotificationState } from '@/lib/work-notifications';
 import { currentPushState, disablePush, disablePushBeforeSignOut, enablePush, loadPushConfig, readOpenOrderLink, readOpenOrderMessage, retryPendingPushRemoval, type PushConfig, type PushState } from '@/lib/push-subscription';
 import Image from 'next/image';
-import { readOrderDashboardMessage, readRequestsDashboardMessage } from '@/lib/stockflow-navigation';
+import { readOrderDashboardMessage, readRequestsDashboardMessage, readStockPoDraftMessage, type StockPoDraftItem } from '@/lib/stockflow-navigation';
+import { canManagePurchaseOrders } from '@/lib/order-permissions';
 import { prepareDeviceForAccount } from '@/lib/device-account-privacy';
 import { hasAnyStockFlowRole, type StockFlowRole } from '@/lib/user-types';
 import { revokeOfflineVault } from '@/lib/offline-vault-storage';
@@ -51,6 +52,12 @@ function SectionLoading() {
 export function StockFlowFrame({ actorEmail, actorRole, actorRoles, staffAuth = false, staffEmailActionsEnabled = false }: { actorEmail: string; actorRole: string; actorRoles?: StockFlowRole[]; staffAuth?: boolean; staffEmailActionsEnabled?: boolean }) {
   const roles = actorRoles ?? [actorRole as StockFlowRole];
   const rolesKey = roles.join(',');
+  const canCreatePo = canManagePurchaseOrders(roles);
+  const stockFrameRef = useRef<HTMLIFrameElement>(null);
+  const [stockPoDraft, setStockPoDraft] = useState<{ nonce: number; items: StockPoDraftItem[] } | null>(null);
+  useEffect(() => {
+    stockFrameRef.current?.contentWindow?.postMessage({ type: 'stockflow-cache-account', email: actorEmail, canCreatePo }, window.location.origin);
+  }, [actorEmail, canCreatePo]);
   const canSeeToday = hasAnyStockFlowRole(roles, ['administrator', 'management']);
   const [surface, setSurface] = useState<Surface>(() => canSeeToday ? 'today' : 'stock');
   const desktopNavRef = useRef<HTMLElement>(null);
@@ -214,6 +221,14 @@ export function StockFlowFrame({ actorEmail, actorRole, actorRoles, staffAuth = 
   useEffect(() => {
     function receiveDashboardNavigation(event: MessageEvent) {
       if (event.origin !== window.location.origin) return;
+      const draft = readStockPoDraftMessage(event.data);
+      if (draft) {
+        if (canCreatePo) {
+          setStockPoDraft(current => ({ nonce: (current?.nonce ?? 0) + 1, items: draft.items }));
+          setSurface('requests');
+        }
+        return;
+      }
       if (readRequestsDashboardMessage(event.data)) {
         setSurface('requests');
         return;
@@ -225,7 +240,7 @@ export function StockFlowFrame({ actorEmail, actorRole, actorRoles, staffAuth = 
     }
     window.addEventListener('message', receiveDashboardNavigation);
     return () => window.removeEventListener('message', receiveDashboardNavigation);
-  }, []);
+  }, [canCreatePo]);
 
   // Work notifications: one foreground checker per session. Starts a few seconds after load so it never competes
   // with the first Stock request on a phone.
@@ -460,16 +475,17 @@ export function StockFlowFrame({ actorEmail, actorRole, actorRoles, staffAuth = 
           <TodayWorkspace onOpen={target => void openTodayTarget(target)} onShowAll={showTodayQueue} />
         ) : surface === 'stock' ? (
           <iframe
+            ref={stockFrameRef}
             title="Suprabha stock dashboard"
             src="/stockflow.html"
             className="block h-full w-full border-0"
             allow="clipboard-write"
-            onLoad={(event) => event.currentTarget.contentWindow?.postMessage({ type: 'stockflow-cache-account', email: actorEmail }, window.location.origin)}
+            onLoad={(event) => event.currentTarget.contentWindow?.postMessage({ type: 'stockflow-cache-account', email: actorEmail, canCreatePo }, window.location.origin)}
           />
         ) : surface === 'orders' ? (
           <Suspense fallback={<SectionLoading />}><OrderWorkspace key={`${orderFilter}:${orderView.nonce}`} actorEmail={actorEmail} initialStatus={orderFilter} initialQuery={orderView.query} focusOrder={orderView.focus} newOrderIds={newOrderIds} onOrderActed={() => workService.current?.reconcile()} /></Suspense>
         ) : surface === 'requests' ? (
-          <Suspense fallback={<SectionLoading />}><RequestsWorkspace roles={roles} onOpenOrder={(orderId, orderNumber) => openOrder({ orderId, orderNumber })} /></Suspense>
+          <Suspense fallback={<SectionLoading />}><RequestsWorkspace roles={roles} onOpenOrder={(orderId, orderNumber) => openOrder({ orderId, orderNumber })} stockPoDraft={stockPoDraft} onStockPoDraftUsed={() => setStockPoDraft(null)} /></Suspense>
         ) : surface === 'accounts' && hasAnyStockFlowRole(roles, ['administrator', 'management', 'sales', 'operations']) ? (
           <Suspense fallback={<SectionLoading />}><AccountsWorkspace key={accountsOpen.nonce} defaultMode={hasAnyStockFlowRole(roles, ['administrator', 'management']) ? 'all' : 'mine'} initialView={accountsOpen.view} initialCustomerId={accountsOpen.customerId} initialWalletView={accountsOpen.walletView} onOpenOrder={openOrder} onNewOrder={id => void openMapOrder(id)} /></Suspense>
         ) : surface === 'pricing' ? (
