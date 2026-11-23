@@ -103,6 +103,7 @@ test('Stock PO controls fit a phone and the bar leaves the last row reachable', 
 });
 
 test.beforeEach(async ({ page }) => {
+  await page.route('**/api/requirements?view=reorder_check', route => route.fulfill({ json: emptyReorderCheck() }));
   await page.route('**/api/requirements?view=on_po', (route) => route.fulfill({ json: { view: 'on_po', items: [] } }));
   await page.route('**/api/requirements?view=idle&page=*', (route) => route.fulfill({
     json: idlePayload(Number(new URL(route.request().url()).searchParams.get('page'))),
@@ -113,6 +114,105 @@ test.beforeEach(async ({ page }) => {
   await page.route('**/api/requirements?view=to_order&page=1', (route) => route.fulfill({
     json: { view: 'to_order', total: 21, waitingCount: 6, unknownCount: 0, page: 1, pageSize: 25, items: [] },
   }));
+});
+
+const emptyReorderCheck = () => ({
+  view: 'reorder_check', coverDays: 60, windowDays: 90, salesThrough: null,
+  shortCount: 0, levelCount: 0, short: [] as Array<{ itemKey: string; closing: number; onOrder: number; target: number; usedLast90: number; daysCover: number }>,
+  level: [] as Array<{ itemKey: string; reorderLevel: number; target: number; usedLast90: number; direction: string }>,
+});
+const reorderCheckPayload = (name = 'Short reagent') => ({
+  ...emptyReorderCheck(), shortCount: 1, levelCount: 2,
+  short: [{ itemKey: name, closing: 5, onOrder: 0, target: 20, usedLast90: 30, daysCover: 15 }],
+  level: [
+    { itemKey: 'Low reagent', reorderLevel: 5, target: 20, usedLast90: 30, direction: 'low' },
+    { itemKey: 'High reagent', reorderLevel: 100, target: 20, usedLast90: 30, direction: 'high' },
+  ],
+});
+
+for (const allowed of [false, undefined]) {
+  test('reorder checks are never requested with PO access ' + String(allowed), async ({ page }) => {
+    const requests: string[] = [];
+    page.on('request', request => { if (request.url().includes('view=reorder_check')) requests.push(request.url()); });
+    const { stock } = await stockPoHarness(page, allowed);
+    await expect(stock.locator('[data-action="levels"]')).toBeHidden();
+    await stock.locator('#refresh').click();
+    await expect(stock.locator('#refresh')).toBeEnabled();
+    expect(requests).toEqual([]);
+  });
+}
+
+test('reorder checks show both lists and switch between levels, groups and idle', async ({ page }) => {
+  await page.route('**/api/requirements?view=reorder_check', route => route.fulfill({ json: reorderCheckPayload() }));
+  const { stock } = await stockPoHarness(page, true);
+  const chip = stock.locator('[data-action="levels"]');
+  await expect(chip.locator('strong')).toHaveText('3 levels to check');
+  await expect(chip.locator('small')).toHaveText('target 60 days of sales');
+  await chip.click();
+  await expect(chip).toHaveAttribute('aria-pressed', 'true');
+  await expect(chip).toHaveClass(/is-selected/);
+  await expect(stock.getByRole('heading', { name: 'Reorder levels to check', exact: true })).toBeVisible();
+  await expect(stock.locator('#levelsView .panel-head p')).toHaveText("Target: 60 days of sales, from the last 90 days. StockFlow doesn't change Tally. Set the level in Tally.");
+  await expect(stock.getByRole('heading', { name: 'Running short, not flagged by Tally · 1', exact: true })).toBeVisible();
+  await expect(stock.getByRole('heading', { name: 'Level far from target · 2', exact: true })).toBeVisible();
+  await expect(stock.locator('#levelsView .idle-row').nth(0)).toHaveText('Short reagentstock 5 · on order 0 · 15 days left · target 20');
+  await expect(stock.locator('#levelsView .idle-row').nth(1)).toHaveText('Low reagentTally level 5 · target 20 · Too low');
+  await expect(stock.locator('#levelsView .idle-row').nth(2)).toHaveText('High reagentTally level 100 · target 20 · Too high');
+  await expect(stock.getByText('Too low', { exact: true })).toHaveCSS('color', 'rgb(138, 47, 41)');
+  await expect(stock.locator('#groupCards')).toBeHidden();
+  await chip.click();
+  await expect(chip).toHaveAttribute('aria-pressed', 'false');
+  await expect(stock.locator('#groupCards')).toBeVisible();
+  await chip.click();
+  await stock.locator('[data-action="idle"]').click();
+  await expect(stock.locator('#levelsView')).toBeHidden();
+  await expect(stock.locator('#idleView')).toBeVisible();
+  await expect(chip).toHaveAttribute('aria-pressed', 'false');
+  await chip.click();
+  await expect(stock.locator('[data-action="idle"]')).toHaveAttribute('aria-pressed', 'false');
+  await stock.locator('[data-action="items"]').click();
+  await expect(chip).toHaveAttribute('aria-pressed', 'false');
+  await expect(stock.locator('#groupCards')).toBeVisible();
+  await chip.click();
+  await expect(stock.locator('[data-action="items"]')).toHaveAttribute('aria-pressed', 'false');
+});
+
+for (const failure of ['server', 'invalid', 'no-policy']) {
+  test('reorder check silently hides on ' + failure, async ({ page }) => {
+    const body = reorderCheckPayload();
+    if (failure === 'invalid') body.level[0].direction = 'x';
+    await page.route('**/api/requirements?view=reorder_check', route => route.fulfill({
+      status: failure === 'server' ? 500 : 200,
+      json: failure === 'no-policy' ? { ...emptyReorderCheck(), coverDays: null } : body,
+    }));
+    const { stock } = await stockPoHarness(page, true);
+    await stock.locator('#refresh').click();
+    await expect(stock.locator('#refresh')).toBeEnabled();
+    await expect(stock.locator('[data-action="levels"]')).toBeHidden();
+    await expect(stock.locator('#error')).toBeHidden();
+    await expect(stock.locator('#groupCards')).toBeVisible();
+  });
+}
+
+test('reorder checks wrap long names on a 375px phone', async ({ page }) => {
+  await page.setViewportSize({ width: 375, height: 812 });
+  const name = 'A'.repeat(120);
+  await page.route('**/api/requirements?view=reorder_check', route => route.fulfill({ json: reorderCheckPayload(name) }));
+  const { stock } = await stockPoHarness(page, true);
+  await stock.locator('[data-action="levels"]').click();
+  await expect(stock.locator('#levelsView .idle-row strong').first()).toHaveText(name);
+  expect(await stock.locator('body').evaluate(() => document.documentElement.scrollWidth <= innerWidth)).toBe(true);
+});
+
+test('reorder checks accept and show negative closing stock', async ({ page }) => {
+  const body = reorderCheckPayload();
+  body.short[0].closing = -3;
+  await page.route('**/api/requirements?view=reorder_check', route => route.fulfill({ json: body }));
+  const { stock } = await stockPoHarness(page, true);
+  const chip = stock.locator('[data-action="levels"]');
+  await expect(chip.locator('strong')).toHaveText('3 levels to check');
+  await chip.click();
+  await expect(stock.locator('#levelsView .idle-row').first()).toContainText('stock -3 · on order 0 · 15 days left · target 20');
 });
 
 const idlePayload = (page: number) => ({
@@ -550,7 +650,8 @@ test("requirements failure leaves the customers waiting count unknown and Stock'
   const reorderRows = payload.rows.filter((row) => (+row.orderToBePlaced || 0) > 0);
   await expect(page.locator('#itemCount')).toHaveText(String(reorderRows.length));
   await expect(page.locator('#criticalCount')).toHaveText('—');
-  await expect(page.locator('.metric-chips button')).toHaveCount(3);
+  await expect(page.locator('.metric-chips button')).toHaveCount(4);
+  await expect(page.locator('.metric-chips [data-action=levels]')).toBeHidden();
   for (const chip of await page.locator('.metric-chips button').all()) await expect(chip).toBeEnabled();
 });
 

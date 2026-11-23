@@ -23,7 +23,7 @@ it('uses the authenticated actor and private read action', async () => {
   expect(response.headers.get('cache-control')).toBe('private, no-store');
   expect(JSON.parse(network.mock.calls[0][1]?.body as string)).toEqual({ actorEmail: 'sales@example.test', action: 'get_requirements', payload: { page: 2 } });
 });
-it.each(['cover', 'on_po', 'late_pos'])('reads stock %s without pagination', async (view) => {
+it.each(['cover', 'on_po', 'late_pos', 'reorder_check'])('reads stock %s without pagination', async (view) => {
   const response = await GET(new Request(`http://local/api/requirements?view=${view}`));
   expect(response.status).toBe(200);
   expect(response.headers.get('cache-control')).toBe('private, no-store');
@@ -53,7 +53,7 @@ it.each([
   expect(await response.json()).toEqual({ error: 'Invalid requirements view' });
   expect(network).not.toHaveBeenCalled();
 });
-it.each(['view=late_pos&page=1', 'view=on_po&page=1', 'view=cover&page=1', 'view=cover&alerts=1', 'view=cover&itemKey=kit', 'view=cover&extra=1', 'view=other'])('rejects invalid cover/view query %s', async (query) => {
+it.each(['view=reorder_check&page=1', 'view=late_pos&page=1', 'view=on_po&page=1', 'view=cover&page=1', 'view=cover&alerts=1', 'view=cover&itemKey=kit', 'view=cover&extra=1', 'view=other'])('rejects invalid cover/view query %s', async (query) => {
   expect((await GET(new Request(`http://local/api/requirements?${query}`))).status).toBe(400);
   expect(network).not.toHaveBeenCalled();
 });
