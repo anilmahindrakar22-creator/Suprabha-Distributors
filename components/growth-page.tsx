@@ -10,19 +10,20 @@ import { GrowthLabMonths } from './growth-lab-months';
 import { GrowthBrands } from './growth-brands';
 import { GrowthSections, usePhoneLayout } from './growth-sections';
 import { chartTipText, useChartTip } from './growth-chart-tip';
+import { GrowthPeriodPicker, GrowthPeriodRevenue, GrowthPeriodBridge, useGrowthPeriodSelection, useGrowthPeriodData, todayIst } from './growth-period';
 
-const lakh = (n: number) => `₹${(n / 1e7).toFixed(1)} L`;
-const rupees = (n: number) => formatPaise(Math.round(n / 100) * 100);
+export const lakh = (n: number) => `₹${(n / 1e7).toFixed(1)} L`;
+export const rupees = (n: number) => formatPaise(Math.round(n / 100) * 100);
 /** Chart labels: amounts under ₹1 L in rupees so small months never read "₹0.0 L". */
 const chartMoney = (n: number) => n === 0 ? '₹0' : Math.abs(n) >= 1e7 ? lakh(n) : rupees(n);
 const plural = (n: number, one: string, many: string) => `${n} ${n === 1 ? one : many}`;
-const months = (m: GrowthMeasures) => m.labsBuying ? m.buyingMonths / m.labsBuying : 0;
+export const months = (m: GrowthMeasures) => m.labsBuying ? m.buyingMonths / m.labsBuying : 0;
 const change = (a: number | null, b: number | null) => a === null || b === null || a === 0 ? null : (b - a) / Math.abs(a) * 100;
-const changeLabel = (a: number | null, b: number | null) => { const n = change(a, b); return n === null ? '—' : `${n >= 0 ? '+' : '−'}${Math.round(Math.abs(n))}%`; };
+export const changeLabel = (a: number | null, b: number | null) => { const n = change(a, b); return n === null ? '—' : `${n >= 0 ? '+' : '−'}${Math.round(Math.abs(n))}%`; };
 const month = (s: string) => new Date(s).toLocaleDateString('en-GB', { month: 'short', timeZone: 'UTC' });
 const monthYear = (s: string | number) => new Date(s).toLocaleDateString('en-GB', { month: 'short', year: 'numeric', timeZone: 'UTC' });
 const previousDay = (s: string) => new Date(Date.parse(s) - 86400000).toISOString().slice(0, 10);
-const card = 'min-w-0 space-y-3 rounded-xl border border-sf-line-soft bg-white p-4 lg:p-5';
+export const card = 'min-w-0 space-y-3 rounded-xl border border-sf-line-soft bg-white p-4 lg:p-5';
 const muted = 'text-xs text-sf-muted';
 const growthTabs = [{ id: 'revenue', label: 'Revenue' }, { id: 'bridge', label: 'H1 → H2' }, { id: 'monthly', label: 'Monthly' }, { id: 'profit', label: 'Profit' }] as const;
 type GrowthTab = typeof growthTabs[number]['id'];
@@ -51,7 +52,7 @@ function RevenueMonths({ data, onDrill }: { data: GrowthData; onDrill: (s: Growt
   </section>;
 }
 
-function Table({ caption, headings, rows }: { caption: string; headings: string[]; rows: ReactNode[][] }) {
+export function Table({ caption, headings, rows }: { caption: string; headings: string[]; rows: ReactNode[][] }) {
   return <table className="w-full table-fixed border-collapse text-xs tabular-nums [&_th]:font-normal [&_th]:text-sf-muted [&_td]:text-right [&_td]:text-[15px] [&_td]:leading-5 [&_th]:p-1.5 [&_td]:p-1.5 [&_th]:border-b [&_td]:border-b [&_th]:border-sf-line-soft [&_td]:border-sf-line-soft [&_th]:align-top [&_td]:align-top [&_td]:break-words"><caption className="mb-2 text-left text-xs text-sf-muted">{caption}</caption><thead><tr>{headings.map((v, i) => <th key={v} scope="col" className={i ? 'text-right' : 'w-[34%] text-left'}>{v}</th>)}</tr></thead><tbody>{rows.map((row, i) => <tr key={i}>{row.map((v, j) => j ? <td key={j}>{v}</td> : <th key={j} scope="row" className="text-left">{v}</th>)}</tr>)}</tbody></table>;
 }
 function Node({ label, value, note, hero = false, onOpen }: { label: string; value: string; note: string; hero?: boolean; onOpen?: () => void }) {
@@ -119,38 +120,51 @@ function Revenue({ data, scope, comparison, onDrill }: { data: GrowthData; scope
 }
 
 function Bridge({ data, scope, comparison, onDrill }: { data: GrowthData; scope: string; comparison: string; onDrill: (selection: GrowthSelection) => void }) {
+  const b = data.bridge;
+  const onDrillIndex = (i: number) => {
+    const list = ['', 'bridge_new', 'bridge_stopped', 'bridge_grew', 'bridge_fell'][i];
+    if (list) onDrill({ list, count: i === 2 ? b.stoppedRegular.labs : [0, b.new.labs, 0, b.grew.labs, b.fell.labs][i], title: ['','New labs','Labs that stopped','Existing labs that grew','Existing labs that fell'][i], explanation: 'H1 against H2. Regular = bought in 3 or more of the 6 months before.' });
+  };
+  return <BridgeChart bridge={b} startLabel="H1" endLabel="H2" caption={`${comparison} · ${scope} · all sales`} tableCaption={`Revenue bridge · ${scope}`} footnote={`Regular = bought in 3 or more of the 6 months before. ${b.stopped.labs - b.stoppedRegular.labs} of the labs that stopped had bought only once or twice.`} onDrillIndex={onDrillIndex} />;
+}
+
+export function BridgeChart({ bridge: b, startLabel, endLabel, caption, tableCaption, footnote, onDrillIndex }: { bridge: GrowthData['bridge']; startLabel: string; endLabel: string; caption: ReactNode; tableCaption?: string; footnote: string; onDrillIndex?: (i: number) => void }) {
   const [table, setTable] = useState(false);
   const { tipProps, tip, containerProps } = useChartTip();
-  const b = data.bridge;
-  const stoppedOccasional = b.stopped.labs - b.stoppedRegular.labs;
   const bridgeHeadline = b.stoppedRegular.labs * 2 < b.stopped.labs
     ? `Most labs that stopped were occasional buyers; ${b.stoppedRegular.labs} regular labs stopped (${lakh(b.stoppedRegular.paise)}). Growth came from ${b.grew.labs} existing labs.`
     : b.new.paise <= b.stopped.paise
       ? `New labs only replaced the labs we lost; growth came from ${b.grew.labs} existing labs.`
       : 'New labs added more than we lost.';
+  const totalLines = (label: string) => {
+    if (onDrillIndex) return [label, 'total'];
+    const lines: string[] = [];
+    for (const word of label.split(' ')) {
+      if (lines.length && lines[lines.length - 1].length + word.length < 9) lines[lines.length - 1] += ' ' + word;
+      else lines.push(word);
+    }
+    return [...lines, 'total'];
+  };
   const bars = [
-    { label: 'H1 total', lines: ['H1', 'total'], value: b.h1Paise, kind: 'total' },
+    { label: `${startLabel} total`, lines: totalLines(startLabel), value: b.h1Paise, kind: 'total' },
     { label: `+ New labs (${b.new.labs})`, lines: ['New labs', `(${b.new.labs})`], value: b.new.paise, kind: 'up' },
     { label: `− Labs that stopped (${b.stopped.labs}) · ${b.stoppedRegular.labs} regular`, lines: ['Stopped', `(${b.stopped.labs})`], value: -b.stopped.paise, kind: 'down' },
     { label: `+ Existing labs that grew (${b.grew.labs})`, lines: ['Existing', `grew (${b.grew.labs})`], value: b.grew.paise, kind: 'up' },
     { label: `− Existing labs that fell (${b.fell.labs})`, lines: ['Existing', `fell (${b.fell.labs})`], value: -b.fell.paise, kind: 'down' },
     ...(b.other.paise !== 0 ? [{ label: `Other (${b.other.labs})`, lines: ['Other', `(${b.other.labs})`], value: b.other.paise, kind: b.other.paise > 0 ? 'up' : 'down' }] : []),
-    { label: 'H2 total', lines: ['H2', 'total'], value: b.h2Paise, kind: 'total' },
+    { label: `${endLabel} total`, lines: totalLines(endLabel), value: b.h2Paise, kind: 'total' },
   ];
   let running = 0;
   const geometry = bars.map(bar => { const start = bar.kind === 'total' ? 0 : running; const end = bar.kind === 'total' ? bar.value : running + bar.value; running = end; return { ...bar, start, end }; });
   const low = Math.min(0, ...geometry.flatMap(v => [v.start, v.end])), high = Math.max(0, ...geometry.flatMap(v => [v.start, v.end]));
   const y = (n: number) => 30 + (high - n) / (high - low || 1) * 175;
   const width = 100 / bars.length;
-  const bridgeSelection = (i: number): GrowthSelection | null => {
-    const list = ['', 'bridge_new', 'bridge_stopped', 'bridge_grew', 'bridge_fell'][i];
-    return list ? { list, count: i === 2 ? b.stoppedRegular.labs : [0, b.new.labs, 0, b.grew.labs, b.fell.labs][i], title: ['','New labs','Labs that stopped','Existing labs that grew','Existing labs that fell'][i], explanation: 'H1 against H2. Regular = bought in 3 or more of the 6 months before.' } : null;
-  };
+  const canDrill = (i: number) => !!onDrillIndex && i > 0 && i < 5;
   const identity = `${(b.h1Paise / 1e7).toFixed(1)} + ${(b.new.paise / 1e7).toFixed(1)} − ${(b.stopped.paise / 1e7).toFixed(1)} + ${(b.grew.paise / 1e7).toFixed(1)} − ${(b.fell.paise / 1e7).toFixed(1)}${b.other.paise ? ` ${b.other.paise > 0 ? '+' : '−'} ${(Math.abs(b.other.paise) / 1e7).toFixed(1)}` : ''} = ${(b.h2Paise / 1e7).toFixed(1)}.`;
-  return <section className={card} aria-labelledby="bridge-title"><div className="flex items-center justify-between gap-2"><h2 id="bridge-title" className="text-base font-bold">Where growth came from</h2><Toggle name="bridge" table={table} onClick={() => setTable(!table)} /></div><p className="text-xs font-bold text-sf-ink">{bridgeHeadline}</p><p className={muted}>{comparison} · {scope} · all sales</p>
+  return <section className={card} aria-labelledby="bridge-title"><div className="flex items-center justify-between gap-2"><h2 id="bridge-title" className="text-base font-bold">Where growth came from</h2><Toggle name="bridge" table={table} onClick={() => setTable(!table)} /></div><p className="text-xs font-bold text-sf-ink">{bridgeHeadline}</p><p className={muted}>{caption}</p>
     {/* oxlint-disable-next-line jsx-a11y/prefer-tag-over-role -- Preserve existing desktop status markup and accessible SVG chart roles. */}
-    {table ? <div id="bridge-table"><Table caption={`Revenue bridge · ${scope}`} headings={['Contribution', 'Revenue']} rows={bars.map((bar, i) => { const s = bridgeSelection(i); return [s ? <button key="label" className="min-h-11 text-left text-sf-brand underline" onClick={() => onDrill(s)}>{bar.label}</button> : bar.label, s ? <button key="value" className="min-h-11 text-sf-brand underline" onClick={() => onDrill(s)}>{lakh(Math.abs(bar.value))}</button> : lakh(Math.abs(bar.value))]; })} /></div> : <div id="bridge-chart" {...containerProps}><svg className="block h-[270px] w-full overflow-visible" role="group" aria-labelledby="bridge-svg-title bridge-svg-desc"><title id="bridge-svg-title">H1 to H2 revenue bridge in ₹ lakh</title><desc id="bridge-svg-desc">{bars.map(bar => `${bar.label} ${lakh(Math.abs(bar.value))}`).join('; ')}. {identity}</desc><line x1="0" x2="100%" y1={y(0)} y2={y(0)} stroke="var(--color-sf-chart-axis)" />{geometry.map((bar, i) => { const x = i * width + 2; const top = y(Math.max(bar.start, bar.end)); return <g key={bar.label}>{i < bars.length - 1 && <line x1={`${x + width - 4}%`} x2={`${(i + 1) * width + 2}%`} y1={y(bar.end)} y2={y(bar.end)} stroke="var(--color-sf-chart-axis)" strokeDasharray="3 3" />}<rect {...tipProps(`${bar.label} · ${chartMoney(Math.abs(bar.value))}`)} {...(bridgeSelection(i) ? barButton(`${bar.lines.join(" ")}: open list`, () => onDrill(bridgeSelection(i)!)) : {})} data-growth-bar={bar.kind} x={`${x}%`} width={`${width - 4}%`} y={top} height={Math.max(2, Math.abs(y(bar.start) - y(bar.end)))} rx="2" fill={`var(--color-sf-chart-${bar.kind === 'total' ? '3' : bar.kind === 'up' ? 'up' : 'down'})`} /><text x={`${(i + .5) * width}%`} y={top - 20} textAnchor="middle" className="fill-sf-label text-[15px]"><tspan x={`${(i + .5) * width}%`}>{lakh(Math.abs(bar.value)).replace(/ L$/, '')}</tspan><tspan x={`${(i + .5) * width}%`} dy="14" className="text-xs">L</tspan></text><text x={`${(i + .5) * width}%`} y="230" textAnchor="middle" className="fill-sf-label text-xs">{bar.lines.map((line, j) => <tspan key={j} x={`${(i + .5) * width}%`} dy={j ? 16 : 0}>{line}</tspan>)}</text></g>; })}</svg><div className="flex flex-wrap gap-3 text-xs text-sf-muted">{['Total', 'Increase', 'Decrease'].map((v, i) => <span key={v} className="inline-flex items-center gap-1"><i className={`size-2 rounded-sm ${['bg-sf-chart-3', 'bg-sf-chart-up', 'bg-sf-chart-down'][i]}`} />{v}</span>)}<span>Values in ₹ L</span></div>{tip}</div>}
-    <p className="text-xs tabular-nums text-sf-muted" aria-label="Bridge identity">{identity}</p><p className={muted}>Regular = bought in 3 or more of the 6 months before. {stoppedOccasional} of the labs that stopped had bought only once or twice.</p></section>;
+    {table ? <div id="bridge-table"><Table caption={tableCaption ?? 'Revenue bridge'} headings={['Contribution', 'Revenue']} rows={bars.map((bar, i) => { const drill = canDrill(i); return [drill ? <button key="label" className="min-h-11 text-left text-sf-brand underline" onClick={() => onDrillIndex?.(i)}>{bar.label}</button> : bar.label, drill ? <button key="value" className="min-h-11 text-sf-brand underline" onClick={() => onDrillIndex?.(i)}>{lakh(Math.abs(bar.value))}</button> : lakh(Math.abs(bar.value))]; })} /></div> : <div id="bridge-chart" {...containerProps} className={onDrillIndex ? containerProps.className : `${containerProps.className} min-w-0 overflow-hidden`}><svg className={onDrillIndex ? "block h-[270px] w-full overflow-visible" : "block h-[340px] w-full overflow-visible"} role="group" aria-labelledby="bridge-svg-title bridge-svg-desc"><title id="bridge-svg-title">{startLabel} to {endLabel} revenue bridge in ₹ lakh</title><desc id="bridge-svg-desc">{bars.map(bar => `${bar.label} ${lakh(Math.abs(bar.value))}`).join('; ')}. {identity}</desc><line x1="0" x2="100%" y1={y(0)} y2={y(0)} stroke="var(--color-sf-chart-axis)" />{geometry.map((bar, i) => { const x = i * width + 2; const top = y(Math.max(bar.start, bar.end)); return <g key={bar.label}>{i < bars.length - 1 && <line x1={`${x + width - 4}%`} x2={`${(i + 1) * width + 2}%`} y1={y(bar.end)} y2={y(bar.end)} stroke="var(--color-sf-chart-axis)" strokeDasharray="3 3" />}<rect {...tipProps(`${bar.label} · ${chartMoney(Math.abs(bar.value))}`)} {...(canDrill(i) ? barButton(`${bar.lines.join(" ")}: open list`, () => onDrillIndex?.(i)) : {})} data-growth-bar={bar.kind} x={`${x}%`} width={`${width - 4}%`} y={top} height={Math.max(2, Math.abs(y(bar.start) - y(bar.end)))} rx="2" fill={`var(--color-sf-chart-${bar.kind === 'total' ? '3' : bar.kind === 'up' ? 'up' : 'down'})`} /><text x={`${(i + .5) * width}%`} y={top - 20} textAnchor="middle" className="fill-sf-label text-[15px]"><tspan x={`${(i + .5) * width}%`}>{lakh(Math.abs(bar.value)).replace(/ L$/, '')}</tspan><tspan x={`${(i + .5) * width}%`} dy="14" className="text-xs">L</tspan></text><text x={`${(i + .5) * width}%`} y="230" textAnchor="middle" className={onDrillIndex ? "fill-sf-label text-xs" : "fill-sf-label text-[10px]"}>{bar.lines.map((line, j) => <tspan key={j} x={`${(i + .5) * width}%`} dy={j ? 16 : 0}>{line}</tspan>)}</text></g>; })}</svg><div className="flex flex-wrap gap-3 text-xs text-sf-muted">{['Total', 'Increase', 'Decrease'].map((v, i) => <span key={v} className="inline-flex items-center gap-1"><i className={`size-2 rounded-sm ${['bg-sf-chart-3', 'bg-sf-chart-up', 'bg-sf-chart-down'][i]}`} />{v}</span>)}<span>Values in ₹ L</span></div>{tip}</div>}
+    <p className="text-xs tabular-nums text-sf-muted" aria-label="Bridge identity">{identity}</p><p className={muted}>{footnote}</p></section>;
 }
 
 
@@ -259,6 +273,13 @@ function Health({ data, onOpenBrandSetup, onOpenMyActions }: { data: GrowthData 
 export function GrowthPage(navigation: GrowthNavigation) {
   // usePhoneLayout uses (max-width: 767px); desktop retains its existing layout.
   const phone = usePhoneLayout();
+  const [period, setPeriod] = useGrowthPeriodSelection();
+  const periodData = useGrowthPeriodData(period);
+  const [comparisonKey, setComparisonKey] = useState<'last_year' | 'previous'>('last_year');
+  // oxlint-disable-next-line react/react-compiler -- The period owns the comparison choice; reset it when that period changes.
+  useEffect(() => { setComparisonKey('last_year'); }, [period]);
+  const periodMode = period !== 'rolling12';
+  const rollingCaption = (child: ReactNode) => periodMode ? <div className="min-w-0 space-y-2"><p className={muted}>Last 12 months</p>{child}</div> : child;
   const [phoneRevenueTab, setPhoneRevenueTab] = useState<'revenue' | 'bridge'>('revenue');
   const [selection, setSelection] = useState<GrowthSelection | null>(null);
   const [data, setData] = useState<GrowthData | null>(null);
@@ -295,42 +316,45 @@ export function GrowthPage(navigation: GrowthNavigation) {
   const inbox = <GrowthInbox onOpenCustomer={navigation.onOpenCustomer} onLinkLedger={navigation.onLinkLedger} onReviewPrices={card => { if (card.customerId) setSelection({ list: 'price_card', count: card.inputs.items, title: `${card.name ?? 'Lab not named'} · items under typical price`, explanation: 'Some low prices are agreed volume rates. Check the quantity before proposing a change.', priceCard: { customerId: card.customerId, name: card.name ?? 'Lab not named', inputs: card.inputs } }); }} />;
   // oxlint-disable-next-line jsx-a11y/prefer-tag-over-role -- Preserve existing desktop status markup and accessible SVG chart roles.
   const pageError = error ? <div role="alert"><p>{error}</p>{error !== 'Growth is for management only.' && <button className="mt-3 min-h-11 rounded-lg border border-sf-line px-3" onClick={() => { setData(null); setError(''); setRevision(n => n + 1); }}>Retry</button>}</div> : !data ? <p role="status">Loading growth…</p> : null;
+  const periodStatus = (title: string, id: string) => <section className={card} aria-labelledby={id}><h2 id={id} className="text-base font-bold">{title}</h2>{periodData.error ? <><p role="alert">{periodData.error}</p><button type="button" className="min-h-11 rounded-lg border border-sf-line px-3" onClick={periodData.retry}>Retry</button></> : <output className="block">Loading period…</output>}</section>;
+  const revenueCard = data && (periodMode ? periodData.data ? <GrowthPeriodRevenue data={periodData.data} comparisonKey={comparisonKey} onComparisonChange={setComparisonKey} /> : periodStatus('Where revenue comes from', 'revenue-period-status') : <Revenue data={data} scope={scope} comparison={comparison} onDrill={setSelection} />);
+  const bridgeCard = data && (periodMode ? periodData.data ? <GrowthPeriodBridge data={periodData.data} comparisonKey={comparisonKey} /> : periodStatus('Where growth came from', 'bridge-period-status') : <Bridge data={data} scope={scope} comparison={comparison} onDrill={setSelection} />);
   return <div data-growth-scroller className="h-full min-w-0 overflow-y-auto p-4 text-sm text-sf-strong sm:p-6 [overflow-wrap:break-word]">
-    <header className="mb-5 space-y-2"><p className={muted}>More / Management</p><h1 className="text-xl font-bold">Growth</h1>{data && <p className={muted}>{scope} · management only</p>}{data && !data.confirmed && <p className="text-xs text-sf-warning">Not confirmed: {plainReason(data.confirmedReason)}</p>}</header>
+    <header className="mb-5 space-y-2"><p className={muted}>More / Management</p><h1 className="text-xl font-bold">Growth</h1>{data && <p className={muted}>{periodMode && periodData.data ? `${periodData.data.period.label} · ${data.companyCount === 1 ? 'one Tally company' : `${data.companyCount} Tally companies`} · management only` : `${scope} · management only`}</p>}<GrowthPeriodPicker value={period} today={todayIst()} onChange={setPeriod} />{data && !data.confirmed && <p className="text-xs text-sf-warning">Not confirmed: {plainReason(data.confirmedReason)}</p>}</header>
     {phone ? <>{pageError}{data && <GrowthSections data={data}>{(section, filter, open) => <>
       {section === 'act' && <>{inbox}<section className={card} aria-labelledby="labs-call-title"><h2 id="labs-call-title" className="text-base font-bold">Labs to call</h2><div className="flex flex-wrap gap-3"><button type="button" className={toggleClass} onClick={() => open('labs', 'lapsing')}>Lapsing core labs ›</button><button type="button" className={toggleClass} onClick={() => open('labs', 'declining')}>Buying less ›</button></div></section></>}
       {section === 'revenue' && <>
-        <Scorecard data={data} onDrill={setSelection} onOpen={(next, target) => {
+        {rollingCaption(<Scorecard data={data} onDrill={setSelection} onOpen={(next, target) => {
           if (next === 'revenue' || next === 'bridge') setPhoneRevenueTab(next);
           open(next === 'monthly' ? 'labs' : next === 'profit' ? 'profit' : 'revenue');
           setTimeout(() => scrollToWhenReady(target), 0);
-        }} />
+        }} />)}
         <div role="tablist" aria-label="Revenue analysis" className="flex gap-1 rounded-lg border border-sf-line p-1">{growthTabs.slice(0, 2).map(item => <button key={item.id} id={`phone-growth-tab-${item.id}`} type="button" role="tab" aria-selected={phoneRevenueTab === item.id} aria-controls="phone-revenue-panel" tabIndex={phoneRevenueTab === item.id ? 0 : -1} className={`min-h-11 rounded-md px-3 text-sm ${phoneRevenueTab === item.id ? 'bg-sf-accent-soft font-bold text-sf-brand' : 'text-sf-muted'}`} onClick={() => setPhoneRevenueTab(item.id as 'revenue' | 'bridge')} onKeyDown={event => {
           if (!['ArrowLeft', 'ArrowRight', 'Home', 'End'].includes(event.key)) return;
           event.preventDefault();
           const next = event.key === 'Home' ? 'revenue' : event.key === 'End' ? 'bridge' : phoneRevenueTab === 'revenue' ? 'bridge' : 'revenue';
           setPhoneRevenueTab(next); document.getElementById(`phone-growth-tab-${next}`)?.focus();
-        }}>{item.label}</button>)}</div>
-        <div id="phone-revenue-panel" role="tabpanel" aria-labelledby={`phone-growth-tab-${phoneRevenueTab}`} className="min-w-0 space-y-4">{phoneRevenueTab === 'revenue' ? <><RevenueMonths data={data} onDrill={setSelection} /><Revenue data={data} scope={scope} comparison={comparison} onDrill={setSelection} /></> : <Bridge data={data} scope={scope} comparison={comparison} onDrill={setSelection} />}</div>
-        <PurchasesCard data={data} onDrill={setSelection} />
+        }}>{periodMode && item.id === 'bridge' ? 'Bridge' : item.label}</button>)}</div>
+        <div id="phone-revenue-panel" role="tabpanel" aria-labelledby={`phone-growth-tab-${phoneRevenueTab}`} className="min-w-0 space-y-4">{phoneRevenueTab === 'revenue' ? <>{rollingCaption(<RevenueMonths data={data} onDrill={setSelection} />)}{revenueCard}</> : bridgeCard}</div>
+        {rollingCaption(<PurchasesCard data={data} onDrill={setSelection} />)}
       </>}
       {section === 'labs' && <>
-        {filter === 'top' && <LabsBuyingCard data={data} onDrill={setSelection} />}
-        <GrowthLabMonths key={filter} onOpenCustomer={navigation.onOpenCustomer} initialFilter={filter} />
-        {filter !== 'top' && <LabsBuyingCard data={data} onDrill={setSelection} />}
+        {filter === 'top' && rollingCaption(<LabsBuyingCard data={data} onDrill={setSelection} />)}
+        {rollingCaption(<GrowthLabMonths key={filter} onOpenCustomer={navigation.onOpenCustomer} initialFilter={filter} />)}
+        {filter !== 'top' && rollingCaption(<LabsBuyingCard data={data} onDrill={setSelection} />)}
       </>}
-      {section === 'profit' && <GrowthProfit data={data} scope={scope} onDrill={setSelection} navigation={navigation} showBrands={false} />}
-      {section === 'brands' && <GrowthBrands onOpenBrandSetup={navigation.onOpenBrandSetup} />}
+      {section === 'profit' && rollingCaption(<GrowthProfit data={data} scope={scope} onDrill={setSelection} navigation={navigation} showBrands={false} />)}
+      {section === 'brands' && rollingCaption(<GrowthBrands onOpenBrandSetup={navigation.onOpenBrandSetup} />)}
       {section === 'health' && <Health data={data} onOpenBrandSetup={navigation.onOpenBrandSetup} onOpenMyActions={navigation.onOpenMyActions} />}
     </>}</GrowthSections>}</> : <div className="grid min-w-0 items-start gap-4 md:grid-cols-[minmax(0,2.2fr)_minmax(280px,1fr)] lg:gap-5">
-      <div className="min-w-0 space-y-4">{pageError}{data && <Scorecard data={data} onDrill={setSelection} onOpen={(next, target) => { chooseTab(next); setTimeout(() => scrollToWhenReady(target), 0); }} />}{inbox}{data && <>
-        <div role="tablist" aria-label="Growth analysis" className="flex gap-1 overflow-x-auto rounded-lg border border-sf-line p-1">{growthTabs.map(item => <button key={item.id} type="button" role="tab" id={`growth-tab-${item.id}`} aria-selected={tab === item.id} aria-controls="growth-panel" tabIndex={tab === item.id ? 0 : -1} className={`min-h-11 shrink-0 rounded-md px-3 text-sm ${tab === item.id ? 'bg-sf-accent-soft font-bold text-sf-brand' : 'text-sf-muted'}`} onClick={() => chooseTab(item.id)} onKeyDown={event => onTabKey(event, item.id)}>{item.label}</button>)}</div>
+      <div className="min-w-0 space-y-4">{pageError}{data && rollingCaption(<Scorecard data={data} onDrill={setSelection} onOpen={(next, target) => { chooseTab(next); setTimeout(() => scrollToWhenReady(target), 0); }} />)}{inbox}{data && <>
+        <div role="tablist" aria-label="Growth analysis" className="flex gap-1 overflow-x-auto rounded-lg border border-sf-line p-1">{growthTabs.map(item => <button key={item.id} type="button" role="tab" id={`growth-tab-${item.id}`} aria-selected={tab === item.id} aria-controls="growth-panel" tabIndex={tab === item.id ? 0 : -1} className={`min-h-11 shrink-0 rounded-md px-3 text-sm ${tab === item.id ? 'bg-sf-accent-soft font-bold text-sf-brand' : 'text-sf-muted'}`} onClick={() => chooseTab(item.id)} onKeyDown={event => onTabKey(event, item.id)}>{periodMode && item.id === 'bridge' ? 'Bridge' : item.label}</button>)}</div>
         <div id="growth-panel" role="tabpanel" aria-labelledby={`growth-tab-${tab}`} className="min-w-0 space-y-4">
-          {tab === 'revenue' && <RevenueMonths data={data} onDrill={setSelection} />}
-          {tab === 'revenue' && <Revenue data={data} scope={scope} comparison={comparison} onDrill={setSelection} />}
-          {tab === 'bridge' && <Bridge data={data} scope={scope} comparison={comparison} onDrill={setSelection} />}
-          {tab === 'monthly' && <><LabsBuyingCard data={data} onDrill={setSelection} /><GrowthLabMonths onOpenCustomer={navigation.onOpenCustomer} /><PurchasesCard data={data} onDrill={setSelection} /></>}
-          {tab === 'profit' && <GrowthProfit data={data} scope={scope} onDrill={setSelection} navigation={navigation} />}
+          {tab === 'revenue' && rollingCaption(<RevenueMonths data={data} onDrill={setSelection} />)}
+          {tab === 'revenue' && revenueCard}
+          {tab === 'bridge' && bridgeCard}
+          {tab === 'monthly' && <>{rollingCaption(<LabsBuyingCard data={data} onDrill={setSelection} />)}{rollingCaption(<GrowthLabMonths onOpenCustomer={navigation.onOpenCustomer} />)}{rollingCaption(<PurchasesCard data={data} onDrill={setSelection} />)}</>}
+          {tab === 'profit' && (periodMode ? <>{rollingCaption(<GrowthProfit data={data} scope={scope} onDrill={setSelection} navigation={navigation} showBrands={false} />)}{rollingCaption(<GrowthBrands onOpenBrandSetup={navigation.onOpenBrandSetup} />)}</> : <GrowthProfit data={data} scope={scope} onDrill={setSelection} navigation={navigation} />)}
         </div></>}</div>
       <div className="min-w-0 space-y-4">{data && <Health data={data} onOpenBrandSetup={navigation.onOpenBrandSetup} onOpenMyActions={navigation.onOpenMyActions} />}</div>
     </div>}
