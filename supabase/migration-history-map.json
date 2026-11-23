@@ -1690,6 +1690,13 @@
       "remoteVersion": null,
       "remoteSha256": null,
       "status": "not_deployed"
+    },
+    {
+      "localFile": "20261220090000_growth_period.sql",
+      "localSha256": "084e43673b212e8c0ccb6e18deb045a11b5cc822cb75f8082f218e070441b0b8",
+      "remoteVersion": null,
+      "remoteSha256": null,
+      "status": "not_deployed"
     }
   ],
   "liveCheck": {
