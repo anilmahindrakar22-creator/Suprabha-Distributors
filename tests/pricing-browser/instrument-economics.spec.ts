@@ -178,7 +178,7 @@ async function openAdvanced(page: Page, section: 'All actions' | 'Exceptions' | 
 }
 
 async function mockWorkspace(page: Page, body = economicsData()) {
-  await mockProducts(page, body.sourceLines);
+  await mockProducts(page, body.sourceLines, (body as Record<string, unknown>).attributionLines as Record<string, unknown>[] | undefined);
   await mockInvoiceLines(page, body.sourceLines);
   await page.route('**/api/instrument-economics', (route: Route) => route.request().method() === 'GET'
     ? route.fulfill({ json: body })
@@ -763,7 +763,7 @@ test('verifies a sale against multiple compatible historical purchases without g
   ] });
   data.sourceLines.push({ ...data.sourceLines[2], id: 'purchase-line-2', voucherId: 'PUR-02', date: '2026-09-02' });
   data.sourceLines.push({ ...data.sourceLines[2], id: 'purchase-too-late', voucherId: 'PUR-LATE', date: '2026-09-11' });
-  await mockProducts(page, data.sourceLines);
+  await mockProducts(page, data.sourceLines, (data as Record<string, unknown>).attributionLines as Record<string, unknown>[]);
   await page.route('**/api/instrument-economics', route => {
     if (route.request().method() === 'GET') return route.fulfill({ json: data });
     posts.push(route.request().postDataJSON()); return route.fulfill({ json: { ok: true } });
@@ -1772,7 +1772,19 @@ async function mockInvoiceLines(page: Page, rows: Record<string, unknown>[]) {
     return route.fulfill({ json: { rows: filtered.slice(offset, offset + limit), total: filtered.length, limit, offset } });
   });
 }
-async function mockProducts(page: Page, lines: Record<string, unknown>[]) {
+async function mockProducts(page: Page, lines: Record<string, unknown>[], attributionLines: Record<string, unknown>[] = []) {
+  // These focused reads replace the former workspace source-line lookups.
+  await page.route('**/api/instrument-economics/cost-review**', route => {
+    const missing = new Set(attributionLines.filter(line => line.targetId && line.status === 'cost_unavailable' && line.costPaise == null).map(line => line.sourceLineId));
+    const sales = lines.filter(line => line.kind === 'sale' && Number(line.quantity) > 0 && missing.has(line.id));
+    const purchases = lines.filter(line => line.kind === 'purchase' && sales.some(sale => line.companyId === sale.companyId && line.productId === sale.productId && line.unit === sale.unit && String(line.date) <= String(sale.date)));
+    return route.fulfill({ json: { sales: sales.slice(0, 500), salesTotal: sales.length, purchases: purchases.slice(0, 5000), purchasesTotal: purchases.length } });
+  });
+  await page.route('**/api/instrument-economics/line-refs**', route => {
+    const params = new URL(route.request().url()).searchParams;
+    const rows = lines.filter(line => line.companyId === params.get('companyId') && line.customerSourceId === params.get('customerSourceId')).map(line => ({ id: line.id, kind: line.kind, voucherNumber: line.voucherNumber ?? null }));
+    return route.fulfill({ json: { rows: rows.slice(0, 5000), total: rows.length, limit: 5000 } });
+  });
   const latest = new Map<string, Record<string, unknown>>();
   for (const line of [...lines].sort((a, b) => String(a.date).localeCompare(String(b.date)) || Number(a.revision) - Number(b.revision) || String(a.id).localeCompare(String(b.id)))) {
     latest.set(JSON.stringify([line.companyId, line.productId]), line);

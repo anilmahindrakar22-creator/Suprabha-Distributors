@@ -1732,6 +1732,13 @@
       "remoteVersion": null,
       "remoteSha256": null,
       "status": "not_deployed"
+    },
+    {
+      "localFile": "20261227120000_economic_cost_review.sql",
+      "localSha256": "d76a73b4ea7a9e1fdf147477351736158ad0f4f63cd4dc1ea461809b54f74fc6",
+      "remoteVersion": null,
+      "remoteSha256": null,
+      "status": "not_deployed"
     }
   ],
   "liveCheck": {

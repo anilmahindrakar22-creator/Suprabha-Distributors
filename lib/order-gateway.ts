@@ -61,6 +61,8 @@ export type GatewayAction =
   | 'get_data_checks'
   | 'get_economic_source_lines'
   | 'get_economic_products'
+  | 'get_economic_cost_review'
+  | 'get_economic_line_refs'
   | 'get_economic_exceptions'
   | 'get_wallet_workspace'
   | 'get_wallet_account'

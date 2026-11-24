@@ -1,6 +1,7 @@
 'use client';
 
-import { useEffect, useId, useState } from 'react';
+import { createContext, useContext, useEffect, useId, useMemo, useReducer, useState } from 'react';
+import { lineRefsSearchParams, normalizeCostReview, normalizeLineRefs, type CostReview, type LineRefs } from '@/lib/instrument-economics-cost-review';
 import { compatiblePurchaseLines, costVerificationSaleLines, maxEconomicEvidenceRows, purchaseMatchKind, type PurchaseMatchKind } from '@/lib/instrument-economics-forms';
 import type { EconomicTarget, EconomicsWorkspaceData } from '@/lib/instrument-economics-types';
 import { EconomicLinePicker } from './economic-line-picker';
@@ -197,7 +198,11 @@ export function InstrumentAcquisitionFields() {
 const inputStyle = 'min-h-10 min-w-0 w-full rounded-lg border border-sf-line bg-white px-3 text-sm';
 const buttonStyle = 'min-h-10 rounded-lg border border-sf-line px-3 text-sm font-bold text-sf-brand';
 
-export function PurchaseCostVerificationFields({ lines, attributionLines = [] }: { lines: SourceLine[]; attributionLines?: NonNullable<EconomicsWorkspaceData['attributionLines']> }) {
+export const CostReviewContext = createContext<ReturnType<typeof useCostReview> & { activate: () => void }>({ review: null, lines: [], loading: true, error: false, retry: () => {}, activate: () => {} });
+
+export function PurchaseCostVerificationFields({ attributionLines = [] }: { attributionLines?: NonNullable<EconomicsWorkspaceData['attributionLines']> }) {
+  const { lines, loading, error, retry, activate } = useContext(CostReviewContext);
+  useEffect(() => { activate(); }, [activate]);
   const [saleId, setSaleId] = useState('');
   const sale = lines.find(line => line.id === saleId);
   const sales = costVerificationSaleLines(lines, attributionLines);
@@ -222,9 +227,10 @@ export function PurchaseCostVerificationFields({ lines, attributionLines = [] }:
     <p className="rounded-lg bg-blue-50 p-3 text-sm font-semibold text-blue-900">{sales.length} sale {sales.length === 1 ? 'line needs' : 'lines need'} cost evidence.</p>
     {summary ? <p className="text-xs font-semibold text-sf-body">{summary}</p> : null}
     {shortQuantity ? <p className="rounded-lg bg-amber-50 p-3 text-sm text-amber-900">{shortQuantity} {shortQuantity === 1 ? 'sale has' : 'sales have'} less compatible purchase quantity than was sold. Cost stays unavailable until the missing purchase is imported.</p> : null}
-    <label className="grid gap-1 text-xs font-semibold">Sale needing cost<select aria-label="Sale needing cost" name="sourceLineId" value={saleId} required disabled={!sales.length} onChange={event => setSaleId(event.target.value)} className={inputStyle}>
-      <option value="" disabled>{sales.length ? 'Select a mapped sale…' : 'No mapped sales need cost evidence'}</option>{sales.map(line => <option key={line.id} value={line.id}>{line.productName || line.productId} · {matchLabel(line)} · {displayQuantity(line.quantity)} {line.unit} · {line.date} · {voucherLabel(line)}</option>)}
+    <label className="grid gap-1 text-xs font-semibold">Sale needing cost<select aria-label="Sale needing cost" name="sourceLineId" value={saleId} required disabled={loading || !sales.length} onChange={event => setSaleId(event.target.value)} className={inputStyle}>
+      <option value="" disabled>{loading ? 'Loading sales…' : sales.length ? 'Select a mapped sale…' : 'No mapped sales need cost evidence'}</option>{sales.map(line => <option key={line.id} value={line.id}>{line.productName || line.productId} · {matchLabel(line)} · {displayQuantity(line.quantity)} {line.unit} · {line.date} · {voucherLabel(line)}</option>)}
     </select></label>
+    {error ? <div role="alert" className="text-sm"><p>Could not load sales.</p><button type="button" onClick={retry} className={`${buttonStyle} mt-2`}>Retry</button></div> : null}
     {sale ? <div className="rounded-lg border border-sf-line-soft p-3 text-sm text-sf-body"><p className="font-semibold">Tally sale {voucherLabel(sale)} line {sale.lineKey} · {sale.date}</p><p className="mt-1 break-words">{sale.productName || sale.productId} · {displayQuantity(sale.quantity)} {sale.unit} · {formatAcquisitionCost(sale.netSalesPaise)}{sale.batchId ? ` · batch ${sale.batchId}` : ' · no batch'}</p><p className="mt-1 font-semibold">Cover the complete sale quantity: {displayQuantity(sale.quantity)} {sale.unit}.</p></div> : sales.length ? <p className="text-xs text-sf-muted">Choose a sale to see purchases with matching company, product, base unit, date and batch evidence.</p> : <p className="text-xs text-sf-muted">There is no purchase-cost review to complete in the current rebuild.</p>}
     <PurchaseRows key={saleId} sale={sale} lines={lines} />
     <label className="grid gap-1 text-xs font-semibold">Evidence reference<input name="evidenceReference" required disabled={!sales.length} placeholder="Tally purchase voucher checked and who checked it" className={inputStyle} /></label>
@@ -234,6 +240,82 @@ export function PurchaseCostVerificationFields({ lines, attributionLines = [] }:
 
 const voucherLabel = (line: SourceLine) => line.voucherNumber?.trim() || line.voucherId;
 const displayQuantity = (quantity: string) => quantity.includes('.') ? quantity.replace(/\.?0+$/, '') : quantity;
+
+type Line = CostReview['sales'][number];
+type ReadEntry<T> = { value: T | null; error: boolean; loading: boolean; controller: AbortController | null; listeners: Set<() => void> };
+const costCache = new Map<string, ReadEntry<CostReview>>();
+const refsCache = new Map<string, ReadEntry<LineRefs>>();
+function entryFor<T>(cache: Map<string, ReadEntry<T>>, key: string): ReadEntry<T> {
+  let entry = cache.get(key);
+  if (!entry) {
+    entry = { value: null, error: false, loading: false, controller: null, listeners: new Set() };
+    cache.set(key, entry);
+    if (cache.size > 20) {
+      const oldest = [...cache.keys()].find(candidate => candidate !== key && !cache.get(candidate)!.listeners.size) ?? cache.keys().next().value;
+      if (oldest !== undefined) cache.delete(oldest);
+    }
+  }
+  return entry;
+}
+function publish<T>(entry: ReadEntry<T>) { for (const listener of entry.listeners) listener(); }
+function startRead<T>(entry: ReadEntry<T>, url: string, normalize: (body: unknown) => T) {
+  if (entry.controller) return;
+  const controller = new AbortController();
+  entry.controller = controller; entry.loading = true; entry.error = false;
+  publish(entry);
+  void (async () => {
+    try {
+      const response = await fetch(url, { signal: controller.signal, cache: 'no-store' });
+      if (!response.ok) throw new Error('Economics read failed');
+      const value = normalize(await response.json());
+      if (!controller.signal.aborted) entry.value = value;
+    } catch {
+      if (!controller.signal.aborted) entry.error = true;
+    } finally {
+      if (!controller.signal.aborted) {
+        entry.controller = null; entry.loading = false; publish(entry);
+      }
+    }
+  })();
+}
+function retryRead<T>(entry: ReadEntry<T> | null, url: string, normalize: (body: unknown) => T) {
+  if (!entry) return;
+  entry.value = null;
+  startRead(entry, url, normalize);
+}
+function useRead<T>(cache: Map<string, ReadEntry<T>>, key: string, enabled: boolean, url: string, normalize: (body: unknown) => T) {
+  const [, update] = useReducer((value: number) => value + 1, 0);
+  const entry = useMemo(() => enabled ? entryFor(cache, key) : null, [cache, key, enabled]);
+  useEffect(() => {
+    if (!entry) return;
+    entry.listeners.add(update);
+    if (!entry.value && !entry.error) startRead(entry, url, normalize);
+    return () => {
+      entry.listeners.delete(update);
+      if (!entry.listeners.size && entry.controller) {
+        entry.controller.abort(); entry.controller = null; entry.loading = false;
+      }
+    };
+  }, [entry, url, normalize]);
+  return {
+    data: entry?.value ?? null,
+    loading: !!entry && (entry.loading || (!entry.value && !entry.error)),
+    error: !!entry?.error,
+    retry: () => retryRead(entry, url, normalize),
+  };
+}
+const emptyLines: Line[] = [];
+const emptyRefs = new Map<string, string | null>();
+export function useCostReview({ enabled, generation }: { enabled: boolean; generation: string | null | undefined }) {
+  const { data: review, ...status } = useRead(costCache, JSON.stringify(generation ?? null), enabled, '/api/instrument-economics/cost-review', normalizeCostReview);
+  return { review, lines: review ? [...review.sales, ...review.purchases] : emptyLines, ...status };
+}
+export function useLineRefs({ companyId, customerSourceId, generation }: { companyId: string; customerSourceId: string | null; generation: string | null | undefined }, { enabled }: { enabled: boolean }) {
+  const params = lineRefsSearchParams({ companyId, customerSourceId: customerSourceId ?? '' });
+  const { data, ...status } = useRead(refsCache, JSON.stringify([companyId, customerSourceId, generation ?? null]), enabled && !!params, `/api/instrument-economics/line-refs?${params ?? ''}`, normalizeLineRefs);
+  return { refs: data ? new Map(data.rows.map(row => [row.id, row.voucherNumber])) : emptyRefs, ...status };
+}
+
 const purchaseValue = (line: SourceLine) => BigInt(line.netSalesPaise) === BigInt(0) ? '₹0 entry' : formatAcquisitionCost(line.netSalesPaise);
 
 function PurchaseRows({ sale, lines }: { sale: SourceLine | undefined; lines: SourceLine[] }) {

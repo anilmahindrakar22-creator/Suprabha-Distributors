@@ -4,8 +4,8 @@ vi.mock('next/link', () => ({ default: 'a' }));
 import { renderToStaticMarkup } from 'react-dom/server';
 import { CumulativeFinancialBreakdown, importProblemText, ImportProblemItem } from '@/components/instrument-economics-workspace';
 import { EconomicActionOptions, ProposedTargetReview, EconomicApprovalPreview, EconomicHealthBadge, EconomicTargetAdvancedDetails, EconomicTargetCard, InstrumentEconomicsWorkspace, economicCommandNotice, friendlyEconomicError, ItemGpBreakdown, reagentLifetime, reportingPeriodLabel, CommandForm } from '@/components/instrument-economics-workspace';
-import { capitalBeyondManagementReview, capitalPreviewPaise } from '@/components/instrument-economics-evidence-forms';
-import type { EconomicTarget } from '@/lib/instrument-economics-types';
+import { capitalBeyondManagementReview, capitalPreviewPaise, CostReviewContext, PurchaseCostVerificationFields } from '@/components/instrument-economics-evidence-forms';
+import type { EconomicTarget, EconomicsWorkspaceData } from '@/lib/instrument-economics-types';
 
 const target: EconomicTarget = {
   id: 'target-1', kind: 'placement', name: 'Central Lab', companyId: 'company-guid', customerId: 'customer-1', customerName: 'City Hospital',
@@ -16,6 +16,32 @@ const target: EconomicTarget = {
 };
 
 describe('instrument economics presentation', () => {
+  it('renders sales waiting for cost from the review context and keeps batch matching unchanged', () => {
+    const sale: NonNullable<EconomicsWorkspaceData['sourceLines']>[number] = {
+      id: 'review-sale', companyId: 'company-guid', voucherId: 'sale-voucher', voucherNumber: 'SALE-42', revision: '1', lineKey: '1', date: '2026-09-12',
+      kind: 'sale', customerSourceId: 'canonical-customer-guid', productId: 'reagent-guid', productName: 'Albumin', quantity: '2', unit: 'kit', netSalesPaise: '20000', batchId: 'batch-a',
+    };
+    const purchase = { ...sale, id: 'review-purchase', kind: 'purchase' as const, voucherId: 'purchase-voucher', voucherNumber: 'PURCHASE-13', date: '2026-09-01', netSalesPaise: '10000' };
+    const otherBatch = { ...purchase, id: 'other-batch', batchId: 'batch-b' };
+    const lines = [sale, purchase, otherBatch];
+    const attributionLines = [{ id: 'attribution', sourceLineId: sale.id, targetId: target.id, status: 'cost_unavailable', reason: 'Cost unavailable', shareBasisPoints: 10000, quantity: sale.quantity, revenuePaise: sale.netSalesPaise, costPaise: null, gpPaise: null, date: sale.date, voucherId: sale.voucherId, revision: sale.revision, productId: sale.productId, productName: 'Albumin', unit: sale.unit, costEvidence: null }];
+    const review = { sales: [sale], salesTotal: 1, purchases: [purchase, otherBatch], purchasesTotal: 2 };
+    const html = renderToStaticMarkup(<CostReviewContext.Provider value={{ review, lines, loading: false, error: false, retry: () => undefined, activate: () => undefined }}><PurchaseCostVerificationFields attributionLines={attributionLines} /></CostReviewContext.Provider>);
+    expect(html).toContain('1 sale line needs cost evidence.');
+    expect(html).toContain('1 ready to check against one purchase');
+    expect(html).toContain('Albumin · 1 purchase match · 2 kit · 2026-09-12 · SALE-42');
+    expect(html).not.toContain('2 possible purchases');
+  });
+  it('disables cost review selection while loading and offers Retry on an error', () => {
+    const renderReview = (loading: boolean, error: boolean) => renderToStaticMarkup(<CostReviewContext.Provider value={{ review: null, lines: [], loading, error, retry: () => undefined, activate: () => undefined }}><PurchaseCostVerificationFields /></CostReviewContext.Provider>);
+    const loading = renderReview(true, false);
+    expect(loading).toMatch(/<select[^>]*aria-label="Sale needing cost"[^>]*disabled=""/);
+    expect(loading).toContain('Loading sales…');
+    const error = renderReview(false, true);
+    expect(error).toContain('Could not load sales.');
+    expect(error).toMatch(/<button[^>]*type="button"[^>]*>Retry<\/button>/);
+    expect(readFileSync('components/instrument-economics-evidence-forms.tsx', 'utf8')).not.toContain('sourceLines');
+  });
   it('shows a previous customer in installation options and the instrument serial on placement cards', () => {
     const data: import('@/lib/instrument-economics-types').EconomicsWorkspaceData = {
       actorEmail: 'rr-management@test.local', targets: [{ ...target, instrumentSerialNumber: 'rr 1', instrumentMovedFrom: 'Lab A' }], customers: [], sourceLines: [], mappings: [], exceptions: [], leakage: [], cases: [],

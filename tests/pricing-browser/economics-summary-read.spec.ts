@@ -1,5 +1,10 @@
 import { expect, test } from '@playwright/test';
 
+test.beforeEach(async ({ page }) => {
+  await page.route('**/api/instrument-economics/cost-review**', route => route.fulfill({ json: { sales: [], salesTotal: 0, purchases: [], purchasesTotal: 0 } }));
+  await page.route('**/api/instrument-economics/line-refs**', route => route.fulfill({ json: { rows: [], total: 0, limit: 5000 } }));
+});
+
 const target = { id: 'summary-target', name: 'SYS 240', customerName: 'Summary laboratory', companyId: 'company', customerId: 'customer', customerSourceId: 'customer-guid', siteId: 'site', modelId: 'model', kind: 'placement', installationId: null,
   effectiveFrom: '2026-07-23', salesFrom: '2026-07-23', effectiveTo: null, approval: 'approved', version: 1, capitalPaise: '62500000', instrumentBillingPaise: '40000000', netInvestmentPaise: '22500000', revenuePaise: '10000', knownGpPaise: '6000', missingCostLines: 1, attributedLines: 2, recoveryPaise: '40006000', outstandingPaise: '22494000', health: 'data_incomplete', forecastMonths: null, expectation: null,
   reagentLifetime: { salesPaise: '20000', knownGpPaise: '12000', lines: 3, missingCostLines: 1 } };
