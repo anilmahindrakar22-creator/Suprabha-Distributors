@@ -1,5 +1,7 @@
 import { expect, test, type Page, type Route } from '@playwright/test';
 
+test.beforeEach(async ({ page }) => { await mockProducts(page, economicsData().sourceLines); });
+
 test('placement locks the instrument model and shows its previous customer', async ({ page }) => {
   await mockWorkspace(page, economicsData({ targets: [{ ...target, instrumentSerialNumber: 'rr 1', instrumentMovedFrom: 'Lab A' }], installations: [
     { id: 'rr-installation', name: 'RR analyzer', serialNumber: 'rr 1', customerName: 'Lab B', instrumentId: 'rr-instrument', modelId: 'rr-model', movedFrom: 'Lab A' },
@@ -31,6 +33,7 @@ test('instrument sale date drives lifetime labels and simple group and item mapp
   const posts: { action: string; payload: Record<string, unknown> }[] = [];
   const sold = { ...target, effectiveFrom: '2026-07-30', salesFrom: '2026-07-23' };
   const data = economicsData({ targets: [sold], attributionLines: [], itemGroupCatalogs: [{ id: 'sale-date-catalog', companyId: 'company-guid', sourceVersion: 'v1', observedAt: '2026-10-09T10:00:00Z', current: true, groups: [{ id: 'sale-date-group', name: 'Sale date group', itemCount: 30, parentId: null }], products: [] }] });
+  await mockProducts(page, data.sourceLines);
   await page.route('**/api/instrument-economics', route => {
     if (route.request().method() === 'GET') return route.fulfill({ json: data });
     posts.push(route.request().postDataJSON());
@@ -67,6 +70,7 @@ test('existing instrument registration searches invoices safely and keeps instal
   const posts: { action: string; payload: Record<string, unknown> }[] = [];
   const data = economicsData({ targets: [], sourceLines: [{ id: 'historical-sale', companyId: 'company-1', voucherId: 'billing-1', voucherNumber: 'SD/26-27/0388', revision: '7', lineKey: '1', date: '2026-07-23', kind: 'sale', customerSourceId: 'customer-guid-1', productId: 'analyzer-1', productName: 'Historical analyzer', quantity: '1', unit: 'qty', netSalesPaise: '40000000', batchId: 'HIST-SERIAL' }, { id: 'bulk-sale', companyId: 'company-1', voucherId: 'bulk-billing', revision: '1', lineKey: '2', date: '2026-07-23', kind: 'sale', customerSourceId: 'customer-guid-1', productId: 'analyzer-1', productName: 'Bulk analyzer', quantity: '2', unit: 'qty', netSalesPaise: '80000000', batchId: 'HIST-SERIAL' }] });
   await mockInvoiceLines(page, data.sourceLines);
+  await mockProducts(page, data.sourceLines);
   await page.route('**/api/instrument-economics', route => {
     if (route.request().method() === 'GET') return route.fulfill({ json: data });
     posts.push(route.request().postDataJSON());
@@ -174,6 +178,7 @@ async function openAdvanced(page: Page, section: 'All actions' | 'Exceptions' | 
 }
 
 async function mockWorkspace(page: Page, body = economicsData()) {
+  await mockProducts(page, body.sourceLines);
   await mockInvoiceLines(page, body.sourceLines);
   await page.route('**/api/instrument-economics', (route: Route) => route.request().method() === 'GET'
     ? route.fulfill({ json: body })
@@ -214,6 +219,7 @@ test('proposal review shows net investment and the placement-start baseline befo
     approvalPreview: { status: 'within_limit', capitalPaise: '55000000', instrumentBillingPaise: '20000000', netInvestmentPaise: '35000000',
       expectedMonthlyGpPaise: '1000000', expectedPaybackMonths: 35, expectationId: 'start-baseline', expectationEffectiveFrom: '2025-01-01',
       policyId: 'policy-1', reviewMonths: 36, exceptionMonths: 48 } }] });
+  await mockProducts(page, data.sourceLines);
   await page.route('**/api/instrument-economics', route => {
     if (route.request().method() === 'GET') return route.fulfill({ json: data });
     posts.push(route.request().postDataJSON());
@@ -247,6 +253,7 @@ test('verified placement can start actual tracking without an expected target', 
     approvalPreview: { status: 'actuals_only', capitalPaise: '62500000', instrumentBillingPaise: '40000000', netInvestmentPaise: '22500000',
       expectedMonthlyGpPaise: null, expectedPaybackMonths: null, expectationId: null, expectationEffectiveFrom: null,
       policyId: 'policy-1', reviewMonths: 36, exceptionMonths: 48 } }] });
+  await mockProducts(page, data.sourceLines);
   await page.route('**/api/instrument-economics', route => {
     if (route.request().method() === 'GET') return route.fulfill({ json: data });
     posts.push(route.request().postDataJSON());
@@ -358,6 +365,7 @@ test('instrument acquisition previews Tally net cost and submits a source link i
   data.sourceLines.push({ ...data.sourceLines[2], id: 'instrument-purchase', voucherId: 'PUR-INSTRUMENT-9', productId: 'instrument-guid', quantity: '1', unit: 'nos', netSalesPaise: '55000001' });
   const posts: Record<string, unknown>[] = [];
   await mockInvoiceLines(page, data.sourceLines);
+  await mockProducts(page, data.sourceLines);
   await page.route('**/api/instrument-economics', route => {
     if (route.request().method() === 'GET') return route.fulfill({ json: data });
     posts.push(route.request().postDataJSON());
@@ -434,6 +442,7 @@ for (const cancelled of [false, true]) {
 test('incompatible acquisition evidence cannot be acknowledged through the review form', async ({ page }) => {
   const posts: unknown[] = [];
   const data = economicsData({ acquisitionReviewItems: [{ targetId: target.id, targetName: target.name, expectedVersion: 2, voucherId: 'PUR-ACQUISITION', expectedSourceRevision: '4', changed: true, cancelled: false, previousAmountPaise: '55000000', proposedAmountPaise: null, capitalDeltaPaise: null, productId: 'instrument-guid', lineKey: '1' }] });
+  await mockProducts(page, data.sourceLines);
   await page.route('**/api/instrument-economics', route => {
     if (route.request().method() === 'GET') return route.fulfill({ json: data });
     posts.push(route.request().postDataJSON()); return route.fulfill({ json: { ok: true } });
@@ -622,6 +631,7 @@ test('non-JSON access rejection still clears financial figures', async ({ page }
 
 test('keeps explicit server errors visible and preserves entered product row values', async ({ page }) => {
   const posts: unknown[] = [];
+  await mockProducts(page, economicsData().sourceLines.map(line => ({ ...line, productName: line.productId === 'product-guid-one' ? 'Reagent one' : 'Reagent two' })));
   await page.route('**/api/instrument-economics', async route => {
     if (route.request().method() === 'GET') return route.fulfill({ json: economicsData() });
     posts.push(route.request().postDataJSON()); return route.fulfill({ status: 400, json: { error: 'Expectation evidence is invalid' } });
@@ -633,20 +643,22 @@ test('keeps explicit server errors visible and preserves entered product row val
   await page.getByLabel('Monthly revenue (₹)').fill('5000.00');
   await page.getByLabel('Monthly GP (₹)').fill('1500.00');
   await page.getByLabel('Reason').fill('Approved monthly commercial baseline');
-  await page.getByLabel('Canonical product GUID').selectOption('product-guid-one');
+  await page.getByRole('combobox', { name: 'Canonical product GUID' }).click();
+  await page.getByRole('option', { name: /product-guid-one/ }).click();
   await page.getByLabel('Base unit').fill('test');
   await page.getByLabel('Expected units per month').fill('0.5');
   await page.getByLabel('Expected unit price (₹)').fill('500.00');
   await page.getByLabel('Expected unit cost (₹)').fill('350.00');
   await page.getByRole('button', { name: 'Add another product' }).click();
-  await page.getByLabel('Canonical product GUID').nth(1).selectOption('product-guid-two');
+  await page.getByRole('combobox', { name: 'Canonical product GUID' }).nth(1).click();
+  await page.getByRole('option', { name: /product-guid-two/ }).click();
   await page.getByLabel('Base unit').nth(1).fill('kit');
   await page.getByLabel('Expected units per month').nth(1).fill('4');
   await page.getByLabel('Expected unit price (₹)').nth(1).fill('900.00');
   await page.getByLabel('Expected unit cost (₹)').nth(1).fill('600.00');
   await page.getByRole('button', { name: 'Set expectation' }).click();
   await expect(page.getByRole('alert')).toContainText('Expectation evidence is invalid');
-  await expect(page.getByLabel('Canonical product GUID').nth(1)).toHaveValue('product-guid-two');
+  await expect(page.locator('input[name="itemProductId1"]')).toHaveValue('product-guid-two');
   expect(posts).toHaveLength(1);
   expect(posts[0]).toMatchObject({ action: 'set_expectation', payload: { monthlyRevenuePaise: '500000', monthlyGpPaise: '150000', items: [
     { productId: 'product-guid-one', baseUnit: 'test', expectedMonthlyUnits: '0.5', expectedUnitPricePaise: '50000', expectedUnitCostPaise: '35000' },
@@ -656,6 +668,7 @@ test('keeps explicit server errors visible and preserves entered product row val
 
 test('retries an unknown response with the exact saved command and idempotency key', async ({ page }) => {
   const posts: Array<{ action: string; payload: Record<string, unknown> }> = [];
+  await mockProducts(page, economicsData().sourceLines.map(line => ({ ...line, productName: line.productId === 'product-guid-one' ? 'Reagent one' : 'Reagent two' })));
   await page.route('**/api/instrument-economics', async route => {
     if (route.request().method() === 'GET') return route.fulfill({ json: economicsData() });
     posts.push(route.request().postDataJSON());
@@ -667,7 +680,9 @@ test('retries an unknown response with the exact saved command and idempotency k
   await page.getByLabel('Effective from').fill('2026-10-01');
   await page.getByLabel('Monthly revenue (₹)').fill('5000.00'); await page.getByLabel('Monthly GP (₹)').fill('1500.00');
   await page.getByLabel('Reason').fill('Approved monthly commercial baseline');
-  await page.getByLabel('Canonical product GUID').selectOption('product-guid-one'); await page.getByLabel('Base unit').fill('test');
+  await page.getByRole('combobox', { name: 'Canonical product GUID' }).click();
+  await page.getByRole('option', { name: /product-guid-one/ }).click();
+  await page.getByLabel('Base unit').fill('test');
   await page.getByLabel('Expected units per month').fill('10'); await page.getByLabel('Expected unit price (₹)').fill('500.00'); await page.getByLabel('Expected unit cost (₹)').fill('350.00');
   await page.getByRole('button', { name: 'Set expectation' }).click();
   await expect(page.getByRole('alert')).toContainText('Temporary gateway response');
@@ -722,6 +737,7 @@ test('FOC review submits its classification without requiring an original-sale l
   data.sourceLines.push({ ...data.sourceLines[0], id: 'foc-source', voucherId: 'FOC-1', netSalesPaise: '0' });
   const posts: Array<{ action: string; payload: Record<string, unknown> }> = [];
   await mockInvoiceLines(page, data.sourceLines);
+  await mockProducts(page, data.sourceLines);
   await page.route('**/api/instrument-economics', route => {
     if (route.request().method() === 'GET') return route.fulfill({ json: data });
     posts.push(route.request().postDataJSON()); return route.fulfill({ json: { ok: true } });
@@ -747,6 +763,7 @@ test('verifies a sale against multiple compatible historical purchases without g
   ] });
   data.sourceLines.push({ ...data.sourceLines[2], id: 'purchase-line-2', voucherId: 'PUR-02', date: '2026-09-02' });
   data.sourceLines.push({ ...data.sourceLines[2], id: 'purchase-too-late', voucherId: 'PUR-LATE', date: '2026-09-11' });
+  await mockProducts(page, data.sourceLines);
   await page.route('**/api/instrument-economics', route => {
     if (route.request().method() === 'GET') return route.fulfill({ json: data });
     posts.push(route.request().postDataJSON()); return route.fulfill({ json: { ok: true } });
@@ -978,6 +995,7 @@ test('mapping suggestions stay company-scoped and submit exact IDs for a placeme
     { ...base.sourceLines[0], id: 'same-name', productId: 'same-name-distinct-guid', productName: 'Chemistry reagent', date: '2026-09-21' },
     { ...base.sourceLines[0], id: 'foreign-product', companyId: 'other-company', productId: 'foreign-guid', productName: 'Foreign reagent' },
   ] });
+  await mockProducts(page, data.sourceLines);
   await page.route('**/api/instrument-economics', route => {
     if (route.request().method() === 'GET') return route.fulfill({ json: data });
     posts.push(route.request().postDataJSON());
@@ -1056,6 +1074,7 @@ test('verified IDs outside imported history still permit a model mapping', async
 test('mapping forms opened from an instrument show the placement as fixed text', async ({ page }) => {
   const posts: { action: string; payload: Record<string, unknown> }[] = [];
   const data = economicsData({ targets: [target], itemGroupCatalogs: [{ id: 'current-catalog', companyId: 'company-guid', sourceVersion: 'v1', observedAt: '2026-10-09T10:00:00Z', current: true, groups: [{ id: 'group-one', name: 'Chemistry group', itemCount: 3, parentId: null }], products: [] }] });
+  await mockProducts(page, data.sourceLines);
   await page.route('**/api/instrument-economics', route => {
     if (route.request().method() === 'GET') return route.fulfill({ json: data });
     posts.push(route.request().postDataJSON());
@@ -1088,6 +1107,7 @@ test('single item picker filters by search', async ({ page }) => {
     { id: 'beta-reagent-id', name: 'Beta reagent', groupId: null, unit: 'qty' },
     { id: 'beta-control-id', name: 'Beta control', groupId: null, unit: 'qty' },
   ] }] });
+  await mockProducts(page, data.sourceLines);
   await page.route('**/api/instrument-economics', route => {
     if (route.request().method() === 'GET') return route.fulfill({ json: data });
     posts.push(route.request().postDataJSON()); return route.fulfill({ json: { ok: true } });
@@ -1134,6 +1154,7 @@ test('item group mapping follows the selected placement company and submits exac
     ],
     sourceLines: base.sourceLines,
   });
+  await mockProducts(page, data.sourceLines);
   await page.route('**/api/instrument-economics', route => {
     if (route.request().method() === 'GET') return route.fulfill({ json: data });
     posts.push(route.request().postDataJSON()); return route.fulfill({ json: { ok: true } });
@@ -1177,6 +1198,7 @@ test('item group mapping shows empty and stale catalog states and blocks submiss
     { id: 'catalog-empty', companyId: 'company-guid', sourceVersion: 'v42', observedAt: '2026-10-09T10:00:00.000Z', current: true, groups: [], products: [] },
     { id: 'catalog-stale', companyId: 'other-company', sourceVersion: 'v41', observedAt: '2026-10-08T10:00:00.000Z', current: false, groups: [{ id: 'stale-group', name: 'Old group', parentId: null, itemCount: 9 }], products: [] },
   ] });
+  await mockProducts(page, data.sourceLines);
   await page.route('**/api/instrument-economics', route => {
     if (route.request().method() === 'GET') return route.fulfill({ json: data });
     posts.push(route.request().postDataJSON()); return route.fulfill({ json: { ok: true } });
@@ -1346,6 +1368,7 @@ test('instrument items panel suggests related items but searches all groups with
       { id: 'r-other', sourceLineId: 'other-customer-sale', targetId: null, status: 'unattributed', reason: 'no_verified_compatible_placement', shareBasisPoints: 10000, quantity: '1', revenuePaise: '100000', costPaise: null, gpPaise: null, date: '2026-09-20', voucherId: 'tally-x', revision: '1', productId: 'scs', productName: 'SYS SCS 400', unit: 'qty', costEvidence: null },
       { id: 'r-unrelated', sourceLineId: 'unrelated-sale', targetId: null, status: 'unattributed', reason: 'no_verified_compatible_placement', shareBasisPoints: 10000, quantity: '2', revenuePaise: '3395979', costPaise: null, gpPaise: null, date: '2026-09-20', voucherId: 'tally-y', revision: '1', productId: 'wdf', productName: 'Sysmex Lysercell WDF', unit: 'qty', costEvidence: null },
     ] });
+  await mockProducts(page, data.sourceLines);
   await page.route('**/api/instrument-economics', route => {
     if (route.request().method() === 'GET') return route.fulfill({ json: data });
     posts.push(route.request().postDataJSON()); return route.fulfill({ json: { ok: true } });
@@ -1395,6 +1418,7 @@ test('read-only roles see counted items without add or remove controls', async (
 test('simple group mapping saves with two selections and keeps dates editable', async ({ page }) => {
   const posts: Record<string, unknown>[] = [];
   const data = economicsData({ targets: [target], itemGroupCatalogs: [{ id: 'current-catalog', companyId: 'company-guid', sourceVersion: 'v1', observedAt: '2026-10-09T10:00:00Z', current: true, groups: [{ id: 'group-one', name: 'Chemistry group', itemCount: 30, parentId: null }], products: [] }] });
+  await mockProducts(page, data.sourceLines);
   await page.route('**/api/instrument-economics', route => {
     if (route.request().method() === 'GET') return route.fulfill({ json: data });
     posts.push(route.request().postDataJSON()); return route.fulfill({ json: { ok: true } });
@@ -1414,6 +1438,7 @@ test('simple group mapping saves with two selections and keeps dates editable', 
 test('simple individual mapping submits canonical IDs and clears item on placement change', async ({ page }) => {
   const posts: Record<string, unknown>[] = [];
   const data = economicsData({ targets: [target, { ...target, id: 'foreign-placement', companyId: 'foreign-company', name: 'Other instrument' }] });
+  await mockProducts(page, data.sourceLines);
   await page.route('**/api/instrument-economics', route => {
     if (route.request().method() === 'GET') return route.fulfill({ json: data });
     posts.push(route.request().postDataJSON()); return route.fulfill({ json: { ok: true } });
@@ -1505,6 +1530,7 @@ test('group item checklist unticks an item from the group start and records the 
       { id: 'coag-reagent', name: 'Coag reagent', groupId: 'haem', unit: 'qty' },
       { id: 'coag-clean', name: 'Coag cleaner', groupId: 'haem', unit: 'qty' },
     ] }] });
+  await mockProducts(page, data.sourceLines);
   await page.route('**/api/instrument-economics', route => {
     if (route.request().method() === 'GET') return route.fulfill({ json: data });
     posts.push(route.request().postDataJSON()); return route.fulfill({ json: { ok: true } });
@@ -1533,6 +1559,7 @@ test('group item checklist collects ticks and saves them in one batch', async ({
       { id: 'coag-reagent', name: 'Coag reagent', groupId: 'haem', unit: 'qty' },
       { id: 'coag-clean', name: 'Coag cleaner', groupId: 'haem', unit: 'qty' },
     ] }] });
+  await mockProducts(page, data.sourceLines);
   await page.route('**/api/instrument-economics', route => {
     if (route.request().method() === 'GET') return route.fulfill({ json: data });
     posts.push(route.request().postDataJSON()); return route.fulfill({ json: { ok: true } });
@@ -1563,6 +1590,7 @@ test('group checklist can search and untick all items in one batch', async ({ pa
   const data = economicsData({ targets: [target], sourceLines: [], businessDate: '2026-11-13',
     itemGroupMappings: [{ id: 'group-map', companyId: 'company-guid', modelId: 'model-1', groupId: 'haem', targetId: target.id, effect: 'include', effectiveFrom: '2026-05-01', effectiveTo: null, catalogId: 'catalog-1', reason: 'Generic haematology group' }],
     itemGroupCatalogs: [{ id: 'catalog-1', companyId: 'company-guid', sourceVersion: 'v1', observedAt: '2026-10-09T10:00:00Z', current: true, groups: [{ id: 'haem', name: 'Generic haematology', itemCount: 10, parentId: null }], products }] });
+  await mockProducts(page, data.sourceLines);
   await page.route('**/api/instrument-economics', route => {
     if (route.request().method() === 'GET') return route.fulfill({ json: data });
     posts.push(route.request().postDataJSON()); return route.fulfill({ json: { ok: true } });
@@ -1592,6 +1620,7 @@ type AreaPost = { action: string; payload: Record<string, unknown> };
 async function mockAreaWorkspace(page: Page, existingGroup = true, failFirst = false) {
   const posts: AreaPost[] = [];
   const data = { ...areaWorkspace(existingGroup), itemAreas: [...areaLinks] };
+  await mockProducts(page, data.sourceLines);
   await page.route('**/api/instrument-economics', route => {
     if (route.request().method() === 'GET') return route.fulfill({ json: data });
     const post = route.request().postDataJSON() as AreaPost;
@@ -1741,5 +1770,21 @@ async function mockInvoiceLines(page: Page, rows: Record<string, unknown>[]) {
     });
     const limit = Number(params.get('limit') ?? 50); const offset = Number(params.get('offset') ?? 0);
     return route.fulfill({ json: { rows: filtered.slice(offset, offset + limit), total: filtered.length, limit, offset } });
+  });
+}
+async function mockProducts(page: Page, lines: Record<string, unknown>[]) {
+  const latest = new Map<string, Record<string, unknown>>();
+  for (const line of [...lines].sort((a, b) => String(a.date).localeCompare(String(b.date)) || Number(a.revision) - Number(b.revision) || String(a.id).localeCompare(String(b.id)))) {
+    latest.set(JSON.stringify([line.companyId, line.productId]), line);
+  }
+  const rows = [...latest.values()].map(line => ({ companyId: String(line.companyId), productId: String(line.productId), productName: String(line.productName || line.productId), lastDate: String(line.date) }))
+    .sort((a, b) => a.productName.localeCompare(b.productName) || a.productId.localeCompare(b.productId) || a.companyId.localeCompare(b.companyId));
+  await page.route('**/api/instrument-economics/products**', route => {
+    const params = new URL(route.request().url()).searchParams;
+    const ids = params.get('productIds')?.split(',');
+    const words = (params.get('q') ?? '').trim().toLowerCase().split(/\s+/);
+    const matches = rows.filter(row => (!params.has('companyId') || row.companyId === params.get('companyId')) && (!ids || ids.includes(row.productId)) && words.every(word => `${row.productId} ${row.productName}`.toLowerCase().includes(word)));
+    const limit = Number(params.get('limit') ?? 200), offset = Number(params.get('offset') ?? 0);
+    return route.fulfill({ json: { rows: matches.slice(offset, offset + limit), total: matches.length, limit, offset, companies: [...new Set(rows.map(row => row.companyId))] } });
   });
 }

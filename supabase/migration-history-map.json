@@ -1725,6 +1725,13 @@
       "remoteVersion": null,
       "remoteSha256": null,
       "status": "not_deployed"
+    },
+    {
+      "localFile": "20261227110000_economic_products_read.sql",
+      "localSha256": "ea66228c3e29b681378605dcd07e31bdcd8fd18279ca4c4e194b9baf28ed3278",
+      "remoteVersion": null,
+      "remoteSha256": null,
+      "status": "not_deployed"
     }
   ],
   "liveCheck": {

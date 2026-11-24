@@ -4,6 +4,8 @@ import { useEffect, useId, useState } from 'react';
 import { compatiblePurchaseLines, costVerificationSaleLines, maxEconomicEvidenceRows, purchaseMatchKind, type PurchaseMatchKind } from '@/lib/instrument-economics-forms';
 import type { EconomicTarget, EconomicsWorkspaceData } from '@/lib/instrument-economics-types';
 import { EconomicLinePicker } from './economic-line-picker';
+import type { SourceLine } from '@/lib/instrument-economics-lines';
+import { useEconomicProducts } from './economic-product-picker';
 
 export function HistoricalInstrumentFields() {
   const [selected, setSelected] = useState<SourceLine | null>(null);
@@ -23,17 +25,25 @@ export function EconomicMappingIdentityFields({ data, simpleOnly = false, onTarg
   const [targetId, setTargetId] = useState(defaultTargetId);
   const [productId, setProductId] = useState('');
   const [query, setQuery] = useState('');
+  const [autoMatch, setAutoMatch] = useState('');
   const placements = data.targets.filter(row => row.kind === 'placement');
   const fixedTarget = placements.find(row => row.id === defaultTargetId);
   const target = placements.find(row => row.id === targetId);
+  const { rows } = useEconomicProducts({ companyId: target?.companyId, q: query.trim().length >= 2 ? query : undefined, limit: 200 }, { enabled: !!target && !advanced });
   const products = new Map<string, string>();
-  (data.sourceLines ?? []).filter(row => row.companyId === target?.companyId).forEach(row => products.set(row.productId, row.productName || row.productId));
+  rows.forEach(row => products.set(row.productId, row.productName || row.productId));
   data.mappings.filter(row => row.companyId === target?.companyId).forEach(row => { if (!products.has(row.productId)) products.set(row.productId, row.productId); });
   (data.itemGroupCatalogs ?? []).filter(row => row.companyId === target?.companyId && row.current)
     .sort((a, b) => a.observedAt.localeCompare(b.observedAt)).forEach(catalog => catalog.products.forEach(row => products.set(row.id, row.name)));
   const normalizedQuery = query.trim().toLowerCase();
   const sortedProducts = [...products].sort((a, b) => a[1].localeCompare(b[1]) || a[0].localeCompare(b[0]));
   const matches = sortedProducts.filter(([id, name]) => normalizedQuery.length < 2 || name.toLowerCase().includes(normalizedQuery) || id.toLowerCase().includes(normalizedQuery));
+  const uniqueMatchId = normalizedQuery.length >= 2 && matches.length === 1 ? matches[0][0] : '';
+  const autoMatchKey = JSON.stringify([targetId, query, uniqueMatchId]);
+  if (autoMatch !== autoMatchKey) {
+    setAutoMatch(autoMatchKey);
+    if (uniqueMatchId) setProductId(uniqueMatchId);
+  }
   const limited = normalizedQuery.length >= 2 && matches.length > 200;
   const visibleIds = new Set((limited ? matches.slice(0, 200) : matches).map(([id]) => id));
   const visibleProducts = sortedProducts.filter(([id]) => visibleIds.has(id) || id === productId);
@@ -72,13 +82,14 @@ function AdvancedMappingIdentityFields({ data }: { data: EconomicsWorkspaceData 
   const [modelId, setModelId] = useState('');
   const [productId, setProductId] = useState('');
   const [targetId, setTargetId] = useState('');
-  const companies = [...new Set([...data.targets, ...data.mappings, ...(data.sourceLines ?? [])].map(row => row.companyId))].sort();
+  const companyPage = useEconomicProducts({ limit: 1 }, { enabled: true });
+  const productPage = useEconomicProducts({ companyId, q: productId.trim().length >= 2 ? productId : undefined }, { enabled: !!companyId });
+  const companies = [...new Set([...data.targets.map(row => row.companyId), ...data.mappings.map(row => row.companyId), ...companyPage.companies])].sort();
   const models = [...new Set([...data.targets, ...data.mappings].filter(row => row.companyId === companyId).map(row => row.modelId))].sort();
   const products = new Map<string, string>();
   data.mappings.filter(row => row.companyId === companyId).forEach(row => products.set(row.productId, row.productId));
   // Names are display hints only. The submitted value always remains the canonical ID.
-  [...(data.sourceLines ?? [])].sort((a, b) => a.date.localeCompare(b.date) || (BigInt(a.revision) < BigInt(b.revision) ? -1 : BigInt(a.revision) > BigInt(b.revision) ? 1 : a.id.localeCompare(b.id)))
-    .filter(row => row.companyId === companyId).forEach(row => products.set(row.productId, row.productName || row.productId));
+  productPage.rows.forEach(row => products.set(row.productId, row.productName || row.productId));
   const placements = data.targets.filter(row => row.kind === 'placement' && row.companyId === companyId && row.modelId === modelId.trim());
   return <section aria-label="Product mapping identity" className="grid min-w-0 gap-3 rounded-xl border border-sf-line-soft p-3 sm:col-span-2 sm:grid-cols-2">
     <p className="text-xs leading-5 text-sf-muted sm:col-span-2">Choose a suggested Tally record, or enter its verified ID if it is outside the imported history. Product names help identify records; mappings use exact IDs.</p>
@@ -185,7 +196,6 @@ export function InstrumentAcquisitionFields() {
 
 const inputStyle = 'min-h-10 min-w-0 w-full rounded-lg border border-sf-line bg-white px-3 text-sm';
 const buttonStyle = 'min-h-10 rounded-lg border border-sf-line px-3 text-sm font-bold text-sf-brand';
-type SourceLine = NonNullable<EconomicsWorkspaceData['sourceLines']>[number];
 
 export function PurchaseCostVerificationFields({ lines, attributionLines = [] }: { lines: SourceLine[]; attributionLines?: NonNullable<EconomicsWorkspaceData['attributionLines']> }) {
   const [saleId, setSaleId] = useState('');
