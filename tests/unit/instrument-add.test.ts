@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { derivedInstrumentFields, instrumentLabIdentities, instrumentLineLabel, instrumentPurchases, investmentLine, matchingInstrumentSales, rentalLabs } from '../../lib/instrument-add';
+import { derivedInstrumentFields, instrumentLabIdentities, instrumentLineLabel, instrumentPurchaseFilter, investmentLine, matchingSalesFilter, rentalLabs } from '../../lib/instrument-add';
 
 const purchase = {
   id: 'purchase-1', companyId: 'co-1', voucherId: 'v-1', voucherNumber: 'PUR-17', revision: '1', lineKey: 'line-1',
@@ -21,19 +21,13 @@ const data = (sourceLines: unknown[] = [purchase, sale], identities: unknown[] =
 }) as never;
 
 describe('instrument add helpers', () => {
-  it('filters purchase candidates by equipment threshold, usage, query, and date', () => {
-    const rows = [purchase, { ...purchase, id: 'below', netSalesPaise: '4999999' }, { ...purchase, id: 'zero', netSalesPaise: '0' }, { ...purchase, id: 'negative', netSalesPaise: '-9000000' }, { ...purchase, id: 'used', usedByInstrument: true }, { ...purchase, id: 'fractional-qty', quantity: '1.01' }, { ...purchase, id: 'formatted-qty', quantity: '1.000000' }, { ...purchase, id: 'older', date: '2025-01-01' }];
-    expect(instrumentPurchases(data(rows), 'sys')).toHaveLength(3);
-    expect(instrumentPurchases(data(rows))[0].id).toBe('purchase-1');
-    expect(instrumentPurchases(data(rows), '', true)).toHaveLength(4);
-    expect(instrumentPurchases(data([{ ...purchase, id: 'threshold', netSalesPaise: '5000000' }]))[0].id).toBe('threshold');
+  it('builds server purchase filters for the equipment threshold and word search', () => {
+    expect(instrumentPurchaseFilter(false, 'sys analyzer')).toEqual({ kind: 'purchase', quantityOne: true, unusedOnly: true, minNetSalesPaise: '5000000', q: 'sys analyzer' });
+    expect(instrumentPurchaseFilter(true)).toEqual({ kind: 'purchase', quantityOne: true, unusedOnly: true, minNetSalesPaise: '1', q: '' });
   });
 
-  it('finds only unused, qualifying sales for the same company and product', () => {
-    const rows = [sale, { ...sale, id: 'other-company', companyId: 'co-2' }, { ...sale, id: 'other-product', productId: 'other' }, { ...sale, id: 'other-unit', unit: 'Box' }, { ...sale, id: 'early', date: '2026-07-22' }, { ...sale, id: 'small-positive', netSalesPaise: '1' }, { ...sale, id: 'formatted-qty', quantity: '1.000000' }, { ...sale, id: 'fractional-qty', quantity: '1.01' }, { ...sale, id: 'negative', netSalesPaise: '-30000000' }, { ...sale, id: 'used', usedByInstrument: true }];
-    expect(matchingInstrumentSales(data(rows), purchase).map(row => row.id)).toEqual(['sale-1', 'small-positive', 'formatted-qty']);
-    const cheaperPurchase = { ...purchase, netSalesPaise: '100' };
-    expect(matchingInstrumentSales(data([{ ...sale, netSalesPaise: '1' }]), cheaperPurchase)).toHaveLength(1);
+  it('builds a same-company, product and unit sales filter after the purchase date', () => {
+    expect(matchingSalesFilter(purchase)).toEqual({ kind: 'sale', companyId: purchase.companyId, productId: purchase.productId, unit: purchase.unit, quantityOne: true, minNetSalesPaise: '1', unusedOnly: true, dateFrom: purchase.date });
   });
 
   it('formats readable labels and investment arithmetic without identifiers', () => {

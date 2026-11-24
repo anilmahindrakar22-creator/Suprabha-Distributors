@@ -3,38 +3,15 @@
 import { useEffect, useId, useState } from 'react';
 import { compatiblePurchaseLines, costVerificationSaleLines, maxEconomicEvidenceRows, purchaseMatchKind, type PurchaseMatchKind } from '@/lib/instrument-economics-forms';
 import type { EconomicTarget, EconomicsWorkspaceData } from '@/lib/instrument-economics-types';
-import { Combobox, ComboboxInput, ComboboxContent, ComboboxList, ComboboxItem, ComboboxEmpty } from '@/components/ui/combobox';
+import { EconomicLinePicker } from './economic-line-picker';
 
-type InvoiceOption = { value: string; label: string };
-function SearchableInstrumentInvoice({ lines, value, onChange }: { lines: NonNullable<EconomicsWorkspaceData['sourceLines']>; value: string; onChange: (id: string) => void }) {
-  const id = useId();
-  const [query, setQuery] = useState('');
-  const options: InvoiceOption[] = lines.map(line => ({ value: line.id, label: `${line.productName || line.productId} · ${line.voucherNumber?.trim() || line.voucherId} / ${line.lineKey} · ${line.date}${line.batchId ? ` · ${line.batchId}` : ''}` }));
-  const words = query.trim().toLowerCase().split(/\s+/).filter(Boolean);
-  const matches = options.filter(option => words.every(word => option.label.toLowerCase().includes(word)));
-  return <div className="grid min-w-0 gap-1 text-xs font-semibold">
-    <label htmlFor={id}>Instrument selling line</label>
-    <Combobox items={options} filteredItems={matches} filter={null} value={options.find(option => option.value === value) ?? null} inputValue={query} name="sourceLineId" required
-      itemToStringLabel={option => option.label} itemToStringValue={option => option.value} isItemEqualToValue={(a, b) => a.value === b.value}
-      onInputValueChange={(text, details) => { setQuery(text); if (details.reason === 'input-change' || details.reason === 'input-clear') onChange(''); }}
-      onValueChange={option => { onChange(option?.value ?? ''); setQuery(option?.label ?? ''); }}>
-      <ComboboxInput id={id} placeholder="Search item, invoice, date or serial…" showClear className="min-h-11 w-full rounded-lg border-sf-line bg-white" />
-      <ComboboxContent className="max-w-[calc(100vw-2rem)] bg-white text-sf-strong">
-        <ComboboxEmpty>No matching instrument invoices.</ComboboxEmpty>
-        <ComboboxList>{(option: InvoiceOption) => <ComboboxItem key={option.value} value={option} className="min-h-11 whitespace-normal break-words py-3">{option.label}</ComboboxItem>}</ComboboxList>
-      </ComboboxContent>
-    </Combobox>
-  </div>;
-}
-
-export function HistoricalInstrumentFields({ lines }: { lines: NonNullable<EconomicsWorkspaceData['sourceLines']> }) {
-  const [sourceId, setSourceId] = useState('');
-  const selected = lines.find(line => line.id === sourceId);
-  const eligible = lines.filter(line => line.kind === 'sale' && /^1(?:\.0{1,6})?$/.test(line.quantity) && BigInt(line.netSalesPaise) > BigInt(0));
+export function HistoricalInstrumentFields() {
+  const [selected, setSelected] = useState<SourceLine | null>(null);
+  const sourceId = selected?.id ?? '';
   return <section aria-label="Existing instrument invoice" className="grid min-w-0 gap-3 rounded-xl border border-sf-line-soft p-3 sm:col-span-2">
     <h3 className="text-sm font-bold">Existing instrument invoice</h3>
     <p className="text-xs leading-5 text-sf-muted">Register equipment already installed before Orders was used. Select its verified Tally billing line and enter the confirmed installation date separately. This creates an equipment record; capital and billing links are reviewed in target setup.</p>
-    <SearchableInstrumentInvoice lines={eligible} value={sourceId} onChange={setSourceId} />
+    <EconomicLinePicker filter={{ kind: 'sale', quantityOne: true, minNetSalesPaise: '1' }} name="sourceLineId" label="Instrument selling line" value={selected} onChange={setSelected} required placeholder="Search item, invoice, date or serial…" optionLabel={line => `${line.productName || line.productId} · ${line.voucherNumber?.trim() || line.voucherId} / ${line.lineKey} · ${line.date}${line.batchId ? ` · ${line.batchId}` : ''}`} />
     <input type="hidden" name="expectedSourceRevision" value={selected?.revision ?? ''} />
     <label className="grid gap-1 text-xs font-semibold">Confirmed serial number<input key={sourceId} name="serialNumber" defaultValue={selected?.batchId ?? ''} required minLength={2} maxLength={100} className="min-h-10 min-w-0 rounded-lg border border-sf-line px-3 text-sm" /></label>
     {selected ? <p className="text-xs text-sf-muted">Invoice date: {selected.date}. Confirm that the selected customer and serial belong to this instrument.</p> : null}
@@ -180,30 +157,26 @@ function placementInvestment(capital: string, billing: string) {
   const remaining = BigInt(capital) - BigInt(billing); return (remaining > BigInt(0) ? remaining : BigInt(0)).toString();
 }
 export function InstrumentBillingFields({ data }: { data: EconomicsWorkspaceData }) {
-  const [targetId, setTargetId] = useState(''); const [sourceId, setSourceId] = useState('');
+  const [targetId, setTargetId] = useState(''); const [selected, setSelected] = useState<SourceLine | null>(null);
   const targets = data.targets.filter(target => target.kind === 'placement' && target.acquisitionProductId && target.capitalEvidenceCurrent !== false && !(data.instrumentBillings ?? []).some(billing => billing.target_id === target.id));
   const target = targets.find(row => row.id === targetId);
-  const sales = (data.sourceLines ?? []).filter(line => target && line.kind === 'sale' && line.companyId === target.companyId && line.customerSourceId === target.customerSourceId && line.productId === target.acquisitionProductId && line.unit === target.acquisitionUnit && Number(line.quantity) === 1 && BigInt(line.netSalesPaise) > BigInt(0));
-  const selected = sales.find(line => line.id === sourceId);
   const investment = target && selected ? placementInvestment(target.capitalPaise, selected.netSalesPaise) : null;
   return <section aria-label="Instrument billing and placement investment" className="grid min-w-0 gap-3 rounded-xl border border-sf-line-soft p-3 sm:col-span-2">
     <p className="text-xs text-sf-muted">Customer instrument billing reduces the investment recovered through reagent GP. Values exclude GST. Billing is invoiced recovery, not proof of cash collection.</p>
-    <label className="grid min-w-0 gap-1 text-xs font-semibold">Instrument placement<select aria-label="Instrument placement" name="targetId" required value={targetId} onChange={event => { setTargetId(event.target.value); setSourceId(''); }} className={inputStyle}><option value="">Select instrument with verified acquisition…</option>{targets.map(row => <option key={row.id} value={row.id}>{row.name} · {row.customerName}</option>)}</select></label>
-    {target ? <><input type="hidden" name="expectedVersion" value={target.version} /><label className="grid min-w-0 gap-1 text-xs font-semibold">Instrument selling invoice<select aria-label="Instrument selling invoice" name="sourceLineId" required value={sourceId} onChange={event => setSourceId(event.target.value)} className={inputStyle}><option value="">Select matching customer instrument invoice…</option>{sales.map(line => <option key={line.id} value={line.id}>{line.date} · {line.voucherId} / {line.lineKey} · {formatAcquisitionCost(line.netSalesPaise)}</option>)}</select></label></> : null}
+    <label className="grid min-w-0 gap-1 text-xs font-semibold">Instrument placement<select aria-label="Instrument placement" name="targetId" required value={targetId} onChange={event => { setTargetId(event.target.value); setSelected(null); }} className={inputStyle}><option value="">Select instrument with verified acquisition…</option>{targets.map(row => <option key={row.id} value={row.id}>{row.name} · {row.customerName}</option>)}</select></label>
+    {target ? <><input type="hidden" name="expectedVersion" value={target.version} />{target.acquisitionProductId && target.acquisitionUnit ? <EconomicLinePicker key={target.id} filter={{ kind: 'sale', companyId: target.companyId, customerSourceId: target.customerSourceId, productId: target.acquisitionProductId, unit: target.acquisitionUnit, quantityOne: true, minNetSalesPaise: '1' }} name="sourceLineId" label="Instrument selling invoice" value={selected} onChange={setSelected} required placeholder="Select matching customer instrument invoice…" optionLabel={line => `${line.date} · ${line.voucherId} / ${line.lineKey} · ${formatAcquisitionCost(line.netSalesPaise)}`} /> : <label className="grid min-w-0 gap-1 text-xs font-semibold">Instrument selling invoice<select name="sourceLineId" required disabled className={inputStyle}><option value="">Select matching customer instrument invoice…</option></select></label>}</> : null}
     {target && selected && investment != null ? <div className="rounded-xl bg-blue-50 p-3 text-sm text-blue-900"><p>Purchase/capital cost: {formatAcquisitionCost(target.capitalPaise)}</p><p>Net instrument billing: {formatAcquisitionCost(selected.netSalesPaise)}</p><p className="font-bold">Placement investment: {formatAcquisitionCost(investment)}</p></div> : null}
     <label className="grid gap-1 text-xs font-semibold">Instrument billing verification evidence<input name="reason" required minLength={3} placeholder="Confirm invoice, customer and instrument serial" className={inputStyle} /></label>
   </section>;
 }
-export function InstrumentAcquisitionFields({ lines }: { lines: NonNullable<EconomicsWorkspaceData['sourceLines']> }) {
+export function InstrumentAcquisitionFields() {
   const [mode, setMode] = useState('manual');
-  const [lineId, setLineId] = useState('');
-  const purchases = lines.filter(line => line.kind === 'purchase' && Number(line.quantity) === 1 && BigInt(line.netSalesPaise) > BigInt(0));
-  const selected = purchases.find(line => line.id === lineId);
+  const [selected, setSelected] = useState<SourceLine | null>(null);
   const cost = selected ? formatAcquisitionCost(selected.netSalesPaise) : null;
   const inputClass = 'min-h-10 min-w-0 w-full rounded-lg border border-sf-line bg-white px-3 text-sm';
   return <section aria-label="Instrument acquisition value" className="grid min-w-0 gap-3 rounded-xl border border-sf-line-soft p-3 sm:col-span-2">
     <label className="grid gap-1 text-xs font-semibold">Capital source<select aria-label="Capital source" value={mode} onChange={event => setMode(event.target.value)} className={inputClass}><option value="manual">Manual historical value with evidence</option><option value="tally">Verified Tally instrument purchase</option></select></label>
-    {mode === 'tally' ? <><input type="hidden" name="capitalPaise" value="0" /><label className="grid gap-1 text-xs font-semibold">Tally acquisition purchase<select aria-label="Tally acquisition purchase" name="acquisitionPurchaseLineId" required value={lineId} onChange={event => setLineId(event.target.value)} className={inputClass}><option value="">Select individually billed instrument…</option>{purchases.map(line => <option key={line.id} value={line.id}>{line.companyId} · {line.date} · {line.voucherId} / {line.lineKey} · {line.productName ?? line.productId}</option>)}</select></label><p className="text-sm font-semibold">{selected ? `Tally net acquisition cost: ${cost}` : 'Select a purchase to see its net cost.'}</p><p className="text-xs text-sf-muted">Management must match the instrument and serial number. The server uses Tally net cost excluding GST and checks company, date and duplicate use. Bulk invoice lines need an evidenced manual allocation.</p></> : <label className="grid gap-1 text-xs font-semibold">Capital (₹)<input name="capitalPaise" required inputMode="decimal" placeholder="0.00" className={inputClass} /></label>}
+    {mode === 'tally' ? <><input type="hidden" name="capitalPaise" value="0" /><EconomicLinePicker filter={{ kind: 'purchase', quantityOne: true, minNetSalesPaise: '1' }} name="acquisitionPurchaseLineId" label="Tally acquisition purchase" value={selected} onChange={setSelected} required placeholder="Select individually billed instrument…" optionLabel={line => `${line.companyId} · ${line.date} · ${line.voucherId} / ${line.lineKey} · ${line.productName ?? line.productId}`} /><p className="text-sm font-semibold">{selected ? `Tally net acquisition cost: ${cost}` : 'Select a purchase to see its net cost.'}</p><p className="text-xs text-sf-muted">Management must match the instrument and serial number. The server uses Tally net cost excluding GST and checks company, date and duplicate use. Bulk invoice lines need an evidenced manual allocation.</p></> : <label className="grid gap-1 text-xs font-semibold">Capital (₹)<input name="capitalPaise" required inputMode="decimal" placeholder="0.00" className={inputClass} /></label>}
     <label className="grid gap-1 text-xs font-semibold">Capital purchase or approval evidence<input name="capitalEvidence" required={mode === 'tally'} placeholder={mode === 'tally' ? 'Instrument serial number and purchase verification reference' : 'Historical acquisition evidence or approved allocation'} className={inputClass} /></label>
   </section>;
 }

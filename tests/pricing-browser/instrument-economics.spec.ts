@@ -66,6 +66,7 @@ test('instrument sale date drives lifetime labels and simple group and item mapp
 test('existing instrument registration searches invoices safely and keeps installation dates separate', async ({ page }, testInfo) => {
   const posts: { action: string; payload: Record<string, unknown> }[] = [];
   const data = economicsData({ targets: [], sourceLines: [{ id: 'historical-sale', companyId: 'company-1', voucherId: 'billing-1', voucherNumber: 'SD/26-27/0388', revision: '7', lineKey: '1', date: '2026-07-23', kind: 'sale', customerSourceId: 'customer-guid-1', productId: 'analyzer-1', productName: 'Historical analyzer', quantity: '1', unit: 'qty', netSalesPaise: '40000000', batchId: 'HIST-SERIAL' }, { id: 'bulk-sale', companyId: 'company-1', voucherId: 'bulk-billing', revision: '1', lineKey: '2', date: '2026-07-23', kind: 'sale', customerSourceId: 'customer-guid-1', productId: 'analyzer-1', productName: 'Bulk analyzer', quantity: '2', unit: 'qty', netSalesPaise: '80000000', batchId: 'HIST-SERIAL' }] });
+  await mockInvoiceLines(page, data.sourceLines);
   await page.route('**/api/instrument-economics', route => {
     if (route.request().method() === 'GET') return route.fulfill({ json: data });
     posts.push(route.request().postDataJSON());
@@ -79,9 +80,9 @@ test('existing instrument registration searches invoices safely and keeps instal
   await page.getByRole('option', { name: /Historical analyzer.*HIST-SERIAL/ }).click();
   await expect(page.getByLabel('Confirmed serial number')).toHaveValue('HIST-SERIAL');
   await page.getByRole('combobox', { name: 'Instrument selling line', exact: true }).fill('unmatched invoice');
-  await expect(page.getByLabel('Confirmed serial number')).toHaveValue('');
-  await expect(page.locator('input[name="expectedSourceRevision"]')).toHaveValue('');
-  await expect(page.getByText('No matching instrument invoices.', { exact: true })).toBeVisible();
+  await expect(page.getByLabel('Confirmed serial number')).toHaveValue('HIST-SERIAL');
+  await expect(page.locator('input[name="expectedSourceRevision"]')).toHaveValue('7');
+  await expect(page.getByText('No matching invoices.', { exact: true })).toBeVisible();
   await page.getByRole('combobox', { name: 'Instrument selling line', exact: true }).fill('0388');
   await expect(page.getByRole('option', { name: /Historical analyzer.*0388/ })).toBeVisible();
   await page.screenshot({ path: `docs/UI-PREVIEWS/instrument-searchable-invoice-${testInfo.project.name}.png`, fullPage: false });
@@ -173,6 +174,7 @@ async function openAdvanced(page: Page, section: 'All actions' | 'Exceptions' | 
 }
 
 async function mockWorkspace(page: Page, body = economicsData()) {
+  await mockInvoiceLines(page, body.sourceLines);
   await page.route('**/api/instrument-economics', (route: Route) => route.request().method() === 'GET'
     ? route.fulfill({ json: body })
     : route.fulfill({ json: { ok: true } }));
@@ -355,6 +357,7 @@ test('instrument acquisition previews Tally net cost and submits a source link i
   const data = economicsData();
   data.sourceLines.push({ ...data.sourceLines[2], id: 'instrument-purchase', voucherId: 'PUR-INSTRUMENT-9', productId: 'instrument-guid', quantity: '1', unit: 'nos', netSalesPaise: '55000001' });
   const posts: Record<string, unknown>[] = [];
+  await mockInvoiceLines(page, data.sourceLines);
   await page.route('**/api/instrument-economics', route => {
     if (route.request().method() === 'GET') return route.fulfill({ json: data });
     posts.push(route.request().postDataJSON());
@@ -363,7 +366,8 @@ test('instrument acquisition previews Tally net cost and submits a source link i
   await page.goto('/?view=instrument-economics');
   await openAdvanced(page);
   await page.getByLabel('Capital source', { exact: true }).selectOption('tally');
-  await page.getByLabel('Tally acquisition purchase', { exact: true }).selectOption('instrument-purchase');
+  await page.getByLabel('Tally acquisition purchase', { exact: true }).click();
+  await page.getByRole('option', { name: /PUR-INSTRUMENT-9/ }).click();
   await expect(page.getByText('Tally net acquisition cost: ₹5,50,000.01', { exact: true })).toBeVisible();
   await expect(page.getByLabel('Capital (₹)', { exact: true })).toHaveCount(0);
 
@@ -449,6 +453,7 @@ test('below-cost instrument billing previews the investment and displays the aut
   const instrumentTarget = { ...target, capitalPaise: '55000000', acquisitionProductId: 'instrument-guid', acquisitionUnit: 'nos', capitalEvidenceCurrent: true, instrumentBillingCurrent: true, instrumentBillingPaise: '0', netInvestmentPaise: '55000000', recoveryPaise: '0', outstandingPaise: '55000000' };
   const sale = { id: 'instrument-sale', companyId: target.companyId, voucherId: 'INSTRUMENT-INV-1', revision: '1', lineKey: '1', date: '2026-09-15', kind: 'sale', customerSourceId: target.customerSourceId, productId: 'instrument-guid', quantity: '1', unit: 'nos', netSalesPaise: '20000000', batchId: null };
   let linked = false; const posts: Record<string, unknown>[] = [];
+  await mockInvoiceLines(page, [sale, { ...sale, id: 'other-customer-sale', customerSourceId: 'another-customer' }, { ...sale, id: 'reagent-sale', productId: 'reagent-guid' }]);
   await page.route('**/api/instrument-economics', route => {
     if (route.request().method() === 'POST') { posts.push(route.request().postDataJSON()); linked = true; return route.fulfill({ json: { ok: true } }); }
     return route.fulfill({ json: economicsData({ targets: [{ ...instrumentTarget, ...(linked ? { version: 3, instrumentBillingPaise: '20000000', netInvestmentPaise: '35000000', recoveryPaise: '20000000', outstandingPaise: '35000000' } : {}) }], sourceLines: [sale, { ...sale, id: 'other-customer-sale', customerSourceId: 'another-customer' }, { ...sale, id: 'reagent-sale', productId: 'reagent-guid' }], instrumentBillings: linked ? [{ target_id: target.id, source_line_id: sale.id, source_id: sale.voucherId, line_key: '1', actor: 'manager@example.com', reason: 'Confirmed serial and below-cost customer invoice', current: true, billedRecoveryPaise: '20000000' }] : [] }) });
@@ -457,8 +462,9 @@ test('below-cost instrument billing previews the investment and displays the aut
   await openAdvanced(page);
   await page.getByRole('combobox', { name: 'Action', exact: true }).selectOption('link_instrument_billing');
   await page.getByLabel('Instrument placement', { exact: true }).selectOption(target.id);
-  await expect(page.getByLabel('Instrument selling invoice', { exact: true }).locator('option')).toHaveCount(2);
-  await page.getByLabel('Instrument selling invoice', { exact: true }).selectOption(sale.id);
+  await page.getByLabel('Instrument selling invoice', { exact: true }).click();
+  await expect(page.getByRole('option')).toHaveCount(1);
+  await page.getByRole('option', { name: /INSTRUMENT-INV-1/ }).click();
   await expect(page.getByText('Purchase/capital cost: ₹5,50,000.00', { exact: true })).toBeVisible();
   await expect(page.getByText('Net instrument billing: ₹2,00,000.00', { exact: true })).toBeVisible();
   await expect(page.getByText('Placement investment: ₹3,50,000.00', { exact: true })).toBeVisible();
@@ -715,6 +721,7 @@ test('FOC review submits its classification without requiring an original-sale l
   const data = economicsData();
   data.sourceLines.push({ ...data.sourceLines[0], id: 'foc-source', voucherId: 'FOC-1', netSalesPaise: '0' });
   const posts: Array<{ action: string; payload: Record<string, unknown> }> = [];
+  await mockInvoiceLines(page, data.sourceLines);
   await page.route('**/api/instrument-economics', route => {
     if (route.request().method() === 'GET') return route.fulfill({ json: data });
     posts.push(route.request().postDataJSON()); return route.fulfill({ json: { ok: true } });
@@ -722,7 +729,8 @@ test('FOC review submits its classification without requiring an original-sale l
   await page.goto('/?view=instrument-economics');
   await openAdvanced(page);
   await page.getByLabel('Action').selectOption('resolve_line');
-  await page.getByLabel('Current unresolved source line', { exact: true }).selectOption('foc-source');
+  await page.getByLabel('Current unresolved source line', { exact: true }).click();
+  await page.getByRole('option', { name: /product-guid-one/ }).filter({ hasText: '₹0.00' }).click();
   await page.getByLabel('FOC reason when reviewing a zero-value sale', { exact: true }).selectOption('commercial_support');
   await page.getByLabel('Review evidence', { exact: true }).fill('Reviewed customer support material');
   await page.getByRole('button', { name: 'Review source line', exact: true }).click();
@@ -947,7 +955,7 @@ for (const [status, months, actualGp, health, label] of [
     await mockWorkspace(page, economicsData({ targets: [{ ...target, health, capitalPaise: '55000000', instrumentBillingPaise: '0', netInvestmentPaise: '55000000', recoveryPaise: String(actualGp), outstandingPaise: String(55000000 - actualGp), knownGpPaise: String(actualGp), revenuePaise: '5000000', forecastMonths: months,
       expectation: { ...target.expectation, monthlyRevenuePaise: '6000000', monthlyGpPaise: '1800000' },
       forecastReview: { status, policyId: 'policy-1', reviewMonths: 36, exceptionMonths: 48 },
-      investmentReview: { status: 'within_limit', expectedPaybackMonths: 30.56, expectationId: 'approval-baseline', policyId: 'policy-1', expectedMonthlyGpPaise: '1800000', netInvestmentPaise: '55000000', reviewMonths: 36, exceptionMonths: 48, approvedPaybackMonths: 30.5555555555555556 },
+      investmentReview: { status: 'within_limit', expectedPaybackMonths: 30.56, expectationId: 'approval-baseline', policyId: 'policy-1', expectedMonthlyGpPaise: '1800000', netInvestmentPaise: '55000000', reviewMonths: 36, exceptionMonths: 48, approvedPaybackMonths: 55000000 / 1800000 },
     }] }));
     await openAdvanced(page, 'Reports');
     const review = page.getByRole('region', { name: 'Actual GP forecast review' });
@@ -1716,3 +1724,22 @@ test('group checklist search limits tick-all-shown and reports no matches', asyn
   await expect(checklist.getByRole('status')).toHaveText('No items match “zzz”.');
   expect(await page.evaluate(() => document.documentElement.scrollWidth <= 375)).toBe(true);
 });
+
+async function mockInvoiceLines(page: Page, rows: Record<string, unknown>[]) {
+  await page.route('**/api/instrument-economics/lines**', route => {
+    const params = new URL(route.request().url()).searchParams;
+    const filtered = rows.filter(row => {
+      for (const key of ['kind', 'companyId', 'customerSourceId', 'productId', 'unit']) {
+        if (params.has(key) && row[key] !== params.get(key)) return false;
+      }
+      if (params.get('quantityOne') === '1' && Number(row.quantity) !== 1) return false;
+      if (params.get('unusedOnly') === '1' && row.usedByInstrument === true) return false;
+      if (params.has('minNetSalesPaise') && BigInt(String(row.netSalesPaise)) < BigInt(params.get('minNetSalesPaise')!)) return false;
+      if (params.has('dateFrom') && String(row.date) < params.get('dateFrom')!) return false;
+      const text = ['productName', 'productId', 'voucherNumber', 'voucherId', 'date', 'batchId', 'partyName'].map(key => typeof row[key] === 'string' ? row[key] : '').join(' ').toLowerCase();
+      return (params.get('q') ?? '').trim().toLowerCase().split(/\s+/).every(word => text.includes(word));
+    });
+    const limit = Number(params.get('limit') ?? 50); const offset = Number(params.get('offset') ?? 0);
+    return route.fulfill({ json: { rows: filtered.slice(offset, offset + limit), total: filtered.length, limit, offset } });
+  });
+}

@@ -1,3 +1,4 @@
+import type { EconomicLineFilter } from './instrument-economics-lines';
 import type { EconomicsWorkspaceData } from './instrument-economics-types';
 
 type SourceLine = NonNullable<EconomicsWorkspaceData['sourceLines']>[number] & {
@@ -14,18 +15,8 @@ type InstrumentAddData = EconomicsWorkspaceData & {
 type Lab = { id: string; name: string; city?: string | null; customerSourceId: string };
 type InstrumentLabIdentity = { customerId: string; companyId: string; customerSourceId: string };
 
-const paise = 5_000_000;
-
 function amount(line: SourceLine): bigint {
   return /^-?\d+$/.test(line.netSalesPaise) ? BigInt(line.netSalesPaise) : BigInt(0);
-}
-
-function unused(line: SourceLine): boolean {
-  return line.usedByInstrument !== true;
-}
-
-function readableText(line: SourceLine): string {
-  return `${line.productName ?? ''} ${line.date ?? ''} ${line.partyName ?? ''}`.toLocaleLowerCase();
 }
 
 function money(value: bigint): string {
@@ -42,18 +33,13 @@ function dateLabel(value: string): string {
   return Number.isNaN(date.getTime()) ? value : new Intl.DateTimeFormat('en-GB', { day: 'numeric', month: 'short', year: 'numeric' }).format(date);
 }
 
-export function instrumentPurchases(data: EconomicsWorkspaceData, search = '', showCheaper = false): SourceLine[] {
-  const query = search.trim().toLocaleLowerCase();
-  return ((data as InstrumentAddData).sourceLines ?? [])
-    .filter(line => line.kind === 'purchase' && Number.isFinite(Number(line.quantity)) && Number(line.quantity) === 1 && unused(line) && amount(line) > BigInt(0) && (showCheaper || amount(line) >= BigInt(paise)))
-    .filter(line => !query || readableText(line).includes(query))
-    .sort((a, b) => b.date.localeCompare(a.date));
+export function instrumentPurchaseFilter(showCheaper: boolean, q = ''): EconomicLineFilter {
+  return { kind: 'purchase', quantityOne: true, unusedOnly: true, minNetSalesPaise: showCheaper ? '1' : '5000000', q };
 }
 
-export function matchingInstrumentSales(data: EconomicsWorkspaceData, purchase: SourceLine): SourceLine[] {
-  return ((data as InstrumentAddData).sourceLines ?? [])
-    .filter(line => line.kind === 'sale' && line.companyId === purchase.companyId && line.productId === purchase.productId && line.unit === purchase.unit && Number.isFinite(Number(line.quantity)) && Number(line.quantity) === 1 && line.date >= purchase.date && unused(line) && amount(line) > BigInt(0))
-    .sort((a, b) => b.date.localeCompare(a.date));
+export function matchingSalesFilter(purchase: SourceLine): EconomicLineFilter {
+  return { kind: 'sale', companyId: purchase.companyId, productId: purchase.productId, unit: purchase.unit,
+    quantityOne: true, minNetSalesPaise: '1', unusedOnly: true, dateFrom: purchase.date };
 }
 
 export function instrumentLineLabel(line: SourceLine): string {

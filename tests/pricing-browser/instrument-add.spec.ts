@@ -25,7 +25,7 @@ const workspace = (overrides: Record<string, unknown> = {}) => ({
 });
 
 test('Add an instrument registers a sold machine from readable invoices and opens its review', async ({ page }) => {
-  const posts: Record<string, any>[] = [];
+  const posts: { action: string; payload: Record<string, unknown> }[] = [];
   let data = workspace();
   await mockWorkspace(page, route => {
     if (route.request().method() === 'GET') return route.fulfill({ json: data });
@@ -98,7 +98,7 @@ test('Add an instrument registers a sold machine from readable invoices and open
 });
 
 test('rental uses the purchase, bounded linked-lab search, and retries step two with its original key', async ({ page }) => {
-  const posts: Record<string, any>[] = [];
+  const posts: { action: string; payload: Record<string, unknown> }[] = [];
   let failCreate = true;
   let data = workspace({ customers: [
     ...Array.from({ length: 24 }, (_, index) => ({ id: `lab-${index}`, name: `Alpha Lab ${index}`, city: `City ${index}`, tallyIdentities: [{ companyId: 'company-uuid-1', customerSourceId: `ledger-${index}` }] })),
@@ -172,6 +172,7 @@ async function goToSetup(page: Page) {
 }
 
 async function mockWorkspace(page: Page, handler: (route: Route) => Promise<void>) {
+  await mockInvoiceLines(page, workspace().sourceLines);
   await page.route('**/api/instrument-economics', handler);
   await page.goto('/?view=frame&role=administrator&roles=administrator');
   const more = page.getByRole('button', { name: 'More' });
@@ -188,3 +189,22 @@ const proposedTarget = {
   approvalPreview: { status: 'actuals_only', capitalPaise: '42000000', instrumentBillingPaise: '30000000', netInvestmentPaise: '12000000', expectedMonthlyGpPaise: null, expectedPaybackMonths: null,
     expectationId: null, expectationEffectiveFrom: null, policyId: 'policy-1', reviewMonths: 36, exceptionMonths: 48 },
 };
+
+async function mockInvoiceLines(page: Page, rows: Record<string, unknown>[]) {
+  await page.route('**/api/instrument-economics/lines**', route => {
+    const params = new URL(route.request().url()).searchParams;
+    const filtered = rows.filter(row => {
+      for (const key of ['kind', 'companyId', 'customerSourceId', 'productId', 'unit']) {
+        if (params.has(key) && row[key] !== params.get(key)) return false;
+      }
+      if (params.get('quantityOne') === '1' && Number(row.quantity) !== 1) return false;
+      if (params.get('unusedOnly') === '1' && row.usedByInstrument === true) return false;
+      if (params.has('minNetSalesPaise') && BigInt(String(row.netSalesPaise)) < BigInt(params.get('minNetSalesPaise')!)) return false;
+      if (params.has('dateFrom') && String(row.date) < params.get('dateFrom')!) return false;
+      const text = ['productName', 'productId', 'voucherNumber', 'voucherId', 'date', 'batchId', 'partyName'].map(key => typeof row[key] === 'string' ? row[key] : '').join(' ').toLowerCase();
+      return (params.get('q') ?? '').trim().toLowerCase().split(/\s+/).every(word => text.includes(word));
+    });
+    const limit = Number(params.get('limit') ?? 50); const offset = Number(params.get('offset') ?? 0);
+    return route.fulfill({ json: { rows: filtered.slice(offset, offset + limit), total: filtered.length, limit, offset } });
+  });
+}
