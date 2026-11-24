@@ -1711,6 +1711,13 @@
       "remoteVersion": null,
       "remoteSha256": null,
       "status": "not_deployed"
+    },
+    {
+      "localFile": "20261227090000_economics_read_speed.sql",
+      "localSha256": "b61b1e2c55148b32a0bcc98f35138569c1379c4fc153dabddb5e3cd0ce0769d5",
+      "remoteVersion": null,
+      "remoteSha256": null,
+      "status": "not_deployed"
     }
   ],
   "liveCheck": {
