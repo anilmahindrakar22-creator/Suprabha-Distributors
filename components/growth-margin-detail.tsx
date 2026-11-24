@@ -1,5 +1,7 @@
 'use client';
 
+/* oxlint-disable jsx-a11y/no-noninteractive-element-interactions, jsx-a11y/prefer-tag-over-role -- Preserve existing modal backdrop/focus handlers and status markup. */
+
 import { useEffect, useRef, useState } from 'react';
 import { normalizeGrowthMarginDetail, normalizeGrowthBilledBelow, type GrowthBilledBelow, type GrowthMarginDetail as Detail } from '@/lib/growth-margin-types';
 import { formatPaise } from '@/lib/wallet-format';
@@ -12,7 +14,7 @@ const money = (n: number | null) => n === null ? '—' : formatPaise(n);
 
 const policyPct = (pct: number) => String(Number(pct.toFixed(4)));
 
-export function GrowthBilledBelowDetail({ navigation, onClose }: { navigation: GrowthNavigation; onClose: () => void }) {
+export function GrowthBilledBelowDetail({ navigation, onClose, period, periodLabel }: { navigation: GrowthNavigation; onClose: () => void; period?: string; periodLabel?: string }) {
   const dialog = useRef<HTMLDialogElement>(null);
   const [data, setData] = useState<GrowthBilledBelow | null>(null);
   const [page, setPage] = useState(1);
@@ -30,15 +32,16 @@ export function GrowthBilledBelowDetail({ navigation, onClose }: { navigation: G
   }, []);
   useEffect(() => {
     const controller = new AbortController();
+    // oxlint-disable-next-line react/react-compiler -- Reset existing pagination request status.
     setLoading(true); setError(false);
-    void fetch(`/api/growth/margin?billedBelow=1&page=${page}`, { cache: 'no-store', signal: controller.signal }).then(async response => {
+    void fetch(`/api/growth/margin?billedBelow=1&page=${page}${period ? `&period=${encodeURIComponent(period)}` : ''}`, { cache: 'no-store', signal: controller.signal }).then(async response => {
       if (!response.ok) throw new Error();
       const value = normalizeGrowthBilledBelow(await response.json());
       if (!value || value.page !== page) throw new Error();
       if (!controller.signal.aborted) setData(previous => ({ ...value, rows: page === 1 ? value.rows : [...(previous?.rows ?? []), ...value.rows] }));
     }).catch(() => { if (!controller.signal.aborted) setError(true); }).finally(() => { if (!controller.signal.aborted) setLoading(false); });
     return () => controller.abort();
-  }, [page, revision]);
+  }, [page, revision, period]);
   return <dialog ref={dialog} aria-labelledby="growth-billed-below-title" aria-describedby="growth-billed-below-explanation" onCancel={event => { event.preventDefault(); onClose(); }} onClick={event => {
     if (event.target === event.currentTarget) { const r = event.currentTarget.getBoundingClientRect(); if (event.clientX < r.left || event.clientX > r.right || event.clientY < r.top || event.clientY > r.bottom) onClose(); }
   }} onKeyDown={event => {
@@ -50,7 +53,7 @@ export function GrowthBilledBelowDetail({ navigation, onClose }: { navigation: G
   }} className="fixed inset-x-0 bottom-0 top-auto m-0 h-[85dvh] max-h-[85dvh] w-full max-w-full overflow-y-auto overscroll-contain rounded-t-2xl border border-sf-line bg-white p-4 text-sm text-sf-strong [overflow-wrap:anywhere] backdrop:bg-sf-ink/30 md:inset-y-0 md:left-auto md:right-0 md:h-dvh md:max-h-dvh md:w-[420px] md:rounded-none md:p-5">
     <div className="flex justify-end"><button className={button} onClick={onClose} aria-label="Close billed below approved price">Close</button></div>
     <h2 id="growth-billed-below-title" className="mt-2 text-base font-bold">Billed below approved price</h2>
-    <p id="growth-billed-below-explanation" className="mt-2 text-xs text-sf-muted">Invoice lines billed under the approved price · 12 months</p>
+    <p id="growth-billed-below-explanation" className="mt-2 text-xs text-sf-muted">Invoice lines billed under the approved price · {periodLabel ?? '12 months'}</p>
     {loading && <p role="status" className="py-4 text-xs">Loading invoice lines…</p>}
     {error && <p role="alert" className="py-4 text-xs">Couldn&apos;t load this check <button className={button} onClick={() => setRevision(n => n + 1)}>Retry</button></p>}
     <ul aria-label="Billed below approved price results">{data?.rows.map((row, index) => <li key={index} className="space-y-1 border-b border-sf-line-soft py-2">
@@ -62,7 +65,7 @@ export function GrowthBilledBelowDetail({ navigation, onClose }: { navigation: G
   </dialog>;
 }
 
-export function GrowthMarginDetail({ selection, navigation, onClose }: { selection: MarginSelection; navigation: GrowthNavigation; onClose: () => void }) {
+export function GrowthMarginDetail({ selection, navigation, onClose, period }: { selection: MarginSelection; navigation: GrowthNavigation; onClose: () => void; period?: string }) {
   const dialog = useRef<HTMLDialogElement>(null);
   const [data, setData] = useState<Detail | null>(null);
   const [page, setPage] = useState(1);
@@ -85,8 +88,10 @@ export function GrowthMarginDetail({ selection, navigation, onClose }: { selecti
   }, []);
   useEffect(() => {
     const controller = new AbortController();
+    // oxlint-disable-next-line react/react-compiler -- Reset existing pagination request status.
     setLoading(true); setError(false);
     const params = new URLSearchParams({ ...selection, page: String(page) });
+    if (period) params.set('period', period);
     void fetch(`/api/growth/margin?${params}`, { cache: 'no-store', signal: controller.signal }).then(async response => {
       if (!response.ok) throw new Error();
       const value = normalizeGrowthMarginDetail(await response.json());
@@ -94,7 +99,7 @@ export function GrowthMarginDetail({ selection, navigation, onClose }: { selecti
       if (!controller.signal.aborted) setData(previous => ({ ...value, rows: page === 1 ? value.rows : [...(previous?.kind === value.kind ? previous.rows : []), ...value.rows] }) as Detail);
     }).catch(() => { if (!controller.signal.aborted) setError(true); }).finally(() => { if (!controller.signal.aborted) setLoading(false); });
     return () => controller.abort();
-  }, [selection, page, revision]);
+  }, [selection, page, revision, period]);
   const navigate = (action: () => void) => { onClose(); action(); };
   const review = async (customerId: string, tallyItemKey: string, typical: number, price: number, quantity: number, itemKey: string | null, suggestedPricePaise?: number) => {
     setReviewError(false); setReviewing(true);
@@ -103,7 +108,7 @@ export function GrowthMarginDetail({ selection, navigation, onClose }: { selecti
     try {
       let labs = data?.kind === 'item' ? data.labs : null;
       if (labs === null && itemKey) {
-        const response = await fetch(`/api/growth/margin?${new URLSearchParams({ itemKey, page: '1' })}`, { cache: 'no-store', signal: controller.signal });
+        const response = await fetch(`/api/growth/margin?${new URLSearchParams({ itemKey, page: '1', ...(period ? { period } : {}) })}`, { cache: 'no-store', signal: controller.signal });
         if (!response.ok) throw new Error();
         const item = normalizeGrowthMarginDetail(await response.json());
         if (!item || item.kind !== 'item' || item.itemKey !== itemKey || item.page !== 1) throw new Error();

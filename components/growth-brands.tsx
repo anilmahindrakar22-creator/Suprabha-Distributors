@@ -1,6 +1,10 @@
 'use client';
 
-import { useEffect, useId, useRef, useState } from 'react';
+/* oxlint-disable jsx-a11y/prefer-tag-over-role -- SVG groups and dots retain their existing accessible chart roles. */
+
+import { createContext, useContext, useEffect, useId, useRef, useState } from 'react';
+import { normalizeGrowthPeriodBrands, type GrowthPeriodBrandsData } from '@/lib/growth-period-profit-types';
+import type { ProfitPeriod } from './growth-profit';
 import type { BrandAreaCode } from '@/lib/brand-mapping';
 import { normalizeGrowthBrands, type GrowthBrandLine, type GrowthBrandRow, type GrowthBrandsData } from '@/lib/growth-brand-types';
 import { formatPaise } from '@/lib/wallet-format';
@@ -33,22 +37,26 @@ const lineLabel = (line: GrowthBrandLine) => {
   const base = group ?? 'No group';
   return line.areaCode ? `${base} · ${areaNames[line.areaCode]}` : base;
 };
-const metaLine = (m: GrowthBrandRow | GrowthBrandLine) => `Sales ${formatPaise(m.salesPaise)} · H2 vs H1 ${change(m.h1Paise, m.h2Paise)} · GP ${formatPaise(m.gpPaise)} · ${pct(m.marginPct)}`;
+type ComparisonDisplay = { label: string; noHistory: boolean } | undefined;
+const ComparisonContext = createContext<ComparisonDisplay>(undefined);
+const metaLine = (m: GrowthBrandRow | GrowthBrandLine, comparison: ComparisonDisplay) => `Sales ${formatPaise(m.salesPaise)} · ${comparison ? `vs ${comparison.label}` : 'H2 vs H1'} ${comparison?.noHistory ? '—' : change(m.h1Paise, m.h2Paise)} · GP ${formatPaise(m.gpPaise)} · ${pct(m.marginPct)}`;
 
 function Measures({ item }: { item: GrowthBrandRow | GrowthBrandLine }) {
+  const comparison = useContext(ComparisonContext);
   return <>
     <span aria-hidden="true" className={cell}>{formatPaise(item.salesPaise)}</span>
-    <span aria-hidden="true" className={cell}>{change(item.h1Paise, item.h2Paise)}</span>
+    <span aria-hidden="true" className={cell}>{comparison?.noHistory ? '—' : change(item.h1Paise, item.h2Paise)}</span>
     <span aria-hidden="true" className={cell}>{formatPaise(item.gpPaise)}</span>
     <span aria-hidden="true" className={cell}>{pct(item.marginPct)}</span>
   </>;
 }
 
 function LineRow({ line }: { line: GrowthBrandLine }) {
+  const comparison = useContext(ComparisonContext);
   return <li className={`${grid} py-1 pl-4`}>
     <span className="min-w-0 break-words">{lineLabel(line)}</span>
     <Measures item={line} />
-    <span className={`${muted} block sm:sr-only`}>{metaLine(line)}</span>
+    <span className={`${muted} block sm:sr-only`}>{metaLine(line, comparison)}</span>
   </li>;
 }
 
@@ -97,11 +105,13 @@ function BrandScatter({ data, onPick }: { data: GrowthBrandsData; onPick: (key: 
 }
 
 function BrandRow({ row, pick, onOpenBrandSetup }: { row: GrowthBrandRow; pick: Pick; onOpenBrandSetup: () => void }) {
+  const comparison = useContext(ComparisonContext);
   const [open, setOpen] = useState(false);
   const linesId = useId();
   const item = useRef<HTMLLIElement>(null);
   useEffect(() => {
     if (pick?.key !== row.key) return;
+    // oxlint-disable-next-line react/react-compiler -- Open the existing principal disclosure selected by the chart.
     setOpen(true);
     item.current?.scrollIntoView({ block: 'nearest' });
   }, [pick, row.key]);
@@ -109,7 +119,7 @@ function BrandRow({ row, pick, onOpenBrandSetup }: { row: GrowthBrandRow; pick: 
     <div className={grid}>
       <span className="min-w-0 break-words text-sm font-bold sm:text-xs">{row.name}</span>
       <Measures item={row} />
-      <span className={`${muted} block sm:sr-only`}>{metaLine(row)}</span>
+      <span className={`${muted} block sm:sr-only`}>{metaLine(row, comparison)}</span>
     </div>
     <div className="flex flex-wrap items-center gap-3">
       {row.lines.length > 0 && <button type="button" className={button} aria-expanded={open} aria-controls={linesId} onClick={() => setOpen(v => !v)}>Lines ({row.lines.length})</button>}
@@ -120,6 +130,7 @@ function BrandRow({ row, pick, onOpenBrandSetup }: { row: GrowthBrandRow; pick: 
 }
 
 function BrandTable({ data, onOpenBrandSetup }: { data: GrowthBrandsData; onOpenBrandSetup: () => void }) {
+  const comparison = useContext(ComparisonContext);
   const [all, setAll] = useState(false);
   const [pick, setPick] = useState<Pick>(null);
   const brands = data.rows.filter(r => r.kind === 'brand');
@@ -128,35 +139,42 @@ function BrandTable({ data, onOpenBrandSetup }: { data: GrowthBrandsData; onOpen
   return <>
     <BrandScatter data={data} onPick={key => { setAll(true); setPick(previous => ({ key, n: (previous?.n ?? 0) + 1 })); }} />
     <div aria-hidden="true" className={`${grid} hidden border-b border-sf-line pb-1 text-xs text-sf-muted sm:grid [&>span:not(:first-child)]:text-right`}>
-      <span>Principal</span><span>Sales</span><span>H2 vs H1</span><span>Gross profit</span><span>Margin %</span>
+      <span>Principal</span><span>Sales</span><span>{comparison ? `vs ${comparison.label}` : 'H2 vs H1'}</span><span>Gross profit</span><span>Margin %</span>
     </div>
     <ul className="space-y-0">
       {shown.map(row => <BrandRow key={row.key} row={row} pick={pick} onOpenBrandSetup={onOpenBrandSetup} />)}
       {brands.length > defaultShown && !all && <li className="border-t border-sf-line-soft py-2"><button type="button" className={button} onClick={() => setAll(true)}>Show all {brands.length} principals</button></li>}
       {others.map(row => <BrandRow key={row.key} row={row} pick={pick} onOpenBrandSetup={onOpenBrandSetup} />)}
     </ul>
-    <p className={muted}>Total {formatPaise(data.totals.salesPaise)} · instruments {formatPaise(data.totals.instrumentSalesPaise)} · consumables margin {pct(data.totals.marginPct)}. Same 12 months as Gross profit.</p>
+    <p className={muted}>Total {formatPaise(data.totals.salesPaise)} · instruments {formatPaise(data.totals.instrumentSalesPaise)} · consumables margin {pct(data.totals.marginPct)}. Same {comparison ? 'period' : '12 months'} as Gross profit.</p>
   </>;
 }
 
-export function GrowthBrands({ onOpenBrandSetup }: { onOpenBrandSetup: () => void }) {
-  const [data, setData] = useState<GrowthBrandsData | null>(null);
+export function GrowthBrands({ onOpenBrandSetup, period }: { onOpenBrandSetup: () => void; period?: ProfitPeriod }) {
+  const periodParam = period?.param;
+  const comparisonKey = period?.comparisonKey;
+  const [data, setData] = useState<GrowthBrandsData | GrowthPeriodBrandsData | null>(null);
   const [error, setError] = useState(false);
   const [revision, setRevision] = useState(0);
   useEffect(() => {
     const controller = new AbortController();
-    void fetch('/api/growth/brands', { cache: 'no-store', signal: controller.signal }).then(async response => {
-      const next = response.ok ? normalizeGrowthBrands(await response.json()) : null;
+    // oxlint-disable-next-line react/react-compiler -- Clear the previous period/comparison while its replacement loads.
+    setData(null); setError(false);
+    void fetch(periodParam ? `/api/growth/brands?period=${encodeURIComponent(periodParam)}&comparison=${comparisonKey}` : '/api/growth/brands', { cache: 'no-store', signal: controller.signal }).then(async response => {
+      const next = response.ok ? (periodParam ? normalizeGrowthPeriodBrands(await response.json()) : normalizeGrowthBrands(await response.json())) : null;
       if (!next) throw new Error('Principals are unavailable');
       if (!controller.signal.aborted) setData(next);
     }).catch(() => { if (!controller.signal.aborted) setError(true); });
     return () => controller.abort();
-  }, [revision]);
-  return <section className={card} aria-labelledby="growth-brands-title">
+  }, [revision, periodParam, comparisonKey]);
+  const state = data && 'comparison' in data ? data.comparison.state : undefined;
+  const comparison = period ? { label: period.comparisonLabel, noHistory: state === 'no_history' } : undefined;
+  return <ComparisonContext.Provider value={comparison}><section className={card} aria-labelledby="growth-brands-title">
     <h2 id="growth-brands-title" className="text-base font-bold">Sales by principal</h2>
-    <p className={muted}>12 months · sales include instruments · margin is consumables only, average purchase cost</p>
+    <p className={muted}>{period?.label ?? '12 months'} · sales include instruments · margin is consumables only, average purchase cost{state === 'differs' ? ' · differs from Tally' : state === 'unconfirmed' ? ' · not yet confirmed against Tally' : ''}</p>
+    {comparison?.noHistory && <p className={muted}>No sales history for {comparison.label} yet.</p>}
     {error ? <div role="alert" className="text-xs">Principals are unavailable. <button type="button" className={button} onClick={() => { setError(false); setRevision(n => n + 1); }}>Retry</button></div>
       : !data ? <output className="block animate-pulse rounded bg-sf-soft-0 p-4 text-xs">Loading principals…</output>
       : <BrandTable data={data} onOpenBrandSetup={onOpenBrandSetup} />}
-  </section>;
+  </section></ComparisonContext.Provider>;
 }

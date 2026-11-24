@@ -5,7 +5,7 @@ import { normalizeGrowth, plainReason, type GrowthData, type GrowthMeasures } fr
 import { GrowthDrilldown, type GrowthNavigation, type GrowthSelection } from './growth-drilldown';
 import { formatPaise } from '@/lib/wallet-format';
 import { GrowthInbox } from './growth-inbox';
-import { GrowthProfit } from './growth-profit';
+import { GrowthProfit, type ProfitPeriod } from './growth-profit';
 import { GrowthLabMonths } from './growth-lab-months';
 import { GrowthBrands } from './growth-brands';
 import { GrowthSections, usePhoneLayout } from './growth-sections';
@@ -282,6 +282,8 @@ export function GrowthPage(navigation: GrowthNavigation) {
   const periodMode = period !== 'rolling12';
   const param = formatGrowthPeriodParam(period);
   const labPeriod = periodMode && periodData.data ? { param, label: periodData.data.period.label } : undefined;
+  const profitPeriod: ProfitPeriod | undefined = periodMode && periodData.data ? { param, label: periodData.data.period.label, comparisonKey, comparisonLabel: (periodData.data.comparisons.find(c => c.key === comparisonKey) ?? periodData.data.comparisons[0]).label } : undefined;
+  const profitCaption = (child: ReactNode) => profitPeriod ? child : rollingCaption(child);
   const rollingCaption = (child: ReactNode) => periodMode ? <div className="min-w-0 space-y-2"><p className={muted}>Last 12 months</p>{child}</div> : child;
   const [phoneRevenueTab, setPhoneRevenueTab] = useState<'revenue' | 'bridge'>('revenue');
   const [selection, setSelection] = useState<GrowthSelection | null>(null);
@@ -346,8 +348,8 @@ export function GrowthPage(navigation: GrowthNavigation) {
         {labPeriod ? <GrowthLabMonths key={`${filter}:${param}`} period={labPeriod} onOpenCustomer={navigation.onOpenCustomer} initialFilter={filter} /> : rollingCaption(<GrowthLabMonths key={`${filter}:rolling`} onOpenCustomer={navigation.onOpenCustomer} initialFilter={filter} />)}
         {filter !== 'top' && rollingCaption(<LabsBuyingCard data={data} onDrill={setSelection} />)}
       </>}
-      {section === 'profit' && rollingCaption(<GrowthProfit data={data} scope={scope} onDrill={setSelection} navigation={navigation} showBrands={false} />)}
-      {section === 'brands' && rollingCaption(<GrowthBrands onOpenBrandSetup={navigation.onOpenBrandSetup} />)}
+      {section === 'profit' && profitCaption(<GrowthProfit key={param} period={profitPeriod} data={data} scope={scope} onDrill={setSelection} navigation={navigation} showBrands={false} />)}
+      {section === 'brands' && profitCaption(<GrowthBrands key={`${param}:${comparisonKey}`} period={profitPeriod} onOpenBrandSetup={navigation.onOpenBrandSetup} />)}
       {section === 'health' && <Health data={data} onOpenBrandSetup={navigation.onOpenBrandSetup} onOpenMyActions={navigation.onOpenMyActions} />}
     </>}</GrowthSections>}</> : <div className="grid min-w-0 items-start gap-4 md:grid-cols-[minmax(0,2.2fr)_minmax(280px,1fr)] lg:gap-5">
       <div className="min-w-0 space-y-4">{pageError}{data && rollingCaption(<Scorecard data={data} onDrill={setSelection} onOpen={(next, target) => { chooseTab(next); setTimeout(() => scrollToWhenReady(target), 0); }} />)}{inbox}{data && <>
@@ -357,7 +359,7 @@ export function GrowthPage(navigation: GrowthNavigation) {
           {tab === 'revenue' && revenueCard}
           {tab === 'bridge' && bridgeCard}
           {tab === 'monthly' && <>{rollingCaption(<LabsBuyingCard data={data} onDrill={setSelection} />)}{labPeriod ? <GrowthLabMonths key={param} period={labPeriod} onOpenCustomer={navigation.onOpenCustomer} /> : rollingCaption(<GrowthLabMonths key="rolling" onOpenCustomer={navigation.onOpenCustomer} />)}{rollingCaption(<PurchasesCard data={data} onDrill={setSelection} />)}</>}
-          {tab === 'profit' && (periodMode ? <>{rollingCaption(<GrowthProfit data={data} scope={scope} onDrill={setSelection} navigation={navigation} showBrands={false} />)}{rollingCaption(<GrowthBrands onOpenBrandSetup={navigation.onOpenBrandSetup} />)}</> : <GrowthProfit data={data} scope={scope} onDrill={setSelection} navigation={navigation} />)}
+          {tab === 'profit' && (periodMode ? <>{profitCaption(<GrowthProfit key={param} period={profitPeriod} data={data} scope={scope} onDrill={setSelection} navigation={navigation} showBrands={false} />)}{profitCaption(<GrowthBrands key={`${param}:${comparisonKey}`} period={profitPeriod} onOpenBrandSetup={navigation.onOpenBrandSetup} />)}</> : <GrowthProfit key={param} period={profitPeriod} data={data} scope={scope} onDrill={setSelection} navigation={navigation} />)}
         </div></>}</div>
       <div className="min-w-0 space-y-4">{data && <Health data={data} onOpenBrandSetup={navigation.onOpenBrandSetup} onOpenMyActions={navigation.onOpenMyActions} />}</div>
     </div>}

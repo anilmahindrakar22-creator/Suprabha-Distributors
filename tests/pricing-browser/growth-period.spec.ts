@@ -30,7 +30,7 @@ function periodSample(fy = false): GrowthPeriodData {
   };
 }
 
-async function fixture(page: Page, options: { param?: string; state?: GrowthPeriodData['current']['check']['state']; failOnce?: boolean; urls?: string[]; labsNoHistory?: boolean } = {}) {
+async function fixture(page: Page, options: { param?: string; state?: GrowthPeriodData['current']['check']['state']; failOnce?: boolean; urls?: string[]; labsNoHistory?: boolean; brandsNoHistory?: boolean } = {}) {
   const requests: string[] = [];
   await page.clock.setFixedTime(new Date('2026-11-24T06:00:00Z'));
   await page.addInitScript(() => { localStorage.removeItem('sf-growth-tab'); localStorage.removeItem('sf-growth-inbox-open'); });
@@ -78,6 +78,44 @@ async function fixture(page: Page, options: { param?: string; state?: GrowthPeri
       total: options.labsNoHistory ? 0 : 1,
       ...(options.labsNoHistory ? { reason: 'no_history' } : {}),
       rows: options.labsNoHistory ? [] : [{ labKey: 'c|lab', customerId: null, name: 'Period lab', town: 'Pune', valuePaise: 2000000, comparisonPaise: url.searchParams.get('list') === 'window_labs' ? null : 1000000, currentPaise: 3000000, monthsBought: url.searchParams.get('list') === 'bridge_stopped' ? 0 : 2, lastBoughtOn: '2026-11-20' }],
+    } });
+  });
+  await page.route('**/api/growth/margin?**', route => {
+    const url = new URL(route.request().url());
+    options.urls?.push(url.href);
+    const p = url.searchParams;
+    const param = p.get('period');
+    const period = param ? periodSample(param.startsWith('fy-')).period : undefined;
+    if (p.get('gp') === '1' && period) {
+      const window = { salesPaise: 10000000, knownSalesPaise: 10000000, costPaise: 7000000, gpPaise: 3000000, gpPct: 30, coveragePct: 100 };
+      const months = Array.from({ length: period.kind === 'fy' ? 8 : 2 }, (_, i) => ({
+        month: `2026-${String((period.kind === 'fy' ? 4 : 10) + i).padStart(2, '0')}`,
+        salesPaise: 10000000, knownSalesPaise: 10000000, gpPaise: 3000000,
+        consumablesKnownSalesPaise: 10000000, consumablesGpPaise: 3000000, instrumentsKnownSalesPaise: 0, instrumentsGpPaise: 0,
+      }));
+      return route.fulfill({ json: { period, method: 'average_purchase_cost_to_date', window, repeat: window, bulk: window, consumables: window, instruments: window, halves: [{ ...window, half: 'H1' }, { ...window, half: 'H2' }], months } });
+    }
+    if (p.get('billedBelow') === '1') return route.fulfill({ json: { ...(period ? { period } : {}), lines: 0, gapPaise: 0, unitMismatchLines: 0, approvedPricesInUse: 0, page: Number(p.get('page')), pageSize: 20, total: 0, rows: [] } });
+    return route.fulfill({ json: {
+      ...(period ? { period } : {}), view: p.get('view'), page: Number(p.get('page')), pageSize: 20, total: 0, rows: [],
+      sort: p.get('sort') ?? 'sales', filter: p.get('filter') ?? 'all', q: p.get('q'), thresholdPct: 20, consumablesMarginPct: 30,
+      levers: { priceSpread: { items: 0, pairs: 0, paise: 0 }, lowMargin: { items: 0, paiseToThreshold: 0, examples: [] }, freeGoods: { lines: 0, costPaise: 0 }, instrumentsGpPaise: 0 },
+    } });
+  });
+  await page.route('**/api/growth/brands*', route => {
+    const url = new URL(route.request().url());
+    options.urls?.push(url.href);
+    const param = url.searchParams.get('period');
+    const sample = periodSample(param?.startsWith('fy-'));
+    const comparison = sample.comparisons.find(c => c.key === url.searchParams.get('comparison')) ?? sample.comparisons[0];
+    const measures = { salesPaise: 12000000, h1Paise: 10000000, h2Paise: 12000000, instrumentSalesPaise: 0, consumablesSalesPaise: 12000000, knownSalesPaise: 12000000, gpPaise: 3600000, marginPct: 30, items: 1 };
+    return route.fulfill({ json: {
+      ...(param ? { period: sample.period, comparison: { key: comparison.key, label: comparison.label, state: options.brandsNoHistory ? 'no_history' : 'confirmed' }, comparisonWindow: { from: comparison.from, to: comparison.to } } : {}),
+      window: { from: sample.period.from, to: sample.period.to, h2From: sample.period.from }, totals: measures,
+      rows: [
+        { ...measures, key: 'principal', kind: 'brand', brandCode: 'principal', name: 'Period principal', lines: [] },
+        { ...measures, h1Paise: 0, marginPct: 20, key: 'second-principal', kind: 'brand', brandCode: 'second-principal', name: 'Second principal', lines: [] },
+      ],
     } });
   });
   await page.goto('/?view=frame&role=management&roles=management' + (options.param ? `&growthPeriod=${options.param}` : ''));
@@ -216,11 +254,11 @@ test('remaining rolling cards retain their Last 12 months captions in period mod
   // Lab months now follows the period; LabsBuyingCard and PurchasesCard remain rolling.
   await expect(captions()).toHaveCount(phone ? 1 : 3);
   await openGrowthArea(page, 'profit');
-  // Phone Profit has GrowthProfit; desktop also counts the persistent Scorecard and GrowthBrands captions.
-  await expect(captions()).toHaveCount(phone ? 1 : 3);
+  // Profit and Brands now follow the period; desktop retains the Scorecard caption.
+  await expect(captions()).toHaveCount(phone ? 0 : 1);
   if (phone) {
     await openGrowthArea(page, 'brands');
-    await expect(captions()).toHaveCount(1);
+    await expect(captions()).toHaveCount(0);
   }
   await page.getByRole('button', { name: 'Last 12 months', exact: true }).click();
   await expect(captions()).toHaveCount(0);
@@ -328,4 +366,85 @@ test('rolling lab months retains twelve headers and no period parameter', async 
   const requests = urls.filter(url => new URL(url).pathname === '/api/growth/lab-months');
   expect(requests.length).toBeGreaterThan(0);
   for (const url of requests) expect(new URL(url).searchParams.has('period')).toBe(false);
+});
+
+test('period Profit reads GP and margin lists for Q3 with period captions', async ({ page }) => {
+  const urls: string[] = [];
+  await fixture(page, { param: 'q3-2026', urls });
+  await expect(page.getByRole('table', { name: 'Revenue comparison' })).toBeVisible();
+  await openGrowthArea(page, 'profit');
+  const gp = page.getByRole('region', { name: 'Gross profit by month', exact: true });
+  await expect(gp).toContainText('Q3 FY 2026-27 to 24 Nov');
+  const explorer = page.getByRole('region', { name: 'Margin by lab and item', exact: true });
+  await expect(explorer).toContainText('Q3 FY 2026-27 to 24 Nov');
+  await expect(explorer.getByRole('status')).toContainText('Showing 0');
+  const grow = page.getByRole('region', { name: 'Where margin can grow', exact: true });
+  await expect(grow).toContainText('Consumables · Q3 FY 2026-27 to 24 Nov · ranked by ₹ in this period');
+  for (const region of [gp, grow, explorer]) await expect(region).not.toContainText('12 months');
+  await expect.poll(() => urls.some(url => url.includes('period=q3-2026&gp=1'))).toBe(true);
+  for (const view of ['items', 'labs']) {
+    await expect.poll(() => urls.some(url => { const p = new URL(url).searchParams; return p.get('period') === 'q3-2026' && p.get('view') === view; })).toBe(true);
+  }
+  await expect.poll(() => urls.some(url => { const p = new URL(url).searchParams; return p.get('period') === 'q3-2026' && p.get('billedBelow') === '1'; })).toBe(true);
+});
+
+test('period GP months outside rolling history have no drill', async ({ page }) => {
+  await fixture(page, { param: 'fy-2026' });
+  await expect(page.getByRole('table', { name: 'Revenue comparison' })).toBeVisible();
+  await openGrowthArea(page, 'profit');
+  const gp = page.getByRole('region', { name: 'Gross profit by month', exact: true });
+  await expect(gp).toContainText('FY 2026-27 to 24 Nov');
+  // Rolling months end in Oct 2026; November remains visible without a drill.
+  await expect(gp.getByRole('button', { name: /^Nov: / })).toHaveCount(0);
+  await expect(gp.getByRole('button', { name: /^Oct: / })).toHaveCount(2);
+  await gp.getByRole('button', { name: 'View as table', exact: true }).click();
+  const table = gp.getByRole('table');
+  await expect(table.getByRole('rowheader', { name: 'Nov 2026', exact: true })).toBeVisible();
+  await expect(table.getByRole('button', { name: 'Nov 2026', exact: true })).toHaveCount(0);
+  await expect(table.getByRole('button', { name: 'Oct 2026', exact: true })).toBeVisible();
+});
+
+test('Brands shares the selected period and Revenue comparison', async ({ page }) => {
+  const urls: string[] = [];
+  await fixture(page, { param: 'q3-2026', urls });
+  await expect(page.getByRole('table', { name: 'Revenue comparison' })).toBeVisible();
+  await openGrowthArea(page, 'brands');
+  const brands = page.getByRole('region', { name: 'Sales by principal', exact: true });
+  await expect(brands.getByRole('group', { name: 'Principals: sales against margin', exact: true })).toBeVisible();
+  await expect(brands.locator('[data-scatter-dot]')).toHaveCount(2);
+  await expect(brands.getByText('vs Q3 FY 2025-26', { exact: true })).toHaveCount(1);
+  await expect(brands).toContainText('Same period as Gross profit.');
+  await expect.poll(() => urls.some(url => url.includes('/api/growth/brands?period=q3-2026&comparison=last_year'))).toBe(true);
+  if (await isPhoneGrowth(page)) await openGrowthArea(page, 'revenue');
+  else await page.getByRole('tab', { name: 'Revenue', exact: true }).click();
+  await page.getByRole('radio', { name: 'vs Q2 FY 2026-27', exact: true }).click();
+  await openGrowthArea(page, 'brands');
+  await expect(brands.getByText('vs Q2 FY 2026-27', { exact: true })).toHaveCount(1);
+  await expect.poll(() => urls.some(url => url.includes('/api/growth/brands?period=q3-2026&comparison=previous'))).toBe(true);
+});
+
+test('Brands explains missing comparison history and hides change', async ({ page }) => {
+  await fixture(page, { param: 'q3-2026', brandsNoHistory: true });
+  await expect(page.getByRole('table', { name: 'Revenue comparison' })).toBeVisible();
+  await openGrowthArea(page, 'brands');
+  const brands = page.getByRole('region', { name: 'Sales by principal', exact: true });
+  await expect(brands).toContainText('No sales history for Q3 FY 2025-26 yet.');
+  await expect(brands.getByRole('group', { name: 'Principals: sales against margin', exact: true })).toBeVisible();
+  for (const row of await brands.locator('[data-brand-row]').all()) {
+    await expect(row).toContainText('vs Q3 FY 2025-26 —');
+    await expect(row).not.toContainText('+20%');
+  }
+});
+
+test('rolling Profit and Brands requests have no period', async ({ page }) => {
+  const urls: string[] = [];
+  await fixture(page, { urls });
+  await openGrowthArea(page, 'profit');
+  await expect(page.getByRole('region', { name: 'Margin by lab and item' }).getByRole('status')).toContainText('Showing 0');
+  await openGrowthArea(page, 'brands');
+  await expect(page.getByRole('region', { name: 'Sales by principal' })).toContainText('Same 12 months as Gross profit.');
+  const reads = urls.filter(url => /\/api\/growth\/(margin|brands)/.test(new URL(url).pathname));
+  expect(reads.some(url => new URL(url).pathname.endsWith('/margin'))).toBe(true);
+  expect(reads.some(url => new URL(url).pathname.endsWith('/brands'))).toBe(true);
+  for (const url of reads) expect(new URL(url).searchParams.has('period')).toBe(false);
 });
