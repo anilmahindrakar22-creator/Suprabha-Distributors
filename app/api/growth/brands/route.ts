@@ -3,6 +3,8 @@ import { callOrderGateway, OrderGatewayError } from '@/lib/order-gateway';
 import { normalizeGrowthBrands } from '@/lib/growth-brand-types';
 import { getStockFlowSession } from '@/lib/stockflow-session';
 import { hasAnyStockFlowRole } from '@/lib/user-types';
+import { parseGrowthPeriodParam } from '@/lib/growth-period-types';
+import { normalizeGrowthPeriodBrands } from '@/lib/growth-period-profit-types';
 
 const headers = { 'cache-control': 'private, no-store' };
 export async function GET(request: Request) {
@@ -11,7 +13,17 @@ export async function GET(request: Request) {
     if (!user) return Response.json({ error: 'Sign in required' }, { status: 401, headers });
     const session = await getStockFlowSession(user.email);
     if (!session || !hasAnyStockFlowRole(session.roles, ['administrator', 'management'])) return Response.json({ error: 'Growth is for management only.' }, { status: 403, headers });
-    if ([...new URL(request.url).searchParams.keys()].length > 0) return Response.json({ error: 'Invalid growth brands parameters' }, { status: 400, headers });
+    const params = new URL(request.url).searchParams;
+    if (params.size > 0) {
+      const period = parseGrowthPeriodParam(params.get('period'));
+      const comparison = params.get('comparison');
+      if (params.size !== 2 || params.getAll('period').length !== 1 || params.getAll('comparison').length !== 1
+        || !period || period === 'rolling12' || (comparison !== 'last_year' && comparison !== 'previous')
+        || (comparison === 'previous' && period.kind !== 'quarter')) return Response.json({ error: 'Invalid growth brands parameters' }, { status: 400, headers });
+      const data = normalizeGrowthPeriodBrands(await callOrderGateway(session.email, 'get_growth_brands_period', { period, comparison }));
+      if (!data || data.comparison.key !== comparison) throw new Error('Malformed growth brands response');
+      return Response.json(data, { headers });
+    }
     const data = normalizeGrowthBrands(await callOrderGateway(session.email, 'get_growth_brands', {}));
     if (!data) throw new Error('Malformed growth brands response');
     return Response.json(data, { headers });
