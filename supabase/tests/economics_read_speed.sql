@@ -7,16 +7,23 @@ create function pg_temp.speed_assert(ok boolean,label text) returns void languag
 begin
  if ok is distinct from true then raise exception 'Economics speed: %',label;end if;
 end$$;
+create function pg_temp.speed_canonical(doc jsonb) returns jsonb language sql immutable as $$
+ select case when jsonb_typeof(doc->'sourceLines')='array'
+  then jsonb_set(doc,'{sourceLines}',coalesce((select jsonb_agg(e order by e->>'id',e::text) from jsonb_array_elements(doc->'sourceLines') e),'[]'::jsonb))
+  else doc end
+$$;
+
 create function pg_temp.speed_parity(actual jsonb,expected jsonb,label text) returns void language plpgsql as $$
 declare differing_key text;
 begin
- if actual is distinct from expected then
+ -- sourceLines is aggregated without ORDER BY in both bodies: compare it as a multiset.
+ if pg_temp.speed_canonical(actual) is distinct from pg_temp.speed_canonical(expected) then
   select k into differing_key from (
    select jsonb_object_keys(actual) k union select jsonb_object_keys(expected)
-  ) keys where actual->k is distinct from expected->k order by k limit 1;
+  ) keys where pg_temp.speed_canonical(actual)->k is distinct from pg_temp.speed_canonical(expected)->k order by k limit 1;
   raise exception 'Economics speed parity %: first differing top-level key %',label,coalesce(differing_key,'<whole value>');
  end if;
- perform pg_temp.speed_assert(actual=expected,label);
+ perform pg_temp.speed_assert(jsonb_array_length(coalesce(actual->'sourceLines','[]'::jsonb))=jsonb_array_length(coalesce(expected->'sourceLines','[]'::jsonb)),label||' sourceLines count');
 end$$;
 
 do $test$
