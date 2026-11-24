@@ -91,7 +91,7 @@ async function fixture(page: Page, options: { role?: string; status?: number; co
     return route.fulfill({ json: { list, month: params.get('month'), ...(params.has('half') ? { half: params.get('half') } : {}), total: list === 'month_large_purchases' || list === 'bulk_invoices' ? 1 : options.labsTotal ?? 12, page: pageNumber, pageSize: 20, rows } });
   });
   if (options.inboxOpen !== false) await page.addInitScript(() => { try { localStorage.setItem('sf-growth-inbox-open', '1'); } catch { /* storage unavailable */ } });
-  await page.goto('/?view=frame&role=' + role + '&roles=' + role);
+  await page.goto('/?view=frame&role=' + role + '&roles=' + role + '&growthPeriod=rolling12');
 }
 async function openGrowth(page: Page) {
   const entry = page.getByRole('button', { name: /^growth$/i });
@@ -191,7 +191,7 @@ for (const width of [375, 1280]) {
       await page.route('**/api/growth', route => route.fulfill({ json: { ...data, gp } }));
       await openGrowth(page); await openGrowthArea(page, 'profit');
       const section = page.getByRole('region', { name: 'Gross profit by month', exact: true });
-      await expect(section.getByText(/Consumables earn 28.0–28.0% a month/)).toBeVisible();
+      await expect(section.getByText(/Consumables earn 28.0% a month/)).toBeVisible();
       await expect(section.locator('svg text').filter({ hasText: /^−/ })).toHaveCount(1);
       await section.getByRole('button', { name: 'View as table', exact: true }).click();
       await expect(section.locator('tbody tr')).toHaveCount(12);

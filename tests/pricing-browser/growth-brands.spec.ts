@@ -56,7 +56,7 @@ async function fixture(page: Page, options: { brands?: 'ok' | 'error-once' } = {
     if (options.brands === 'error-once' && brandRequests++ === 0) return route.fulfill({ status: 503, json: { error: 'Unavailable' } });
     return route.fulfill({ json: brandsSample() });
   });
-  await page.goto('/?view=frame&role=management&roles=management');
+  await page.goto('/?view=frame&role=management&roles=management&growthPeriod=rolling12');
 }
 async function openProfit(page: Page) {
   const entry = page.getByRole('button', { name: /^growth$/i });

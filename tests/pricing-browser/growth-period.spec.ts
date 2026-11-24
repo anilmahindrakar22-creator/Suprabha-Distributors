@@ -5,7 +5,7 @@ import { isPhoneGrowth, openGrowthArea } from './growth-helpers';
 
 const tree = { revenuePaise: 120000000, repeatPaise: 100000000, bulkPaise: 20000000, bulkInvoices: 1, labsBuying: 10, buyingMonths: 20, perBuyingMonthPaise: 5000000 };
 const contribution = { labs: 0, paise: 0 };
-const bridge = { h1Paise: 100000000, h2Paise: 120000000, new: { labs: 2, paise: 20000000 }, stopped: contribution, stoppedRegular: contribution, grew: contribution, fell: contribution, same: contribution, other: contribution };
+const bridge = { h1Paise: 100000000, h2Paise: 120000000, new: { labs: 2, paise: 20000000 }, stopped: { labs: 2, paise: 0 }, stoppedRegular: { labs: 1, paise: 0 }, grew: { labs: 5, paise: 0 }, fell: { labs: 1, paise: 0 }, same: { labs: 2, paise: 0 }, other: contribution };
 function rollingSample(): GrowthData {
   return {
     companyCount: 1, confirmed: true, confirmedReason: null,
@@ -134,8 +134,85 @@ async function openBridge(page: Page) {
   await page.getByRole('tab', { name: 'Bridge', exact: true }).click();
 }
 
-test('rolling is the default and makes no period request', async ({ page }) => {
+test('FY to date is the default and only non-default selections need a parameter', async ({ page }) => {
   const requests = await fixture(page);
+  await expect(page.getByRole('button', { name: 'FY to date', exact: true })).toHaveAttribute('aria-pressed', 'true');
+  await expect(page.getByRole('table', { name: 'Revenue comparison' })).toBeVisible();
+  expect(requests).toEqual(['fy-2026']);
+  expect(new URL(page.url()).searchParams.has('growthPeriod')).toBe(false);
+  await page.getByRole('button', { name: 'Last 12 months', exact: true }).click();
+  await expect(page).toHaveURL(/growthPeriod=rolling12/);
+  await expect(page.getByRole('button', { name: 'Last 12 months', exact: true })).toHaveAttribute('aria-pressed', 'true');
+  await page.getByRole('button', { name: 'FY to date', exact: true }).click();
+  await expect(page.getByRole('button', { name: 'FY to date', exact: true })).toHaveAttribute('aria-pressed', 'true');
+  expect(new URL(page.url()).searchParams.has('growthPeriod')).toBe(false);
+});
+
+test('period Scorecard shows six KPIs and opens period labs and retention drills', async ({ page }) => {
+  const urls: string[] = [];
+  await fixture(page, { param: 'q3-2026', urls });
+  const scorecard = page.getByRole('region', { name: 'Scorecard', exact: true });
+  await expect(scorecard.locator('[data-scorecard-tile]')).toHaveCount(6);
+  for (const label of ['Revenue', 'Repeat share', 'Labs buying', 'Retention', '₹ per buying month', 'Gross profit']) {
+    await expect(scorecard.getByText(label, { exact: true })).toBeVisible();
+  }
+  await expect(scorecard).toContainText('Q3 FY 2026-27 to 24 Nov vs Q3 FY 2025-26');
+  await expect(scorecard.getByRole('button', { name: /^Retention: 80%,/ })).toBeVisible();
+  await expect(scorecard).toContainText('8 of 10 labs from Q3 FY 2025-26 still buying');
+  await expect(scorecard.getByRole('button', { name: /^Gross profit: 30%,/ })).toBeVisible();
+  await expect(scorecard).toContainText('cost known for 100% of sales');
+  await scorecard.getByRole('button', { name: /^Labs buying:/ }).click();
+  const drawer = page.getByRole('dialog');
+  await expect(drawer.getByRole('heading')).toContainText('Labs with sales (incl. instrument & bulk)');
+  await drawer.getByRole('button', { name: 'Close drilldown' }).click();
+  await scorecard.getByRole('button', { name: /^Retention:/ }).click();
+  await expect(drawer.getByRole('heading')).toContainText('Labs that stopped');
+  expect(urls.some(url => { const p = new URL(url).searchParams; return p.get('period') === 'q3-2026' && p.get('list') === 'bridge_stopped' && p.get('comparison') === 'last_year'; })).toBe(true);
+});
+
+test('retention explains missing comparison history', async ({ page }) => {
+  await fixture(page, { param: 'q3-2026', state: 'no_history' });
+  const tile = page.getByRole('region', { name: 'Scorecard', exact: true }).locator('[data-scorecard-tile]').filter({ has: page.getByText('Retention', { exact: true }) });
+  await expect(tile.locator('strong')).toHaveText('—');
+  await expect(tile).toContainText('No sales history for Q3 FY 2025-26 yet');
+  await expect(tile.getByRole('button')).toHaveCount(0);
+});
+
+test('Scorecard and Profit share exactly one GP request per selected period', async ({ page }) => {
+  const urls: string[] = [];
+  await fixture(page, { param: 'q3-2026', urls });
+  const gpRequests = (param: string) => urls.filter(url => { const p = new URL(url).searchParams; return p.get('gp') === '1' && p.get('period') === param; });
+  await expect(page.getByRole('region', { name: 'Scorecard', exact: true }).getByRole('button', { name: /^Gross profit: 30%,/ })).toBeVisible();
+  expect(gpRequests('q3-2026')).toHaveLength(1);
+  await openGrowthArea(page, 'profit');
+  await expect(page.getByRole('region', { name: 'Gross profit by month', exact: true })).toContainText('Consumables earn 30.0% a month.');
+  expect(gpRequests('q3-2026')).toHaveLength(1);
+  await page.getByRole('button', { name: 'FY to date', exact: true }).click();
+  await expect(page.getByRole('region', { name: 'Gross profit by month', exact: true })).toContainText('FY 2026-27 to 24 Nov');
+  expect(gpRequests('fy-2026')).toHaveLength(1);
+  await openGrowthArea(page, 'revenue');
+  await expect(page.getByRole('region', { name: 'Scorecard', exact: true }).getByRole('button', { name: /^Gross profit: 30%,/ })).toBeVisible();
+  expect(gpRequests('fy-2026')).toHaveLength(1);
+});
+
+for (const width of [375, 1280]) {
+  test(`Q3 GP bars span more than half the chart at ${width}px`, async ({ page }) => {
+    await page.setViewportSize({ width, height: 900 });
+    await fixture(page, { param: 'q3-2026' });
+    await openGrowthArea(page, 'profit');
+    const chart = page.locator('#gp-month-chart svg');
+    const bars = chart.locator('rect[aria-label*="consumables gross profit"]');
+    await expect(bars).toHaveCount(2);
+    const first = await bars.nth(0).boundingBox(), last = await bars.nth(1).boundingBox(), bounds = await chart.boundingBox();
+    expect(first).not.toBeNull(); expect(last).not.toBeNull(); expect(bounds).not.toBeNull();
+    expect(last!.x - first!.x).toBeGreaterThan(bounds!.width * 0.4);
+    // Bar widths remain capped at their rolling-view widths.
+    expect(first!.width).toBeLessThanOrEqual(bounds!.width * 0.042 + 1);
+  });
+}
+
+test('explicit rolling makes no period request', async ({ page }) => {
+  const requests = await fixture(page, { param: 'rolling12' });
   await expect(page.getByRole('button', { name: 'Last 12 months', exact: true })).toHaveAttribute('aria-pressed', 'true');
   await expect(page.getByLabel('Financial year', { exact: true })).toBeDisabled();
   await expect(page.getByText('12 months', { exact: true })).toHaveCount(1); // picker chip
@@ -145,7 +222,7 @@ test('rolling is the default and makes no period request', async ({ page }) => {
 });
 
 test('Q3 updates URL, table, shared comparison and bridge with drill buttons', async ({ page }) => {
-  const requests = await fixture(page);
+  const requests = await fixture(page, { param: 'rolling12' });
   await selectQuarter(page);
   expect(requests).toEqual(['q3-2026']);
   await expect(page).toHaveURL(/growthPeriod=q3-2026/);
@@ -154,7 +231,7 @@ test('Q3 updates URL, table, shared comparison and bridge with drill buttons', a
   await expect(table.getByRole('columnheader', { name: 'Q3 FY 2025-26', exact: true })).toBeVisible();
   await expect(table.getByRole('row', { name: /^Revenue / })).toContainText('+20%');
   await expect(page.locator('header').getByText('Q3 FY 2026-27 to 24 Nov · one Tally company · management only', { exact: true })).toBeVisible();
-  await expect(page.getByRole('region', { name: /Scorecard/ }).locator('xpath=preceding-sibling::p[1]')).toHaveText('Last 12 months');
+  await expect(page.getByRole('region', { name: 'Scorecard', exact: true })).toContainText('Q3 FY 2026-27 to 24 Nov vs Q3 FY 2025-26');
   await expect(page.getByText('1 invoice of ₹2 L or more this period.', { exact: true })).toBeVisible();
   await openBridge(page);
   await expect(page.locator('#bridge-svg-desc')).toContainText('Q3 FY 2025-26 total');
@@ -163,6 +240,7 @@ test('Q3 updates URL, table, shared comparison and bridge with drill buttons', a
   await page.getByRole('radio', { name: 'vs Q2 FY 2026-27', exact: true }).click();
   await expect(table.getByRole('columnheader', { name: 'Q2 FY 2026-27', exact: true })).toBeVisible();
   await expect(table.getByRole('row', { name: /^Revenue / })).toContainText('+50%');
+  await expect(page.getByRole('region', { name: 'Scorecard', exact: true })).toContainText('Q3 FY 2026-27 to 24 Nov vs Q2 FY 2026-27');
   await openBridge(page);
   await expect(page.locator('#bridge-svg-desc')).toContainText('Q2 FY 2026-27 total');
   await expect(page.locator('#bridge-svg-desc')).toContainText('Q3 FY 2026-27 to 24 Nov total');
@@ -170,7 +248,7 @@ test('Q3 updates URL, table, shared comparison and bridge with drill buttons', a
 });
 
 test('comparison arrows move selection and focus', async ({ page }) => {
-  await fixture(page);
+  await fixture(page, { param: 'rolling12' });
   await selectQuarter(page);
   const first = page.getByRole('radio', { name: 'vs Q3 FY 2025-26', exact: true });
   await first.focus();
@@ -185,20 +263,20 @@ test('comparison arrows move selection and focus', async ({ page }) => {
 
 for (const state of ['no_history', 'differs', 'unconfirmed'] as const) {
   test(`${state} follows the Tally and change rules`, async ({ page }) => {
-    await fixture(page, { state });
+    await fixture(page, { param: 'rolling12', state });
     await selectQuarter(page);
     const note = state === 'no_history' ? 'No sales history for Q3 FY 2025-26 yet.' : state === 'differs' ? 'Differs from Tally in Oct 2025. Change hidden.' : 'Not yet confirmed against Tally.';
-    await expect(page.getByText(note, { exact: true })).toBeVisible();
+    await expect(page.getByRole('region', { name: 'Where revenue comes from', exact: true }).getByText(note, { exact: true })).toBeVisible();
     const cells = page.getByRole('table', { name: 'Revenue comparison' }).getByRole('row', { name: /^Revenue / }).getByRole('cell');
     await expect(cells.nth(1)).toHaveText(state === 'no_history' ? '—' : '₹10.0 L');
     await expect(cells.nth(2)).toHaveText(state === 'unconfirmed' ? '+20%' : '—');
     await openBridge(page);
-    await expect(page.getByText(state === 'no_history' ? 'No sales history for Q3 FY 2025-26 yet, so there is nothing to compare.' : note, { exact: true })).toBeVisible();
+    await expect(page.getByRole('region', { name: 'Where growth came from', exact: true }).getByText(state === 'no_history' ? 'No sales history for Q3 FY 2025-26 yet, so there is nothing to compare.' : note, { exact: true })).toBeVisible();
   });
 }
 
 test('future Q4 is disabled and FY change falls back to Full year or FY to date', async ({ page }) => {
-  await fixture(page);
+  await fixture(page, { param: 'rolling12' });
   await expect(page.getByRole('button', { name: 'Q4', exact: true })).toBeDisabled();
   await selectQuarter(page);
   await page.getByLabel('Financial year', { exact: true }).selectOption('2025');
@@ -209,7 +287,7 @@ test('future Q4 is disabled and FY change falls back to Full year or FY to date'
 });
 
 test('rolling cards are labelled only in period mode and survive period failure and retry', async ({ page }) => {
-  await fixture(page, { failOnce: true });
+  await fixture(page, { param: 'rolling12', failOnce: true });
   const monthly = page.getByRole('heading', { name: 'Revenue by month', exact: true }).locator('..');
   await expect(monthly.locator('xpath=..').getByText('Last 12 months', { exact: true })).toHaveCount(0);
   await page.getByRole('button', { name: 'Q3', exact: true }).click();
@@ -227,7 +305,7 @@ test('rolling cards are labelled only in period mode and survive period failure 
   await expect(page.getByRole('heading', { name: 'Where revenue comes from', exact: true })).toBeVisible();
   await expect(page.getByText('Last 12 months', { exact: true })).toHaveCount(0);
   await expect(page.getByRole('button', { name: 'Last 12 months', exact: true })).toHaveText('12 months');
-  await expect(page).not.toHaveURL(/growthPeriod=/);
+  await expect(page).toHaveURL(/growthPeriod=rolling12/);
 });
 
 test('loads FY from the URL once, preserving other parameters and the hash on change', async ({ page }) => {
@@ -244,18 +322,18 @@ test('loads FY from the URL once, preserving other parameters and the hash on ch
 });
 
 test('remaining rolling cards retain their Last 12 months captions in period mode', async ({ page }) => {
-  await fixture(page);
+  await fixture(page, { param: 'rolling12' });
   await selectQuarter(page);
   const phone = await isPhoneGrowth(page);
   const captions = () => page.locator('p').filter({ hasText: /^Last 12 months$/ });
-  // Scorecard and RevenueMonths, plus PurchasesCard on the phone.
-  await expect(captions()).toHaveCount(phone ? 3 : 2);
+  // RevenueMonths, plus PurchasesCard on the phone.
+  await expect(captions()).toHaveCount(phone ? 2 : 1);
   await openGrowthArea(page, 'labs');
   // Lab months now follows the period; LabsBuyingCard and PurchasesCard remain rolling.
-  await expect(captions()).toHaveCount(phone ? 1 : 3);
+  await expect(captions()).toHaveCount(phone ? 1 : 2);
   await openGrowthArea(page, 'profit');
-  // Profit and Brands now follow the period; desktop retains the Scorecard caption.
-  await expect(captions()).toHaveCount(phone ? 0 : 1);
+  // Profit, Brands and Scorecard follow the period.
+  await expect(captions()).toHaveCount(0);
   if (phone) {
     await openGrowthArea(page, 'brands');
     await expect(captions()).toHaveCount(0);
@@ -266,7 +344,7 @@ test('remaining rolling cards retain their Last 12 months captions in period mod
 
 test('375px picker scrolls its chips without horizontal page scroll', async ({ page }) => {
   await page.setViewportSize({ width: 375, height: 812 });
-  await fixture(page);
+  await fixture(page, { param: 'rolling12' });
   await selectQuarter(page);
   const picker = page.locator('[aria-label="Growth period"]');
   await expect(picker).toBeVisible();
@@ -359,7 +437,7 @@ test('period labs shows the no-history explanation', async ({ page }) => {
 
 test('rolling lab months retains twelve headers and no period parameter', async ({ page }) => {
   const urls: string[] = [];
-  await fixture(page, { urls });
+  await fixture(page, { param: 'rolling12', urls });
   await openGrowthArea(page, 'labs');
   const card = page.getByRole('region', { name: 'Who is buying, month by month', exact: true });
   await expect(card.locator('[data-month-header]')).toHaveCount(12);
@@ -438,7 +516,7 @@ test('Brands explains missing comparison history and hides change', async ({ pag
 
 test('rolling Profit and Brands requests have no period', async ({ page }) => {
   const urls: string[] = [];
-  await fixture(page, { urls });
+  await fixture(page, { param: 'rolling12', urls });
   await openGrowthArea(page, 'profit');
   await expect(page.getByRole('region', { name: 'Margin by lab and item' }).getByRole('status')).toContainText('Showing 0');
   await openGrowthArea(page, 'brands');

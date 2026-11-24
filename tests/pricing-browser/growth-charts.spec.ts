@@ -62,7 +62,7 @@ async function fixture(page: Page) {
   await page.route('**/api/growth/labs?**', route => route.fulfill({ status: 503, json: { error: 'Unavailable in fixture' } }));
   await page.route('**/api/growth/lab-months**', route => route.fulfill({ status: 503, json: { error: 'Unavailable in fixture' } }));
   await page.route('**/api/growth/brands', route => route.fulfill({ json: brands() }));
-  await page.goto('/?view=frame&role=management&roles=management');
+  await page.goto('/?view=frame&role=management&roles=management&growthPeriod=rolling12');
 }
 async function openTab(page: Page, area: GrowthArea) {
   const entry = page.getByRole('button', { name: /^growth$/i });

@@ -32,7 +32,7 @@ export function periodChangeLabel(state: Check['state'], previous: number | null
 function differingMonths(check: Check) {
   return check.months.filter(m => m.state === 'differs').map(m => new Date(`${m.month}-01T00:00:00Z`).toLocaleDateString('en-GB', { month: 'short', year: 'numeric', timeZone: 'UTC' })).join(', ');
 }
-function comparisonNote(check: Check, label: string) {
+export function comparisonNote(check: Check, label: string) {
   return check.state === 'no_history' ? `No sales history for ${label} yet.` : check.state === 'differs' ? `Differs from Tally in ${differingMonths(check)}. Change hidden.` : check.state === 'unconfirmed' ? 'Not yet confirmed against Tally.' : '';
 }
 
@@ -50,28 +50,30 @@ export function GrowthPeriodPicker({ value, today, onChange }: { value: Selectio
   </div>;
 }
 
-export function useGrowthPeriodSelection(): [Selection, (value: Selection) => void] {
-  const [value, setValue] = useState<Selection>('rolling12');
+export function useGrowthPeriodSelection(): [Selection, (value: Selection) => void, boolean] {
+  const [value, setValue] = useState<Selection>({ kind: 'fy', fy: currentFinancialYear(todayIst()) });
+  const [ready, setReady] = useState(false);
   useEffect(() => {
-    // oxlint-disable-next-line react/react-compiler -- Read the browser URL after mount, preserving the rolling server render.
-    setValue(parseGrowthPeriodParam(new URL(window.location.href).searchParams.get('growthPeriod')) ?? 'rolling12');
+    // oxlint-disable-next-line react/react-compiler -- Restore the URL selection before starting period requests.
+    setValue(parseGrowthPeriodParam(new URL(window.location.href).searchParams.get('growthPeriod')) ?? { kind: 'fy', fy: currentFinancialYear(todayIst()) });
+    setReady(true);
   }, []);
   const choose = (next: Selection) => {
     const url = new URL(window.location.href);
-    if (next === 'rolling12') url.searchParams.delete('growthPeriod');
+    if (next !== 'rolling12' && next.kind === 'fy' && next.fy === currentFinancialYear(todayIst())) url.searchParams.delete('growthPeriod');
     else url.searchParams.set('growthPeriod', formatGrowthPeriodParam(next));
     history.replaceState(history.state, '', url.pathname + url.search + url.hash);
     setValue(next);
   };
-  return [value, choose];
+  return [value, choose, ready];
 }
 
-export function useGrowthPeriodData(selection: Selection) {
+export function useGrowthPeriodData(selection: Selection, enabled = true) {
   const key = formatGrowthPeriodParam(selection);
   const [revision, setRevision] = useState(0);
   const [result, setResult] = useState<{ key: string; revision: number; data: GrowthPeriodData | null; error: string; loading: boolean } | null>(null);
   useEffect(() => {
-    if (key === 'rolling12') return;
+    if (!enabled || key === 'rolling12') return;
     const controller = new AbortController();
     // oxlint-disable-next-line react/react-compiler -- Clear a previous visit to this selection while its fresh request is in flight.
     setResult({ key, revision, data: null, error: '', loading: true });
@@ -85,7 +87,7 @@ export function useGrowthPeriodData(selection: Selection) {
       if (!controller.signal.aborted) setResult({ key, revision, data: null, error: error instanceof Error && error.message === 'Growth is for management only.' ? error.message : 'This period could not load. Try again.', loading: false });
     });
     return () => controller.abort();
-  }, [key, revision]);
+  }, [key, revision, enabled]);
   const state = key === 'rolling12' ? { data: null, error: '', loading: false } : result?.key === key && result.revision === revision ? result : { data: null, error: '', loading: true };
   return { ...state, retry: () => setRevision(n => n + 1) };
 }
@@ -120,7 +122,7 @@ export function GrowthPeriodRevenue({ data, comparisonKey, onComparisonChange, o
 
 export function GrowthPeriodBridge({ data, comparisonKey, param, onDrill }: { data: GrowthPeriodData; comparisonKey: ComparisonKey; param: string; onDrill: (selection: GrowthSelection) => void }) {
   const comparison = data.comparisons.find(c => c.key === comparisonKey) ?? data.comparisons[0];
-  if (!comparison.bridge) return <section className={card}><h2 className="text-base font-bold">Where growth came from</h2><p className={muted}>No sales history for {comparison.label} yet, so there is nothing to compare.</p></section>;
+  if (!comparison.bridge) return <section className={card} aria-labelledby="bridge-title"><h2 id="bridge-title" className="text-base font-bold">Where growth came from</h2><p className={muted}>No sales history for {comparison.label} yet, so there is nothing to compare.</p></section>;
   const note = comparisonNote(comparison.check, comparison.label);
   const b = comparison.bridge;
   const onDrillIndex = (i: number) => {

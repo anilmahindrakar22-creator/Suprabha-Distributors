@@ -90,7 +90,7 @@ async function fixture(page: Page, options: { role?: string; status?: number; co
     return route.fulfill({ json: { list, month: params.get('month'), ...(params.has('half') ? { half: params.get('half') } : {}), total: list === 'month_large_purchases' || list === 'bulk_invoices' ? 1 : options.labsTotal ?? 12, page: pageNumber, pageSize: 20, rows } });
   });
   if (options.inboxOpen !== false) await page.addInitScript(() => { try { localStorage.setItem('sf-growth-inbox-open', '1'); } catch { /* storage unavailable */ } });
-  await page.goto('/?view=frame&role=' + role + '&roles=' + role);
+  await page.goto('/?view=frame&role=' + role + '&roles=' + role + '&growthPeriod=rolling12');
 }
 async function openGrowth(page: Page) {
   const entry = page.getByRole('button', { name: /^growth$/i });
@@ -200,7 +200,7 @@ test.describe('Growth phone sections', () => {
   });
   test('6. an initial labs hash opens Labs', async ({ page }) => {
     await phoneFixture(page);
-    await page.goto('/?view=frame&role=management&roles=management#growth-labs');
+    await page.goto('/?view=frame&role=management&roles=management&growthPeriod=rolling12#growth-labs');
     await openGrowth(page);
     await expect(sectionHeading(page, 'Labs')).toBeFocused();
     await expect(page.getByRole('heading', { name: 'Labs buying each month', exact: true })).toBeVisible();

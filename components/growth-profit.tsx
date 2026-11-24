@@ -2,7 +2,7 @@
 
 import { useEffect, useId, useRef, useState } from 'react';
 import type { GrowthData } from '@/lib/growth-types';
-import { normalizeGrowthPeriodGp, type GrowthPeriodGp } from '@/lib/growth-period-profit-types';
+import type { GrowthPeriodGp } from '@/lib/growth-period-profit-types';
 import { normalizeGrowthMargin, normalizeGrowthBilledBelow, type GrowthBilledBelow, type GrowthMarginData, type GrowthMarginView, type GrowthMarginSort, type GrowthMarginFilter } from '@/lib/growth-margin-types';
 import { formatPaise } from '@/lib/wallet-format';
 import type { GrowthNavigation, GrowthSelection } from './growth-drilldown';
@@ -13,6 +13,7 @@ import { GrowthMarginDetail, GrowthBilledBelowDetail, type MarginSelection } fro
 
 const card = 'min-w-0 space-y-3 rounded-xl border border-sf-line-soft bg-white p-4 lg:p-5';
 export type ProfitPeriod = { param: string; label: string; comparisonKey: 'last_year' | 'previous'; comparisonLabel: string };
+export type PeriodGpResult = { data: GrowthPeriodGp | null; error: boolean; retry: () => void };
 const muted = 'text-xs text-sf-muted';
 const button = 'min-h-9 rounded-lg border border-sf-line px-3 text-xs text-sf-brand';
 const lakh = (n: number) => `₹${(n / 1e7).toFixed(1)} L`;
@@ -47,28 +48,19 @@ function BilledBelowCheck({ navigation, period }: { navigation: GrowthNavigation
   </li>;
 }
 
-function ProfitMonths({ data, onDrill, scope, period }: { data: GrowthData; scope: string; onDrill: (selection: GrowthSelection) => void; period?: ProfitPeriod }) {
-  const periodParam = period?.param;
+function ProfitMonths({ data, onDrill, scope, period, periodGp }: { data: GrowthData; scope: string; onDrill: (selection: GrowthSelection) => void; period?: ProfitPeriod; periodGp?: PeriodGpResult }) {
   const [table, setTable] = useState(false);
   const { tipProps, tip, containerProps } = useChartTip();
-  const [periodGp, setPeriodGp] = useState<GrowthPeriodGp | null>(null);
-  const [error, setError] = useState(false);
-  const [revision, setRevision] = useState(0);
-  useEffect(() => {
-    if (!periodParam) return;
-    const controller = new AbortController();
-    void fetch(`/api/growth/margin?period=${encodeURIComponent(periodParam)}&gp=1`, { cache: 'no-store', signal: controller.signal }).then(async response => {
-      const next = response.ok ? normalizeGrowthPeriodGp(await response.json()) : null;
-      if (!next) throw new Error();
-      if (!controller.signal.aborted) setPeriodGp(next);
-    }).catch(() => { if (!controller.signal.aborted) setError(true); });
-    return () => controller.abort();
-  }, [periodParam, revision]);
-  const gp = period ? periodGp : data.gp;
-  if (period && !gp) return <section className={card} aria-labelledby="gp-month-title"><h2 id="gp-month-title" className="text-base font-bold">Gross profit by month</h2>{error ? <><p>Gross profit for this period could not load.</p><button className={button} onClick={() => { setError(false); setRevision(n => n + 1); }}>Retry</button></> : <output>Loading…</output>}</section>;
+  const gp = period ? periodGp?.data : data.gp;
+  if (period && !gp) return <section className={card} aria-labelledby="gp-month-title"><h2 id="gp-month-title" className="text-base font-bold">Gross profit by month</h2>{periodGp?.error ? <><p>Gross profit for this period could not load.</p><button className={button} onClick={periodGp.retry}>Retry</button></> : <output>Loading…</output>}</section>;
   if (!gp || !gp.consumables || !gp.instruments || !gp.months.every(m => m.consumablesKnownSalesPaise !== undefined && m.consumablesGpPaise !== undefined && m.instrumentsKnownSalesPaise !== undefined && m.instrumentsGpPaise !== undefined)) return null;
   const rows = gp.months.map(m => ({ ...m, rollingMonth: data.months.find(rolling => rolling.month === m.month), consumables: m.consumablesGpPaise!, instruments: m.instrumentsGpPaise!, margin: m.consumablesKnownSalesPaise ? m.consumablesGpPaise! / m.consumablesKnownSalesPaise * 100 : null }));
   const margins = rows.flatMap(m => m.margin === null ? [] : [m.margin]);
+  const minMargin = Math.min(...margins).toFixed(1), maxMargin = Math.max(...margins).toFixed(1);
+  // Keep rolling geometry. Period slots spread capped bar pairs across the plot,
+  // with the unused slot width shared between pairs (a lone pair is centred).
+  const slot = period ? 90 / Math.max(1, rows.length) : 7.35;
+  const groupX = (i: number) => !period ? 10 + i * 7.35 : 9 + i * slot + (slot - 6.5) / 2;
   const high = Math.max(1, ...rows.flatMap(m => [m.consumables, m.instruments]));
   const low = Math.min(-high / 3, ...rows.flatMap(m => [m.consumables, m.instruments]));
   const y = (n: number) => 32 + (high - n) / (high - low) * 220;
@@ -80,21 +72,21 @@ function ProfitMonths({ data, onDrill, scope, period }: { data: GrowthData; scop
   return <section className={card} aria-labelledby="gp-month-title">
     <div className="flex flex-wrap items-center justify-between gap-2"><h2 id="gp-month-title" className="text-base font-bold">Gross profit by month</h2><button className="min-h-11 text-xs text-sf-brand underline" aria-expanded={table} aria-controls={table ? 'gp-month-table' : 'gp-month-chart'} onClick={() => setTable(!table)}>{table ? 'View as chart' : 'View as table'}</button></div>
     <p className={muted}>{scope} · average purchase cost · consumables and instruments shown apart</p>
-    <p className="text-sm font-bold">{margins.length ? `Consumables earn ${Math.min(...margins).toFixed(1)}–${Math.max(...margins).toFixed(1)}% a month` : 'Consumables margin is not known yet'}{gp.instruments.gpPaise < 0 ? `; instrument sales ran ${lakh(-gp.instruments.gpPaise)} below cost, to be recovered through reagents.` : '.'}</p>
-    <p className="text-xs text-sf-brand">Tap a bar to see that month&apos;s labs.</p>
+    <p className="text-sm font-bold">{margins.length ? `Consumables earn ${minMargin === maxMargin ? minMargin : `${minMargin}–${maxMargin}`}% a month` : 'Consumables margin is not known yet'}{gp.instruments.gpPaise < 0 ? `; instrument sales ran ${lakh(-gp.instruments.gpPaise)} below cost, to be recovered through reagents.` : '.'}</p>
+    {(!period || rows.some(m => m.rollingMonth)) && <p className="text-xs text-sf-brand">Tap a bar to see that month&apos;s labs.</p>}
     {table ? <table id="gp-month-table" className="w-full table-fixed text-xs tabular-nums [&_th]:p-1 [&_td]:p-1 [&_th]:font-normal [&_td]:text-right"><caption className="text-left text-sf-muted">Gross profit by month · {scope} · average purchase cost</caption><thead><tr>{['Month', 'Consumables GP', 'Consumables %', 'Instruments GP'].map(t => <th key={t} scope="col">{t}</th>)}</tr></thead><tbody>{rows.map((m, i) => <tr key={m.month}><th scope="row">{m.rollingMonth ? <button className="min-h-11 text-left text-sf-brand underline" onClick={() => open(i)}>{monthLabel(m.month, true)}</button> : monthLabel(m.month, true)}</th><td>{formatPaise(m.consumables)}</td><td>{pct(m.margin)}</td><td>{formatPaise(m.instruments)}</td></tr>)}</tbody></table> : <div id="gp-month-chart" {...containerProps}>
       {/* oxlint-disable-next-line jsx-a11y/prefer-tag-over-role -- Preserve existing desktop status markup and accessible SVG chart roles. */}
       <svg className="block h-[306px] w-full" role="group" aria-labelledby="gp-svg-title gp-svg-desc"><title id="gp-svg-title">Gross profit by month</title><desc id="gp-svg-desc">Consumables and instruments gross profit in ₹ thousand, above and below zero. {rows.map(m => `${monthLabel(m.month, true)}: consumables ${formatPaise(m.consumables)}, ${pct(m.margin)}; instruments ${formatPaise(m.instruments)}`).join('; ')}</desc><text x="0" y="14" className="fill-sf-muted text-[10px]">₹ thousand</text>
         {[low, 0, high / 3, high * 2 / 3, high].map((v, i) => <g key={i}><line x1="9%" x2="99%" y1={y(v)} y2={y(v)} stroke={v === 0 ? 'var(--color-sf-chart-axis)' : 'var(--color-sf-chart-grid)'} /><text x="8%" y={y(v) + 4} textAnchor="end" className="fill-sf-label text-[10px]">{v < 0 ? '−' : ''}{(Math.abs(v) / 1e5).toFixed(0)}</text></g>)}
         {/* oxlint-disable-next-line jsx-a11y/prefer-tag-over-role -- Preserve existing desktop status markup and accessible SVG chart roles. */}
-        {rows.map((m, i) => <g key={m.month}>{[m.consumables, m.instruments].map((v, j) => { const label = `${monthLabel(m.month)}: ${j ? 'instruments and bulk' : 'consumables'} gross profit ${formatPaise(v)}${j ? '' : `, ${pct(m.margin)}`}${m.rollingMonth ? ', open labs' : ''}`; return <rect key={j} role={m.rollingMonth ? 'button' : undefined} tabIndex={m.rollingMonth ? 0 : undefined} aria-label={label} {...tipProps(chartTipText(label))} onClick={m.rollingMonth ? () => open(i) : undefined} onKeyDown={m.rollingMonth ? e => { if (e.key === 'Enter' || e.key === ' ') { e.preventDefault(); open(i); } } : undefined} className={m.rollingMonth ? 'cursor-pointer focus:stroke-sf-ink focus:stroke-2' : undefined} x={`${10 + i * 7.35 + j * 4.7}%`} width={`${j ? 1.8 : 4.2}%`} y={y(Math.max(v, 0))} height={Math.max(2, Math.abs(y(v) - y(0)))} rx="1" fill={`var(--color-sf-chart-${j ? 2 : 1})`} />; })}<text x={`${12.1 + i * 7.35}%`} y={y(Math.max(m.consumables, 0)) - 7} textAnchor="middle" className="hidden fill-sf-label text-[9px] sm:block">{pct(m.margin)}</text><text x={`${13 + i * 7.35}%`} y="290" textAnchor="middle" className="fill-sf-label text-[10px]">{monthLabel(m.month)}</text></g>)}
+        {rows.map((m, i) => <g key={m.month}>{[m.consumables, m.instruments].map((v, j) => { const label = `${monthLabel(m.month)}: ${j ? 'instruments and bulk' : 'consumables'} gross profit ${formatPaise(v)}${j ? '' : `, ${pct(m.margin)}`}${m.rollingMonth ? ', open labs' : ''}`; return <rect key={j} role={m.rollingMonth ? 'button' : undefined} tabIndex={m.rollingMonth ? 0 : undefined} aria-label={label} {...tipProps(chartTipText(label))} onClick={m.rollingMonth ? () => open(i) : undefined} onKeyDown={m.rollingMonth ? e => { if (e.key === 'Enter' || e.key === ' ') { e.preventDefault(); open(i); } } : undefined} className={m.rollingMonth ? 'cursor-pointer focus:stroke-sf-ink focus:stroke-2' : undefined} x={`${groupX(i) + j * 4.7}%`} width={`${j ? 1.8 : 4.2}%`} y={y(Math.max(v, 0))} height={Math.max(2, Math.abs(y(v) - y(0)))} rx="1" fill={`var(--color-sf-chart-${j ? 2 : 1})`} />; })}<text x={`${groupX(i) + 2.1}%`} y={y(Math.max(m.consumables, 0)) - 7} textAnchor="middle" className="hidden fill-sf-label text-[9px] sm:block">{pct(m.margin)}</text><text x={`${groupX(i) + 3}%`} y="290" textAnchor="middle" className="fill-sf-label text-[10px]">{monthLabel(m.month)}</text></g>)}
       </svg><div className="flex flex-wrap gap-3 text-xs text-sf-muted">{['Consumables', 'Instruments & bulk'].map((label, i) => <span key={label} className="inline-flex items-center gap-1"><i className={`size-2 rounded-sm ${i ? 'bg-sf-chart-2' : 'bg-sf-chart-1'}`} />{label}</span>)}</div>{tip}
     </div>}
     <p className={muted}>Cost is known for {gp.window.coveragePct ?? '—'}% of sales; {gp.window.unreliableLines ?? 0} lines are left out where sale and cost units look different.</p>
   </section>;
 }
 
-export function GrowthProfit({ data, scope, onDrill, navigation, showBrands = true, period }: { data: GrowthData; scope: string; onDrill: (selection: GrowthSelection) => void; navigation: GrowthNavigation; showBrands?: boolean; period?: ProfitPeriod }) {
+export function GrowthProfit({ data, scope, onDrill, navigation, showBrands = true, period, periodGp }: { data: GrowthData; scope: string; onDrill: (selection: GrowthSelection) => void; navigation: GrowthNavigation; showBrands?: boolean; period?: ProfitPeriod; periodGp?: PeriodGpResult }) {
   const periodParam = period?.param;
   const formId = useId();
   const [levers, setLevers] = useState<GrowthMarginData | null>(null);
@@ -147,7 +139,7 @@ export function GrowthProfit({ data, scope, onDrill, navigation, showBrands = tr
   const filters: [GrowthMarginFilter, string][] = [['all', 'All'], ['low', 'Low margin'], ...(query.view === 'labs' ? [['unlinked', 'Unlinked'] as [GrowthMarginFilter, string]] : [['below_cost', 'Below cost'] as [GrowthMarginFilter, string], ['spread', 'Price spread'] as [GrowthMarginFilter, string]])];
   const sortHeader = (sort: GrowthMarginSort, label: string) => <th scope="col" aria-sort={query.sort === sort || sort === 'margin' && query.sort === 'margin_asc' ? query.sort === 'margin_asc' ? 'ascending' : 'descending' : 'none'} className="p-1 text-right font-normal"><button className="min-h-9 text-sf-brand" aria-label={`Sort ${query.view} by ${label}`} onClick={() => update({ sort: sort === 'margin' && query.sort === 'margin' ? 'margin_asc' : sort })}>{label}</button></th>;
   return <>
-    <ProfitMonths data={data} scope={period?.label ?? scope} period={period} onDrill={onDrill} />
+    <ProfitMonths data={data} scope={period?.label ?? scope} period={period} periodGp={periodGp} onDrill={onDrill} />
     <section className={card} aria-labelledby="margin-grow-title"><h2 id="margin-grow-title" className="text-base font-bold">Where margin can grow</h2><p className={muted}>Consumables · {period ? `${period.label} · ranked by ₹ in this period` : '12 months · ranked by ₹ a year'}</p><p className="text-sm font-bold">The biggest lever is price consistency: some labs pay far less than others for the same item.</p><p className={muted}>Instruments excluded by item · average purchase cost ≥ ₹25,000</p>
       {/* oxlint-disable-next-line jsx-a11y/prefer-tag-over-role -- Preserve existing desktop status markup and accessible SVG chart roles. */}
       {leverError ? <div role="alert" className="text-xs">Margin opportunities are unavailable. <button className={button} onClick={() => setLeverRevision(n => n + 1)}>Retry</button></div> : !l && <p role="status" className="animate-pulse rounded bg-sf-soft-0 p-4 text-xs">Loading margin opportunities…</p>}

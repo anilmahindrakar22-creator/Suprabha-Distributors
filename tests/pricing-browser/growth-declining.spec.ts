@@ -77,7 +77,7 @@ async function fixture(page: Page, options: { emptyDeclining?: boolean; stoppedE
     const keys = new URL(route.request().url()).searchParams.getAll('lab');
     return route.fulfill({ json: { labs: keys.map((labKey, i) => ({ labKey, items: i === 0 ? stoppedItems(options.longName) : [] })) } });
   });
-  await page.goto('/?view=frame&role=management&roles=management');
+  await page.goto('/?view=frame&role=management&roles=management&growthPeriod=rolling12');
 }
 async function openMonthly(page: Page) {
   const entry = page.getByRole('button', { name: /^growth$/i });

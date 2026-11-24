@@ -48,7 +48,7 @@ async function fixture(page: Page, options: { error?: boolean; emptyLapsing?: bo
   await page.route('**/api/growth', route => route.fulfill({ json: growthSample() }));
   await page.route('**/api/growth/inbox**', route => route.fulfill({ status: 503, json: { error: 'Unavailable in fixture' } }));
   await page.route('**/api/growth/labs?**', route => route.fulfill({ status: 503, json: { error: 'Unavailable in fixture' } }));
-  let requests = { top: 0, lapsing: 0, declining: 0 };
+  const requests = { top: 0, lapsing: 0, declining: 0 };
   await page.route('**/api/growth/lab-months*', route => {
     const filter = new URL(route.request().url()).searchParams.get('filter');
     if (filter === 'lapsing') {
@@ -63,7 +63,7 @@ async function fixture(page: Page, options: { error?: boolean; emptyLapsing?: bo
     if (options.error && requests.top === 1) return route.fulfill({ status: 503, json: { error: 'Unavailable' } });
     return route.fulfill({ json: labMonthsSample() });
   });
-  await page.goto('/?view=frame&role=management&roles=management');
+  await page.goto('/?view=frame&role=management&roles=management&growthPeriod=rolling12');
 }
 async function openMonthly(page: Page) {
   const entry = page.getByRole('button', { name: /^growth$/i });

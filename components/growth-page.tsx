@@ -10,8 +10,9 @@ import { GrowthLabMonths } from './growth-lab-months';
 import { GrowthBrands } from './growth-brands';
 import { GrowthSections, usePhoneLayout } from './growth-sections';
 import { chartTipText, useChartTip } from './growth-chart-tip';
-import { formatGrowthPeriodParam } from '@/lib/growth-period-types';
-import { GrowthPeriodPicker, GrowthPeriodRevenue, GrowthPeriodBridge, useGrowthPeriodSelection, useGrowthPeriodData, todayIst } from './growth-period';
+import { formatGrowthPeriodParam, type GrowthPeriodData } from '@/lib/growth-period-types';
+import { normalizeGrowthPeriodGp, type GrowthPeriodGp } from '@/lib/growth-period-profit-types';
+import { GrowthPeriodPicker, GrowthPeriodRevenue, GrowthPeriodBridge, useGrowthPeriodSelection, useGrowthPeriodData, todayIst, periodChangeLabel, comparisonNote } from './growth-period';
 
 export const lakh = (n: number) => `₹${(n / 1e7).toFixed(1)} L`;
 export const rupees = (n: number) => formatPaise(Math.round(n / 100) * 100);
@@ -203,6 +204,41 @@ function Scorecard({ data, onDrill, onOpen }: { data: GrowthData; onDrill: (s: G
   return <section className={card} aria-labelledby="scorecard-title"><h2 id="scorecard-title" className="text-base font-bold">Scorecard</h2><p className={muted}>{period} · change is H2 against H1 · tap a tile for details</p><div className="grid grid-cols-2 gap-3 lg:grid-cols-3">{tiles.map(([label, value, note], i) => <div key={label} data-scorecard-tile className="min-w-0 rounded-lg border border-sf-line-soft bg-sf-soft-0 p-3 hover:border-sf-brand" {...(i === 5 ? { style: { cursor: 'pointer' }, onClick: (event: React.MouseEvent) => { if (!(event.target as Element).closest('a,button')) onOpenProfit(); } } : barButton(tileOpen[i][0], tileOpen[i][1]))}><p className="text-xs text-sf-label">{label}</p><strong className={`my-1 block tabular-nums ${i === 0 ? 'text-xl' : 'text-base'}`}>{value}</strong><p className={muted}>{note}</p>{i === 5 && profit && <p className={muted}>{profitNote}</p>}{i === 5 && <span className="flex flex-wrap gap-3"><button type="button" className="inline-flex min-h-9 items-center text-sf-brand underline" aria-label={tileOpen[5][0]} onClick={onOpenProfit}>See profit</button><a className="inline-flex min-h-9 items-center text-sf-brand underline" href="#data-health">Why?</a></span>}</div>)}</div></section>;
 }
 
+function usePeriodGp(param: string | undefined) {
+  const [revision, setRevision] = useState(0);
+  const [result, setResult] = useState<{ param: string; revision: number; data: GrowthPeriodGp | null; error: boolean } | null>(null);
+  useEffect(() => {
+    if (!param) return;
+    const controller = new AbortController();
+    void fetch(`/api/growth/margin?period=${encodeURIComponent(param)}&gp=1`, { cache: 'no-store', signal: controller.signal }).then(async response => {
+      const data = response.ok ? normalizeGrowthPeriodGp(await response.json()) : null;
+      if (!data) throw new Error();
+      if (!controller.signal.aborted) setResult({ param, revision, data, error: false });
+    }).catch(() => { if (!controller.signal.aborted) setResult({ param, revision, data: null, error: true }); });
+    return () => controller.abort();
+  }, [param, revision]);
+  const state = result?.param === param && result?.revision === revision ? result : { data: null, error: false };
+  return { data: state.data, error: state.error, retry: () => setRevision(n => n + 1) };
+}
+
+function PeriodScorecard({ data, comparisonKey, param, periodGp, onDrill, onOpen }: { data: GrowthPeriodData; comparisonKey: 'last_year' | 'previous'; param: string; periodGp: ReturnType<typeof usePeriodGp>; onDrill: (s: GrowthSelection) => void; onOpen: (tab: GrowthTab, target: string) => void }) {
+  const comparison = data.comparisons.find(c => c.key === comparisonKey) ?? data.comparisons[0];
+  const cur = data.current.tree, cmp = comparison.tree, b = comparison.bridge;
+  const base = b ? b.stopped.labs + b.grew.labs + b.fell.labs + b.same.labs : 0;
+  const retained = b ? base - b.stopped.labs : 0;
+  const change = (before: number | null | undefined, now: number | null) => periodChangeLabel(comparison.check.state, before ?? null, now);
+  const gp = periodGp.data;
+  const tiles: { label: string; value: string; note: string; action?: () => void; actionLabel?: string }[] = [
+    { label: 'Revenue', value: lakh(cur.revenuePaise), note: change(cmp?.revenuePaise, cur.revenuePaise), action: () => onOpen('revenue', 'revenue-months'), actionLabel: 'open revenue by month' },
+    { label: 'Repeat share', value: cur.revenuePaise > 0 ? `${Math.round(100 * cur.repeatPaise / cur.revenuePaise)}%` : '—', note: `repeat sales ${lakh(cur.repeatPaise)}` },
+    { label: 'Labs buying', value: String(cur.labsBuying), note: change(cmp?.labsBuying, cur.labsBuying), actionLabel: 'open labs with sales', action: () => onDrill({ list: 'window_labs', period: param, count: cur.labsBuying, title: 'Labs with sales (incl. instrument & bulk)', explanation: `Every lab with sales in ${data.current.label}, including instrument and bulk invoices, so this can be more than Labs buying.` }) },
+    { label: 'Retention', value: base ? `${Math.round(100 * retained / base)}%` : '—', note: base ? `${retained} of ${base} labs from ${comparison.label} still buying` : `No sales history for ${comparison.label} yet`, actionLabel: 'open labs that stopped', action: b ? () => onDrill({ list: 'bridge_stopped', period: param, comparison: comparison.key, count: b.stoppedRegular.labs, title: 'Labs that stopped', explanation: `${comparison.label} against ${data.current.label}. Regular = bought in 3 or more months of ${comparison.label}.` }) : undefined },
+    { label: '₹ per buying month', value: cur.perBuyingMonthPaise === null ? '—' : rupees(cur.perBuyingMonthPaise), note: change(cmp?.perBuyingMonthPaise, cur.perBuyingMonthPaise) },
+    { label: 'Gross profit', value: gp ? gp.window.gpPct === null ? '—' : `${gp.window.gpPct}%` : periodGp.error ? 'Could not load' : 'Loading…', note: `cost known for ${gp?.window.coveragePct ?? '—'}% of sales`, action: () => onOpen('profit', 'gp-month-title'), actionLabel: 'open Profit' },
+  ];
+  return <section className={card} aria-labelledby="scorecard-title"><h2 id="scorecard-title" className="text-base font-bold">Scorecard</h2><p className={muted}>{data.current.label} vs {comparison.label}</p><div className="grid grid-cols-2 gap-3 lg:grid-cols-3">{tiles.map(({ label, value, note, action, actionLabel }) => <div key={label} data-scorecard-tile className="min-w-0 rounded-lg border border-sf-line-soft bg-sf-soft-0 p-3"><p className="text-xs text-sf-label">{label}</p>{action ? <button type="button" className={`my-1 block min-h-11 text-left font-bold tabular-nums ${label === 'Revenue' ? 'text-xl' : 'text-base'}`} aria-label={`${label}: ${value}, ${actionLabel}`} onClick={action}>{value}</button> : <strong className="my-1 block text-base tabular-nums">{value}</strong>}<p className={muted}>{note}</p>{label === 'Gross profit' && periodGp.error && <button type="button" className="min-h-11 text-sf-brand underline" onClick={periodGp.retry}>Retry</button>}</div>)}</div>{comparison.check.state !== 'confirmed' && <p className={muted}>{comparisonNote(comparison.check, comparison.label)}</p>}</section>;
+}
+
 function MonthlyChart({ data, onDrill, kind }: { data: GrowthData; onDrill: (s: GrowthSelection) => void; kind: 'labs' | 'purchases' }) {
   const [buyingTable, setBuyingTable] = useState(false), [purchaseTable, setPurchaseTable] = useState(false);
   const buyingTip = useChartTip(), purchaseTip = useChartTip();
@@ -274,13 +310,14 @@ function Health({ data, onOpenBrandSetup, onOpenMyActions }: { data: GrowthData 
 export function GrowthPage(navigation: GrowthNavigation) {
   // usePhoneLayout uses (max-width: 767px); desktop retains its existing layout.
   const phone = usePhoneLayout();
-  const [period, setPeriod] = useGrowthPeriodSelection();
-  const periodData = useGrowthPeriodData(period);
+  const [period, setPeriod, periodReady] = useGrowthPeriodSelection();
+  const periodData = useGrowthPeriodData(period, periodReady);
   const [comparisonKey, setComparisonKey] = useState<'last_year' | 'previous'>('last_year');
   // oxlint-disable-next-line react/react-compiler -- The period owns the comparison choice; reset it when that period changes.
   useEffect(() => { setComparisonKey('last_year'); }, [period]);
   const periodMode = period !== 'rolling12';
   const param = formatGrowthPeriodParam(period);
+  const periodGp = usePeriodGp(periodReady && periodMode ? param : undefined);
   const labPeriod = periodMode && periodData.data ? { param, label: periodData.data.period.label } : undefined;
   const profitPeriod: ProfitPeriod | undefined = periodMode && periodData.data ? { param, label: periodData.data.period.label, comparisonKey, comparisonLabel: (periodData.data.comparisons.find(c => c.key === comparisonKey) ?? periodData.data.comparisons[0]).label } : undefined;
   const profitCaption = (child: ReactNode) => profitPeriod ? child : rollingCaption(child);
@@ -323,17 +360,18 @@ export function GrowthPage(navigation: GrowthNavigation) {
   const pageError = error ? <div role="alert"><p>{error}</p>{error !== 'Growth is for management only.' && <button className="mt-3 min-h-11 rounded-lg border border-sf-line px-3" onClick={() => { setData(null); setError(''); setRevision(n => n + 1); }}>Retry</button>}</div> : !data ? <p role="status">Loading growth…</p> : null;
   const periodStatus = (title: string, id: string) => <section className={card} aria-labelledby={id}><h2 id={id} className="text-base font-bold">{title}</h2>{periodData.error ? <><p role="alert">{periodData.error}</p><button type="button" className="min-h-11 rounded-lg border border-sf-line px-3" onClick={periodData.retry}>Retry</button></> : <output className="block">Loading period…</output>}</section>;
   const revenueCard = data && (periodMode ? periodData.data ? <GrowthPeriodRevenue data={periodData.data} comparisonKey={comparisonKey} onComparisonChange={setComparisonKey} onDrill={setSelection} param={param} /> : periodStatus('Where revenue comes from', 'revenue-period-status') : <Revenue data={data} scope={scope} comparison={comparison} onDrill={setSelection} />);
+  const scorecard = (onOpen: (next: GrowthTab, target: string) => void) => data && (periodMode && periodData.data ? <PeriodScorecard data={periodData.data} comparisonKey={comparisonKey} param={param} periodGp={periodGp} onDrill={setSelection} onOpen={onOpen} /> : <Scorecard data={data} onDrill={setSelection} onOpen={onOpen} />);
   const bridgeCard = data && (periodMode ? periodData.data ? <GrowthPeriodBridge data={periodData.data} comparisonKey={comparisonKey} onDrill={setSelection} param={param} /> : periodStatus('Where growth came from', 'bridge-period-status') : <Bridge data={data} scope={scope} comparison={comparison} onDrill={setSelection} />);
   return <div data-growth-scroller className="h-full min-w-0 overflow-y-auto p-4 text-sm text-sf-strong sm:p-6 [overflow-wrap:break-word]">
     <header className="mb-5 space-y-2"><p className={muted}>More / Management</p><h1 className="text-xl font-bold">Growth</h1>{data && <p className={muted}>{periodMode && periodData.data ? `${periodData.data.period.label} · ${data.companyCount === 1 ? 'one Tally company' : `${data.companyCount} Tally companies`} · management only` : `${scope} · management only`}</p>}<GrowthPeriodPicker value={period} today={todayIst()} onChange={setPeriod} />{data && !data.confirmed && <p className="text-xs text-sf-warning">Not confirmed: {plainReason(data.confirmedReason)}</p>}</header>
     {phone ? <>{pageError}{data && <GrowthSections data={data}>{(section, filter, open) => <>
       {section === 'act' && <>{inbox}<section className={card} aria-labelledby="labs-call-title"><h2 id="labs-call-title" className="text-base font-bold">Labs to call</h2><div className="flex flex-wrap gap-3"><button type="button" className={toggleClass} onClick={() => open('labs', 'lapsing')}>Lapsing core labs ›</button><button type="button" className={toggleClass} onClick={() => open('labs', 'declining')}>Buying less ›</button></div></section></>}
       {section === 'revenue' && <>
-        {rollingCaption(<Scorecard data={data} onDrill={setSelection} onOpen={(next, target) => {
+        {scorecard((next, target) => {
           if (next === 'revenue' || next === 'bridge') setPhoneRevenueTab(next);
           open(next === 'monthly' ? 'labs' : next === 'profit' ? 'profit' : 'revenue');
           setTimeout(() => scrollToWhenReady(target), 0);
-        }} />)}
+        })}
         <div role="tablist" aria-label="Revenue analysis" className="flex gap-1 rounded-lg border border-sf-line p-1">{growthTabs.slice(0, 2).map(item => <button key={item.id} id={`phone-growth-tab-${item.id}`} type="button" role="tab" aria-selected={phoneRevenueTab === item.id} aria-controls="phone-revenue-panel" tabIndex={phoneRevenueTab === item.id ? 0 : -1} className={`min-h-11 rounded-md px-3 text-sm ${phoneRevenueTab === item.id ? 'bg-sf-accent-soft font-bold text-sf-brand' : 'text-sf-muted'}`} onClick={() => setPhoneRevenueTab(item.id as 'revenue' | 'bridge')} onKeyDown={event => {
           if (!['ArrowLeft', 'ArrowRight', 'Home', 'End'].includes(event.key)) return;
           event.preventDefault();
@@ -348,18 +386,18 @@ export function GrowthPage(navigation: GrowthNavigation) {
         {labPeriod ? <GrowthLabMonths key={`${filter}:${param}`} period={labPeriod} onOpenCustomer={navigation.onOpenCustomer} initialFilter={filter} /> : rollingCaption(<GrowthLabMonths key={`${filter}:rolling`} onOpenCustomer={navigation.onOpenCustomer} initialFilter={filter} />)}
         {filter !== 'top' && rollingCaption(<LabsBuyingCard data={data} onDrill={setSelection} />)}
       </>}
-      {section === 'profit' && profitCaption(<GrowthProfit key={param} period={profitPeriod} data={data} scope={scope} onDrill={setSelection} navigation={navigation} showBrands={false} />)}
+      {section === 'profit' && profitCaption(<GrowthProfit key={param} period={profitPeriod} periodGp={periodGp} data={data} scope={scope} onDrill={setSelection} navigation={navigation} showBrands={false} />)}
       {section === 'brands' && profitCaption(<GrowthBrands key={`${param}:${comparisonKey}`} period={profitPeriod} onOpenBrandSetup={navigation.onOpenBrandSetup} />)}
       {section === 'health' && <Health data={data} onOpenBrandSetup={navigation.onOpenBrandSetup} onOpenMyActions={navigation.onOpenMyActions} />}
     </>}</GrowthSections>}</> : <div className="grid min-w-0 items-start gap-4 md:grid-cols-[minmax(0,2.2fr)_minmax(280px,1fr)] lg:gap-5">
-      <div className="min-w-0 space-y-4">{pageError}{data && rollingCaption(<Scorecard data={data} onDrill={setSelection} onOpen={(next, target) => { chooseTab(next); setTimeout(() => scrollToWhenReady(target), 0); }} />)}{inbox}{data && <>
+      <div className="min-w-0 space-y-4">{pageError}{scorecard((next, target) => { chooseTab(next); setTimeout(() => scrollToWhenReady(target), 0); })}{inbox}{data && <>
         <div role="tablist" aria-label="Growth analysis" className="flex gap-1 overflow-x-auto rounded-lg border border-sf-line p-1">{growthTabs.map(item => <button key={item.id} type="button" role="tab" id={`growth-tab-${item.id}`} aria-selected={tab === item.id} aria-controls="growth-panel" tabIndex={tab === item.id ? 0 : -1} className={`min-h-11 shrink-0 rounded-md px-3 text-sm ${tab === item.id ? 'bg-sf-accent-soft font-bold text-sf-brand' : 'text-sf-muted'}`} onClick={() => chooseTab(item.id)} onKeyDown={event => onTabKey(event, item.id)}>{periodMode && item.id === 'bridge' ? 'Bridge' : item.label}</button>)}</div>
         <div id="growth-panel" role="tabpanel" aria-labelledby={`growth-tab-${tab}`} className="min-w-0 space-y-4">
           {tab === 'revenue' && rollingCaption(<RevenueMonths data={data} onDrill={setSelection} />)}
           {tab === 'revenue' && revenueCard}
           {tab === 'bridge' && bridgeCard}
           {tab === 'monthly' && <>{rollingCaption(<LabsBuyingCard data={data} onDrill={setSelection} />)}{labPeriod ? <GrowthLabMonths key={param} period={labPeriod} onOpenCustomer={navigation.onOpenCustomer} /> : rollingCaption(<GrowthLabMonths key="rolling" onOpenCustomer={navigation.onOpenCustomer} />)}{rollingCaption(<PurchasesCard data={data} onDrill={setSelection} />)}</>}
-          {tab === 'profit' && (periodMode ? <>{profitCaption(<GrowthProfit key={param} period={profitPeriod} data={data} scope={scope} onDrill={setSelection} navigation={navigation} showBrands={false} />)}{profitCaption(<GrowthBrands key={`${param}:${comparisonKey}`} period={profitPeriod} onOpenBrandSetup={navigation.onOpenBrandSetup} />)}</> : <GrowthProfit key={param} period={profitPeriod} data={data} scope={scope} onDrill={setSelection} navigation={navigation} />)}
+          {tab === 'profit' && (periodMode ? <>{profitCaption(<GrowthProfit key={param} period={profitPeriod} periodGp={periodGp} data={data} scope={scope} onDrill={setSelection} navigation={navigation} showBrands={false} />)}{profitCaption(<GrowthBrands key={`${param}:${comparisonKey}`} period={profitPeriod} onOpenBrandSetup={navigation.onOpenBrandSetup} />)}</> : <GrowthProfit key={param} period={profitPeriod} periodGp={periodGp} data={data} scope={scope} onDrill={setSelection} navigation={navigation} />)}
         </div></>}</div>
       <div className="min-w-0 space-y-4">{data && <Health data={data} onOpenBrandSetup={navigation.onOpenBrandSetup} onOpenMyActions={navigation.onOpenMyActions} />}</div>
     </div>}
