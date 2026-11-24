@@ -59,6 +59,7 @@ export type GatewayAction =
   | 'get_sales_coverage'
   | 'get_link_suggestions'
   | 'get_data_checks'
+  | 'get_data_speed_report'
   | 'get_economic_source_lines'
   | 'get_economic_products'
   | 'get_economic_cost_review'

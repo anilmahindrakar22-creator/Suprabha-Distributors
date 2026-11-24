@@ -85,6 +85,7 @@ const pricingReleaseFiles = new Set([
   '20261227100000_economic_line_reads.sql',
   '20261227110000_economic_products_read.sql',
   '20261227120000_economic_cost_review.sql',
+  '20261227130000_data_speed_report.sql',
   '20261102090000_po_tally_receipts.sql',
   '20261031140000_power_map_enhancement.sql',
   '20261030090000_instrument_register.sql',
@@ -282,6 +283,7 @@ export const pricingReleaseSqlTests = [
   'supabase/tests/economic_line_reads.sql',
   'supabase/tests/economic_products_read.sql',
   'supabase/tests/economic_cost_review.sql',
+  'supabase/tests/data_speed_report.sql',
 ];
 
 export function pricingReleasePreflight(evidence, files) {

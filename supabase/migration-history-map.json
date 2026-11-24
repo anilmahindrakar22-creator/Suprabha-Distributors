@@ -1739,6 +1739,13 @@
       "remoteVersion": null,
       "remoteSha256": null,
       "status": "not_deployed"
+    },
+    {
+      "localFile": "20261227130000_data_speed_report.sql",
+      "localSha256": "280fae9863b5a5ace1c0a4e9b8bf99b4931426893af1e138ddd24c6433d56020",
+      "remoteVersion": null,
+      "remoteSha256": null,
+      "status": "not_deployed"
     }
   ],
   "liveCheck": {

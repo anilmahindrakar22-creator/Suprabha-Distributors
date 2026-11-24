@@ -213,6 +213,7 @@ try {
   $salesNames += '20261227100000_economic_line_reads.sql'
   $salesNames += '20261227110000_economic_products_read.sql'
   $salesNames += '20261227120000_economic_cost_review.sql'
+  $salesNames += '20261227130000_data_speed_report.sql'
   for ($salesIndex = 1; $salesIndex -lt $salesNames.Count; $salesIndex++) {
     if ([array]::IndexOf($planNames,$salesNames[$salesIndex]) -le [array]::IndexOf($planNames,$salesNames[$salesIndex-1])) { throw 'Full sales replay order is invalid' }
   }
@@ -244,7 +245,7 @@ create table public.test_upgrade_expected as select to_jsonb(o) as order_data,(s
     if ($migration.Name -ge '20260913130000_customer_price_book.sql' -and (Get-FileHash $migration.FullName).Hash -ne (Get-FileHash (Join-Path $migrationSource $migration.Name)).Hash) { throw "Pricing migration copy changed: $($migration.Name)" }
     # The speed fixture checks the idle item keys before buyerCount was added.
     # Apply this final migration after that historical fixture below.
-    if ($migration.Name -in @('20261217110000_idle_buyers.sql','20261220090000_growth_period.sql','20261220100000_growth_period_labs.sql','20261220110000_growth_period_profit.sql','20261227090000_economics_read_speed.sql','20261227100000_economic_line_reads.sql','20261227110000_economic_products_read.sql','20261227120000_economic_cost_review.sql')) { continue }
+    if ($migration.Name -in @('20261217110000_idle_buyers.sql','20261220090000_growth_period.sql','20261220100000_growth_period_labs.sql','20261220110000_growth_period_profit.sql','20261227090000_economics_read_speed.sql','20261227100000_economic_line_reads.sql','20261227110000_economic_products_read.sql','20261227120000_economic_cost_review.sql','20261227130000_data_speed_report.sql')) { continue }
     if ($migration.Name -eq '20261129160000_growth_item_kind.sql') {
       # Retain actual pre-patch definitions for byte-for-byte read comparisons.
       $baselineSql = @'
@@ -514,6 +515,9 @@ end$$;
   Invoke-DatabaseCommand $psqlProgram @('-U',$databaseUser,'-X','-q','-v','ON_ERROR_STOP=1','-d',$database,'-f',(Join-Path $work '20261227120000_economic_cost_review.sql'))
   Invoke-DatabaseCommand $psqlProgram @('-U',$databaseUser,'-X','-q','-v','ON_ERROR_STOP=1','-d',$database,'-f',(Join-Path $repository 'supabase/tests/economic_cost_review.sql'))
   Write-Output 'PASS: economics cost review and line refs reads, scope, parity and access'
+  Invoke-DatabaseCommand $psqlProgram @('-U',$databaseUser,'-X','-q','-v','ON_ERROR_STOP=1','-d',$database,'-f',(Join-Path $work '20261227130000_data_speed_report.sql'))
+  Invoke-DatabaseCommand $psqlProgram @('-U',$databaseUser,'-X','-q','-v','ON_ERROR_STOP=1','-d',$database,'-f',(Join-Path $repository 'supabase/tests/data_speed_report.sql'))
+  Write-Output 'PASS: data and speed report, window maths, exceptions, snapshot and access'
   Invoke-DatabaseCommand $psqlProgram @('-U',$databaseUser,'-X','-q','-v','ON_ERROR_STOP=1','-d',$database,'-f',(Join-Path $repository 'supabase/tests/economics_candidate_rebuild.sql'))
   Write-Output 'PASS: rebuild containment, sales coverage and exact control reconciliation'
   Invoke-DatabaseCommand $psqlProgram @('-U',$databaseUser,'-X','-q','-v','ON_ERROR_STOP=1','-d',$database,'-f',(Join-Path $repository 'supabase/tests/mapped_instrument_cost_scope.sql'))
