@@ -10,6 +10,7 @@ import { GrowthLabMonths } from './growth-lab-months';
 import { GrowthBrands } from './growth-brands';
 import { GrowthSections, usePhoneLayout } from './growth-sections';
 import { chartTipText, useChartTip } from './growth-chart-tip';
+import { formatGrowthPeriodParam } from '@/lib/growth-period-types';
 import { GrowthPeriodPicker, GrowthPeriodRevenue, GrowthPeriodBridge, useGrowthPeriodSelection, useGrowthPeriodData, todayIst } from './growth-period';
 
 export const lakh = (n: number) => `₹${(n / 1e7).toFixed(1)} L`;
@@ -279,6 +280,8 @@ export function GrowthPage(navigation: GrowthNavigation) {
   // oxlint-disable-next-line react/react-compiler -- The period owns the comparison choice; reset it when that period changes.
   useEffect(() => { setComparisonKey('last_year'); }, [period]);
   const periodMode = period !== 'rolling12';
+  const param = formatGrowthPeriodParam(period);
+  const labPeriod = periodMode && periodData.data ? { param, label: periodData.data.period.label } : undefined;
   const rollingCaption = (child: ReactNode) => periodMode ? <div className="min-w-0 space-y-2"><p className={muted}>Last 12 months</p>{child}</div> : child;
   const [phoneRevenueTab, setPhoneRevenueTab] = useState<'revenue' | 'bridge'>('revenue');
   const [selection, setSelection] = useState<GrowthSelection | null>(null);
@@ -317,8 +320,8 @@ export function GrowthPage(navigation: GrowthNavigation) {
   // oxlint-disable-next-line jsx-a11y/prefer-tag-over-role -- Preserve existing desktop status markup and accessible SVG chart roles.
   const pageError = error ? <div role="alert"><p>{error}</p>{error !== 'Growth is for management only.' && <button className="mt-3 min-h-11 rounded-lg border border-sf-line px-3" onClick={() => { setData(null); setError(''); setRevision(n => n + 1); }}>Retry</button>}</div> : !data ? <p role="status">Loading growth…</p> : null;
   const periodStatus = (title: string, id: string) => <section className={card} aria-labelledby={id}><h2 id={id} className="text-base font-bold">{title}</h2>{periodData.error ? <><p role="alert">{periodData.error}</p><button type="button" className="min-h-11 rounded-lg border border-sf-line px-3" onClick={periodData.retry}>Retry</button></> : <output className="block">Loading period…</output>}</section>;
-  const revenueCard = data && (periodMode ? periodData.data ? <GrowthPeriodRevenue data={periodData.data} comparisonKey={comparisonKey} onComparisonChange={setComparisonKey} /> : periodStatus('Where revenue comes from', 'revenue-period-status') : <Revenue data={data} scope={scope} comparison={comparison} onDrill={setSelection} />);
-  const bridgeCard = data && (periodMode ? periodData.data ? <GrowthPeriodBridge data={periodData.data} comparisonKey={comparisonKey} /> : periodStatus('Where growth came from', 'bridge-period-status') : <Bridge data={data} scope={scope} comparison={comparison} onDrill={setSelection} />);
+  const revenueCard = data && (periodMode ? periodData.data ? <GrowthPeriodRevenue data={periodData.data} comparisonKey={comparisonKey} onComparisonChange={setComparisonKey} onDrill={setSelection} param={param} /> : periodStatus('Where revenue comes from', 'revenue-period-status') : <Revenue data={data} scope={scope} comparison={comparison} onDrill={setSelection} />);
+  const bridgeCard = data && (periodMode ? periodData.data ? <GrowthPeriodBridge data={periodData.data} comparisonKey={comparisonKey} onDrill={setSelection} param={param} /> : periodStatus('Where growth came from', 'bridge-period-status') : <Bridge data={data} scope={scope} comparison={comparison} onDrill={setSelection} />);
   return <div data-growth-scroller className="h-full min-w-0 overflow-y-auto p-4 text-sm text-sf-strong sm:p-6 [overflow-wrap:break-word]">
     <header className="mb-5 space-y-2"><p className={muted}>More / Management</p><h1 className="text-xl font-bold">Growth</h1>{data && <p className={muted}>{periodMode && periodData.data ? `${periodData.data.period.label} · ${data.companyCount === 1 ? 'one Tally company' : `${data.companyCount} Tally companies`} · management only` : `${scope} · management only`}</p>}<GrowthPeriodPicker value={period} today={todayIst()} onChange={setPeriod} />{data && !data.confirmed && <p className="text-xs text-sf-warning">Not confirmed: {plainReason(data.confirmedReason)}</p>}</header>
     {phone ? <>{pageError}{data && <GrowthSections data={data}>{(section, filter, open) => <>
@@ -340,7 +343,7 @@ export function GrowthPage(navigation: GrowthNavigation) {
       </>}
       {section === 'labs' && <>
         {filter === 'top' && rollingCaption(<LabsBuyingCard data={data} onDrill={setSelection} />)}
-        {rollingCaption(<GrowthLabMonths key={filter} onOpenCustomer={navigation.onOpenCustomer} initialFilter={filter} />)}
+        {labPeriod ? <GrowthLabMonths key={`${filter}:${param}`} period={labPeriod} onOpenCustomer={navigation.onOpenCustomer} initialFilter={filter} /> : rollingCaption(<GrowthLabMonths key={`${filter}:rolling`} onOpenCustomer={navigation.onOpenCustomer} initialFilter={filter} />)}
         {filter !== 'top' && rollingCaption(<LabsBuyingCard data={data} onDrill={setSelection} />)}
       </>}
       {section === 'profit' && rollingCaption(<GrowthProfit data={data} scope={scope} onDrill={setSelection} navigation={navigation} showBrands={false} />)}
@@ -353,11 +356,11 @@ export function GrowthPage(navigation: GrowthNavigation) {
           {tab === 'revenue' && rollingCaption(<RevenueMonths data={data} onDrill={setSelection} />)}
           {tab === 'revenue' && revenueCard}
           {tab === 'bridge' && bridgeCard}
-          {tab === 'monthly' && <>{rollingCaption(<LabsBuyingCard data={data} onDrill={setSelection} />)}{rollingCaption(<GrowthLabMonths onOpenCustomer={navigation.onOpenCustomer} />)}{rollingCaption(<PurchasesCard data={data} onDrill={setSelection} />)}</>}
+          {tab === 'monthly' && <>{rollingCaption(<LabsBuyingCard data={data} onDrill={setSelection} />)}{labPeriod ? <GrowthLabMonths key={param} period={labPeriod} onOpenCustomer={navigation.onOpenCustomer} /> : rollingCaption(<GrowthLabMonths key="rolling" onOpenCustomer={navigation.onOpenCustomer} />)}{rollingCaption(<PurchasesCard data={data} onDrill={setSelection} />)}</>}
           {tab === 'profit' && (periodMode ? <>{rollingCaption(<GrowthProfit data={data} scope={scope} onDrill={setSelection} navigation={navigation} showBrands={false} />)}{rollingCaption(<GrowthBrands onOpenBrandSetup={navigation.onOpenBrandSetup} />)}</> : <GrowthProfit data={data} scope={scope} onDrill={setSelection} navigation={navigation} />)}
         </div></>}</div>
       <div className="min-w-0 space-y-4">{data && <Health data={data} onOpenBrandSetup={navigation.onOpenBrandSetup} onOpenMyActions={navigation.onOpenMyActions} />}</div>
     </div>}
-    {selection && <GrowthDrilldown key={`${selection.list}:${selection.month ?? ""}:${selection.half ?? ""}:${selection.sort ?? ""}`} selection={selection} onClose={() => setSelection(null)} {...navigation} />}
+    {selection && <GrowthDrilldown key={`${selection.list}:${selection.month ?? ""}:${selection.half ?? ""}:${selection.sort ?? ""}:${selection.period ?? ""}:${selection.comparison ?? ""}`} selection={selection} onClose={() => setSelection(null)} {...navigation} />}
   </div>;
 }

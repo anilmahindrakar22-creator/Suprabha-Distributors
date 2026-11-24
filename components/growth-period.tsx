@@ -3,6 +3,7 @@
 import { useEffect, useState, type ReactNode } from 'react';
 import { formatGrowthPeriodParam, normalizeGrowthPeriod, parseGrowthPeriodParam, type GrowthPeriodData, type GrowthPeriodSelection } from '@/lib/growth-period-types';
 import { BridgeChart, Table, card, lakh, rupees, months, changeLabel } from './growth-page';
+import type { GrowthSelection } from './growth-drilldown';
 
 type Selection = GrowthPeriodSelection | 'rolling12';
 type ComparisonKey = 'last_year' | 'previous';
@@ -89,7 +90,7 @@ export function useGrowthPeriodData(selection: Selection) {
   return { ...state, retry: () => setRevision(n => n + 1) };
 }
 
-export function GrowthPeriodRevenue({ data, comparisonKey, onComparisonChange }: { data: GrowthPeriodData; comparisonKey: ComparisonKey; onComparisonChange: (key: ComparisonKey) => void }) {
+export function GrowthPeriodRevenue({ data, comparisonKey, onComparisonChange, onDrill, param }: { data: GrowthPeriodData; comparisonKey: ComparisonKey; onComparisonChange: (key: ComparisonKey) => void; onDrill?: (selection: GrowthSelection) => void; param?: string }) {
   const comparison = data.comparisons.find(c => c.key === comparisonKey) ?? data.comparisons[0];
   const current = data.current.tree, previous = comparison.tree;
   const measures: [string, number | null, number | null, (n: number) => string][] = [
@@ -112,14 +113,19 @@ export function GrowthPeriodRevenue({ data, comparisonKey, onComparisonChange }:
       const buttons = event.currentTarget.parentElement?.querySelectorAll<HTMLButtonElement>('button');
       buttons?.[1 - index].focus();
     }}>vs {c.label}</button>)}</div>}
-    <Table caption="Revenue comparison" headings={['Measure', data.current.label, comparison.label, 'Change']} rows={measures.map(([label, now, before, format]): ReactNode[] => [label, now === null ? '—' : format(now), comparison.check.state === 'no_history' || before === null ? '—' : format(before), periodChangeLabel(comparison.check.state, before, now)])} />
+    <Table caption="Revenue comparison" headings={['Measure', data.current.label, comparison.label, 'Change']} rows={measures.map(([label, now, before, format]): ReactNode[] => [label, label === 'Labs buying' && onDrill ? <button key="labs" type="button" className="min-h-11 text-sf-brand underline" onClick={() => onDrill({ list: 'window_labs', period: param, count: current.labsBuying, title: 'Labs with sales (incl. instrument & bulk)', explanation: `Every lab with sales in ${data.current.label}, including instrument and bulk invoices, so this can be more than Labs buying.` })}>{current.labsBuying}</button> : now === null ? '—' : format(now), comparison.check.state === 'no_history' || before === null ? '—' : format(before), periodChangeLabel(comparison.check.state, before, now)])} />
     {note && <p className={muted}>{note}</p>}<p className={muted}>{current.bulkInvoices} {current.bulkInvoices === 1 ? 'invoice' : 'invoices'} of ₹2 L or more this period.</p>
   </section>;
 }
 
-export function GrowthPeriodBridge({ data, comparisonKey }: { data: GrowthPeriodData; comparisonKey: ComparisonKey }) {
+export function GrowthPeriodBridge({ data, comparisonKey, param, onDrill }: { data: GrowthPeriodData; comparisonKey: ComparisonKey; param: string; onDrill: (selection: GrowthSelection) => void }) {
   const comparison = data.comparisons.find(c => c.key === comparisonKey) ?? data.comparisons[0];
   if (!comparison.bridge) return <section className={card}><h2 className="text-base font-bold">Where growth came from</h2><p className={muted}>No sales history for {comparison.label} yet, so there is nothing to compare.</p></section>;
   const note = comparisonNote(comparison.check, comparison.label);
-  return <BridgeChart bridge={comparison.bridge} startLabel={comparison.label} endLabel={data.current.label} caption={<>{comparison.label} → {data.current.label} · all sales{note && <span className="mt-2 block">{note}</span>}</>} footnote={`Regular = bought in 3 or more months of ${comparison.label}.`} />;
+  const b = comparison.bridge;
+  const onDrillIndex = (i: number) => {
+    const list = ['', 'bridge_new', 'bridge_stopped', 'bridge_grew', 'bridge_fell'][i];
+    if (list) onDrill({ list, period: param, comparison: comparison.key, count: [0, b.new.labs, b.stoppedRegular.labs, b.grew.labs, b.fell.labs][i], title: ['', 'New labs', 'Labs that stopped', 'Existing labs that grew', 'Existing labs that fell'][i], explanation: `${comparison.label} against ${data.current.label}. Regular = bought in 3 or more months of ${comparison.label}.` });
+  };
+  return <BridgeChart bridge={b} startLabel={comparison.label} endLabel={data.current.label} caption={<>{comparison.label} → {data.current.label} · all sales{note && <span className="mt-2 block">{note}</span>}</>} footnote={`Regular = bought in 3 or more months of ${comparison.label}.`} onDrillIndex={onDrillIndex} />;
 }

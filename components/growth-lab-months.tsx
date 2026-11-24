@@ -1,6 +1,7 @@
 'use client';
 
-import { useEffect, useState } from 'react';
+import { useEffect, useState, type CSSProperties } from 'react';
+import { normalizeGrowthPeriodLabMonths, type GrowthPeriodLabMonthsData } from '@/lib/growth-period-labs-types';
 import { normalizeGrowthLabMonths, type GrowthLabMonthRow, type GrowthLabMonthsData } from '@/lib/growth-lab-month-types';
 import { formatPaise } from '@/lib/wallet-format';
 import { parseGrowthStoppedItems, type GrowthStoppedItem, type GrowthStoppedItems } from '@/lib/growth-stopped-items';
@@ -8,7 +9,8 @@ import { parseGrowthStoppedItems, type GrowthStoppedItem, type GrowthStoppedItem
 const card = 'min-w-0 space-y-3 rounded-xl border border-sf-line-soft bg-white p-4 lg:p-5';
 const muted = 'text-xs text-sf-muted';
 const button = 'min-h-9 rounded-lg border border-sf-line px-3 text-xs text-sf-brand';
-const rowGrid = 'grid grid-cols-[7rem_repeat(12,minmax(0,1fr))] gap-0.5 sm:grid-cols-[12rem_repeat(12,minmax(0,1fr))]';
+const rowGrid = 'grid grid-cols-[7rem_repeat(var(--sf-months),minmax(0,1fr))] gap-0.5 sm:grid-cols-[12rem_repeat(var(--sf-months),minmax(0,1fr))]';
+type MonthData = Pick<GrowthPeriodLabMonthsData, 'months' | 'rows'>;
 const monthNames = ['Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun', 'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec'];
 const heatClasses = ['bg-transparent border border-dashed border-sf-line', 'bg-sf-heat-1', 'bg-sf-heat-2', 'bg-sf-heat-3', 'bg-sf-heat-4', 'bg-sf-heat-5'];
 
@@ -35,16 +37,16 @@ function Pill() {
 }
 
 function HeaderRow({ months }: { months: string[] }) {
-  return <div aria-hidden="true" className={`${rowGrid} text-[10px] text-sf-muted`}>
+  return <div aria-hidden="true" style={{ '--sf-months': months.length } as CSSProperties} className={`${rowGrid} text-[10px] text-sf-muted`}>
     <span />
     {months.map(m => <span key={m} data-month-header className="whitespace-nowrap text-center text-[10px]"><span className="sm:hidden">{monthShort(m).charAt(0)}</span><span className="hidden sm:inline">{monthShort(m)}</span></span>)}
   </div>;
 }
 
-function HeatRow({ row, months, filter }: { row: GrowthLabMonthRow; months: string[]; filter: GrowthLabMonthsData['filter'] }) {
+function HeatRow({ row, months, showLapsing, filter }: { row: GrowthPeriodLabMonthsData['rows'][number]; months: string[]; showLapsing: boolean; filter?: GrowthLabMonthsData['filter'] }) {
   const best = Math.max(0, ...row.monthsPaise);
-  const quiet = filter === 'lapsing' || isLapsing(row);
-  return <div data-lab-row className={`${rowGrid} items-center`}>
+  const quiet = showLapsing && (filter === 'lapsing' || isLapsing(row));
+  return <div data-lab-row style={{ '--sf-months': months.length } as CSSProperties} className={`${rowGrid} items-center`}>
     <span className="flex min-w-0 items-center gap-1 text-xs">
       <span title={labName(row)} className={`min-w-0 truncate ${quiet ? 'font-bold text-sf-strong' : ''}`}>{labName(row)}</span>
       {quiet && <Pill />}
@@ -57,7 +59,7 @@ function HeatRow({ row, months, filter }: { row: GrowthLabMonthRow; months: stri
   </div>;
 }
 
-function Legend() {
+function Legend({ showLapsing }: { showLapsing: boolean }) {
   return <div className="flex flex-wrap items-center gap-x-3 gap-y-1 text-[10px] text-sf-muted">
     <span className="flex items-center gap-1">
       {heatClasses.map((c, i) => <span key={c} className="flex items-center gap-1">
@@ -66,18 +68,18 @@ function Legend() {
         {i === 5 && <span>best month</span>}
       </span>)}
     </span>
-    <span className="flex items-center gap-1"><Pill /> bought in most months, then nothing recently</span>
+    {showLapsing && <span className="flex items-center gap-1"><Pill /> bought in most months, then nothing recently</span>}
   </div>;
 }
 
-function Heatmap({ data }: { data: GrowthLabMonthsData }) {
+function Heatmap({ data, showLapsing, filter }: { data: MonthData; showLapsing: boolean; filter?: GrowthLabMonthsData['filter'] }) {
   return <div className="space-y-0.5">
     <HeaderRow months={data.months} />
-    {data.rows.map(row => <HeatRow key={row.labKey} row={row} months={data.months} filter={data.filter} />)}
+    {data.rows.map(row => <HeatRow key={row.labKey} row={row} months={data.months} showLapsing={showLapsing} filter={filter} />)}
   </div>;
 }
 
-function MonthTable({ data }: { data: GrowthLabMonthsData }) {
+function MonthTable({ data }: { data: MonthData; showLapsing: boolean }) {
   return <div className="overflow-x-auto">
     <table className="w-full min-w-[44rem] text-xs tabular-nums">
       <thead>
@@ -98,7 +100,7 @@ function MonthTable({ data }: { data: GrowthLabMonthsData }) {
   </div>;
 }
 
-type Props = { onOpenCustomer?: (customerId: string) => void };
+type Props = { onOpenCustomer?: (customerId: string) => void; period?: { param: string; label: string } };
 
 function stoppedItemLabel(item: GrowthStoppedItem) {
   const quantity = Math.round(item.usualMonthlyQuantity * 1000) / 1000;
@@ -142,42 +144,46 @@ function CallList({ data, onOpenCustomer }: Props & { data: GrowthLabMonthsData 
   </ol>;
 }
 
-function LabMonthsBody({ data, onOpenCustomer }: Props & { data: GrowthLabMonthsData }) {
+function LabMonthsBody({ data, onOpenCustomer, period }: Props & { data: GrowthLabMonthsData | GrowthPeriodLabMonthsData }) {
   const [table, setTable] = useState(false);
+  const filter = 'filter' in data ? data.filter : 'top';
+  const showLapsing = !period;
   return <>
-    {data.filter !== 'top' && (data.rows.length ? <CallList data={data} onOpenCustomer={onOpenCustomer} /> : <p className={muted}>{data.filter === 'declining' ? 'No labs buying less right now.' : 'No lapsing core labs right now.'}</p>)}
+    {'filter' in data && filter !== 'top' && (data.rows.length ? <CallList data={data} onOpenCustomer={onOpenCustomer} /> : <p className={muted}>{filter === 'declining' ? 'No labs buying less right now.' : 'No lapsing core labs right now.'}</p>)}
     <div className="flex justify-end">
       <button type="button" className={button} aria-pressed={table} onClick={() => setTable(v => !v)}>{table ? 'View as chart' : 'View as table'}</button>
     </div>
-    {table ? <MonthTable data={data} /> : <Heatmap data={data} />}
-    <Legend />
-    <p className={muted}>{data.filter === 'lapsing'
+    {table ? <MonthTable data={data} showLapsing={showLapsing} /> : <Heatmap data={data} showLapsing={showLapsing} filter={filter} />}
+    <Legend showLapsing={showLapsing} />
+      <p className={muted}>{period ? `${data.totalLabs} ${data.totalLabs === 1 ? 'lab' : 'labs'} bought in ${period.label}; showing the top ${data.rows.length}. Includes instrument and bulk sales.` : filter === 'lapsing'
       ? `Lapsing = bought in 5+ of 12 months, nothing for 30+ days, and either 60+ days since the last purchase or 2 of the last 3 months missed.`
-      : data.filter === 'declining' ? 'Buying less = consumables in the last 90 days at least 30% and ₹10,000 below the 90 days before. Instruments not counted.'
+      : filter === 'declining' ? 'Buying less = consumables in the last 90 days at least 30% and ₹10,000 below the 90 days before. Instruments not counted.'
       : `${data.totalLabs} labs bought in these 12 months; showing the top ${data.rows.length}. Lapsing = bought in 5+ months and missed 2 of the last 3 months.`}</p>
-    {data.filter !== 'top' && data.totalLabs > data.rows.length && <p className={muted}>Showing {data.rows.length} of {data.totalLabs} {data.filter === 'declining' ? 'labs buying less' : 'lapsing labs'}.</p>}
+    {filter !== 'top' && data.totalLabs > data.rows.length && <p className={muted}>Showing {data.rows.length} of {data.totalLabs} {filter === 'declining' ? 'labs buying less' : 'lapsing labs'}.</p>}
   </>;
 }
 
-function useLabMonthsData(filter: GrowthLabMonthsData['filter']) {
-  const [data, setData] = useState<GrowthLabMonthsData | null>(null);
+function useLabMonthsData(filter: GrowthLabMonthsData['filter'], period?: string) {
+  const [data, setData] = useState<GrowthLabMonthsData | GrowthPeriodLabMonthsData | null>(null);
   const [error, setError] = useState(false);
   const [revision, setRevision] = useState(0);
   useEffect(() => {
     const controller = new AbortController();
-    void fetch(`/api/growth/lab-months${filter === 'top' ? '' : `?filter=${filter}`}`, { cache: 'no-store', signal: controller.signal }).then(async response => {
-      const next = response.ok ? normalizeGrowthLabMonths(await response.json(), filter) : null;
+    const url = period ? `/api/growth/lab-months?period=${period}` : `/api/growth/lab-months${filter === 'top' ? '' : `?filter=${filter}`}`;
+    void fetch(url, { cache: 'no-store', signal: controller.signal }).then(async response => {
+      const raw: unknown = response.ok ? await response.json() : null;
+      const next = period ? normalizeGrowthPeriodLabMonths(raw) : normalizeGrowthLabMonths(raw, filter);
       if (!next) throw new Error('Lab months are unavailable');
       if (!controller.signal.aborted) setData(next);
     }).catch(() => { if (!controller.signal.aborted) setError(true); });
     return () => controller.abort();
-  }, [revision, filter]);
+  }, [revision, filter, period]);
   return { data, error, retry: () => { setError(false); setRevision(n => n + 1); } };
 }
 
-export function GrowthLabMonths({ onOpenCustomer, initialFilter = 'top' }: Props & { initialFilter?: 'top' | 'lapsing' | 'declining' } = {}) {
+export function GrowthLabMonths({ onOpenCustomer, period, initialFilter = 'top' }: Props & { initialFilter?: 'top' | 'lapsing' | 'declining' } = {}) {
   const [filter, setFilter] = useState<GrowthLabMonthsData['filter']>(initialFilter);
-  const top = useLabMonthsData('top');
+  const top = useLabMonthsData('top', period?.param);
   const lapsing = useLabMonthsData('lapsing');
   const declining = useLabMonthsData('declining');
   const { data, error, retry } = filter === 'top' ? top : filter === 'lapsing' ? lapsing : declining;
@@ -190,9 +196,9 @@ export function GrowthLabMonths({ onOpenCustomer, initialFilter = 'top' }: Props
         setFilter(value);
       }}>{value === 'top' ? 'Top labs' : value === 'lapsing' ? `Lapsing core labs${lapsingCount === undefined ? '' : ` (${lapsingCount})`}` : `Buying less${decliningCount === undefined ? '' : ` (${decliningCount})`}`}</button>)}
     </div>
-    <p className={muted}>{filter === 'top' ? `Top ${data?.rows.length ?? 20} labs by sales · ` : ''}12 months · darker = more of that lab&apos;s usual monthly business</p>
+    <p className={muted}>{period && filter !== 'top' ? 'As of today · ' : ''}{filter === 'top' ? `Top ${data?.rows.length ?? 20} ${data?.rows.length === 1 ? 'lab' : 'labs'} by sales · ` : ''}{period && filter === 'top' ? period.label : '12 months'} · darker = more of that lab&apos;s usual monthly business</p>
     {error ? <div role="alert" className="text-xs">Lab months are unavailable. <button type="button" className={button} onClick={retry}>Retry</button></div>
       : !data ? <output className="block animate-pulse rounded bg-sf-soft-0 p-4 text-xs">Loading labs…</output>
-      : <LabMonthsBody key={filter} data={data} onOpenCustomer={onOpenCustomer} />}
+      : <LabMonthsBody key={filter} data={data} period={filter === 'top' ? period : undefined} onOpenCustomer={onOpenCustomer} />}
   </section>;
 }

@@ -30,7 +30,7 @@ function periodSample(fy = false): GrowthPeriodData {
   };
 }
 
-async function fixture(page: Page, options: { param?: string; state?: GrowthPeriodData['current']['check']['state']; failOnce?: boolean } = {}) {
+async function fixture(page: Page, options: { param?: string; state?: GrowthPeriodData['current']['check']['state']; failOnce?: boolean; urls?: string[]; labsNoHistory?: boolean } = {}) {
   const requests: string[] = [];
   await page.clock.setFixedTime(new Date('2026-11-24T06:00:00Z'));
   await page.addInitScript(() => { localStorage.removeItem('sf-growth-tab'); localStorage.removeItem('sf-growth-inbox-open'); });
@@ -52,6 +52,33 @@ async function fixture(page: Page, options: { param?: string; state?: GrowthPeri
       if (options.state === 'no_history') { c.tree = null; c.bridge = null; }
     }
     return route.fulfill({ json: data });
+  });
+  await page.route('**/api/growth/lab-months*', route => {
+    const url = new URL(route.request().url());
+    options.urls?.push(url.href);
+    const param = url.searchParams.get('period');
+    const period = periodSample(param?.startsWith('fy-')).period;
+    const months = param
+      ? Array.from({ length: period.kind === 'fy' ? 8 : 2 }, (_, i) => `2026-${String((period.kind === 'fy' ? 4 : 10) + i).padStart(2, '0')}`)
+      : rollingSample().months.map(m => m.month);
+    return route.fulfill({ json: {
+      window: param ? { from: period.from, to: period.to } : { from: '2025-11-01', to: '2026-11-01' },
+      months, totalLabs: 1,
+      rows: [{ labKey: 'c|lab', customerId: null, name: 'Period lab', town: null, totalPaise: 10000000, monthsPaise: months.map(() => 1000000), buyingMonths: months.length,
+        ...(url.searchParams.get('filter') === 'declining' ? { previousNinetyPaise: 2000000, lastNinetyPaise: 1000000 } : {}),
+      }],
+    } });
+  });
+  await page.route('**/api/growth/labs?period=*', route => {
+    const url = new URL(route.request().url());
+    options.urls?.push(url.href);
+    return route.fulfill({ json: {
+      list: url.searchParams.get('list'), comparison: url.searchParams.get('comparison'), page: Number(url.searchParams.get('page')), pageSize: 20,
+      period: periodSample(url.searchParams.get('period')?.startsWith('fy-')).period,
+      total: options.labsNoHistory ? 0 : 1,
+      ...(options.labsNoHistory ? { reason: 'no_history' } : {}),
+      rows: options.labsNoHistory ? [] : [{ labKey: 'c|lab', customerId: null, name: 'Period lab', town: 'Pune', valuePaise: 2000000, comparisonPaise: url.searchParams.get('list') === 'window_labs' ? null : 1000000, currentPaise: 3000000, monthsBought: url.searchParams.get('list') === 'bridge_stopped' ? 0 : 2, lastBoughtOn: '2026-11-20' }],
+    } });
   });
   await page.goto('/?view=frame&role=management&roles=management' + (options.param ? `&growthPeriod=${options.param}` : ''));
   const entry = page.getByRole('button', { name: /^growth$/i });
@@ -79,7 +106,7 @@ test('rolling is the default and makes no period request', async ({ page }) => {
   await expect(page.locator('#bridge-svg-title')).toHaveText('H1 to H2 revenue bridge in ₹ lakh');
 });
 
-test('Q3 updates URL, table, shared comparison and bridge without drill buttons', async ({ page }) => {
+test('Q3 updates URL, table, shared comparison and bridge with drill buttons', async ({ page }) => {
   const requests = await fixture(page);
   await selectQuarter(page);
   expect(requests).toEqual(['q3-2026']);
@@ -101,7 +128,7 @@ test('Q3 updates URL, table, shared comparison and bridge without drill buttons'
   await openBridge(page);
   await expect(page.locator('#bridge-svg-desc')).toContainText('Q2 FY 2026-27 total');
   await expect(page.locator('#bridge-svg-desc')).toContainText('Q3 FY 2026-27 to 24 Nov total');
-  await expect(page.locator('#bridge-chart [role=button]')).toHaveCount(0);
+  await expect(page.locator('#bridge-chart [role=button]')).toHaveCount(4);
 });
 
 test('comparison arrows move selection and focus', async ({ page }) => {
@@ -155,7 +182,7 @@ test('rolling cards are labelled only in period mode and survive period failure 
   await expect(page.getByRole('table', { name: 'Revenue comparison' })).toBeVisible();
   if (!await isPhoneGrowth(page)) {
     await page.getByRole('tab', { name: 'Monthly', exact: true }).click();
-    await expect(page.locator('#growth-panel').getByText('Last 12 months', { exact: true })).toHaveCount(3);
+    await expect(page.locator('#growth-panel').getByText('Last 12 months', { exact: true })).toHaveCount(2);
   }
   await page.getByRole('button', { name: 'Last 12 months', exact: true }).click();
   if (!await isPhoneGrowth(page)) await page.getByRole('tab', { name: 'Revenue', exact: true }).click();
@@ -178,7 +205,7 @@ test('loads FY from the URL once, preserving other parameters and the hash on ch
   for (const [key, value] of before.searchParams) if (key !== 'growthPeriod') expect(after.searchParams.get(key)).toBe(value);
 });
 
-test('all six rolling cards retain their Last 12 months captions in period mode', async ({ page }) => {
+test('remaining rolling cards retain their Last 12 months captions in period mode', async ({ page }) => {
   await fixture(page);
   await selectQuarter(page);
   const phone = await isPhoneGrowth(page);
@@ -186,8 +213,8 @@ test('all six rolling cards retain their Last 12 months captions in period mode'
   // Scorecard and RevenueMonths, plus PurchasesCard on the phone.
   await expect(captions()).toHaveCount(phone ? 3 : 2);
   await openGrowthArea(page, 'labs');
-  // Phone Labs has LabsBuyingCard and GrowthLabMonths; desktop Monthly also counts the visible Scorecard caption and PurchasesCard.
-  await expect(captions()).toHaveCount(phone ? 2 : 4);
+  // Lab months now follows the period; LabsBuyingCard and PurchasesCard remain rolling.
+  await expect(captions()).toHaveCount(phone ? 1 : 3);
   await openGrowthArea(page, 'profit');
   // Phone Profit has GrowthProfit; desktop also counts the persistent Scorecard and GrowthBrands captions.
   await expect(captions()).toHaveCount(phone ? 1 : 3);
@@ -215,4 +242,90 @@ test('375px picker scrolls its chips without horizontal page scroll', async ({ p
   await expect(page.locator('#bridge-chart')).toBeVisible();
   expect(await page.evaluate(() => document.documentElement.scrollWidth <= innerWidth)).toBe(true);
   expect(await page.locator('[data-growth-scroller]').evaluate(el => el.scrollWidth <= el.clientWidth)).toBe(true);
+});
+
+test('period lab months uses returned months and keeps call lists as of today', async ({ page }) => {
+  const urls: string[] = [];
+  await fixture(page, { param: 'q3-2026', urls });
+  await expect(page.getByRole('table', { name: 'Revenue comparison' })).toBeVisible();
+  await openGrowthArea(page, 'labs');
+  const card = page.getByRole('region', { name: 'Who is buying, month by month', exact: true });
+  await expect(card.locator('[data-month-header]')).toHaveCount(2);
+  await expect(card.locator('[data-month-header]').nth(0)).toContainText('Oct');
+  await expect(card.locator('[data-month-header]').nth(1)).toContainText('Nov');
+  await expect(card).toContainText("Top 1 lab by sales · Q3 FY 2026-27 to 24 Nov · darker = more of that lab's usual monthly business");
+  await expect(card).toContainText('Includes instrument and bulk sales.');
+  await expect(card.getByText('Lapsing', { exact: true })).toHaveCount(0);
+  expect(urls.some(url => new URL(url).searchParams.get('period') === 'q3-2026')).toBe(true);
+  await card.getByRole('button', { name: 'View as table', exact: true }).click();
+  await expect(card.getByRole('columnheader')).toHaveCount(4); // Lab, Oct, Nov, Total
+  await card.getByRole('button', { name: /^Lapsing core labs/ }).click();
+  await expect(card.locator('p').filter({ hasText: /^As of today · 12 months/ })).toBeVisible();
+  await card.getByRole('button', { name: /^Buying less/ }).click();
+  await expect(card.locator('p').filter({ hasText: /^As of today · 12 months/ })).toBeVisible();
+});
+
+test('period bridge drills with the shared comparison', async ({ page }) => {
+  const urls: string[] = [];
+  await fixture(page, { param: 'q3-2026', urls });
+  await expect(page.getByRole('table', { name: 'Revenue comparison' })).toBeVisible();
+  await openBridge(page);
+  await page.locator('#bridge-chart [data-growth-bar="up"]').first().click();
+  const drawer = page.getByRole('dialog');
+  await expect(drawer.getByRole('listitem')).toContainText('change ·');
+  await expect(drawer.getByRole('listitem')).toContainText('→');
+  await expect(drawer.getByRole('listitem')).toContainText('bought in 2 months · last 20 Nov');
+  await expect(drawer.getByRole('combobox')).toHaveCount(0);
+  await expect(drawer).not.toContainText('compares the last 3 months');
+  expect(urls.some(url => url.includes('period=q3-2026&list=bridge_new&page=1&comparison=last_year'))).toBe(true);
+  await drawer.getByRole('button', { name: 'Close drilldown' }).click();
+  await page.getByRole('tab', { name: 'Revenue', exact: true }).click();
+  await page.getByRole('radio', { name: 'vs Q2 FY 2026-27', exact: true }).click();
+  await openBridge(page);
+  await page.locator('#bridge-chart [data-growth-bar="up"]').first().click();
+  await expect(drawer.getByRole('listitem')).toContainText('change ·');
+  expect(urls.some(url => url.includes('period=q3-2026&list=bridge_new&page=1&comparison=previous'))).toBe(true);
+  for (const url of urls.filter(url => new URL(url).pathname === '/api/growth/labs')) {
+    const params = new URL(url).searchParams;
+    for (const key of ['sort', 'month', 'half', 'regularOnly']) expect(params.has(key)).toBe(false);
+  }
+  await drawer.getByRole('button', { name: 'Close drilldown' }).click();
+  await page.getByRole('tab', { name: 'Revenue', exact: true }).click();
+  await openBridge(page);
+  await page.locator('#bridge-chart [data-growth-bar="down"]').first().click();
+  await expect(page.getByRole('dialog').getByRole('listitem')).toContainText('no purchases in period');
+});
+
+test('period Labs buying opens all sales without a comparison', async ({ page }) => {
+  const urls: string[] = [];
+  await fixture(page, { param: 'q3-2026', urls });
+  const table = page.getByRole('table', { name: 'Revenue comparison' });
+  await table.getByRole('row', { name: /^Labs buying / }).getByRole('button').click();
+  const drawer = page.getByRole('dialog');
+  await expect(drawer.getByRole('heading')).toContainText('Labs with sales (incl. instrument & bulk)');
+  await expect(drawer.getByRole('listitem')).toContainText('in period · bought in 2 months');
+  const url = new URL(urls.find(url => new URL(url).pathname === '/api/growth/labs')!);
+  expect(url.searchParams.get('period')).toBe('q3-2026');
+  expect(url.searchParams.get('list')).toBe('window_labs');
+  expect(url.searchParams.has('comparison')).toBe(false);
+});
+
+test('period labs shows the no-history explanation', async ({ page }) => {
+  await fixture(page, { param: 'q3-2026', labsNoHistory: true });
+  await expect(page.getByRole('table', { name: 'Revenue comparison' })).toBeVisible();
+  await openBridge(page);
+  await page.locator('#bridge-chart [data-growth-bar="up"]').first().click();
+  await expect(page.getByRole('dialog')).toContainText('No sales history for this comparison yet.');
+  await expect(page.getByRole('dialog')).not.toContainText('No labs in this list');
+});
+
+test('rolling lab months retains twelve headers and no period parameter', async ({ page }) => {
+  const urls: string[] = [];
+  await fixture(page, { urls });
+  await openGrowthArea(page, 'labs');
+  const card = page.getByRole('region', { name: 'Who is buying, month by month', exact: true });
+  await expect(card.locator('[data-month-header]')).toHaveCount(12);
+  const requests = urls.filter(url => new URL(url).pathname === '/api/growth/lab-months');
+  expect(requests.length).toBeGreaterThan(0);
+  for (const url of requests) expect(new URL(url).searchParams.has('period')).toBe(false);
 });
