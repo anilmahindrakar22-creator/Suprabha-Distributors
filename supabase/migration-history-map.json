@@ -1718,6 +1718,13 @@
       "remoteVersion": null,
       "remoteSha256": null,
       "status": "not_deployed"
+    },
+    {
+      "localFile": "20261227100000_economic_line_reads.sql",
+      "localSha256": "3a1d2815397c58ad04c0925285e94897d044a50284ee9d0a152e02771dd1137b",
+      "remoteVersion": null,
+      "remoteSha256": null,
+      "status": "not_deployed"
     }
   ],
   "liveCheck": {
