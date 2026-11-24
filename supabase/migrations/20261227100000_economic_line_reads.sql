@@ -1,5 +1,16 @@
 begin;
 
+create function private.stockflow_economic_line_used(p_line uuid) returns boolean
+language sql stable set search_path=pg_catalog,private as $$
+select exists(select 1 from private.stockflow_equipment_installations i where i.historical_sale_line_id=l.id or i.tally_key=v.company_id||':'||v.source_id||':'||l.line_key)
+    or exists(select 1 from private.stockflow_economic_acquisition_links a where a.company_id=v.company_id and a.source_id=v.source_id and a.line_key=l.line_key)
+    or exists(select 1 from private.stockflow_economic_instrument_billings b where b.company_id=v.company_id and b.source_id=v.source_id and b.line_key=l.line_key)
+    or exists(select 1 from private.stockflow_economic_cost_links c join private.stockflow_economic_source_lines cl on cl.id=c.purchase_line_id join private.stockflow_economic_source_vouchers cv on cv.id=cl.voucher_id where cv.company_id=v.company_id and cv.source_id=v.source_id and cl.line_key=l.line_key)
+from private.stockflow_economic_source_lines l
+join private.stockflow_economic_source_vouchers v on v.id=l.voucher_id
+where l.id=p_line
+$$;
+
 create function private.stockflow_economic_line_rows(p_ids uuid[]) returns jsonb
 language sql stable set search_path=pg_catalog,private as $$
 select coalesce(jsonb_agg(jsonb_build_object('id',l.id,'companyId',v.company_id,'voucherId',v.source_id,'revision',v.source_revision::text,'lineKey',l.line_key,'date',v.business_date,'kind',v.kind,'customerSourceId',v.customer_source_id,'productId',l.product_id,'productName',coalesce(l.evidence->>'label',l.product_id),'voucherNumber',nullif(btrim(v.evidence->>'sourceReference'),''),'quantity',l.quantity::text,'unit',l.unit,'netSalesPaise',l.net_sales_paise::text,'batchId',l.batch_id,
@@ -20,14 +31,15 @@ create function private.stockflow_economic_source_lines_read(p jsonb) returns js
 language plpgsql stable set search_path=pg_catalog,private as $$
 declare
  k text; ids uuid[]; page_ids uuid[]; n integer:=50; off integer:=0; total bigint; pattern text;
+ date_from date; date_to date;
 begin
  if jsonb_typeof(p) is distinct from 'object' then
   raise exception 'Invalid source lines payload' using errcode='22023';
  end if;
- if exists(select 1 from jsonb_object_keys(p) key where key not in ('kind','companyId','customerSourceId','productId','q','ids','limit','offset')) then
+ if exists(select 1 from jsonb_object_keys(p) key where key not in ('kind','companyId','customerSourceId','productId','q','ids','limit','offset','unit','quantityOne','minNetSalesPaise','dateFrom','dateTo','unusedOnly')) then
   raise exception 'Invalid source lines payload' using errcode='22023';
  end if;
- if p ? 'kind' and (jsonb_typeof(p->'kind') is distinct from 'string' or p->>'kind' not in ('sale','purchase','return','credit')) then
+ if p ? 'kind' and (jsonb_typeof(p->'kind') is distinct from 'string' or p->>'kind' not in ('sale','purchase','return','credit','purchase_return')) then
   raise exception 'Invalid source lines kind' using errcode='22023';
  end if;
  foreach k in array array['companyId','customerSourceId','productId'] loop
@@ -35,6 +47,32 @@ begin
    raise exception 'Invalid source lines filter' using errcode='22023';
   end if;
  end loop;
+ if p ? 'unit' and (jsonb_typeof(p->'unit') is distinct from 'string' or length(btrim(p->>'unit'))=0 or length(p->>'unit')>80) then
+  raise exception 'Invalid source lines unit' using errcode='22023';
+ end if;
+ foreach k in array array['quantityOne','unusedOnly'] loop
+  if p ? k and jsonb_typeof(p->k) is distinct from 'boolean' then
+   raise exception 'Invalid source lines boolean filter' using errcode='22023';
+  end if;
+ end loop;
+ if p ? 'minNetSalesPaise' and (jsonb_typeof(p->'minNetSalesPaise') is distinct from 'string' or (p->>'minNetSalesPaise') !~ '^[0-9]{1,18}$') then
+  raise exception 'Invalid source lines minimum amount' using errcode='22023';
+ end if;
+ foreach k in array array['dateFrom','dateTo'] loop
+  if p ? k then
+   if jsonb_typeof(p->k) is distinct from 'string' or (p->>k) !~ '^[0-9]{4}-[0-9]{2}-[0-9]{2}$' then
+    raise exception 'Invalid source lines date' using errcode='22023';
+   end if;
+   begin
+    if k='dateFrom' then date_from:=(p->>k)::date; else date_to:=(p->>k)::date; end if;
+   exception when invalid_datetime_format or datetime_field_overflow then
+    raise exception 'Invalid source lines date' using errcode='22023';
+   end;
+  end if;
+ end loop;
+ if date_from>date_to then
+  raise exception 'Invalid source lines date range' using errcode='22023';
+ end if;
  if p ? 'q' then
   if jsonb_typeof(p->'q') is distinct from 'string' or length(btrim(p->>'q')) not between 1 and 80 then
    raise exception 'Invalid source lines query' using errcode='22023';
@@ -76,6 +114,12 @@ begin
    and (not p ? 'companyId' or v.company_id=p->>'companyId')
    and (not p ? 'customerSourceId' or v.customer_source_id=p->>'customerSourceId')
    and (not p ? 'productId' or l.product_id=p->>'productId')
+   and (not p ? 'unit' or l.unit=p->>'unit')
+   and (not coalesce((p->>'quantityOne')::boolean,false) or l.quantity=1)
+   and (not p ? 'minNetSalesPaise' or l.net_sales_paise>=(p->>'minNetSalesPaise')::bigint)
+   and (date_from is null or v.business_date>=date_from)
+   and (date_to is null or v.business_date<=date_to)
+   and (not coalesce((p->>'unusedOnly')::boolean,false) or not private.stockflow_economic_line_used(l.id))
    and (ids is null or l.id=any(ids))
    and (pattern is null or nullif(btrim(v.evidence->>'sourceReference'),'') ilike pattern escape E'\\'
     or v.source_id ilike pattern escape E'\\' or l.product_id ilike pattern escape E'\\'
@@ -97,8 +141,11 @@ begin
  if jsonb_typeof(p) is distinct from 'object' then
   raise exception 'Invalid exceptions payload' using errcode='22023';
  end if;
- if exists(select 1 from jsonb_object_keys(p) key where key not in ('limit','offset')) then
+ if exists(select 1 from jsonb_object_keys(p) key where key not in ('limit','offset','status')) then
   raise exception 'Invalid exceptions payload' using errcode='22023';
+ end if;
+ if p ? 'status' and (jsonb_typeof(p->'status') is distinct from 'string' or length(btrim(p->>'status'))=0 or length(p->>'status')>60) then
+  raise exception 'Invalid exceptions status' using errcode='22023';
  end if;
  foreach k in array array['limit','offset'] loop
   if p ? k then
@@ -121,17 +168,20 @@ begin
  ), groups as (
   select x->>'status' status,x->>'reason' reason,count(*) count,sum((x->>'netSalesPaise')::numeric)::text net
   from errors group by x->>'status',x->>'reason'
+ ), filtered as materialized (
+  select x from errors where not p ? 'status' or x->>'status'=p->>'status'
  ), page as (
-  select x from errors order by x->>'date' desc nulls last,x->>'sourceId',x->>'sourceLineId' nulls last,x::text limit n offset off
+  select x from filtered order by x->>'date' desc nulls last,x->>'sourceId',x->>'sourceLineId' nulls last,x::text limit n offset off
  )
  select jsonb_build_object(
   'groups',coalesce((select jsonb_agg(jsonb_build_object('status',status,'reason',reason,'count',count,'netSalesPaise',net) order by count desc,status,reason) from groups),'[]'::jsonb),
   'rows',coalesce((select jsonb_agg(x order by x->>'date' desc nulls last,x->>'sourceId',x->>'sourceLineId' nulls last,x::text) from page),'[]'::jsonb),
-  'total',(select count(*) from errors),'limit',n,'offset',off) into result;
+  'total',(select count(*) from filtered),'limit',n,'offset',off) into result;
  return result;
 end $$;
 
 revoke all on function private.stockflow_economic_line_rows(uuid[]) from public,anon,authenticated,service_role;
+revoke all on function private.stockflow_economic_line_used(uuid) from public,anon,authenticated,service_role;
 revoke all on function private.stockflow_economic_source_lines_read(jsonb) from public,anon,authenticated,service_role;
 revoke all on function private.stockflow_economic_exceptions_read(jsonb) from public,anon,authenticated,service_role;
 
@@ -147,9 +197,8 @@ begin
   if v_hash is null or encode(extensions.digest(coalesce(p_gateway_key,''),'sha256'),'hex')<>v_hash then
    raise exception 'Unauthorized gateway' using errcode='42501';
   end if;
-  select roles into v_roles from public.stockflow_members
-   where email=lower(btrim(coalesce(p_actor_email,''))) and status='active';
-  if not private.stockflow_valid_roles(v_roles) or not coalesce(v_roles&&array['administrator','management'],false) then
+  v_roles:=private.stockflow_active_member_roles(lower(btrim(coalesce(p_actor_email,''))));
+  if not coalesce(v_roles&&array['administrator','management','accounts'],false) then
    raise exception 'Economics evidence is restricted' using errcode='42501';
   end if;
   if p_action='get_economic_source_lines' then
