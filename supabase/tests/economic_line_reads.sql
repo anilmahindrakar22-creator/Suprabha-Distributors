@@ -64,8 +64,9 @@ begin
   perform pg_temp.line_reads_constraints('private.stockflow_economic_source_lines');
   -- Voucher FK; unique voucher/line_key; product 1..240 and unit 1..80; required numeric values.
   insert into private.stockflow_economic_source_lines
-   (voucher_id,line_key,product_id,quantity,unit,net_sales_paise,evidence)
-  values(voucher,'1',fixture.product_id,fixture.quantity,fixture.unit,fixture.net_sales_paise,fixture.line_evidence) returning id into line_id;
+  (voucher_id,line_key,product_id,quantity,unit,net_sales_paise,batch_id,evidence)
+  values(voucher,'1',fixture.product_id,fixture.quantity,fixture.unit,fixture.net_sales_paise,
+   case when fixture.source_id='spd' then 'SER-9001' end,fixture.line_evidence) returning id into line_id;
   if fixture.cancelled or (fixture.source_id='revision' and fixture.revision=0) then
    excluded:=array_append(excluded,line_id);
   else
@@ -129,14 +130,24 @@ begin
   ('{"kind":"purchase"}'::jsonb,purchase),
   ('{"kind":"purchase_return"}'::jsonb,purchase_return),
   ('{"q":"spd-77"}'::jsonb,spd),
+  ('{"q":"spd-product 7781"}'::jsonb,spd),
+  ('{"q":"7781 spd-product"}'::jsonb,spd),
+  ('{"q":"ser-9001"}'::jsonb,spd),
+  ('{"q":"2026-12-20"}'::jsonb,spd),
   ('{"q":"speed supplies"}'::jsonb,purchase),
   ('{"q":"50%_"}'::jsonb,labelled),
+  ('{"q":"50%"}'::jsonb,labelled),
+  ('{"q":"0%_x"}'::jsonb,labelled),
   ('{"q":"%"}'::jsonb,labelled),
   ('{"productId":"purchase-product"}'::jsonb,purchase)
  ) f(filter,expected_id) loop
   result:=pg_temp.line_reads_call('get_economic_source_lines',fixture.filter||jsonb_build_object('companyId',company));
   perform pg_temp.line_reads_assert(result->>'total'='1' and result#>>'{rows,0,id}'=fixture.expected_id::text,'filter '||fixture.filter::text);
  end loop;
+ result:=pg_temp.line_reads_call('get_economic_source_lines',jsonb_build_object('companyId',company,'q','no-such-word'));
+ perform pg_temp.line_reads_assert(result->>'total'='0','word matching no searchable field');
+ result:=pg_temp.line_reads_call('get_economic_source_lines',jsonb_build_object('companyId',company,'q','zzqqnomatch'));
+ perform pg_temp.line_reads_assert(result->>'total'='0','unmatched word excludes fixtures with missing party names and null batch');
  result:=pg_temp.line_reads_call('get_economic_source_lines',jsonb_build_object('companyId',company,'customerSourceId','line-reads-customer','kind','sale'));
  perform pg_temp.line_reads_assert(result->>'total'='2','customer and kind AND');
  result:=pg_temp.line_reads_call('get_economic_source_lines',jsonb_build_object('companyId',company,'kind','purchase','q','spd-77'));
@@ -242,7 +253,7 @@ begin
 
  raise notice 'Economics line reads phase: payload validation';
  for payload in select x from (values
-  ('{"unknown":1}'::jsonb),('{"kind":"x"}'),('{"q":""}'),
+  ('{"unknown":1}'::jsonb),('{"kind":"x"}'),('{"q":""}'),('{"q":"one two three four five six seven"}'),
   (jsonb_build_object('q',repeat('x',81))),('{"ids":[]}'),
   (jsonb_build_object('ids',to_jsonb(array_fill(spd,array[201])))),
   ('{"ids":["not-a-uuid"]}'),('{"limit":0}'),('{"limit":201}'),('{"offset":-1}'),

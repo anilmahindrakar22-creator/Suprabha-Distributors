@@ -1721,7 +1721,7 @@
     },
     {
       "localFile": "20261227100000_economic_line_reads.sql",
-      "localSha256": "ef5fc56450d7a3a956c339b78173a34c6a1bd3d70137d768de6c2d8506953def",
+      "localSha256": "28d82f67984456a866a969c001d0b9a0769ba496856069e2f46158fb18526b34",
       "remoteVersion": null,
       "remoteSha256": null,
       "status": "not_deployed"

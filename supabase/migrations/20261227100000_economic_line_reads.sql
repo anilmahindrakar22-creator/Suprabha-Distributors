@@ -30,7 +30,7 @@ $$;
 create function private.stockflow_economic_source_lines_read(p jsonb) returns jsonb
 language plpgsql stable set search_path=pg_catalog,private as $$
 declare
- k text; ids uuid[]; page_ids uuid[]; n integer:=50; off integer:=0; total bigint; pattern text;
+ k text; ids uuid[]; page_ids uuid[]; n integer:=50; off integer:=0; total bigint; words text[];
  date_from date; date_to date;
 begin
  if jsonb_typeof(p) is distinct from 'object' then
@@ -77,7 +77,11 @@ begin
   if jsonb_typeof(p->'q') is distinct from 'string' or length(btrim(p->>'q')) not between 1 and 80 then
    raise exception 'Invalid source lines query' using errcode='22023';
   end if;
-  pattern:='%'||replace(replace(replace(btrim(p->>'q'),E'\\',E'\\\\'),'%',E'\\%'),'_',E'\\_')||'%';
+  select array_agg('%'||replace(replace(replace(word,E'\\',E'\\\\'),'%',E'\\%'),'_',E'\\_')||'%')
+   into words from regexp_split_to_table(btrim(p->>'q'),'\s+') word;
+  if cardinality(words)>6 then
+   raise exception 'Invalid source lines query' using errcode='22023';
+  end if;
  end if;
  if p ? 'ids' then
   if jsonb_typeof(p->'ids') is distinct from 'array' then
@@ -121,10 +125,12 @@ begin
    and (date_to is null or v.business_date<=date_to)
    and (not coalesce((p->>'unusedOnly')::boolean,false) or not private.stockflow_economic_line_used(l.id))
    and (ids is null or l.id=any(ids))
-   and (pattern is null or nullif(btrim(v.evidence->>'sourceReference'),'') ilike pattern escape E'\\'
-    or v.source_id ilike pattern escape E'\\' or l.product_id ilike pattern escape E'\\'
-    or l.evidence->>'label' ilike pattern escape E'\\' or v.evidence->>'partyName' ilike pattern escape E'\\'
-    or v.evidence->>'supplierName' ilike pattern escape E'\\' or v.evidence->>'customerName' ilike pattern escape E'\\')
+   and (words is null or not exists(select 1 from unnest(words) w where not coalesce((
+    nullif(btrim(v.evidence->>'sourceReference'),'') ilike w escape E'\\'
+    or v.source_id ilike w escape E'\\' or l.product_id ilike w escape E'\\'
+    or l.evidence->>'label' ilike w escape E'\\' or v.evidence->>'partyName' ilike w escape E'\\'
+    or v.evidence->>'supplierName' ilike w escape E'\\' or v.evidence->>'customerName' ilike w escape E'\\'
+    or l.batch_id ilike w escape E'\\' or to_char(v.business_date,'YYYY-MM-DD') ilike w escape E'\\'),false)))
  ), page as (
   select * from candidates order by array_position(ids,id),business_date desc,source_id,line_key,id limit n offset off
  )
