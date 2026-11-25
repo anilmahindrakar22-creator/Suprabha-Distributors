@@ -494,7 +494,7 @@ export function StockFlowFrame({ actorEmail, actorRole, actorRoles, staffAuth = 
         ) : surface === 'orders' ? (
           <Suspense fallback={<SectionLoading />}><OrderWorkspace key={`${orderFilter}:${orderView.nonce}`} actorEmail={actorEmail} initialStatus={orderFilter} initialQuery={orderView.query} focusOrder={orderView.focus} newOrderIds={newOrderIds} onOrderActed={() => workService.current?.reconcile()} /></Suspense>
         ) : surface === 'requests' ? (
-          <Suspense fallback={<SectionLoading />}><RequestsWorkspace roles={roles} onOpenOrder={(orderId, orderNumber) => openOrder({ orderId, orderNumber })} stockPoDraft={stockPoDraft} onStockPoDraftUsed={() => setStockPoDraft(null)} /></Suspense>
+          <Suspense fallback={<SectionLoading />}><RequestsWorkspace roles={roles} actorEmail={actorEmail} onOpenOrder={(orderId, orderNumber) => openOrder({ orderId, orderNumber })} stockPoDraft={stockPoDraft} onStockPoDraftUsed={() => setStockPoDraft(null)} /></Suspense>
         ) : surface === 'accounts' && hasAnyStockFlowRole(roles, ['administrator', 'management', 'sales', 'operations']) ? (
           <Suspense fallback={<SectionLoading />}><AccountsWorkspace key={accountsOpen.nonce} defaultMode={hasAnyStockFlowRole(roles, ['administrator', 'management']) ? 'all' : 'mine'} initialView={accountsOpen.view} initialCustomerId={accountsOpen.customerId} initialWalletView={accountsOpen.walletView} onOpenOrder={openOrder} onNewOrder={id => void openMapOrder(id)} /></Suspense>
         ) : surface === 'pricing' ? (

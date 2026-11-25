@@ -20,6 +20,15 @@ const letterhead: Letterhead = {
 };
 
 describe('buildPoPdfContent', () => {
+  it('keeps revision zero unchanged and describes changed quantities on revised POs', () => {
+    const po = basePo([{ ...line('Widget A', 12), originalQuantity: 10 }, { ...line('Widget B', 3), originalQuantity: 4 }, line('Unchanged', 2)]);
+    const original = buildPoPdfContent(po, letterhead);
+    expect(buildPoPdfContent({ ...po, revisionCount: 0 }, letterhead)).toEqual(original);
+    const revised = buildPoPdfContent({ ...po, revisionCount: 2 }, letterhead);
+    expect(revised.instructions).toEqual(['Revision 2. Changed: Widget A was 10, now 12; Widget B was 4, now 3', ...original.instructions]);
+    expect(revised.footer).toBe(`${original.footer} · Revision 2`);
+    expect(revised.showRates).toBe(false);
+  });
   it('adds serials, words, GST, footer and optional logo', () => {
     const logo = { type: 'image/png' as const, bytes: new Uint8Array([1, 2]) };
     const content = buildPoPdfContent(basePo(managementLines, 990.05), letterhead, { logo, terms: [] });

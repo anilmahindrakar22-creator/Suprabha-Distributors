@@ -112,5 +112,7 @@ export function validatePurchaseOrderCommand(value: unknown): { action: string; 
 }
 
 export function purchaseOrderShareText(po: PurchaseOrder) {
-  return [`Purchase order ${po.poNumber}`, `Supplier: ${po.supplierName}`, ...po.lines.map((line) => `${line.itemName} — ${line.quantity} ${line.unit ?? ''}`), 'Suprabha Distributors'].join('\n');
+  const revised = (po.revisionCount ?? 0) > 0;
+  return [`Purchase order ${po.poNumber}${revised ? ` — Revision ${po.revisionCount}` : ''}`, `Supplier: ${po.supplierName}`, ...po.lines.map((line) => `${line.itemName} — ${line.quantity} ${line.unit ?? ''}`),
+    ...(revised ? po.lines.filter(line => line.originalQuantity !== undefined && line.originalQuantity !== line.quantity).map(line => `Changed: ${line.itemName} was ${line.originalQuantity}, now ${line.quantity}`) : []), 'Suprabha Distributors'].join('\n');
 }

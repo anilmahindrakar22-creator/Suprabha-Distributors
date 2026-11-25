@@ -162,4 +162,7 @@ it('formats plain text share content without exposing rates', () => {
   const message = purchaseOrderShareText(po);
   expect(message).toBe('Purchase order PO/26-27/0001\nSupplier: Supplier\nReagent — 2 kit\nSuprabha Distributors');
   expect(message).not.toMatch(/₹|\d+\.\d+|rate/i);
+  expect(purchaseOrderShareText({ ...po, revisionCount: 0 })).toBe(message);
+  expect(purchaseOrderShareText({ ...po, revisionCount: 0, lines: [{ ...po.lines[0], originalQuantity: 3 }] })).toBe(message);
+  expect(purchaseOrderShareText({ ...po, revisionCount: 2, lines: [{ ...po.lines[0], originalQuantity: 3 }] })).toBe('Purchase order PO/26-27/0001 — Revision 2\nSupplier: Supplier\nReagent — 2 kit\nChanged: Reagent was 3, now 2\nSuprabha Distributors');
 });

@@ -77,11 +77,13 @@ async function downloadPdf(page: Page) {
   await checkDownload(await downloaded);
 }
 
-test('desktop management downloads the PO PDF with a missing bold font without recording text sharing', async ({ page }) => {
-  const { commands } = await setup(page, { role: 'management', orders: [purchaseOrder({ totalValue: 546, lines: [purchaseOrderLine({ rate: 42 })] })] });
+test('desktop management downloads the PO PDF with a missing bold font and records a PDF share', async ({ page }) => {
+  const order = purchaseOrder({ totalValue: 546, lines: [purchaseOrderLine({ rate: 42 })] });
+  const { commands } = await setup(page, { role: 'management', orders: [order] });
   await desktop(page);
   await downloadPdf(page);
-  expect(commands).toEqual([]);
+  await expect.poll(() => commands.length).toBe(1);
+  expect(commands).toEqual([{ action: 'mark_purchase_order_shared', payload: { id: order.id, expectedVersion: order.version, channel: 'pdf', idempotencyKey: expect.any(String) } }]);
 });
 
 test('operations downloads with no rate keys or totalValue', async ({ page }) => {
@@ -157,14 +159,16 @@ test('phone shares one named PDF without downloading', async ({ page }) => {
   });
   let downloads = 0;
   page.on('download', () => { downloads++; });
-  const { commands } = await setup(page);
+  const order = purchaseOrder();
+  const { commands } = await setup(page, { orders: [order] });
   await pdfButton(page).click();
   await expect.poll(() => page.evaluate(() => (window as unknown as { pdfShare: unknown }).pdfShare)).toMatchObject({
     title: 'PO/26-27/0001', files: [{ name: 'PO-26-27-0001.pdf', type: 'application/pdf', size: expect.any(Number) }],
   });
   await expect(pdfButton(page)).toBeEnabled();
   expect(downloads).toBe(0);
-  expect(commands).toEqual([]);
+  await expect.poll(() => commands.length).toBe(1);
+  expect(commands).toEqual([{ action: 'mark_purchase_order_shared', payload: { id: order.id, expectedVersion: order.version, channel: 'pdf', idempotencyKey: expect.any(String) } }]);
 });
 
 test('phone downloads when sharing is refused with NotAllowedError', async ({ page }) => {

@@ -62,5 +62,10 @@ export function buildPoPdfContent(po: PurchaseOrder, letterhead: Letterhead | nu
     content.total = formatPaise(Math.round(po.totalValue * 100));
     content.amountInWords = rupeesInWords(Math.round(po.totalValue * 100));
   }
+  if ((po.revisionCount ?? 0) > 0) {
+    const changes = po.lines.filter(line => line.originalQuantity !== undefined && line.originalQuantity !== line.quantity).map(line => `${line.itemName} was ${line.originalQuantity}, now ${line.quantity}`);
+    content.instructions.unshift(`Revision ${po.revisionCount}.${changes.length ? ` Changed: ${changes.join('; ')}` : ''}`);
+    content.footer += ` · Revision ${po.revisionCount}`;
+  }
   return content;
 }

@@ -10,6 +10,9 @@ import { UnlinkedReceipts } from './po-unlinked-receipts';
 import { buildPoPdfContent } from '@/lib/po-pdf-content';
 import { parseLetterhead } from '@/lib/letterhead';
 import { logoBytes, parseLetterheadExtras } from '@/lib/letterhead-extras';
+import type { StockFlowRole } from '@/lib/user-types';
+import { parsePoCorrectionsWeek, type PoCorrectionsWeek, type PurchaseOrderLine, type PendingCorrection } from '@/lib/purchase-orders';
+import { CorrectionSheet, ReviewSheet, ConfirmSupplierSheet, CorrectionHistory } from './po-correction';
 
 let pdfFont: Promise<ArrayBuffer> | undefined;
 let pdfBoldFont: Promise<ArrayBuffer | null> | undefined;
@@ -91,7 +94,7 @@ async function copyLatePo(po: LatePo): Promise<boolean> {
 }
 
 // Keep the exact command as well as its key until the server gives a definite result.
-function usePurchaseOrderWrite(onConflict: () => void, conflictMessage = 'This purchase order changed. Reload.') {
+export function usePurchaseOrderWrite(onConflict: () => void, conflictMessage = 'This purchase order changed. Reload.') {
   const pending = useRef<{ action: string; payload: Record<string, unknown> } | null>(null);
   const busyRef = useRef(false);
   const [busy, setBusy] = useState(false);
@@ -125,7 +128,7 @@ function usePurchaseOrderWrite(onConflict: () => void, conflictMessage = 'This p
   return { write, busy, locked, error };
 }
 
-function PurchaseOrderSheet({ title, locked, onClose, children }: { title: string; locked: boolean; onClose: () => void; children: ReactNode }) {
+export function PurchaseOrderSheet({ title, locked, onClose, children }: { title: string; locked: boolean; onClose: () => void; children: ReactNode }) {
   return <Sheet open onOpenChange={(open) => { if (!open && !locked) onClose(); }}>
     <SheetContent side="bottom" showCloseButton={false} className="max-h-[90dvh] overflow-y-auto border-sf-line bg-sf-page p-4 text-sf-body sm:mx-auto sm:max-w-2xl" aria-describedby={undefined}>
       <div className="flex items-center justify-between gap-2"><SheetTitle render={<h2>{title}</h2>} className={title === 'Review purchase orders' ? 'text-sm font-bold text-sf-body' : 'text-sf-body'}>{title}</SheetTitle><button className={button} disabled={locked} onClick={onClose}>Close</button></div>
@@ -282,13 +285,27 @@ function TallyReceiveSheet({ po, onClose, onRefresh, onConflict }: { po: Purchas
   </PurchaseOrderSheet>;
 }
 
-function PurchaseOrderCard({ po, tallyCount, lateDays, onRefresh, onConflict, autoReceive, onAutoReceiveDone }: { po: PurchaseOrder; tallyCount: number; lateDays?: number; onRefresh: () => void; onConflict: () => void; autoReceive?: boolean; onAutoReceiveDone: () => void }) {
+function PurchaseOrderCard({ po, roles, actorEmail, tallyCount, lateDays, onRefresh, onConflict, autoReceive, onAutoReceiveDone }: { po: PurchaseOrder; roles: readonly StockFlowRole[]; actorEmail: string; tallyCount: number; lateDays?: number; onRefresh: () => void; onConflict: () => void; autoReceive?: boolean; onAutoReceiveDone: () => void }) {
+  const canReview = roles.includes('management') || roles.includes('administrator');
+  const [history, setHistory] = useState(false);
+  const [correctLine, setCorrectLine] = useState<PurchaseOrderLine | null>(null);
+  const [reviewRequest, setReviewRequest] = useState<PendingCorrection | null>(null);
+  const [confirmSupplier, setConfirmSupplier] = useState(false);
+  const [shareChannel, setShareChannel] = useState<'text' | 'pdf' | null>(null);
+  function correctionDone(message: string) { setCorrectLine(null); setReviewRequest(null); setConfirmSupplier(false); setNote(message); onRefresh(); }
   const [expanded, setExpanded] = useState(false);
   const [mode, setMode] = useState<'receive' | 'cancel' | null>(null);
   const [reason, setReason] = useState('');
   const [note, setNote] = useState('');
   const [pdfBusy, setPdfBusy] = useState(false);
+  const command = usePurchaseOrderWrite(onConflict);
+  const sharing = usePurchaseOrderWrite(onConflict);
   async function preparePdf() {
+    if (sharing.locked) {
+      const body = await sharing.write('mark_purchase_order_shared', { id: po.id, expectedVersion: po.version, channel: 'pdf' });
+      if (body) onRefresh();
+      return;
+    }
     setPdfBusy(true);
     setNote('');
     try {
@@ -298,21 +315,21 @@ function PurchaseOrderCard({ po, tallyCount, lateDays, onRefresh, onConflict, au
       const content = buildPoPdfContent(po, letterhead, extras);
       const bytes = await renderPoPdf(content, font, boldFont);
       const file = new File([new Uint8Array(bytes)], content.fileName, { type: 'application/pdf' });
-      try {
-        if (navigator.canShare?.({ files: [file] })) {
-          await navigator.share({ files: [file], title: po.poNumber });
-          return;
-        }
-      } catch (cause) {
-        if (cause instanceof Error && cause.name === 'AbortError') return;
+      let delivered = false;
+      if (navigator.canShare?.({ files: [file] })) {
+        try { await navigator.share({ files: [file], title: po.poNumber }); delivered = true; }
+        catch (cause) { if (cause instanceof Error && cause.name === 'AbortError') return; }
       }
-      downloadPdf(file);
-    } catch { setNote('PDF could not be prepared. Try again.'); }
+      if (!delivered) downloadPdf(file);
+      if (po.status === 'open') {
+        setShareChannel('pdf');
+        const body = await sharing.write('mark_purchase_order_shared', { id: po.id, expectedVersion: po.version, channel: 'pdf' });
+        if (body) onRefresh();
+      }
+    } catch (cause) { if (!(cause instanceof Error && cause.name === 'AbortError')) setNote('PDF could not be prepared. Try again.'); }
     finally { setPdfBusy(false); }
   }
-  const pdfButton = <button className={button} aria-label={`PDF ${po.poNumber}`} disabled={pdfBusy} onClick={preparePdf}>{pdfBusy ? 'Preparing…' : 'PDF'}</button>;
-  const command = usePurchaseOrderWrite(onConflict);
-  const sharing = usePurchaseOrderWrite(onConflict);
+  const pdfButton = <button className={button} aria-label={`PDF ${po.poNumber}`} disabled={pdfBusy || sharing.busy || command.locked || (sharing.locked && shareChannel !== 'pdf')} onClick={preparePdf}>{pdfBusy ? 'Preparing…' : sharing.locked && shareChannel === 'pdf' ? 'Retry share record' : 'PDF'}</button>;
   const autoReceiveDone = useEffectEvent(onAutoReceiveDone);
   useEffect(() => {
     if (!autoReceive) return;
@@ -321,29 +338,49 @@ function PurchaseOrderCard({ po, tallyCount, lateDays, onRefresh, onConflict, au
   }, [autoReceive]);
   return <article className="min-w-0 space-y-2 rounded-lg border border-sf-line bg-sf-soft-0 p-3" aria-label={po.poNumber}>
     <button className="min-h-11 w-full min-w-0 text-left" aria-label={`Details for ${po.poNumber}`} aria-expanded={expanded} onClick={() => setExpanded(!expanded)}><strong className="break-words">{po.poNumber}</strong><span className="mt-1 block break-words">{po.supplierName}</span></button>
-    <div className="flex flex-wrap items-center gap-2 text-xs text-sf-muted"><span className="rounded-full bg-sf-soft-2 px-2 py-1">{po.status[0].toUpperCase() + po.status.slice(1)}</span>{po.status === 'open' && lateDays ? <span className="rounded-full border border-sf-danger px-2 py-1 text-sf-danger">{lateDays} {lateDays === 1 ? 'day' : 'days'} late</span> : null}<span>Created {date(po.createdAt)}</span><span>{po.lines.length} {po.lines.length === 1 ? 'item' : 'items'}</span></div>
+    <div className="flex flex-wrap items-center gap-2 text-xs text-sf-muted"><span className="rounded-full bg-sf-soft-2 px-2 py-1">{po.status[0].toUpperCase() + po.status.slice(1)}</span>{po.status === 'open' && lateDays ? <span className="rounded-full border border-sf-danger px-2 py-1 text-sf-danger">{lateDays} {lateDays === 1 ? 'day' : 'days'} late</span> : null}<span>Created {date(po.createdAt)}</span><span>{po.lines.length} {po.lines.length === 1 ? 'item' : 'items'}</span>
+      {(po.revisionCount ?? 0) > 0 ? <button className="min-h-11 rounded-full bg-sf-soft-2 px-2 py-1" aria-expanded={history} onClick={() => setHistory(!history)}>Revised ({po.revisionCount})</button> : null}
+      {po.status === 'open' && !!po.pendingCorrections?.length ? <span className="rounded-full border border-sf-warning px-2 py-1 text-sf-warning">Correction waiting</span> : null}
+      {po.status === 'open' && po.resendNeeded ? <span className="rounded-full border border-sf-danger px-2 py-1 text-sf-danger">Re-send needed</span> : null}
+    </div>
     {po.status === 'open' && tallyCount > 0 ? <span className="inline-block rounded-full bg-sf-soft-2 px-2 py-1 text-xs text-sf-muted">Tally shows a receipt</span> : null}
+    {history ? <CorrectionHistory po={po} /> : null}
     {po.sharedAt ? <p className="text-xs text-sf-muted">Shared {date(po.sharedAt)}</p> : null}
-    {expanded ? <ul className="space-y-2 text-sm">{po.lines.map((line) => <li key={line.itemKey} className="break-words">{line.itemName} — {line.quantity} {line.unit}{line.receivedQuantity > 0 ? ` · received ${line.receivedQuantity}` : ''}{Object.hasOwn(line, 'rate') ? ` · ₹${line.rate ?? '—'}` : ''}</li>)}</ul> : null}
+    {po.supplierConfirmedAt ? <p className="text-xs text-sf-muted">Supplier confirmed {date(po.supplierConfirmedAt)}</p> : null}
+    {expanded ? <ul className="min-w-0 space-y-2 text-sm">{po.lines.map((line) => {
+      const pending = po.pendingCorrections?.find(request => request.itemKey === line.itemKey);
+      return <li key={line.itemKey} className="min-w-0 break-words [overflow-wrap:anywhere]"><span>{line.itemName} — {line.quantity} {line.unit}{line.receivedQuantity > 0 ? ` · received ${line.receivedQuantity}` : ''}{Object.hasOwn(line, 'rate') ? ` · ₹${line.rate ?? '—'}` : ''}{line.originalQuantity !== undefined && line.originalQuantity !== line.quantity ? ` (first ${line.originalQuantity})` : ''}</span>
+        {po.status === 'open' ? <div className="mt-1">{line.locked ? <span className="text-xs text-sf-muted">Locked: Tally receipt</span> : pending ? <span className="text-xs text-sf-muted">Waiting: {pending.fromQuantity} → {pending.toQuantity}</span> : <button className={button} aria-label={`Correct quantity for ${line.itemName}`} disabled={sharing.locked || command.locked || pdfBusy} onClick={() => setCorrectLine(line)}>Correct</button>}</div> : null}
+      </li>;
+    })}</ul> : null}
+    {po.status === 'open' && !!po.pendingCorrections?.length ? <ul className="min-w-0 space-y-2 text-sm">{po.pendingCorrections.map(request => <li key={request.requestId} className="min-w-0 space-y-1 [overflow-wrap:anywhere]">
+      <p>{po.lines.find(line => line.itemKey === request.itemKey)?.itemName ?? request.itemKey}: {request.fromQuantity} → {request.toQuantity} · by {request.requestedByEmail}</p>
+      {canReview && request.requestedByEmail.toLowerCase() !== actorEmail.toLowerCase() ? <button className={button} aria-label={`Review correction for ${po.lines.find(line => line.itemKey === request.itemKey)?.itemName ?? request.itemKey}`} disabled={sharing.locked || command.locked || pdfBusy} onClick={() => setReviewRequest(request)}>Review</button> : null}
+    </li>)}</ul> : null}
     {Object.hasOwn(po, 'totalValue') ? <p className="text-sm font-semibold">Total ₹{po.totalValue ?? '—'}</p> : null}
     {po.status === 'open' ? <div className="flex flex-wrap gap-2">
-      <button className={button} aria-label={`Share ${po.poNumber}`} disabled={sharing.busy || command.locked} onClick={async () => {
+      <button className={button} aria-label={`Share ${po.poNumber}`} disabled={sharing.busy || command.locked || pdfBusy || (sharing.locked && shareChannel !== 'text')} onClick={async () => {
         try {
           if (!sharing.locked) {
             const text = purchaseOrderShareText(po);
             if (navigator.share) await navigator.share({ title: po.poNumber, text });
             else { await navigator.clipboard.writeText(text); setNote('Copied'); }
           }
-          const body = await sharing.write('mark_purchase_order_shared', { id: po.id, expectedVersion: po.version });
+          setShareChannel('text');
+          const body = await sharing.write('mark_purchase_order_shared', { id: po.id, expectedVersion: po.version, channel: 'text' });
           if (body) onRefresh();
         } catch (cause) { setNote(cause instanceof Error ? cause.message : 'Sharing failed.'); }
-      }}>{sharing.locked ? 'Retry share record' : 'Share'}</button>
+      }}>{sharing.locked ? 'Retry share record' : po.resendNeeded ? 'Re-send' : 'Share'}</button>
       {pdfButton}
-      <button className={button} aria-label={`Mark received ${po.poNumber}`} disabled={sharing.locked || command.locked} onClick={() => setMode('receive')}>Mark received</button>
-      <button className="min-h-11 px-3 text-sm font-semibold text-sf-danger disabled:opacity-50" aria-label={`Cancel PO ${po.poNumber}`} disabled={sharing.locked || command.locked} onClick={() => { setReason(''); setMode('cancel'); }}>Cancel PO</button>
+      {po.sharedAt && !po.resendNeeded && !po.supplierConfirmedAt ? <button className={button} disabled={sharing.locked || command.locked || pdfBusy} onClick={() => setConfirmSupplier(true)}>Supplier confirmed</button> : null}
+      <button className={button} aria-label={`Mark received ${po.poNumber}`} disabled={sharing.locked || command.locked || pdfBusy} onClick={() => setMode('receive')}>Mark received</button>
+      <button className="min-h-11 px-3 text-sm font-semibold text-sf-danger disabled:opacity-50" aria-label={`Cancel PO ${po.poNumber}`} disabled={sharing.locked || command.locked || pdfBusy} onClick={() => { setReason(''); setMode('cancel'); }}>Cancel PO</button>
     </div> : null}
     {po.status === 'received' ? <div className="flex flex-wrap gap-2">{pdfButton}</div> : null}
     {note ? <output className="block text-xs text-sf-muted">{note}</output> : null}
+    {correctLine ? <CorrectionSheet po={po} line={correctLine} onClose={() => setCorrectLine(null)} onDone={correctionDone} onConflict={onConflict} /> : null}
+    {reviewRequest ? <ReviewSheet po={po} request={reviewRequest} onClose={() => setReviewRequest(null)} onDone={correctionDone} onConflict={onConflict} /> : null}
+    {confirmSupplier ? <ConfirmSupplierSheet po={po} onClose={() => setConfirmSupplier(false)} onDone={correctionDone} onConflict={onConflict} /> : null}
     {sharing.error ? <output className="block text-xs text-sf-muted">Share record: {sharing.error}</output> : null}
     {mode === 'receive' ? <TallyReceiveSheet po={po} onClose={() => setMode(null)} onRefresh={onRefresh} onConflict={onConflict} /> : null}
     {mode && mode !== 'receive' ? <PurchaseOrderSheet title={`Cancel PO ${po.poNumber}`} locked={command.locked} onClose={() => setMode(null)}>
@@ -363,7 +400,10 @@ function PurchaseOrderCard({ po, tallyCount, lateDays, onRefresh, onConflict, au
   </article>;
 }
 
-export function PurchaseOrdersPanel({ refreshKey, onChanged }: { refreshKey: number; onChanged: () => void }) {
+export function PurchaseOrdersPanel({ refreshKey, onChanged, roles, actorEmail }: { refreshKey: number; onChanged: () => void; roles: readonly StockFlowRole[]; actorEmail: string }) {
+  const canReview = roles.includes('management') || roles.includes('administrator');
+  const [week, setWeek] = useState<PoCorrectionsWeek | null>(null);
+  const [showWeek, setShowWeek] = useState(false);
   const [status, setStatus] = useState<PurchaseOrder['status']>('open');
   const [items, setItems] = useState<PurchaseOrder[]>([]);
   const [tallyCounts, setTallyCounts] = useState<Record<string, number>>({});
@@ -385,6 +425,15 @@ export function PurchaseOrdersPanel({ refreshKey, onChanged }: { refreshKey: num
     const controller = new AbortController(); request.current = controller;
     setLoading(true); setError('');
     if (nextPage === 1) {
+      setWeek(null);
+      if (canReview) void (async () => {
+        try {
+          const response = await fetch('/api/purchase-orders?corrections=week', { cache: 'no-store', signal: controller.signal });
+          if (!response.ok) throw new Error('Corrections unavailable');
+          const body = parsePoCorrectionsWeek(await readJsonBody<unknown>(response));
+          if (!controller.signal.aborted) setWeek(body);
+        } catch { if (!controller.signal.aborted) setWeek(null); }
+      })();
       setLatePos(null);
       void (async () => {
       try {
@@ -423,7 +472,7 @@ export function PurchaseOrdersPanel({ refreshKey, onChanged }: { refreshKey: num
   useEffect(() => {
     const timer = setTimeout(() => loadInitial(status), 0);
     return () => { clearTimeout(timer); request.current?.abort(); };
-  }, [status, refreshKey, reload]);
+  }, [status, refreshKey, reload, canReview]);
   function openPo(id: string, poNumber: string) {
     setPoNotice('');
     if (items.some((po) => po.id === id && po.status === 'open')) setFocusPo({ id, poNumber });
@@ -444,7 +493,7 @@ export function PurchaseOrdersPanel({ refreshKey, onChanged }: { refreshKey: num
   function refresh() { setReload((value) => value + 1); onChanged(); }
   return <section aria-label="Purchase orders" className="mt-3 min-w-0 space-y-3 rounded-xl border border-sf-line-soft bg-sf-soft p-3 text-sf-body">
     <div className="flex flex-wrap items-center justify-between gap-2"><h2 className="text-sm font-bold">Purchase orders</h2><button className={button} aria-label={'Refresh\u0020purchase orders'} disabled={loading} onClick={() => setReload((value) => value + 1)}>Refresh</button></div>
-    <div className="flex flex-wrap gap-2">{(['open', 'received', 'cancelled'] as const).map((value) => <button key={value} className={status === value ? 'min-h-11 rounded-lg border border-sf-ink bg-sf-ink px-3 text-sm font-semibold text-sf-soft-0' : button} aria-pressed={status === value} onClick={() => { if (status !== value) { request.current?.abort(); setLoading(true); setPage(1); setItems([]); setMore(false); setConflict(''); setStatus(value); } }}>{value[0].toUpperCase() + value.slice(1)}</button>)}{latePos && latePos.total > 0 ? <button className={button.replace('text-sf-body', 'text-sf-danger').replace('border-sf-line', showLate ? 'border-sf-danger' : 'border-sf-line')} aria-pressed={showLate} onClick={() => setShowLate(!showLate)}>{latePos.total} late</button> : null}</div>
+    <div className="flex flex-wrap gap-2">{(['open', 'received', 'cancelled'] as const).map((value) => <button key={value} className={status === value ? 'min-h-11 rounded-lg border border-sf-ink bg-sf-ink px-3 text-sm font-semibold text-sf-soft-0' : button} aria-pressed={status === value} onClick={() => { if (status !== value) { request.current?.abort(); setLoading(true); setPage(1); setItems([]); setMore(false); setConflict(''); setStatus(value); } }}>{value[0].toUpperCase() + value.slice(1)}</button>)}{latePos && latePos.total > 0 ? <button className={button.replace('text-sf-body', 'text-sf-danger').replace('border-sf-line', showLate ? 'border-sf-danger' : 'border-sf-line')} aria-pressed={showLate} onClick={() => setShowLate(!showLate)}>{latePos.total} late</button> : null}{canReview && week && week.items.length > 0 ? <button className={button} aria-pressed={showWeek} onClick={() => setShowWeek(!showWeek)}>{week.items.length} corrections this week</button> : null}</div>
     {latePos && latePos.total > 0 && showLate ? <section aria-label="Late purchase orders" className="min-w-0 space-y-3 rounded-lg border border-sf-line p-3">
       <div><h3 className="text-sm font-bold">Late purchase orders</h3><p className="text-sm text-sf-muted">Open longer than the {latePos.leadTimeDays}-day delivery time.</p></div>
       <ul className="min-w-0 space-y-3">{latePos.items.map((po) => <li key={po.poNumber} className="min-w-0 space-y-1">
@@ -461,11 +510,20 @@ export function PurchaseOrdersPanel({ refreshKey, onChanged }: { refreshKey: num
       </li>)}</ul>
       {latePos.total > latePos.items.length ? <p className="text-sm text-sf-muted">Showing the 100 most late</p> : null}
     </section> : null}
+    {canReview && week && week.items.length > 0 && showWeek ? <section aria-label="Corrections this week" className="min-w-0 space-y-3 rounded-lg border border-sf-line p-3">
+      <div><h3 className="text-sm font-bold">Corrections this week</h3><p className="text-sm text-sf-muted">Corrected or requested in the last 7 days.</p></div>
+      <ul className="min-w-0 space-y-3">{week.items.map(item => <li key={item.poId} className="min-w-0 space-y-1 text-sm [overflow-wrap:anywhere]">
+        <p>{item.poNumber} · {item.supplierName}</p><p className="text-sf-muted">{item.corrections} corrections · {item.pending} waiting</p>
+        <div className="flex flex-wrap gap-2 text-xs text-sf-muted">{([
+          ['byCreator', 'Raised by PO creator'], ['moreThanTwo', 'More than 2 corrections'], ['beforeReceipt', 'Corrected within 24 h before receipt'], ['notResent', 'Not re-sent'],
+        ] as const).map(([flag, label]) => item.flags[flag] ? <span key={flag} className="rounded-full border border-sf-line px-2 py-1">{label}</span> : null)}</div>
+      </li>)}</ul>
+    </section> : null}
     <UnlinkedReceipts refreshKey={refreshKey + reload} onOpenPo={openPo} />
     {poNotice ? <p className="text-sm text-sf-muted">{poNotice}</p> : null}
     {error ? <p role="alert" className="text-sm text-sf-danger">{error}</p> : null}
     {conflict ? <p role="alert" className="text-sm text-sf-danger">{conflict}</p> : null}
-    {items.map((po) => <PurchaseOrderCard key={po.id} po={po} tallyCount={tallyCounts[po.id] ?? 0} lateDays={latePos?.items.find((late) => late.poNumber === po.poNumber)?.lateDays} autoReceive={focusPo?.id === po.id} onAutoReceiveDone={() => setFocusPo(null)} onRefresh={refresh} onConflict={() => { setConflict('This purchase order changed. Reload.'); refresh(); }} />)}
+    {items.map((po) => <PurchaseOrderCard key={po.id} po={po} roles={roles} actorEmail={actorEmail} tallyCount={tallyCounts[po.id] ?? 0} lateDays={latePos?.items.find((late) => late.poNumber === po.poNumber)?.lateDays} autoReceive={focusPo?.id === po.id} onAutoReceiveDone={() => setFocusPo(null)} onRefresh={refresh} onConflict={() => { setConflict('This purchase order changed. Reload.'); refresh(); }} />)}
     {loading ? <p className="text-sm text-sf-muted">Loading purchase orders…</p> : !items.length && !error ? <p className="text-sm text-sf-muted">No {status} purchase orders.</p> : null}
     {more ? <button className={button} disabled={loading} onClick={() => void load(page + 1, status)}>Load more</button> : null}
   </section>;
