@@ -41,6 +41,7 @@ next-env.d.ts
 /.wrangler/
 /outputs/
 /work/
+/.tmp/
 /supabase/.temp/
 /.local-tools/
 /public/generated-offline/
