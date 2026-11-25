@@ -5,11 +5,14 @@ const mocks = vi.hoisted(() => ({ user: vi.fn(), session: vi.fn(), gateway: vi.f
 vi.mock('@/app/chatgpt-auth', () => ({ getChatGPTUser: mocks.user }));
 vi.mock('@/lib/stockflow-session', () => ({ getStockFlowSession: mocks.session }));
 vi.mock('@/lib/order-gateway', async importOriginal => ({ ...await importOriginal<typeof import('@/lib/order-gateway')>(), callOrderGateway: mocks.gateway }));
-import { GET } from '@/app/api/data-speed/route';
+import { GET, POST } from '@/app/api/data-speed/route';
 
 const valid = { statsAvailable: true, statsResetAt: '2026-11-01T00:00:00Z', windowFrom: null, reads: [{ gateway: 'economics', calls: 5, meanMs: 1200, previousMeanMs: null, maxMs: 4000 }], budget: { meanMs: 1000, maxMs: 3000 }, lastImportAt: null, lastRebuildAt: null, exceptions: [{ reason: 'bad reason', total: 3, under7Days: 1, from7To30Days: 1, over30Days: 1 }], snapshotCount: 0 };
 describe('data speed normalization', () => {
-  it('accepts valid data', () => expect(normalizeDataSpeed(valid)).toEqual(valid));
+  it('accepts valid data and defaults old rows', () => {
+    expect(normalizeDataSpeed(valid).exceptions[0].acknowledgeable).toBe(0);
+    expect(normalizeDataSpeed({ ...valid, exceptions: [{ ...valid.exceptions[0], acknowledgeable: 2 }] }).exceptions[0].acknowledgeable).toBe(2);
+  });
   it.each([
     null, [], {}, { ...valid, statsAvailable: 1 }, { ...valid, statsResetAt: 1 }, { ...valid, windowFrom: false },
     { ...valid, reads: Array(31).fill(valid.reads[0]) }, { ...valid, reads: [{ ...valid.reads[0], calls: -1 }] },
@@ -17,7 +20,8 @@ describe('data speed normalization', () => {
     { ...valid, budget: { meanMs: 1.5, maxMs: 3 } }, { ...valid, lastImportAt: 3 }, { ...valid, lastRebuildAt: false },
     { ...valid, exceptions: Array(51).fill(valid.exceptions[0]) }, { ...valid, exceptions: [{ ...valid.exceptions[0], reason: 3 }] },
     { ...valid, exceptions: [{ ...valid.exceptions[0], total: -1 }] }, { ...valid, exceptions: [{ ...valid.exceptions[0], over30Days: 0 }] },
-    { ...valid, snapshotCount: -1 },
+    { ...valid, snapshotCount: -1 }, { ...valid, exceptions: [{ ...valid.exceptions[0], acknowledgeable: -1 }] },
+    { ...valid, exceptions: [{ ...valid.exceptions[0], acknowledgeable: 1.5 }] },
   ])('throws on malformed data %#', body => expect(() => normalizeDataSpeed(body)).toThrow());
   it('labels mapped and fallback gateways', () => {
     expect(gatewayLabel('economics')).toBe('Instrument economics');
@@ -44,5 +48,19 @@ describe('data speed route', () => {
   it('returns 502 for a bad shape', async () => {
     mocks.gateway.mockResolvedValue({});
     expect((await GET(new Request('https://local/api/data-speed'))).status).toBe(502);
+  });
+  it('posts the exact acknowledgement payload and returns the gateway result', async () => {
+    const payload = { action: 'acknowledge', requestId: '123e4567-e89b-42d3-a456-426614174000', reason: 'bad reason', expectedCount: 2, note: 'Reviewed with the owner' };
+    mocks.gateway.mockResolvedValue({ actionId: 'a1', acknowledged: 2 });
+    const response = await POST(new Request('https://local/api/data-speed', { method: 'POST', headers: { 'content-type': 'application/json' }, body: JSON.stringify(payload) }));
+    expect(mocks.gateway).toHaveBeenCalledWith('manager@example.test', 'acknowledge_economic_exceptions', { requestId: payload.requestId, reason: payload.reason, expectedCount: 2, note: payload.note });
+    expect(await response.json()).toEqual({ actionId: 'a1', acknowledged: 2 });
+    expect(response.headers.get('cache-control')).toBe('private, no-store');
+  });
+  it('rejects extra keys and maps concurrent count errors to 409', async () => {
+    const base = { action: 'acknowledge', requestId: '123e4567-e89b-42d3-a456-426614174000', reason: 'bad reason', expectedCount: 2, note: 'Reviewed with the owner' };
+    expect((await POST(new Request('https://local/api/data-speed', { method: 'POST', body: JSON.stringify({ ...base, extra: 1 }) }))).status).toBe(400);
+    mocks.gateway.mockRejectedValue(new (await import('@/lib/order-gateway')).OrderGatewayError('Problem count changed; reload', 409));
+    expect((await POST(new Request('https://local/api/data-speed', { method: 'POST', body: JSON.stringify(base) }))).status).toBe(409);
   });
 });

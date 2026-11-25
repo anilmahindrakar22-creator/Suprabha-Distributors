@@ -64,6 +64,7 @@ export type GatewayAction =
   | 'get_link_suggestions'
   | 'get_data_checks'
   | 'get_data_speed_report'
+  | 'acknowledge_economic_exceptions'
   | 'get_economic_source_lines'
   | 'get_economic_products'
   | 'get_economic_cost_review'

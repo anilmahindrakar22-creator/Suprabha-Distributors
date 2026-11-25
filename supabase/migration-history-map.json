@@ -1767,6 +1767,13 @@
       "remoteVersion": null,
       "remoteSha256": null,
       "status": "not_deployed"
+    },
+    {
+      "localFile": "20270103120000_import_exception_hygiene.sql",
+      "localSha256": "241d07ffd441530b123b6c6e41d25491e2e9498980ebda52823a8b446592bb29",
+      "remoteVersion": null,
+      "remoteSha256": null,
+      "status": "not_deployed"
     }
   ],
   "liveCheck": {

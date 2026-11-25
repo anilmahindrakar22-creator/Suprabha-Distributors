@@ -27,3 +27,26 @@ export async function GET(request: Request) {
       : failure('Data speed report is temporarily unavailable', 502);
   }
 }
+
+export async function POST(request: Request) {
+  try {
+    const session = await actor();
+    let body: unknown;
+    try { body = await request.json(); } catch { return failure('Invalid acknowledgement request', 400); }
+    if (!body || typeof body !== 'object' || Array.isArray(body)) return failure('Invalid acknowledgement request', 400);
+    const value = body as Record<string, unknown>;
+    const keys = ['action', 'requestId', 'reason', 'expectedCount', 'note'];
+    if (Object.keys(value).length !== keys.length || keys.some(key => !Object.hasOwn(value, key))
+      || value.action !== 'acknowledge' || typeof value.requestId !== 'string'
+      || !/^[0-9a-f]{8}-[0-9a-f]{4}-[1-8][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i.test(value.requestId)
+      || typeof value.reason !== 'string' || !Number.isSafeInteger(value.expectedCount) || (value.expectedCount as number) <= 0
+      || typeof value.note !== 'string' || value.note.trim().length < 10 || value.note.trim().length > 500) return failure('Invalid acknowledgement request', 400);
+    const result = await callOrderGateway<{ actionId: string; acknowledged: number }>(session.email, 'acknowledge_economic_exceptions', {
+      requestId: value.requestId, reason: value.reason, expectedCount: value.expectedCount, note: value.note,
+    });
+    return Response.json(result, { headers });
+  } catch (error) {
+    return error instanceof OrderGatewayError ? failure(error.message, error.status)
+      : failure('Data speed report is temporarily unavailable', 502);
+  }
+}

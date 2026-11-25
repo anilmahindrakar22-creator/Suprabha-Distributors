@@ -19,6 +19,10 @@ export function DataSpeedReport() {
   const [data, setData] = useState<DataSpeedResponse | null>(null);
   const [failed, setFailed] = useState(false);
   const [attempt, setAttempt] = useState(0);
+  const [selected, setSelected] = useState<{ reason: string; count: number; requestId: string } | null>(null);
+  const [note, setNote] = useState('');
+  const [saving, setSaving] = useState(false);
+  const [ackMessage, setAckMessage] = useState('');
   const load = useCallback(() => setAttempt(n => n + 1), []);
   useEffect(() => {
     const controller = new AbortController();
@@ -37,6 +41,17 @@ export function DataSpeedReport() {
   const staleImport = hoursOld(data.lastImportAt) > 6;
   const overBudgetCount = data.statsAvailable ? reads.filter(row => overBudget(row, data.budget)).length : 0;
   const openProblemCount = data.exceptions.reduce((total, row) => total + row.total, 0);
+  async function acknowledge() {
+    if (!selected || note.trim().length < 10 || note.trim().length > 500 || saving) return;
+    setSaving(true); setAckMessage('');
+    try {
+      const response = await fetch('/api/data-speed', { method: 'POST', cache: 'no-store', headers: { 'content-type': 'application/json' }, body: JSON.stringify({ action: 'acknowledge', requestId: selected.requestId, reason: selected.reason, expectedCount: selected.count, note }) });
+      if (response.status === 200) { setAckMessage(`Acknowledged ${selected.count}.`); setSelected(null); setNote(''); load(); }
+      else if (response.status === 409) { setAckMessage('The count changed. Reloaded — check again.'); setSelected(null); setNote(''); load(); }
+      else setAckMessage('Could not save. Try again.');
+    } catch { setAckMessage('Could not save. Try again.'); }
+    finally { setSaving(false); }
+  }
   return <section aria-label="Data and speed" className="min-w-0 rounded-2xl border border-sf-line-soft bg-white p-4">
     <details>
       <summary className="flex min-h-11 cursor-pointer flex-wrap items-center gap-x-1 text-sm">
@@ -65,7 +80,13 @@ export function DataSpeedReport() {
       </div>
       <div>
         <h3 className="font-semibold">Open import problems</h3>
-        {data.exceptions.length ? <div className="mt-2 min-w-0 overflow-x-auto"><table className="min-w-[480px] w-full text-left"><thead><tr><th>Problem</th><th>Open</th><th>Under 7 days</th><th>7–30 days</th><th>Over 30 days</th></tr></thead><tbody>{data.exceptions.map(row => <tr key={row.reason} className="border-t border-sf-line-soft"><td className="py-1 pr-2">{importProblemText(row.reason)}</td><td>{row.total}</td><td>{row.under7Days}</td><td>{row.from7To30Days}</td><td>{row.over30Days}</td></tr>)}</tbody></table></div> : <p className="mt-2 flex items-center gap-1.5"><CircleCheck aria-hidden="true" size={16} />No open import problems.</p>}
+        {data.exceptions.length ? <div className="mt-2 min-w-0 overflow-x-auto"><table className="min-w-[480px] w-full text-left"><thead><tr><th>Problem</th><th>Open</th><th>Under 7 days</th><th>7–30 days</th><th>Over 30 days</th><th><span className="sr-only">Actions</span></th></tr></thead><tbody>{data.exceptions.map(row => <tr key={row.reason} className="border-t border-sf-line-soft"><td className="py-1 pr-2">{importProblemText(row.reason)}</td><td>{row.total}</td><td>{row.under7Days}</td><td>{row.from7To30Days}</td><td>{row.over30Days}</td><td>{row.acknowledgeable > 0 ? <button type="button" className="min-h-11 rounded-xl border border-sf-line px-3 font-bold text-sf-brand" aria-label={`Acknowledge (${row.acknowledgeable}) ${importProblemText(row.reason)}`} onClick={() => { setSelected({ reason: row.reason, count: row.acknowledgeable, requestId: crypto.randomUUID() }); setNote(''); setAckMessage(''); }}>Acknowledge ({row.acknowledgeable})</button> : null}</td></tr>)}</tbody></table></div> : <p className="mt-2 flex items-center gap-1.5"><CircleCheck aria-hidden="true" size={16} />No open import problems.</p>}
+        {selected ? <div className="mt-3 rounded-xl border border-sf-line-soft p-3">
+          <p>Mark {selected.count} "{importProblemText(selected.reason)}" as reviewed. They stay on record; nothing is deleted.</p>
+          <label className="mt-2 block">Why they no longer need action<textarea className="mt-1 min-h-20 w-full rounded-lg border border-sf-line p-2" required minLength={10} maxLength={500} autoFocus value={note} onChange={event => setNote(event.target.value)} /></label>
+          <div className="mt-2 flex flex-wrap gap-2"><button type="button" className="min-h-11 rounded-xl border border-sf-line px-3 font-bold text-sf-brand disabled:opacity-50" disabled={saving || note.trim().length < 10 || note.trim().length > 500} onClick={() => void acknowledge()}>Acknowledge</button><button type="button" className="min-h-11 rounded-xl border border-sf-line px-3 font-bold" disabled={saving} onClick={() => { setSelected(null); setNote(''); setAckMessage(''); }}>Cancel</button></div>
+        </div> : null}
+        {ackMessage ? <p role="status" className="mt-2">{ackMessage}</p> : null}
       </div>
       <p className="text-sf-muted">Speed snapshots are taken every Monday.{data.snapshotCount === 0 ? ' The first weekly comparison appears after the first snapshot.' : ''}</p>
       </div>
