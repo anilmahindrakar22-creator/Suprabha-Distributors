@@ -65,6 +65,7 @@ export type GatewayAction =
   | 'get_data_checks'
   | 'get_data_speed_report'
   | 'acknowledge_economic_exceptions'
+  | 'exclude_accounting_only_sale'
   | 'get_economic_source_lines'
   | 'get_economic_products'
   | 'get_economic_cost_review'

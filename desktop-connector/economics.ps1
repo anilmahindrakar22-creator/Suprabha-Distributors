@@ -245,7 +245,15 @@ function Convert-TallyEconomicEvidence([xml]$CompanyDocument,[xml]$LedgerDocumen
                     $lines[$lines.Count-1].nativeQuantity=$nativeQuantity.ToString([Globalization.CultureInfo]::InvariantCulture)
                 }
             }
-            if ($lines.Count -eq 0) { throw 'Accounting-only credit or voucher needs verified product/original-sale linkage.' }
+            if ($lines.Count -eq 0) {
+                if ($entry.kind -eq 'sale' -and $type -in @('Sales','GST SALE') -and $inventoryEntries.Count -eq 0) {
+                    $entry.kind='non_economic';$entry.classificationPolicy='owner_excluded_v1'
+                    $entry.exclusionReason='Accounting-only sale; needs owner exclusion before it is excluded from item sales.'
+                    $entry.inventoryEntryCount=0;$entry.amountStatus='verified';$entry.lines=@()
+                    $vouchers.Add($entry);continue
+                }
+                throw 'Accounting-only credit or voucher needs verified product/original-sale linkage.'
+            }
             foreach ($ledgerLine in (Get-EconomicVoucherEntries $voucher 'LEDGER')) {
                 $name=Get-EconomicXmlText $ledgerLine './LEDGERNAME'
                 $amount=(Convert-EconomicAmount (Get-EconomicXmlText $ledgerLine './AMOUNT'))*$direction

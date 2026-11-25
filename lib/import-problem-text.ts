@@ -8,6 +8,7 @@ const importProblemMessages: Record<string, string> = {
   'Unclassified document adjustment; configure its canonical ledger role.': "An extra ledger on this invoice (discount, freight or rounding) isn't classified yet.",
   'Unclassified inventory voucher type; configure its verified voucher role.': "This voucher type isn't set up as a sale, purchase or return.",
   'Accounting-only credit or voucher needs verified product/original-sale linkage.': "This document isn't linked to products or to the original sale.",
+  'Accounting-only sale needs owner exclusion': "This invoice has no stock items. A manager must confirm it is a charge, not a sale of stock.",
   'Economic amount is not exact decimal currency.': "An amount isn't an exact rupee value.",
   'Tally did not verify a zero-valued inventory amount.': "A zero-value line couldn't be verified in Tally.",
   'Zero-value amount evidence does not match the voucher revision and inventory line.': "A zero-value line doesn't match the invoice version.",

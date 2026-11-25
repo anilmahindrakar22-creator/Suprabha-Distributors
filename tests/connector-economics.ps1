@@ -139,6 +139,19 @@ $mapped=Convert-TallyEconomicEvidence $company $ledgers $products $custom $from 
 Assert-Economic ($mapped.vouchers[0].amountStatus -eq 'verified' -and $mapped.vouchers[0].kind -eq 'sale') 'Verified custom voucher role was not applied'
 $excluded=Convert-TallyEconomicEvidence $company $ledgers $products $custom $from $to @{} @{'Lab Sales'='non_economic'}
 Assert-Economic ($excluded.vouchers.Count -eq 1 -and $excluded.vouchers[0].kind -eq 'non_economic' -and $excluded.vouchers[0].lines.Count -eq 0 -and $excluded.vouchers[0].classificationPolicy -eq 'explicit_non_economic_v1' -and $excluded.vouchers[0].voucherType -eq 'Lab Sales') 'Explicit non-economic document was lost or produced financial lines'
+$accountingSaleTemplate='<ENVELOPE><VOUCHER><GUID>accounting-sale-guid</GUID><ALTERID>21</ALTERID><DATE>20260915</DATE><VOUCHERTYPENAME>{0}</VOUCHERTYPENAME><PARTYLEDGERNAME>Customer A</PARTYLEDGERNAME><ALLLEDGERENTRIES.LIST><LEDGERNAME>Customer A</LEDGERNAME><ISPARTYLEDGER>Yes</ISPARTYLEDGER><AMOUNT>-118.00</AMOUNT></ALLLEDGERENTRIES.LIST><ALLLEDGERENTRIES.LIST><LEDGERNAME>Sales</LEDGERNAME><AMOUNT>100.00</AMOUNT></ALLLEDGERENTRIES.LIST><ALLLEDGERENTRIES.LIST><LEDGERNAME>GST</LEDGERNAME><AMOUNT>18.00</AMOUNT></ALLLEDGERENTRIES.LIST></VOUCHER></ENVELOPE>'
+foreach($accountingSaleType in @('GST SALE','Sales')){
+    [xml]$accountingSaleXml=$accountingSaleTemplate -f $accountingSaleType
+    $accountingSale=Convert-TallyEconomicEvidence $company $ledgers $products $accountingSaleXml $from $to
+    $candidate=$accountingSale.vouchers[0]
+    Assert-Economic ($accountingSale.vouchers.Count -eq 1 -and $candidate.kind -eq 'non_economic' -and $candidate.classificationPolicy -eq 'owner_excluded_v1' -and $candidate.lines.Count -eq 0 -and $candidate.voucherType -eq $accountingSaleType -and $candidate.amountStatus -eq 'verified' -and $candidate.inventoryEntryCount -eq 0 -and $candidate.customerSourceId -eq 'customer-guid-1' -and -not $candidate.error) "$accountingSaleType accounting-only sale was not sent as an owner-exclusion candidate"
+}
+foreach($accountingOnlyType in @('Credit Note','Purchase')){
+    [xml]$accountingOnlyXml=$accountingSaleTemplate -f $accountingOnlyType
+    if($accountingOnlyType -eq 'Credit Note'){$accountingOnlyXml.SelectSingleNode('//ALLLEDGERENTRIES.LIST[LEDGERNAME="Sales"]/AMOUNT').InnerText='-100.00'}
+    $accountingOnly=Convert-TallyEconomicEvidence $company $ledgers $products $accountingOnlyXml $from $to
+    Assert-Economic ($accountingOnly.vouchers.Count -eq 1 -and $accountingOnly.vouchers[0].error -eq 'Accounting-only credit or voucher needs verified product/original-sale linkage.') "$accountingOnlyType without stock lines did not retain the existing exception"
+}
 $excludedSummary=Get-EconomicPreflightSummary $excluded
 Assert-Economic ($excludedSummary.explicitlyExcludedDocuments -eq 1 -and $excludedSummary.verifiedActiveVouchers -eq 0 -and -not $excludedSummary.extractionEvidenceComplete) 'Excluded-only evidence counted as verified economic supply'
 $standardSale=Convert-TallyEconomicEvidence $company $ledgers $products $vouchers $from $to @{} @{'Sales'='non_economic'}
