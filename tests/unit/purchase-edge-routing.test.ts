@@ -18,6 +18,12 @@ function fixture() {
 }
 
 describe('purchase order Edge routing', () => {
+  it.each(['request_po_quantity_correction', 'decide_po_quantity_correction', 'confirm_purchase_order_supplier', 'list_po_corrections'])('routes %s through the PO revision gateway', async action => {
+    const { send, fetcher } = fixture();
+    expect((await send(action)).status).toBe(200);
+    expect(fetcher.mock.calls[0][0]).toBe('https://database.example.test/rest/v1/rpc/stockflow_po_revision_gateway');
+    expect(JSON.parse(fetcher.mock.calls[0][1].body)).toMatchObject({ p_action: action, p_actor_email: 'sales@example.test' });
+  });
   it.each(['get_letterhead_extras', 'set_letterhead_extras'])('routes %s through the extras gateway with the correct admission', async action => {
     const begin = vi.spyOn(RequestGate.prototype, 'begin');
     const finish = vi.spyOn(RequestGate.prototype, 'finish');
@@ -93,7 +99,7 @@ describe('purchase order Edge routing', () => {
     const finish = vi.spyOn(RequestGate.prototype, 'finish');
     try {
       const { send } = fixture();
-      for (const action of ['supplier_options', 'list_purchase_orders', 'get_tally_receipts', 'get_tally_receipt_counts', 'get_unlinked_receipts', 'get_letterhead']) {
+      for (const action of ['supplier_options', 'list_purchase_orders', 'get_tally_receipts', 'get_tally_receipt_counts', 'get_unlinked_receipts', 'get_letterhead', 'list_po_corrections']) {
         expect((await send(action)).status).toBe(200);
         expect((await send(action)).status).toBe(200);
       }

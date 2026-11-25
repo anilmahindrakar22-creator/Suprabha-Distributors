@@ -1746,6 +1746,13 @@
       "remoteVersion": null,
       "remoteSha256": null,
       "status": "not_deployed"
+    },
+    {
+      "localFile": "20270103090000_po_quantity_corrections.sql",
+      "localSha256": "087f7956bd0a72251a9fe4744aab507ae60cda797c7095f2e5cc094e6c4d5c9e",
+      "remoteVersion": null,
+      "remoteSha256": null,
+      "status": "not_deployed"
     }
   ],
   "liveCheck": {

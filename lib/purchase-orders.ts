@@ -1,6 +1,19 @@
-export type PurchaseOrderLine = { itemKey: string; itemName: string; quantity: number; unit: string | null; receivedQuantity: number; rate?: number | null };
-export type PurchaseOrder = { id: string; poNumber: string; supplierName: string; status: 'open' | 'received' | 'cancelled'; sharedAt: string | null; version: number; createdAt: string; createdByEmail: string; lines: PurchaseOrderLine[]; totalValue?: number | null };
+export type CorrectionReason = 'typing_mistake' | 'supplier_changed' | 'requirement_changed';
+export type PendingCorrection = { requestId: string; itemKey: string; fromQuantity: number; toQuantity: number; reasonCode: CorrectionReason; note: string; requestedByEmail: string; requestedAt: string };
+export type AppliedCorrection = { itemKey: string; fromQuantity: number; toQuantity: number; reasonCode: CorrectionReason; note: string; requestedByEmail: string; approvedByEmail: string | null; recordedAt: string };
+export type PoCorrectionsWeek = { view: 'po_corrections'; since: string; items: Array<{ poId: string; poNumber: string; supplierName: string; status: PurchaseOrder['status']; createdByEmail: string; corrections: number; pending: number; flags: { byCreator: boolean; moreThanTwo: boolean; beforeReceipt: boolean; notResent: boolean } }> };
+export type PurchaseOrderLine = { itemKey: string; itemName: string; quantity: number; unit: string | null; receivedQuantity: number; rate?: number | null; originalQuantity?: number; locked?: boolean };
+export type PurchaseOrder = { id: string; poNumber: string; supplierName: string; status: 'open' | 'received' | 'cancelled'; sharedAt: string | null; version: number; createdAt: string; createdByEmail: string; lines: PurchaseOrderLine[]; totalValue?: number | null; revisionCount?: number; resendNeeded?: boolean; supplierConfirmedAt?: string | null; pendingCorrections?: PendingCorrection[]; corrections?: AppliedCorrection[] };
 export type SupplierOption = { supplierName: string; effectiveAt: string; lowest: boolean; rate?: number };
+
+export const CORRECTION_REASONS: ReadonlyArray<{ code: CorrectionReason; label: string }> = [
+  { code: 'typing_mistake', label: 'Typing mistake' },
+  { code: 'supplier_changed', label: 'Supplier changed quantity' },
+  { code: 'requirement_changed', label: 'Requirement changed' },
+];
+export function correctionAppliesNow(po: PurchaseOrder, line: PurchaseOrderLine, quantity: number): boolean {
+  return !po.sharedAt && (quantity < line.quantity || quantity <= (line.originalQuantity ?? line.quantity) * 1.2);
+}
 
 export type BatchReceiptResult =
   | { ok: true; lines: Array<{ itemKey: string; receivedQuantity: number }> }
@@ -33,6 +46,15 @@ const record = (v: unknown): v is Record<string, unknown> => !!v && typeof v ===
 const exact = (v: Record<string, unknown>, keys: string[]) => Object.keys(v).every((k) => keys.includes(k));
 const text = (v: unknown, max: number, min = 1) => typeof v === 'string' && v.trim().length >= min && v.trim().length <= max;
 const qty = (v: unknown, positive = false) => typeof v === 'number' && Number.isFinite(v) && v >= (positive ? Number.MIN_VALUE : 0) && v <= 1_000_000;
+export function parsePoCorrectionsWeek(value: unknown): PoCorrectionsWeek {
+  const count = (v: unknown) => typeof v === 'number' && Number.isInteger(v) && v >= 0;
+  if (!record(value) || value.view !== 'po_corrections' || typeof value.since !== 'string' || !Array.isArray(value.items) || value.items.length > 100 || !value.items.every((item) =>
+    record(item) && isUuid(item.poId) && typeof item.poNumber === 'string' && typeof item.supplierName === 'string' &&
+    ['open', 'received', 'cancelled'].includes(item.status as string) && typeof item.createdByEmail === 'string' && count(item.corrections) && count(item.pending) &&
+    record(item.flags) && typeof item.flags.byCreator === 'boolean' && typeof item.flags.moreThanTwo === 'boolean' && typeof item.flags.beforeReceipt === 'boolean' && typeof item.flags.notResent === 'boolean'
+  )) throw new Error('Invalid corrections list');
+  return value as PoCorrectionsWeek;
+}
 export function parsePurchaseOrderTallyQuery(params: URLSearchParams): { action: 'get_tally_receipts' | 'get_tally_receipt_counts'; payload: Record<string, unknown> } | null {
   if (params.size !== 1) return null;
   const ids = params.getAll('tallyReceiptCounts');
@@ -70,10 +92,20 @@ export function validatePurchaseOrderCommand(value: unknown): { action: string; 
       if (seen.has(tuple)) return null;
       seen.add(tuple);
     }
+  } else if (action === 'request_po_quantity_correction' || action === 'decide_po_quantity_correction' || action === 'confirm_purchase_order_supplier') {
+    const keys = action === 'request_po_quantity_correction' ? ['id', 'expectedVersion', 'itemKey', 'quantity', 'reasonCode', 'note', 'idempotencyKey'] : action === 'decide_po_quantity_correction' ? ['requestId', 'expectedVersion', 'decision', 'note', 'idempotencyKey'] : ['id', 'expectedVersion', 'note', 'idempotencyKey'];
+    if (!exact(payload, keys) || !isUuid(action === 'decide_po_quantity_correction' ? payload.requestId : payload.id) || !isUuid(payload.idempotencyKey) || !Number.isInteger(payload.expectedVersion) || (payload.expectedVersion as number) < 1 || (payload.expectedVersion as number) > 2_147_483_647) return null;
+    if (action === 'request_po_quantity_correction') {
+      if (!text(payload.itemKey, 220) || !qty(payload.quantity, true) || !CORRECTION_REASONS.some(reason => reason.code === payload.reasonCode) || !text(payload.note, 300, 3)) return null;
+    } else {
+      if (action === 'decide_po_quantity_correction' && payload.decision !== 'approve' && payload.decision !== 'reject') return null;
+      if ('note' in payload && !text(payload.note, action === 'confirm_purchase_order_supplier' ? 200 : 300)) return null;
+    }
   } else if (action === 'mark_purchase_order_shared' || action === 'receive_purchase_order' || action === 'cancel_purchase_order') {
-    const keys = action === 'mark_purchase_order_shared' ? ['id', 'idempotencyKey', 'expectedVersion'] : action === 'receive_purchase_order' ? ['id', 'idempotencyKey', 'expectedVersion', 'lines'] : ['id', 'idempotencyKey', 'expectedVersion', 'reason'];
+    const keys = action === 'mark_purchase_order_shared' ? ['id', 'idempotencyKey', 'expectedVersion', 'channel'] : action === 'receive_purchase_order' ? ['id', 'idempotencyKey', 'expectedVersion', 'lines'] : ['id', 'idempotencyKey', 'expectedVersion', 'reason'];
     if (!exact(payload, keys) || !isUuid(payload.id) || !isUuid(payload.idempotencyKey) || !Number.isInteger(payload.expectedVersion) || (payload.expectedVersion as number) < 1 || (payload.expectedVersion as number) > 2_147_483_647) return null;
     if (action === 'receive_purchase_order' && !distinctLines(payload.lines, 'receive')) return null;
+    if (action === 'mark_purchase_order_shared' && 'channel' in payload && payload.channel !== 'text' && payload.channel !== 'pdf') return null;
     if (action === 'cancel_purchase_order' && !text(payload.reason, 300, 3)) return null;
   } else return null;
   return { action, payload };

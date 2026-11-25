@@ -11,6 +11,10 @@ export async function GET(request: Request) {
     const user = await getChatGPTUser();
     if (!user) return failure('Sign in required', 401);
     const params = new URL(request.url).searchParams;
+    if (params.has('corrections')) {
+      if (params.size !== 1 || params.get('corrections') !== 'week') return failure('Invalid corrections query', 400);
+      return Response.json(await callOrderGateway(user.email, 'list_po_corrections', {}), { headers });
+    }
     if (params.has('unlinked')) {
       const raw = params.get('page');
       const page = raw === null ? 1 : Number(raw);
@@ -21,7 +25,7 @@ export async function GET(request: Request) {
       }
       return Response.json(await callOrderGateway(user.email, 'get_unlinked_receipts', { page }), { headers });
     }
-    if ([...params.keys()].some((key) => !['page', 'status', 'supplierOptions', 'tallyReceipts', 'tallyReceiptCounts', 'unlinked'].includes(key))) return failure('Invalid purchase order query', 400);
+    if ([...params.keys()].some((key) => !['page', 'status', 'supplierOptions', 'tallyReceipts', 'tallyReceiptCounts', 'unlinked', 'corrections'].includes(key))) return failure('Invalid purchase order query', 400);
     const tallyReceipts = params.get('tallyReceipts');
     const tallyReceiptCounts = params.get('tallyReceiptCounts');
     if (tallyReceipts !== null || tallyReceiptCounts !== null) {
