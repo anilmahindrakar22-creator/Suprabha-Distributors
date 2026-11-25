@@ -1545,6 +1545,13 @@
       "status": "exact_normalized_match"
     },
     {
+      "localFile": "20261130175000_voucher_lookup_indexes.sql",
+      "localSha256": "254e97b0b5066d0fe8118de07e729e5315f1d4b5c32245404b30e506e887767e",
+      "remoteVersion": null,
+      "remoteSha256": null,
+      "status": "not_deployed"
+    },
+    {
       "localFile": "20261130180000_economic_item_areas.sql",
       "localSha256": "33b840c11f64c0ff98f0d4318b022592624370c596f73230b698caa93dafba88",
       "remoteVersion": null,
@@ -1750,6 +1757,13 @@
     {
       "localFile": "20270103090000_po_quantity_corrections.sql",
       "localSha256": "087f7956bd0a72251a9fe4744aab507ae60cda797c7095f2e5cc094e6c4d5c9e",
+      "remoteVersion": null,
+      "remoteSha256": null,
+      "status": "not_deployed"
+    },
+    {
+      "localFile": "20270103100000_item_forecast_trial.sql",
+      "localSha256": "8a1bd601754057d70455f58c070893ba261e9019db8d2d6cb3e1c9b05406932c",
       "remoteVersion": null,
       "remoteSha256": null,
       "status": "not_deployed"

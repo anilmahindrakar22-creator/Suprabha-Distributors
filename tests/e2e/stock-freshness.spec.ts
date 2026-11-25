@@ -780,8 +780,9 @@ test("requirements failure leaves the customers waiting count unknown and Stock'
   const reorderRows = payload.rows.filter((row) => (+row.orderToBePlaced || 0) > 0);
   await expect(page.locator('#itemCount')).toHaveText(String(reorderRows.length));
   await expect(page.locator('#criticalCount')).toHaveText('—');
-  await expect(page.locator('.metric-chips button')).toHaveCount(4);
+  await expect(page.locator('.metric-chips button')).toHaveCount(5);
   await expect(page.locator('.metric-chips [data-action=levels]')).toBeHidden();
+  await expect(page.locator('.metric-chips [data-action=forecast]')).toBeHidden();
   for (const chip of await page.locator('.metric-chips button').all()) await expect(chip).toBeEnabled();
 });
 

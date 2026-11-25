@@ -5,6 +5,7 @@ import { resolve } from 'node:path';
 
 // Evidence-only: no database connection, SQL execution or migration-history repair.
 const pricingReleaseFiles = new Set([
+  '20261130175000_voucher_lookup_indexes.sql',
   '20261102100000_contract_windows.sql',
   '20261102110000_today_decisions.sql',
   '20261102120000_customer_map.sql',
@@ -87,6 +88,7 @@ const pricingReleaseFiles = new Set([
   '20261227120000_economic_cost_review.sql',
   '20261227130000_data_speed_report.sql',
   '20270103090000_po_quantity_corrections.sql',
+  '20270103100000_item_forecast_trial.sql',
   '20261102090000_po_tally_receipts.sql',
   '20261031140000_power_map_enhancement.sql',
   '20261030090000_instrument_register.sql',
@@ -193,6 +195,7 @@ const versionPattern = /^\d{14}$/;
 
 // Replay registration only; this evidence checker never executes SQL.
 export const pricingReleaseSqlTests = [
+  'supabase/tests/voucher_lookup_indexes.sql',
   'supabase/tests/sales_coverage.sql',
   'supabase/tests/wallet_v2.sql',
   'supabase/tests/wallet_v2_concurrency.sql',
@@ -286,6 +289,7 @@ export const pricingReleaseSqlTests = [
   'supabase/tests/economic_cost_review.sql',
   'supabase/tests/data_speed_report.sql',
   'supabase/tests/po_quantity_corrections.sql',
+  'supabase/tests/item_forecast_trial.sql',
 ];
 
 export function pricingReleasePreflight(evidence, files) {

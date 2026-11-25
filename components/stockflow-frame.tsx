@@ -54,11 +54,12 @@ export function StockFlowFrame({ actorEmail, actorRole, actorRoles, staffAuth = 
   const rolesKey = roles.join(',');
   const canCreatePo = canManagePurchaseOrders(roles);
   const canSeeBuyers = hasAnyStockFlowRole(roles, ['administrator', 'management', 'operations', 'sales']);
+  const canSeeForecast = hasAnyStockFlowRole(roles, ['administrator', 'management']);
   const stockFrameRef = useRef<HTMLIFrameElement>(null);
   const [stockPoDraft, setStockPoDraft] = useState<{ nonce: number; items: StockPoDraftItem[] } | null>(null);
   useEffect(() => {
-    stockFrameRef.current?.contentWindow?.postMessage({ type: 'stockflow-cache-account', email: actorEmail, canCreatePo, canSeeBuyers }, window.location.origin);
-  }, [actorEmail, canCreatePo, canSeeBuyers]);
+    stockFrameRef.current?.contentWindow?.postMessage({ type: 'stockflow-cache-account', email: actorEmail, canCreatePo, canSeeBuyers, canSeeForecast }, window.location.origin);
+  }, [actorEmail, canCreatePo, canSeeBuyers, canSeeForecast]);
   const canSeeToday = hasAnyStockFlowRole(roles, ['administrator', 'management']);
   const [surface, setSurface] = useState<Surface>(() => canSeeToday ? 'today' : 'stock');
   const desktopNavRef = useRef<HTMLElement>(null);
@@ -489,7 +490,7 @@ export function StockFlowFrame({ actorEmail, actorRole, actorRoles, staffAuth = 
             src="/stockflow.html"
             className="block h-full w-full border-0"
             allow="clipboard-write"
-            onLoad={(event) => event.currentTarget.contentWindow?.postMessage({ type: 'stockflow-cache-account', email: actorEmail, canCreatePo, canSeeBuyers }, window.location.origin)}
+            onLoad={(event) => event.currentTarget.contentWindow?.postMessage({ type: 'stockflow-cache-account', email: actorEmail, canCreatePo, canSeeBuyers, canSeeForecast }, window.location.origin)}
           />
         ) : surface === 'orders' ? (
           <Suspense fallback={<SectionLoading />}><OrderWorkspace key={`${orderFilter}:${orderView.nonce}`} actorEmail={actorEmail} initialStatus={orderFilter} initialQuery={orderView.query} focusOrder={orderView.focus} newOrderIds={newOrderIds} onOrderActed={() => workService.current?.reconcile()} /></Suspense>

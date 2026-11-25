@@ -185,6 +185,7 @@ try {
   $salesNames += '20261130150000_growth_brands.sql'
   $salesNames += '20261130160000_economic_covered_segments.sql'
   $salesNames += '20261130170000_growth_lab_months.sql'
+  $salesNames += '20261130175000_voucher_lookup_indexes.sql'
   $salesNames += '20261130180000_economic_item_areas.sql'
   $salesNames += '20261130190000_brand_group_inherit.sql'
   $salesNames += '20261130200000_economic_prune_schedule.sql'
@@ -215,6 +216,7 @@ try {
   $salesNames += '20261227120000_economic_cost_review.sql'
   $salesNames += '20261227130000_data_speed_report.sql'
   $salesNames += '20270103090000_po_quantity_corrections.sql'
+  $salesNames += '20270103100000_item_forecast_trial.sql'
   for ($salesIndex = 1; $salesIndex -lt $salesNames.Count; $salesIndex++) {
     if ([array]::IndexOf($planNames,$salesNames[$salesIndex]) -le [array]::IndexOf($planNames,$salesNames[$salesIndex-1])) { throw 'Full sales replay order is invalid' }
   }
@@ -246,7 +248,7 @@ create table public.test_upgrade_expected as select to_jsonb(o) as order_data,(s
     if ($migration.Name -ge '20260913130000_customer_price_book.sql' -and (Get-FileHash $migration.FullName).Hash -ne (Get-FileHash (Join-Path $migrationSource $migration.Name)).Hash) { throw "Pricing migration copy changed: $($migration.Name)" }
     # The speed fixture checks the idle item keys before buyerCount was added.
     # Apply this final migration after that historical fixture below.
-    if ($migration.Name -in @('20261217110000_idle_buyers.sql','20261220090000_growth_period.sql','20261220100000_growth_period_labs.sql','20261220110000_growth_period_profit.sql','20261227090000_economics_read_speed.sql','20261227100000_economic_line_reads.sql','20261227110000_economic_products_read.sql','20261227120000_economic_cost_review.sql','20261227130000_data_speed_report.sql','20270103090000_po_quantity_corrections.sql')) { continue }
+    if ($migration.Name -in @('20261217110000_idle_buyers.sql','20261220090000_growth_period.sql','20261220100000_growth_period_labs.sql','20261220110000_growth_period_profit.sql','20261227090000_economics_read_speed.sql','20261227100000_economic_line_reads.sql','20261227110000_economic_products_read.sql','20261227120000_economic_cost_review.sql','20261227130000_data_speed_report.sql','20270103090000_po_quantity_corrections.sql','20270103100000_item_forecast_trial.sql')) { continue }
     if ($migration.Name -eq '20261129160000_growth_item_kind.sql') {
       # Retain actual pre-patch definitions for byte-for-byte read comparisons.
       $baselineSql = @'
@@ -525,6 +527,11 @@ end$$;
   # Recheck receipt behavior against the additive PO revision schema as well.
   Invoke-DatabaseCommand $psqlProgram @('-U',$databaseUser,'-X','-q','-v','ON_ERROR_STOP=1','-d',$database,'-f',(Join-Path $repository 'supabase/tests/po_tally_receipts.sql'))
   Write-Output 'PASS: PO Tally receipts against quantity corrections schema'
+  Invoke-DatabaseCommand $psqlProgram @('-U',$databaseUser,'-X','-q','-v','ON_ERROR_STOP=1','-d',$database,'-f',(Join-Path $work '20270103100000_item_forecast_trial.sql'))
+  Invoke-DatabaseCommand $psqlProgram @('-U',$databaseUser,'-X','-q','-v','ON_ERROR_STOP=1','-d',$database,'-f',(Join-Path $repository 'supabase/tests/item_forecast_trial.sql'))
+  Write-Output 'PASS: item forecast trial'
+  Invoke-DatabaseCommand $psqlProgram @('-U',$databaseUser,'-X','-q','-v','ON_ERROR_STOP=1','-d',$database,'-f',(Join-Path $repository 'supabase/tests/voucher_lookup_indexes.sql'))
+  Write-Output 'PASS: voucher lookup indexes'
   Invoke-DatabaseCommand $psqlProgram @('-U',$databaseUser,'-X','-q','-v','ON_ERROR_STOP=1','-d',$database,'-f',(Join-Path $repository 'supabase/tests/economics_candidate_rebuild.sql'))
   Write-Output 'PASS: rebuild containment, sales coverage and exact control reconciliation'
   Invoke-DatabaseCommand $psqlProgram @('-U',$databaseUser,'-X','-q','-v','ON_ERROR_STOP=1','-d',$database,'-f',(Join-Path $repository 'supabase/tests/mapped_instrument_cost_scope.sql'))

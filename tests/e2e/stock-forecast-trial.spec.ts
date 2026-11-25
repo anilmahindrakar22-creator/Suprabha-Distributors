@@ -1,0 +1,182 @@
+import { expect, test, type FrameLocator, type Page } from '@playwright/test';
+
+const forecastPayload = () => ({
+  view: 'forecast_trial', asOf: '2027-01-04', computedAt: '2027-01-03T21:20:05Z',
+  throughMonth: '2026-12-01', stale: false, uncertifiedMonths: [] as string[],
+  check: [
+    { horizon: 1, segment: 'established', method: 'base', cutoffs: 6, itemMonths: 1425, wape: 63.9, bias: 2.7 },
+    { horizon: 1, segment: 'established', method: 'avg6', cutoffs: 6, itemMonths: 1425, wape: 57.9, bias: 1.2 },
+    { horizon: 1, segment: 'established', method: 'cap12', cutoffs: 6, itemMonths: 1425, wape: 52, bias: 0 },
+    { horizon: 2, segment: 'established', method: 'base', cutoffs: 6, itemMonths: 1425, wape: 60, bias: -3.5 },
+    { horizon: 1, segment: 'new', method: 'base', cutoffs: 6, itemMonths: 25, wape: 80, bias: 5 },
+    { horizon: 1, segment: 'new', method: 'avg6', cutoffs: 6, itemMonths: 25, wape: 75, bias: null },
+    { horizon: 1, segment: 'new', method: 'cap12', cutoffs: 6, itemMonths: 25, wape: null, bias: null },
+  ],
+  itemCount: 3,
+  items: [
+    { itemKey: 'Reagent A', isNew: false, firstSaleMonth: '2024-03-01', nowMonthly: 12, nowDaysLeft: 40, avg6Monthly: 10, avg6DaysLeft: 48, cap12Monthly: 8, cap12DaysLeft: 60 },
+    { itemKey: 'New reagent', isNew: true, firstSaleMonth: '2026-10-01', nowMonthly: 6, nowDaysLeft: 20, avg6Monthly: 5, avg6DaysLeft: 24, cap12Monthly: 4, cap12DaysLeft: 30 },
+    { itemKey: 'Reagent without cover', isNew: false, firstSaleMonth: '2024-03-01', nowMonthly: 0, nowDaysLeft: null, avg6Monthly: 0, avg6DaysLeft: null, cap12Monthly: 0, cap12DaysLeft: null },
+  ],
+});
+
+async function harness(page: Page, payload: unknown = forecastPayload(), canSeeForecast = true, status = 200) {
+  const requests: string[] = [];
+  page.on('request', request => {
+    if (new URL(request.url()).searchParams.get('view') === 'forecast_trial') requests.push(request.url());
+  });
+  await page.route('**/forecast-trial-test', route => route.fulfill({
+    contentType: 'text/html',
+    body: '<meta name="viewport" content="width=device-width,initial-scale=1"><style>html,body{margin:0;height:100%;overflow:hidden}iframe{width:100%;height:100%;border:0;display:block}</style><iframe src="/stockflow.html"></iframe>',
+  }));
+  await page.route('**/api/stock?view=dashboard', route => route.fulfill({ json: {
+    company: 'Test company', fetchedAtIso: new Date().toISOString(), fetchedAt: '4 Jan 2027', groups: ['Reagents'],
+    rows: [{ group: 'Reagents', item: 'Reagent A', closing: 1, reorderLevel: 2, minimumOrder: 1, shortfall: 1, orderToBePlaced: 1 }],
+  } }));
+  await page.route('**/api/orders?summary=1', route => route.fulfill({ json: {} }));
+  await page.route('**/api/requirements?*', route => {
+    const view = new URL(route.request().url()).searchParams.get('view');
+    switch (view) {
+      case 'forecast_trial': return route.fulfill({ status, json: payload });
+      case 'reorder_check': return route.fulfill({ json: {
+        view: 'reorder_check', coverDays: 60, shortCount: 1, levelCount: 0,
+        short: [{ itemKey: 'Reagent A', closing: 1, onOrder: 0, target: 20, usedLast90: 30, daysCover: 3 }], level: [],
+      } });
+      case 'on_po': return route.fulfill({ json: { view: 'on_po', items: [] } });
+      case 'cover': return route.fulfill({ json: { view: 'cover', leadTimeDays: 7, salesThrough: null, runsOutCount: 0, items: [] } });
+      case 'idle': return route.fulfill({ json: { view: 'idle', idleCount: 1, inStockCount: 3, asOf: '2027-01-04', historyFrom: '2024-01-01', items: [
+        { itemKey: 'Idle reagent', group: 'Reagents', closing: 1, baseUnit: 'pack', lastSoldOn: null, buyerCount: 0 },
+      ] } });
+      case 'to_order': return route.fulfill({ json: { view: 'to_order', total: 1, waitingCount: 0, items: [] } });
+      default: return route.fulfill({ status: 400, json: {} });
+    }
+  });
+  await page.goto('/forecast-trial-test');
+  const stock = page.frameLocator('iframe');
+  await expect(stock.locator('#company')).toHaveText('Test company');
+  await expect(stock.locator('#refresh')).toBeEnabled();
+  const response = canSeeForecast ? page.waitForResponse(r => new URL(r.url()).searchParams.get('view') === 'forecast_trial') : null;
+  await postAccount(page, canSeeForecast);
+  if (response) {
+    await (await response).finished();
+    await stock.locator('body').evaluate(() => new Promise<void>(resolve => requestAnimationFrame(() => resolve())));
+  }
+  return { stock, requests };
+}
+
+async function postAccount(page: Page, canSeeForecast: boolean, email = 'management@example.test') {
+  await page.evaluate(({ allowed, email }) => document.querySelector('iframe')?.contentWindow?.postMessage({
+    type: 'stockflow-cache-account', email, canCreatePo: true, canSeeBuyers: true, canSeeForecast: allowed,
+  }, location.origin), { allowed: canSeeForecast, email });
+}
+
+async function openForecast(stock: FrameLocator) {
+  const chip = stock.locator('[data-action="forecast"]');
+  await expect(chip).toContainText('Forecast trial');
+  await expect(stock.locator('#forecastHint')).toHaveText('3 items');
+  await chip.click();
+  await expect(stock.locator('#forecastView h2')).toHaveText('Forecast trial');
+}
+
+async function expectForecast(stock: FrameLocator) {
+  const panel = stock.locator('#forecastView');
+  await expect(panel.locator('.levels-caption')).toHaveText("Two ways to read sales, shown next to today's 90-day average. Nothing changes in Stock until the owner chooses. Today uses the last 90 days; the trial uses complete months to Dec 2026.");
+  await expect(panel.locator('.forecast-check')).toBeVisible();
+  await expect(panel.locator('td').filter({ hasText: '63.9% off · +2.7%' })).toHaveCount(1);
+  await expect(panel.locator('td').filter({ hasText: '57.9% off · +1.2%' })).toHaveCount(1);
+  await expect(panel.locator('td').filter({ hasText: '52.0% off · +0.0%' })).toHaveCount(1);
+  await expect(panel.locator('td').filter({ hasText: '60.0% off · −3.5%' })).toHaveCount(1);
+  await expect(panel).toContainText('New items (first 6 months): 80.0% / 75.0% / — off next month. Treat their figures as rough.');
+  await expect(panel.locator('.idle-row')).toHaveCount(3);
+  await expect(panel.locator('.forecast-new')).toHaveText('New');
+  await expect(panel.locator('.idle-row').last()).toContainText('today 0/month · —');
+  await expect(stock.locator('#groupCards')).toBeHidden();
+  await expect(stock.locator('.groups-title')).toBeHidden();
+  await expect(stock.locator('#coverCaption')).toBeHidden();
+}
+
+test('operations cannot see or request the forecast trial', async ({ page }) => {
+  const { stock, requests } = await harness(page, forecastPayload(), false);
+  await expect(stock.locator('[data-action="forecast"]')).toBeHidden();
+  await stock.locator('[data-action="items"]').click();
+  expect(requests).toEqual([]);
+});
+
+test('management can read the forecast trial on a 375px phone', async ({ page }) => {
+  await page.setViewportSize({ width: 375, height: 812 });
+  const { stock } = await harness(page);
+  await openForecast(stock);
+  await expectForecast(stock);
+  expect(await stock.locator('body').evaluate(() => document.documentElement.scrollWidth <= 375)).toBe(true);
+});
+
+test('desktop forecast renders and levels clears the forecast selection', async ({ page }) => {
+  await page.setViewportSize({ width: 1280, height: 900 });
+  const { stock } = await harness(page);
+  await openForecast(stock);
+  await expectForecast(stock);
+  await stock.locator('[data-action="levels"]').click();
+  await expect(stock.locator('#forecastView')).toBeHidden();
+  await expect(stock.locator('[data-action="forecast"]')).toHaveAttribute('aria-pressed', 'false');
+  await expect(stock.locator('#levelsView')).toBeVisible();
+});
+
+test('stale and uncertified notices show the run time and month names', async ({ page }) => {
+  const { stock } = await harness(page, { ...forecastPayload(), stale: true, uncertifiedMonths: ['2025-10-01', '2025-03-01'] });
+  await openForecast(stock);
+  await expect(stock.locator('#forecastView')).toContainText('Forecast not updated since');
+  await expect(stock.locator('#forecastView')).toContainText('Some months are not reconciled yet: Oct 2025, Mar 2025');
+});
+
+test('no run keeps a loaded zero-item chip and explains the empty forecast', async ({ page }) => {
+  const { stock } = await harness(page, { ...forecastPayload(), computedAt: null, throughMonth: null, check: null, items: [], itemCount: 0, stale: true });
+  await expect(stock.locator('#forecastHint')).toHaveText('0 items');
+  await stock.locator('[data-action="forecast"]').click();
+  await expect(stock.locator('#forecastView')).toContainText('Forecast not run yet');
+  await expect(stock.locator('.forecast-check')).toHaveCount(0);
+  await expect(stock.locator('#forecastView .levels-caption')).not.toContainText('Today uses');
+});
+
+for (const [label, payload] of [
+  ['wrong view', { ...forecastPayload(), view: 'other' }],
+  ['fractional days', { ...forecastPayload(), items: [{ ...forecastPayload().items[0], nowDaysLeft: 2.5 }] }],
+  ['invalid month', { ...forecastPayload(), throughMonth: '2026-13-01' }],
+  ['missing fields', { view: 'forecast_trial' }],
+  ['mixed no-run fields', { ...forecastPayload(), computedAt: null }],
+  ['invalid check', { ...forecastPayload(), check: [{ ...forecastPayload().check[0], wape: '63.9' }] }],
+] as const) {
+  test('invalid payload stays hidden: ' + label, async ({ page }) => {
+    const { stock, requests } = await harness(page, payload);
+    await expect(stock.locator('[data-action="forecast"]')).toBeHidden();
+    expect(requests).toHaveLength(1);
+  });
+}
+
+test('403 hides the chip even when the frame flag permits a request', async ({ page }) => {
+  const { stock } = await harness(page, { error: 'Forbidden' }, true, 403);
+  await expect(stock.locator('[data-action="forecast"]')).toBeHidden();
+});
+
+test('permission removal clears the visible forecast and account changes reload it', async ({ page }) => {
+  const { stock, requests } = await harness(page);
+  await openForecast(stock);
+  await postAccount(page, false);
+  await expect(stock.locator('[data-action="forecast"]')).toBeHidden();
+  await expect(stock.locator('#forecastView')).toBeEmpty();
+  await postAccount(page, true);
+  await expect(stock.locator('#forecastHint')).toHaveText('3 items');
+  await postAccount(page, true, 'second-management@example.test');
+  await expect.poll(() => requests.length).toBe(3);
+  await expect(stock.locator('#forecastHint')).toHaveText('3 items');
+  await expect(stock.locator('#forecastView')).toBeHidden();
+});
+
+test('idle and reorder selections clear the forecast view', async ({ page }) => {
+  const { stock } = await harness(page);
+  for (const action of ['idle', 'items']) {
+    await openForecast(stock);
+    await stock.locator('[data-action="' + action + '"]').click();
+    await expect(stock.locator('#forecastView')).toBeHidden();
+    await expect(stock.locator('[data-action="forecast"]')).toHaveAttribute('aria-pressed', 'false');
+  }
+});
