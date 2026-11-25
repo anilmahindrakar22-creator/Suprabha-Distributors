@@ -26,7 +26,8 @@ $salesCoverageBackfillPath = Join-Path $stateDirectory 'sales-coverage-backfill-
 $script:pendingBackfillEntry = $null
 $script:salesCoverageState = Read-SalesCoverageState $salesCoverageStatePath $companyName
 $script:salesCoverageAttemptDate = $null
-$script:backfillAttemptDate=$null
+$script:backfillHalted=$false
+$script:backfillRestorePending=$false
 $script:salesCoverageUploadFailures = 0
 $script:salesCoverageUploadAttemptDate = $null
 $healthLogPath = Join-Path $stateDirectory 'connector-health.log'
@@ -133,13 +134,20 @@ function Get-ServerTimingFields([string]$Header) {
     } catch { return '' }
 }
 
+function Stop-SalesCoverageBackfill([string]$Entry,[string]$Reason) {
+    $script:backfillHalted = $true
+    $script:backfillRestorePending = $false
+    Write-ConnectorHealth "$([datetimeoffset]::Now.ToString('o')) request=sales_coverage_backfill status=halted entry=$Entry reason=$Reason"
+}
+
 function Remove-PendingSalesCoverage([string]$Reason) {
     if ($script:pendingUpload.economicEvidence.purpose -ne 'sales_coverage') { return }
     if ($script:pendingUpload.economicEvidence.backfillEntry) {
         Write-ConnectorHealth "$([datetimeoffset]::Now.ToString('o')) request=sales_coverage_backfill status=retry entry=$($script:pendingUpload.economicEvidence.backfillEntry)"
+        Stop-SalesCoverageBackfill ([string]$script:pendingUpload.economicEvidence.backfillEntry) 'upload_failed'
     }
     $script:pendingBackfillEntry = $null
-    $script:salesCoverageAttemptDate = (Get-SalesCoverageClock).ToString('yyyy-MM-dd')
+    if (-not $script:pendingUpload.economicEvidence.backfillEntry) { $script:salesCoverageAttemptDate = (Get-SalesCoverageClock).ToString('yyyy-MM-dd') }
     $script:economicSyncError = 'Sales coverage upload dropped after repeated failure'
     $script:economicSyncDomain = 'sales_coverage'
     foreach ($key in @('economicEvidence','salesControlTotals','salesCoverageDate')) {
@@ -245,6 +253,7 @@ function Publish-CloudSnapshot([string]$Json) {
                 Write-ConnectorHealth "$([datetimeoffset]::Now.ToString('o')) request=sales_coverage_backfill status=done entry=$entry"
             } catch {
                 Write-ConnectorHealth "$([datetimeoffset]::Now.ToString('o')) request=sales_coverage_backfill status=failed entry=$entry"
+                Stop-SalesCoverageBackfill $entry 'queue_update_failed'
             }
         }
     }
@@ -587,7 +596,7 @@ function Read-ReorderData {
         $coverageNow=[datetimeoffset]::UtcNow
         $istDate=(Get-SalesCoverageClock $coverageNow).ToString('yyyy-MM-dd')
         $coverageDue=-not $DisableSalesCoverage -and $script:pendingUpload.economicEvidence.purpose -ne 'sales_coverage' -and $script:salesCoverageAttemptDate -ne $istDate -and (Test-SalesCoverageDue $script:salesCoverageState $coverageNow)
-        $backfillDue=-not $coverageDue -and -not $DisableSalesCoverage -and $script:pendingUpload.economicEvidence.purpose -ne 'sales_coverage' -and [string]$script:salesCoverageState.lastSalesCoverageDate -eq $istDate -and $script:backfillAttemptDate -ne $istDate -and ($backfillNow=Get-NextSalesCoverageBackfill $salesCoverageBackfillPath $companyName)
+        $backfillDue=-not $coverageDue -and -not $DisableSalesCoverage -and -not $script:backfillHalted -and -not $script:backfillRestorePending -and $script:pendingUpload.economicEvidence.purpose -ne 'sales_coverage' -and [string]$script:salesCoverageState.lastSalesCoverageDate -ge (Get-SalesCoverageClock $coverageNow).AddDays(-1).ToString('yyyy-MM-dd') -and -not (Test-SalesCoverageDue $script:salesCoverageState $coverageNow) -and ($backfillNow=Get-NextSalesCoverageBackfill $salesCoverageBackfillPath $companyName)
         try {
             $ledgerRoles=@{}
             $rolePath=Join-Path $stateDirectory 'economic-ledger-roles.json'
@@ -608,15 +617,18 @@ function Read-ReorderData {
                 # Restore the normal envelope on the next cycle, not after four hours.
                 $script:nextEconomicRead=Get-Date
             }elseif($backfillDue){
-                $script:backfillAttemptDate=$istDate
                 $script:pendingBackfillEntry=$backfillNow.ToString('yyyy-MM-dd',[Globalization.CultureInfo]::InvariantCulture)
                 $coverage=Read-TallySalesCoverage $companyName $ledgerRoles $voucherRoles -Now $backfillNow
                 $coverage.economicEvidence.backfillEntry=$script:pendingBackfillEntry
-                $coverageDate=$istDate
+                # A history window must not mark today's regular coverage as done.
+                $coverageDate=[string]$script:salesCoverageState.lastSalesCoverageDate
                 # Restore the normal envelope on the next cycle, not after four hours.
                 $script:nextEconomicRead=Get-Date
+                $script:backfillRestorePending=$true
             }else{
                 $script:lastEconomicEvidence=Read-TallyEconomicEvidence $companyName $EconomicHistoryMonths $ledgerRoles $voucherRoles $EconomicPurchaseHistoryMonths
+                # After the restore cycle, take the next queued window on the following cycle.
+                if($script:backfillRestorePending){$script:backfillRestorePending=$false;$script:nextEconomicRead=Get-Date}
             }
             $script:economicSyncError=$null
             $script:economicSyncDomain=$null
@@ -624,6 +636,7 @@ function Read-ReorderData {
             $script:economicSyncError=$_.Exception.Message
             $domain=if($coverageDue -or $backfillDue){'sales_coverage'}else{'instrument_economics'}
             $script:economicSyncDomain=$domain
+            if($backfillDue){Stop-SalesCoverageBackfill $script:pendingBackfillEntry 'read_failed'}
             Write-ConnectorHealth "$([datetimeoffset]::Now.ToString('o')) domain=$domain status=failed reason=$($script:economicSyncError)"
         }
     }

@@ -147,7 +147,7 @@ Assert-Backfill ($script:readNow -eq $coverageNow -and $coverageDate -eq $istDat
 $script:pendingBackfillEntry=$null;$script:readNow=$null
 . $readCoverage
 Assert-Backfill ($script:readNow -eq $coverageNow -and $coverageDate -eq $istDate -and -not $coverage.economicEvidence.ContainsKey('backfillEntry') -and $null -eq $script:pendingBackfillEntry -and [SalesCoverageMemoryFile]::Files[$salesCoverageBackfillPath] -ceq $queueJson) 'Queued backfill changed regular coverage'
-foreach($name in @('Publish-CloudSnapshot','Remove-PendingSalesCoverage')) {
+foreach($name in @('Publish-CloudSnapshot','Remove-PendingSalesCoverage','Stop-SalesCoverageBackfill')) {
     $definition=$dashboardAst.Find({param($node) $node -is [Management.Automation.Language.FunctionDefinitionAst] -and $node.Name -eq $name},$true)
     Invoke-Expression $definition.Extent.Text
 }
@@ -179,6 +179,7 @@ foreach($mode in @('success','rewrite_failure','state_failure','three_failures')
         1..2 | ForEach-Object { Assert-Backfill (-not (Publish-CloudSnapshot $uploadJson)) 'Offline retry succeeded' }
         Assert-Backfill ($null -eq $script:pendingUpload.economicEvidence -and $script:salesCoverageUploadFailures -eq 3) 'Three failures did not drop coverage'
         Assert-Backfill (@($script:healthLines | Where-Object {$_ -match 'request=sales_coverage_backfill status=retry entry=2026-05-15$'}).Count -eq 1) 'Backfill retry log missing'
+        Assert-Backfill (@($script:healthLines | Where-Object {$_ -match 'request=sales_coverage_backfill status=halted entry=2026-05-15 reason=upload_failed$'}).Count -eq 1 -and $script:backfillHalted) 'Upload failure did not halt backfill'
     } elseif($mode -eq 'state_failure') {
         Assert-Backfill (-not $accepted) 'Failed state save acknowledged coverage'
     } else {

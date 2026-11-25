@@ -469,12 +469,15 @@ $stateDirectory=Join-Path ([IO.Path]::GetTempPath()) ('backfill-read-'+[guid]::N
 $salesCoverageBackfillPath=$salesCoverageStatePath+'.backfill'
 $script:coverageReads=[Collections.Generic.List[datetimeoffset]]::new()
 $script:failBackfillRead=$false
+$stopper=$ast.Find({param($node) $node -is [Management.Automation.Language.FunctionDefinitionAst] -and $node.Name -eq 'Stop-SalesCoverageBackfill'},$true)
+Invoke-Expression $stopper.Extent.Text
+$script:economicReads=0
 function Read-TallySalesCoverage($Company,$LedgerRoles,$VoucherRoles,[datetimeoffset]$Now) {
     $script:coverageReads.Add($Now)
     if($script:failBackfillRead){throw 'fixture backfill read failure'}
     return @{economicEvidence=@{purpose='sales_coverage'};salesControlTotals=@{}}
 }
-function Read-TallyEconomicEvidence { return @{purpose='normal'} }
+function Read-TallyEconomicEvidence { $script:economicReads++;return @{purpose='normal'} }
 function Invoke-TestCoverageCycle {
     $coverage=$null;$coverageDate=$null
     $coverageNow=$script:testCoverageNow
@@ -489,12 +492,12 @@ try {
     [IO.File]::WriteAllText($salesCoverageBackfillPath,'{"company":"fixture","windows":["2026-07-01","2026-04-01"]}')
     $script:testCoverageNow=[datetimeoffset]'2026-10-30T22:00:00+05:30'
     $script:salesCoverageState=@{lastSalesCoverageDate='2026-10-29'}
-    $script:salesCoverageAttemptDate=$null;$script:backfillAttemptDate=$null
+    $script:salesCoverageAttemptDate=$null;$script:backfillHalted=$false;$script:backfillRestorePending=$false
     $script:pendingBackfillEntry=$null;$script:pendingUpload=$null
     $script:uploadState=@{company='fixture';rejectedPayloadHash=$null;blockedKeyHash=$null}
     $script:failCloud=$false
     $regular=Invoke-TestCoverageCycle
-    Assert-Economic ($script:coverageReads.Count -eq 1 -and $script:coverageReads[0] -eq $script:testCoverageNow -and -not $regular.economicEvidence.backfillEntry -and -not $script:backfillAttemptDate) '(a) Queued backfill replaced regular coverage'
+    Assert-Economic ($script:coverageReads.Count -eq 1 -and $script:coverageReads[0] -eq $script:testCoverageNow -and -not $regular.economicEvidence.backfillEntry -and -not $script:backfillRestorePending) '(a) Queued backfill replaced regular coverage'
     Assert-Economic ($regular.salesCoverageDate -eq '2026-10-30' -and $script:nextEconomicRead -le (Get-Date)) 'Regular coverage did not restore the next economic read'
     Write-Output 'PASS: (a) queued backfill leaves the regular current window first'
 
@@ -506,30 +509,56 @@ try {
     Assert-Economic ((Read-SalesCoverageState $salesCoverageStatePath 'fixture').lastSalesCoverageDate -eq '2026-10-30') 'Regular coverage state was not saved'
     $script:pendingUpload=$null
     $backfill=Invoke-TestCoverageCycle
-    Assert-Economic ($script:coverageReads.Count -eq 2 -and $script:coverageReads[1] -eq [datetimeoffset]'2026-07-01T12:00:00+05:30' -and $backfill.economicEvidence.backfillEntry -eq '2026-07-01' -and $script:pendingBackfillEntry -eq '2026-07-01' -and $script:backfillAttemptDate -eq '2026-10-30') '(b) Backfill did not run after saved regular coverage'
+    Assert-Economic ($script:coverageReads.Count -eq 2 -and $script:coverageReads[1] -eq [datetimeoffset]'2026-07-01T12:00:00+05:30' -and $backfill.economicEvidence.backfillEntry -eq '2026-07-01' -and $script:pendingBackfillEntry -eq '2026-07-01' -and $script:backfillRestorePending) '(b) Backfill did not run after saved regular coverage'
     Assert-Economic ($backfill.salesCoverageDate -eq '2026-10-30' -and $script:nextEconomicRead -le (Get-Date)) 'Backfill did not restore the next economic read'
     Assert-Economic (@((Get-Content -LiteralPath $salesCoverageBackfillPath -Raw | ConvertFrom-Json).windows).Count -eq 2) 'Backfill entry removed before upload'
     Write-Output 'PASS: (b) backfill runs after saved regular coverage with backfillEntry set'
 
     Assert-Economic (Publish-CloudSnapshot ($backfill | ConvertTo-Json -Depth 12 -Compress)) 'Backfill upload failed'
     Assert-Economic ((Get-NextSalesCoverageBackfill $salesCoverageBackfillPath 'fixture').ToString('yyyy-MM-dd') -eq '2026-04-01') 'Successful backfill upload did not remove its entry'
+    $economicReadsBefore=$script:economicReads
+    $restore=Invoke-TestCoverageCycle
+    Assert-Economic ($script:economicReads -eq ($economicReadsBefore+1) -and $script:coverageReads.Count -eq 2 -and -not $restore.economicEvidence -and -not $script:backfillRestorePending -and $script:nextEconomicRead -le (Get-Date)) '(c) Restore did not schedule the next cycle'
     $second=Invoke-TestCoverageCycle
-    Assert-Economic ($script:coverageReads.Count -eq 2 -and -not $second.economicEvidence) '(c) A second backfill ran on the same IST day'
-    Write-Output 'PASS: (c) second backfill is blocked on the same IST day'
+    Assert-Economic ($script:coverageReads.Count -eq 3 -and $script:coverageReads[2] -eq [datetimeoffset]'2026-04-01T12:00:00+05:30' -and $second.salesCoverageDate -eq '2026-10-30') '(c) Next cycle did not read the second history window'
+    Assert-Economic (Publish-CloudSnapshot ($second | ConvertTo-Json -Depth 12 -Compress)) 'Second backfill upload failed'
+    Assert-Economic ($null -eq (Get-NextSalesCoverageBackfill $salesCoverageBackfillPath 'fixture')) '(c) Successful drain left a queued window'
+    $restore=Invoke-TestCoverageCycle
+    $normal=Invoke-TestCoverageCycle
+    Assert-Economic ($script:coverageReads.Count -eq 3 -and -not $script:backfillRestorePending -and $script:nextEconomicRead -gt (Get-Date).AddMinutes(239)) '(c) Empty queue did not return to the 240-minute cadence'
+    Write-Output 'PASS: (c) the next window runs on the cycle after the restore'
+
+    [IO.File]::WriteAllText($salesCoverageBackfillPath,'{"company":"fixture","windows":["2026-01-01"]}')
+    $script:testCoverageNow=[datetimeoffset]'2026-10-31T11:00:00+05:30'
+    $daytime=Invoke-TestCoverageCycle
+    Assert-Economic ($script:coverageReads.Count -eq 4 -and $script:coverageReads[3] -eq [datetimeoffset]'2026-01-01T12:00:00+05:30' -and $daytime.economicEvidence.backfillEntry -eq '2026-01-01' -and $daytime.salesCoverageDate -eq '2026-10-30') '(c2) Daytime history replaced regular coverage or advanced its date'
+    Assert-Economic (Publish-CloudSnapshot ($daytime | ConvertTo-Json -Depth 12 -Compress)) 'Daytime backfill upload failed'
+    Assert-Economic ((Read-SalesCoverageState $salesCoverageStatePath 'fixture').lastSalesCoverageDate -eq '2026-10-30') '(c2) Daytime history marked today regular coverage done'
+    $restore=Invoke-TestCoverageCycle
+    Write-Output 'PASS: (c2) daytime window keeps yesterday''s coverage date'
 
     # The next day still starts with regular coverage, then retries queued history.
-    $script:testCoverageNow=$script:testCoverageNow.AddDays(1)
+    $script:testCoverageNow=[datetimeoffset]'2026-10-31T22:00:00+05:30'
+    [IO.File]::WriteAllText($salesCoverageBackfillPath,'{"company":"fixture","windows":["2025-10-01"]}')
     $regular=Invoke-TestCoverageCycle
-    Assert-Economic ($script:coverageReads.Count -eq 3 -and $script:coverageReads[2] -eq $script:testCoverageNow -and -not $regular.economicEvidence.backfillEntry) 'Queued history blocked the next day regular run'
+    Assert-Economic ($script:coverageReads.Count -eq 5 -and $script:coverageReads[-1] -eq $script:testCoverageNow -and -not $regular.economicEvidence.backfillEntry) 'Queued history blocked the next day regular run'
     Assert-Economic (Publish-CloudSnapshot ($regular | ConvertTo-Json -Depth 12 -Compress)) 'Next day regular coverage upload failed'
-    $queueBefore=[IO.File]::ReadAllText($salesCoverageBackfillPath)
+    $queueBefore=[Convert]::ToBase64String([IO.File]::ReadAllBytes($salesCoverageBackfillPath))
     $script:failBackfillRead=$true
     $failed=Invoke-TestCoverageCycle
-    Assert-Economic ($script:coverageReads.Count -eq 4 -and $script:coverageReads[3] -eq [datetimeoffset]'2026-04-01T12:00:00+05:30' -and $script:economicSyncDomain -eq 'sales_coverage' -and $script:economicSyncError -eq 'fixture backfill read failure' -and $script:backfillAttemptDate -eq '2026-10-31' -and -not $failed.economicEvidence) '(d) Failed backfill lost its domain or attempt gate'
-    Assert-Economic ([IO.File]::ReadAllText($salesCoverageBackfillPath) -ceq $queueBefore) '(d) Failed backfill changed the queue entry'
+    Assert-Economic ($script:coverageReads.Count -eq 6 -and $script:coverageReads[5] -eq [datetimeoffset]'2025-10-01T12:00:00+05:30' -and $script:economicSyncDomain -eq 'sales_coverage' -and $script:economicSyncError -eq 'fixture backfill read failure' -and $script:backfillHalted -and -not $script:backfillRestorePending -and -not $failed.economicEvidence) '(d) Failed backfill lost its domain or halt state'
+    Assert-Economic ([Convert]::ToBase64String([IO.File]::ReadAllBytes($salesCoverageBackfillPath)) -ceq $queueBefore) '(d) Failed backfill changed the queue entry'
+    Assert-Economic (@($script:healthLines | Where-Object {$_ -match 'request=sales_coverage_backfill status=halted entry=2025-10-01 reason=read_failed'}).Count -eq 1) '(d) Failed backfill did not log its halt'
     $retry=Invoke-TestCoverageCycle
-    Assert-Economic ($script:coverageReads.Count -eq 4 -and -not $retry.economicEvidence) 'Failed backfill retried on the same IST day'
-    Write-Output 'PASS: (d) failed backfill reports sales_coverage, retains the queue and waits until another IST day'
+    Assert-Economic ($script:coverageReads.Count -eq 6 -and -not $retry.economicEvidence) 'Failed backfill retried on the same IST day'
+    $script:failBackfillRead=$false
+    $script:testCoverageNow=$script:testCoverageNow.AddDays(1)
+    $regular=Invoke-TestCoverageCycle
+    Assert-Economic ($script:coverageReads.Count -eq 7 -and $script:coverageReads[-1] -eq $script:testCoverageNow -and -not $regular.economicEvidence.backfillEntry) '(d) Halted backfill blocked regular coverage'
+    Assert-Economic (Publish-CloudSnapshot ($regular | ConvertTo-Json -Depth 12 -Compress)) '(d) Regular coverage after halt was not saved'
+    $retry=Invoke-TestCoverageCycle
+    Assert-Economic ($script:coverageReads.Count -eq 7 -and -not $retry.economicEvidence -and $script:backfillHalted -and [Convert]::ToBase64String([IO.File]::ReadAllBytes($salesCoverageBackfillPath)) -ceq $queueBefore) '(d) Failed backfill retried after next day regular coverage'
+    Write-Output 'PASS: (d) failed backfill halts the drain until restart and keeps the queue'
     Write-Output 'PASS: backfill runs after regular coverage'
 } finally {
     foreach($path in @($salesCoverageBackfillPath,$salesCoverageStatePath,"$salesCoverageStatePath.bak",$uploadStatePath,"$uploadStatePath.bak")){if([IO.File]::Exists($path)){[IO.File]::Delete($path)}}
