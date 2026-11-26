@@ -750,8 +750,8 @@ export function OrderWorkspace({ actorEmail, initialStatus = 'open', initialQuer
 
   return (
     <div ref={workspaceRef} className="h-full overflow-y-auto bg-sf-page">
-      <div className="mx-auto max-w-7xl px-3 pb-6 sm:px-6 lg:px-8">
-        <div className="sticky top-0 z-20 -mx-3 border-b border-sf-line-soft bg-sf-page/95 px-3 pb-2 pt-2 backdrop-blur sm:-mx-6 sm:px-6 lg:-mx-8 lg:px-8 lg:flex lg:flex-wrap lg:items-center lg:gap-x-3 lg:gap-y-2">
+      <div className="mx-auto max-w-7xl px-3 pb-6 sm:px-6 lg:px-8 lg:flex lg:h-full lg:flex-col lg:overflow-y-auto lg:pb-3">
+        <div className="sticky top-0 z-20 -mx-3 border-b border-sf-line-soft bg-sf-page/95 px-3 pb-2 pt-2 backdrop-blur sm:-mx-6 sm:px-6 lg:-mx-8 lg:px-8 lg:flex lg:flex-wrap lg:items-center lg:gap-x-3 lg:gap-y-2 lg:shrink-0">
         <header className="flex items-center justify-between gap-2 lg:contents">
           <div className="min-w-0 lg:order-1">
             <h1 className="text-xl font-black tracking-tight text-sf-ink sm:text-2xl">
@@ -797,7 +797,7 @@ export function OrderWorkspace({ actorEmail, initialStatus = 'open', initialQuer
         <nav aria-label="Order queues" className="mt-2 lg:order-3 lg:mt-0 lg:min-w-0 lg:flex-1">
           <OrderStageChips filters={stageFilters} active={activeStage} onSelect={showQueue} />
         </nav>
-        <div id="mobile-order-filters" className={`${mobileFiltersOpen ? 'grid' : 'hidden'} mt-2 gap-3 rounded-2xl border border-sf-line-soft bg-white p-3 shadow-sm sm:grid-cols-[minmax(0,1fr)_auto] sm:items-end lg:order-6 lg:basis-full`}>
+        <div id="mobile-order-filters" className={`${mobileFiltersOpen ? 'grid' : 'hidden'} mt-2 gap-3 rounded-2xl border border-sf-line-soft bg-white p-3 shadow-sm sm:grid-cols-[minmax(0,1fr)_auto] sm:items-end lg:order-6 lg:basis-full lg:shrink-0`}>
           <div><label className="block text-xs font-bold text-sf-muted" htmlFor="order-status">Show orders</label>
           <select
             id="order-status"
@@ -849,13 +849,13 @@ export function OrderWorkspace({ actorEmail, initialStatus = 'open', initialQuer
         </div>
         </div>
 
-        {notice ? <div className="mt-4 flex items-center justify-between gap-3 rounded-xl border border-sf-accent-line bg-sf-accent-soft px-4 py-3 text-sm font-semibold text-sf-success"><p>{notice}</p>{noticeOrderNumber ? <button type="button" onClick={reviewNoticeOrder} className="min-h-9 shrink-0 rounded-lg border border-sf-accent-line bg-white px-3 text-xs font-bold text-sf-accent">Review order</button> : null}</div> : null}
-        {error ? <p role="alert" className="mt-4 rounded-xl border border-sf-danger-line bg-sf-danger-soft px-4 py-3 text-sm text-sf-danger">{error}</p> : null}
-        {focusNotice ? <p role="alert" className="mt-4 flex flex-wrap items-center justify-between gap-2 rounded-xl border border-sf-danger-line bg-sf-danger-soft px-4 py-3 text-sm text-sf-danger"><span>{focusNotice}</span><button type="button" onClick={() => setFocusNotice('')} className="min-h-9 shrink-0 rounded-lg border border-sf-danger-line bg-white px-3 text-xs font-bold">Dismiss</button></p> : null}
+        {notice ? <div className="mt-4 flex items-center justify-between gap-3 rounded-xl border border-sf-accent-line bg-sf-accent-soft px-4 py-3 text-sm font-semibold text-sf-success lg:shrink-0"><p>{notice}</p>{noticeOrderNumber ? <button type="button" onClick={reviewNoticeOrder} className="min-h-9 shrink-0 rounded-lg border border-sf-accent-line bg-white px-3 text-xs font-bold text-sf-accent">Review order</button> : null}</div> : null}
+        {error ? <p role="alert" className="mt-4 rounded-xl border border-sf-danger-line bg-sf-danger-soft px-4 py-3 text-sm text-sf-danger lg:shrink-0">{error}</p> : null}
+        {focusNotice ? <p role="alert" className="mt-4 flex flex-wrap items-center justify-between gap-2 rounded-xl border border-sf-danger-line bg-sf-danger-soft px-4 py-3 text-sm text-sf-danger lg:shrink-0"><span>{focusNotice}</span><button type="button" onClick={() => setFocusNotice('')} className="min-h-9 shrink-0 rounded-lg border border-sf-danger-line bg-white px-3 text-xs font-bold">Dismiss</button></p> : null}
 
 
-        <section className="mt-3 overflow-hidden rounded-2xl border border-sf-line-soft bg-white shadow-[0_1px_3px_rgba(9,47,54,0.06)]">
-          <div className="flex items-center justify-between gap-3 border-b border-sf-line-soft px-4 py-2">
+        <section className="mt-3 overflow-hidden rounded-2xl border border-sf-line-soft bg-white shadow-[0_1px_3px_rgba(9,47,54,0.06)] lg:flex lg:min-h-0 lg:flex-1 lg:flex-col">
+          <div className="flex items-center justify-between gap-3 border-b border-sf-line-soft px-4 py-2 lg:shrink-0">
             <div className="min-w-0">
               <h2 className="truncate text-sm font-extrabold text-sf-strong">{pricesToApprove && status === 'open' ? 'Prices to approve' : <>{queueNames[status] || statusLabel(status)}</>}</h2>
               {data ? <p className="hidden text-[11px] text-sf-subtle lg:block" title={staleText}>Tally stock {snapshotTimeLabel(data.snapshot.fetchedAt).toLocaleLowerCase('en-IN')}</p> : null}
@@ -874,7 +874,7 @@ export function OrderWorkspace({ actorEmail, initialStatus = 'open', initialQuer
               <p className="mt-2 text-sm text-sf-subtle">{query ? `No orders match “${query}”. Clear the search to see the full list.` : status === 'history' ? 'Completed and cancelled orders will remain available here.' : status === 'attention' ? 'No active orders are stalled or have unresolved operational issues.' : status === 'billing_attention' ? 'No invoice, customer-ledger, product, quantity, or stale-verification issues need attention.' : status.startsWith('delivery_due_') ? 'No promised deliveries fall in this period.' : status === 'back_ordered' ? 'No prepared orders currently have a quantity shortage.' : status === 'delivery_exception' ? 'No delivery exceptions are currently open.' : 'New orders will appear here immediately.'}</p>
             </div>
           ) : desktopControlCenter ? (
-            <div className="grid items-start lg:h-[calc(100dvh-9.5rem)] lg:min-h-96 lg:grid-cols-[minmax(360px,440px)_minmax(0,1fr)]">
+            <div className="grid items-start lg:items-stretch lg:min-h-[18rem] lg:flex-1 lg:grid-rows-[minmax(0,1fr)] lg:grid-cols-[minmax(360px,440px)_minmax(0,1fr)]">
               <aside aria-label="Desktop order queue" className="h-full overflow-y-auto border-r border-sf-line-soft bg-sf-soft-0">
                 {orderGroups.map((group) => <section key={group.id} aria-label={group.label}>
                   <h3 className={`sticky top-0 z-[1] border-b border-sf-soft-2 bg-sf-soft-0/95 px-4 py-1.5 text-[11px] font-extrabold uppercase tracking-wide backdrop-blur ${group.id === 'priority' ? 'text-sf-danger' : 'text-sf-subtle'}`}>{group.label} <span className="font-bold tabular-nums">· {group.orders.length}</span></h3>
@@ -892,7 +892,7 @@ export function OrderWorkspace({ actorEmail, initialStatus = 'open', initialQuer
                   })}
                 </section>)}
               </aside>
-              <div aria-label="Selected order workspace" className="h-full min-w-0 overflow-y-auto overscroll-contain">
+              <div aria-label="Selected order workspace" className="h-full min-w-0 overflow-y-auto overscroll-contain lg:min-h-0">
                 <div className="sticky top-0 z-10 border-b border-sf-line-soft bg-white/95 px-4 py-2 backdrop-blur">
                   <div className="flex min-h-9 items-center justify-between gap-3">
                     <span aria-live="polite" className="text-xs font-bold text-sf-muted">Order {selectedOrderIndex + 1} of {displayedOrders.length} <span className="ml-2 font-normal text-sf-subtle">↑ ↓ to navigate</span></span>

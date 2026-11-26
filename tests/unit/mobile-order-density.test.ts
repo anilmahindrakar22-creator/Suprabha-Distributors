@@ -67,7 +67,9 @@ describe('order-list density (list-first redesign)', () => {
     expect(workspace).toContain("const desktopControlCenterQuery = '(min-width: 1024px)'");
     expect(workspace).toContain('aria-label="Desktop order queue"');
     expect(workspace).toContain('aria-label="Selected order workspace"');
-    expect(workspace).toContain('lg:h-[calc(100dvh-9.5rem)] lg:min-h-96');
+    expect(workspace).toContain('lg:flex lg:h-full lg:flex-col lg:overflow-y-auto');
+    expect(workspace).toContain('lg:min-h-[18rem] lg:flex-1 lg:grid-rows-[minmax(0,1fr)]');
+    expect(workspace).not.toContain('100dvh-9.5rem');
     expect(workspace).toContain('h-full min-w-0 overflow-y-auto overscroll-contain');
     expect(workspace).toContain("aria-current={selected ? 'true' : undefined}");
     expect(workspace).toContain('desktopControlCenter ? (');
