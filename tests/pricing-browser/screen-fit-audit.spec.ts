@@ -71,6 +71,22 @@ async function setupPurchase(page: Page) {
 
 // accounts-workspace.spec.ts: all-accounts response and account card shape.
 async function setupAccounts(page: Page) {
+  // Optional lazy Accounts cards fetch on mount, even while collapsed.
+  // Success envelopes from data-checks.spec.ts and data-speed-report.spec.ts.
+  // Fall through to the network guard for mutations; this audit is read-only.
+  await page.route('**/api/data-checks', route => route.request().method() !== 'GET' ? route.fallback() : route.fulfill({ json: {
+    view: 'data_checks', asOf: '2026-11-18',
+    unlinkedLedgers: { count: 7, ofBuying: 100, top: rows(i => ({ name: `Test ledger ${i}`, lastSaleOn: '2026-11-17' }), 7) },
+    noPinCode: { count: 20, ofBuying: 93, top: rows(i => ({ customerId: `11111111-1111-4111-8111-${String(i).padStart(12, '0')}`, name: lab(i), town: 'Test town' }), 20) },
+    itemsNotInStockFlow: { count: 0, ofSold: 42 },
+    freshness: { salesThrough: '2026-11-17', itemListReadAt: '2026-11-18T04:30:00Z' },
+  } }));
+  await page.route('**/api/data-speed', route => route.request().method() !== 'GET' ? route.fallback() : route.fulfill({ json: {
+    statsAvailable: true, statsResetAt: '2026-11-01T00:00:00Z', windowFrom: '2026-11-11T00:00:00Z',
+    reads: [{ gateway: 'economics', calls: 7, meanMs: 1977, previousMeanMs: 714, maxMs: 4200 }, { gateway: 'today', calls: 5, meanMs: 714, previousMeanMs: null, maxMs: 900 }],
+    budget: { meanMs: 1000, maxMs: 3000 }, lastImportAt: new Date(Date.now() - 8 * 3600_000).toISOString(), lastRebuildAt: '2026-11-18T04:30:00Z',
+    exceptions: [{ reason: 'Canonical customer GUID unavailable in the master export.', total: 4, under7Days: 1, from7To30Days: 2, over30Days: 1, acknowledgeable: 0 }], snapshotCount: 0,
+  } }));
   await jsonRoute(page, '**/api/power-map**', { contacts: [], links: [], route: null });
   await jsonRoute(page, '**/api/accounts**', { accounts: rows(i => ({ id: `customer-${i}`, name: lab(i), city: 'Pune', appContacts: [],
     owner: { email, territoryId: 'territory-1', territoryName: 'West', since: '2026-10-01', version: 1 }, location: null,
@@ -258,6 +274,11 @@ test.describe('Screen fit audit @audit', () => {
           await expect(content.getByRole('heading', { name: 'Today', exact: true })).toBeVisible();
           await expect(content.getByRole('region', { name: 'Unblock today', exact: true }).getByRole('article')).toHaveCount(5);
           await expect(content.getByRole('region', { name: 'Grow', exact: true }).getByRole('article')).toHaveCount(5);
+        }
+        if (surface === 'accounts') {
+          // Include the lazy optional cards before taking measurements/screenshots.
+          await expect(content.locator('summary').filter({ hasText: /^Data checks/ }).first()).toBeVisible();
+          await expect(content.getByRole('region', { name: 'Data and speed', exact: true })).toBeVisible();
         }
         const dimensions = await page.evaluate(() => ({ width: document.scrollingElement!.scrollWidth, height: document.scrollingElement!.scrollHeight, innerWidth, innerHeight }));
         const header = await page.locator('main > header').boundingBox();
