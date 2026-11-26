@@ -110,6 +110,7 @@ html{scroll-behavior:auto}.hero{padding:20px 42px 72px}.hero-copy{margin-top:18p
 .item-month-bar{width:75%;max-width:34px;background:var(--mint);border-radius:4px 4px 0 0;flex-shrink:0}
 .item-month-label{min-height:32px;margin-top:7px;line-height:1.4}
 @media(max-width:767px){#itemSheet{inset:auto 0 0;margin:0;width:100%;height:auto;max-height:85vh;border-radius:18px 18px 0 0}.item-sheet-head{padding:18px 16px}#itemSheetBody{padding:0 16px calc(20px + env(safe-area-inset-bottom))}}
+@media(max-height:760px){.hero{padding-top:calc(12px + env(safe-area-inset-top));padding-bottom:70px}.hero-copy{margin-top:12px}.eyebrow,.hero-sub{display:none}h1{font-size:30px}}
 </style>
 <dialog id="itemSheet" aria-labelledby="itemSheetTitle"><div class="item-sheet-head"><h2 id="itemSheetTitle"></h2><button type="button" id="itemSheetClose">Close</button></div><div id="itemSheetBody" aria-live="polite"></div></dialog>
 

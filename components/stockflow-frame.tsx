@@ -429,15 +429,15 @@ export function StockFlowFrame({ actorEmail, actorRole, actorRoles, staffAuth = 
 
   return (
     <main className="fixed inset-0 flex w-full flex-col overflow-hidden bg-sf-page text-sf-strong" style={{ paddingTop: 'env(safe-area-inset-top)', paddingBottom: 'env(safe-area-inset-bottom)' }}>
-      <header className="flex shrink-0 flex-wrap items-center justify-between gap-2 border-b border-sf-line-soft bg-white px-4 py-2 sm:h-16 sm:flex-nowrap sm:px-6 sm:py-0">
+      <header className="flex shrink-0 flex-wrap items-center justify-between gap-2 border-b border-sf-line-soft bg-white px-4 py-2 lg:h-16 lg:flex-nowrap lg:px-6 lg:py-0">
         <div className="flex min-w-0 items-center gap-3">
           <Image src="/suprabha-logo.png" alt="" width={36} height={36} priority className="size-9 shrink-0 object-contain" />
-          <div className="min-w-0 sm:hidden xl:block">
+          <div className="min-w-0 lg:hidden xl:block">
             <p className="truncate text-sm font-extrabold text-sf-ink">StockFlow</p>
-            <p className="hidden text-xs text-sf-subtle sm:block">Suprabha Distributors</p>
+            <p className="hidden text-xs text-sf-subtle lg:block">Suprabha Distributors</p>
           </div>
         </div>
-        <nav ref={desktopNavRef} aria-label="Application sections" className="hidden min-w-0 overflow-x-auto rounded-xl bg-sf-soft p-1 [scrollbar-width:none] sm:flex">
+        <nav ref={desktopNavRef} aria-label="Application sections" className="hidden min-w-0 overflow-x-auto rounded-xl bg-sf-soft p-1 [scrollbar-width:none] lg:flex">
           {surfaces.map((item) => (
             <button
               key={item}
@@ -513,7 +513,7 @@ export function StockFlowFrame({ actorEmail, actorRole, actorRoles, staffAuth = 
       ) : null}
       {captureError ? <p role="alert" className="p-3 text-sm text-sf-danger">{captureError}</p> : null}
       {newOrderData ? <Suspense fallback={<SectionLoading />}><NewOrderCapture data={newOrderData} initialCustomerId={newOrderCustomerId} templateOrder={null} onClose={() => { setNewOrderData(null); setNewOrderCustomerId(undefined); }} onCreated={() => { setNewOrderData(null); setNewOrderCustomerId(undefined); workService.current?.reconcile(); }} onViewCustomer={() => { setNewOrderData(null); setNewOrderCustomerId(undefined); setSurface('accounts'); }} /></Suspense> : null}
-      <nav aria-label="Application sections" className="relative flex shrink-0 border-t border-sf-line-soft bg-white sm:hidden">
+      <nav aria-label="Application sections" className="relative flex shrink-0 border-t border-sf-line-soft bg-white lg:hidden">
         {phoneMain.map((item) => (
           <button key={item} type="button" aria-label={surfaceLabels[item] ?? item} onClick={() => openSurface(item)} onPointerDown={item === 'orders' ? warmOrders : undefined} aria-pressed={surface === item} aria-describedby={item === 'orders' && waitingCount ? 'orders-new-work-phone' : undefined} className={`flex min-h-14 flex-1 flex-col items-center justify-center gap-0.5 text-xs font-bold capitalize ${surface === item ? 'text-sf-brand' : 'text-sf-muted'}`}>
             <span className="relative">
