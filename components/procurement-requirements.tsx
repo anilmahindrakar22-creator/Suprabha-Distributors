@@ -84,7 +84,6 @@ export function ProcurementRequirements({ onOpenOrder, roles = [], refreshKey = 
 
   useEffect(() => {
     const controller = new AbortController();
-    setRunsOutKeys(null);
     if (permitted) void (async () => {
       try {
         const response = await fetch('/api/requirements?view=cover', { cache: 'no-store', signal: controller.signal });

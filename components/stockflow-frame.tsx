@@ -446,7 +446,6 @@ export function StockFlowFrame({ actorEmail, actorRole, actorRoles, staffAuth = 
               onFocus={item === 'orders' ? warmOrders : undefined}
               onPointerEnter={item === 'orders' ? warmOrders : undefined}
               onPointerDown={item === 'orders' ? warmOrders : undefined}
-              aria-label={surfaceLabels[item] ?? item}
               aria-pressed={surface === item}
               aria-describedby={item === 'orders' && waitingCount ? 'orders-new-work' : undefined}
               className={`relative inline-flex min-h-11 shrink-0 flex-col items-center justify-center gap-0.5 rounded-lg px-2 text-[11px] leading-none font-bold capitalize transition 2xl:flex-row 2xl:gap-1.5 2xl:px-4 2xl:text-sm 2xl:leading-normal ${
@@ -455,7 +454,7 @@ export function StockFlowFrame({ actorEmail, actorRole, actorRoles, staffAuth = 
                   : 'text-sf-muted hover:text-sf-ink'
               }`}
             >
-                <SurfaceIcon surface={item} size={18} />{surfaceLabels[item] ?? item}{item === 'orders' && waitingCount ? <span className="absolute right-0 top-0 2xl:static">{ordersBadge}</span> : null}
+                <SurfaceIcon surface={item} size={18} />{surfaceLabels[item] ?? (item === 'growth' ? 'Growth' : item)}{item === 'orders' && waitingCount ? <span className="absolute right-0 top-0 2xl:static">{ordersBadge}</span> : null}
             </button>
           ))}
           {/* Full navigation re-verifies the staff session before local preparation. */}
