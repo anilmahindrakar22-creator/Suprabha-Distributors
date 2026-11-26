@@ -144,6 +144,20 @@ function Read-EconomicEvidenceIndex([string]$Path, [string]$Company) {
     return $null
 }
 
+function Save-EconomicEvidenceIndex($Index) {
+    try {
+        Save-ConnectorSnapshot $economicIndexPath $Index
+        $script:economicIndex = $Index
+        $script:economicDeltaForceFull = $false
+    } catch {
+        foreach ($path in @($economicIndexPath, "$economicIndexPath.bak")) {
+            try { Remove-Item -LiteralPath $path -Force -ErrorAction Stop } catch { }
+        }
+        $script:economicIndex = $null
+        Write-ConnectorHealth "$([datetimeoffset]::Now.ToString('o')) request=economic_index status=failed"
+    }
+}
+
 function ConvertTo-EconomicEvidenceDelta($Evidence, $Index, [datetimeoffset]$Now) {
     $ist = $Now.ToOffset([timespan]::FromMinutes(330))
     $usable = $null -ne $Index -and $Index.companyId -ceq $Evidence.companyId -and -not [string]::IsNullOrWhiteSpace([string]$Index.baseVersion)
@@ -402,17 +416,7 @@ function Publish-CloudSnapshot([string]$Json) {
     if ($null -ne $uploaded.economicEvidence -and $uploaded.economicEvidence.purpose -ne 'sales_coverage' -and -not [string]::IsNullOrEmpty([string]$uploaded.economicEvidence.sourceVersion)) {
         $script:economicEvidenceAckedVersion = [string]$uploaded.economicEvidence.sourceVersion
         if ($null -ne $script:pendingEconomicIndex -and [string]$uploaded.economicEvidence.sourceVersion -ceq [string]$script:pendingEconomicIndex.baseVersion) {
-            try {
-                Save-ConnectorSnapshot $economicIndexPath $script:pendingEconomicIndex
-                $script:economicIndex = $script:pendingEconomicIndex
-                $script:economicDeltaForceFull = $false
-            } catch {
-                foreach ($path in @($economicIndexPath, "$economicIndexPath.bak")) {
-                    try { Remove-Item -LiteralPath $path -Force -ErrorAction Stop } catch { }
-                }
-                $script:economicIndex = $null
-                Write-ConnectorHealth "$([datetimeoffset]::Now.ToString('o')) request=economic_index status=failed"
-            }
+            Save-EconomicEvidenceIndex $script:pendingEconomicIndex
         }
     }
     if ($economicEvidenceAckedField -or $pricingHistoryAckedField) {

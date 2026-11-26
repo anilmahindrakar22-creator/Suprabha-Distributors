@@ -5,7 +5,7 @@ $dashboardPath=Join-Path $PSScriptRoot '../desktop-connector/dashboard.ps1'
 $tokens=$null;$parseErrors=$null
 $ast=[Management.Automation.Language.Parser]::ParseFile($dashboardPath,[ref]$tokens,[ref]$parseErrors)
 Assert-Delta ($parseErrors.Count -eq 0) 'Dashboard parser errors'
-foreach($name in @('Get-EconomicEntryHash','New-EconomicEvidenceIndex','Read-EconomicEvidenceIndex','ConvertTo-EconomicEvidenceDelta','Publish-CloudSnapshot','Get-ServerTimingFields')) {
+foreach($name in @('Get-EconomicEntryHash','New-EconomicEvidenceIndex','Read-EconomicEvidenceIndex','Save-EconomicEvidenceIndex','ConvertTo-EconomicEvidenceDelta','Publish-CloudSnapshot','Get-ServerTimingFields')) {
     $definition=$ast.Find({param($node) $node -is [Management.Automation.Language.FunctionDefinitionAst] -and $node.Name -eq $name},$true)
     Assert-Delta ($null -ne $definition) "Missing helper $name"
     Invoke-Expression $definition.Extent.Text
@@ -143,5 +143,5 @@ try {
 }
 $source=Get-Content -LiteralPath $dashboardPath -Raw
 Assert-Delta ($source.Contains('$script:economicDeltaForceFull = $true') -and $source.Contains('request=economic_delta status=fallback')) 'Delta failure fallback missing'
-Assert-Delta ($source.Contains('Save-ConnectorSnapshot $economicIndexPath $script:pendingEconomicIndex')) 'Ack path index save missing'
+Assert-Delta ($source.Contains('Save-EconomicEvidenceIndex $script:pendingEconomicIndex') -and $source.Contains('Save-ConnectorSnapshot $economicIndexPath $Index')) 'Ack path index save missing'
 Write-Output 'PASS: economic delta contract, caps, index recovery, acknowledgement and full retry'
