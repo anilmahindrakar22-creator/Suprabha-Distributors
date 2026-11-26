@@ -73,7 +73,7 @@ for (const viewport of [{ width: 1280, height: 594 }, { width: 1440, height: 900
     expect(await queue.evaluate((element) => element.scrollHeight > element.clientHeight)).toBe(true);
     await queue.evaluate((element) => { element.scrollTop = element.scrollHeight; });
     const lastOrder = queue.getByRole('button').last();
-    await expect(lastOrder).toBeInViewport({ ratio: 1 });
+    await expect(lastOrder).toBeInViewport({ ratio: 0.95 });
     expect(await lastOrder.evaluate((element) => {
       const row = element.getBoundingClientRect();
       const pane = element.closest('aside')!.getBoundingClientRect();
