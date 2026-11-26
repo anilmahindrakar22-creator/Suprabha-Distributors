@@ -84,7 +84,7 @@ actions.push(...brandMappingActions);
 readActions.add('get_brand_mapping');
 actions.push('get_growth');
 readActions.add('get_growth');
-const growthPeriodActions = ['get_growth_cohorts', 'get_growth_period', 'get_growth_lab_months_period', 'get_growth_labs_period', 'get_growth_margin_period', 'get_growth_brands_period'];
+const growthPeriodActions = ['get_growth_lab_tiers', 'get_growth_cohorts', 'get_growth_period', 'get_growth_lab_months_period', 'get_growth_labs_period', 'get_growth_margin_period', 'get_growth_brands_period'];
 actions.push(...growthPeriodActions);
 growthPeriodActions.forEach(a => readActions.add(a));
 actions.push('get_growth_labs');
