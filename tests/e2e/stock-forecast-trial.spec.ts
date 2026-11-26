@@ -39,8 +39,8 @@ async function harness(page: Page, payload: unknown = forecastPayload(), canSeeF
     switch (view) {
       case 'forecast_trial': return route.fulfill({ status, json: payload });
       case 'reorder_check': return route.fulfill({ json: {
-        view: 'reorder_check', coverDays: 60, shortCount: 1, levelCount: 0,
-        short: [{ itemKey: 'Reagent A', closing: 1, onOrder: 0, target: 20, usedLast90: 30, daysCover: 3 }], level: [],
+        view: 'reorder_check', coverDays: 60, leadTimeDays: 7, reviewDays: 1, shortCount: 1, levelCount: 0,
+        short: [{ itemKey: 'Reagent A', closing: 1, onOrder: 0, usedLast90: 30, daysCover: 3, reorderPoint: 8, orderUpTo: 20, suggestedQty: 19 }], level: [],
       } });
       case 'on_po': return route.fulfill({ json: { view: 'on_po', items: [] } });
       case 'cover': return route.fulfill({ json: { view: 'cover', leadTimeDays: 7, salesThrough: null, runsOutCount: 0, items: [] } });

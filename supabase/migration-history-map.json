@@ -1788,6 +1788,13 @@
       "remoteVersion": null,
       "remoteSha256": null,
       "status": "not_deployed"
+    },
+    {
+      "localFile": "20270103150000_reorder_point.sql",
+      "localSha256": "a5334fd8095326dd467132a4f2142f86e09c567865eb1b97dcf2f0ec5799283d",
+      "remoteVersion": null,
+      "remoteSha256": null,
+      "status": "not_deployed"
     }
   ],
   "liveCheck": {

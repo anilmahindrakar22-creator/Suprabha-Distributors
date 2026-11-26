@@ -304,11 +304,12 @@ function validateReorderCheck(response,body){
   const number=x=>Number.isFinite(x)&&x>=0;
   const item=x=>object(x)&&typeof x.itemKey==='string'&&x.itemKey.trim().length>0&&x.itemKey.length<=220;
   if(!response.ok||!object(body)||body.view!=='reorder_check'||!Number.isInteger(body.coverDays)||body.coverDays<7||body.coverDays>365||
+    !Number.isInteger(body.leadTimeDays)||!number(body.leadTimeDays)||!Number.isInteger(body.reviewDays)||!number(body.reviewDays)||
     !Number.isInteger(body.shortCount)||body.shortCount<0||!Number.isInteger(body.levelCount)||body.levelCount<0||
     !Array.isArray(body.short)||body.short.length>200||!Array.isArray(body.level)||body.level.length>200||
     body.shortCount<body.short.length||body.levelCount<body.level.length||
-    !body.short.every(x=>item(x)&&Number.isFinite(x.closing)&&['onOrder','target','usedLast90','daysCover'].every(k=>number(x[k]))&&Number.isInteger(x.daysCover))||
-    !body.level.every(x=>item(x)&&['reorderLevel','target','usedLast90'].every(k=>number(x[k]))&&['low','high'].includes(x.direction)))
+    !body.short.every(x=>item(x)&&Number.isFinite(x.closing)&&['onOrder','reorderPoint','orderUpTo','suggestedQty','usedLast90','daysCover'].every(k=>number(x[k]))&&Number.isInteger(x.daysCover))||
+    !body.level.every(x=>item(x)&&['reorderLevel','reorderPoint','orderUpTo','usedLast90'].every(k=>number(x[k]))&&['low','high'].includes(x.direction)))
     throw new Error('Invalid reorder check');
 }
 async function loadReorderCheck(){
@@ -329,7 +330,7 @@ function renderLevelsState(){
   chip.hidden=!poAllowed||!reorderCheck||count===0;
   if(chip.hidden)levelsView=false;
   chip.classList.toggle('is-selected',levelsView);chip.setAttribute('aria-pressed',String(levelsView));
-  $('levelsCount').textContent=fmt(count);$('levelsHint').textContent=reorderCheck?'target '+reorderCheck.coverDays+' days of sales':'';
+  $('levelsCount').textContent=fmt(count);$('levelsHint').textContent=reorderCheck?'reorder at about '+(reorderCheck.leadTimeDays+reorderCheck.reviewDays)+' days · order up to '+reorderCheck.coverDays+' days':'';
   $('levelsView').hidden=!levelsView;
   $('groupCards').hidden=idleView||levelsView;document.querySelector('.groups-title').hidden=idleView||levelsView;
   if(levelsView)$('coverCaption').hidden=true;
@@ -338,9 +339,9 @@ function renderLevels(){
   if(!reorderCheck)return;
   const r=reorderCheck;
   const section=(heading,count,items,row)=>items.length?'<section><h3 class="levels-head">'+esc(heading+' · '+fmt(count))+'</h3>'+items.map(row).join('')+(count>items.length?'<p class="idle-meta levels-note">Showing the first 200</p>':'')+'</section>':'';
-  $('levelsView').innerHTML='<div class="panel-head"><div><h2>Reorder levels to check</h2><p class="levels-caption">'+esc("Target: "+r.coverDays+" days of sales, from the last 90 days. StockFlow doesn't change Tally. Set the level in Tally.")+'</p></div></div>'+
-    section('Running short, not flagged by Tally',r.shortCount,r.short,x=>'<div class="idle-row"><strong>'+esc(x.itemKey)+'</strong><div class="idle-meta">'+esc('stock '+fmt(x.closing)+' · on order '+fmt(x.onOrder)+' · '+fmt(x.daysCover)+' days left · target '+fmt(x.target))+'</div></div>')+
-    section('Level far from target',r.levelCount,r.level,x=>'<div class="idle-row"><strong>'+esc(x.itemKey)+'</strong><div class="idle-meta">'+esc('Tally level '+fmt(x.reorderLevel)+' · target '+fmt(x.target)+' · ')+'<span style="color:'+(x.direction==='low'?'#8a2f29':'var(--muted)')+'">'+esc(x.direction==='low'?'Too low':'Too high')+'</span></div></div>');
+  $('levelsView').innerHTML='<div class="panel-head"><div><h2>Reorder levels to check</h2><p class="levels-caption">'+esc("Reorder when stock falls to the reorder point: "+fmt(r.leadTimeDays+r.reviewDays)+" days of sales ("+fmt(r.leadTimeDays)+"-day delivery + "+fmt(r.reviewDays)+" day) plus a buffer for busy weeks. Order up to "+fmt(r.coverDays)+" days of sales. StockFlow doesn't change Tally. Set the level in Tally.")+'</p></div></div>'+
+    section('Running short, not flagged by Tally',r.shortCount,r.short,x=>'<div class="idle-row"><strong>'+esc(x.itemKey)+'</strong><div class="idle-meta">'+esc('stock '+fmt(x.closing)+' · on order '+fmt(x.onOrder)+' · '+fmt(x.daysCover)+' days left · reorder at '+fmt(x.reorderPoint)+' · order up to '+fmt(x.orderUpTo)+' (about '+fmt(x.suggestedQty)+')')+'</div></div>')+
+      section('Tally level far from the reorder point',r.levelCount,r.level,x=>'<div class="idle-row"><strong>'+esc(x.itemKey)+'</strong><div class="idle-meta">'+esc('Tally level '+fmt(x.reorderLevel)+' · reorder point about '+fmt(x.reorderPoint)+' · '+fmt(x.usedLast90)+' used in 90 days')+' · <span style="color:'+(x.direction==='low'?'#8a2f29':'var(--muted)')+'">'+esc(x.direction==='low'?'Too low':'Too high')+'</span></div></div>');
 }
 function validateIdleBuyers(response,body,key){
   if(!response.ok||body?.view!=='idle_buyers'||body.itemKey!==key||!Array.isArray(body.buyers)||body.buyers.length>3||

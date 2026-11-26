@@ -48,16 +48,16 @@ test.beforeEach(async ({ page }) => {
 });
 
 const emptyReorderCheck = () => ({
-  view: 'reorder_check', coverDays: 60, windowDays: 90, salesThrough: null,
-  shortCount: 0, levelCount: 0, short: [] as Array<{ itemKey: string; closing: number; onOrder: number; target: number; usedLast90: number; daysCover: number }>,
-  level: [] as Array<{ itemKey: string; reorderLevel: number; target: number; usedLast90: number; direction: string }>,
+  view: 'reorder_check', coverDays: 60, windowDays: 90, salesThrough: null, leadTimeDays: 7, reviewDays: 1,
+  shortCount: 0, levelCount: 0, short: [] as Array<{ itemKey: string; closing: number; onOrder: number; reorderPoint: number; orderUpTo: number; suggestedQty: number; usedLast90: number; daysCover: number }>,
+  level: [] as Array<{ itemKey: string; reorderLevel: number; reorderPoint: number; orderUpTo: number; usedLast90: number; direction: string }>,
 });
 const reorderCheckPayload = (name = 'Short reagent') => ({
   ...emptyReorderCheck(), shortCount: 1, levelCount: 2,
-  short: [{ itemKey: name, closing: 5, onOrder: 0, target: 20, usedLast90: 30, daysCover: 15 }],
+  short: [{ itemKey: name, closing: 5, onOrder: 0, reorderPoint: 8, orderUpTo: 20, suggestedQty: 15, usedLast90: 30, daysCover: 15 }],
   level: [
-    { itemKey: 'Low reagent', reorderLevel: 5, target: 20, usedLast90: 30, direction: 'low' },
-    { itemKey: 'High reagent', reorderLevel: 100, target: 20, usedLast90: 30, direction: 'high' },
+    { itemKey: 'Low reagent', reorderLevel: 5, reorderPoint: 8, orderUpTo: 20, usedLast90: 30, direction: 'low' },
+    { itemKey: 'High reagent', reorderLevel: 100, reorderPoint: 8, orderUpTo: 20, usedLast90: 30, direction: 'high' },
   ],
 });
 
@@ -78,17 +78,17 @@ test('reorder checks show both lists and switch between levels, groups and idle'
   const { stock } = await stockPoHarness(page, true);
   const chip = stock.locator('[data-action="levels"]');
   await expect(chip.locator('strong')).toHaveText('3 levels to check');
-  await expect(chip.locator('small')).toHaveText('target 60 days of sales');
+  await expect(chip.locator('small')).toHaveText('reorder at about 8 days · order up to 60 days');
   await chip.click();
   await expect(chip).toHaveAttribute('aria-pressed', 'true');
   await expect(chip).toHaveClass(/is-selected/);
   await expect(stock.getByRole('heading', { name: 'Reorder levels to check', exact: true })).toBeVisible();
-  await expect(stock.locator('#levelsView .panel-head p')).toHaveText("Target: 60 days of sales, from the last 90 days. StockFlow doesn't change Tally. Set the level in Tally.");
+  await expect(stock.locator('#levelsView .panel-head p')).toHaveText("Reorder when stock falls to the reorder point: 8 days of sales (7-day delivery + 1 day) plus a buffer for busy weeks. Order up to 60 days of sales. StockFlow doesn't change Tally. Set the level in Tally.");
   await expect(stock.getByRole('heading', { name: 'Running short, not flagged by Tally · 1', exact: true })).toBeVisible();
-  await expect(stock.getByRole('heading', { name: 'Level far from target · 2', exact: true })).toBeVisible();
-  await expect(stock.locator('#levelsView .idle-row').nth(0)).toHaveText('Short reagentstock 5 · on order 0 · 15 days left · target 20');
-  await expect(stock.locator('#levelsView .idle-row').nth(1)).toHaveText('Low reagentTally level 5 · target 20 · Too low');
-  await expect(stock.locator('#levelsView .idle-row').nth(2)).toHaveText('High reagentTally level 100 · target 20 · Too high');
+    await expect(stock.getByRole('heading', { name: 'Tally level far from the reorder point · 2', exact: true })).toBeVisible();
+  await expect(stock.locator('#levelsView .idle-row').nth(0)).toHaveText('Short reagentstock 5 · on order 0 · 15 days left · reorder at 8 · order up to 20 (about 15)');
+  await expect(stock.locator('#levelsView .idle-row').nth(1)).toHaveText('Low reagentTally level 5 · reorder point about 8 · 30 used in 90 days · Too low');
+  await expect(stock.locator('#levelsView .idle-row').nth(2)).toHaveText('High reagentTally level 100 · reorder point about 8 · 30 used in 90 days · Too high');
   await expect(stock.getByText('Too low', { exact: true })).toHaveCSS('color', 'rgb(138, 47, 41)');
   await expect(stock.locator('#groupCards')).toBeHidden();
   await chip.click();
@@ -123,6 +123,26 @@ for (const failure of ['server', 'invalid', 'no-policy']) {
   });
 }
 
+test('reorder checks hide the levels chip for the old target contract', async ({ page }) => {
+  const current = reorderCheckPayload();
+  const body = {
+    ...current,
+    short: current.short.map(({ itemKey, closing, onOrder, orderUpTo, usedLast90, daysCover }) => ({
+      itemKey, closing, onOrder, target: orderUpTo, usedLast90, daysCover,
+    })),
+    level: current.level.map(({ itemKey, reorderLevel, orderUpTo, usedLast90, direction }) => ({
+      itemKey, reorderLevel, target: orderUpTo, usedLast90, direction,
+    })),
+  };
+  await page.route('**/api/requirements?view=reorder_check', route => route.fulfill({ json: body }));
+  const { stock } = await stockPoHarness(page, true);
+  await stock.locator('#refresh').click();
+  await expect(stock.locator('#refresh')).toBeEnabled();
+  await expect(stock.locator('[data-action="levels"]')).toBeHidden();
+  await expect(stock.locator('#error')).toBeHidden();
+  await expect(stock.locator('#groupCards')).toBeVisible();
+});
+
 test('reorder checks wrap long names on a 375px phone', async ({ page }) => {
   await page.setViewportSize({ width: 375, height: 812 });
   const name = 'A'.repeat(120);
@@ -141,7 +161,7 @@ test('reorder checks accept and show negative closing stock', async ({ page }) =
   const chip = stock.locator('[data-action="levels"]');
   await expect(chip.locator('strong')).toHaveText('3 levels to check');
   await chip.click();
-  await expect(stock.locator('#levelsView .idle-row').first()).toContainText('stock -3 · on order 0 · 15 days left · target 20');
+  await expect(stock.locator('#levelsView .idle-row').first()).toContainText('stock -3 · on order 0 · 15 days left · reorder at 8 · order up to 20 (about 15)');
 });
 
 const idlePayload = (page: number) => ({
