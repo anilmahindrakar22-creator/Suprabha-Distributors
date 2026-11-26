@@ -50,7 +50,7 @@ test('unavailable stats and failed request recover on retry', async ({ page }) =
   await setup(page, 503);
   await expect(page.getByText('Data & speed is unavailable.')).toBeVisible();
   await page.route('**/api/data-speed**', route => route.fulfill({ json: report }));
-  await page.getByRole('button', { name: 'Retry' }).click();
+  await page.getByRole('button', { name: 'Retry', exact: true }).click();
   await expect(page.getByRole('region', { name: 'Data and speed' })).toBeVisible();
 });
 test('phone tables scroll internally and the page has no horizontal overflow', async ({ page }) => {

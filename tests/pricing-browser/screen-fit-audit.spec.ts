@@ -71,6 +71,18 @@ async function setupPurchase(page: Page) {
 
 // accounts-workspace.spec.ts: all-accounts response and account card shape.
 async function setupAccounts(page: Page) {
+  // Same weekly values as go-live-card.spec.ts, with two active people for the audit.
+  await page.route('**/api/go-live', route => route.request().method() !== 'GET' ? route.fallback() : route.fulfill({ json: {
+    weeks: ['2026-11-23','2026-11-16','2026-11-09','2026-11-02','2026-10-26'].map(weekStart => ({
+      weekStart, ordersEntered: 2, ordersLinkedToTally: 1, tallySaleInvoices: 0, visitsLogged: 3, activePeople: 2,
+    })),
+    people: [
+      { email: 'staff@example.test', roles: ['management'], actionsThisWeek: 4, ordersThisWeek: 2, visitsThisWeek: 3, lastActionAt: null },
+      { email: 'admin@example.test', roles: ['administrator'], actionsThisWeek: 1, ordersThisWeek: 0, visitsThisWeek: 0, lastActionAt: '2026-11-26T00:00:00Z' },
+    ],
+    membersByRole: { sales: 0, operations: 0, warehouse: 0, accounts: 0, billing: 0, management: 1, administrator: 1, viewer: 0 },
+    generatedAt: '2026-11-26T00:00:00Z',
+  } }));
   // Optional lazy Accounts cards fetch on mount, even while collapsed.
   // Success envelopes from data-checks.spec.ts and data-speed-report.spec.ts.
   // Fall through to the network guard for mutations; this audit is read-only.

@@ -1830,6 +1830,13 @@
       "remoteVersion": null,
       "remoteSha256": null,
       "status": "not_deployed"
+    },
+    {
+      "localFile": "20270117100000_go_live_adoption.sql",
+      "localSha256": "1db136f596a7706c8cd0c1bdf3a96da08325154bb897865ab1a77028d4ffabde",
+      "remoteVersion": null,
+      "remoteSha256": null,
+      "status": "not_deployed"
     }
   ],
   "liveCheck": {
