@@ -10,6 +10,7 @@ $script:nextEconomicRead=Get-Date
 $script:lastEconomicEvidence=$null
 $script:economicEvidenceAckedVersion=$null
 $script:pricingHistoryAckedHash=$null
+$script:pricingHistoryDeferrals=0
 $script:pendingPricingHistoryHash=$null
 $script:economicSyncError=$null
 $script:economicSyncDomain=$null
@@ -287,6 +288,7 @@ function Publish-CloudSnapshot([string]$Json) {
     $pricingHistoryAckedField = if ($null -ne $uploaded -and $null -eq $uploaded.pricingHistory -and $null -ne $script:pricingHistoryAckedHash) { ' pricingHistory=acked' } else { '' }
     if ($null -ne $uploaded -and $null -ne $uploaded.pricingHistory -and $null -ne $script:pendingPricingHistoryHash) {
         $script:pricingHistoryAckedHash = $script:pendingPricingHistoryHash
+        $script:pricingHistoryDeferrals = 0
     }
     if ($null -ne $uploaded.economicEvidence -and $uploaded.economicEvidence.purpose -ne 'sales_coverage' -and -not [string]::IsNullOrEmpty([string]$uploaded.economicEvidence.sourceVersion)) {
         $script:economicEvidenceAckedVersion = [string]$uploaded.economicEvidence.sourceVersion
@@ -759,6 +761,13 @@ function Read-ReorderData {
         $script:pendingPricingHistoryHash = $null
     } else {
         $script:pendingPricingHistoryHash = $hash
+    }
+    if ($snapshot.Contains('pricingHistory') -and $null -ne $snapshot.economicEvidence -and $script:pricingHistoryDeferrals -lt 4) {
+        $snapshot.Remove('pricingHistory')
+        $script:pendingPricingHistoryHash = $null
+        $script:pricingHistoryDeferrals++
+    } elseif ($snapshot.Contains('pricingHistory')) {
+        $script:pricingHistoryDeferrals = 0
     }
     return $snapshot
 }
