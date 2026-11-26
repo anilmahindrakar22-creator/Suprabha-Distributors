@@ -41,7 +41,7 @@ async function setup(page: Page, po = base(), role = 'operations') {
   });
   // The frame preview uses staff@example.test, as in sign-out.spec.ts.
   await page.goto(`/?view=frame&role=${role}`);
-  await page.getByRole('button', { name: /^requests$/i }).click();
+  await page.getByRole('button', { name: /^purchase$/i }).click();
   await expect(page.getByRole('article', { name: po.poNumber, exact: true })).toBeVisible();
   return { commands, reads };
 }

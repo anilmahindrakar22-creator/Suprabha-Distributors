@@ -51,7 +51,7 @@ async function setup(page: Page, { role = 'operations', receipts = rows, failure
     }
   });
   await page.goto(`/?view=frame&role=${role}`);
-  await page.getByRole('button', { name: /^requests$/i }).click();
+  await page.getByRole('button', { name: /^purchase$/i }).click();
   await expect(page.getByRole('heading', { name: 'To order', exact: true })).toBeVisible();
   return { reads };
 }

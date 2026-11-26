@@ -54,7 +54,7 @@ async function setup(page: Page, { role = 'operations', orders = [purchaseOrder(
   }));
   await page.route('**/fonts/noto-sans-po-bold-subset.ttf', (route) => route.fulfill({ status: 404, body: 'Not found' }));
   await page.goto(`/?view=frame&role=${role}`);
-  await page.getByRole('button', { name: /^requests$/i }).click();
+  await page.getByRole('button', { name: /^purchase$/i }).click();
   await expect(page.getByRole('heading', { name: 'To order', exact: true })).toBeVisible();
   return { commands, reads, get letterheadRequests() { return letterheadRequests; }, setCompanyName: (value: string) => { companyName = value; } };
 }

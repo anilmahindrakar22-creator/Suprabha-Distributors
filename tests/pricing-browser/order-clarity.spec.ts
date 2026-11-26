@@ -132,7 +132,7 @@ test('Requirements contributing order opens that order through the frame', async
     }
   });
   await page.goto('/?view=frame&role=sales');
-  await page.getByRole('button', { name: /^requests/i }).click();
+  await page.getByRole('button', { name: /^purchase/i }).click();
   await expect(page.getByRole('heading', { name: 'To order', level: 2, exact: true })).toBeVisible();
   await expect(page.getByRole('region', { name: 'To order', exact: true }).getByText('1 to order', { exact: true })).toBeVisible();
   await page.getByRole('button', { name: 'View waiting orders' }).click();
