@@ -1823,6 +1823,13 @@
       "remoteVersion": null,
       "remoteSha256": null,
       "status": "not_deployed"
+    },
+    {
+      "localFile": "20270110110000_foc_cost_charged.sql",
+      "localSha256": "007173c29228c0fa76b1f5d5fa4e878caa6e2775f7f69d98090f55afa4f747b3",
+      "remoteVersion": null,
+      "remoteSha256": null,
+      "status": "not_deployed"
     }
   ],
   "liveCheck": {

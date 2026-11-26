@@ -16,6 +16,14 @@ const target: EconomicTarget = {
 };
 
 describe('instrument economics presentation', () => {
+  it('shows free supply count and actual cost only for non-proposed targets with free lines', () => {
+    const free = { ...target, freeLines: 2, freeCostPaise: '3200000' };
+    const html = renderToStaticMarkup(<EconomicTargetCard target={free} />);
+    expect(html).toContain('Free lines: 2, cost ₹32,000.00');
+    for (const hidden of [{ ...free, freeLines: 0 }, target, { ...free, approval: 'proposed' as const }]) {
+      expect(renderToStaticMarkup(<EconomicTargetCard target={hidden} />)).not.toContain('Free lines:');
+    }
+  });
   it('renders sales waiting for cost from the review context and keeps batch matching unchanged', () => {
     const sale: NonNullable<EconomicsWorkspaceData['sourceLines']>[number] = {
       id: 'review-sale', companyId: 'company-guid', voucherId: 'sale-voucher', voucherNumber: 'SALE-42', revision: '1', lineKey: '1', date: '2026-09-12',

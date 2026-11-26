@@ -79,12 +79,12 @@ begin
  perform pg_temp.m_assert(r->>'stale'='true','compute fallback before refresh');
  first_refresh:=private.stockflow_refresh_lab_tiers('2026-11-26');
  perform pg_temp.m_assert(first_refresh->>'previousMonthSeeded'='true','previous month seeded initially');
- select jsonb_agg(to_jsonb(s) order by company_id,customer_source_id) into snapshot
+ select jsonb_agg(to_jsonb(s) order by month,company_id,customer_source_id) into snapshot
   from private.stockflow_lab_tier_snapshots s;
  r:=private.stockflow_refresh_lab_tiers('2026-11-26');
  perform pg_temp.m_assert(r->>'previousMonthSeeded'='false','previous month seeded only once');
  perform pg_temp.m_assert(r-'previousMonthSeeded'=first_refresh-'previousMonthSeeded'
-  and snapshot=(select jsonb_agg(to_jsonb(s) order by company_id,customer_source_id) from private.stockflow_lab_tier_snapshots s),
+  and snapshot=(select jsonb_agg(to_jsonb(s) order by month,company_id,customer_source_id) from private.stockflow_lab_tier_snapshots s),
   'same-day refresh is idempotent');
  r:=private.stockflow_growth_lab_tiers_read('2026-11-26','{}');
  perform pg_temp.m_assert(r @> '{"month":"2026-11-01","stale":false,"placement":{"labs":2,"consumablesPaise":62000000}}','summary and placement');

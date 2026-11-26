@@ -59,6 +59,7 @@ export type EconomicTarget = {
   approval: 'proposed' | 'approved' | 'rejected'; version: number;
   pooledIn?: string | null;
   capitalPaise: string; revenuePaise: string; knownGpPaise: string; missingCostLines: number;
+  freeLines?: number; freeCostPaise?: string;
   capitalSource?: 'tally_purchase' | 'manual_evidence' | 'pooled_capital'; capitalEvidenceCurrent?: boolean;
   acquisitionProductId?: string | null; acquisitionUnit?: string | null;
   instrumentBillingPaise?: string; netInvestmentPaise?: string; instrumentBillingCurrent?: boolean;
