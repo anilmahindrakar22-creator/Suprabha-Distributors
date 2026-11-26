@@ -1547,9 +1547,9 @@
     {
       "localFile": "20261130175000_voucher_lookup_indexes.sql",
       "localSha256": "254e97b0b5066d0fe8118de07e729e5315f1d4b5c32245404b30e506e887767e",
-      "remoteVersion": null,
-      "remoteSha256": null,
-      "status": "not_deployed"
+      "remoteVersion": "20261126061559",
+      "remoteSha256": "254e97b0b5066d0fe8118de07e729e5315f1d4b5c32245404b30e506e887767e",
+      "status": "exact_normalized_match"
     },
     {
       "localFile": "20261130180000_economic_item_areas.sql",

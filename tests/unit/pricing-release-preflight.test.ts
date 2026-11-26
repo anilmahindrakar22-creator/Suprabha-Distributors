@@ -191,15 +191,14 @@ describe('read-only pricing release preflight', () => {
     expect(runner.indexOf(sqlTest)).toBeGreaterThan(apply);
     expect(runner).toContain('PASS: item forecast trial');
   });
-  it('registers the voucher lookup indexes hotfix in name order', () => {
-    const result = pricingReleasePreflight(original, source);
+  it('registers the deployed voucher lookup indexes hotfix', () => {
+    const result = pricingReleasePreflight(current, source);
     const name = '20261130175000_voucher_lookup_indexes.sql';
-    const pendingIndex = result.pending.indexOf(name);
-    expect(pendingIndex).toBeGreaterThanOrEqual(0);
-    expect(result.pending.slice(0, pendingIndex).every((entry) => entry < '20261130175000')).toBe(true);
-    expect(result.pending.slice(pendingIndex + 1).every((entry) => entry > '20261130175000')).toBe(true);
+    expect(result.pending).not.toContain(name);
     expect(result.sqlTests).toContain('supabase/tests/voucher_lookup_indexes.sql');
-    expect(current.migrations.find((entry: { localFile: string }) => entry.localFile === name)?.status).toBe('not_deployed');
+    const entry = current.migrations.find((entry: { localFile: string }) => entry.localFile === name);
+    expect(entry?.status).toBe('exact_normalized_match');
+    expect(entry?.remoteVersion).toBe('20261126061559');
     const runner = readFileSync(new URL('../pricing-migration-local.ps1', import.meta.url), 'utf8');
     expect(runner).toContain("Write-Output 'PASS: voucher lookup indexes'");
   });
@@ -860,7 +859,7 @@ it('registers billed-below after margin with guarded read-only dispatch', () => 
     expect(fixture).toContain('PASS economic prune schedule (pg_cron absent; schedule not asserted)');
     expect(fixture.trimEnd()).toMatch(/rollback;$/);
   });
-  it('records all 214 live migrations and the twelve pending migrations through the 13 Dec train', () => {
+  it('records all 215 live migrations and the 37 pending migrations', () => {
     const result = pricingReleasePreflight(current, source);
     expect(result.pending.at(-34)).toBe('20261130200000_economic_prune_schedule.sql');
     expect(result.pending.at(-35)).toBe('20261130190000_brand_group_inherit.sql');
@@ -881,7 +880,7 @@ it('registers billed-below after margin with guarded read-only dispatch', () => 
     const growthLabMonthsFixture = readFileSync(new URL('../../supabase/tests/growth_lab_months.sql', import.meta.url), 'utf8');
     expect(growthLabMonthsFixture.trimEnd()).toContain('PASS growth lab months L1-L11');
     expect(result.sqlTests.at(-37)).toBe('supabase/tests/growth_lab_months.sql');
-    expect(result.pending.at(-38)).toBe('20261130160000_economic_covered_segments.sql');
+    expect(result.pending.at(-37)).toBe('20261130160000_economic_covered_segments.sql');
     const growthBrands = source.get('20261130150000_growth_brands.sql')!;
     expect(growthBrands.match(/is distinct from '[0-9a-f]{32}' then/g)).toHaveLength(3);
     expect(growthBrands).toContain("anchor text:='if p_action=''get_growth_margin'' then'");
@@ -910,11 +909,10 @@ it('registers billed-below after margin with guarded read-only dispatch', () => 
     const exceptionDate = source.get('20261130100000_coverage_exception_date.sql')!;
     expect(exceptionDate.match(/Unexpected sales coverage exception-date definition/g)).toHaveLength(2);
     expect(exceptionDate).toContain("replace(definition,needle,'e.evidence_sales_date')");
-    expect(result.deployed).toHaveLength(214);
-    expect(result.deployed.at(-1)?.remoteVersion).toBe('20261115111119');
+    expect(result.deployed).toHaveLength(215);
+    expect(result.deployed.at(-1)?.remoteVersion).toBe('20261126061559');
     expect(result.pending).toEqual([
       '20261130160000_economic_covered_segments.sql',
-      '20261130175000_voucher_lookup_indexes.sql',
       '20261130180000_economic_item_areas.sql',
       '20261130190000_brand_group_inherit.sql',
       '20261130200000_economic_prune_schedule.sql',
