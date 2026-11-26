@@ -232,10 +232,10 @@ Write-Output 'PASS: cost history retains relevant purchases and earlier consumpt
 $savedConverter=${function:Convert-TallyEconomicEvidence}
 try{
     function Convert-TallyEconomicEvidence {
-        [ordered]@{vouchers=@(1..700 | ForEach-Object { [ordered]@{kind='sale';amountStatus='verified';lines=@(@{productId='product-guid-1'})} });windowFrom='2026-09-01';windowTo='2026-10-01'}
+        [ordered]@{vouchers=@(1..3400 | ForEach-Object { [ordered]@{kind='sale';amountStatus='verified';lines=@(@{productId='product-guid-1'})} });windowFrom='2026-09-01';windowTo='2026-10-01'}
     }
     $bounded=$false
-    try{Read-TallyEconomicEvidence 'SUPRABHA DISTRIBUTORS' 1 @{} @{} 3 | Out-Null}catch{$bounded=$_.Exception.Message -eq 'Combined economic cost history exceeds 2000 vouchers; narrow the history window.'}
+    try{Read-TallyEconomicEvidence 'SUPRABHA DISTRIBUTORS' 1 @{} @{} 3 | Out-Null}catch{$bounded=$_.Exception.Message -eq 'Combined economic cost history exceeds 10000 vouchers; narrow the history window.'}
     Assert-Economic $bounded 'Separate monthly exports bypassed the combined voucher bound'
 }finally{Set-Item Function:Convert-TallyEconomicEvidence $savedConverter}
 Write-Output 'PASS: combined monthly history fails explicitly above the upload bound'

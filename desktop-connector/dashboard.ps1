@@ -22,6 +22,7 @@ $purchasePath = Join-Path $stateDirectory 'purchase-history-v1.json'
 $customerPath = Join-Path $stateDirectory 'customer-master-v1.json'
 $catalogPath = Join-Path $stateDirectory 'catalog-master-v1.json'
 $uploadStatePath = Join-Path $stateDirectory 'cloud-upload-state-v1.json'
+$economicIndexPath = Join-Path $stateDirectory 'economic-evidence-index-v1.json'
 $salesCoverageStatePath = Join-Path $stateDirectory 'sales-coverage-state-v1.json'
 $salesCoverageBackfillPath = Join-Path $stateDirectory 'sales-coverage-backfill-v1.json'
 $script:pendingBackfillEntry = $null
@@ -113,6 +114,84 @@ function Select-UploadEconomicEvidence($Coverage, $LastEvidence, [string]$AckedV
     if (-not [string]::IsNullOrEmpty($sourceVersion) -and [string]::Equals($sourceVersion, $AckedVersion, [StringComparison]::Ordinal)) { return $null }
     return $LastEvidence
 }
+
+function Get-EconomicEntryHash($Entry) {
+    return Get-StableEvidenceVersion ($Entry | ConvertTo-Json -Depth 6 -Compress)
+}
+
+function New-EconomicEvidenceIndex($Evidence, [string]$Company, [bool]$Full, $PreviousIndex, [string]$IstDate) {
+    $entries = @{}
+    foreach ($entry in $Evidence.vouchers) {
+        $entries[[string]$entry.sourceId] = @{ revision = [string]$entry.revision; hash = Get-EconomicEntryHash $entry }
+    }
+    return [ordered]@{
+        schemaVersion = 1; company = $Company; companyId = $Evidence.companyId
+        baseVersion = [string]$Evidence.sourceVersion
+        fullDate = if ($Full) { $IstDate } else { $PreviousIndex.fullDate }
+        entries = $entries
+    }
+}
+
+function Read-EconomicEvidenceIndex([string]$Path, [string]$Company) {
+    foreach ($candidate in @($Path, "$Path.bak")) {
+        try {
+            $saved = Read-ConnectorJson $candidate
+            $index = $saved.snapshot
+            if ($saved.schemaVersion -ne 1 -or $index.schemaVersion -ne 1 -or $index.company -cne $Company) { continue }
+            return $index
+        } catch { }
+    }
+    return $null
+}
+
+function ConvertTo-EconomicEvidenceDelta($Evidence, $Index, [datetimeoffset]$Now) {
+    $ist = $Now.ToOffset([timespan]::FromMinutes(330))
+    $usable = $null -ne $Index -and $Index.companyId -ceq $Evidence.companyId -and -not [string]::IsNullOrWhiteSpace([string]$Index.baseVersion)
+    $coverage = $Evidence.purpose -eq 'sales_coverage' -or $Evidence.backfillEntry
+    $full = $coverage -or -not $usable -or ($ist.Hour -ge 2 -and $Index.fullDate -cne $ist.ToString('yyyy-MM-dd'))
+    $count = @($Evidence.vouchers).Count
+    if ($full) {
+        if ($count -le 2000) { return @{ document = $Evidence; full = $true } }
+        if ($coverage -or -not $usable) { return $null }
+    }
+    $sourceIds = [Collections.Generic.HashSet[string]]::new([StringComparer]::Ordinal)
+    foreach ($entry in $Evidence.vouchers) {
+        if ([string]::IsNullOrWhiteSpace([string]$entry.sourceId) -or [string]$entry.revision -cnotmatch '^[0-9]+$' -or -not $sourceIds.Add([string]$entry.sourceId)) {
+            if ($count -le 2000) { return @{ document = $Evidence; full = $true } }
+            return $null
+        }
+    }
+    $manifest = [Collections.Generic.List[object]]::new()
+    $changed = [Collections.Generic.List[object]]::new()
+    foreach ($entry in $Evidence.vouchers) {
+        $id = [string]$entry.sourceId
+        $revision = [string]$entry.revision
+        $manifest.Add(@($id, $revision))
+        $previous = $Index.entries.$id
+        if ($null -eq $previous -or [string]$previous.revision -cne $revision -or [string]$previous.hash -cne (Get-EconomicEntryHash $entry)) {
+            $changed.Add($entry)
+        }
+    }
+    if ($changed.Count -gt 2000) {
+        if ($count -le 2000) { return @{ document = $Evidence; full = $true } }
+        return $null
+    }
+    $document = [ordered]@{}
+    if ($Evidence -is [Collections.IDictionary]) {
+        foreach ($key in $Evidence.Keys) { if ($key -ne 'vouchers') { $document[$key] = $Evidence[$key] } }
+    } else {
+        foreach ($property in $Evidence.PSObject.Properties) { if ($property.Name -ne 'vouchers') { $document[$property.Name] = $property.Value } }
+    }
+    $document.schemaVersion = 2
+    $document.baseVersion = [string]$Index.baseVersion
+    $document.manifest = $manifest.ToArray()
+    $document.vouchers = $changed.ToArray()
+    return @{ document = $document; full = $false }
+}
+
+$script:economicIndex = Read-EconomicEvidenceIndex $economicIndexPath $companyName
+$script:pendingEconomicIndex = $null
+$script:economicDeltaForceFull = $false
 
 function Get-PricingHistoryHash($PricingHistory) {
     if ($null -eq $PricingHistory) { return $null }
@@ -207,7 +286,36 @@ function Publish-CloudSnapshot([string]$Json) {
         } catch { $serverTimingFields = '' }
         Write-ConnectorHealth "$([datetimeoffset]::Now.ToString('o')) request=cloud_upload durationMs=$($watch.ElapsedMilliseconds) bytes=$payloadBytes$serverTimingFields consecutiveFailures=$($script:cloudUploadFailures) status=failed failure=$failureCode"
         $failedPurpose = $null
-        try { $failedPurpose = ($Json | ConvertFrom-Json -ErrorAction Stop).economicEvidence.purpose } catch { $failedPurpose = $null }
+        $failed = $null
+        try { $failed = $Json | ConvertFrom-Json -ErrorAction Stop; $failedPurpose = $failed.economicEvidence.purpose } catch { $failedPurpose = $null }
+        if ($failed.economicEvidence.schemaVersion -eq 2) {
+            $script:economicDeltaForceFull = $true
+            $script:economicIndex = $null
+            $script:pendingEconomicIndex = $null
+            foreach ($path in @($economicIndexPath, "$economicIndexPath.bak")) {
+                try { Remove-Item -LiteralPath $path -Force -ErrorAction Stop } catch { }
+            }
+            Write-ConnectorHealth "$([datetimeoffset]::Now.ToString('o')) request=economic_delta status=fallback"
+            $fullEvidence = $script:lastEconomicEvidence
+            $replacement = $null
+            if ($null -ne $fullEvidence) {
+                $replacement = ConvertTo-EconomicEvidenceDelta $fullEvidence $null ([datetimeoffset]::UtcNow)
+                if ($null -eq $replacement) {
+                    Write-ConnectorHealth "$([datetimeoffset]::Now.ToString('o')) request=economic_evidence status=skipped reason=full_upload_over_cap count=$(@($fullEvidence.vouchers).Count)"
+                }
+            }
+            $failed.economicEvidence = if ($replacement) { $replacement.document } else { $null }
+            if ($replacement) {
+                $istDate = [datetimeoffset]::UtcNow.ToOffset([timespan]::FromMinutes(330)).ToString('yyyy-MM-dd')
+                $script:pendingEconomicIndex = New-EconomicEvidenceIndex $fullEvidence $companyName $true $null $istDate
+            }
+            $script:pendingUpload = $failed
+            $script:pendingUploadJson = $failed | ConvertTo-Json -Depth 6 -Compress
+            $script:lastReorderData = $failed
+            $script:lastReorderJson = $script:pendingUploadJson
+            try { Save-ConnectorSnapshot $snapshotPath $failed }
+            catch { Write-ConnectorHealth "$([datetimeoffset]::Now.ToString('o')) request=economic_delta_snapshot status=failed" }
+        }
         if ($failedPurpose -eq 'sales_coverage') {
             $script:salesCoverageUploadFailures++
             $script:salesCoverageUploadAttemptDate = (Get-SalesCoverageClock).ToString('yyyy-MM-dd')
@@ -284,6 +392,7 @@ function Publish-CloudSnapshot([string]$Json) {
         $economicVoucherCount = @($uploaded.economicEvidence.vouchers).Count
     }
     $economicVoucherField = if ($null -ne $economicVoucherCount) { " economicVouchers=$economicVoucherCount" } else { '' }
+    if ($null -ne $uploaded.economicEvidence.manifest) { $economicVoucherField += " economicManifest=$(@($uploaded.economicEvidence.manifest).Count)" }
     $economicEvidenceAckedField = if ($null -eq $uploaded.economicEvidence -and $null -ne $script:lastEconomicEvidence -and -not [string]::IsNullOrEmpty([string]$script:lastEconomicEvidence.sourceVersion) -and [string]::Equals([string]$script:lastEconomicEvidence.sourceVersion, $script:economicEvidenceAckedVersion, [StringComparison]::Ordinal)) { ' economicEvidence=acked' } else { '' }
     $pricingHistoryAckedField = if ($null -ne $uploaded -and $null -eq $uploaded.pricingHistory -and $null -ne $script:pricingHistoryAckedHash) { ' pricingHistory=acked' } else { '' }
     if ($null -ne $uploaded -and $null -ne $uploaded.pricingHistory -and $null -ne $script:pendingPricingHistoryHash) {
@@ -292,6 +401,19 @@ function Publish-CloudSnapshot([string]$Json) {
     }
     if ($null -ne $uploaded.economicEvidence -and $uploaded.economicEvidence.purpose -ne 'sales_coverage' -and -not [string]::IsNullOrEmpty([string]$uploaded.economicEvidence.sourceVersion)) {
         $script:economicEvidenceAckedVersion = [string]$uploaded.economicEvidence.sourceVersion
+        if ($null -ne $script:pendingEconomicIndex -and [string]$uploaded.economicEvidence.sourceVersion -ceq [string]$script:pendingEconomicIndex.baseVersion) {
+            try {
+                Save-ConnectorSnapshot $economicIndexPath $script:pendingEconomicIndex
+                $script:economicIndex = $script:pendingEconomicIndex
+                $script:economicDeltaForceFull = $false
+            } catch {
+                foreach ($path in @($economicIndexPath, "$economicIndexPath.bak")) {
+                    try { Remove-Item -LiteralPath $path -Force -ErrorAction Stop } catch { }
+                }
+                $script:economicIndex = $null
+                Write-ConnectorHealth "$([datetimeoffset]::Now.ToString('o')) request=economic_index status=failed"
+            }
+        }
     }
     if ($economicEvidenceAckedField -or $pricingHistoryAckedField) {
         Write-ConnectorHealth "$([datetimeoffset]::Now.ToString('o')) request=cloud_upload durationMs=$($watch.ElapsedMilliseconds) bytes=$payloadBytes$serverTimingFields$economicVoucherField$economicEvidenceAckedField$pricingHistoryAckedField consecutiveFailures=0 status=ok"
@@ -754,6 +876,20 @@ function Read-ReorderData {
         salesCoverageDate = $coverageDate
         economicSyncError = $script:economicSyncError
         economicSyncDomain = $script:economicSyncDomain
+    }
+    $script:pendingEconomicIndex = $null
+    if ($null -ne $snapshot.economicEvidence -and $snapshot.economicEvidence.purpose -ne 'sales_coverage') {
+        $fullEvidence = $snapshot.economicEvidence
+        $index = if ($script:economicDeltaForceFull) { $null } else { $script:economicIndex }
+        $now = [datetimeoffset]::UtcNow
+        $selection = ConvertTo-EconomicEvidenceDelta $fullEvidence $index $now
+        $snapshot.economicEvidence = if ($selection) { $selection.document } else { $null }
+        if ($selection) {
+            $istDate = $now.ToOffset([timespan]::FromMinutes(330)).ToString('yyyy-MM-dd')
+            $script:pendingEconomicIndex = New-EconomicEvidenceIndex $fullEvidence $companyName $selection.full $index $istDate
+        } else {
+            Write-ConnectorHealth "$($now.ToString('o')) request=economic_evidence status=skipped reason=full_upload_over_cap count=$(@($fullEvidence.vouchers).Count)"
+        }
     }
     $hash = Get-PricingHistoryHash $snapshot.pricingHistory
     if ($null -ne $hash -and $null -ne $script:pricingHistoryAckedHash -and [string]::Equals([string]$hash, [string]$script:pricingHistoryAckedHash, [StringComparison]::Ordinal)) {

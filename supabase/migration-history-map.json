@@ -1816,6 +1816,13 @@
       "remoteVersion": null,
       "remoteSha256": null,
       "status": "not_deployed"
+    },
+    {
+      "localFile": "20270110100000_economic_delta_upload.sql",
+      "localSha256": "b7a20aec2bcd1adfac521bb39112adea8904d05b7454bdd9489340474ca94dec",
+      "remoteVersion": null,
+      "remoteSha256": null,
+      "status": "not_deployed"
     }
   ],
   "liveCheck": {

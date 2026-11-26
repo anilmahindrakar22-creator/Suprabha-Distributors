@@ -293,7 +293,7 @@ function Convert-TallyEconomicEvidence([xml]$CompanyDocument,[xml]$LedgerDocumen
         } catch { $entry.error=$_.Exception.Message }
         $vouchers.Add($entry)
     }
-    if ($vouchers.Count -gt 2000) { throw 'Economic window exceeds 2000 vouchers; reduce EconomicHistoryMonths.' }
+    if ($vouchers.Count -gt 10000) { throw 'Economic window exceeds 10000 vouchers; reduce EconomicHistoryMonths.' }
     $result=[ordered]@{ schemaVersion=1;companyId=$company;sourceVersion=[datetimeoffset]::UtcNow.ToString('o');completeWindow=$true;windowFrom=$From.ToString('yyyy-MM-dd');windowTo=$To.ToString('yyyy-MM-dd');vouchers=$vouchers.ToArray() }
     # Reuse the same canonical master index; active app customers and an explicit
     # person confirmation determine eligibility, never a ledger's display group.
@@ -381,7 +381,7 @@ function Read-TallyEconomicEvidence([string]$Company,[int]$HistoryMonths=3,[hash
         $result.vouchers=@($history.ToArray())+@($result.vouchers)
         $result.purchaseHistoryFrom=[datetime]::new((Get-Date).Year,(Get-Date).Month,1).AddMonths(-$PurchaseHistoryMonths).ToString('yyyy-MM-dd')
     }
-    if(@($result.vouchers).Count -gt 2000){throw 'Combined economic cost history exceeds 2000 vouchers; narrow the history window.'}
+    if(@($result.vouchers).Count -gt 10000){throw 'Combined economic cost history exceeds 10000 vouchers; narrow the history window.'}
     return $result
 }
 function Get-TallyEconomicNumericAmountCollection([string]$Company,[datetime]$From,[datetime]$To){
