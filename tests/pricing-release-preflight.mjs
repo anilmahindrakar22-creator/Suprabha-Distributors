@@ -91,6 +91,7 @@ const pricingReleaseFiles = new Set([
   '20270103100000_item_forecast_trial.sql',
   '20270103120000_import_exception_hygiene.sql',
   '20270103130000_voucher_exclusions.sql',
+  '20270103140000_growth_cohorts.sql',
   '20261102090000_po_tally_receipts.sql',
   '20261031140000_power_map_enhancement.sql',
   '20261030090000_instrument_register.sql',
@@ -294,6 +295,7 @@ export const pricingReleaseSqlTests = [
   'supabase/tests/item_forecast_trial.sql',
   'supabase/tests/import_exception_hygiene.sql',
   'supabase/tests/voucher_exclusions.sql',
+  'supabase/tests/growth_cohorts.sql',
 ];
 
 export function pricingReleasePreflight(evidence, files) {

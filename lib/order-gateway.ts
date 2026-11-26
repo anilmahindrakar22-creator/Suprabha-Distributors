@@ -10,6 +10,7 @@ export type GatewayAction =
   | 'get_growth_billed_below'
   | 'get_growth_brands'
   | 'get_growth_lab_months'
+  | 'get_growth_cohorts'
   | 'get_growth_period'
   | 'get_growth_lab_months_period'
   | 'get_growth_labs_period'

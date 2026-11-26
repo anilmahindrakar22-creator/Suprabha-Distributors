@@ -1781,6 +1781,13 @@
       "remoteVersion": null,
       "remoteSha256": null,
       "status": "not_deployed"
+    },
+    {
+      "localFile": "20270103140000_growth_cohorts.sql",
+      "localSha256": "1b6eb3928cb1ae10d671338e25c93bcf4fafbacdad052faf62ed74354c9aa4a1",
+      "remoteVersion": null,
+      "remoteSha256": null,
+      "status": "not_deployed"
     }
   ],
   "liveCheck": {

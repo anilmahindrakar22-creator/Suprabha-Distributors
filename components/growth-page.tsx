@@ -7,6 +7,7 @@ import { formatPaise } from '@/lib/wallet-format';
 import { GrowthInbox } from './growth-inbox';
 import { GrowthProfit, type ProfitPeriod } from './growth-profit';
 import { GrowthLabMonths } from './growth-lab-months';
+import { GrowthCohorts } from './growth-cohorts';
 import { GrowthBrands } from './growth-brands';
 import { GrowthSections, usePhoneLayout } from './growth-sections';
 import { chartTipText, useChartTip } from './growth-chart-tip';
@@ -385,6 +386,7 @@ export function GrowthPage(navigation: GrowthNavigation) {
         {filter === 'top' && rollingCaption(<LabsBuyingCard data={data} onDrill={setSelection} />)}
         {labPeriod ? <GrowthLabMonths key={`${filter}:${param}`} period={labPeriod} onOpenCustomer={navigation.onOpenCustomer} initialFilter={filter} /> : rollingCaption(<GrowthLabMonths key={`${filter}:rolling`} onOpenCustomer={navigation.onOpenCustomer} initialFilter={filter} />)}
         {filter !== 'top' && rollingCaption(<LabsBuyingCard data={data} onDrill={setSelection} />)}
+        {filter === 'top' && <GrowthCohorts onOpenCustomer={navigation.onOpenCustomer} />}
       </>}
       {section === 'profit' && profitCaption(<GrowthProfit key={param} period={profitPeriod} periodGp={periodGp} data={data} scope={scope} onDrill={setSelection} navigation={navigation} showBrands={false} />)}
       {section === 'brands' && profitCaption(<GrowthBrands key={`${param}:${comparisonKey}`} period={profitPeriod} onOpenBrandSetup={navigation.onOpenBrandSetup} />)}

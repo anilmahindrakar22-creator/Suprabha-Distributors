@@ -25,7 +25,7 @@ function fixture() {
 }
 
 describe('Growth Edge routing', () => {
-  it.each(['get_growth', 'get_growth_labs', 'get_growth_inbox', 'get_growth_margin', 'get_growth_margin_detail', 'get_growth_billed_below', 'get_growth_brands', 'get_growth_lab_months', 'get_growth_period', 'get_growth_lab_months_period', 'get_growth_labs_period', 'get_growth_margin_period', 'get_growth_brands_period'])('routes %s read-only to its RPC', async action => {
+  it.each(['get_growth_cohorts', 'get_growth', 'get_growth_labs', 'get_growth_inbox', 'get_growth_margin', 'get_growth_margin_detail', 'get_growth_billed_below', 'get_growth_brands', 'get_growth_lab_months', 'get_growth_period', 'get_growth_lab_months_period', 'get_growth_labs_period', 'get_growth_margin_period', 'get_growth_brands_period'])('routes %s read-only to its RPC', async action => {
     const admission = vi.spyOn(RequestGate.prototype, 'begin');
     try {
       const { send, fetcher } = fixture();
