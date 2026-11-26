@@ -7,6 +7,7 @@ import { formatPaise } from '@/lib/wallet-format';
 import { GrowthInbox } from './growth-inbox';
 import { GrowthProfit, type ProfitPeriod } from './growth-profit';
 import { GrowthLabMonths } from './growth-lab-months';
+import { GrowthNewLabs } from './growth-new-labs';
 import { GrowthCohorts } from './growth-cohorts';
 import { GrowthBrands } from './growth-brands';
 import { GrowthSections, usePhoneLayout } from './growth-sections';
@@ -366,7 +367,7 @@ export function GrowthPage(navigation: GrowthNavigation) {
   return <div data-growth-scroller className="h-full min-w-0 overflow-y-auto p-4 text-sm text-sf-strong sm:p-6 [overflow-wrap:break-word]">
     <header className="mb-5 space-y-2"><p className={muted}>More / Management</p><h1 className="text-xl font-bold">Growth</h1>{data && <p className={muted}>{periodMode && periodData.data ? `${periodData.data.period.label} · ${data.companyCount === 1 ? 'one Tally company' : `${data.companyCount} Tally companies`} · management only` : `${scope} · management only`}</p>}<GrowthPeriodPicker value={period} today={todayIst()} onChange={setPeriod} />{data && !data.confirmed && <p className="text-xs text-sf-warning">Not confirmed: {plainReason(data.confirmedReason)}</p>}</header>
     {phone ? <>{pageError}{data && <GrowthSections data={data}>{(section, filter, open) => <>
-      {section === 'act' && <>{inbox}<section className={card} aria-labelledby="labs-call-title"><h2 id="labs-call-title" className="text-base font-bold">Labs to call</h2><div className="flex flex-wrap gap-3"><button type="button" className={toggleClass} onClick={() => open('labs', 'lapsing')}>Lapsing core labs ›</button><button type="button" className={toggleClass} onClick={() => open('labs', 'declining')}>Buying less ›</button></div></section></>}
+      {section === 'act' && <>{inbox}<section className={card} aria-labelledby="labs-call-title"><h2 id="labs-call-title" className="text-base font-bold">Labs to call</h2><div className="flex flex-wrap gap-3"><button type="button" className={toggleClass} onClick={() => open('labs', 'lapsing')}>Lapsing core labs ›</button><button type="button" className={toggleClass} onClick={() => open('labs', 'declining')}>Buying less ›</button><button type="button" className={toggleClass} onClick={() => open('labs', 'new')}>New labs ›</button></div></section></>}
       {section === 'revenue' && <>
         {scorecard((next, target) => {
           if (next === 'revenue' || next === 'bridge') setPhoneRevenueTab(next);
@@ -382,12 +383,12 @@ export function GrowthPage(navigation: GrowthNavigation) {
         <div id="phone-revenue-panel" role="tabpanel" aria-labelledby={`phone-growth-tab-${phoneRevenueTab}`} className="min-w-0 space-y-4">{phoneRevenueTab === 'revenue' ? <>{rollingCaption(<RevenueMonths data={data} onDrill={setSelection} />)}{revenueCard}</> : bridgeCard}</div>
         {rollingCaption(<PurchasesCard data={data} onDrill={setSelection} />)}
       </>}
-      {section === 'labs' && <>
+      {section === 'labs' && (filter === 'new' ? <GrowthNewLabs onOpenCustomer={navigation.onOpenCustomer} /> : <>
         {filter === 'top' && rollingCaption(<LabsBuyingCard data={data} onDrill={setSelection} />)}
         {labPeriod ? <GrowthLabMonths key={`${filter}:${param}`} period={labPeriod} onOpenCustomer={navigation.onOpenCustomer} initialFilter={filter} /> : rollingCaption(<GrowthLabMonths key={`${filter}:rolling`} onOpenCustomer={navigation.onOpenCustomer} initialFilter={filter} />)}
         {filter !== 'top' && rollingCaption(<LabsBuyingCard data={data} onDrill={setSelection} />)}
         {filter === 'top' && <GrowthCohorts onOpenCustomer={navigation.onOpenCustomer} />}
-      </>}
+      </>)}
       {section === 'profit' && profitCaption(<GrowthProfit key={param} period={profitPeriod} periodGp={periodGp} data={data} scope={scope} onDrill={setSelection} navigation={navigation} showBrands={false} />)}
       {section === 'brands' && profitCaption(<GrowthBrands key={`${param}:${comparisonKey}`} period={profitPeriod} onOpenBrandSetup={navigation.onOpenBrandSetup} />)}
       {section === 'health' && <Health data={data} onOpenBrandSetup={navigation.onOpenBrandSetup} onOpenMyActions={navigation.onOpenMyActions} />}

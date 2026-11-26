@@ -1802,6 +1802,13 @@
       "remoteVersion": null,
       "remoteSha256": null,
       "status": "not_deployed"
+    },
+    {
+      "localFile": "20270103170000_growth_new_labs.sql",
+      "localSha256": "7cff66c7333b1f236a8119dfee56e42af99d3a8d4a57700ce831b24d0fff2c21",
+      "remoteVersion": null,
+      "remoteSha256": null,
+      "status": "not_deployed"
     }
   ],
   "liveCheck": {

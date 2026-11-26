@@ -13,12 +13,12 @@ const sections = [
   { key: 'health', title: 'Data health' },
 ] as const;
 export type GrowthSection = typeof sections[number]['key'];
-type LabFilter = 'top' | 'lapsing' | 'declining';
+type LabFilter = 'top' | 'lapsing' | 'declining' | 'new';
 type SectionState = { growthSection: GrowthSection; filter?: LabFilter };
 const isSection = (value: unknown): value is GrowthSection => sections.some(section => section.key === value);
 const readState = (state: unknown): SectionState | null => {
   if (!state || typeof state !== 'object' || !('growthSection' in state) || !isSection(state.growthSection)) return null;
-  const filter = 'filter' in state && (state.filter === 'lapsing' || state.filter === 'declining') ? state.filter : 'top';
+  const filter = 'filter' in state && (state.filter === 'lapsing' || state.filter === 'declining' || state.filter === 'new') ? state.filter : 'top';
   return { growthSection: state.growthSection, filter };
 };
 

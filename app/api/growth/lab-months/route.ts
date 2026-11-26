@@ -1,6 +1,7 @@
 import { getChatGPTUser } from '@/app/chatgpt-auth';
 import { callOrderGateway, OrderGatewayError } from '@/lib/order-gateway';
 import { normalizeGrowthLabMonths } from '@/lib/growth-lab-month-types';
+import { normalizeGrowthNewLabs } from '@/lib/growth-new-lab-types';
 import { parseGrowthPeriodParam } from '@/lib/growth-period-types';
 import { normalizeGrowthPeriodLabMonths } from '@/lib/growth-period-labs-types';
 import { getStockFlowSession } from '@/lib/stockflow-session';
@@ -25,6 +26,11 @@ export async function GET(request: Request) {
       params.delete('period');
     }
     const requestedFilter = params.get('filter');
+    if (params.size === 1 && requestedFilter === 'new') {
+      const data = normalizeGrowthNewLabs(await callOrderGateway(session.email, 'get_growth_lab_months', { filter: 'new' }));
+      if (!data) throw new Error('Malformed growth lab months response');
+      return Response.json(data, { headers });
+    }
     const filter = params.size === 1 && (requestedFilter === 'lapsing' || requestedFilter === 'declining') ? requestedFilter : 'top';
     if (params.size > 0 && filter === 'top') return Response.json({ error: 'Invalid growth lab months parameters' }, { status: 400, headers });
     const data = normalizeGrowthLabMonths(await callOrderGateway(session.email, 'get_growth_lab_months', filter === 'top' ? {} : { filter }), filter);
