@@ -6,7 +6,6 @@ import { readJsonBody } from '@/lib/http-json';
 import { canManagePurchaseOrders } from '@/lib/order-permissions';
 import type { StockFlowRole } from '@/lib/user-types';
 import { PurchaseOrderReview } from './purchase-orders-panel';
-import type { StockPoDraftItem } from '@/lib/stockflow-navigation';
 
 import { toOrderReasonText, toOrderStockText, type ToOrderItem, type ToOrderResponse } from '@/lib/to-order';
 
@@ -55,28 +54,12 @@ function displayDate(value: string | null) {
   return date.toLocaleString('en-IN', { dateStyle: 'medium', timeStyle: 'short', timeZone: 'Asia/Kolkata' });
 }
 
-function toStockDraftItem({ itemKey, quantity }: StockPoDraftItem): ToOrderItem {
-  return { itemKey, itemName: itemKey, group: null, closing: null, reorderLevel: null, minimumOrder: null,
-    tallyOpenPurchase: null, openDemand: 0, waitingOrders: 0, oldestOrderAt: null, reasons: [],
-    state: 'order', suggestedQty: Math.max(1, Math.ceil(quantity)), lowestSupplier: null };
-}
-
-export function ProcurementRequirements({ onOpenOrder, roles = [], refreshKey = 0, onPurchaseOrdersCreated, stockPoDraft, onStockPoDraftUsed }: { onOpenOrder?: (orderId: string, orderNumber: string) => void; roles?: readonly StockFlowRole[]; refreshKey?: number; onPurchaseOrdersCreated?: () => void; stockPoDraft?: { nonce: number; items: StockPoDraftItem[] } | null; onStockPoDraftUsed?: () => void } = {}) {
+export function ProcurementRequirements({ onOpenOrder, roles = [], refreshKey = 0, onPurchaseOrdersCreated }: { onOpenOrder?: (orderId: string, orderNumber: string) => void; roles?: readonly StockFlowRole[]; refreshKey?: number; onPurchaseOrdersCreated?: () => void } = {}) {
   const permitted = canManagePurchaseOrders(roles);
   const [selected, setSelected] = useState<ToOrderItem[]>([]);
   const [review, setReview] = useState(false);
   const [success, setSuccess] = useState('');
-  const [fromStock, setFromStock] = useState(false);
-  const handledStockNonce = useRef<number | null>(null);
-  useEffect(() => {
-    if (!permitted || !stockPoDraft?.items.length || handledStockNonce.current === stockPoDraft.nonce) return;
-    handledStockNonce.current = stockPoDraft.nonce;
-    setSelected(stockPoDraft.items.map(toStockDraftItem));
-    setFromStock(true);
-    setSuccess('');
-    setReview(true);
-    onStockPoDraftUsed?.();
-  }, [stockPoDraft, permitted, onStockPoDraftUsed]);
+  const [runsOutKeys, setRunsOutKeys] = useState<Set<string> | null>(null);
   const [openGroups, setOpenGroups] = useState<Set<string>>(() => new Set());
   const [page, setPage] = useState(1);
   const [result, setResult] = useState<ToOrderResponse | null>(null);
@@ -98,6 +81,24 @@ export function ProcurementRequirements({ onOpenOrder, roles = [], refreshKey = 
   const [alertsError, setAlertsError] = useState('');
   const alertsRequestRef = useRef<{ id: number; controller: AbortController } | null>(null);
   const alertsRequestIdRef = useRef(0);
+
+  useEffect(() => {
+    const controller = new AbortController();
+    setRunsOutKeys(null);
+    if (permitted) void (async () => {
+      try {
+        const response = await fetch('/api/requirements?view=cover', { cache: 'no-store', signal: controller.signal });
+        const body = await readJsonBody<{ items: { itemKey: string; state: string }[] }>(response);
+        if (!response.ok || !body || !Array.isArray(body.items)
+          || body.items.some((item) => !item || typeof item.itemKey !== 'string' || typeof item.state !== 'string'))
+          throw new Error('Cover response was incomplete.');
+        if (!controller.signal.aborted) setRunsOutKeys(new Set(body.items.filter((item) => item.state === 'runs_out').map((item) => item.itemKey)));
+      } catch {
+        if (!controller.signal.aborted) setRunsOutKeys(null);
+      }
+    })();
+    return () => controller.abort();
+  }, [permitted, refreshKey]);
 
   useEffect(() => () => {
     requestRef.current?.controller.abort();
@@ -281,6 +282,8 @@ export function ProcurementRequirements({ onOpenOrder, roles = [], refreshKey = 
   }, [refreshKey]);
 
   const items = [...(result?.items ?? [])].sort((a, b) => Number(a.state === 'stock_unknown') - Number(b.state === 'stock_unknown'));
+  const runsOutItems = items.filter((item) => item.state === 'order' && runsOutKeys?.has(item.itemKey));
+  const unselectedRunsOutCount = runsOutItems.filter((item) => !selected.some((line) => line.itemKey === item.itemKey)).length;
   const groups = [...items.reduce((map, item) => {
     const name = item.group?.trim() || 'No stock group';
     const group = map.get(name) ?? { name, items: [] as ToOrderItem[], waiting: 0 };
@@ -301,9 +304,9 @@ export function ProcurementRequirements({ onOpenOrder, roles = [], refreshKey = 
       <span className="text-sm font-semibold text-sf-body">{selected.length} selected</span>
       <button type="button" className="min-h-12 rounded-lg bg-sf-ink px-3 text-sm font-bold text-sf-soft-0" onClick={() => setReview(true)}>Create purchase order{new Set(selected.map((item) => item.lowestSupplier?.supplierName ?? '')).size > 1 ? 's' : ''}</button>
     </div> : null}
-    {permitted && review ? <PurchaseOrderReview items={selected} preferLowest={fromStock} onClose={() => { setReview(false); if (fromStock) { setSelected([]); setFromStock(false); } }} onConflict={() => { void load(1); onPurchaseOrdersCreated?.(); }} onCreated={(orders) => {
+    {permitted && review ? <PurchaseOrderReview items={selected} onClose={() => { setReview(false); setSelected([]); }} onConflict={() => { void load(1); onPurchaseOrdersCreated?.(); }} onCreated={(orders) => {
       setSuccess(`Created ${orders.map((order) => order.poNumber).join(', ')}`);
-      setReview(false); setSelected([]); setFromStock(false); void load(1); onPurchaseOrdersCreated?.();
+      setReview(false); setSelected([]); void load(1); onPurchaseOrdersCreated?.();
     }} /> : null}
     {result ? <div className="mt-3 flex flex-wrap gap-2 text-xs font-semibold text-sf-label">
       <span className="rounded-full bg-sf-soft-2 px-3 py-2">{result.total} to order</span>
@@ -313,6 +316,16 @@ export function ProcurementRequirements({ onOpenOrder, roles = [], refreshKey = 
     {error ? <p role="alert" className="mt-2 text-sm text-sf-danger">{error}</p> : null}
     {success ? <output className="mt-2 block text-sm text-sf-success">{success}</output> : null}
     {loading && !result ? <p className="mt-3 text-sm text-sf-subtle">Loading to order…</p> : null}
+    {permitted && runsOutKeys !== null && runsOutItems.length > 0 ? <button type="button" className="mt-3 min-h-11 rounded-lg border border-sf-line bg-sf-soft-0 px-3 text-xs font-bold text-sf-body" onClick={() => {
+      setSelected((previous) => {
+        const keys = new Set(previous.map((item) => item.itemKey));
+        return [...previous, ...runsOutItems.filter((item) => {
+          if (keys.has(item.itemKey)) return false;
+          keys.add(item.itemKey);
+          return true;
+        })];
+      });
+    }}>Select all that run out before delivery ({unselectedRunsOutCount})</button> : null}
     <div className="mt-3 space-y-2">
       {groups.map((group) => <details key={group.name} data-request-group={group.name} open={groups.length === 1 || openGroups.has(group.name)} onToggle={(event) => {
         const isOpen = event.currentTarget.open;
@@ -333,7 +346,7 @@ export function ProcurementRequirements({ onOpenOrder, roles = [], refreshKey = 
               <h3 className="min-w-0 flex-1 break-words text-left text-sm font-semibold">{item.itemName}</h3>
               <p className="shrink-0 text-right text-sm font-bold">Order {item.state === 'stock_unknown' || item.suggestedQty === null ? '—' : quantity(item.suggestedQty)}</p>
             </div>
-            <p className="break-words text-xs text-sf-muted"><span className="text-sf-body">{toOrderReasonText(item)}</span> · {toOrderStockText(item)}{item.lowestSupplier ? <> · Lowest price: {item.lowestSupplier.supplierName}</> : null}</p>
+            <p className="break-words text-xs text-sf-muted"><span className="text-sf-body">{toOrderReasonText(item)}</span>{permitted && runsOutKeys?.has(item.itemKey) ? <> · <span className="text-xs text-sf-warning">Runs out before delivery</span></> : null} · {toOrderStockText(item)}{item.lowestSupplier ? <> · Lowest price: {item.lowestSupplier.supplierName}</> : null}</p>
             {item.waitingOrders > 0 ? <button type="button" aria-expanded={waitingOrigin === item.itemKey} onClick={() => toggleWaitingOrders(item.itemKey)} className="mt-1 min-h-11 rounded-lg border border-sf-line px-3 text-xs font-bold text-sf-body">
               {waitingOrigin === item.itemKey ? 'Hide waiting orders' : 'View waiting orders'}
             </button> : null}

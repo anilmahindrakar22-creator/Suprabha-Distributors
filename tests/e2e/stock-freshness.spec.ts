@@ -10,20 +10,9 @@ const stockPayload = (sourceFetchedAtIso?: Record<string, unknown>) => ({
   ...(sourceFetchedAtIso ? { sourceFetchedAtIso } : {}),
 });
 
-async function stockPoHarness(page: Page, canCreatePo?: boolean, longName = false) {
-  const messages: unknown[] = [];
+async function stockPoHarness(page: Page, canCreatePo?: boolean) {
   const payload = coverStockPayload();
   payload.rows[0].orderToBePlaced = 4.2;
-  if (longName) payload.rows[0].item = 'Very long reagent name that wraps across several lines on a small phone screen';
-  await page.exposeFunction('captureStockPoMessage', (message: unknown) => messages.push(message));
-  await page.addInitScript(() => {
-    if (window.parent !== window) return;
-    window.addEventListener('message', event => {
-      if (event.origin === location.origin && event.data?.type === 'stockflow-create-po') {
-        void (window as unknown as { captureStockPoMessage: (message: unknown) => Promise<void> }).captureStockPoMessage(event.data);
-      }
-    });
-  });
   await page.route('**/stock-po-test', route => route.fulfill({ contentType: 'text/html', body:
     '<meta name="viewport" content="width=device-width,initial-scale=1"><style>html,body{margin:0;height:100%;overflow:hidden}iframe{width:100%;height:100%;border:0;display:block}</style><iframe src="/stockflow.html"></iframe>',
   }));
@@ -40,67 +29,9 @@ async function stockPoHarness(page: Page, canCreatePo?: boolean, longName = fals
   await page.evaluate(allowed => document.querySelector('iframe')?.contentWindow?.postMessage({
     type: 'stockflow-cache-account', email: 'stock-po@example.test', ...(allowed === undefined ? {} : { canCreatePo: allowed }),
   }, location.origin), canCreatePo);
-  if (canCreatePo) await expect(stock.locator('.gi-pick')).toHaveCount(3);
   await stock.locator('#groupCards summary').click();
-  return { stock, payload, messages };
+  return { stock, payload };
 }
-
-for (const allowed of [false, undefined]) {
-  test(`Stock has no PO controls when access is ${String(allowed)}`, async ({ page }) => {
-    const { stock } = await stockPoHarness(page, allowed);
-    await expect(stock.locator('.gi-pick')).toHaveCount(0);
-    await expect(stock.locator('#poBar')).toBeHidden();
-    await expect(stock.locator('#pickRunsOut')).toHaveCount(0);
-  });
-}
-
-test('Stock creates a draft from two ticks and clears the bar', async ({ page }) => {
-  const { stock, payload, messages } = await stockPoHarness(page, true);
-  for (const row of payload.rows.slice(0, 2)) await stock.getByRole('checkbox', { name: `Select ${row.item} for a purchase order`, exact: true }).check();
-  await expect(stock.locator('#poCount')).toHaveText('2 selected');
-  await stock.getByRole('button', { name: 'Create PO', exact: true }).click();
-  await expect.poll(() => messages).toEqual([{ type: 'stockflow-create-po', items: payload.rows.slice(0, 2).map(row => ({ itemKey: row.item, quantity: Math.ceil(row.orderToBePlaced) })) }]);
-  await expect(stock.locator('#poBar')).toBeHidden();
-  await expect(stock.locator('input[data-pick]:checked')).toHaveCount(0);
-});
-
-test('Stock selects exactly the rows that run out before delivery', async ({ page }) => {
-  const { stock, payload } = await stockPoHarness(page, true);
-  await stock.getByRole('button', { name: 'Select all that run out before delivery', exact: true }).click();
-  await expect(stock.locator('input[data-pick]:checked')).toHaveCount(2);
-  for (const row of payload.rows.slice(0, 2)) await expect(stock.getByRole('checkbox', { name: `Select ${row.item} for a purchase order`, exact: true })).toBeChecked();
-  await expect(stock.locator('#poCount')).toHaveText('2 selected');
-});
-
-test('Stock Clear empties the ticks and hides the bar', async ({ page }) => {
-  const { stock } = await stockPoHarness(page, true);
-  await stock.locator('input[data-pick]').first().check();
-  await stock.getByRole('button', { name: 'Clear', exact: true }).click();
-  await expect(stock.locator('input[data-pick]:checked')).toHaveCount(0);
-  await expect(stock.locator('#poBar')).toBeHidden();
-});
-
-test('Stock PO controls fit a phone and the bar leaves the last row reachable', async ({ page }) => {
-  await page.setViewportSize({ width: 375, height: 812 });
-  const { stock, payload } = await stockPoHarness(page, true, true);
-  expect(await stock.locator('body').evaluate(() => innerWidth)).toBeLessThanOrEqual(375);
-  const row = stock.locator('.group-item').filter({ has: stock.getByRole('button', { name: payload.rows[0].item, exact: true }) });
-  await row.locator('input').check();
-  const name = await row.locator('.gi-name').boundingBox();
-  const pill = await row.locator('.gi-order').boundingBox();
-  const tick = await row.locator('.gi-pick input').boundingBox();
-  expect(Math.abs(pill!.y - name!.y)).toBeLessThanOrEqual(4);
-  expect(tick!.x + tick!.width).toBeLessThanOrEqual(name!.x);
-  expect(pill!.x).toBeGreaterThan(name!.x);
-  expect(name!.height).toBeGreaterThan(pill!.height);
-  expect(Math.abs(tick!.y + tick!.height / 2 - (name!.y + 10))).toBeLessThanOrEqual(4);
-  const last = stock.locator('.group-item').last();
-  await last.evaluate(() => window.scrollTo(0, document.documentElement.scrollHeight));
-  await expect(last).toBeInViewport();
-  const lastBox = await last.boundingBox(), barBox = await stock.locator('#poBar').boundingBox();
-  expect(lastBox!.y + lastBox!.height).toBeLessThanOrEqual(barBox!.y);
-  expect(await stock.locator('body').evaluate(() => document.documentElement.scrollWidth <= innerWidth)).toBe(true);
-});
 
 test.beforeEach(async ({ page }) => {
   await page.route('**/api/requirements?view=reorder_check', route => route.fulfill({ json: emptyReorderCheck() }));
@@ -170,11 +101,9 @@ test('reorder checks show both lists and switch between levels, groups and idle'
   await expect(chip).toHaveAttribute('aria-pressed', 'false');
   await chip.click();
   await expect(stock.locator('[data-action="idle"]')).toHaveAttribute('aria-pressed', 'false');
-  await stock.locator('[data-action="items"]').click();
-  await expect(chip).toHaveAttribute('aria-pressed', 'false');
-  await expect(stock.locator('#groupCards')).toBeVisible();
   await chip.click();
-  await expect(stock.locator('[data-action="items"]')).toHaveAttribute('aria-pressed', 'false');
+  await expect(stock.locator('#groupCards')).toBeVisible();
+  await expect(stock.locator('[data-action="items"]')).not.toHaveAttribute('aria-pressed');
 });
 
 for (const failure of ['server', 'invalid', 'no-policy']) {
@@ -388,17 +317,14 @@ test('idle stock is paginated, searchable and returns to groups on a phone', asy
   await expect(page.locator('#groupCards details')).toHaveCount(2);
 });
 
-test('idle and reorder chip selections clear each other', async ({ page }) => {
+test('Purchase chip is a link while idle remains a Stock view', async ({ page }) => {
   await openStockDashboard(page, coverStockPayload());
-  const reorder = page.locator('[data-action="items"]'), idle = page.locator('[data-action="idle"]');
+  const purchase = page.locator('[data-action="items"]'), idle = page.locator('[data-action="idle"]');
   await expect(idle).toBeVisible();
-  await reorder.click();
-  await expect(reorder).toHaveAttribute('aria-pressed', 'true');
   await idle.click();
-  await expect(reorder).toHaveAttribute('aria-pressed', 'false');
   await expect(idle).toHaveAttribute('aria-pressed', 'true');
-  await reorder.click();
-  await expect(idle).toHaveAttribute('aria-pressed', 'false');
+  await expect(purchase).not.toHaveAttribute('aria-pressed');
+  await idle.click();
   await expect(page.locator('#groupCards')).toBeVisible();
 });
 
@@ -702,20 +628,13 @@ async function openStockDashboard(page: import('@playwright/test').Page, payload
   await expect(page.locator('details dl')).toContainText('Stock');
 }
 
-test('phone Stock shows unified Requests counts with Groups as the only view and no page overflow', async ({ page }) => {
+test('phone Stock shows Purchase counts with Groups as the only view and no page overflow', async ({ page }) => {
   await page.setViewportSize({ width: 375, height: 812 });
   const payload = stockPayload();
   await openStockDashboard(page, payload);
 
-  const reorderRows = payload.rows.filter((row) => (+row.orderToBePlaced || 0) > 0);
-  const n = reorderRows.length;
-  const c = reorderRows.filter((row) => {
-    const base = Math.max(+row.reorderLevel || 0, +row.minimumOrder || 0, 1);
-    const ratio = (+row.shortfall || +row.orderToBePlaced || 0) / base;
-    return ratio >= 0.75;
-  }).length;
-  await expect(page.locator('.metric-chips [data-action="items"] strong')).toHaveText(`${n} to reorder`);
-  await expect(page.locator('#itemHint')).toHaveText(`${c} critical`);
+  await expect(page.locator('.metric-chips [data-action="items"] strong')).toHaveText('21 to order');
+  await expect(page.locator('#itemHint')).toHaveText('0 run out before delivery');
   await expect(page.locator('.metric-chips [data-action="critical"]')).toContainText('6 customers waiting');
   await expect(page.locator('.metric-chips [data-action="critical"]')).toHaveClass(/has-critical/);
   await expect(page.getByRole('button', { name: 'Reorder list', exact: true })).toHaveCount(0);
@@ -727,7 +646,7 @@ test('phone Stock shows unified Requests counts with Groups as the only view and
   expect(await page.evaluate(() => document.documentElement.scrollWidth <= innerWidth)).toBe(true);
 });
 
-test('customers waiting chip opens Requests to order', async ({ page }) => {
+test('customers waiting chip opens Purchase to order', async ({ page }) => {
   const messages: unknown[] = [];
   await page.exposeFunction('captureStockMessage', (message: unknown) => messages.push(message));
   await page.addInitScript(() => {
@@ -749,36 +668,13 @@ test('customers waiting chip opens Requests to order', async ({ page }) => {
   ]);
 });
 
-test('to reorder chip expands the reorder list on Stock', async ({ page }) => {
-  await page.route('**/requests-link-test', (route) => route.fulfill({ contentType: 'text/html', body: '<iframe src="/stockflow.html"></iframe>' }));
-  await page.route('**/api/stock?view=dashboard', (route) => route.fulfill({ json: {
-    ...stockPayload(), groups: ['Group A', 'Group B'], rows: [
-      { group: 'Group A', item: 'Item A', closing: 0, reorderLevel: 2, minimumOrder: 1, shortfall: 2, orderToBePlaced: 2 },
-      { group: 'Group B', item: 'Item B', closing: 0, reorderLevel: 2, minimumOrder: 1, shortfall: 2, orderToBePlaced: 2 },
-    ],
-  } }));
-  await page.route('**/api/orders?summary=1', (route) => route.fulfill({ json: {} }));
-  await page.goto('/requests-link-test');
-  const stock = page.frameLocator('iframe');
-  const chip = stock.locator('.metric-chips [data-action="items"]');
-  await expect(chip.locator('strong')).toHaveText('2 to reorder');
-  await expect(stock.locator('#itemHint')).toHaveText('2 critical');
-  await chip.click();
-  await expect(page).toHaveURL(/requests-link-test/);
-  await expect(stock.locator('#groupCards details')).toHaveCount(2);
-  for (const group of await stock.locator('#groupCards details').all()) await expect(group).toHaveAttribute('open', '');
-  await expect(chip).toHaveAttribute('aria-pressed', 'true');
-  await chip.click();
-  for (const group of await stock.locator('#groupCards details').all()) await expect(group).not.toHaveAttribute('open', '');
-  await expect(chip).toHaveAttribute('aria-pressed', 'false');
-});
 
-test("requirements failure leaves the customers waiting count unknown and Stock's reorder count intact", async ({ page }) => {
+
+test('requirements failure leaves both Purchase counts unknown', async ({ page }) => {
   await page.route('**/api/requirements?view=to_order&page=1', (route) => route.fulfill({ status: 503, json: {} }));
   const payload = stockPayload();
   await openStockDashboard(page, payload);
-  const reorderRows = payload.rows.filter((row) => (+row.orderToBePlaced || 0) > 0);
-  await expect(page.locator('#itemCount')).toHaveText(String(reorderRows.length));
+  await expect(page.locator('#itemCount')).toHaveText('—');
   await expect(page.locator('#criticalCount')).toHaveText('—');
   await expect(page.locator('.metric-chips button')).toHaveCount(5);
   await expect(page.locator('.metric-chips [data-action=levels]')).toBeHidden();
@@ -901,7 +797,7 @@ test('Stock makes no order request and shows tappable groups', async ({ page }) 
   await expect(firstGroup.locator('.group-item').first()).toBeVisible();
   await expect(firstGroup.locator('.gi-order').first()).toBeVisible();
   await expect(firstGroup.locator('.gi-order').first()).toHaveText(/^Order \d/);
-  await expect(firstGroup.locator('.group-meta .gi-order-total')).toBeVisible();
+  await expect(firstGroup.locator('.group-meta')).toHaveText('1 item · 1 critical');
   await page.getByRole('button', { name: 'Refresh' }).click();
   await expect(page.locator('#refresh')).toBeEnabled();
   expect(orderRequests).toEqual([]);

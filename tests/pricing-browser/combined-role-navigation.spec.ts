@@ -1,6 +1,6 @@
 import { expect, test, type Page } from '@playwright/test';
 
-// Phones show Stock / Orders / Requests / More at the bottom; the other sections live under More.
+// Phones show Stock / Orders / Purchase / More at the bottom; the other sections live under More.
 async function showAllSections(page: Page) {
   const more = page.getByRole('button', { name: 'More' });
   if (await more.isVisible()) await more.click();
@@ -9,6 +9,8 @@ async function showAllSections(page: Page) {
 test('secondary Accounts role offers Pricing without Administrator controls', async ({ page }) => {
   await page.goto('/?view=frame&role=sales&roles=sales,accounts');
   await showAllSections(page);
+  await expect(page.getByRole('button', { name: /^Purchase$/ }).filter({ visible: true })).toHaveCount(1);
+  await expect(page.getByRole('button', { name: /^Requests$/i })).toHaveCount(0);
   await expect(page.getByRole('button', { name: /^pricing$/i })).toBeVisible();
   await expect(page.getByRole('button', { name: /^users$/i })).toHaveCount(0);
 });

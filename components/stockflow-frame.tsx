@@ -12,7 +12,7 @@ import { BellIcon } from './order-list';
 import { startWorkNotifications, workQueuesForRoles, type WorkItem, type WorkNotificationState } from '@/lib/work-notifications';
 import { currentPushState, disablePush, disablePushBeforeSignOut, enablePush, loadPushConfig, readOpenOrderLink, readOpenOrderMessage, retryPendingPushRemoval, type PushConfig, type PushState } from '@/lib/push-subscription';
 import Image from 'next/image';
-import { readOpenCustomerMessage, readOrderDashboardMessage, readRequestsDashboardMessage, readStockPoDraftMessage, type StockPoDraftItem } from '@/lib/stockflow-navigation';
+import { readOpenCustomerMessage, readOrderDashboardMessage, readRequestsDashboardMessage } from '@/lib/stockflow-navigation';
 import { canManagePurchaseOrders } from '@/lib/order-permissions';
 import { prepareDeviceForAccount } from '@/lib/device-account-privacy';
 import { hasAnyStockFlowRole, type StockFlowRole } from '@/lib/user-types';
@@ -33,6 +33,7 @@ const RequestsWorkspace = lazy(() => import('./requests-workspace').then((module
 const AccountsWorkspace = lazy(() => import('./accounts-workspace').then((module) => ({ default: module.AccountsWorkspace })).catch(reloadOnStaleChunk));
 
 type Surface = 'today' | 'stock' | 'orders' | 'requests' | 'accounts' | 'pricing' | 'economics' | 'growth' | 'service' | 'users';
+const surfaceLabels: Partial<Record<Surface, string>> = { requests: 'Purchase' };
 const surfaceIcons = { today: LayoutDashboard, stock: Boxes, orders: ShoppingCart, requests: Inbox, accounts: Building2, pricing: Tags, economics: TrendingUp, growth: LineChart, service: Wrench, users: Users };
 function SurfaceIcon({ surface, size }: { surface: Surface; size: number }) {
   const Icon = surfaceIcons[surface];
@@ -56,7 +57,6 @@ export function StockFlowFrame({ actorEmail, actorRole, actorRoles, staffAuth = 
   const canSeeBuyers = hasAnyStockFlowRole(roles, ['administrator', 'management', 'operations', 'sales']);
   const canSeeForecast = hasAnyStockFlowRole(roles, ['administrator', 'management']);
   const stockFrameRef = useRef<HTMLIFrameElement>(null);
-  const [stockPoDraft, setStockPoDraft] = useState<{ nonce: number; items: StockPoDraftItem[] } | null>(null);
   useEffect(() => {
     stockFrameRef.current?.contentWindow?.postMessage({ type: 'stockflow-cache-account', email: actorEmail, canCreatePo, canSeeBuyers, canSeeForecast }, window.location.origin);
   }, [actorEmail, canCreatePo, canSeeBuyers, canSeeForecast]);
@@ -223,14 +223,6 @@ export function StockFlowFrame({ actorEmail, actorRole, actorRoles, staffAuth = 
   useEffect(() => {
     function receiveDashboardNavigation(event: MessageEvent) {
       if (event.origin !== window.location.origin) return;
-      const draft = readStockPoDraftMessage(event.data);
-      if (draft) {
-        if (canCreatePo) {
-          setStockPoDraft(current => ({ nonce: (current?.nonce ?? 0) + 1, items: draft.items }));
-          setSurface('requests');
-        }
-        return;
-      }
       const customer = readOpenCustomerMessage(event.data);
       if (customer) {
         if (hasAnyStockFlowRole(roles, ['administrator', 'management', 'sales', 'operations'])) {
@@ -250,7 +242,7 @@ export function StockFlowFrame({ actorEmail, actorRole, actorRoles, staffAuth = 
     }
     window.addEventListener('message', receiveDashboardNavigation);
     return () => window.removeEventListener('message', receiveDashboardNavigation);
-  }, [canCreatePo, roles]);
+  }, [roles]);
 
   // Work notifications: one foreground checker per session. Starts a few seconds after load so it never competes
   // with the first Stock request on a phone.
@@ -454,6 +446,7 @@ export function StockFlowFrame({ actorEmail, actorRole, actorRoles, staffAuth = 
               onFocus={item === 'orders' ? warmOrders : undefined}
               onPointerEnter={item === 'orders' ? warmOrders : undefined}
               onPointerDown={item === 'orders' ? warmOrders : undefined}
+              aria-label={surfaceLabels[item] ?? item}
               aria-pressed={surface === item}
               aria-describedby={item === 'orders' && waitingCount ? 'orders-new-work' : undefined}
               className={`relative inline-flex min-h-11 shrink-0 flex-col items-center justify-center gap-0.5 rounded-lg px-2 text-[11px] leading-none font-bold capitalize transition 2xl:flex-row 2xl:gap-1.5 2xl:px-4 2xl:text-sm 2xl:leading-normal ${
@@ -462,7 +455,7 @@ export function StockFlowFrame({ actorEmail, actorRole, actorRoles, staffAuth = 
                   : 'text-sf-muted hover:text-sf-ink'
               }`}
             >
-                <SurfaceIcon surface={item} size={18} />{item === 'growth' ? 'Growth' : item}{item === 'orders' && waitingCount ? <span className="absolute right-0 top-0 2xl:static">{ordersBadge}</span> : null}
+                <SurfaceIcon surface={item} size={18} />{surfaceLabels[item] ?? item}{item === 'orders' && waitingCount ? <span className="absolute right-0 top-0 2xl:static">{ordersBadge}</span> : null}
             </button>
           ))}
           {/* Full navigation re-verifies the staff session before local preparation. */}
@@ -495,7 +488,7 @@ export function StockFlowFrame({ actorEmail, actorRole, actorRoles, staffAuth = 
         ) : surface === 'orders' ? (
           <Suspense fallback={<SectionLoading />}><OrderWorkspace key={`${orderFilter}:${orderView.nonce}`} actorEmail={actorEmail} initialStatus={orderFilter} initialQuery={orderView.query} focusOrder={orderView.focus} newOrderIds={newOrderIds} onOrderActed={() => workService.current?.reconcile()} /></Suspense>
         ) : surface === 'requests' ? (
-          <Suspense fallback={<SectionLoading />}><RequestsWorkspace roles={roles} actorEmail={actorEmail} onOpenOrder={(orderId, orderNumber) => openOrder({ orderId, orderNumber })} stockPoDraft={stockPoDraft} onStockPoDraftUsed={() => setStockPoDraft(null)} /></Suspense>
+          <Suspense fallback={<SectionLoading />}><RequestsWorkspace roles={roles} actorEmail={actorEmail} onOpenOrder={(orderId, orderNumber) => openOrder({ orderId, orderNumber })} /></Suspense>
         ) : surface === 'accounts' && hasAnyStockFlowRole(roles, ['administrator', 'management', 'sales', 'operations']) ? (
           <Suspense fallback={<SectionLoading />}><AccountsWorkspace key={accountsOpen.nonce} defaultMode={hasAnyStockFlowRole(roles, ['administrator', 'management']) ? 'all' : 'mine'} initialView={accountsOpen.view} initialCustomerId={accountsOpen.customerId} initialWalletView={accountsOpen.walletView} onOpenOrder={openOrder} onNewOrder={id => void openMapOrder(id)} /></Suspense>
         ) : surface === 'pricing' ? (
@@ -523,13 +516,13 @@ export function StockFlowFrame({ actorEmail, actorRole, actorRoles, staffAuth = 
       {newOrderData ? <Suspense fallback={<SectionLoading />}><NewOrderCapture data={newOrderData} initialCustomerId={newOrderCustomerId} templateOrder={null} onClose={() => { setNewOrderData(null); setNewOrderCustomerId(undefined); }} onCreated={() => { setNewOrderData(null); setNewOrderCustomerId(undefined); workService.current?.reconcile(); }} onViewCustomer={() => { setNewOrderData(null); setNewOrderCustomerId(undefined); setSurface('accounts'); }} /></Suspense> : null}
       <nav aria-label="Application sections" className="relative flex shrink-0 border-t border-sf-line-soft bg-white sm:hidden">
         {phoneMain.map((item) => (
-          <button key={item} type="button" aria-label={item} onClick={() => openSurface(item)} onPointerDown={item === 'orders' ? warmOrders : undefined} aria-pressed={surface === item} aria-describedby={item === 'orders' && waitingCount ? 'orders-new-work-phone' : undefined} className={`flex min-h-14 flex-1 flex-col items-center justify-center gap-0.5 text-xs font-bold capitalize ${surface === item ? 'text-sf-brand' : 'text-sf-muted'}`}>
+          <button key={item} type="button" aria-label={surfaceLabels[item] ?? item} onClick={() => openSurface(item)} onPointerDown={item === 'orders' ? warmOrders : undefined} aria-pressed={surface === item} aria-describedby={item === 'orders' && waitingCount ? 'orders-new-work-phone' : undefined} className={`flex min-h-14 flex-1 flex-col items-center justify-center gap-0.5 text-xs font-bold capitalize ${surface === item ? 'text-sf-brand' : 'text-sf-muted'}`}>
             <span className="relative">
               <span aria-hidden="true" className={`block h-1 w-6 rounded-full ${surface === item ? 'bg-sf-ink' : 'bg-transparent'}`} />
               {item === 'orders' && waitingCount ? <span id="orders-new-work-phone" className={`absolute -right-5 -top-2 min-w-5 rounded-full px-1 text-center text-[11px] font-black leading-5 text-white ${badgeTone}`}>{badgeText}<span className="sr-only"> waiting{freshCount ? `, ${freshCount} new` : ''}</span></span> : null}
             </span>
             <SurfaceIcon surface={item} size={22} />
-            <span className="text-xs">{item}</span>
+            <span className="text-xs">{surfaceLabels[item] ?? item}</span>
           </button>
         ))}
         {phoneMore.length || offlineLink ? <button type="button" aria-expanded={moreOpen} aria-controls="more-sections" onClick={() => setMoreOpen(!moreOpen)} className={`flex min-h-14 flex-1 flex-col items-center justify-center gap-0.5 text-xs font-bold ${phoneMore.includes(surface) || moreOpen ? 'text-sf-brand' : 'text-sf-muted'}`}><span aria-hidden="true" className={`block h-1 w-6 rounded-full ${phoneMore.includes(surface) ? 'bg-sf-ink' : 'bg-transparent'}`} /><Ellipsis size={22} aria-hidden="true" className="shrink-0" /><span className="text-xs">More</span></button> : null}

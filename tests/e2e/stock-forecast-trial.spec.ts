@@ -171,12 +171,31 @@ test('permission removal clears the visible forecast and account changes reload 
   await expect(stock.locator('#forecastView')).toBeHidden();
 });
 
-test('idle and reorder selections clear the forecast view', async ({ page }) => {
+test('idle selection clears the forecast view; the to-order chip opens Purchase', async ({ page }) => {
+  const messages: unknown[] = [];
+  await page.exposeFunction('captureStockMessage', (message: unknown) => messages.push(message));
+  await page.addInitScript(() => {
+    if (window.parent !== window) return;
+    window.addEventListener('message', (event) => {
+      if (event.origin === location.origin && event.data?.type === 'stockflow-open-requests') {
+        void (window as unknown as { captureStockMessage: (message: unknown) => Promise<void> }).captureStockMessage(event.data);
+      }
+    });
+  });
   const { stock } = await harness(page);
-  for (const action of ['idle', 'items']) {
-    await openForecast(stock);
-    await stock.locator('[data-action="' + action + '"]').click();
-    await expect(stock.locator('#forecastView')).toBeHidden();
-    await expect(stock.locator('[data-action="forecast"]')).toHaveAttribute('aria-pressed', 'false');
-  }
+  await openForecast(stock);
+  await stock.locator('[data-action="idle"]').click();
+  await expect(stock.locator('#forecastView')).toBeHidden();
+  await expect(stock.locator('[data-action="forecast"]')).toHaveAttribute('aria-pressed', 'false');
+
+  await openForecast(stock);
+  await stock.locator('[data-action="items"]').click();
+  await expect.poll(() => messages).toEqual([
+    { type: 'stockflow-open-requests', section: 'to-order' },
+  ]);
+  await expectForecast(stock);
+  await expect(stock.locator('[data-action="forecast"]')).toHaveAttribute('aria-pressed', 'true');
+  await expect(stock.locator('[data-action="items"]')).not.toHaveAttribute('aria-pressed');
+  await expect(stock.locator('#idleView')).toBeHidden();
+  await expect(stock.locator('#levelsView')).toBeHidden();
 });
