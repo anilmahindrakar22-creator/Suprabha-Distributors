@@ -18,6 +18,7 @@ export type GatewayAction =
   | 'get_growth_brands_period'
   | 'get_growth_stopped_items'
   | 'set_item_kind'
+  | 'set_item_demand_estimate'
   | 'get_growth_inbox'
   | 'decide_growth_card'
   | 'get_power_map'
@@ -210,10 +211,12 @@ export async function callOrderGateway<T>(
       ? 403
       : failure.code === '40001' || failure.code === 'PT409'
         ? 409
-        : failure.code === '54000'
-          ? 429
-          : response.status >= 500
-            ? 502
-            : 400;
+        : failure.code === '22023'
+          ? 400
+          : failure.code === '54000'
+            ? 429
+            : response.status >= 500
+              ? 502
+              : 400;
   throw new OrderGatewayError(message, status);
 }

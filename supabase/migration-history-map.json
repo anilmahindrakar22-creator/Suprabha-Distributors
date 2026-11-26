@@ -1795,6 +1795,13 @@
       "remoteVersion": null,
       "remoteSha256": null,
       "status": "not_deployed"
+    },
+    {
+      "localFile": "20270103160000_item_demand_estimates.sql",
+      "localSha256": "3d67a32ef52f34d7a201c57d35e430e1bbda66c1816d417bd1b1ecaca81fb26a",
+      "remoteVersion": null,
+      "remoteSha256": null,
+      "status": "not_deployed"
     }
   ],
   "liveCheck": {

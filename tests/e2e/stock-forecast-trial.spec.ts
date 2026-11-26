@@ -80,7 +80,7 @@ async function openForecast(stock: FrameLocator) {
 
 async function expectForecast(stock: FrameLocator) {
   const panel = stock.locator('#forecastView');
-  await expect(panel.locator('.levels-caption')).toHaveText("Two ways to read sales, shown next to today's 90-day average. Nothing changes in Stock until the owner chooses. Today uses the last 90 days; the trial uses complete months to Dec 2026.");
+  await expect(panel.locator('.levels-caption')).toHaveText("Two ways to read sales, shown next to today's 90-day average. Nothing changes in Stock until the owner chooses. Today uses the last 90 days; the trial uses complete months to Dec 2026. New items can carry a manager's expected use until they have 6 months of sales.");
   await expect(panel.locator('.forecast-check')).toBeVisible();
   await expect(panel.locator('td').filter({ hasText: '63.9% off · +2.7%' })).toHaveCount(1);
   await expect(panel.locator('td').filter({ hasText: '57.9% off · +1.2%' })).toHaveCount(1);
@@ -100,6 +100,95 @@ test('operations cannot see or request the forecast trial', async ({ page }) => 
   await expect(stock.locator('[data-action="forecast"]')).toBeHidden();
   await stock.locator('[data-action="items"]').click();
   expect(requests).toEqual([]);
+});
+
+async function fillExpectedUse(stock: FrameLocator) {
+  await stock.getByRole('button', { name: 'Set expected use', exact: true }).click();
+  const form = stock.locator('#forecastEstimateEditor');
+  await expect(form.getByRole('button', { name: 'Save', exact: true })).toBeDisabled();
+  await form.getByLabel('Expected use per month').fill('12.5');
+  await form.getByLabel('Why', { exact: true }).fill('Principal plan: 2 labs from Jan');
+  const reviewOn = await form.getByLabel('Review on').inputValue();
+  await expect(form.getByRole('button', { name: 'Save', exact: true })).toBeEnabled();
+  return { form, reviewOn };
+}
+
+test('only New rows offer Set expected use', async ({ page }) => {
+  const { stock } = await harness(page);
+  await openForecast(stock);
+  await expect(stock.locator('.idle-row').filter({ hasText: 'New reagent' }).getByRole('button', { name: 'Set expected use' })).toBeVisible();
+  await expect(stock.locator('.idle-row').filter({ hasText: 'Reagent A' }).getByRole('button')).toHaveCount(0);
+  await expect(stock.locator('.idle-row').filter({ hasText: 'Reagent without cover' }).getByRole('button')).toHaveCount(0);
+});
+
+test('saving expected use posts the exact contract and reloads the forecast', async ({ page }) => {
+  const requestId = '123e4567-e89b-42d3-a456-426614174000';
+  await page.addInitScript(id => { Object.defineProperty(crypto, 'randomUUID', { value: () => id }); }, requestId);
+  let posted: unknown;
+  await page.route('**/api/item-estimates', async route => {
+    posted = route.request().postDataJSON();
+    await route.fulfill({ json: { saved: true } });
+  });
+  const { stock, requests } = await harness(page);
+  await openForecast(stock);
+  const { form, reviewOn } = await fillExpectedUse(stock);
+  await form.getByRole('button', { name: 'Save', exact: true }).click();
+  await expect.poll(() => requests.length).toBe(2);
+  expect(posted).toEqual({ requestId, itemKey: 'New reagent', monthlyQty: 12.5, reason: 'Principal plan: 2 labs from Jan', reviewOn });
+  await expect(stock.locator('#forecastEstimateEditor')).toHaveCount(0);
+});
+
+test('an estimate shows expected use and can be changed', async ({ page }) => {
+  const payload = forecastPayload();
+  const items = payload.items.map(item => ({ ...item, estimate: item.isNew ? {
+    monthly: 12.5, daysLeft: 10, reason: 'Principal plan: 2 labs from Jan', reviewOn: '2027-02-12',
+    setBy: 'manager@example.test', setAt: '2026-11-26T12:00:00Z',
+  } : null }));
+  const { stock } = await harness(page, { ...payload, items });
+  await openForecast(stock);
+  const row = stock.locator('.idle-row').filter({ hasText: 'New reagent' });
+  await expect(row).toContainText('expected 12.5/month · 10 days left · Principal plan: 2 labs from Jan · review 12 Feb');
+  await row.getByRole('button', { name: 'Change expected use' }).click();
+  await expect(row.getByLabel('Expected use per month')).toHaveValue('12.5');
+  await expect(row.getByLabel('Why', { exact: true })).toHaveValue('Principal plan: 2 labs from Jan');
+  await row.getByRole('button', { name: 'Cancel', exact: true }).click();
+  await expect(stock.locator('#forecastEstimateEditor')).toHaveCount(0);
+});
+
+test('a 400 displays the server message and retries reuse the request id', async ({ page }) => {
+  const posted: { requestId: string; reason: string }[] = [];
+  await page.route('**/api/item-estimates', async route => {
+    posted.push(route.request().postDataJSON());
+    await route.fulfill({ status: 400, json: { error: 'Only new items take an expected use' } });
+  });
+  const { stock, requests } = await harness(page);
+  await openForecast(stock);
+  const { form } = await fillExpectedUse(stock);
+  await form.getByLabel('Why', { exact: true }).fill('   short   ');
+  await expect(form.getByRole('button', { name: 'Save', exact: true })).toBeDisabled();
+  await form.getByLabel('Why', { exact: true }).fill(' Principal plan: 2 labs from Jan ');
+  await form.getByRole('button', { name: 'Save', exact: true }).click();
+  await expect(form.getByRole('alert')).toHaveText('Only new items take an expected use');
+  await form.getByRole('button', { name: 'Save', exact: true }).click();
+  await expect.poll(() => posted.length).toBe(2);
+  expect(posted[0].requestId).toMatch(/^[0-9a-f-]{36}$/);
+  expect(posted[1].requestId).toBe(posted[0].requestId);
+  expect(posted[0].reason).toBe('Principal plan: 2 labs from Jan');
+  expect(requests).toHaveLength(1);
+});
+
+test('expected use form fits a 375px phone without horizontal scroll', async ({ page }) => {
+  await page.setViewportSize({ width: 375, height: 812 });
+  const { stock } = await harness(page);
+  await openForecast(stock);
+  const { form } = await fillExpectedUse(stock);
+  for (const control of [form, form.getByLabel('Expected use per month'), form.getByLabel('Why', { exact: true }), form.getByLabel('Review on')]) {
+    const box = await control.boundingBox();
+    expect(box).not.toBeNull();
+    expect(box!.x).toBeGreaterThanOrEqual(0);
+    expect(box!.x + box!.width).toBeLessThanOrEqual(375);
+  }
+  expect(await stock.locator('body').evaluate(() => document.documentElement.scrollWidth <= 375)).toBe(true);
 });
 
 test('management can read the forecast trial on a 375px phone', async ({ page }) => {
@@ -140,6 +229,8 @@ test('no run keeps a loaded zero-item chip and explains the empty forecast', asy
 for (const [label, payload] of [
   ['wrong view', { ...forecastPayload(), view: 'other' }],
   ['fractional days', { ...forecastPayload(), items: [{ ...forecastPayload().items[0], nowDaysLeft: 2.5 }] }],
+  ['incomplete estimate', { ...forecastPayload(), items: [{ ...forecastPayload().items[1], estimate: { monthly: 12 } }] }],
+  ['zero estimate', { ...forecastPayload(), items: [{ ...forecastPayload().items[1], estimate: { monthly: 0, daysLeft: null, reason: 'Principal plan: 2 labs from Jan', reviewOn: '2027-02-12', setBy: 'manager@example.test', setAt: '2026-11-26T12:00:00Z' } }] }],
   ['invalid month', { ...forecastPayload(), throughMonth: '2026-13-01' }],
   ['missing fields', { view: 'forecast_trial' }],
   ['mixed no-run fields', { ...forecastPayload(), computedAt: null }],

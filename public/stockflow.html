@@ -407,9 +407,10 @@ document.querySelectorAll('[data-view]').forEach(b=>b.onclick=()=>{setView(b.dat
 })();
 </script>
 <script>
-// Read-only forecast trial; kept separate from the Stock snapshot.
+// Forecast trial; kept separate from the Stock snapshot.
 let forecastAllowed=false,forecastTrial=null,forecastView=false,forecastToken=0;
-function clearForecastTrial(){++forecastToken;forecastTrial=null;forecastView=false;$('forecastView').replaceChildren()}
+let forecastEstimateForm=null;
+function clearForecastTrial(){++forecastToken;forecastTrial=null;forecastView=false;forecastEstimateForm=null;$('forecastView').replaceChildren()}
 function handleForecastAccount(message){
   const allowed=message.canSeeForecast===true,permissionChanged=forecastAllowed!==allowed;
   const email=typeof message.email==='string'?message.email.trim().toLocaleLowerCase('en-IN'):'';
@@ -429,13 +430,16 @@ function validateForecastTrial(response,body){
   const number=x=>typeof x==='number'&&Number.isFinite(x),nullableNumber=x=>x===null||number(x);
   const count=x=>Number.isInteger(x)&&x>=0;
   const timestamp=x=>typeof x==='string'&&/^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}(?:\.\d+)?(?:Z|[+-]\d{2}:\d{2})$/.test(x)&&date(x.slice(0,10))&&Number.isFinite(Date.parse(x));
-  const item=x=>shape(x,['itemKey','isNew','firstSaleMonth','nowMonthly','nowDaysLeft','avg6Monthly','avg6DaysLeft','cap12Monthly','cap12DaysLeft'])&&typeof x.itemKey==='string'&&x.itemKey.trim().length>0&&typeof x.isNew==='boolean'&&month(x.firstSaleMonth)&&['nowMonthly','avg6Monthly','cap12Monthly'].every(k=>number(x[k]))&&['nowDaysLeft','avg6DaysLeft','cap12DaysLeft'].every(k=>x[k]===null||Number.isInteger(x[k]));
+  const estimate=x=>x===null||(shape(x,['monthly','daysLeft','reason','reviewOn','setBy','setAt'])&&number(x.monthly)&&x.monthly>0&&(x.daysLeft===null||Number.isInteger(x.daysLeft))&&typeof x.reason==='string'&&date(x.reviewOn)&&typeof x.setBy==='string'&&timestamp(x.setAt));
+  const itemKeys=['itemKey','isNew','firstSaleMonth','nowMonthly','nowDaysLeft','avg6Monthly','avg6DaysLeft','cap12Monthly','cap12DaysLeft'];
+  const item=x=>object(x)&&shape(x,Object.hasOwn(x,'estimate')?itemKeys.concat('estimate'):itemKeys)&&(!Object.hasOwn(x,'estimate')||estimate(x.estimate))&&typeof x.itemKey==='string'&&x.itemKey.trim().length>0&&typeof x.isNew==='boolean'&&month(x.firstSaleMonth)&&['nowMonthly','avg6Monthly','cap12Monthly'].every(k=>number(x[k]))&&['nowDaysLeft','avg6DaysLeft','cap12DaysLeft'].every(k=>x[k]===null||Number.isInteger(x[k]));
   const check=x=>shape(x,['horizon','segment','method','cutoffs','itemMonths','wape','bias'])&&[1,2].includes(x.horizon)&&['established','new'].includes(x.segment)&&['base','avg6','cap12'].includes(x.method)&&count(x.cutoffs)&&count(x.itemMonths)&&nullableNumber(x.wape)&&nullableNumber(x.bias);
   if(!response.ok||!shape(body,['view','asOf','computedAt','throughMonth','stale','uncertifiedMonths','check','itemCount','items'])||body.view!=='forecast_trial'||!date(body.asOf)||!(body.computedAt===null||timestamp(body.computedAt))||!(body.throughMonth===null||month(body.throughMonth))||typeof body.stale!=='boolean'||!Array.isArray(body.uncertifiedMonths)||!body.uncertifiedMonths.every(month)||!(body.check===null||(Array.isArray(body.check)&&body.check.length<=12&&body.check.every(check)))||!count(body.itemCount)||!Array.isArray(body.items)||body.items.length>200||body.itemCount<body.items.length||!body.items.every(item))throw new Error('Invalid forecast trial');
   if(body.computedAt===null||body.throughMonth===null||body.check===null){
     if(body.computedAt!==null||body.throughMonth!==null||body.check!==null||body.items.length!==0||body.itemCount!==0||!body.stale)throw new Error('Invalid forecast run state');
   }
   if(body.check&&new Set(body.check.map(x=>x.horizon+':'+x.segment+':'+x.method)).size!==body.check.length)throw new Error('Duplicate forecast check');
+  body.items.forEach(x=>{if(!Object.hasOwn(x,'estimate'))x.estimate=null});
 }
 async function loadForecastTrial(){
   if(!forecastAllowed)return;
@@ -451,6 +455,38 @@ async function loadForecastTrial(){
   renderGroups();
 }
 function forecastMonth(value){return new Date(value+'T00:00:00Z').toLocaleDateString('en-US',{month:'short',year:'numeric',timeZone:'UTC'})}
+function forecastReviewDate(value){return new Date(value+'T00:00:00Z').toLocaleDateString('en-GB',{day:'numeric',month:'short',timeZone:'UTC'})}
+function forecastDateAfter(days){const d=new Date();d.setDate(d.getDate()+days);return d.getFullYear()+'-'+String(d.getMonth()+1).padStart(2,'0')+'-'+String(d.getDate()).padStart(2,'0')}
+function validForecastEstimate(form){
+  const qty=Number(form.monthlyQty),reason=form.reason.trim(),date=form.reviewOn;
+  return form.monthlyQty.trim()!==''&&Number.isFinite(qty)&&qty>=0.01&&qty<=1000000&&reason.length>=10&&reason.length<=300&&/^\d{4}-\d{2}-\d{2}$/.test(date)&&Number.isFinite(Date.parse(date+'T00:00:00Z'))&&new Date(date+'T00:00:00Z').toISOString().slice(0,10)===date&&date>=forecastDateAfter(7)&&date<=forecastDateAfter(183);
+}
+const forecastButtonStyle='grid-column:auto;grid-row:auto;min-height:44px;justify-self:start';
+function forecastEstimateEditor(item){
+  const f=forecastEstimateForm;
+  if(!f||f.itemKey!==item.itemKey)return '';
+  const inputStyle='box-sizing:border-box;min-width:0;width:100%;max-width:100%;min-height:44px';
+  return '<form id="forecastEstimateEditor" style="grid-column:1/-1;display:grid;gap:10px;min-width:0;width:100%">'+
+    '<label>Expected use per month<input name="monthlyQty" type="number" step="any" min="0.01" max="1000000" required style="'+inputStyle+'" value="'+esc(f.monthlyQty)+'"'+(f.saving?' disabled':'')+'></label>'+
+    '<label>Why<input name="reason" type="text" minlength="10" maxlength="300" required placeholder="Principal plan: 2 labs from Jan" style="'+inputStyle+'" value="'+esc(f.reason)+'"'+(f.saving?' disabled':'')+'></label>'+
+    '<label>Review on<input name="reviewOn" type="date" required min="'+esc(forecastDateAfter(7))+'" max="'+esc(forecastDateAfter(183))+'" style="'+inputStyle+'" value="'+esc(f.reviewOn)+'"'+(f.saving?' disabled':'')+'></label>'+
+    '<div style="display:flex;flex-wrap:wrap;gap:8px"><button type="submit" class="idle-open-lab" style="'+forecastButtonStyle+'"'+(f.saving||!validForecastEstimate(f)?' disabled':'')+'>Save</button><button type="button" data-estimate-cancel class="idle-open-lab" style="'+forecastButtonStyle+'"'+(f.saving?' disabled':'')+'>Cancel</button></div>'+
+    '<div role="alert" class="idle-meta">'+esc(f.error)+'</div></form>';
+}
+async function saveForecastEstimate(event){
+  event.preventDefault();
+  const form=forecastEstimateForm;
+  if(!forecastAllowed||!form||form.saving||!validForecastEstimate(form))return;
+  form.saving=true;form.error='';renderForecast();
+  try{
+    const response=await fetch('/api/item-estimates',{method:'POST',credentials:'same-origin',cache:'no-store',headers:{'content-type':'application/json'},body:JSON.stringify({requestId:form.requestId,itemKey:form.itemKey,monthlyQty:Number(form.monthlyQty),reason:form.reason.trim(),reviewOn:form.reviewOn})});
+    if(forecastEstimateForm!==form||!forecastAllowed)return;
+    if(response.status===200){forecastEstimateForm=null;renderForecast();await loadForecastTrial();return}
+    form.error='Could not save. Try again.';
+    if(response.status===400){try{const body=await response.json();if(typeof body.error==='string')form.error=body.error}catch{}}
+  }catch{form.error='Could not save. Try again.'}
+  finally{if(forecastEstimateForm===form&&forecastAllowed){form.saving=false;renderForecast()}}
+}
 function renderForecastState(){
   const chip=document.querySelector('[data-action="forecast"]');
   chip.hidden=!forecastAllowed||!forecastTrial;
@@ -465,7 +501,7 @@ function renderForecastState(){
 function renderForecast(){
   if(!forecastTrial)return;
   const r=forecastTrial,methods=['base','avg6','cap12'];
-  const caption="Two ways to read sales, shown next to today's 90-day average. Nothing changes in Stock until the owner chooses."+(r.throughMonth?' Today uses the last 90 days; the trial uses complete months to '+forecastMonth(r.throughMonth)+'.':'');
+  const caption="Two ways to read sales, shown next to today's 90-day average. Nothing changes in Stock until the owner chooses."+(r.throughMonth?' Today uses the last 90 days; the trial uses complete months to '+forecastMonth(r.throughMonth)+'.':'')+" New items can carry a manager's expected use until they have 6 months of sales.";
   const notice=text=>'<p class="idle-meta">'+esc(text)+'</p>';
   const find=(horizon,segment,method)=>r.check?.find(x=>x.horizon===horizon&&x.segment===segment&&x.method===method);
   const percent=value=>value.toFixed(1);
@@ -476,9 +512,24 @@ function renderForecast(){
   $('forecastView').innerHTML='<div class="panel-head"><div><h2>Forecast trial</h2><p class="levels-caption">'+esc(caption)+'</p></div></div>'+
     (r.stale?notice(r.computedAt?'Forecast not updated since '+new Intl.DateTimeFormat('en-IN',{dateStyle:'medium',timeStyle:'short',timeZone:'Asia/Kolkata'}).format(new Date(r.computedAt)):'Forecast not run yet'):'')+
     (r.uncertifiedMonths.length?notice('Some months are not reconciled yet: '+r.uncertifiedMonths.map(forecastMonth).join(', ')):'')+table+newLine+
-    r.items.map(x=>'<div class="idle-row"><strong>'+esc(x.itemKey)+(x.isNew?' <span class="forecast-new">New</span>':'')+'</strong><div class="idle-meta">'+esc('today '+fmt(x.nowMonthly)+'/month · '+days(x.nowDaysLeft))+'</div><div class="idle-meta">'+esc('6-month '+fmt(x.avg6Monthly)+'/month · '+days(x.avg6DaysLeft)+' · capped '+fmt(x.cap12Monthly)+'/month · '+days(x.cap12DaysLeft))+'</div></div>').join('')+
+    r.items.map(x=>'<div class="idle-row"><strong>'+esc(x.itemKey)+(x.isNew?' <span class="forecast-new">New</span>':'')+'</strong><div class="idle-meta">'+esc('today '+fmt(x.nowMonthly)+'/month · '+days(x.nowDaysLeft))+'</div><div class="idle-meta">'+esc('6-month '+fmt(x.avg6Monthly)+'/month · '+days(x.avg6DaysLeft)+' · capped '+fmt(x.cap12Monthly)+'/month · '+days(x.cap12DaysLeft))+'</div>'+
+      (x.isNew?(x.estimate?'<div class="idle-meta">'+esc('expected '+fmt(x.estimate.monthly)+'/month · '+days(x.estimate.daysLeft)+' · '+x.estimate.reason+' · review '+forecastReviewDate(x.estimate.reviewOn))+'</div>':'')+'<button type="button" class="idle-open-lab" style="'+forecastButtonStyle+'" data-estimate-item="'+esc(x.itemKey)+'"'+(forecastEstimateForm?.saving?' disabled':'')+'>'+esc(x.estimate?'Change expected use':'Set expected use')+'</button>'+forecastEstimateEditor(x):'')+'</div>').join('')+
     (!r.items.length&&r.computedAt?notice('No items with recent sales to compare.'):'')+
     (r.itemCount>r.items.length?'<p class="idle-meta levels-note">Showing the first 200</p>':'');
+  $('forecastView').querySelectorAll('[data-estimate-item]').forEach(button=>button.onclick=()=>{
+    if(forecastEstimateForm?.saving||!forecastAllowed)return;
+    const item=r.items.find(x=>x.itemKey===button.dataset.estimateItem&&x.isNew);
+    if(!item)return;
+    forecastEstimateForm={itemKey:item.itemKey,requestId:crypto.randomUUID(),monthlyQty:item.estimate?String(item.estimate.monthly):'',reason:item.estimate?.reason||'',reviewOn:item.estimate?.reviewOn||forecastDateAfter(90),saving:false,error:''};
+    renderForecast();
+    $('forecastEstimateEditor')?.elements.namedItem('monthlyQty').focus();
+  });
+  const editor=$('forecastEstimateEditor');
+  if(editor){
+    editor.oninput=()=>{const form=forecastEstimateForm;if(!form||form.saving)return;['monthlyQty','reason','reviewOn'].forEach(key=>form[key]=editor.elements.namedItem(key).value);editor.querySelector('[type="submit"]').disabled=!validForecastEstimate(form)};
+    editor.onsubmit=saveForecastEstimate;
+    editor.querySelector('[data-estimate-cancel]').onclick=()=>{if(!forecastEstimateForm?.saving){forecastEstimateForm=null;renderForecast()}};
+  }
 }
 document.querySelector('[data-action="forecast"]').onclick=()=>{
   if(!forecastAllowed||!forecastTrial)return;
