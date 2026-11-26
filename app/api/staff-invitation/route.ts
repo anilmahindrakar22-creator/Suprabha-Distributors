@@ -1,7 +1,7 @@
 import { getChatGPTUser } from '@/app/chatgpt-auth';
 import { callOrderGateway, OrderGatewayError } from '@/lib/order-gateway';
 import { BoundedJsonRequestError, readBoundedJsonRequest } from '@/lib/bounded-json-request';
-import { sameStaffOrigin, staffAuthEnabled, staffInvitationClient, staffOrigin } from '@/lib/staff-auth';
+import { sameStaffOrigin, staffAuthClient, staffAuthEnabled, staffInvitationClient, staffOrigin } from '@/lib/staff-auth';
 
 const headers = { 'cache-control': 'private, no-store' };
 const fail = (status: number, error: string) => Response.json({ error }, { status, headers });
@@ -20,8 +20,19 @@ export async function POST(request: Request) {
     if (!directory.users.some(member => member.email === email && member.status === 'active')) return fail(400, 'Select an active approved staff account');
     if (process.env.STOCKFLOW_AUTH_EMAIL_RESET_ENABLED !== 'true') return fail(503, 'Access is saved, but invitation email delivery is not enabled');
     const { error } = await staffInvitationClient().auth.admin.inviteUserByEmail(email, { redirectTo: `${staffOrigin()}/staff-password-reset` });
-    if (error) return fail(502, 'Invitation not confirmed. Check the staff account before retrying; existing accounts may need a password reset');
-    return Response.json({ ok: true, message: 'Invitation requested. Staff must use the email link to set their own password.' }, { headers });
+    if (error) {
+      if (error.code === 'email_exists' || (error.status === 422 && error.code === 'user_already_exists')) {
+        try {
+          const { error: resetError } = await staffAuthClient().auth.resetPasswordForEmail(email, { redirectTo: `${staffOrigin()}/staff-password-reset` });
+          if (resetError) return fail(502, 'Set-password email not confirmed. Check the staff account before retrying.');
+          return Response.json({ ok: true, kind: 'reset', message: 'This person already has a StockFlow login. A link to set a new password was emailed to them.' }, { headers });
+        } catch {
+          return fail(502, 'Set-password email not confirmed. Check the staff account before retrying.');
+        }
+      }
+      return fail(502, 'Invitation not confirmed. Check the staff account before retrying; existing accounts may need a password reset');
+    }
+    return Response.json({ ok: true, kind: 'invite', message: 'Invitation requested. Staff must use the email link to set their own password.' }, { headers });
   } catch (error) {
     if (error instanceof BoundedJsonRequestError) return fail(error.status, error.message);
     if (error instanceof OrderGatewayError) return fail(error.status, 'Invitation could not be authorized');
