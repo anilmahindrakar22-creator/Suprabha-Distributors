@@ -40,7 +40,7 @@ for (const surface of ['service', 'instrument-economics', 'embedded-economics'])
     expect(await scrollArea.evaluate(element => element.getBoundingClientRect().bottom <= innerHeight + 1)).toBe(true);
     const lowerEvidence = surface === 'service'
       ? page.getByRole('region', { name: 'Installed equipment register' }).getByText('Installation details', { exact: true }).last()
-      : page.getByText('Current source line evidence (0)', { exact: true });
+      : page.getByText(/^Current source line evidence/);
     await expect(lowerEvidence).not.toBeInViewport();
     const box = (await scrollArea.boundingBox())!;
     await page.mouse.move(box.x + box.width / 2, box.y + box.height - 30);

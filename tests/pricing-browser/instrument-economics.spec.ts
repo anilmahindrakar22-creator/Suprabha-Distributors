@@ -178,6 +178,12 @@ async function openAdvanced(page: Page, section: 'All actions' | 'Exceptions' | 
 }
 
 async function mockWorkspace(page: Page, body = economicsData()) {
+  await page.route('**/api/instrument-economics/exceptions**', route => {
+    const params = new URL(route.request().url()).searchParams;
+    const rows = (body.exceptions as import('@/lib/instrument-economics-types').EconomicException[]).filter(row => !params.has('status') || row.status === params.get('status'));
+    const limit = Number(params.get('limit') ?? 200); const offset = Number(params.get('offset') ?? 0);
+    return route.fulfill({ json: { rows: rows.slice(offset, offset + limit), groups: [], total: rows.length, limit, offset } });
+  });
   await mockProducts(page, body.sourceLines, (body as Record<string, unknown>).attributionLines as Record<string, unknown>[] | undefined);
   await mockInvoiceLines(page, body.sourceLines);
   await page.route('**/api/instrument-economics', (route: Route) => route.request().method() === 'GET'

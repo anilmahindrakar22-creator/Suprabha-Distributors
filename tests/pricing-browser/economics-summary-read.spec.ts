@@ -1,6 +1,7 @@
 import { expect, test } from '@playwright/test';
 
 test.beforeEach(async ({ page }) => {
+  await page.route('**/api/instrument-economics/exceptions**', route => route.fulfill({ json: { rows: [], groups: [], total: 0, limit: Number(new URL(route.request().url()).searchParams.get('limit') ?? 200), offset: 0 } }));
   await page.route('**/api/instrument-economics/cost-review**', route => route.fulfill({ json: { sales: [], salesTotal: 0, purchases: [], purchasesTotal: 0 } }));
   await page.route('**/api/instrument-economics/line-refs**', route => route.fulfill({ json: { rows: [], total: 0, limit: 5000 } }));
 });
@@ -34,7 +35,7 @@ test('one instrument starts as a summary; evidence loads only on demand and can 
   expect(views).toEqual(['summary', 'detail']);
 });
 
-test('tabs load the lighter detail view; only invoice-searching forms load every source line', async ({ page }) => {
+test('all tabs and action forms stay on the lighter detail view', async ({ page }) => {
   const views: string[] = [];
   await page.route('**/api/instrument-economics', route => {
     const view = route.request().headers()['x-stockflow-economics-view']; views.push(view);
@@ -49,10 +50,10 @@ test('tabs load the lighter detail view; only invoice-searching forms load every
   expect(views).toEqual(['summary', 'detail']);
   await page.getByRole('button', { name: 'All actions', exact: true }).click();
   await expect(page.getByRole('button', { name: 'All actions', exact: true })).toHaveAttribute('aria-current', 'page');
-  expect(views).toEqual(['summary', 'detail', 'full']);
+  expect(views).toEqual(['summary', 'detail']);
   await page.getByRole('button', { name: 'Set up', exact: true }).click();
   await expect(page.getByRole('button', { name: 'Set up', exact: true })).toHaveAttribute('aria-current', 'page');
-  expect(views).toEqual(['summary', 'detail', 'full']);
+  expect(views).toEqual(['summary', 'detail']);
 });
 
 test('failed evidence read retains summary and never opens empty setup; revocation clears finance', async ({ page }) => {
