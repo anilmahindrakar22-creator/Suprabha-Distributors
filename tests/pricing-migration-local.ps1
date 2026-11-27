@@ -183,9 +183,16 @@ try {
   $salesNames += '20261130130000_batch_item_mappings.sql'
   $salesNames += '20261130140000_brand_line_tree.sql'
   $salesNames += '20261130150000_growth_brands.sql'
-  $salesNames += '20261130160000_economic_covered_segments.sql'
-  $salesNames += '20261130170000_growth_lab_months.sql'
-  $salesNames += '20261130175000_voucher_lookup_indexes.sql'
+  # The deployed history has the lab-month read before covered segments, and
+  # the lookup indexes were released later as a standalone hotfix.
+  if ($DeploymentOrder) {
+    $salesNames += '20261130170000_growth_lab_months.sql'
+    $salesNames += '20261130160000_economic_covered_segments.sql'
+  } else {
+    $salesNames += '20261130160000_economic_covered_segments.sql'
+    $salesNames += '20261130170000_growth_lab_months.sql'
+    $salesNames += '20261130175000_voucher_lookup_indexes.sql'
+  }
   $salesNames += '20261130180000_economic_item_areas.sql'
   $salesNames += '20261130190000_brand_group_inherit.sql'
   $salesNames += '20261130200000_economic_prune_schedule.sql'
@@ -197,6 +204,9 @@ try {
   $salesNames += '20261206110000_data_checks.sql'
   $salesNames += '20261206120000_idle_stock.sql'
   $salesNames += '20261213090000_observed_price_changes.sql'
+  if ($DeploymentOrder) {
+    $salesNames += '20261130175000_voucher_lookup_indexes.sql'
+  }
   $salesNames += '20261214090000_unlinked_po_receipts.sql'
   $salesNames += '20261214100000_company_letterhead.sql'
   $salesNames += '20261215090000_growth_declining_labs.sql'
