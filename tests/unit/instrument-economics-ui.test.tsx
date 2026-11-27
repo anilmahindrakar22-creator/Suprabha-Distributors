@@ -1,8 +1,43 @@
 import { readFileSync } from 'node:fs';
 import { describe, expect, it, vi } from 'vitest';
+// A small hook runner exercises the fetch/effect path without a browser dependency.
+const hooks = vi.hoisted(() => ({ active: false, initial: true, cursor: 0, slots: [] as unknown[], effects: [] as (() => unknown)[] }));
+vi.mock('react', async importOriginal => {
+  const actual = await importOriginal<typeof import('react')>();
+  return {
+    ...actual,
+    useState: ((initial: unknown) => {
+      if (!hooks.active) return actual.useState(initial);
+      const index = hooks.cursor++;
+      if (hooks.initial) hooks.slots[index] = typeof initial === 'function' ? initial() : initial;
+      const slots = hooks.slots;
+      return [slots[index], (value: unknown) => { slots[index] = typeof value === 'function' ? value(slots[index]) : value; }];
+    }) as typeof actual.useState,
+    useRef: ((initial: unknown) => {
+      if (!hooks.active) return actual.useRef(initial);
+      const index = hooks.cursor++;
+      if (hooks.initial) hooks.slots[index] = { current: initial };
+      return hooks.slots[index];
+    }) as typeof actual.useRef,
+    useCallback: ((callback: () => unknown, deps: unknown[]) => hooks.active ? callback : actual.useCallback(callback, deps)) as typeof actual.useCallback,
+    useMemo: ((factory: () => unknown, deps: unknown[]) => hooks.active ? factory() : actual.useMemo(factory, deps)) as typeof actual.useMemo,
+    useReducer: ((reducer: (state: unknown, action: unknown) => unknown, initial: unknown) => {
+      if (!hooks.active) return actual.useReducer(reducer, initial);
+      const index = hooks.cursor++; const slots = hooks.slots;
+      if (hooks.initial) slots[index] = initial;
+      return [slots[index], (action: unknown) => { slots[index] = reducer(slots[index], action); }];
+    }) as typeof actual.useReducer,
+    useId: () => hooks.active ? 'test-id' : actual.useId(),
+    useEffect: ((effect: () => unknown, deps: unknown[]) => {
+      if (!hooks.active) return actual.useEffect(effect as () => void, deps);
+      if (hooks.initial) hooks.effects.push(effect);
+    }) as typeof actual.useEffect,
+  };
+});
 vi.mock('next/link', () => ({ default: 'a' }));
 import { renderToStaticMarkup } from 'react-dom/server';
-import { CumulativeFinancialBreakdown, importProblemText, ImportProblemItem } from '@/components/instrument-economics-workspace';
+import { isValidElement, type ReactElement, type ReactNode } from 'react';
+import { AccountsDocumentReview, CumulativeFinancialBreakdown, importProblemText, ImportProblemItem } from '@/components/instrument-economics-workspace';
 import { EconomicActionOptions, ProposedTargetReview, EconomicApprovalPreview, EconomicHealthBadge, EconomicTargetAdvancedDetails, EconomicTargetCard, InstrumentEconomicsWorkspace, economicCommandNotice, friendlyEconomicError, ItemGpBreakdown, reagentLifetime, reportingPeriodLabel, CommandForm } from '@/components/instrument-economics-workspace';
 import { capitalBeyondManagementReview, capitalPreviewPaise, CostReviewContext, PurchaseCostVerificationFields } from '@/components/instrument-economics-evidence-forms';
 import type { EconomicTarget, EconomicsWorkspaceData } from '@/lib/instrument-economics-types';
@@ -15,7 +50,137 @@ const target: EconomicTarget = {
   expectation: { id: 'expectation-1', monthlyRevenuePaise: '100000', monthlyGpPaise: '25000', effectiveFrom: '2026-04-01', reason: 'Current approved baseline' },
 };
 
+type TestElement = ReactElement<Record<string, any>>;
+function findElement(node: unknown, predicate: (element: TestElement) => boolean): TestElement | null {
+  if (Array.isArray(node)) {
+    for (const child of node) { const found = findElement(child, predicate); if (found) return found; }
+  } else if (isValidElement(node)) {
+    const element = node as TestElement;
+    if (predicate(element)) return element;
+    for (const child of Object.values(element.props)) {
+      if (Array.isArray(child) || isValidElement(child)) { const found = findElement(child, predicate); if (found) return found; }
+    }
+  }
+  return null;
+}
+function hookComponent(render: () => ReactNode) {
+  const slots: unknown[] = [];
+  let initial = true;
+  let effects: (() => unknown)[] = [];
+  return {
+    render() {
+      hooks.active = true; hooks.initial = initial; hooks.cursor = 0; hooks.slots = slots; hooks.effects = [];
+      try { const tree = render(); effects = hooks.effects; initial = false; return tree; }
+      finally { hooks.active = false; }
+    },
+    effects() { for (const effect of effects) effect(); },
+  };
+}
+async function detailScenario(background: boolean) {
+  const timers: (() => void)[] = [];
+  vi.stubGlobal('window', { setTimeout: (callback: () => void) => { timers.push(callback); return timers.length; }, clearTimeout: vi.fn(), sessionStorage: { getItem: () => null } });
+  const summary = { actorEmail: 'manager@test.local', readView: 'summary', todoCount: 0, targets: [target], mappings: [], exceptions: [], leakage: [], cases: [], sourceLines: [], installations: [], customers: [], canManage: true, canApprove: true, canAct: true, generation: 'test-run', sourceLineCount: 0, unattributedPaise: '0', policy: { forecastWindowMonths: 3 } };
+  let resolveRead: (response: Response) => void = () => undefined;
+  const fetchMock = vi.fn((_url: string, options: RequestInit) => {
+    if ((options.headers as Record<string, string>)['x-stockflow-economics-view'] === 'summary') return Promise.resolve(Response.json(summary));
+    return new Promise<Response>(resolve => { resolveRead = resolve; });
+  });
+  vi.stubGlobal('fetch', fetchMock);
+  const workspace = hookComponent(() => InstrumentEconomicsWorkspace());
+  workspace.render(); workspace.effects();
+  timers.shift()!();
+  await vi.waitFor(() => expect(timers).toHaveLength(1));
+  if (background) timers.shift()!();
+  let placementElement = findElement(workspace.render(), element => typeof element.type === 'function' && element.type.name === 'PlacementReagents')!;
+  const cardElement = findElement(workspace.render(), element => element.type === EconomicTargetCard)!;
+  const card = hookComponent(() => EconomicTargetCard(cardElement.props as Parameters<typeof EconomicTargetCard>[0]));
+  const placement = hookComponent(() => (placementElement.type as (props: Record<string, unknown>) => ReactNode)(placementElement.props));
+  const button = () => findElement(placement.render(), element => element.type === 'button')!;
+  return {
+    tap: () => button().props.onClick() as Promise<void>, button,
+    salesTap: () => findElement(card.render(), element => element.type === 'button' && 'aria-expanded' in element.props)!.props.onClick() as Promise<void>,
+    detailRequests: () => fetchMock.mock.calls.filter(([, options]) => (options.headers as Record<string, string>)['x-stockflow-economics-view'] === 'detail'),
+    finish: (success: boolean) => resolveRead(Response.json(success ? { ...summary, readView: 'detail' } : { error: 'Detail unavailable' }, { status: success ? 200 : 502 })),
+    form: () => {
+      placementElement = findElement(workspace.render(), element => typeof element.type === 'function' && element.type.name === 'PlacementReagents')!;
+      return findElement(placement.render(), element => typeof element.type === 'function' && element.type.name === 'AddGroupWithItems');
+    },
+    failure: () => {
+      const element = findElement(placement.render(), element => typeof element.type === 'function' && element.type.name === 'InstrumentDetailFailure');
+      return element ? (element.type as (props: Record<string, unknown>) => ReactElement)(element.props) : null;
+    },
+    cleanup: () => { hooks.active = false; vi.unstubAllGlobals(); },
+  };
+}
+
 describe('instrument economics presentation', () => {
+  it.each([false, true])('three Add reagents taps share one pending detail read (background=%s)', async background => {
+    const scenario = await detailScenario(background);
+    try {
+      const taps = [scenario.tap(), scenario.tap(), scenario.tap(), scenario.salesTap()];
+      expect(scenario.detailRequests()).toHaveLength(1);
+      const button = scenario.button();
+      expect(button.props.disabled).toBe(true);
+      expect(button.props['aria-busy']).toBe(true);
+      expect(renderToStaticMarkup(button)).toContain('Loading…');
+      scenario.finish(true);
+      await Promise.all(taps);
+      expect(scenario.form()).toBeTruthy();
+      expect(scenario.button().props['aria-busy']).toBe(false);
+      expect(scenario.detailRequests()).toHaveLength(1);
+    } finally { scenario.cleanup(); }
+  });
+  it('shows a failed detail read beside Add reagents and Retry opens the form', async () => {
+    const scenario = await detailScenario(false);
+    try {
+      const tap = scenario.tap();
+      scenario.finish(false);
+      await tap;
+      const failure = scenario.failure();
+      const html = renderToStaticMarkup(failure);
+      expect(html).toContain('role="alert"');
+      expect(html).toContain('Couldn&#x27;t load the instrument details.');
+      const retry = findElement(failure, element => element.props['aria-label'] === 'Retry loading instrument details')!;
+      expect(retry.props.children).toContain('Retry');
+      const retrying = retry.props.onClick();
+      expect(scenario.detailRequests()).toHaveLength(2);
+      scenario.finish(true);
+      await retrying;
+      expect(scenario.form()).toBeTruthy();
+      expect(scenario.failure()).toBeNull();
+    } finally { scenario.cleanup(); }
+  });
+  it('loads Accounts review from the paged route, uses total and sorts loaded voucher dates', async () => {
+    const row = { sourceId: 'fetch-import', productId: '', date: '2026-10-10', netSalesPaise: '0', status: 'import_rejected', reason: 'Missing customer', voucherNumber: 'FETCH-42', voucherType: 'Sales', voucherDate: '2026-10-10' };
+    const fetchMock = vi.fn().mockResolvedValue(Response.json({ rows: [{ ...row, voucherNumber: 'OLDER', voucherDate: '2026-10-01' }, row], groups: [], total: 240, limit: 200, offset: 0 }));
+    vi.stubGlobal('fetch', fetchMock);
+    hooks.active = true; hooks.initial = true; hooks.cursor = 0; hooks.slots = []; hooks.effects = [];
+    const data = { generation: 'fetch-generation', exceptions: [{ ...row, voucherNumber: 'STALE' }] } as unknown as EconomicsWorkspaceData;
+    const render = () => { hooks.cursor = 0; return renderToStaticMarkup(AccountsDocumentReview({ data })); };
+    try {
+      expect(render()).toContain('Loading');
+      hooks.initial = false;
+      for (const effect of hooks.effects) effect();
+      await vi.waitFor(() => {
+        const html = render();
+        expect(html).toContain('Sales invoice FETCH-42');
+        expect(html).toContain('Tally documents needing review (240)');
+        expect(html).toContain('Show more');
+        expect(html).not.toContain('STALE');
+        expect(html.indexOf('FETCH-42')).toBeLessThan(html.indexOf('OLDER'));
+      });
+      expect(fetchMock).toHaveBeenCalledWith('/api/instrument-economics/exceptions?status=import_rejected&limit=200&offset=0', { cache: 'no-store' });
+    } finally {
+      hooks.active = false;
+      vi.unstubAllGlobals();
+    }
+  });
+  it('has no full read callers or local purchase-line options', () => {
+    const source = readFileSync('components/instrument-economics-workspace.tsx', 'utf8');
+    expect(source).not.toContain("ensureView('full')");
+    expect(source).not.toContain('loadAllSourceLines');
+    expect(source).not.toContain("field.type === 'purchaseLine'");
+  });
   it('shows free supply count and actual cost only for non-proposed targets with free lines', () => {
     const free = { ...target, freeLines: 2, freeCostPaise: '3200000' };
     const html = renderToStaticMarkup(<EconomicTargetCard target={free} />);

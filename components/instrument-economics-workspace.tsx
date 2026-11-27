@@ -17,7 +17,8 @@ import { clearEconomicRecoveryReference, readEconomicRecoveryReference, writeEco
 import { EconomicLinePicker } from './economic-line-picker';
 import { EconomicProductPicker, useEconomicProducts, useProductOptions } from './economic-product-picker';
 import type { EconomicProduct } from '@/lib/instrument-economics-products';
-import type { EconomicLineFilter, SourceLine } from '@/lib/instrument-economics-lines';
+import { normalizeEconomicLinePage, type EconomicLineFilter, type SourceLine } from '@/lib/instrument-economics-lines';
+import { normalizeEconomicExceptions } from '@/lib/instrument-economics-exceptions';
 import { capitalBeyondManagementReview, capitalPreviewPaise, MappingOptions, HistoricalInstrumentFields, AcquisitionReviewFields, EconomicMappingIdentityFields, EconomicAllocationRows, InstrumentAcquisitionFields, InstrumentBillingFields, ItemGroupMappingFields, PurchaseCostVerificationFields } from '@/components/instrument-economics-evidence-forms';
 import { filterEconomicTargets, InstrumentEconomicsPortfolioFilters, type InstrumentEconomicsPortfolioFilterValues as EconomicPortfolioFilters } from '@/components/instrument-economics-portfolio-filters';
 import { readJsonBody } from '@/lib/http-json';
@@ -298,7 +299,8 @@ function InvestmentRecovery({ target, policyWindowMonths, businessDate }: { targ
 }
 
 const approvalLabel: Record<EconomicTarget['approval'], string> = { approved: 'Approved', proposed: 'Proposed', rejected: 'Rejected' };
-export function EconomicTargetCard({ target, selected, pooledInName, expanded, onToggle, children, lifetime, period, policyWindowMonths = 3, businessDate, onReviewCosts, reagentAction }: { target: EconomicTarget; selected?: boolean; pooledInName?: string; expanded?: boolean; onToggle?: () => void; children?: ReactNode; lifetime?: ReagentLifetime; period?: string; policyWindowMonths?: number; businessDate?: string; onReviewCosts?: () => void; reagentAction?: ReactNode }) {
+export function EconomicTargetCard({ target, selected, pooledInName, expanded, onToggle, children, lifetime, period, policyWindowMonths = 3, businessDate, onReviewCosts, reagentAction }: { target: EconomicTarget; selected?: boolean; pooledInName?: string; expanded?: boolean; onToggle?: () => void | Promise<boolean>; children?: ReactNode; lifetime?: ReagentLifetime; period?: string; policyWindowMonths?: number; businessDate?: string; onReviewCosts?: () => void; reagentAction?: ReactNode }) {
+  const toggle = useInstrumentDetailAction(async () => (await onToggle?.()) !== false);
   const missingCost = target.approval === 'proposed' ? 0 : lifetime?.missingCostLines ?? target.missingCostLines;
   return <article className={`min-w-0 rounded-2xl border bg-white p-4 shadow-sm sm:p-5 ${selected ? 'border-sf-accent ring-2 ring-sf-accent/20' : 'border-sf-line-soft'}`}>
      <div className="flex flex-wrap items-start justify-between gap-3"><div className="min-w-0"><p className="text-xs font-semibold text-sf-muted">{target.customerName}{target.kind === 'group' ? ' · group' : ''}</p><h3 className="mt-1 break-words text-lg font-extrabold text-sf-ink">{target.name}</h3>{target.kind === 'placement' && target.instrumentSerialNumber ? <p className="mt-1 text-xs text-sf-muted">Instrument SN {target.instrumentSerialNumber} · placed here since {displayDate(target.effectiveFrom)}{target.instrumentMovedFrom ? ` · previously at ${target.instrumentMovedFrom}` : ''}</p> : null}<p className="mt-1 text-xs text-sf-muted">Since {displayDate(target.effectiveFrom)}{target.effectiveTo ? ` to ${displayDate(target.effectiveTo)}` : ''} · {approvalLabel[target.approval]}</p></div><EconomicHealthBadge health={target.health} /></div>
@@ -311,7 +313,7 @@ export function EconomicTargetCard({ target, selected, pooledInName, expanded, o
     <InvestmentRecovery target={target} policyWindowMonths={policyWindowMonths} businessDate={businessDate} />
     <ReagentSummary target={target} lifetime={lifetime} period={period} />
     {reagentAction}
-    {onToggle ? <button type="button" onClick={onToggle} aria-expanded={expanded} className="mt-4 inline-flex min-h-10 items-center gap-1 rounded-lg border border-sf-line px-3 text-sm font-bold text-sf-brand">{expanded ? <>Hide sales &amp; items</> : <>Sales &amp; items</>}</button> : null}{expanded ? <div className="mt-4 space-y-4">{children}</div> : null}
+    {onToggle ? <button type="button" onClick={toggle.run} disabled={toggle.waiting} aria-busy={toggle.waiting} aria-expanded={expanded} className="mt-4 inline-flex min-h-10 items-center gap-1 rounded-lg border border-sf-line px-3 text-sm font-bold text-sf-brand">{expanded ? <>Hide sales &amp; items</> : <>Sales &amp; items</>}{toggle.waiting ? <span className="ml-2 text-xs">Loading…</span> : null}</button> : null}{toggle.failed ? <InstrumentDetailFailure action={toggle} /> : null}{expanded ? <div className="mt-4 space-y-4">{children}</div> : null}
   </article>;
 }
 
@@ -456,7 +458,7 @@ function Field({ field, data, targets, model }: { field: (typeof fields[string])
   const common = { 'aria-label': field.label, id: field.name, name: field.name, required: field.required, className: 'min-h-10 min-w-0 w-full rounded-lg border border-sf-line bg-white px-3 text-sm outline-none focus-visible:ring-2 focus-visible:ring-sf-accent' };
   let input: ReactNode;
   if (field.type === 'checkbox') input = <input {...common} type="checkbox" className="size-5 accent-sf-accent" />;
-  else if (field.type === 'select' || field.type === 'effect' || field.type === 'decision' || field.type === 'capitalKind' || field.type === 'customer' || field.type === 'installation' || field.type === 'target' || field.type === 'capitalTarget' || field.type === 'group' || field.type === 'placement' || field.type === 'case' || field.type === 'membership' || field.type === 'allocation' || field.type === 'purchaseLine' || field.type === 'focReason') {
+  else if (field.type === 'select' || field.type === 'effect' || field.type === 'decision' || field.type === 'capitalKind' || field.type === 'customer' || field.type === 'installation' || field.type === 'target' || field.type === 'capitalTarget' || field.type === 'group' || field.type === 'placement' || field.type === 'case' || field.type === 'membership' || field.type === 'allocation' || field.type === 'focReason') {
     let options: [string, string][] = [];
     if (field.type === 'select') options = [['placement', 'Placement'], ['group', 'Group']];
     if (field.type === 'effect') options = [['include', 'Include'], ['exclude', 'Exclude']];
@@ -471,7 +473,6 @@ function Field({ field, data, targets, model }: { field: (typeof fields[string])
     if (field.type === 'case') options = data.cases.map<[string, string]>(row => [row.id, `${row.title} · ${row.status}`]);
     if (field.type === 'membership') options = (data.groupMemberships ?? []).map<[string, string]>(row => [row.id, `${targets.find(target => target.id === row.groupId)?.name ?? row.groupId} → ${targets.find(target => target.id === row.placementId)?.name ?? row.placementId} · ${row.effectiveFrom}${row.effectiveTo ? ` to ${row.effectiveTo}` : ' active'}`]);
     if (field.type === 'allocation') options = (data.allocations ?? []).filter(row => !row.effectiveTo).map<[string, string]>(row => [row.id, `${row.productId} · ${row.siteId} · since ${row.effectiveFrom}`]);
-    if (field.type === 'purchaseLine') options = (data.sourceLines ?? []).filter(row => row.kind === 'purchase').map<[string, string]>(row => [`${row.id}`, `${row.date} · ${row.kind} · ${row.productName ? `${row.productName} (${row.productId})` : row.productId} · ${row.quantity} ${row.unit} · ${money(row.netSalesPaise)}`]);
     if (field.type === 'focReason') options = [['installation', 'Installation'], ['training', 'Training'], ['quality_control', 'Quality control'], ['replacement', 'Replacement'], ['commercial_support', 'Commercial support'], ['other', 'Other']];
     input = <select {...common} defaultValue="">{!field.required ? <option value="">None</option> : <option value="" disabled>Select…</option>}{options.map(([value, label]) => <option key={value} value={value}>{label}</option>)}</select>;
   } else input = <><input {...common} onChange={field.name === 'productId' ? event => setProductQuery(event.target.value) : undefined} list={field.name === 'productId' ? 'economic-product-options' : undefined} type={field.type === 'money' || field.type === 'decimal' ? 'text' : field.type ?? 'text'} inputMode={field.type === 'money' || field.type === 'decimal' ? 'decimal' : field.type === 'number' ? 'numeric' : undefined} min={field.name === 'testsPerUnit' ? '0.001' : ['testCount', 'qcUnits', 'externalSupply'].includes(field.name) ? '0' : undefined} step={field.type === 'decimal' ? 'any' : field.type === 'number' ? '1' : undefined} placeholder={field.placeholder} />{field.name === 'productId' ? <datalist id="economic-product-options">{productOptions.map(([id, label]) => <option key={id} value={id}>{label}</option>)}</datalist> : null}</>;
@@ -761,8 +762,8 @@ export function ImportProblemItem({ row }: { row: EconomicException }) {
 function TodoPanel({ data, onAccountsReview }: { data: EconomicsWorkspaceData; onAccountsReview: () => void }) {
   const { review, lines, loading, error, retry } = useCostReview({ enabled: true, generation: data.generation });
   const sales = costVerificationSaleLines(lines, data.attributionLines ?? []);
-  const problems = data.exceptions.filter(row => row.status === 'import_rejected')
-    .sort((a, b) => (b.voucherDate ?? b.date).localeCompare(a.voucherDate ?? a.date));
+  const imports = useEconomicPage('/api/instrument-economics/exceptions?status=import_rejected', 1, normalizeEconomicExceptions, true, data.generation);
+  const problemCount = imports.total ?? 0;
   return <div className="space-y-4">
     <section aria-label="Sales without purchase cost" className="rounded-2xl border border-sf-line-soft bg-white p-4 sm:p-6">
       <h2 className="text-lg font-extrabold">Sales without a matching Tally purchase ({loading ? '…' : sales.length})</h2>
@@ -771,24 +772,27 @@ function TodoPanel({ data, onAccountsReview }: { data: EconomicsWorkspaceData; o
       {loading ? <p className="mt-3 text-sm">Loading sales…</p> : error ? <div role="alert" className="mt-3 text-sm"><p>Could not load sales.</p><button type="button" onClick={retry} className="mt-2 min-h-11 rounded-lg border border-sf-line px-4 font-semibold">Retry</button></div> : sales.length ? <ul className="mt-3 divide-y divide-sf-soft">{sales.map(sale => <li key={sale.id} className="break-words py-3"><p className="font-bold">{sale.productName || sale.productId} · {plainQuantity(sale.quantity)} {sale.unit} · {money(sale.netSalesPaise)}</p><p className="mt-1 text-xs text-sf-muted">{displayDate(sale.date)} · Tally {sale.voucherNumber?.trim() || sale.voucherId} line {sale.lineKey}{sale.batchId ? ` · batch ${sale.batchId}` : ''}</p><p className="mt-1 text-sm text-sf-warning inline-flex items-center gap-1"><TriangleAlert size={14} aria-hidden="true" className="shrink-0" />{missingPurchaseReason(sale, lines)}</p></li>)}</ul>
         : <p className="mt-3 text-sm text-sf-success inline-flex items-center gap-1"><CircleCheck size={14} aria-hidden="true" className="shrink-0" />Nothing to fix. Every counted sale has a Tally purchase cost.</p>}
     </section>
-    {problems.length ? <button type="button" aria-label={`Accounts review (${problems.length})`} onClick={onAccountsReview} className="min-h-11 w-full rounded-xl border border-sf-line bg-white p-4 text-left text-sm font-bold text-sf-brand">Accounts review ({problems.length})<span className="mt-1 block text-xs font-normal text-sf-muted">Other Tally documents across customers. Review separately from instrument sales.</span></button> : null}
+    <PageStatus page={imports} />
+    {problemCount ? <button type="button" aria-label={`Accounts review (${problemCount})`} onClick={onAccountsReview} className="min-h-11 w-full rounded-xl border border-sf-line bg-white p-4 text-left text-sm font-bold text-sf-brand">Accounts review ({problemCount})<span className="mt-1 block text-xs font-normal text-sf-muted">Other Tally documents across customers. Review separately from instrument sales.</span></button> : null}
   </div>;
 }
 
 export function AccountsDocumentReview({ data }: { data: EconomicsWorkspaceData }) {
-  const problems = data.exceptions.filter(row => row.status === 'import_rejected')
-    .sort((a, b) => (b.voucherDate ?? b.date).localeCompare(a.voucherDate ?? a.date));
+  const imports = useEconomicPage('/api/instrument-economics/exceptions?status=import_rejected', 200, normalizeEconomicExceptions, true, data.generation);
+  const problems = [...imports.rows].sort((a, b) => (b.voucherDate ?? b.date).localeCompare(a.voucherDate ?? a.date));
   return (<section aria-label="Tally import problems" className="rounded-2xl border border-sf-line-soft bg-white p-4 sm:p-6">
       <h2 className="text-lg font-extrabold">Accounts review</h2>
-      <h3 className="mt-2 text-base font-bold">Tally documents needing review ({problems.length})</h3>
+      <h3 className="mt-2 text-base font-bold">Tally documents needing review ({typeof imports.total === 'number' ? imports.total : '…'})</h3>
+      <PageStatus page={imports} />
       {problems.length ? <>
         <p className="mt-1 text-sm text-sf-muted">Accounts needs to review these documents before their amounts can be used. This covers imported Tally data across instruments.</p>
         <details className="mt-3 rounded-xl bg-sf-soft p-3">
-          <summary className="-m-3 list-item cursor-pointer p-3 text-sm font-bold">Show document details ({problems.length})</summary>
+          <summary className="-m-3 list-item cursor-pointer p-3 text-sm font-bold">Show document details ({imports.total})</summary>
           <ul className="mt-2 max-h-80 divide-y divide-sf-soft overflow-y-auto">{problems.map((row, index) => <ImportProblemItem key={`${row.sourceId}-${index}`} row={row} />)}</ul>
         </details>
       </>
-        : <p className="mt-3 text-sm text-sf-success inline-flex items-center gap-1"><CircleCheck size={14} aria-hidden="true" className="shrink-0" />No import problems.</p>}
+        : imports.total === 0 ? <p className="mt-3 text-sm text-sf-success inline-flex items-center gap-1"><CircleCheck size={14} aria-hidden="true" className="shrink-0" />No import problems.</p> : null}
+      {imports.rows.length < (imports.total ?? 0) ? <button type="button" disabled={imports.loading} onClick={imports.more} className="min-h-11 rounded-lg border border-sf-line px-4 text-sm font-bold">Show more</button> : null}
     </section>);
 }
 
@@ -843,18 +847,42 @@ function AddGroupWithItems({ target, data, disabled, runCommand, onSuccess }: { 
   </form>;
 }
 
+
+function useInstrumentDetailAction(action: () => Promise<boolean>) {
+  const pending = useRef(false);
+  const [waiting, setWaiting] = useState(false);
+  const [failed, setFailed] = useState(false);
+  const run = async () => {
+    if (pending.current) return;
+    pending.current = true;
+    setWaiting(true);
+    try { setFailed(!await action()); }
+    catch { setFailed(true); }
+    finally { pending.current = false; setWaiting(false); }
+  };
+  return { run, waiting, failed };
+}
+function InstrumentDetailFailure({ action }: { action: ReturnType<typeof useInstrumentDetailAction> }) {
+  return <div role="alert" className="mt-2 text-sm text-sf-danger">Couldn&apos;t load the instrument details. <button type="button" aria-label="Retry loading instrument details" disabled={action.waiting} aria-busy={action.waiting} onClick={action.run} className="min-h-11 rounded-lg border border-sf-line px-3 font-bold">Retry{action.waiting ? <span className="ml-2 text-xs">Loading…</span> : null}</button></div>;
+}
 function PlacementReagents({ target, data, disabled, onSubmit, onOpen, runCommand }: { target: EconomicTarget; data: EconomicsWorkspaceData; disabled: boolean; onSubmit: SubmitCommand; onOpen: () => Promise<boolean>; runCommand: InstrumentAddCommand }) {
   const [open, setOpen] = useState(false);
-  return data.canManage ? <div className="mt-3 min-w-0"><button type="button" disabled={disabled} className="min-h-11 rounded-lg border border-sf-line px-3 text-sm font-bold" onClick={async () => { if (open) setOpen(false); else if (await onOpen()) setOpen(true); }}>Add reagents</button>{open ? <><AddGroupWithItems target={target} data={data} disabled={disabled} runCommand={runCommand} onSuccess={() => setOpen(false)} /><details><summary className="min-h-11 cursor-pointer py-3">More options (dates, exclusion, note)</summary><CommandForm action="set_item_group_mapping" data={data} disabled={disabled} busy={disabled} onSubmit={onSubmit} defaultTargetId={target.id} label="Add item group" /></details><details><summary className="min-h-11 cursor-pointer py-3">Add a single item</summary><CommandForm action="set_mapping" data={data} disabled={disabled} busy={disabled} onSubmit={onSubmit} defaultTargetId={target.id} simpleMapping label="Add item" /></details></> : null}</div> : null;
+  const action = useInstrumentDetailAction(async () => {
+    if (open) { setOpen(false); return true; }
+    if (!await onOpen()) return false;
+    setOpen(true);
+    return true;
+  });
+  return data.canManage ? <div className="mt-3 min-w-0"><button type="button" disabled={disabled || action.waiting} aria-busy={action.waiting} className="min-h-11 rounded-lg border border-sf-line px-3 text-sm font-bold" onClick={action.run}>Add reagents{action.waiting ? <span className="ml-2 text-xs">Loading…</span> : null}</button>{action.failed ? <InstrumentDetailFailure action={action} /> : null}{open ? <><AddGroupWithItems target={target} data={data} disabled={disabled} runCommand={runCommand} onSuccess={() => setOpen(false)} /><details><summary className="min-h-11 cursor-pointer py-3">More options (dates, exclusion, note)</summary><CommandForm action="set_item_group_mapping" data={data} disabled={disabled} busy={disabled} onSubmit={onSubmit} defaultTargetId={target.id} label="Add item group" /></details><details><summary className="min-h-11 cursor-pointer py-3">Add a single item</summary><CommandForm action="set_mapping" data={data} disabled={disabled} busy={disabled} onSubmit={onSubmit} defaultTargetId={target.id} simpleMapping label="Add item" /></details></> : null}</div> : null;
 }
 
-function SetupSteps({ data, disabled, busy, onSubmit, runCommand, onRefresh, onAdvancedOpen }: { data: EconomicsWorkspaceData; disabled: boolean; busy: boolean; onSubmit: SubmitCommand; runCommand: InstrumentAddCommand; onRefresh: () => Promise<unknown>; onAdvancedOpen: () => Promise<void> }) {
+function SetupSteps({ data, disabled, busy, onSubmit, runCommand, onRefresh }: { data: EconomicsWorkspaceData; disabled: boolean; busy: boolean; onSubmit: SubmitCommand; runCommand: InstrumentAddCommand; onRefresh: () => Promise<unknown> }) {
   const proposed = data.targets.filter(row => row.approval === 'proposed');
   if (!data.canManage) return <Empty title="Administrator access required" body="Your role can view instrument economics but cannot set up instruments." />;
   return <div className="space-y-4">
     {proposed.length ? <section id="economics-approvals" aria-labelledby="economics-approvals-title" className="scroll-mt-4 rounded-2xl border border-sf-brand bg-white p-4 sm:p-6"><h2 id="economics-approvals-title" className="text-lg font-extrabold">Waiting for approval ({proposed.length})</h2><p className="mt-1 text-sm text-sf-muted">Check the machine, lab, serial and investment, then approve or reject with a reason.</p>{proposed.map(row => <ProposedTargetReview key={`${row.id}:${data.generation}`} target={row} data={data} disabled={disabled} onSubmit={event => void onSubmit(event, 'approve_target')} />)}</section> : null}
     <InstrumentAdd data={data} disabled={disabled} runCommand={runCommand} onRefresh={onRefresh} />
-    <details onToggle={event => { if (event.currentTarget.open) void onAdvancedOpen(); }} className="rounded-xl border border-sf-line-soft p-4"><summary className="min-h-11 cursor-pointer font-bold">Advanced (corrections)</summary>
+    <details className="rounded-xl border border-sf-line-soft p-4"><summary className="min-h-11 cursor-pointer font-bold">Advanced (corrections)</summary>
     <SetupStep number={1} title="Choose the instrument" body="Instruments delivered through Orders are already listed; go to step 2. For an instrument installed earlier, register it from its Tally invoice.">
       <details className="mt-3 rounded-xl bg-sf-soft p-3"><summary className="-m-3 list-item cursor-pointer p-3 text-sm font-bold">Register an existing instrument</summary><CommandForm action="register_historical_instrument" data={data} disabled={disabled} busy={busy} onSubmit={onSubmit} /></details>
     </SetupStep>
@@ -885,71 +913,75 @@ export function InstrumentEconomicsWorkspace({ embedded = false }: { embedded?: 
   const recoveryReference = useRef<EconomicRecoveryReference | null>(null);
   const [hasSavedPayload, setHasSavedPayload] = useState(false);
   const measurementElement = useRef<HTMLElement>(null);
-  const readView = useRef<EconomicsReadView>('summary');
+  const readView = useRef<Exclude<EconomicsReadView, 'full'>>('summary');
   const readSequence = useRef(0);
-  const backgroundRead = useRef<{ view: EconomicsReadView; promise: Promise<boolean> } | null>(null);
+  const inFlightRead = useRef<{ view: EconomicsReadView; promise: Promise<boolean>; signal?: AbortSignal } | null>(null);
   const backgroundReadStarted = useRef(false);
-  const loadRef = useRef<(signal?: AbortSignal, view?: EconomicsReadView, quiet?: boolean) => Promise<boolean>>(async () => false);
+  const loadRef = useRef<(signal?: AbortSignal, view?: Exclude<EconomicsReadView, 'full'>, quiet?: boolean) => Promise<boolean>>(async () => false);
   const loadMeasurement = useRef<{ data: EconomicsWorkspaceData; startedAt: number; parsedAt: number; signal?: AbortSignal; details: { serverTiming: string | null; responseBytes: number | null; targetCount: number; sourceLineCount: number | null } } | null>(null);
-  const load = useCallback(async (signal?: AbortSignal, view = readView.current, quiet = false) => {
-    const sequence = ++readSequence.current;
-    let accessRevoked = false;
-    if (!quiet) {
-      setLoading(true);
-      loadMeasurement.current = null;
-      try { measurementElement.current?.removeAttribute('data-load-sample'); } catch { /* optional */ }
-    }
-    const startedAt = quiet ? null : startLoadMeasurement();
-    try {
-      const response = await fetch('/api/instrument-economics', { cache: 'no-store', signal, headers: { 'x-stockflow-economics-view': view } });
-      if (signal?.aborted || sequence !== readSequence.current) return false;
-      if (response.status === 401 || response.status === 403) {
-        accessRevoked = true;
-        setData(null); setSelectedId(''); setExpandedId(''); setNotice('');
-        const body = await response.json().catch(() => ({})) as { error?: string };
-        throw new Error(body.error || 'Financial access is no longer available. Sign in and refresh.');
+  const load = useCallback((signal?: AbortSignal, view = readView.current, quiet = false) => {
+    const pending = inFlightRead.current;
+    if (pending && !pending.signal?.aborted && viewRank[pending.view] >= viewRank[view]) return pending.promise;
+    const promise = (async () => {
+      const sequence = ++readSequence.current;
+      let accessRevoked = false;
+      if (!quiet) {
+        setLoading(true);
+        loadMeasurement.current = null;
+        try { measurementElement.current?.removeAttribute('data-load-sample'); } catch { /* optional */ }
       }
-      const body = await readJsonBody<EconomicsWorkspaceData & { error?: string }>(response);
-      if (signal?.aborted || sequence !== readSequence.current) return false;
-      if (!response.ok) throw new Error(body.error || 'Unable to load instrument economics.');
-      readView.current = body.readView === 'summary' || body.readView === 'detail' ? body.readView : 'full';
-      if (startedAt !== null && !signal?.aborted) {
-        try {
-          const bytes = response.headers.get('x-stockflow-response-bytes');
-          loadMeasurement.current = { data: body, startedAt, parsedAt: performance.now(), signal, details: {
-            serverTiming: response.headers.get('server-timing')?.slice(0, 1024) ?? null,
-            responseBytes: bytes && /^\d+$/.test(bytes) && Number.isSafeInteger(Number(bytes)) ? Number(bytes) : null,
-            targetCount: body.targets.length, sourceLineCount: body.sourceLineCount ?? null,
-          } };
-        } catch { /* optional */ }
+      const startedAt = quiet ? null : startLoadMeasurement();
+      try {
+        const response = await fetch('/api/instrument-economics', { cache: 'no-store', signal, headers: { 'x-stockflow-economics-view': view } });
+        if (signal?.aborted || sequence !== readSequence.current) return false;
+        if (response.status === 401 || response.status === 403) {
+          accessRevoked = true;
+          setData(null); setSelectedId(''); setExpandedId(''); setNotice('');
+          const body = await response.json().catch(() => ({})) as { error?: string };
+          throw new Error(body.error || 'Financial access is no longer available. Sign in and refresh.');
+        }
+        const body = await readJsonBody<EconomicsWorkspaceData & { error?: string }>(response);
+        if (signal?.aborted || sequence !== readSequence.current) return false;
+        if (!response.ok) throw new Error(body.error || 'Unable to load instrument economics.');
+        readView.current = body.readView === 'summary' ? 'summary' : 'detail';
+        if (startedAt !== null && !signal?.aborted) {
+          try {
+            const bytes = response.headers.get('x-stockflow-response-bytes');
+            loadMeasurement.current = { data: body, startedAt, parsedAt: performance.now(), signal, details: {
+              serverTiming: response.headers.get('server-timing')?.slice(0, 1024) ?? null,
+              responseBytes: bytes && /^\d+$/.test(bytes) && Number.isSafeInteger(Number(bytes)) ? Number(bytes) : null,
+              targetCount: body.targets.length, sourceLineCount: body.sourceLineCount ?? null,
+            } };
+          } catch { /* optional */ }
+        }
+        setData(body);
+        try { recoveryReference.current = readEconomicRecoveryReference(window.sessionStorage); } catch (cause) { setUnresolved(true); throw cause; }
+        if (recoveryReference.current) { setUnresolved(true); setSavedCommandActor(recoveryReference.current.actorEmail); }
+        const savedActor = pendingCommand.current?.payload.expectedActorEmail ?? recoveryReference.current?.actorEmail;
+        setError(savedActor && savedActor !== body.actorEmail ? 'A saved command belongs to another account. Sign in with the original account and refresh before retrying.' : '');
+        setSelectedId(current => body.targets.some(row => row.id === current) ? current : body.targets[0]?.id ?? '');
+        if (body.readView !== 'summary' && view === 'summary' && body.targets.length === 1) setExpandedId(body.targets[0].id);
+        if (!quiet && body.readView === 'summary' && !backgroundReadStarted.current && !recoveryReference.current) {
+          backgroundReadStarted.current = true;
+          const scheduledAfter = readSequence.current;
+          window.setTimeout(() => {
+            if (readSequence.current !== scheduledAfter || viewRank[readView.current] >= viewRank.detail) return;
+            void loadRef.current(undefined, 'detail', true);
+          }, 0);
+        }
+        return true;
       }
-      setData(body);
-      try { recoveryReference.current = readEconomicRecoveryReference(window.sessionStorage); } catch (cause) { setUnresolved(true); throw cause; }
-      if (recoveryReference.current) { setUnresolved(true); setSavedCommandActor(recoveryReference.current.actorEmail); }
-      const savedActor = pendingCommand.current?.payload.expectedActorEmail ?? recoveryReference.current?.actorEmail;
-      setError(savedActor && savedActor !== body.actorEmail ? 'A saved command belongs to another account. Sign in with the original account and refresh before retrying.' : '');
-      setSelectedId(current => body.targets.some(row => row.id === current) ? current : body.targets[0]?.id ?? '');
-      if (body.readView !== 'summary' && view === 'summary' && body.targets.length === 1) setExpandedId(body.targets[0].id);
-      if (!quiet && body.readView === 'summary' && !backgroundReadStarted.current && !recoveryReference.current) {
-        backgroundReadStarted.current = true;
-        const scheduledAfter = readSequence.current;
-        window.setTimeout(() => {
-          if (readSequence.current !== scheduledAfter || viewRank[readView.current] >= viewRank.detail) return;
-          const promise = loadRef.current(undefined, 'detail', true);
-          backgroundRead.current = { view: 'detail', promise };
-          void promise.finally(() => {
-            if (backgroundRead.current?.promise === promise) backgroundRead.current = null;
-          });
-        }, 0);
+      catch (cause) {
+        if (signal?.aborted || sequence !== readSequence.current) return false;
+        if (quiet && !accessRevoked) return false;
+        setError(cause instanceof Error ? cause.message : 'Unable to load instrument economics.'); return false;
       }
-      return true;
-    }
-    catch (cause) {
-      if (signal?.aborted || sequence !== readSequence.current) return false;
-      if (quiet && !accessRevoked) return false;
-      setError(cause instanceof Error ? cause.message : 'Unable to load instrument economics.'); return false;
-    }
-    finally { if (!quiet && !signal?.aborted && sequence === readSequence.current) setLoading(false); }
+      finally { if (!quiet && !signal?.aborted && sequence === readSequence.current) setLoading(false); }
+    })();
+    const flight = { view, promise, signal };
+    inFlightRead.current = flight;
+    void promise.finally(() => { if (inFlightRead.current === flight) inFlightRead.current = null; });
+    return promise;
   }, []);
   useEffect(() => { loadRef.current = load; }, [load]);
   useEffect(() => { const controller = new AbortController(); const timer = window.setTimeout(() => void load(controller.signal), 0); return () => { window.clearTimeout(timer); controller.abort(); }; }, [load]);
@@ -977,35 +1009,36 @@ export function InstrumentEconomicsWorkspace({ embedded = false }: { embedded?: 
   const labs = useMemo(() => data?.businessDate ? labTotals(visibleTargets, data.businessDate) : [], [data, visibleTargets]);
   const selected = useMemo(() => visibleTargets.find(row => row.id === selectedId) ?? visibleTargets[0] ?? null, [visibleTargets, selectedId]);
   const expanded = visibleTargets.find(row => row.id === expandedId) ?? null;
-  /** Load a richer view only when the screen needs it: detail for tabs, full for invoice-searching forms. */
-  async function ensureView(view: EconomicsReadView) {
+  /** Load detail only when the screen needs it. Source lines use paged reads. */
+  async function ensureView(view: Exclude<EconomicsReadView, 'full'>) {
     if (viewRank[(data?.readView ?? 'full') as EconomicsReadView] >= viewRank[view]) return true;
-    const pending = backgroundRead.current;
-    if (pending && viewRank[pending.view] >= viewRank[view]) {
-      const loaded = await pending.promise;
-      if (loaded && viewRank[readView.current] >= viewRank[view]) return true;
-    }
-    return load(undefined, view);
+    const pending = inFlightRead.current;
+    const loaded = await (pending && !pending.signal?.aborted && viewRank[pending.view] >= viewRank[view] ? pending.promise : load(undefined, view));
+    if (!loaded) setError(current => current || "Couldn't load the instrument details.");
+    return loaded;
+  }
+  const switching = useRef(false);
+  const [waitingTab, setWaitingTab] = useState<string | null>(null);
+  async function switchTab(name: string, change: () => void, needsDetail = true) {
+    if (switching.current) return;
+    switching.current = true;
+    setWaitingTab(name);
+    try {
+      if (needsDetail && !await ensureView('detail')) return;
+      change();
+    } finally { switching.current = false; setWaitingTab(null); }
   }
   async function openTab(name: Tab) {
-    if (loading) return;
-    const needed = name === 'Advanced' && advancedTab === 'All actions' ? 'full' : name === 'Instruments' ? null : 'detail';
-    if (needed && !await ensureView(needed)) return;
-    setTab(name);
+    await switchTab(name, () => setTab(name), name !== 'Instruments');
   }
   async function openAdvancedTab(name: AdvancedTab) {
-    if (loading) return;
-    if (name === 'All actions' && !await ensureView('full')) return;
-    setAdvancedTab(name);
-  }
-  async function loadAllSourceLines() {
-    if (!loading) await ensureView('full');
+    await switchTab(name, () => setAdvancedTab(name));
   }
   async function toggleTarget(targetId: string) {
-    if (loading) return;
-    if (expandedId === targetId) { setExpandedId(''); return; }
-    if (!await ensureView('detail')) return;
+    if (expandedId === targetId) { setExpandedId(''); return true; }
+    if (!await ensureView('detail')) return false;
     setExpandedId(targetId);
+    return true;
   }
   async function sendCommand(commandToSend: { action: EconomicAction; payload: Record<string, unknown>; key: string; form: HTMLFormElement | null }, refresh = true) {
     if (busyRef.current) return; busyRef.current = true; setBusy(true); setHasSavedPayload(true); setNotice(''); setError('');
@@ -1133,22 +1166,22 @@ export function InstrumentEconomicsWorkspace({ embedded = false }: { embedded?: 
     />
     {error || unresolved ? <div role="alert" className="rounded-xl border border-sf-danger-line bg-sf-danger-soft p-4 text-sm text-sf-danger"><CircleAlert size={14} aria-hidden="true" className="shrink-0" />{error || 'A saved command is waiting for confirmation. Retry it with the original request key before making another change.'}{unresolved && canRetrySavedCommand ? <button type="button" disabled={busy} onClick={() => { const pending = pendingCommand.current; if (pending) void sendCommand(pending); }} className="ml-3 min-h-11 rounded-lg bg-sf-danger px-3 font-bold text-white disabled:opacity-50">{busy ? 'Retrying…' : 'Retry saved command'}</button> : null}{unresolved && savedCommandActor && savedCommandActor === data?.actorEmail ? <span className="mt-3 flex flex-wrap gap-2"><button type="button" disabled={busy} onClick={() => void recoverCommand(false)} className="min-h-10 rounded-lg border border-sf-danger-line px-3 font-bold disabled:opacity-50">Check saved command</button>{data?.canManage ? <button type="button" disabled={busy} onClick={() => void recoverCommand(true)} className="min-h-10 rounded-lg bg-sf-danger px-3 font-bold text-white disabled:opacity-50">Close unresolved request</button> : null}<span className="basis-full text-xs">Closing checks the receipt first. A completed save is retained; otherwise any late delivery of this request is blocked.</span></span> : null}</div> : null}{notice ? <output className="rounded-xl border border-sf-success-line bg-sf-success-soft p-3 text-sm text-sf-success inline-flex items-center gap-1"><CircleCheck size={14} aria-hidden="true" className="shrink-0" />{notice}</output> : null}
     {data ? <p className="-mt-2 text-xs text-sf-muted">Business date {data.businessDate ? displayDate(data.businessDate) : 'unavailable'} · Tally data from {economicTimestamp(data.sourceImportedAt)}</p> : null}
-    <nav aria-label="Economics sections" className="flex gap-1 overflow-x-auto rounded-2xl border border-sf-line-soft bg-white p-1.5 [scrollbar-width:none]">{visibleTabs.map(name => <button key={name} type="button" onClick={() => void openTab(name)} disabled={loading} aria-current={tab === name || (tab === 'Accounts review' && name === 'To do') ? 'page' : undefined} className={`min-h-11 flex-1 shrink-0 whitespace-nowrap rounded-xl px-2.5 py-2 text-sm font-bold ${tab === name || (tab === 'Accounts review' && name === 'To do') ? 'bg-sf-brand text-white' : 'text-sf-body hover:bg-sf-soft'}`}>{name}{name === 'To do' && todoCount ? ` (${todoCount})` : ''}</button>)}</nav>
+    <nav aria-label="Economics sections" className="flex gap-1 overflow-x-auto rounded-2xl border border-sf-line-soft bg-white p-1.5 [scrollbar-width:none]">{visibleTabs.map(name => <button key={name} type="button" onClick={() => void openTab(name)} disabled={loading || waitingTab !== null} aria-busy={waitingTab === name} aria-current={tab === name || (tab === 'Accounts review' && name === 'To do') ? 'page' : undefined} className={`min-h-11 flex-1 shrink-0 whitespace-nowrap rounded-xl px-2.5 py-2 text-sm font-bold ${tab === name || (tab === 'Accounts review' && name === 'To do') ? 'bg-sf-brand text-white' : 'text-sf-body hover:bg-sf-soft'}`}>{name}{name === 'To do' && todoCount ? ` (${todoCount})` : ''}{waitingTab === name ? <span className="ml-2 text-xs">Loading…</span> : null}</button>)}</nav>
     {/* The successful workspace GET is restricted by the shared role helper to
         administrator/management/accounts. canManage separates managers from accounts. */}
     {data && tab === 'Instruments' ? <SalesCoverageCard key={data.actorEmail} roles={data.canAdministrator ? ['administrator'] : data.canManage ? ['management'] : ['accounts']} /> : null}
     {loading && data ? <output className="block text-sm text-sf-muted">Loading economics details…</output> : null}
     {loading && !data ? <div className="rounded-2xl bg-white p-8 text-sm text-sf-muted">Loading economics data…</div> : null}
-    {data && tab === 'Instruments' ? <>{data.targets.length > 2 ? <InstrumentEconomicsPortfolioFilters filters={portfolioFilters} onChange={setPortfolioFilters} total={data.targets.length} matching={visibleTargets.length} /> : null}{labs.length > 0 ? <section aria-label="Lab totals" className="grid gap-4 xl:grid-cols-2">{labs.map(lab => <EconomicsLabTotal key={lab.key} lab={lab} forecastWindowMonths={data.policy.forecastWindowMonths} />)}</section> : null}<section aria-label="Economic targets" className="grid gap-4 xl:grid-cols-2">{visibleTargets.length ? visibleTargets.map(target => <EconomicTargetCard key={target.id} target={target} policyWindowMonths={data.policy.forecastWindowMonths} businessDate={data.businessDate} reagentAction={target.kind === 'placement' ? <PlacementReagents runCommand={runInstrumentCommand} onOpen={() => ensureView('detail')} target={target} data={data} disabled={unresolved || busy} onSubmit={submit} /> : null} pooledInName={data.targets.find(row => row.id === target.pooledIn)?.name} selected={expanded?.id === target.id} expanded={expanded?.id === target.id} onToggle={() => void toggleTarget(target.id)} lifetime={target.reagentLifetime ?? (data.attributionLines ? reagentLifetime(target.id, data.attributionLines) : undefined)} period={reportingPeriodLabel(data.reportingFrom, data.reportingTo)} onReviewCosts={() => void openTab('To do')}>{target.kind === 'placement' && !target.pooledIn ? <InstrumentItems key={target.id} target={target} data={data} disabled={unresolved || busy} onSubmit={submit} runCommand={runInstrumentCommand} /> : null}<ReagentSalesList target={target} data={data} /></EconomicTargetCard>) : <Empty title={data.targets.length ? "No matching instruments" : "No instruments yet"} body={data.targets.length ? "Change the search, status or type filters to see more instruments." : "Add an instrument in Set up."} />}</section></> : null}
+    {data && tab === 'Instruments' ? <>{data.targets.length > 2 ? <InstrumentEconomicsPortfolioFilters filters={portfolioFilters} onChange={setPortfolioFilters} total={data.targets.length} matching={visibleTargets.length} /> : null}{labs.length > 0 ? <section aria-label="Lab totals" className="grid gap-4 xl:grid-cols-2">{labs.map(lab => <EconomicsLabTotal key={lab.key} lab={lab} forecastWindowMonths={data.policy.forecastWindowMonths} />)}</section> : null}<section aria-label="Economic targets" className="grid gap-4 xl:grid-cols-2">{visibleTargets.length ? visibleTargets.map(target => <EconomicTargetCard key={target.id} target={target} policyWindowMonths={data.policy.forecastWindowMonths} businessDate={data.businessDate} reagentAction={target.kind === 'placement' ? <PlacementReagents runCommand={runInstrumentCommand} onOpen={() => ensureView('detail')} target={target} data={data} disabled={unresolved || busy} onSubmit={submit} /> : null} pooledInName={data.targets.find(row => row.id === target.pooledIn)?.name} selected={expanded?.id === target.id} expanded={expanded?.id === target.id} onToggle={() => toggleTarget(target.id)} lifetime={target.reagentLifetime ?? (data.attributionLines ? reagentLifetime(target.id, data.attributionLines) : undefined)} period={reportingPeriodLabel(data.reportingFrom, data.reportingTo)} onReviewCosts={() => void openTab('To do')}>{target.kind === 'placement' && !target.pooledIn ? <InstrumentItems key={target.id} target={target} data={data} disabled={unresolved || busy} onSubmit={submit} runCommand={runInstrumentCommand} /> : null}<ReagentSalesList target={target} data={data} /></EconomicTargetCard>) : <Empty title={data.targets.length ? "No matching instruments" : "No instruments yet"} body={data.targets.length ? "Change the search, status or type filters to see more instruments." : "Add an instrument in Set up."} />}</section></> : null}
     {data && tab === 'To do' ? <TodoPanel data={data} onAccountsReview={() => void openTab('Accounts review')} /> : null}
     {data && tab === 'Accounts review' ? <div className="space-y-3"><button type="button" onClick={() => void openTab('To do')} className="min-h-11 rounded-xl border border-sf-line bg-white px-4 text-sm font-bold text-sf-brand">Back to instrument tasks</button><AccountsDocumentReview data={data} /></div> : null}
-    {data && tab === 'Set up' ? <SetupSteps data={data} disabled={unresolved || busy} busy={busy} onSubmit={submit} runCommand={runInstrumentCommand} onRefresh={load} onAdvancedOpen={loadAllSourceLines} /> : null}
-    {data && tab === 'Advanced' && data.canManage ? <nav aria-label="Advanced sections" className="-mx-1 flex gap-2 overflow-x-auto px-1 pb-0.5 [scrollbar-width:none]">{advancedTabs.map(name => <button key={name} type="button" onClick={() => void openAdvancedTab(name)} aria-current={advancedTab === name ? 'page' : undefined} className={`shrink-0 whitespace-nowrap min-h-10 rounded-lg border px-3 text-sm font-bold ${advancedTab === name ? 'border-sf-brand bg-sf-brand text-white' : 'border-sf-line bg-white text-sf-body'}`}>{name}</button>)}</nav> : null}
+    {data && tab === 'Set up' ? <SetupSteps data={data} disabled={unresolved || busy} busy={busy} onSubmit={submit} runCommand={runInstrumentCommand} onRefresh={load} /> : null}
+    {data && tab === 'Advanced' && data.canManage ? <nav aria-label="Advanced sections" className="-mx-1 flex gap-2 overflow-x-auto px-1 pb-0.5 [scrollbar-width:none]">{advancedTabs.map(name => <button key={name} type="button" onClick={() => void openAdvancedTab(name)} disabled={waitingTab !== null} aria-busy={waitingTab === name} aria-current={advancedTab === name ? 'page' : undefined} className={`shrink-0 whitespace-nowrap min-h-10 rounded-lg border px-3 text-sm font-bold ${advancedTab === name ? 'border-sf-brand bg-sf-brand text-white' : 'border-sf-line bg-white text-sf-body'}`}>{name}{waitingTab === name ? <span className="ml-2 text-xs">Loading…</span> : null}</button>)}</nav> : null}
     {data && tab === 'Advanced' && data.canManage && advancedTab === 'All actions' ? <div className="grid gap-4 xl:grid-cols-[minmax(0,1fr)_minmax(18rem,.75fr)]"><details id="economic-setup" open={command === 'verify_cost' || !data.targets.some(row => row.approval === 'proposed')} className="scroll-mt-4 self-start rounded-2xl border border-sf-line-soft bg-white p-4 sm:p-6"><summary className="min-h-10 cursor-pointer py-2 font-extrabold"><h2 className="inline text-lg font-extrabold">All actions</h2></summary><p className="mt-1 text-sm text-sf-muted">Add a versioned target, source mapping, expectation, usage observation, group, allocation, cost evidence or capital entry.</p>{data.canManage ? <><label className="mt-4 grid gap-1.5 text-xs font-semibold text-sf-body">Action<select aria-label="Action" value={command} disabled={unresolved || busy} onChange={event => setCommand(event.target.value as EconomicAction)} className="min-h-10 rounded-lg border border-sf-line bg-white px-3 text-sm"><EconomicActionOptions data={data} /></select></label>{command === 'record_capital' ? <p className="mt-3 rounded-lg bg-sf-soft p-3 text-xs leading-5 text-sf-muted">Record actual capital or eligible contributions dated today or earlier. Capital increases on approved placements use the original approved expected GP and current payback limits; payback beyond the review band requires explicit administrator approval.</p> : null}{command === 'record_observation' ? <p className="mt-3 rounded-lg bg-sf-soft p-3 text-xs leading-5 text-sf-muted">Expected supply = tests ÷ tests per unit + QC units + closing stock − opening stock − net transfers. External supply is recorded as separate evidence and is not subtracted from the sales opportunity.</p> : null}{command === 'close_group_membership' ? <p className="mt-3 rounded-lg bg-sf-warning-soft p-3 text-xs leading-5 text-sf-warning inline-flex items-center gap-1"><TriangleAlert size={14} aria-hidden="true" className="shrink-0" />Closing membership also closes the member’s logical economic placement on this date; its physical installation remains active. Create a new dated placement and review residual capital before regrouping or moving the instrument.</p> : null}<CommandForm key={command} action={command} data={data} disabled={unresolved || busy} busy={busy} onSubmit={submit} /></> : <Empty title="Management access required" body="Your role can view verified economics but cannot change target setup." />}</details><section className="rounded-2xl border border-sf-line-soft bg-white p-4 sm:p-6"><h2 className="text-lg font-extrabold">Proposed targets</h2>{data.targets.filter(row => row.approval === 'proposed').length ? data.targets.filter(row => row.approval === 'proposed').map(row => <ProposedTargetReview key={`${row.id}:${data.generation}`} target={row} data={data} disabled={unresolved || busy} onSubmit={event => void submit(event, 'approve_target')} />) : <p className="mt-3 text-sm text-sf-muted">No proposed targets.</p>}</section></div> : null}
     {data && tab === 'Advanced' && data.canManage && advancedTab === 'Exceptions' ? <section className="overflow-hidden rounded-2xl border border-sf-line-soft bg-white"><div className="p-4 sm:p-6"><h2 className="text-lg font-extrabold">Attribution and cost exceptions</h2><p className="mt-1 text-sm text-sf-muted">Unattributed sales remain outside target revenue. Missing cost evidence leaves attributed revenue visible while GP stays unavailable; reviewed FOC rows can carry negative known GP. Connector import errors are shown as source evidence and may affect the completeness of this reporting generation.</p></div>{data.exceptions.length ? <div className="overflow-x-auto"><table className="w-full min-w-[680px] text-left text-sm"><thead className="bg-sf-soft text-xs text-sf-muted"><tr><th className="p-3">Source</th><th className="p-3">Product</th><th className="p-3">Date</th><th className="p-3">Sales</th><th className="p-3">Status</th><th className="p-3">Reason</th></tr></thead><tbody>{data.exceptions.map((row, i) => <tr key={`${row.sourceId}-${i}`} className="border-t border-sf-soft"><td className="p-3">{row.sourceId}</td><td className="p-3">{row.productId}</td><td className="p-3">{row.date}</td><td className="p-3">{money(row.netSalesPaise)}</td><td className="p-3">{row.status}</td><td className="p-3">{row.reason}</td></tr>)}</tbody></table></div> : <Empty title="No current exceptions" body="The current workspace has no unresolved attribution or cost exception rows." />}</section> : null}
     {data && tab === 'Advanced' && data.canManage && advancedTab === 'Reagent leakage' ? <div className="space-y-5"><section className="rounded-2xl border border-sf-line-soft bg-white p-4 sm:p-6"><h2 className="text-lg font-extrabold">Reagent leakage opportunities</h2><p className="mt-1 text-sm text-sf-muted">Potential values are estimates labeled by their evidence tier; they are not realized sales or GP.</p>{data.leakage.length ? <div className="mt-4 grid gap-3 lg:grid-cols-2">{data.leakage.map((row, i) => <article key={`${row.targetId}-${row.productId}-${row.windowFrom}-${row.windowTo}-${i}`} className="rounded-xl border border-sf-line-soft p-4"><div className="flex flex-wrap justify-between gap-2"><strong>{data.targets.find(t => t.id === row.targetId)?.name ?? row.targetId}</strong><span className="rounded-full bg-sf-info-soft px-2.5 py-1 text-xs font-bold text-sf-info inline-flex items-center gap-1"><Info size={12} aria-hidden="true" className="shrink-0" />Estimate · {economicCodeLabel(row.evidenceTier)}</span></div><p className="mt-2 text-xs text-sf-muted" title={row.productId}>{leakageProducts.rows.find(product => product.productId === row.productId)?.productName ?? 'Reagent'} · {reportingPeriodLabel(row.windowFrom, row.windowTo)}</p><dl className="mt-3 grid grid-cols-2 gap-2"><Metric label="Expected units" value={row.expectedUnits} /><Metric label="Actual units" value={row.actualUnits} /><Metric label="Shortfall" value={row.shortfallUnits} /><Metric label="Potential revenue" value={money(row.potentialRevenuePaise)} /><Metric label="Potential GP" value={money(row.potentialGpPaise)} /><Metric label="Evaluation" value={economicCodeLabel(row.status)} />{row.actualConsumptionUnits != null ? <Metric label="Observed consumption" value={row.actualConsumptionUnits} /> : null}{row.externalSupplyUnits != null ? <Metric label="External supply (separate)" value={row.externalSupplyUnits} /> : null}</dl>{row.financialVarianceStatus ? <LeakageEconomicsVariance {...row} /> : null}{row.attributionComplete === false ? <p role="alert" className="mt-3 rounded-lg border border-sf-warning-line bg-sf-warning-soft p-3 text-xs leading-5 text-sf-warning inline-flex items-center gap-1"><TriangleAlert size={14} aria-hidden="true" className="shrink-0" />Unattributed sales exist for this customer and product in the period. Resolve mappings before valuing the supply gap.</p> : null}{row.observationId || row.evidenceReference ? <p className="mt-2 text-xs text-sf-muted">Observation evidence{row.observationId ? ` · ${row.observationId}` : ''}{row.evidenceReference ? ` · ${row.evidenceReference}` : ''}</p> : null}{data.canAct ? <form onSubmit={event => void submit(event, 'create_case', undefined, row)} className="mt-3 grid gap-2"><fieldset disabled={unresolved || busy} className="grid gap-2"><LeakageClassificationFields /><label className="grid gap-1 text-xs font-semibold">Case title<input name="title" required className="min-h-10 rounded-lg border px-3 text-sm" /></label><label className="grid gap-1 text-xs font-semibold">Reason<input name="reason" required className="min-h-10 rounded-lg border px-3 text-sm" /></label><label className="grid gap-1 text-xs font-semibold">Owner<input name="owner" required className="min-h-10 rounded-lg border px-3 text-sm" /></label><label className="grid gap-1 text-xs font-semibold">Due date<input name="dueDate" type="date" className="min-h-10 rounded-lg border px-3 text-sm" /></label><label className="grid gap-1 text-xs font-semibold">Follow-up action<input name="action" required className="min-h-10 rounded-lg border px-3 text-sm" /></label><button disabled={unresolved || busy} className="min-h-10 rounded-lg bg-sf-brand px-3 text-sm font-bold text-white disabled:opacity-50">Create case</button></fieldset></form> : null}</article>)}</div> : <Empty title="No leakage opportunities" body="No current reagent consumption or supply proxy evaluations are available." />}</section>
       <section className="rounded-2xl border border-sf-line-soft bg-white p-4 sm:p-6"><h2 className="text-lg font-extrabold">Leakage cases</h2>{data.cases.length ? <div className="mt-3 grid gap-3 lg:grid-cols-2">{data.cases.map(row => <div key={row.id} className="space-y-2"><CaseCard row={row} canAct={data.canAct} busy={busy} unresolved={unresolved} submit={submit} /><LeakageCaseHistory caseId={row.id} history={data.caseHistory ?? []} truncated={data.caseHistoryTruncated} /></div>)}</div> : <p className="mt-3 text-sm text-sf-muted">No cases have been opened.</p>}</section></div> : null}
-    {data && tab === 'Advanced' && data.canManage && advancedTab === 'Reports' ? <div className="space-y-5"><section aria-label="Economics data coverage" className="grid grid-cols-2 gap-3 lg:grid-cols-4"><Metric label="Instruments tracked" value={data ? String(data.targets.length) : '—'} /><Metric label="Tally lines imported" value={data ? String(data.sourceLineCount) : '—'} /><Metric label="Sales not linked to an instrument" value={data ? money(data.unattributedPaise) : '—'} /><Metric label="Last Tally import" value={economicTimestamp(data?.sourceImportedAt)} hint={data?.lastRebuiltAt ? `Figures recalculated ${economicTimestamp(data.lastRebuiltAt)}` : 'Figures not yet calculated'} /></section>{data ? <EconomicDocumentExclusions documents={data.sourceDocumentExclusions ?? []} total={data.sourceDocumentExclusionCount ?? 0} /> : null}{data?.reportingSummary ? <details className="rounded-xl border border-sf-line-soft bg-white p-4"><summary className="min-h-10 cursor-pointer py-2 text-sm font-bold">Monthly sales reconciliation<span className="ml-2 font-normal text-sf-muted">· Net {money(data.reportingSummary.netSalesPaise)}{Number(data.reportingSummary.missingCostLines ?? 0) > 0 ? ` · ${data.reportingSummary.missingCostLines} missing cost` : ''}</span></summary><dl className="mt-3 grid grid-cols-2 gap-2 sm:grid-cols-4"><Metric label="Net Tally sales" value={money(data.reportingSummary.netSalesPaise)} /><Metric label="Attributed sales" value={money(data.reportingSummary.attributedSalesPaise)} /><Metric label="Unattributed sales" value={money(data.reportingSummary.unattributedSalesPaise)} /><Metric label="Excluded sales" value={money(data.reportingSummary.excludedSalesPaise)} /><Metric label="Instrument billing" value={money(data.reportingSummary.instrumentBillingSalesPaise ?? '0')} /><Metric label="Verified reagent cost" value={money(data.reportingSummary.verifiedCostPaise)} /><Metric label="Known reagent GP" value={money(data.reportingSummary.knownGpPaise)} hint="Verified-cost lines only; may be partial" /><Metric label="Lines missing cost" value={data.reportingSummary.missingCostLines == null ? 'Unavailable' : String(data.reportingSummary.missingCostLines)} /></dl><p className="mt-3 text-xs text-sf-muted">Reagent-attributed, unattributed, excluded and instrument billing sales reconcile to net Tally sales. Instrument billing reduces placement investment and is excluded from reagent GP. {money(data.reportingSummary.missingCostSalesPaise)} of attributed sales still needs verified purchase costs. Zero-revenue FOC lines can also lack cost; use the missing-line count, not the sales amount, to assess completeness.</p></details> : null}{data.targets.length ? <label className="grid max-w-md gap-1 text-xs font-semibold">Instrument<select aria-label="Report instrument" value={selected?.id ?? ''} onChange={event => setSelectedId(event.target.value)} className="min-h-10 rounded-lg border border-sf-line bg-white px-3 text-sm">{visibleTargets.map(row => <option key={row.id} value={row.id}>{row.name}</option>)}</select></label> : null}{selected ? <><section aria-label="Selected target details" className="rounded-2xl border border-sf-line-soft bg-white p-5"><h2 className="text-lg font-extrabold">{selected.name} · coverage and recovery</h2><p className="mt-1 text-sm text-sf-muted">{selected.customerName} · {selected.attributedLines} attributed lines · {selected.missingCostLines} lines without verified cost.</p><p className="mt-3 text-sm text-sf-muted">Capital source: {selected.capitalSource === 'tally_purchase' ? 'Verified Tally purchase' : selected.capitalSource === 'pooled_capital' ? 'Pooled member capital' : 'Manual value with evidence'}.</p>{selected.kind === 'placement' ? <ItemGroupMappingSummary target={selected} data={data} /> : null}{selected.instrumentBillingCurrent === false ? <p role="alert" className="mt-3 rounded-xl bg-sf-warning-soft p-3 text-sm text-sf-warning inline-flex items-center gap-1"><TriangleAlert size={14} aria-hidden="true" className="shrink-0" />Instrument selling invoice evidence is missing or incompatible. Upfront recovery and investment need review.</p> : null}{selected.capitalEvidenceCurrent === false ? <p role="alert" className="mt-3 rounded-xl bg-sf-warning-soft p-3 text-sm text-sf-warning inline-flex items-center gap-1"><TriangleAlert size={14} aria-hidden="true" className="shrink-0" />Tally acquisition evidence has changed. Historical capital is retained; approval and payback forecast require review.</p> : null}{selected.pooledIn ? <p className="mt-3 rounded-xl bg-sf-info-soft p-3 text-sm text-sf-info inline-flex items-center gap-1"><Info size={14} aria-hidden="true" className="shrink-0" />This placement is pooled into {data.targets.find(row => row.id === selected.pooledIn)?.name ?? 'an approved group'}. Capital recovery and payback are reported on the group summary.</p> : null}<details className="mt-3 rounded-xl border border-sf-line-soft p-3"><summary className="-m-3 list-item cursor-pointer p-3 text-sm font-bold">Full financial breakdown</summary><CumulativeFinancialBreakdown target={selected} lifetime={selected.reagentLifetime ?? (data.attributionLines ? reagentLifetime(selected.id, data.attributionLines) : undefined)} /></details></section><section className="rounded-2xl border border-sf-line-soft bg-white p-4 sm:p-6"><h2 className="text-lg font-extrabold">Planning and payback</h2><EconomicTargetAdvancedDetails target={selected} /></section><ItemGpBreakdown target={selected} reportingFrom={data.reportingFrom} reportingTo={data.reportingTo} /><AttributionDrilldown targetId={selected.id} lines={data.attributionLines ?? []} /></> : null}<EvidenceHistory data={data} onLoadAllSourceLines={loadAllSourceLines} loading={loading} /></div> : null}
+    {data && tab === 'Advanced' && data.canManage && advancedTab === 'Reports' ? <div className="space-y-5"><section aria-label="Economics data coverage" className="grid grid-cols-2 gap-3 lg:grid-cols-4"><Metric label="Instruments tracked" value={data ? String(data.targets.length) : '—'} /><Metric label="Tally lines imported" value={data ? String(data.sourceLineCount) : '—'} /><Metric label="Sales not linked to an instrument" value={data ? money(data.unattributedPaise) : '—'} /><Metric label="Last Tally import" value={economicTimestamp(data?.sourceImportedAt)} hint={data?.lastRebuiltAt ? `Figures recalculated ${economicTimestamp(data.lastRebuiltAt)}` : 'Figures not yet calculated'} /></section>{data ? <EconomicDocumentExclusions documents={data.sourceDocumentExclusions ?? []} total={data.sourceDocumentExclusionCount ?? 0} /> : null}{data?.reportingSummary ? <details className="rounded-xl border border-sf-line-soft bg-white p-4"><summary className="min-h-10 cursor-pointer py-2 text-sm font-bold">Monthly sales reconciliation<span className="ml-2 font-normal text-sf-muted">· Net {money(data.reportingSummary.netSalesPaise)}{Number(data.reportingSummary.missingCostLines ?? 0) > 0 ? ` · ${data.reportingSummary.missingCostLines} missing cost` : ''}</span></summary><dl className="mt-3 grid grid-cols-2 gap-2 sm:grid-cols-4"><Metric label="Net Tally sales" value={money(data.reportingSummary.netSalesPaise)} /><Metric label="Attributed sales" value={money(data.reportingSummary.attributedSalesPaise)} /><Metric label="Unattributed sales" value={money(data.reportingSummary.unattributedSalesPaise)} /><Metric label="Excluded sales" value={money(data.reportingSummary.excludedSalesPaise)} /><Metric label="Instrument billing" value={money(data.reportingSummary.instrumentBillingSalesPaise ?? '0')} /><Metric label="Verified reagent cost" value={money(data.reportingSummary.verifiedCostPaise)} /><Metric label="Known reagent GP" value={money(data.reportingSummary.knownGpPaise)} hint="Verified-cost lines only; may be partial" /><Metric label="Lines missing cost" value={data.reportingSummary.missingCostLines == null ? 'Unavailable' : String(data.reportingSummary.missingCostLines)} /></dl><p className="mt-3 text-xs text-sf-muted">Reagent-attributed, unattributed, excluded and instrument billing sales reconcile to net Tally sales. Instrument billing reduces placement investment and is excluded from reagent GP. {money(data.reportingSummary.missingCostSalesPaise)} of attributed sales still needs verified purchase costs. Zero-revenue FOC lines can also lack cost; use the missing-line count, not the sales amount, to assess completeness.</p></details> : null}{data.targets.length ? <label className="grid max-w-md gap-1 text-xs font-semibold">Instrument<select aria-label="Report instrument" value={selected?.id ?? ''} onChange={event => setSelectedId(event.target.value)} className="min-h-10 rounded-lg border border-sf-line bg-white px-3 text-sm">{visibleTargets.map(row => <option key={row.id} value={row.id}>{row.name}</option>)}</select></label> : null}{selected ? <><section aria-label="Selected target details" className="rounded-2xl border border-sf-line-soft bg-white p-5"><h2 className="text-lg font-extrabold">{selected.name} · coverage and recovery</h2><p className="mt-1 text-sm text-sf-muted">{selected.customerName} · {selected.attributedLines} attributed lines · {selected.missingCostLines} lines without verified cost.</p><p className="mt-3 text-sm text-sf-muted">Capital source: {selected.capitalSource === 'tally_purchase' ? 'Verified Tally purchase' : selected.capitalSource === 'pooled_capital' ? 'Pooled member capital' : 'Manual value with evidence'}.</p>{selected.kind === 'placement' ? <ItemGroupMappingSummary target={selected} data={data} /> : null}{selected.instrumentBillingCurrent === false ? <p role="alert" className="mt-3 rounded-xl bg-sf-warning-soft p-3 text-sm text-sf-warning inline-flex items-center gap-1"><TriangleAlert size={14} aria-hidden="true" className="shrink-0" />Instrument selling invoice evidence is missing or incompatible. Upfront recovery and investment need review.</p> : null}{selected.capitalEvidenceCurrent === false ? <p role="alert" className="mt-3 rounded-xl bg-sf-warning-soft p-3 text-sm text-sf-warning inline-flex items-center gap-1"><TriangleAlert size={14} aria-hidden="true" className="shrink-0" />Tally acquisition evidence has changed. Historical capital is retained; approval and payback forecast require review.</p> : null}{selected.pooledIn ? <p className="mt-3 rounded-xl bg-sf-info-soft p-3 text-sm text-sf-info inline-flex items-center gap-1"><Info size={14} aria-hidden="true" className="shrink-0" />This placement is pooled into {data.targets.find(row => row.id === selected.pooledIn)?.name ?? 'an approved group'}. Capital recovery and payback are reported on the group summary.</p> : null}<details className="mt-3 rounded-xl border border-sf-line-soft p-3"><summary className="-m-3 list-item cursor-pointer p-3 text-sm font-bold">Full financial breakdown</summary><CumulativeFinancialBreakdown target={selected} lifetime={selected.reagentLifetime ?? (data.attributionLines ? reagentLifetime(selected.id, data.attributionLines) : undefined)} /></details></section><section className="rounded-2xl border border-sf-line-soft bg-white p-4 sm:p-6"><h2 className="text-lg font-extrabold">Planning and payback</h2><EconomicTargetAdvancedDetails target={selected} /></section><ItemGpBreakdown target={selected} reportingFrom={data.reportingFrom} reportingTo={data.reportingTo} /><AttributionDrilldown targetId={selected.id} lines={data.attributionLines ?? []} /></> : null}<EvidenceHistory data={data} /></div> : null}
   </div></main></CostReviewContext.Provider>;
 }
 function CaseEstimateEvidence({ row }: { row: LeakageCase }) {
@@ -1160,12 +1193,67 @@ function CaseCard({ row, canAct, busy, unresolved, submit }: { row: LeakageCase;
   const [selectedSale, setSelectedSale] = useState<SourceLine | null>(null);
   return <article className="rounded-xl border border-sf-line-soft p-4"><div className="flex flex-wrap justify-between gap-2"><strong>{row.title}</strong><LeakageCaseStatus status={row.status} /></div><p className="mt-1 text-sm text-sf-muted">{row.reason} · owner {row.owner || 'Unassigned'}{row.dueDate ? ` · due ${row.dueDate}` : ''}</p><p className="mt-2 text-xs text-sf-muted">{leakageReasonLabels[row.primaryReason ?? 'unknown']} · Confidence: {row.confidence ?? 'unknown'}{row.evidenceReference ? ` · ${row.evidenceReference}` : ''}</p>{row.recoveryReviewRequired ? <p role="alert" className="mt-3 rounded-lg border border-sf-warning-line bg-sf-warning-soft p-3 text-sm font-semibold text-sf-warning inline-flex items-center gap-1"><TriangleAlert size={14} aria-hidden="true" className="shrink-0" />Review required: a source correction has removed positive recovery evidence from this closed case.</p> : null}<dl className="mt-3 grid grid-cols-2 gap-2"><Metric label="Potential revenue" value={money(row.potentialRevenuePaise)} /><Metric label="Potential GP" value={money(row.potentialGpPaise)} /><Metric label="Recovered revenue" value={money(row.recoveredRevenuePaise)} /><Metric label="Recovered GP" value={money(row.recoveredGpPaise)} /></dl><CaseEstimateEvidence row={row} />{canAct ? <><form onSubmit={event => void submit(event, 'update_case', row)} className="mt-3 grid gap-2 sm:grid-cols-2"><fieldset disabled={unresolved || busy} className="contents"><LeakageClassificationFields classification={row} /><label className="grid gap-1 text-xs font-semibold">Case status<select name="status" defaultValue={row.status} className="min-h-10 rounded-lg border px-3 text-sm">{['detected', 'qualified', 'in_progress', 'recovered', 'partially_recovered', 'no_recovery', 'dismissed'].map(status => <option key={status} value={status}>{status.replaceAll('_', ' ')}</option>)}</select></label><label className="grid gap-1 text-xs font-semibold">Reason<input name="reason" defaultValue={row.reason} required className="min-h-10 rounded-lg border px-3 text-sm" /></label><label className="grid gap-1 text-xs font-semibold">Owner<input name="owner" defaultValue={row.owner} className="min-h-10 rounded-lg border px-3 text-sm" /></label><label className="grid gap-1 text-xs font-semibold">Due date<input name="dueDate" type="date" defaultValue={row.dueDate ?? ''} className="min-h-10 rounded-lg border px-3 text-sm" /></label><label className="grid gap-1 text-xs font-semibold">Action<input name="action" defaultValue={row.action} className="min-h-10 rounded-lg border px-3 text-sm" /></label><label className="grid gap-1 text-xs font-semibold">Outcome<input name="outcome" defaultValue={row.outcome} className="min-h-10 rounded-lg border px-3 text-sm" /></label><button disabled={unresolved || busy} className="min-h-10 rounded-lg bg-sf-brand px-3 text-sm font-bold text-white disabled:opacity-50 sm:col-span-2">Update case</button></fieldset></form>{row.status === 'dismissed' || row.status === 'no_recovery' ? <p className="mt-3 text-sm text-sf-muted">Reopen this case before recording new recovery evidence.</p> : null}<form onSubmit={event => void submit(event, 'claim_recovery', row)} className="mt-3 grid gap-2 sm:grid-cols-2"><fieldset disabled={unresolved || busy || row.status === 'dismissed' || row.status === 'no_recovery'} className="grid gap-2 sm:grid-cols-2"><EconomicLinePicker filter={{ kind: 'sale' }} name="sourceLineId" label="Follow-up sale source line" value={selectedSale} onChange={setSelectedSale} required placeholder="Select a sale source…" optionLabel={line => `${line.date} · ${line.productId} · ${line.quantity} ${line.unit} · ${line.voucherId}`} /><label className="grid gap-1 text-xs font-semibold">Recovery share (basis points)<input name="shareBasisPoints" type="number" min="1" max="10000" step="1" required className="min-h-10 rounded-lg border px-3 text-sm" /></label><label className="grid gap-1 text-xs font-semibold sm:col-span-2">Recovery evidence<input name="reason" required className="min-h-10 rounded-lg border px-3 text-sm" /></label><button disabled={unresolved || busy} className="min-h-10 rounded-lg border border-sf-accent px-3 text-sm font-bold text-sf-brand disabled:opacity-50 sm:col-span-2">Claim recovery</button></fieldset></form></> : null}</article>;
 }
+
+type PageResult<T> = { rows: T[]; total: number; limit: number; offset: number };
+function useEconomicPage<T>(url: string, limit: number, normalize: (value: unknown) => PageResult<T>, enabled: boolean, generation?: string | null) {
+  const [state, setState] = useState<{ rows: T[]; total: number | null; loading: boolean; error: boolean }>({ rows: [], total: null, loading: enabled, error: false });
+  const offset = useRef(0);
+  const pending = useRef(false);
+  const lifecycle = useRef({ active: true });
+  const load = useCallback(async (reset = false) => {
+    if (pending.current) return;
+    pending.current = true;
+    const requestLifecycle = lifecycle.current;
+    // Defer state changes so effect-triggered loads never update state synchronously.
+    await Promise.resolve();
+    if (!requestLifecycle.active) return;
+    setState(previous => reset ? { rows: [], total: null, loading: true, error: false } : { ...previous, loading: true, error: false });
+    try {
+      const response = await fetch(`${url}${url.includes('?') ? '&' : '?'}limit=${limit}&offset=${offset.current}`, { cache: 'no-store' });
+      if (!response.ok) throw new Error('Page unavailable');
+      const page = normalize(await response.json());
+      if (!requestLifecycle.active) return;
+      offset.current = page.offset + page.rows.length;
+      setState(previous => ({ rows: [...previous.rows, ...page.rows], total: page.total, loading: false, error: false }));
+    } catch {
+      if (requestLifecycle.active) setState(previous => ({ ...previous, loading: false, error: true }));
+    } finally {
+      if (requestLifecycle.active) pending.current = false;
+    }
+  }, [url, limit, normalize]);
+  useEffect(() => {
+    const currentLifecycle = { active: true };
+    lifecycle.current = currentLifecycle;
+    pending.current = false;
+    offset.current = 0;
+    if (enabled) void load(true);
+    else void Promise.resolve().then(() => {
+      if (currentLifecycle.active) setState({ rows: [], total: null, loading: false, error: false });
+    });
+    return () => { currentLifecycle.active = false; };
+  }, [enabled, generation, load]);
+  return { ...state, more: () => void load() };
+}
+function PageStatus({ page }: { page: { loading: boolean; error: boolean; more: () => void } }) {
+  return page.loading ? <output className="mt-3 block text-sm">Loading…</output> : page.error ? <div role="alert" className="mt-3 text-sm">Could not load records. <button type="button" onClick={page.more} className="min-h-11 rounded-lg border border-sf-line px-4 font-bold">Retry</button></div> : null;
+}
+function SourceLineEvidence() {
+  const [opened, setOpened] = useState(false);
+  const page = useEconomicPage('/api/instrument-economics/lines', 50, normalizeEconomicLinePage, opened);
+  return <details onToggle={event => { if (event.currentTarget.open) setOpened(true); }} className="rounded-xl bg-sf-soft p-3">
+    <summary className="-m-3 list-item cursor-pointer p-3 text-sm font-bold">Current source line evidence{typeof page.total === 'number' ? ` (${page.total})` : ''}</summary>
+    <PageStatus page={page} />
+    <ul className="mt-3 space-y-2 text-sm">{page.rows.map(row => <li key={row.id} className="border-t border-sf-line-soft pt-2"><strong>{row.kind}</strong> · {row.productName ? `${row.productName} (${row.productId})` : row.productId}<p className="text-xs text-sf-muted">{row.date} · {row.quantity} {row.unit} · {money(row.netSalesPaise)} · {row.voucherId} revision {row.revision}</p></li>)}{page.total === 0 ? <li>No source line details are available.</li> : null}</ul>
+    {page.rows.length < (page.total ?? 0) ? <button type="button" disabled={page.loading} onClick={page.more} className="min-h-11 rounded-lg border border-sf-line px-4 text-sm font-bold">Show more</button> : null}
+  </details>;
+}
+
 function recordText(record: Record<string, unknown>, ...keys: string[]) { for (const key of keys) { const value = record[key]; if (typeof value === 'string' || typeof value === 'number') return String(value); } return ''; }
-function EvidenceHistory({ data, onLoadAllSourceLines, loading = false }: { data: EconomicsWorkspaceData; onLoadAllSourceLines?: () => void; loading?: boolean }) {
+function EvidenceHistory({ data }: { data: EconomicsWorkspaceData }) {
   const [showAll, setShowAll] = useState(false);
-  const instrumentBillings = data.instrumentBillings ?? []; const acquisitionReviews = data.acquisitionReviews ?? []; const memberships = data.groupMemberships ?? []; const ledger = data.ledger ?? []; const expectations = data.expectationHistory ?? []; const observations = data.observations ?? []; const sourceLines = data.sourceLines ?? [];
+  const instrumentBillings = data.instrumentBillings ?? []; const acquisitionReviews = data.acquisitionReviews ?? []; const memberships = data.groupMemberships ?? []; const ledger = data.ledger ?? []; const expectations = data.expectationHistory ?? []; const observations = data.observations ?? [];
   const showRows = <T,>(rows: T[]) => showAll ? rows : rows.slice(0, 10);
-  const hasLongHistory = [instrumentBillings, acquisitionReviews, ledger, expectations, observations, sourceLines].some(rows => rows.length > 10);
+  const hasLongHistory = [instrumentBillings, acquisitionReviews, ledger, expectations, observations].some(rows => rows.length > 10);
   return <section className="rounded-2xl border border-sf-line-soft bg-white p-4 sm:p-6"><div className="flex flex-wrap items-start justify-between gap-3"><div><h2 className="text-lg font-extrabold">Evidence and history</h2><p className="mt-1 text-sm text-sf-muted">Readable source, group, capital, usage and expectation records for review.</p></div>{hasLongHistory ? <button type="button" onClick={() => setShowAll(value => !value)} className="min-h-10 rounded-lg border border-sf-line px-3 text-sm font-bold text-sf-brand">{showAll ? 'Show first 10 records' : 'Show all evidence records'}</button> : null}</div>{hasLongHistory && !showAll ? <p className="mt-2 text-xs text-sf-muted">Showing the first 10 records in longer lists.</p> : null}<div className="mt-4 grid gap-3 lg:grid-cols-2">
     <details className="rounded-xl bg-sf-soft p-3"><summary className="-m-3 list-item cursor-pointer p-3 text-sm font-bold">Group memberships ({memberships.length})</summary><ul className="mt-3 space-y-2 text-sm">{memberships.length ? showRows(memberships).map(row => <li key={row.id} className="border-t border-sf-line-soft pt-2"><strong>{data.targets.find(target => target.id === row.groupId)?.name ?? row.groupId}</strong> includes {data.targets.find(target => target.id === row.placementId)?.name ?? row.placementId}<p className="text-xs text-sf-muted">{row.effectiveFrom}{row.effectiveTo ? ` through ${row.effectiveTo}` : ' · active'}</p></li>) : <li>No group memberships are recorded.</li>}</ul></details>
     <details className="rounded-xl bg-sf-soft p-3"><summary className="-m-3 list-item cursor-pointer p-3 text-sm font-bold">Recent economic events (latest 500 · {ledger.length} shown)</summary><ul className="mt-3 space-y-2 text-sm">{ledger.length ? showRows(ledger).map((row, index) => <li key={recordText(row, 'id') || index} className="border-t border-sf-line-soft pt-2"><strong>{recordText(row, 'kind').replaceAll('_', ' ')}</strong> · {money(recordText(row, 'amount_paise', 'amountPaise'))}<p className="text-xs text-sf-muted">{recordText(row, 'effective_date', 'effectiveDate')} · {recordText(row, 'reason')}</p></li>) : <li>No posted events are recorded.</li>}</ul></details>
@@ -1173,7 +1261,7 @@ function EvidenceHistory({ data, onLoadAllSourceLines, loading = false }: { data
     <details className="rounded-xl bg-sf-soft p-3"><summary className="-m-3 list-item cursor-pointer p-3 text-sm font-bold">Usage observations ({observations.length})</summary><ul className="mt-3 space-y-2 text-sm">{observations.length ? showRows(observations).map((row, index) => <li key={recordText(row, 'id') || index} className="border-t border-sf-line-soft pt-2"><strong>{recordText(row, 'product_id', 'productId')}</strong> · {recordText(row, 'base_unit', 'baseUnit')}<p className="text-xs text-sf-muted">{recordText(row, 'window_from', 'windowFrom')} to {recordText(row, 'window_to', 'windowTo')} · {recordText(row, 'test_count', 'testCount')} tests / {recordText(row, 'tests_per_unit', 'testsPerUnit')} tests per unit · QC {recordText(row, 'qc_units', 'qcUnits') || '0'}</p><p className="text-xs text-sf-muted">{recordText(row, 'evidence_reference', 'evidenceReference')} · stock {recordText(row, 'opening_stock', 'openingStock') || 'not supplied'} to {recordText(row, 'closing_stock', 'closingStock') || 'not supplied'} · transfers {recordText(row, 'net_transfers', 'netTransfers') || '0'} · external supply {recordText(row, 'external_supply', 'externalSupply') || '0'}</p></li>) : <li>No usage observations are recorded.</li>}</ul></details>
     <details className="rounded-xl bg-sf-soft p-3"><summary className="-m-3 list-item cursor-pointer p-3 text-sm font-bold">Instrument selling invoices ({instrumentBillings.length})</summary><ul className="mt-3 space-y-2 text-sm">{instrumentBillings.length ? showRows(instrumentBillings).map(row => <li key={row.target_id} className="border-t border-sf-line-soft pt-2"><strong>{data.targets.find(target => target.id === row.target_id)?.name ?? row.target_id}</strong><p>{row.source_id} / line {row.line_key}</p><p className="text-xs text-sf-muted">{row.actor} · {row.reason}{!row.current ? ' · Source evidence needs review' : ''}</p></li>) : <li>No instrument selling invoices linked.</li>}</ul></details>
     <details className="rounded-xl bg-sf-soft p-3"><summary className="-m-3 list-item cursor-pointer p-3 text-sm font-bold">Acquisition reviews ({acquisitionReviews.length})</summary><ul className="mt-3 space-y-2 text-sm">{acquisitionReviews.length ? showRows(acquisitionReviews).map(row => <li key={recordText(row, 'id')} className="border-t border-sf-line-soft pt-2"><strong>{data.targets.find(target => target.id === recordText(row, 'target_id'))?.name ?? recordText(row, 'target_id')}</strong> · review {recordText(row, 'revision')}<p>{money(recordText(row, 'previous_amount_paise'))} → {money(recordText(row, 'amount_paise'))}</p><p className="text-xs text-sf-muted">{recordText(row, 'actor')} · {recordText(row, 'recorded_at')} · {recordText(row, 'reason')}</p></li>) : <li>No acquisition reviews recorded.</li>}</ul></details>
-    <details className="rounded-xl bg-sf-soft p-3"><summary className="-m-3 list-item cursor-pointer p-3 text-sm font-bold">Current source line evidence ({data.readView === 'detail' ? `${sourceLines.length} shown` : sourceLines.length})</summary>{data.readView === 'detail' ? <div className="mt-3 flex flex-wrap items-center gap-2 text-xs text-sf-muted"><span>Showing purchases and sales of customers with an instrument.</span>{onLoadAllSourceLines ? <button type="button" disabled={loading} onClick={onLoadAllSourceLines} className="min-h-9 rounded-lg border border-sf-line bg-white px-3 font-bold text-sf-body disabled:opacity-50">{loading ? 'Loading…' : 'Load all source lines'}</button> : null}</div> : null}<ul className="mt-3 space-y-2 text-sm">{sourceLines.length ? showRows(sourceLines).map(row => <li key={row.id} className="border-t border-sf-line-soft pt-2"><strong>{row.kind}</strong> · {row.productName ? `${row.productName} (${row.productId})` : row.productId}<p className="text-xs text-sf-muted">{row.date} · {row.quantity} {row.unit} · {money(row.netSalesPaise)} · {row.voucherId} revision {row.revision}</p></li>) : <li>No source line details are available.</li>}</ul></details>
+    <SourceLineEvidence key={data.generation} />
   </div></section>;
 }
 export function ItemGpBreakdown({ target, reportingFrom, reportingTo }: { target: EconomicTarget; reportingFrom: string; reportingTo: string }) {
