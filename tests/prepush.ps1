@@ -46,6 +46,9 @@ function Test-BrowserPorts {
 
 Push-Location $repository
 try {
+  if (-not (Test-Path -LiteralPath (Join-Path $repository 'node_modules') -PathType Container)) {
+    throw 'node_modules is missing. Install the repository dependencies before running prepush.'
+  }
   if ([string]::IsNullOrWhiteSpace($Base)) {
     $Base = (Read-Git @('merge-base', 'HEAD', 'origin/feature/phase3-order-exceptions')).Trim()
   }
@@ -117,7 +120,7 @@ try {
     Add-Step "connector/$($script.BaseName)" $connector 'desktop-connector/ or tests/connector-* changed' 'powershell' @('-NoProfile', '-ExecutionPolicy', 'Bypass', '-File', "tests/$($script.Name)")
   }
   $pricingEnabled = $browser -and -not $SkipBrowser -and $selected.Count -gt 0
-  Add-Step 'browser/build-offline' $pricingEnabled 'CI prerequisite; skipped if no selected specs or -SkipBrowser' 'pnpm' @('build:offline')
+  Add-Step 'browser/build-offline' $pricingEnabled 'CI prerequisite; skipped if no selected specs or -SkipBrowser' 'npm' @('run', 'build:offline')
   Add-Step 'browser/pricing' $pricingEnabled 'affected pricing specs; skipped if none or -SkipBrowser' 'npx' (@('--no-install', 'playwright', 'test', '--config', 'playwright.pricing.config.ts') + $selected.ToArray() + @('--reporter=line'))
   $stockSpecs = @(Get-ChildItem tests/e2e -File -Filter 'stock*.spec.ts' | Sort-Object Name | ForEach-Object { "tests/e2e/$($_.Name)" })
   Write-Host "Stock e2e spec list ($($stockSpecs.Count); selected=$($stock -and -not $SkipBrowser)):"
@@ -126,7 +129,7 @@ try {
     if ($stock -and -not $SkipBrowser) { Write-Host "  $_ <- $($stockChanges -join ', ') (Stock shell changed)" }
     else { Write-Host "  $_ (not selected)" }
   }
-  Add-Step 'browser/stock' ($stock -and -not $SkipBrowser) 'Stock shell changed; config starts pnpm dev on port 3000 unless PLAYWRIGHT_BASE_URL is set' 'npx' (@('--no-install', 'playwright', 'test', '--config', 'playwright.config.ts') + $stockSpecs + @('--reporter=line'))
+  Add-Step 'browser/stock' ($stock -and -not $SkipBrowser) 'Stock shell changed; config starts the dev server on port 3000 unless PLAYWRIGHT_BASE_URL is set' 'npx' (@('--no-install', 'playwright', 'test', '--config', 'playwright.config.ts') + $stockSpecs + @('--reporter=line'))
   # Synchronous commands only: replay is always last and never overlaps tests.
   Add-Step 'replay' ($replay -and -not $SkipReplay) 'supabase/ or tests/pricing-* changed; skipped by -SkipReplay' 'powershell' @('-NoProfile', '-ExecutionPolicy', 'Bypass', '-File', 'tests/pricing-migration-local.ps1')
 
