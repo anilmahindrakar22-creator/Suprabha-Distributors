@@ -43,6 +43,8 @@ import { courierChoices, defaultReceiver, isLocalDelivery, istToday, LOCAL_DELIV
 import { hasAnyStockFlowRole, type StockFlowRole } from '@/lib/user-types';
 import { canAddOrderNotes, canBillChallan, canSendOnChallan, canCreateOrders, canEditOrders, canManageDeliveryExceptions, canManageInstallations, canRecordFulfilment } from '@/lib/order-permissions';
 import type { TallyRecentProducts } from '@/lib/tally-recent-products';
+import { useCustomerTiers } from '@/lib/customer-tiers';
+import { CustomerTierBadge } from './customer-tier-badge';
 
 type DraftLine = { tallyKey: string; item: CatalogItem | null; quantity: number };
 
@@ -389,6 +391,7 @@ export function OrderWorkspace({ actorEmail, initialStatus = 'open', initialQuer
   const orderGroups = useMemo(() => groupOrdersForList(visibleOrders, showsDeliveredToday ? deliveredToday : []), [visibleOrders, showsDeliveredToday, deliveredToday]);
   const displayedOrders = useMemo(() => orderGroups.flatMap((group) => group.orders), [orderGroups]);
   const openOrder = openOrderId ? displayedOrders.find((order) => order.id === openOrderId) || (retainedOpenOrder?.id === openOrderId ? retainedOpenOrder : undefined) : undefined;
+  const tiers = useCustomerTiers(actorEmail, [...displayedOrders.map(order => order.id), ...(openOrder ? [openOrder.id] : [])]);
   const orderPageId = !desktopControlCenter ? openOrder?.id : undefined;
 
   useEffect(() => {
@@ -885,7 +888,7 @@ export function OrderWorkspace({ actorEmail, initialStatus = 'open', initialQuer
                   return <button id={`desktop-order-${order.id}`} key={order.id} type="button" aria-label={`${order.orderNumber}, ${order.customerName}, ${orderStage(order.status)}`} aria-current={selected ? 'true' : undefined} title={`${order.assignedToEmail ? `Owner: ${order.assignedToEmail}` : 'Unassigned'} · Next: ${nextAction}`} onClick={() => setSelectedOrderId(order.id)} onKeyDown={(event) => { if (['ArrowUp', 'ArrowDown', 'Home', 'End'].includes(event.key)) { event.preventDefault(); navigateDesktopQueue(event.key); } }} className={`relative block w-full border-b border-sf-soft-2 flex min-h-11 items-center py-1.5 pl-5 pr-3 text-left outline-none hover:bg-white focus-visible:bg-white focus-visible:ring-2 focus-visible:ring-inset focus-visible:ring-sf-accent-bright aria-current:bg-white aria-current:shadow-[inset_3px_0_0_#092f36] ${['delivered', 'cancelled'].includes(order.status) ? 'opacity-70' : ''}`}>
                     <span aria-hidden="true" className={`absolute inset-y-2 left-2 w-1 rounded-full ${stage.bar}`} />
                     <span className="flex min-w-0 flex-1 flex-col gap-0.5">
-                      <span className="flex min-w-0 items-baseline gap-2"><strong className="min-w-0 flex-1 truncate text-sm text-sf-ink">{order.customerName}</strong>{newOrderIds?.has(order.id) ? <span className="shrink-0 rounded-full bg-sf-ink px-1.5 py-0.5 text-[9px] font-black uppercase text-white">New</span> : null}<time dateTime={order.createdAt} title={`Ordered ${orderDateTime(order.createdAt)}`} className="shrink-0 text-[11px] font-semibold tabular-nums text-sf-subtle">{orderDateLabel(order.createdAt)}</time></span>
+                      <span className="flex min-w-0 items-baseline gap-2"><span className="flex min-w-0 flex-1 items-center gap-1"><strong className="min-w-0 truncate text-sm text-sf-ink">{order.customerName}</strong><CustomerTierBadge tier={tiers[order.id]} /></span>{newOrderIds?.has(order.id) ? <span className="shrink-0 rounded-full bg-sf-ink px-1.5 py-0.5 text-[9px] font-black uppercase text-white">New</span> : null}<time dateTime={order.createdAt} title={`Ordered ${orderDateTime(order.createdAt)}`} className="shrink-0 text-[11px] font-semibold tabular-nums text-sf-subtle">{orderDateLabel(order.createdAt)}</time></span>
                       <span className="flex min-w-0 items-center gap-1.5"><span className={`shrink-0 rounded-full px-2 py-0.5 text-[10px] font-extrabold ${stage.chip}`}>{stage.label}</span><OrderFlagBadge order={order} /><span className="min-w-0 truncate text-[11px] tabular-nums text-sf-subtle">{order.orderNumber}</span>{nextAction === 'View order' ? null : <span className="ml-auto shrink-0 pl-1 text-right text-[11px] font-bold text-sf-accent">{nextAction}</span>}</span>
                     </span>
                   </button>;
@@ -910,7 +913,7 @@ export function OrderWorkspace({ actorEmail, initialStatus = 'open', initialQuer
             <div>
               {orderGroups.map((group) => <section key={group.id} aria-label={group.label}>
                 <h3 className={`border-b border-sf-soft-2 bg-sf-soft-0 px-4 py-1.5 text-[11px] font-extrabold uppercase tracking-wide ${group.id === 'priority' ? 'text-sf-danger' : 'text-sf-subtle'}`}>{group.label} <span className="font-bold tabular-nums">· {group.orders.length}</span></h3>
-                {group.orders.map((order) => <CompactOrderRow key={order.id} order={order} onOpen={openOrderDetail} isNew={newOrderIds?.has(order.id)} />)}
+                {group.orders.map((order) => <CompactOrderRow key={order.id} order={order} tiers={tiers} onOpen={openOrderDetail} isNew={newOrderIds?.has(order.id)} />)}
               </section>)}
             </div>
           )}
@@ -924,7 +927,7 @@ export function OrderWorkspace({ actorEmail, initialStatus = 'open', initialQuer
             <div className="flex items-center gap-1">
               <button type="button" autoFocus aria-label="Back to orders" onClick={() => setOpenOrderId('')} className="grid min-h-11 min-w-11 place-items-center rounded-xl text-sf-ink hover:bg-sf-soft"><BackIcon /></button>
               <div className="min-w-0 flex-1">
-                <p className="truncate text-base font-black text-sf-ink">{openOrder.customerName}</p>
+                <p className="flex min-w-0 items-center gap-1 text-base font-black text-sf-ink"><span className="min-w-0 truncate">{openOrder.customerName}</span><CustomerTierBadge tier={tiers[openOrder.id]} withLabel /></p>
                 <p className="flex flex-wrap items-center gap-x-1.5 gap-y-0.5 text-xs text-sf-subtle"><span className={`rounded-full px-2 py-0.5 text-[10px] font-extrabold ${orderStageStyle(openOrder.status).chip}`}>{orderStageStyle(openOrder.status).label}</span><OrderFlagBadge order={openOrder} /><span>{openOrder.orderNumber}</span><time dateTime={openOrder.createdAt} className="basis-full sm:basis-auto">Ordered {orderDateTime(openOrder.createdAt)}</time></p>
               </div>
             </div>

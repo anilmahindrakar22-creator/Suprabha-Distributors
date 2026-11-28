@@ -1,6 +1,8 @@
 'use client';
 
 import type { KeyboardEvent } from 'react';
+import type { CustomerTier } from '@/lib/customer-tiers';
+import { CustomerTierBadge } from './customer-tier-badge';
 import { ArrowUp, Flame, Hourglass, PackageCheck, PackageX, ShieldAlert, TriangleAlert, Truck, Wrench, type LucideIcon } from 'lucide-react';
 import type { OrderSummary } from '@/lib/order-types';
 import { orderStage } from '@/lib/order-types';
@@ -57,7 +59,7 @@ const flagIcons: Record<string, LucideIcon> = {
 };
 
 /** Two-line order row (about 60 px): customer and order date, then stage, one flag, order number and quantity. */
-export function CompactOrderRow({ order, onOpen, selected = false, isNew = false, id, onKeyDown }: { order: OrderSummary; onOpen: (order: OrderSummary) => void; selected?: boolean; isNew?: boolean; id?: string; onKeyDown?: (event: KeyboardEvent<HTMLButtonElement>) => void }) {
+export function CompactOrderRow({ order, tiers = {}, onOpen, selected = false, isNew = false, id, onKeyDown }: { order: OrderSummary; tiers?: Record<string, CustomerTier>; onOpen: (order: OrderSummary) => void; selected?: boolean; isNew?: boolean; id?: string; onKeyDown?: (event: KeyboardEvent<HTMLButtonElement>) => void }) {
   const style = orderStageStyle(order.status);
   const finished = ['delivered', 'cancelled'].includes(order.status);
   return (
@@ -73,7 +75,7 @@ export function CompactOrderRow({ order, onOpen, selected = false, isNew = false
       <span aria-hidden="true" className={`absolute inset-y-2 left-1.5 w-1 rounded-full ${style.bar}`} />
       <span className="min-w-0 flex-1">
         <span className="flex items-baseline justify-between gap-2">
-          <strong className="truncate text-[15px] font-bold text-sf-ink">{order.customerName}</strong>
+          <span className="flex min-w-0 items-center gap-1"><strong className="min-w-0 truncate text-[15px] font-bold text-sf-ink">{order.customerName}</strong><CustomerTierBadge tier={tiers[order.id]} /></span>
           <time dateTime={order.createdAt} title={`Ordered ${orderDateTime(order.createdAt)}`} className="shrink-0 text-xs font-semibold tabular-nums text-sf-subtle">{orderDateLabel(order.createdAt)}</time>
         </span>
         <span className="mt-1 flex min-w-0 items-center gap-1.5 text-xs text-sf-subtle">

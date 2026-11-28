@@ -237,6 +237,7 @@ try {
   $salesNames += '20270110100000_economic_delta_upload.sql'
   $salesNames += '20270110110000_foc_cost_charged.sql'
   $salesNames += '20270117100000_go_live_adoption.sql'
+  $salesNames += '20270117110000_customer_tiers.sql'
   for ($salesIndex = 1; $salesIndex -lt $salesNames.Count; $salesIndex++) {
     if ([array]::IndexOf($planNames,$salesNames[$salesIndex]) -le [array]::IndexOf($planNames,$salesNames[$salesIndex-1])) { throw 'Full sales replay order is invalid' }
   }
@@ -268,7 +269,7 @@ create table public.test_upgrade_expected as select to_jsonb(o) as order_data,(s
     if ($migration.Name -ge '20260913130000_customer_price_book.sql' -and (Get-FileHash $migration.FullName).Hash -ne (Get-FileHash (Join-Path $migrationSource $migration.Name)).Hash) { throw "Pricing migration copy changed: $($migration.Name)" }
     # The speed fixture checks the idle item keys before buyerCount was added.
     # Apply this final migration after that historical fixture below.
-    if ($migration.Name -in @('20261217110000_idle_buyers.sql','20261220090000_growth_period.sql','20261220100000_growth_period_labs.sql','20261220110000_growth_period_profit.sql','20261227090000_economics_read_speed.sql','20261227100000_economic_line_reads.sql','20261227110000_economic_products_read.sql','20261227120000_economic_cost_review.sql','20261227130000_data_speed_report.sql','20270103090000_po_quantity_corrections.sql','20270103100000_item_forecast_trial.sql','20270103120000_import_exception_hygiene.sql','20270103130000_voucher_exclusions.sql','20270103140000_growth_cohorts.sql','20270103150000_reorder_point.sql','20270103160000_item_demand_estimates.sql','20270103170000_growth_new_labs.sql','20270103180000_lab_tiers.sql','20270110100000_economic_delta_upload.sql','20270110110000_foc_cost_charged.sql','20270117100000_go_live_adoption.sql')) { continue }
+    if ($migration.Name -in @('20261217110000_idle_buyers.sql','20261220090000_growth_period.sql','20261220100000_growth_period_labs.sql','20261220110000_growth_period_profit.sql','20261227090000_economics_read_speed.sql','20261227100000_economic_line_reads.sql','20261227110000_economic_products_read.sql','20261227120000_economic_cost_review.sql','20261227130000_data_speed_report.sql','20270103090000_po_quantity_corrections.sql','20270103100000_item_forecast_trial.sql','20270103120000_import_exception_hygiene.sql','20270103130000_voucher_exclusions.sql','20270103140000_growth_cohorts.sql','20270103150000_reorder_point.sql','20270103160000_item_demand_estimates.sql','20270103170000_growth_new_labs.sql','20270103180000_lab_tiers.sql','20270110100000_economic_delta_upload.sql','20270110110000_foc_cost_charged.sql','20270117100000_go_live_adoption.sql','20270117110000_customer_tiers.sql')) { continue }
     if ($migration.Name -eq '20261129160000_growth_item_kind.sql') {
       # Retain actual pre-patch definitions for byte-for-byte read comparisons.
       $baselineSql = @'
@@ -584,6 +585,9 @@ end$$;
   Invoke-DatabaseCommand $psqlProgram @('-U',$databaseUser,'-X','-q','-v','ON_ERROR_STOP=1','-d',$database,'-f',(Join-Path $work '20270117100000_go_live_adoption.sql'))
   Invoke-DatabaseCommand $psqlProgram @('-U',$databaseUser,'-X','-q','-v','ON_ERROR_STOP=1','-d',$database,'-f',(Join-Path $repository 'supabase/tests/go_live_adoption.sql'))
   Write-Output 'PASS: go-live adoption'
+  Invoke-DatabaseCommand $psqlProgram @('-U',$databaseUser,'-X','-q','-v','ON_ERROR_STOP=1','-d',$database,'-f',(Join-Path $work '20270117110000_customer_tiers.sql'))
+  Invoke-DatabaseCommand $psqlProgram @('-U',$databaseUser,'-X','-q','-v','ON_ERROR_STOP=1','-d',$database,'-f',(Join-Path $repository 'supabase/tests/customer_tiers.sql'))
+  Write-Output 'PASS: customer tiers'
   Invoke-DatabaseCommand $psqlProgram @('-U',$databaseUser,'-X','-q','-v','ON_ERROR_STOP=1','-d',$database,'-f',(Join-Path $repository 'supabase/tests/economics_candidate_rebuild.sql'))
   Write-Output 'PASS: rebuild containment, sales coverage and exact control reconciliation'
   Invoke-DatabaseCommand $psqlProgram @('-U',$databaseUser,'-X','-q','-v','ON_ERROR_STOP=1','-d',$database,'-f',(Join-Path $repository 'supabase/tests/mapped_instrument_cost_scope.sql'))

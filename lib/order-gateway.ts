@@ -90,6 +90,7 @@ export type GatewayAction =
   | 'get_actions_due'
   | 'get_contract_windows'
   | 'get_today'
+  | 'get_customer_tiers'
   | 'get_map_pins'
   | 'get_not_on_map'
   | 'get_pin_labs'

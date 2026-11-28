@@ -1837,6 +1837,13 @@
       "remoteVersion": null,
       "remoteSha256": null,
       "status": "not_deployed"
+    },
+    {
+      "localFile": "20270117110000_customer_tiers.sql",
+      "localSha256": "19e7c042ab56f439ebed3e35efcffb822267f5862af6d5860e2d3a2eb5d1e1b9",
+      "remoteVersion": null,
+      "remoteSha256": null,
+      "status": "not_deployed"
     }
   ],
   "liveCheck": {
