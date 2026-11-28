@@ -47,13 +47,14 @@ export function useCustomerTiers(actorEmail: string | undefined, orderIds: strin
             method: 'POST', cache: 'no-store', headers: { 'content-type': 'application/json' },
             body: JSON.stringify({ orderIds: chunk }),
           });
-          if (!response.ok) return;
+          if (!response.ok) { chunk.forEach(id => cache.set(key(id), null)); return; }
           const data = normalizeCustomerTiers(await response.json());
-          if (!data) return;
+          if (!data) { chunk.forEach(id => cache.set(key(id), null)); return; }
           chunk.forEach(id => cache.set(key(id), data.tiers[id] ?? null));
           listeners.forEach(listener => listener());
         } catch {
-          // Optional decoration: leave failures uncached for the next list load.
+          chunk.forEach(id => cache.set(key(id), null));
+          // Optional decoration: a failed read shows no badge and is not retried until reload.
         } finally {
           chunk.forEach(id => inFlight.delete(key(id)));
         }

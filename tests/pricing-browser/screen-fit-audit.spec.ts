@@ -83,6 +83,7 @@ async function setupAccounts(page: Page) {
     membersByRole: { sales: 0, operations: 0, warehouse: 0, accounts: 0, billing: 0, management: 1, administrator: 1, viewer: 0 },
     generatedAt: '2026-11-26T00:00:00Z',
   } }));
+  await page.route('**/api/customer-tiers', route => route.request().method() !== 'POST' ? route.fallback() : route.fulfill({ json: { month: '2026-10-01', tiers: {} } }));
   // Optional lazy Accounts cards fetch on mount, even while collapsed.
   // Success envelopes from data-checks.spec.ts and data-speed-report.spec.ts.
   // Fall through to the network guard for mutations; this audit is read-only.
