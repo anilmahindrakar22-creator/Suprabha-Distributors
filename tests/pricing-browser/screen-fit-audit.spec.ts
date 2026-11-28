@@ -14,11 +14,6 @@ const jsonRoute = async (page: Page, pattern: string, json: unknown) => {
 
 // Frame: frame-scroll-boundaries.spec.ts, orders-fit-screen.spec.ts and today.spec.ts.
 async function setupFrame(page: Page) {
-  // The audit measures screens in their normal state, without the first-run role guide, for any actor email.
-  await page.addInitScript(() => {
-    const getItem = Storage.prototype.getItem;
-    Storage.prototype.getItem = function (key: string) { return key.startsWith('stockflow.roleGuide.dismissed.v1:') ? '1' : getItem.call(this, key); };
-  });
   await jsonRoute(page, '**/api/staff-auth', { ok: true, renewAfterSeconds: 3000 });
   await jsonRoute(page, '**/api/me', { roles: ['administrator'] });
   await jsonRoute(page, '**/api/push-subscription**', { enabled: false, publicKey: '' });

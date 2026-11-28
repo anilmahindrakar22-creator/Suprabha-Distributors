@@ -11,7 +11,7 @@ for (const [name, viewport] of [['phone', { width: 390, height: 844 }], ['deskto
   test(`Role guide card on ${name}`, async ({ page }) => {
     await page.setViewportSize(viewport);
     await mockFrame(page);
-    await page.goto('/?view=frame&role=sales&roles=sales');
+    await page.goto('/?view=frame&role=sales&roles=sales&roleGuide=show');
     const card = page.getByRole('region', { name: 'What you can do' });
     await expect(card).toBeVisible();
     await expect(card.getByText('Your roles: Sales')).toBeVisible();

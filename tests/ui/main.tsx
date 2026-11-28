@@ -18,6 +18,13 @@ import type { OrderBootstrap } from '@/lib/order-types';
 import { normalizeStockFlowRoles } from '@/lib/user-types';
 import '@/app/globals.css';
 
+// Test harness only: specs see the frame in its normal state, without the first-run role guide,
+// unless the URL asks for it with roleGuide=show (tests/pricing-browser/role-guide.spec.ts).
+if (typeof window !== 'undefined' && new URLSearchParams(window.location.search).get('roleGuide') !== 'show') {
+  const getItem = Storage.prototype.getItem;
+  Storage.prototype.getItem = function (key: string) { return key.startsWith('stockflow.roleGuide.dismissed.v1:') ? '1' : getItem.call(this, key); };
+}
+
 const row = {
   fixed: false, lastRate: 420, historicCost: 300, currentCost: 310, costChange: 10,
   continuityPrice: 430, targetMarginPrice: 445, recommendedPrice: 445,
