@@ -70,6 +70,7 @@ export type GatewayAction =
   | 'get_go_live'
   | 'acknowledge_economic_exceptions'
   | 'exclude_accounting_only_sale'
+  | 'exclude_errored_voucher'
   | 'get_economic_source_lines'
   | 'get_economic_products'
   | 'get_economic_cost_review'

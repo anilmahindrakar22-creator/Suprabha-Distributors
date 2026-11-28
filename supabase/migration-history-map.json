@@ -1858,6 +1858,13 @@
       "remoteVersion": null,
       "remoteSha256": null,
       "status": "not_deployed"
+    },
+    {
+      "localFile": "20270124100000_errored_voucher_exclusion.sql",
+      "localSha256": "a7fcc73a03e71e9a8700e5bc7de81df909bdc6940be88fb5dee9ee24eac5f2cb",
+      "remoteVersion": null,
+      "remoteSha256": null,
+      "status": "not_deployed"
     }
   ],
   "liveCheck": {
