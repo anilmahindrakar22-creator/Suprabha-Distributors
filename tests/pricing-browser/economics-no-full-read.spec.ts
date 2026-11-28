@@ -30,7 +30,7 @@ for (const [device, viewport] of [['phone', { width: 390, height: 844 }], ['desk
         await route.fulfill({ json: { ...summary, readView: 'detail' } });
       });
       await page.goto('/?view=instrument-economics');
-      const add = page.getByRole('button', { name: /^Add reagents/ });
+      const add = page.getByRole('button', { name: /^(Add|Hide) reagents/ });
       await add.evaluate(button => { for (let i = 0; i < 3; i++) (button as HTMLButtonElement).click(); });
       await expect(add).toBeDisabled();
       await expect(add).toHaveAttribute('aria-busy', 'true');
@@ -76,7 +76,7 @@ for (const [device, viewport] of [['phone', { width: 390, height: 844 }], ['desk
         return route.fulfill({ json: { ...summary, readView: 'detail' } });
       });
       await page.goto('/?view=instrument-economics');
-      const card = page.getByRole('article').filter({ has: page.getByRole('button', { name: /^Add reagents/ }) });
+      const card = page.getByRole('article').filter({ has: page.getByRole('button', { name: /^(Add|Hide) reagents/ }) });
       await card.getByRole('button', { name: /^Add reagents/ }).click();
       await expect(card.getByRole('alert')).toContainText("Couldn't load the instrument details.");
       const retry = card.getByRole('button', { name: 'Retry loading instrument details', exact: true });
