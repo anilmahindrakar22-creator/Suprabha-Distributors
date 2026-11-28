@@ -20,8 +20,9 @@ const releaseOrder = (result: { deployed: { localFile: string }[]; pending: stri
 
 describe('read-only pricing release preflight', () => {
   it('registers go-live adoption after FOC', () => {
-    const result = pricingReleasePreflight(original, source);
-    expect(result.pending.slice(-2)).toEqual(['20270110110000_foc_cost_charged.sql','20270117100000_go_live_adoption.sql']);
+    const result = pricingReleasePreflight(current, source);
+    expect(result.deployed.find(entry => entry.localFile === '20270110110000_foc_cost_charged.sql')?.remoteVersion).toBe('20261127140500');
+    expect(result.pending.at(-1)).toBe('20270117100000_go_live_adoption.sql');
     expect(result.sqlTests.at(-1)).toBe('supabase/tests/go_live_adoption.sql');
     const migration = source.get('20270117100000_go_live_adoption.sql')!;
     expect(migration).toContain('stockflow_economics_gateway_before_go_live');
@@ -39,15 +40,16 @@ describe('read-only pricing release preflight', () => {
     expect(readFileSync(new URL('../../supabase/tests/go_live_adoption.sql', import.meta.url), 'utf8').trimEnd()).toMatch(/rollback;$/);
   });
   it('registers FOC cost charged immediately after economic delta upload', () => {
-    const result = pricingReleasePreflight(original, source);
+    const result = pricingReleasePreflight(current, source);
     const name = '20270110110000_foc_cost_charged.sql';
     const sqlTest = 'supabase/tests/foc_cost_charged.sql';
-    expect(result.pending.slice(-3, -1)).toEqual(['20270110100000_economic_delta_upload.sql', name]);
+    expect(result.deployed.find(entry => entry.localFile === '20270110100000_economic_delta_upload.sql')?.remoteVersion).toBe('20261127140455');
+    expect(result.deployed.find(entry => entry.localFile === name)?.remoteVersion).toBe('20261127140500');
     expect(result.sqlTests.slice(-3, -1)).toEqual(['supabase/tests/economic_delta_upload.sql', sqlTest]);
-    expect(current.migrations.find((entry: { localFile: string }) => entry.localFile === name)?.status).toBe('not_deployed');
+    expect(current.migrations.find((entry: { localFile: string }) => entry.localFile === name)?.status).toBe('exact_normalized_match');
     const changed = new Map(source);
     changed.set(name, source.get(name)! + '\nselect 1;');
-    expect(() => pricingReleasePreflight(original, changed)).toThrow('Migration hash changed: ' + name);
+    expect(() => pricingReleasePreflight(current, changed)).toThrow('Migration hash changed: ' + name);
     const runner = readFileSync(new URL('../pricing-migration-local.ps1', import.meta.url), 'utf8');
     expect(runner).toContain("$salesNames += '" + name + "'");
     expect(runner).toContain("'20270110100000_economic_delta_upload.sql','" + name + "','20270117100000_go_live_adoption.sql')) { continue }");
@@ -64,15 +66,16 @@ describe('read-only pricing release preflight', () => {
     expect(fixture).not.toMatch(/update\s+private\.stockflow_economic_source_/i);
   });
   it('registers economic delta upload immediately after lab tiers', () => {
-    const result = pricingReleasePreflight(original, source);
+    const result = pricingReleasePreflight(current, source);
     const name = '20270110100000_economic_delta_upload.sql';
     const sqlTest = 'supabase/tests/economic_delta_upload.sql';
-    expect(result.pending.slice(-4, -2)).toEqual(['20270103180000_lab_tiers.sql', name]);
+    expect(result.deployed.find(entry => entry.localFile === '20270103180000_lab_tiers.sql')?.remoteVersion).toBe('20261127140450');
+    expect(result.deployed.find(entry => entry.localFile === name)?.remoteVersion).toBe('20261127140455');
     expect(result.sqlTests.slice(-4, -2)).toEqual(['supabase/tests/lab_tiers.sql', sqlTest]);
-    expect(current.migrations.find((entry: { localFile: string }) => entry.localFile === name)?.status).toBe('not_deployed');
+    expect(current.migrations.find((entry: { localFile: string }) => entry.localFile === name)?.status).toBe('exact_normalized_match');
     const changed = new Map(source);
     changed.set(name, source.get(name)! + '\nselect 1;');
-    expect(() => pricingReleasePreflight(original, changed)).toThrow('Migration hash changed: ' + name);
+    expect(() => pricingReleasePreflight(current, changed)).toThrow('Migration hash changed: ' + name);
     const runner = readFileSync(new URL('../pricing-migration-local.ps1', import.meta.url), 'utf8');
     expect(runner).toContain("$salesNames += '" + name + "'");
     expect(runner).toContain("'20270103180000_lab_tiers.sql','" + name + "','20270110110000_foc_cost_charged.sql','20270117100000_go_live_adoption.sql')) { continue }");
@@ -89,15 +92,16 @@ describe('read-only pricing release preflight', () => {
     expect(fixture).not.toMatch(/update\s+private\.stockflow_economic_source_/i);
   });
   it('registers lab tiers immediately after growth new labs', () => {
-    const result = pricingReleasePreflight(original, source);
+    const result = pricingReleasePreflight(current, source);
     const name = '20270103180000_lab_tiers.sql';
     const sqlTest = 'supabase/tests/lab_tiers.sql';
-    expect(result.pending.slice(-5, -3)).toEqual(['20270103170000_growth_new_labs.sql', name]);
+    expect(result.deployed.find(entry => entry.localFile === '20270103170000_growth_new_labs.sql')?.remoteVersion).toBe('20261127140445');
+    expect(result.deployed.find(entry => entry.localFile === name)?.remoteVersion).toBe('20261127140450');
     expect(result.sqlTests.slice(-5, -3)).toEqual(['supabase/tests/growth_new_labs.sql', sqlTest]);
-    expect(current.migrations.find((entry: { localFile: string }) => entry.localFile === name)?.status).toBe('not_deployed');
+    expect(current.migrations.find((entry: { localFile: string }) => entry.localFile === name)?.status).toBe('exact_normalized_match');
     const changed = new Map(source);
     changed.set(name, source.get(name)! + '\nselect 1;');
-    expect(() => pricingReleasePreflight(original, changed)).toThrow('Migration hash changed: ' + name);
+    expect(() => pricingReleasePreflight(current, changed)).toThrow('Migration hash changed: ' + name);
     const runner = readFileSync(new URL('../pricing-migration-local.ps1', import.meta.url), 'utf8');
     expect(runner).toContain("$salesNames += '" + name + "'");
     expect(runner).toContain("'20270103170000_growth_new_labs.sql','" + name + "','20270110100000_economic_delta_upload.sql','20270110110000_foc_cost_charged.sql','20270117100000_go_live_adoption.sql')) { continue }");
@@ -117,15 +121,16 @@ describe('read-only pricing release preflight', () => {
     expect(fixture).not.toMatch(/update\s+private\.stockflow_economic_source_/i);
   });
   it('registers growth new labs immediately after item demand estimates', () => {
-    const result = pricingReleasePreflight(original, source);
+    const result = pricingReleasePreflight(current, source);
     const name = '20270103170000_growth_new_labs.sql';
     const sqlTest = 'supabase/tests/growth_new_labs.sql';
-    expect(result.pending.slice(-6, -4)).toEqual(['20270103160000_item_demand_estimates.sql', name]);
+    expect(result.deployed.find(entry => entry.localFile === '20270103160000_item_demand_estimates.sql')?.remoteVersion).toBe('20261127140442');
+    expect(result.deployed.find(entry => entry.localFile === name)?.remoteVersion).toBe('20261127140445');
     expect(result.sqlTests.slice(-6, -4)).toEqual(['supabase/tests/item_demand_estimates.sql', sqlTest]);
-    expect(current.migrations.find((entry: { localFile: string }) => entry.localFile === name)?.status).toBe('not_deployed');
+    expect(current.migrations.find((entry: { localFile: string }) => entry.localFile === name)?.status).toBe('exact_normalized_match');
     const changed = new Map(source);
     changed.set(name, source.get(name)! + '\nselect 1;');
-    expect(() => pricingReleasePreflight(original, changed)).toThrow('Migration hash changed: ' + name);
+    expect(() => pricingReleasePreflight(current, changed)).toThrow('Migration hash changed: ' + name);
     const runner = readFileSync(new URL('../pricing-migration-local.ps1', import.meta.url), 'utf8');
     expect(runner).toContain("$salesNames += '" + name + "'");
     expect(runner).toContain("'20270103160000_item_demand_estimates.sql','" + name + "','20270103180000_lab_tiers.sql','20270110100000_economic_delta_upload.sql','20270110110000_foc_cost_charged.sql','20270117100000_go_live_adoption.sql')) { continue }");
@@ -145,15 +150,16 @@ describe('read-only pricing release preflight', () => {
     expect(fixture).not.toMatch(/update\s+private\.stockflow_economic_source_/i);
   });
   it('registers item demand estimates immediately after reorder point', () => {
-    const result = pricingReleasePreflight(original, source);
+    const result = pricingReleasePreflight(current, source);
     const name = '20270103160000_item_demand_estimates.sql';
     const sqlTest = 'supabase/tests/item_demand_estimates.sql';
-    expect(result.pending.slice(-7, -5)).toEqual(['20270103150000_reorder_point.sql', name]);
+    expect(result.deployed.find(entry => entry.localFile === '20270103150000_reorder_point.sql')?.remoteVersion).toBe('20261127140438');
+    expect(result.deployed.find(entry => entry.localFile === name)?.remoteVersion).toBe('20261127140442');
     expect(result.sqlTests.slice(-7, -5)).toEqual(['supabase/tests/reorder_point.sql', sqlTest]);
-    expect(current.migrations.find((entry: { localFile: string }) => entry.localFile === name)?.status).toBe('not_deployed');
+    expect(current.migrations.find((entry: { localFile: string }) => entry.localFile === name)?.status).toBe('exact_normalized_match');
     const changed = new Map(source);
     changed.set(name, source.get(name)! + '\nselect 1;');
-    expect(() => pricingReleasePreflight(original, changed)).toThrow('Migration hash changed: ' + name);
+    expect(() => pricingReleasePreflight(current, changed)).toThrow('Migration hash changed: ' + name);
     const runner = readFileSync(new URL('../pricing-migration-local.ps1', import.meta.url), 'utf8');
     expect(runner).toContain("$salesNames += '" + name + "'");
     expect(runner).toContain("'20270103150000_reorder_point.sql','" + name + "','20270103170000_growth_new_labs.sql','20270103180000_lab_tiers.sql','20270110100000_economic_delta_upload.sql','20270110110000_foc_cost_charged.sql','20270117100000_go_live_adoption.sql')) { continue }");
@@ -170,15 +176,16 @@ describe('read-only pricing release preflight', () => {
     expect(fixture.trimEnd()).toMatch(/rollback;$/);
   });
   it('registers reorder point immediately after growth cohorts', () => {
-    const result = pricingReleasePreflight(original, source);
+    const result = pricingReleasePreflight(current, source);
     const name = '20270103150000_reorder_point.sql';
     const sqlTest = 'supabase/tests/reorder_point.sql';
-    expect(result.pending.slice(-8, -6)).toEqual(['20270103140000_growth_cohorts.sql', name]);
+    expect(result.deployed.find(entry => entry.localFile === '20270103140000_growth_cohorts.sql')?.remoteVersion).toBe('20261127140434');
+    expect(result.deployed.find(entry => entry.localFile === name)?.remoteVersion).toBe('20261127140438');
     expect(result.sqlTests.slice(-8, -6)).toEqual(['supabase/tests/growth_cohorts.sql', sqlTest]);
-    expect(current.migrations.find((entry: { localFile: string }) => entry.localFile === name)?.status).toBe('not_deployed');
+    expect(current.migrations.find((entry: { localFile: string }) => entry.localFile === name)?.status).toBe('exact_normalized_match');
     const changed = new Map(source);
     changed.set(name, source.get(name)! + '\nselect 1;');
-    expect(() => pricingReleasePreflight(original, changed)).toThrow('Migration hash changed: ' + name);
+    expect(() => pricingReleasePreflight(current, changed)).toThrow('Migration hash changed: ' + name);
     const runner = readFileSync(new URL('../pricing-migration-local.ps1', import.meta.url), 'utf8');
     expect(runner).toContain("$salesNames += '" + name + "'");
     expect(runner).toContain("'20270103140000_growth_cohorts.sql','" + name + "','20270103160000_item_demand_estimates.sql','20270103170000_growth_new_labs.sql','20270103180000_lab_tiers.sql','20270110100000_economic_delta_upload.sql','20270110110000_foc_cost_charged.sql','20270117100000_go_live_adoption.sql')) { continue }");
@@ -200,15 +207,16 @@ describe('read-only pricing release preflight', () => {
     expect(fixture.trimEnd()).toMatch(/rollback;$/);
   });
   it('registers growth cohorts immediately after voucher exclusions', () => {
-    const result = pricingReleasePreflight(original, source);
+    const result = pricingReleasePreflight(current, source);
     const name = '20270103140000_growth_cohorts.sql';
     const sqlTest = 'supabase/tests/growth_cohorts.sql';
-    expect(result.pending.slice(-9, -7)).toEqual(['20270103130000_voucher_exclusions.sql', name]);
+    expect(result.deployed.find(entry => entry.localFile === '20270103130000_voucher_exclusions.sql')?.remoteVersion).toBe('20261127140430');
+    expect(result.deployed.find(entry => entry.localFile === name)?.remoteVersion).toBe('20261127140434');
     expect(result.sqlTests.slice(-9, -7)).toEqual(['supabase/tests/voucher_exclusions.sql', sqlTest]);
-    expect(current.migrations.find((entry: { localFile: string }) => entry.localFile === name)?.status).toBe('not_deployed');
+    expect(current.migrations.find((entry: { localFile: string }) => entry.localFile === name)?.status).toBe('exact_normalized_match');
     const changed = new Map(source);
     changed.set(name, source.get(name)! + '\nselect 1;');
-    expect(() => pricingReleasePreflight(original, changed)).toThrow('Migration hash changed: ' + name);
+    expect(() => pricingReleasePreflight(current, changed)).toThrow('Migration hash changed: ' + name);
     const runner = readFileSync(new URL('../pricing-migration-local.ps1', import.meta.url), 'utf8');
     expect(runner).toContain("$salesNames += '" + name + "'");
     expect(runner).toContain("'20270103130000_voucher_exclusions.sql','" + name + "','20270103150000_reorder_point.sql','20270103160000_item_demand_estimates.sql','20270103170000_growth_new_labs.sql','20270103180000_lab_tiers.sql','20270110100000_economic_delta_upload.sql','20270110110000_foc_cost_charged.sql','20270117100000_go_live_adoption.sql')) { continue }");
@@ -227,15 +235,16 @@ describe('read-only pricing release preflight', () => {
     expect(fixture.trimEnd()).toMatch(/rollback;$/);
   });
   it('registers voucher exclusions immediately after import exception hygiene', () => {
-    const result = pricingReleasePreflight(original, source);
+    const result = pricingReleasePreflight(current, source);
     const name = '20270103130000_voucher_exclusions.sql';
     const sqlTest = 'supabase/tests/voucher_exclusions.sql';
-    expect(result.pending.slice(-10, -8)).toEqual(['20270103120000_import_exception_hygiene.sql', name]);
+    expect(result.deployed.find(entry => entry.localFile === '20270103120000_import_exception_hygiene.sql')?.remoteVersion).toBe('20261127140426');
+    expect(result.deployed.find(entry => entry.localFile === name)?.remoteVersion).toBe('20261127140430');
     expect(result.sqlTests.slice(-10, -8)).toEqual(['supabase/tests/import_exception_hygiene.sql', sqlTest]);
-    expect(current.migrations.find((entry: { localFile: string }) => entry.localFile === name)?.status).toBe('not_deployed');
+    expect(current.migrations.find((entry: { localFile: string }) => entry.localFile === name)?.status).toBe('exact_normalized_match');
     const changed = new Map(source);
     changed.set(name, source.get(name)! + '\nselect 1;');
-    expect(() => pricingReleasePreflight(original, changed)).toThrow('Migration hash changed: ' + name);
+    expect(() => pricingReleasePreflight(current, changed)).toThrow('Migration hash changed: ' + name);
     const runner = readFileSync(new URL('../pricing-migration-local.ps1', import.meta.url), 'utf8');
     expect(runner).toContain('PASS: omission scope against voucher exclusions');
     expect(runner).toContain("$salesNames += '" + name + "'");
@@ -265,15 +274,16 @@ describe('read-only pricing release preflight', () => {
     expect(fixture.trimEnd()).toMatch(/rollback;$/);
   });
   it('registers import exception hygiene immediately after the item forecast trial', () => {
-    const result = pricingReleasePreflight(original, source);
+    const result = pricingReleasePreflight(current, source);
     const name = '20270103120000_import_exception_hygiene.sql';
     const sqlTest = 'supabase/tests/import_exception_hygiene.sql';
-    expect(result.pending.slice(-11, -9)).toEqual(['20270103100000_item_forecast_trial.sql', name]);
+    expect(result.deployed.find(entry => entry.localFile === '20270103100000_item_forecast_trial.sql')?.remoteVersion).toBe('20261127140422');
+    expect(result.deployed.find(entry => entry.localFile === name)?.remoteVersion).toBe('20261127140426');
     expect(result.sqlTests.slice(-11, -9)).toEqual(['supabase/tests/item_forecast_trial.sql', sqlTest]);
-    expect(current.migrations.find((entry: { localFile: string }) => entry.localFile === name)?.status).toBe('not_deployed');
+    expect(current.migrations.find((entry: { localFile: string }) => entry.localFile === name)?.status).toBe('exact_normalized_match');
     const changed = new Map(source);
     changed.set(name, source.get(name)! + '\nselect 1;');
-    expect(() => pricingReleasePreflight(original, changed)).toThrow('Migration hash changed: ' + name);
+    expect(() => pricingReleasePreflight(current, changed)).toThrow('Migration hash changed: ' + name);
     const runner = readFileSync(new URL('../pricing-migration-local.ps1', import.meta.url), 'utf8');
     expect(runner).toContain("$salesNames += '" + name + "'");
     expect(runner).toContain("'20270103100000_item_forecast_trial.sql','" + name + "','20270103130000_voucher_exclusions.sql','20270103140000_growth_cohorts.sql','20270103150000_reorder_point.sql','20270103160000_item_demand_estimates.sql','20270103170000_growth_new_labs.sql','20270103180000_lab_tiers.sql','20270110100000_economic_delta_upload.sql','20270110110000_foc_cost_charged.sql','20270117100000_go_live_adoption.sql')) { continue }");
@@ -296,17 +306,17 @@ describe('read-only pricing release preflight', () => {
     expect(fixture.trimEnd()).toMatch(/rollback;$/);
   });
   it('registers the item forecast trial immediately after PO quantity corrections', () => {
-    const result = pricingReleasePreflight(original, source);
+    const result = pricingReleasePreflight(current, source);
     const name = '20270103100000_item_forecast_trial.sql';
     const sqlTest = 'supabase/tests/item_forecast_trial.sql';
     const changed = new Map(source);
     changed.set(name, source.get(name)! + '\nselect 1;');
-    expect(() => pricingReleasePreflight(original, changed)).toThrow('Migration hash changed: ' + name);
-    expect(result.pending.at(-11)).toBe(name);
-    expect(result.pending.at(-12)).toBe('20270103090000_po_quantity_corrections.sql');
+    expect(() => pricingReleasePreflight(current, changed)).toThrow('Migration hash changed: ' + name);
+    expect(result.deployed.find(entry => entry.localFile === name)?.remoteVersion).toBe('20261127140422');
+    expect(result.deployed.find(entry => entry.localFile === '20270103090000_po_quantity_corrections.sql')?.remoteVersion).toBe('20261127140417');
     expect(result.sqlTests.at(-11)).toBe(sqlTest);
     expect(result.sqlTests.at(-12)).toBe('supabase/tests/po_quantity_corrections.sql');
-    expect(current.migrations.find((entry: { localFile: string }) => entry.localFile === name)?.status).toBe('not_deployed');
+    expect(current.migrations.find((entry: { localFile: string }) => entry.localFile === name)?.status).toBe('exact_normalized_match');
     const runner = readFileSync(new URL('../pricing-migration-local.ps1', import.meta.url), 'utf8');
     expect(runner).toContain("$salesNames += '" + name + "'");
     expect(runner).toContain("'20270103090000_po_quantity_corrections.sql','" + name + "','20270103120000_import_exception_hygiene.sql','20270103130000_voucher_exclusions.sql','20270103140000_growth_cohorts.sql','20270103150000_reorder_point.sql','20270103160000_item_demand_estimates.sql','20270103170000_growth_new_labs.sql','20270103180000_lab_tiers.sql','20270110100000_economic_delta_upload.sql','20270110110000_foc_cost_charged.sql','20270117100000_go_live_adoption.sql')) { continue }");
@@ -328,14 +338,14 @@ describe('read-only pricing release preflight', () => {
     expect(runner).toContain("Write-Output 'PASS: voucher lookup indexes'");
   });
   it('registers PO quantity corrections immediately after the data and speed report', () => {
-    const result = pricingReleasePreflight(original, source);
+    const result = pricingReleasePreflight(current, source);
     const name = '20270103090000_po_quantity_corrections.sql';
     const sqlTest = 'supabase/tests/po_quantity_corrections.sql';
-    expect(result.pending.at(-12)).toBe(name);
-    expect(result.pending.at(-13)).toBe('20261227130000_data_speed_report.sql');
+    expect(result.deployed.find(entry => entry.localFile === name)?.remoteVersion).toBe('20261127140417');
+    expect(result.deployed.find(entry => entry.localFile === '20261227130000_data_speed_report.sql')?.remoteVersion).toBe('20261127140409');
     expect(result.sqlTests.at(-12)).toBe(sqlTest);
     expect(result.sqlTests.at(-13)).toBe('supabase/tests/data_speed_report.sql');
-    expect(current.migrations.find((entry: { localFile: string }) => entry.localFile === name)?.status).toBe('not_deployed');
+    expect(current.migrations.find((entry: { localFile: string }) => entry.localFile === name)?.status).toBe('exact_normalized_match');
     const runner = readFileSync(new URL('../pricing-migration-local.ps1', import.meta.url), 'utf8');
     expect(runner).toContain("$salesNames += '" + name + "'");
     expect(runner).toContain("'20261227130000_data_speed_report.sql','" + name + "','20270103100000_item_forecast_trial.sql','20270103120000_import_exception_hygiene.sql','20270103130000_voucher_exclusions.sql','20270103140000_growth_cohorts.sql','20270103150000_reorder_point.sql','20270103160000_item_demand_estimates.sql','20270103170000_growth_new_labs.sql','20270103180000_lab_tiers.sql','20270110100000_economic_delta_upload.sql','20270110110000_foc_cost_charged.sql','20270117100000_go_live_adoption.sql')) { continue }");
@@ -347,14 +357,14 @@ describe('read-only pricing release preflight', () => {
     expect(runner.indexOf('supabase/tests/supplier_purchase_orders.sql')).toBeGreaterThan(apply);
   });
   it('registers the data and speed report after the economics cost review read', () => {
-    const result = pricingReleasePreflight(original, source);
+    const result = pricingReleasePreflight(current, source);
     const name = '20261227130000_data_speed_report.sql';
     const sqlTest = 'supabase/tests/data_speed_report.sql';
-    expect(result.pending.at(-13)).toBe(name);
-    expect(result.pending.at(-14)).toBe('20261227120000_economic_cost_review.sql');
+    expect(result.deployed.find(entry => entry.localFile === name)?.remoteVersion).toBe('20261127140409');
+    expect(result.deployed.find(entry => entry.localFile === '20261227120000_economic_cost_review.sql')?.remoteVersion).toBe('20261127140313');
     expect(result.sqlTests.at(-13)).toBe(sqlTest);
     expect(result.sqlTests.at(-14)).toBe('supabase/tests/economic_cost_review.sql');
-    expect(current.migrations.find((entry: { localFile: string }) => entry.localFile === name)?.status).toBe('not_deployed');
+    expect(current.migrations.find((entry: { localFile: string }) => entry.localFile === name)?.status).toBe('exact_normalized_match');
     const runner = readFileSync(new URL('../pricing-migration-local.ps1', import.meta.url), 'utf8');
     expect(runner).toContain("$salesNames += '" + name + "'");
     expect(runner).toContain("'" + name + "','20270103090000_po_quantity_corrections.sql','20270103100000_item_forecast_trial.sql','20270103120000_import_exception_hygiene.sql','20270103130000_voucher_exclusions.sql','20270103140000_growth_cohorts.sql','20270103150000_reorder_point.sql','20270103160000_item_demand_estimates.sql','20270103170000_growth_new_labs.sql','20270103180000_lab_tiers.sql','20270110100000_economic_delta_upload.sql','20270110110000_foc_cost_charged.sql','20270117100000_go_live_adoption.sql')) { continue }");
@@ -377,13 +387,13 @@ describe('read-only pricing release preflight', () => {
     expect(fixture.trimEnd()).toMatch(/rollback;$/);
   });
   it('registers the economics cost review read after the economics products read', () => {
-    const result = pricingReleasePreflight(original, source);
+    const result = pricingReleasePreflight(current, source);
     const name = '20261227120000_economic_cost_review.sql';
     const sqlTest = 'supabase/tests/economic_cost_review.sql';
-    expect(result.pending.at(-14)).toBe(name);
-    expect(result.pending.at(-15)).toBe('20261227110000_economic_products_read.sql');
+    expect(result.deployed.find(entry => entry.localFile === name)?.remoteVersion).toBe('20261127140313');
+    expect(result.deployed.find(entry => entry.localFile === '20261227110000_economic_products_read.sql')?.remoteVersion).toBe('20261127140308');
     expect(result.sqlTests.at(-14)).toBe(sqlTest);
-    expect(current.migrations.find((entry: { localFile: string }) => entry.localFile === name)?.status).toBe('not_deployed');
+    expect(current.migrations.find((entry: { localFile: string }) => entry.localFile === name)?.status).toBe('exact_normalized_match');
     const runner = readFileSync(new URL('../pricing-migration-local.ps1', import.meta.url), 'utf8');
     expect(runner).toContain("$salesNames += '" + name + "'");
     expect(runner).toContain("'" + name + "','20261227130000_data_speed_report.sql','20270103090000_po_quantity_corrections.sql','20270103100000_item_forecast_trial.sql','20270103120000_import_exception_hygiene.sql','20270103130000_voucher_exclusions.sql','20270103140000_growth_cohorts.sql','20270103150000_reorder_point.sql','20270103160000_item_demand_estimates.sql','20270103170000_growth_new_labs.sql','20270103180000_lab_tiers.sql','20270110100000_economic_delta_upload.sql','20270110110000_foc_cost_charged.sql','20270117100000_go_live_adoption.sql')) { continue }");
@@ -407,14 +417,14 @@ describe('read-only pricing release preflight', () => {
   });
 
   it('registers the economics products read after the economics line reads', () => {
-    const result = pricingReleasePreflight(original, source);
+    const result = pricingReleasePreflight(current, source);
     const name = '20261227110000_economic_products_read.sql';
     const sqlTest = 'supabase/tests/economic_products_read.sql';
-    expect(result.pending.at(-15)).toBe(name);
-    expect(result.pending.at(-16)).toBe('20261227100000_economic_line_reads.sql');
+    expect(result.deployed.find(entry => entry.localFile === name)?.remoteVersion).toBe('20261127140308');
+    expect(result.deployed.find(entry => entry.localFile === '20261227100000_economic_line_reads.sql')?.remoteVersion).toBe('20261127140302');
     expect(result.sqlTests.at(-15)).toBe(sqlTest);
     expect(result.sqlTests.at(-16)).toBe('supabase/tests/economic_line_reads.sql');
-    expect(current.migrations.find((entry: { localFile: string }) => entry.localFile === name)?.status).toBe('not_deployed');
+    expect(current.migrations.find((entry: { localFile: string }) => entry.localFile === name)?.status).toBe('exact_normalized_match');
     const runner = readFileSync(new URL('../pricing-migration-local.ps1', import.meta.url), 'utf8');
     expect(runner).toContain("$salesNames += '" + name + "'");
     expect(runner).toContain("'" + name + "','20261227120000_economic_cost_review.sql','20261227130000_data_speed_report.sql','20270103090000_po_quantity_corrections.sql','20270103100000_item_forecast_trial.sql','20270103120000_import_exception_hygiene.sql','20270103130000_voucher_exclusions.sql','20270103140000_growth_cohorts.sql','20270103150000_reorder_point.sql','20270103160000_item_demand_estimates.sql','20270103170000_growth_new_labs.sql','20270103180000_lab_tiers.sql','20270110100000_economic_delta_upload.sql','20270110110000_foc_cost_charged.sql','20270117100000_go_live_adoption.sql')) { continue }");
@@ -434,11 +444,11 @@ describe('read-only pricing release preflight', () => {
     expect(fixture.trimEnd()).toMatch(/rollback;$/);
   });
   it('registers the economics line reads after the economics read speed', () => {
-    const result = pricingReleasePreflight(original, source);
+    const result = pricingReleasePreflight(current, source);
     const name = '20261227100000_economic_line_reads.sql';
     const sqlTest = 'supabase/tests/economic_line_reads.sql';
-    expect(result.pending.at(-16)).toBe(name);
-    expect(result.pending.at(-17)).toBe('20261227090000_economics_read_speed.sql');
+    expect(result.deployed.find(entry => entry.localFile === name)?.remoteVersion).toBe('20261127140302');
+    expect(result.deployed.find(entry => entry.localFile === '20261227090000_economics_read_speed.sql')?.remoteVersion).toBe('20261127135222');
     expect(result.sqlTests.at(-16)).toBe(sqlTest);
     const runner = readFileSync(new URL('../pricing-migration-local.ps1', import.meta.url), 'utf8');
     expect(runner).toContain("$salesNames += '" + name + "'");
@@ -446,7 +456,7 @@ describe('read-only pricing release preflight', () => {
     expect(runner.indexOf("(Join-Path $work '" + name + "')")).toBeGreaterThan(runner.indexOf('supabase/tests/economics_read_speed.sql'));
     expect(runner.indexOf(sqlTest)).toBeGreaterThan(runner.indexOf("(Join-Path $work '" + name + "')"));
     expect(runner).toContain('PASS: economics line reads, filters, paging, exceptions and access');
-    expect(current.migrations.find((entry: { localFile: string }) => entry.localFile === name)?.status).toBe('not_deployed');
+    expect(current.migrations.find((entry: { localFile: string }) => entry.localFile === name)?.status).toBe('exact_normalized_match');
     expect(source.get(name)).toContain('stockflow_economics_gateway_before_line_reads');
     expect(source.get(name)).toContain("set statement_timeout='20s'");
     const fixture = readFileSync(new URL('../../' + sqlTest, import.meta.url), 'utf8');
@@ -456,11 +466,11 @@ describe('read-only pricing release preflight', () => {
     expect(fixture.trimEnd()).toMatch(/rollback;$/);
   });
   it('registers the economics read speed after the growth period profit', () => {
-    const result = pricingReleasePreflight(original, source);
+    const result = pricingReleasePreflight(current, source);
     const name = '20261227090000_economics_read_speed.sql';
     const sqlTest = 'supabase/tests/economics_read_speed.sql';
-    expect(result.pending.at(-17)).toBe(name);
-    expect(result.pending.at(-18)).toBe('20261220110000_growth_period_profit.sql');
+    expect(result.deployed.find(entry => entry.localFile === name)?.remoteVersion).toBe('20261127135222');
+    expect(result.deployed.find(entry => entry.localFile === '20261220110000_growth_period_profit.sql')?.remoteVersion).toBe('20261127135151');
     expect(result.sqlTests.at(-17)).toBe(sqlTest);
     const runner = readFileSync(new URL('../pricing-migration-local.ps1', import.meta.url), 'utf8');
     expect(runner).toContain("$salesNames += '" + name + "'");
@@ -468,7 +478,7 @@ describe('read-only pricing release preflight', () => {
     expect(runner.indexOf("(Join-Path $work '" + name + "')")).toBeGreaterThan(runner.indexOf('supabase/tests/growth_period_profit.sql'));
     expect(runner.indexOf(sqlTest)).toBeGreaterThan(runner.indexOf("(Join-Path $work '" + name + "')"));
     expect(runner).toContain('PASS: economics read speed parity, ownership set and privileges');
-    expect(current.migrations.find((entry: { localFile: string }) => entry.localFile === name)?.status).toBe('not_deployed');
+    expect(current.migrations.find((entry: { localFile: string }) => entry.localFile === name)?.status).toBe('exact_normalized_match');
     const migration = source.get(name)!;
     for (const hash of ['a905a56040342ffa75d92713ba2d961d', 'a0f40fc9c3de4378643a259fe51439f3', '089ed11cc35532fab8a31e6a50ea26db']) {
       expect(migration).toContain(hash);
@@ -484,57 +494,57 @@ describe('read-only pricing release preflight', () => {
     expect(fixture.trimEnd()).toMatch(/rollback;$/);
   });
   it('registers the growth period profit after the growth period labs', () => {
-    const result = pricingReleasePreflight(original, source);
+    const result = pricingReleasePreflight(current, source);
     const name = '20261220110000_growth_period_profit.sql';
     const sqlTest = 'supabase/tests/growth_period_profit.sql';
-    expect(result.pending.at(-18)).toBe(name);
-    expect(result.pending.at(-19)).toBe('20261220100000_growth_period_labs.sql');
+    expect(result.deployed.find(entry => entry.localFile === name)?.remoteVersion).toBe('20261127135151');
+    expect(result.deployed.find(entry => entry.localFile === '20261220100000_growth_period_labs.sql')?.remoteVersion).toBe('20261127135146');
     expect(result.sqlTests.at(-18)).toBe(sqlTest);
     const runner = readFileSync(new URL('../pricing-migration-local.ps1', import.meta.url), 'utf8');
     expect(runner).toContain("$salesNames += '" + name + "'");
     expect(runner.indexOf("(Join-Path $work '" + name + "')")).toBeGreaterThan(runner.indexOf('supabase/tests/growth_period_labs.sql'));
     expect(runner.indexOf(sqlTest)).toBeGreaterThan(runner.indexOf("(Join-Path $work '" + name + "')"));
-    expect(current.migrations.find((entry: { localFile: string }) => entry.localFile === name)?.status).toBe('not_deployed');
+    expect(current.migrations.find((entry: { localFile: string }) => entry.localFile === name)?.status).toBe('exact_normalized_match');
     expect(source.get(name)).toContain('stockflow_growth_gateway_before_period_profit');
     expect(source.get(name)).toContain('stockflow_growth_costed_lines_window');
     expect(source.get(name)).toContain('statement_timeout');
   });
   it('registers the growth period labs after the growth period', () => {
-    const result = pricingReleasePreflight(original, source);
+    const result = pricingReleasePreflight(current, source);
     const name = '20261220100000_growth_period_labs.sql';
     const sqlTest = 'supabase/tests/growth_period_labs.sql';
-    expect(result.pending.at(-19)).toBe(name);
-    expect(result.pending.at(-20)).toBe('20261220090000_growth_period.sql');
+    expect(result.deployed.find(entry => entry.localFile === name)?.remoteVersion).toBe('20261127135146');
+    expect(result.deployed.find(entry => entry.localFile === '20261220090000_growth_period.sql')?.remoteVersion).toBe('20261127135142');
     expect(result.sqlTests.at(-19)).toBe(sqlTest);
     const runner = readFileSync(new URL('../pricing-migration-local.ps1', import.meta.url), 'utf8');
     expect(runner).toContain("$salesNames += '" + name + "'");
     expect(runner.indexOf("(Join-Path $work '" + name + "')")).toBeGreaterThan(runner.indexOf('supabase/tests/growth_period.sql'));
     expect(runner.indexOf(sqlTest)).toBeGreaterThan(runner.indexOf("(Join-Path $work '" + name + "')"));
-    expect(current.migrations.find((entry: { localFile: string }) => entry.localFile === name)?.status).toBe('not_deployed');
+    expect(current.migrations.find((entry: { localFile: string }) => entry.localFile === name)?.status).toBe('exact_normalized_match');
     expect(source.get(name)).toContain('stockflow_growth_gateway_before_period_labs');
     expect(source.get(name)).toContain('statement_timeout');
   });
   it('registers the growth period read after the idle buyers', () => {
-    const result = pricingReleasePreflight(original, source);
+    const result = pricingReleasePreflight(current, source);
     const name = '20261220090000_growth_period.sql';
     const sqlTest = 'supabase/tests/growth_period.sql';
-    expect(result.pending.at(-20)).toBe(name);
-    expect(result.pending.at(-21)).toBe('20261217110000_idle_buyers.sql');
+    expect(result.deployed.find(entry => entry.localFile === name)?.remoteVersion).toBe('20261127135142');
+    expect(result.deployed.find(entry => entry.localFile === '20261217110000_idle_buyers.sql')?.remoteVersion).toBe('20261127135138');
     expect(result.sqlTests.at(-20)).toBe(sqlTest);
     const runner = readFileSync(new URL('../pricing-migration-local.ps1', import.meta.url), 'utf8');
     expect(runner).toContain("$salesNames += '" + name + "'");
     expect(runner).toContain(sqlTest);
     expect(runner.indexOf("(Join-Path $work '" + name + "')")).toBeGreaterThan(runner.indexOf("(Join-Path $work '20261217110000_idle_buyers.sql')"));
     expect(runner.indexOf(sqlTest)).toBeGreaterThan(runner.indexOf("(Join-Path $work '" + name + "')"));
-    expect(current.migrations.find((entry: { localFile: string }) => entry.localFile === name)?.status).toBe('not_deployed');
+    expect(current.migrations.find((entry: { localFile: string }) => entry.localFile === name)?.status).toBe('exact_normalized_match');
     expect(source.get(name)).toContain('stockflow_growth_gateway_before_period');
     expect(source.get(name)).toContain('statement_timeout');
   });
   it('registers the idle buyers read after the reorder check', () => {
-    const result = pricingReleasePreflight(original, source);
+    const result = pricingReleasePreflight(current, source);
     const name = '20261217110000_idle_buyers.sql';
-    expect(result.pending.at(-21)).toBe(name);
-    expect(result.pending.at(-22)).toBe('20261217100000_reorder_check.sql');
+    expect(result.deployed.find(entry => entry.localFile === name)?.remoteVersion).toBe('20261127135138');
+    expect(result.deployed.find(entry => entry.localFile === '20261217100000_reorder_check.sql')?.remoteVersion).toBe('20261127135133');
     expect(result.sqlTests.at(-21)).toBe('supabase/tests/idle_buyers.sql');
     const runner = readFileSync(new URL('../pricing-migration-local.ps1', import.meta.url), 'utf8');
     expect(runner).toContain(name);
@@ -543,89 +553,89 @@ describe('read-only pricing release preflight', () => {
     expect(source.get(name)).not.toContain('rate');
   });
   it('registers the reorder check after late purchase orders', () => {
-    const result = pricingReleasePreflight(original, source);
+    const result = pricingReleasePreflight(current, source);
     const name = '20261217100000_reorder_check.sql';
     const sqlTest = 'supabase/tests/reorder_check.sql';
     const runner = readFileSync(new URL('../pricing-migration-local.ps1', import.meta.url), 'utf8');
-    expect(result.pending.at(-22)).toBe(name);
-    expect(result.pending.at(-23)).toBe('20261217090000_late_pos.sql');
+    expect(result.deployed.find(entry => entry.localFile === name)?.remoteVersion).toBe('20261127135133');
+    expect(result.deployed.find(entry => entry.localFile === '20261217090000_late_pos.sql')?.remoteVersion).toBe('20261127135128');
     expect(result.sqlTests.at(-22)).toBe(sqlTest);
     expect(result.sqlTests.indexOf(sqlTest)).toBe(result.sqlTests.indexOf('supabase/tests/late_pos.sql') + 1);
-    expect(current.migrations.find((entry: { localFile: string }) => entry.localFile === name)?.status).toBe('not_deployed');
+    expect(current.migrations.find((entry: { localFile: string }) => entry.localFile === name)?.status).toBe('exact_normalized_match');
     expect(runner).toContain("$salesNames += '" + name + "'");
     expect(runner).toContain(sqlTest);
     expect(source.get(name)).toContain('stockflow_requirements_gateway_before_reorder_check');
     expect(source.get(name)).not.toContain('rate');
   });
   it('registers the late purchase orders read after the idle stock speed fix', () => {
-    const result = pricingReleasePreflight(original, source);
+    const result = pricingReleasePreflight(current, source);
     const name = '20261217090000_late_pos.sql';
     const sqlTest = 'supabase/tests/late_pos.sql';
     const runner = readFileSync(new URL('../pricing-migration-local.ps1', import.meta.url), 'utf8');
-    expect(result.pending.at(-23)).toBe(name);
-    expect(result.pending.at(-24)).toBe('20261216110000_idle_stock_speed.sql');
+    expect(result.deployed.find(entry => entry.localFile === name)?.remoteVersion).toBe('20261127135128');
+    expect(result.deployed.find(entry => entry.localFile === '20261216110000_idle_stock_speed.sql')?.remoteVersion).toBe('20261127135124');
     expect(result.sqlTests.at(-23)).toBe(sqlTest);
     expect(result.sqlTests.indexOf(sqlTest)).toBe(result.sqlTests.indexOf('supabase/tests/idle_stock_speed.sql') + 1);
-    expect(current.migrations.find((entry: { localFile: string }) => entry.localFile === name)?.status).toBe('not_deployed');
+    expect(current.migrations.find((entry: { localFile: string }) => entry.localFile === name)?.status).toBe('exact_normalized_match');
     expect(runner).toContain("$salesNames += '" + name + "'");
     expect(runner).toContain(sqlTest);
     expect(source.get(name)).toContain('stockflow_requirements_gateway_before_late_pos');
     expect(source.get(name)).not.toContain('rate');
   });
   it('registers the idle stock speed fix after the stock item detail', () => {
-    const result = pricingReleasePreflight(original, source);
+    const result = pricingReleasePreflight(current, source);
     const name = '20261216110000_idle_stock_speed.sql';
     const sqlTest = 'supabase/tests/idle_stock_speed.sql';
     const runner = readFileSync(new URL('../pricing-migration-local.ps1', import.meta.url), 'utf8');
-    expect(result.pending.at(-24)).toBe(name);
-    expect(result.pending.at(-25)).toBe('20261216100000_stock_item_detail.sql');
+    expect(result.deployed.find(entry => entry.localFile === name)?.remoteVersion).toBe('20261127135124');
+    expect(result.deployed.find(entry => entry.localFile === '20261216100000_stock_item_detail.sql')?.remoteVersion).toBe('20261127135120');
     expect(result.sqlTests.at(-24)).toBe(sqlTest);
     expect(result.sqlTests.indexOf(sqlTest)).toBe(result.sqlTests.indexOf('supabase/tests/stock_item_detail.sql') + 1);
-    expect(current.migrations.find((entry: { localFile: string }) => entry.localFile === name)?.status).toBe('not_deployed');
+    expect(current.migrations.find((entry: { localFile: string }) => entry.localFile === name)?.status).toBe('exact_normalized_match');
     expect(runner).toContain("$salesNames += '" + name + "'");
     expect(runner).toContain(sqlTest);
     expect(source.get(name)).toContain('sale_lines as materialized');
     expect(source.get(name)).not.toContain('buyerCount');
   });
   it('registers the stock item detail after the stock on-PO read', () => {
-    const result = pricingReleasePreflight(original, source);
+    const result = pricingReleasePreflight(current, source);
     const name = '20261216100000_stock_item_detail.sql';
     const sqlTest = 'supabase/tests/stock_item_detail.sql';
     const runner = readFileSync(new URL('../pricing-migration-local.ps1', import.meta.url), 'utf8');
-    expect(result.pending.at(-25)).toBe(name);
-    expect(result.pending.at(-26)).toBe('20261216090000_stock_on_po.sql');
+    expect(result.deployed.find(entry => entry.localFile === name)?.remoteVersion).toBe('20261127135120');
+    expect(result.deployed.find(entry => entry.localFile === '20261216090000_stock_on_po.sql')?.remoteVersion).toBe('20261127135114');
     expect(result.sqlTests.at(-25)).toBe(sqlTest);
     expect(result.sqlTests.indexOf(sqlTest)).toBe(result.sqlTests.indexOf('supabase/tests/stock_on_po.sql') + 1);
-    expect(current.migrations.find((entry: { localFile: string }) => entry.localFile === name)?.status).toBe('not_deployed');
+    expect(current.migrations.find((entry: { localFile: string }) => entry.localFile === name)?.status).toBe('exact_normalized_match');
     expect(runner).toContain("$salesNames += '" + name + "'");
     expect(runner).toContain(sqlTest);
     expect(source.get(name)).toContain('stockflow_requirements_gateway_before_item_detail');
     expect(source.get(name)).toContain("array['administrator','management']");
   });
   it('registers the stock on-PO read after the letterhead extras', () => {
-    const result = pricingReleasePreflight(original, source);
+    const result = pricingReleasePreflight(current, source);
     const name = '20261216090000_stock_on_po.sql';
     const sqlTest = 'supabase/tests/stock_on_po.sql';
     const runner = readFileSync(new URL('../pricing-migration-local.ps1', import.meta.url), 'utf8');
-    expect(result.pending.at(-26)).toBe(name);
-    expect(result.pending.at(-27)).toBe('20261215100000_letterhead_extras.sql');
+    expect(result.deployed.find(entry => entry.localFile === name)?.remoteVersion).toBe('20261127135114');
+    expect(result.deployed.find(entry => entry.localFile === '20261215100000_letterhead_extras.sql')?.remoteVersion).toBe('20261127135109');
     expect(result.sqlTests.at(-26)).toBe(sqlTest);
-    expect(current.migrations.find((entry: { localFile: string }) => entry.localFile === name)?.status).toBe('not_deployed');
+    expect(current.migrations.find((entry: { localFile: string }) => entry.localFile === name)?.status).toBe('exact_normalized_match');
     expect(runner).toContain("$salesNames += '" + name + "'");
     expect(runner).toContain(sqlTest);
     expect(source.get(name)).toContain('stockflow_requirements_gateway_before_on_po');
     expect(source.get(name)).not.toContain('rate');
   });
   it('registers the letterhead extras after the growth declining labs', () => {
-    const result = pricingReleasePreflight(original, source);
+    const result = pricingReleasePreflight(current, source);
     const name = '20261215100000_letterhead_extras.sql';
     const sqlTest = 'supabase/tests/letterhead_extras.sql';
     const runner = readFileSync(new URL('../pricing-migration-local.ps1', import.meta.url), 'utf8').replace(/\r/g, '');
-    expect(result.pending.at(-27)).toBe(name);
-    expect(result.pending.at(-28)).toBe('20261215090000_growth_declining_labs.sql');
+    expect(result.deployed.find(entry => entry.localFile === name)?.remoteVersion).toBe('20261127135109');
+    expect(result.deployed.find(entry => entry.localFile === '20261215090000_growth_declining_labs.sql')?.remoteVersion).toBe('20261127135105');
     expect(result.sqlTests.at(-27)).toBe(sqlTest);
     expect(result.sqlTests.indexOf(sqlTest)).toBe(result.sqlTests.indexOf('supabase/tests/growth_declining_labs.sql') + 1);
-    expect(current.migrations.find((entry: { localFile: string }) => entry.localFile === name)?.status).toBe('not_deployed');
+    expect(current.migrations.find((entry: { localFile: string }) => entry.localFile === name)?.status).toBe('exact_normalized_match');
     expect(runner).toContain("$salesNames += '" + name + "'");
     expect(runner).toContain("Invoke-DatabaseCommand $psqlProgram @('-U',$databaseUser,'-X','-q','-v','ON_ERROR_STOP=1','-d',$database,'-f',(Join-Path $repository '" + sqlTest + "'))");
     const migration = source.get(name)!;
@@ -634,15 +644,15 @@ describe('read-only pricing release preflight', () => {
     expect(migration).toContain('stockflow_letterhead_extras_events');
   });
   it('registers the growth declining labs after the company letterhead', () => {
-    const result = pricingReleasePreflight(original, source);
+    const result = pricingReleasePreflight(current, source);
     const name = '20261215090000_growth_declining_labs.sql';
     const sqlTest = 'supabase/tests/growth_declining_labs.sql';
     const runner = readFileSync(new URL('../pricing-migration-local.ps1', import.meta.url), 'utf8').replace(/\r/g, '');
-    expect(result.pending.at(-28)).toBe(name);
-    expect(result.pending.at(-29)).toBe('20261214100000_company_letterhead.sql');
+    expect(result.deployed.find(entry => entry.localFile === name)?.remoteVersion).toBe('20261127135105');
+    expect(result.deployed.find(entry => entry.localFile === '20261214100000_company_letterhead.sql')?.remoteVersion).toBe('20261127135100');
     expect(result.sqlTests.at(-28)).toBe(sqlTest);
     expect(result.sqlTests.indexOf(sqlTest)).toBe(result.sqlTests.indexOf('supabase/tests/company_letterhead.sql') + 1);
-    expect(current.migrations.find((entry: { localFile: string }) => entry.localFile === name)?.status).toBe('not_deployed');
+    expect(current.migrations.find((entry: { localFile: string }) => entry.localFile === name)?.status).toBe('exact_normalized_match');
     expect(runner).toContain("$salesNames += '" + name + "'");
     expect(runner).toContain("Invoke-DatabaseCommand $psqlProgram @('-U',$databaseUser,'-X','-q','-v','ON_ERROR_STOP=1','-d',$database,'-f',(Join-Path $repository '" + sqlTest + "'))");
     const migration = source.get(name)!;
@@ -651,28 +661,28 @@ describe('read-only pricing release preflight', () => {
     expect(migration).not.toMatch(/\b(insert into|update|delete from)\s+private\./i);
   });
   it('registers the company letterhead after the unlinked PO receipts read', () => {
-    const result = pricingReleasePreflight(original, source);
+    const result = pricingReleasePreflight(current, source);
     const name = '20261214100000_company_letterhead.sql';
     const sqlTest = 'supabase/tests/company_letterhead.sql';
     const runner = readFileSync(new URL('../pricing-migration-local.ps1', import.meta.url), 'utf8').replace(/\r/g, '');
-    expect(result.pending.at(-29)).toBe(name);
-    expect(result.pending.at(-30)).toBe('20261214090000_unlinked_po_receipts.sql');
+    expect(result.deployed.find(entry => entry.localFile === name)?.remoteVersion).toBe('20261127135100');
+    expect(result.deployed.find(entry => entry.localFile === '20261214090000_unlinked_po_receipts.sql')?.remoteVersion).toBe('20261127135055');
     expect(result.sqlTests.at(-29)).toBe(sqlTest);
     expect(result.sqlTests.indexOf(sqlTest)).toBe(result.sqlTests.indexOf('supabase/tests/unlinked_po_receipts.sql') + 1);
-    expect(current.migrations.find((entry: { localFile: string }) => entry.localFile === name)?.status).toBe('not_deployed');
+    expect(current.migrations.find((entry: { localFile: string }) => entry.localFile === name)?.status).toBe('exact_normalized_match');
     expect(runner).toContain("$salesNames += '" + name + "'");
     expect(runner).toContain("Invoke-DatabaseCommand $psqlProgram @('-U',$databaseUser,'-X','-q','-v','ON_ERROR_STOP=1','-d',$database,'-f',(Join-Path $repository '" + sqlTest + "'))");
   });
   it('registers the unlinked PO receipts read after the observed price changes read', () => {
-    const result = pricingReleasePreflight(original, source);
+    const result = pricingReleasePreflight(current, source);
     const name = '20261214090000_unlinked_po_receipts.sql';
     const sqlTest = 'supabase/tests/unlinked_po_receipts.sql';
     const runner = readFileSync(new URL('../pricing-migration-local.ps1', import.meta.url), 'utf8').replace(/\r/g, '');
-    expect(result.pending.at(-30)).toBe(name);
-    expect(result.pending.at(-31)).toBe('20261213090000_observed_price_changes.sql');
+    expect(result.deployed.find(entry => entry.localFile === name)?.remoteVersion).toBe('20261127135055');
+    expect(result.deployed.find(entry => entry.localFile === '20261213090000_observed_price_changes.sql')?.remoteVersion).toBe('20261122091936');
     expect(result.sqlTests.at(-30)).toBe(sqlTest);
     expect(result.sqlTests.indexOf(sqlTest)).toBe(result.sqlTests.indexOf('supabase/tests/observed_price_changes.sql') + 1);
-    expect(current.migrations.find((entry: { localFile: string }) => entry.localFile === name)?.status).toBe('not_deployed');
+    expect(current.migrations.find((entry: { localFile: string }) => entry.localFile === name)?.status).toBe('exact_normalized_match');
     expect(runner).toContain("$salesNames += '" + name + "'");
     expect(runner).toContain("Invoke-DatabaseCommand $psqlProgram @('-U',$databaseUser,'-X','-q','-v','ON_ERROR_STOP=1','-d',$database,'-f',(Join-Path $repository '" + sqlTest + "'))");
   });
@@ -984,7 +994,7 @@ it('registers billed-below after margin with guarded read-only dispatch', () => 
     expect(fixture).toContain('PASS economic prune schedule (pg_cron absent; schedule not asserted)');
     expect(fixture.trimEnd()).toMatch(/rollback;$/);
   });
-  it('records all 227 live migrations and the 29 pending migrations', () => {
+  it('records all 256 live migrations and the 1 pending migration', () => {
     const result = pricingReleasePreflight(current, source);
     expect(result.deployed.find(entry => entry.localFile === '20261130200000_economic_prune_schedule.sql')?.remoteVersion).toBe('20261120074510');
     expect(result.deployed.find(entry => entry.localFile === '20261130190000_brand_group_inherit.sql')?.remoteVersion).toBe('20261120074504');
@@ -1034,41 +1044,15 @@ it('registers billed-below after margin with guarded read-only dispatch', () => 
     const exceptionDate = source.get('20261130100000_coverage_exception_date.sql')!;
     expect(exceptionDate.match(/Unexpected sales coverage exception-date definition/g)).toHaveLength(2);
     expect(exceptionDate).toContain("replace(definition,needle,'e.evidence_sales_date')");
-    expect(result.deployed).toHaveLength(227);
-    expect(result.deployed.at(-1)?.remoteVersion).toBe('20261126061559');
+    expect(result.deployed).toHaveLength(256);
+    expect(result.deployed.at(-1)?.remoteVersion).toBe('20261127140500');
     expect(result.pending).toEqual([
-      '20261214090000_unlinked_po_receipts.sql',
-      '20261214100000_company_letterhead.sql',
-      '20261215090000_growth_declining_labs.sql',
-      '20261215100000_letterhead_extras.sql',
-      '20261216090000_stock_on_po.sql',
-      '20261216100000_stock_item_detail.sql',
-      '20261216110000_idle_stock_speed.sql',
-      '20261217090000_late_pos.sql',
-      '20261217100000_reorder_check.sql',
-      '20261217110000_idle_buyers.sql',
-      '20261220090000_growth_period.sql',
-      '20261220100000_growth_period_labs.sql',
-      '20261220110000_growth_period_profit.sql',
-      '20261227090000_economics_read_speed.sql',
-      '20261227100000_economic_line_reads.sql',
-      '20261227110000_economic_products_read.sql',
-      '20261227120000_economic_cost_review.sql',
-      '20261227130000_data_speed_report.sql',
-      '20270103090000_po_quantity_corrections.sql',
-      '20270103100000_item_forecast_trial.sql',
-      '20270103120000_import_exception_hygiene.sql',
-      '20270103130000_voucher_exclusions.sql',
-      '20270103140000_growth_cohorts.sql',
-      '20270103150000_reorder_point.sql',
-      '20270103160000_item_demand_estimates.sql',
-      '20270103170000_growth_new_labs.sql',
-      '20270103180000_lab_tiers.sql',
-      '20270110100000_economic_delta_upload.sql',
-      '20270110110000_foc_cost_charged.sql',
       '20270117100000_go_live_adoption.sql',
     ]);
-    expect(current.liveCheck.matchedMigrationHashes).toBe(227);
+    expect(current.liveCheck.matchedMigrationHashes).toBe(256);
+    expect(current.liveCheck.remoteMigrationCount).toBe(256);
+    expect(current.liveCheck.latestRemoteVersion).toBe('20261127140500');
+    expect(current.liveCheck.checkedAt).toBe('2026-11-27');
     expect(result.releaseReady).toBe(false);
   });
   it('registers the isolated company GP model and its guarded gateway read', () => {
