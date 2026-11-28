@@ -78,12 +78,6 @@ try {
   $browser = @($changed | Where-Object { $_ -match '^(app/|components/|lib/|public/|tests/pricing-browser/.*\.spec\.ts$)' }).Count -gt 0
   $stock = @($changed | Where-Object { $_ -match '^(public/stockflow\.html|components/stockflow-frame\.tsx)(/|$)' }).Count -gt 0
   $replay = @($changed | Where-Object { $_ -match '^(supabase/|tests/pricing-)' }).Count -gt 0
-  $needles = @($changed | Where-Object { $_ -match '^(components/|app/|lib/)' } | ForEach-Object {
-    [pscustomobject]@{ File = $_; Text = [IO.Path]::GetFileNameWithoutExtension($_) }
-    if ($_ -match '^app(/api/.*)/route\.ts$') {
-      [pscustomobject]@{ File = $_; Text = $Matches[1] }
-    }
-  })
   $selected = New-Object System.Collections.Generic.List[string]
   $selectionReasons = @{}
   $componentChange = $changed | Where-Object { $_ -like 'components/*' } | Select-Object -First 1
@@ -93,14 +87,6 @@ try {
     if ($changed -contains $relative) { $reason = "$relative (changed spec)" }
     if (-not $reason -and $relative -eq 'tests/pricing-browser/screen-fit-audit.spec.ts' -and $componentChange) {
       $reason = "$componentChange (component change requires screen-fit audit)"
-    }
-    $content = [IO.File]::ReadAllText($spec.FullName)
-    foreach ($needle in $needles) {
-      if ($reason) { break }
-      if ($content.IndexOf($needle.Text, [StringComparison]::OrdinalIgnoreCase) -ge 0) {
-        $reason = "$($needle.File) (spec contains '$($needle.Text)')"
-        break
-      }
     }
     if ($reason) { $selected.Add($relative); $selectionReasons[$relative] = $reason }
   }
@@ -121,7 +107,7 @@ try {
   }
   $pricingEnabled = $browser -and -not $SkipBrowser -and $selected.Count -gt 0
   Add-Step 'browser/build-offline' $pricingEnabled 'CI prerequisite; skipped if no selected specs or -SkipBrowser' 'npm' @('run', 'build:offline')
-  Add-Step 'browser/pricing' $pricingEnabled 'affected pricing specs; skipped if none or -SkipBrowser' 'npx' (@('--no-install', 'playwright', 'test', '--config', 'playwright.pricing.config.ts') + $selected.ToArray() + @('--reporter=line'))
+  Add-Step 'browser/pricing' $pricingEnabled 'changed pricing specs only (CI runs the full suite); skipped if none or -SkipBrowser' 'npx' (@('--no-install', 'playwright', 'test', '--config', 'playwright.pricing.config.ts') + $selected.ToArray() + @('--reporter=line'))
   $stockSpecs = @(Get-ChildItem tests/e2e -File -Filter 'stock*.spec.ts' | Sort-Object Name | ForEach-Object { "tests/e2e/$($_.Name)" })
   Write-Host "Stock e2e spec list ($($stockSpecs.Count); selected=$($stock -and -not $SkipBrowser)):"
   $stockChanges = @($changed | Where-Object { $_ -match '^(public/stockflow\.html|components/stockflow-frame\.tsx)(/|$)' })
