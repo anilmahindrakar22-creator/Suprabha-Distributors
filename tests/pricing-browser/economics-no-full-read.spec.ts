@@ -41,6 +41,27 @@ for (const [device, viewport] of [['phone', { width: 390, height: 844 }], ['desk
       await expect(add).toHaveAttribute('aria-busy', 'false');
       expect(detailRequests).toBe(1);
     });
+    test('Add reagents shows its open state and closes only on Hide reagents', async ({ page }) => {
+      let detailRequests = 0;
+      await page.route('**/api/instrument-economics', async route => {
+        const view = route.request().headers()['x-stockflow-economics-view'];
+        expect(view).not.toBe('full');
+        if (view === 'summary') return route.fulfill({ json: summary });
+        detailRequests++;
+        await route.fulfill({ json: { ...summary, readView: 'detail' } });
+      });
+      await page.goto('/?view=instrument-economics');
+      const add = page.getByRole('button', { name: /^Add reagents/ });
+      await add.click();
+      await expect(page.getByRole('form', { name: 'Add group with items' })).toBeVisible();
+      const hide = page.getByRole('button', { name: /^Hide reagents/ });
+      await expect(hide).toHaveAttribute('aria-expanded', 'true');
+      await hide.click();
+      await expect(page.getByRole('form', { name: 'Add group with items' })).toBeHidden();
+      const closed = page.getByRole('button', { name: /^Add reagents/ });
+      await expect(closed).toHaveAttribute('aria-expanded', 'false');
+      expect(detailRequests).toBe(1);
+    });
     test('failed Add reagents read has an inline alert and Retry opens the form', async ({ page }) => {
       let detailRequests = 0;
       await page.route('**/api/instrument-economics', async route => {
