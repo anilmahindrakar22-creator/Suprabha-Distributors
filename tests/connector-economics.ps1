@@ -174,6 +174,39 @@ foreach($badDraft in @('{"state":"active","companyName":"SUPRABHA DISTRIBUTORS",
     try{Convert-EconomicPolicyDraft $badDraft 'SUPRABHA DISTRIBUTORS' | Out-Null}catch{$draftRejected=$true}
     Assert-Economic $draftRejected 'Foreign, activated or invalid policy draft accepted'
 }
+[xml]$chargeProducts='<ENVELOPE><STOCKITEM NAME="Reagent A"><GUID>product-guid-1</GUID><BASEUNITS>pack</BASEUNITS></STOCKITEM><STOCKITEM NAME="Reagent B"><GUID>product-guid-2</GUID><BASEUNITS>pack</BASEUNITS></STOCKITEM><STOCKITEM NAME="Reagent C"><GUID>product-guid-3</GUID><BASEUNITS>pack</BASEUNITS></STOCKITEM><STOCKITEM NAME="Packing &amp; Forwarding 5%"><GUID>pf-guid-1</GUID><BASEUNITS>Not Applicable</BASEUNITS></STOCKITEM></ENVELOPE>'
+$chargeRoles=@{'pf-guid-1'='charge_item'}
+function New-ChargeInv([string]$Name,[string]$Qty,[string]$Amount){'<ALLINVENTORYENTRIES.LIST><STOCKITEMNAME>'+$Name+'</STOCKITEMNAME>'+$(if($Qty){'<ACTUALQTY>'+$Qty+'</ACTUALQTY>'}else{'<ACTUALQTY></ACTUALQTY><BILLEDQTY></BILLEDQTY>'})+'<AMOUNT>'+$Amount+'</AMOUNT></ALLINVENTORYENTRIES.LIST>'}
+function New-ChargeLed([string]$Name,[string]$Amount,[bool]$Party=$false){'<ALLLEDGERENTRIES.LIST><LEDGERNAME>'+$Name+'</LEDGERNAME>'+$(if($Party){'<ISPARTYLEDGER>Yes</ISPARTYLEDGER>'})+'<AMOUNT>'+$Amount+'</AMOUNT></ALLLEDGERENTRIES.LIST>'}
+function New-ChargeVoucher([string]$Type,[string]$Body){[xml]('<ENVELOPE><VOUCHER><GUID>charge-voucher-1</GUID><ALTERID>30</ALTERID><DATE>20260915</DATE><VOUCHERTYPENAME>'+$Type+'</VOUCHERTYPENAME><PARTYLEDGERNAME>Customer A</PARTYLEDGERNAME>'+$Body+'</VOUCHER></ENVELOPE>')}
+$chargeLedgers=ConvertFrom-TallyEconomicXml ($ledgers.OuterXml.Replace('</ENVELOPE>','<LEDGER NAME="Purchase"><GUID>purchase-guid-1</GUID><PARENT>Purchase Accounts</PARENT></LEDGER></ENVELOPE>'))
+$pfName='Packing &amp; Forwarding 5%'
+# 1. Sale: packing is item revenue.
+$chargeSaleXml=New-ChargeVoucher 'GST SALE' ((New-ChargeInv 'Reagent A' '40.00 pack' '4200.00')+(New-ChargeInv $pfName '' '100.00')+(New-ChargeLed 'Customer A' '-4515.00' $true)+(New-ChargeLed 'Sales' '4300.00')+(New-ChargeLed 'GST' '215.00'))
+$chargeSale=Convert-TallyEconomicEvidence $company $chargeLedgers $chargeProducts $chargeSaleXml $from $to $chargeRoles
+$cs=$chargeSale.vouchers[0]
+Assert-Economic ($cs.amountStatus -eq 'verified' -and -not $cs.error -and $cs.lines.Count -eq 1 -and $cs.lines[0].netSalesPaise -eq '430000' -and $cs.lines[0].chargePaise -eq '10000' -and $cs.chargeItemPaise -eq '10000' -and $cs.chargeItemLines.Count -eq 1 -and $cs.chargeItemLines[0].productId -eq 'pf-guid-1' -and $cs.excludedChargesPaise -eq '0') 'Sale charge item was not spread onto the product line'
+# 2. Purchase: packing becomes item cost; truncation with remainder on the last line.
+$chargePurchaseXml=New-ChargeVoucher 'Purchase' ((New-ChargeInv 'Reagent A' '1.00 pack' '-350.00')+(New-ChargeInv 'Reagent B' '1.00 pack' '-350.00')+(New-ChargeInv 'Reagent C' '1.00 pack' '-3450.00')+(New-ChargeInv $pfName '' '-350.00')+(New-ChargeLed 'Customer A' '4725.00' $true)+(New-ChargeLed 'Purchase' '-4500.00')+(New-ChargeLed 'GST' '-225.00'))
+$chargePurchase=Convert-TallyEconomicEvidence $company $chargeLedgers $chargeProducts $chargePurchaseXml $from $to $chargeRoles
+$cp=$chargePurchase.vouchers[0]
+Assert-Economic ($cp.amountStatus -eq 'verified' -and -not $cp.error -and $cp.lines.Count -eq 3 -and $cp.chargeItemPaise -eq '35000') 'Purchase charge item was not accepted'
+Assert-Economic ($cp.lines[0].chargePaise -eq '2951' -and $cp.lines[1].chargePaise -eq '2951' -and $cp.lines[2].chargePaise -eq '29098' -and $cp.lines[0].netSalesPaise -eq '37951' -and $cp.lines[1].netSalesPaise -eq '37951' -and $cp.lines[2].netSalesPaise -eq '374098' -and (($cp.lines | ForEach-Object {[long]$_.netSalesPaise} | Measure-Object -Sum).Sum -eq 450000)) 'Purchase charge item shares do not follow the truncation rule'
+# 3. Listed item with a quantity needs review.
+$chargeQtyXml=New-ChargeVoucher 'GST SALE' ((New-ChargeInv 'Reagent A' '40.00 pack' '4200.00')+(New-ChargeInv $pfName '1.00 Not Applicable' '100.00')+(New-ChargeLed 'Customer A' '-4515.00' $true)+(New-ChargeLed 'Sales' '4300.00')+(New-ChargeLed 'GST' '215.00'))
+$chargeQty=Convert-TallyEconomicEvidence $company $chargeLedgers $chargeProducts $chargeQtyXml $from $to $chargeRoles
+Assert-Economic ($chargeQty.vouchers[0].amountStatus -eq 'unverified' -and $chargeQty.vouchers[0].error -eq 'Charge item with a quantity requires review.') 'Charge item with a quantity was accepted'
+# 4. Unlisted item keeps the existing refusal.
+$chargeUnlisted=Convert-TallyEconomicEvidence $company $chargeLedgers $chargeProducts $chargeSaleXml $from $to @{}
+Assert-Economic ($chargeUnlisted.vouchers[0].amountStatus -eq 'unverified' -and $chargeUnlisted.vouchers[0].error -eq 'Quantity/base-unit evidence unavailable.') 'Unlisted charge item was silently accepted'
+# 5. Charge-only voucher stays accounting-only.
+$chargeOnlyXml=New-ChargeVoucher 'GST SALE' ((New-ChargeInv $pfName '' '100.00')+(New-ChargeLed 'Customer A' '-105.00' $true)+(New-ChargeLed 'Sales' '100.00')+(New-ChargeLed 'GST' '5.00'))
+$chargeOnly=Convert-TallyEconomicEvidence $company $chargeLedgers $chargeProducts $chargeOnlyXml $from $to $chargeRoles
+Assert-Economic ($chargeOnly.vouchers[0].amountStatus -eq 'unverified' -and $chargeOnly.vouchers[0].error -eq 'Accounting-only credit or voucher needs verified product/original-sale linkage.') 'Charge-only voucher was not treated as accounting-only'
+# 6. A ledger carrying the charge_item role with a non-zero amount is unclassified.
+$chargeLedgerRole=Convert-TallyEconomicEvidence $company $chargeLedgers $chargeProducts $discounted $from $to @{'discount-guid-1'='charge_item'}
+Assert-Economic ($chargeLedgerRole.vouchers[0].amountStatus -eq 'unverified' -and $chargeLedgerRole.vouchers[0].error -match '^Unclassified document adjustment') 'charge_item role on a ledger was accepted'
+Write-Output 'PASS: charge items are spread by value, listed explicitly, and never invent quantity'
 Write-Output 'PASS: economic connector GUIDs, net GST-free amounts, discounts, renames, units, cancellation and FOC'
 
 

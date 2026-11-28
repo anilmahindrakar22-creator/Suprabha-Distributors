@@ -112,7 +112,7 @@ function Convert-TallyEconomicItemCatalog([xml]$ProductDocument,[xml]$GroupDocum
 }
 function Convert-TallyEconomicEvidence([xml]$CompanyDocument,[xml]$LedgerDocument,[xml]$ProductDocument,[xml]$VoucherDocument,[datetime]$From,[datetime]$To,[hashtable]$LedgerRoles=@{},[hashtable]$VoucherRoles=@{},[xml]$ZeroAmountDocument=$null,[xml]$GroupDocument=$null,[switch]$SalesCoverage) {
     foreach($role in $LedgerRoles.GetEnumerator()){
-        if(-not $role.Key -or $role.Value -notin @('gst','discount','rounding','charge','trade')){throw 'Economic ledger role configuration is invalid.'}
+        if(-not $role.Key -or $role.Value -notin @('gst','discount','rounding','charge','trade','charge_item')){throw 'Economic ledger role configuration is invalid.'}
     }
     foreach($role in $VoucherRoles.GetEnumerator()){
         if(-not $role.Key -or $role.Value -notin @('sale','purchase','return','non_economic')){throw 'Economic voucher role configuration is invalid.'}
@@ -205,13 +205,23 @@ function Convert-TallyEconomicEvidence([xml]$CompanyDocument,[xml]$LedgerDocumen
                 $entry.customerSourceId = $ledgers[$party].guid
             }
             $direction = if ($entry.kind -in @('purchase','purchase_return')) { -1 } else { 1 }
-            $lineNumber=0; $totalInventory=[long]0; $discount=[long]0; $rounding=[long]0; $tax=[long]0; $charges=[long]0; $partyTotal=[long]0
+            $lineNumber=0; $totalInventory=[long]0; $discount=[long]0; $rounding=[long]0; $tax=[long]0; $charges=[long]0; $partyTotal=[long]0; [long]$chargeItems=0
+            $chargeItemLines=[Collections.Generic.List[object]]::new()
             $lines=[Collections.Generic.List[object]]::new()
             foreach ($line in $inventoryEntries) {
                 $lineNumber++
                 $name=Get-EconomicXmlText $line './STOCKITEMNAME'
                 if (-not $products.ContainsKey($name)) { throw 'Canonical product GUID unavailable in the master export.' }
                 $master=$products[$name]
+                if($LedgerRoles[$master.guid] -eq 'charge_item'){
+                    # Owner-listed packing/freight stock items carry no quantity; spread by value like discounts.
+                    if((Get-EconomicXmlText $line './ACTUALQTY') -or (Get-EconomicXmlText $line './BILLEDQTY')){throw 'Charge item with a quantity requires review.'}
+                    $chargeAmount=(Convert-EconomicAmount (Get-EconomicXmlText $line './AMOUNT'))*$direction
+                    if(($entry.kind -in @('sale','purchase') -and $chargeAmount -lt 0) -or ($entry.kind -in @('return','purchase_return') -and $chargeAmount -gt 0)){throw 'Mixed economic signs require review.'}
+                    $chargeItems+=$chargeAmount
+                    $chargeItemLines.Add([ordered]@{label=$name;productId=$master.guid;amountPaise=[string]$chargeAmount})
+                    continue
+                }
                 $qtyText=Get-EconomicXmlText $line './ACTUALQTY'
                 if (-not $qtyText) { $qtyText=Get-EconomicXmlText $line './BILLEDQTY' }
                 if ($qtyText -notmatch '^\s*(-?[\d,]+(?:\.\d{1,6})?)\s+(.+?)\s*$') { throw 'Quantity/base-unit evidence unavailable.' }
@@ -272,7 +282,7 @@ function Convert-TallyEconomicEvidence([xml]$CompanyDocument,[xml]$LedgerDocumen
                     default { if ($amount -ne 0) { throw 'Unclassified document adjustment; configure its canonical ledger role.' } }
                 }
             }
-            if ($partyTotal -ne $totalInventory+$tax+$discount+$rounding+$charges) { throw 'Inventory, GST, adjustments and party value do not reconcile.' }
+            if ($partyTotal -ne $totalInventory+$chargeItems+$tax+$discount+$rounding+$charges) { throw 'Inventory, GST, adjustments and party value do not reconcile.' }
             foreach($adjustment in @(@{amount=$discount;field='discountPaise'},@{amount=$rounding;field='roundingPaise'})) {
                 if($adjustment.amount -eq 0){continue}
                 if ($totalInventory -eq 0) { throw 'Cannot allocate a document adjustment over zero inventory value.' }
@@ -289,6 +299,21 @@ function Convert-TallyEconomicEvidence([xml]$CompanyDocument,[xml]$LedgerDocumen
                     $allocated+=$share;$lines[$i][$adjustment.field]=[string]$share;$lines[$i].netSalesPaise=[string]([long]$lines[$i].netSalesPaise+$share)
                 }
             }
+            if($chargeItems -ne 0){
+                $chargeWeights=@();$lastCharged=-1;$weightSum=[long]0
+                for($i=0;$i -lt $lines.Count;$i++){
+                    $weight=[long]$lines[$i].netSalesPaise
+                    $chargeWeights+=,$weight;$weightSum+=$weight
+                    if($weight -ne 0){$lastCharged=$i}
+                }
+                if($weightSum -eq 0){ throw 'Cannot allocate a document adjustment over zero inventory value.' }
+                $chargeAllocated=[long]0
+                for($i=0;$i -lt $lines.Count;$i++){
+                    $share=if($i -eq $lastCharged){$chargeItems-$chargeAllocated}else{[long][Math]::Truncate([decimal]$chargeItems*[decimal]$chargeWeights[$i]/[decimal]$weightSum)}
+                    $chargeAllocated+=$share;$lines[$i].chargePaise=[string]$share;$lines[$i].netSalesPaise=[string]([long]$lines[$i].netSalesPaise+$share)
+                }
+            }
+            if($chargeItemLines.Count -gt 0){$entry.chargeItemLines=$chargeItemLines.ToArray();$entry.chargeItemPaise=[string]$chargeItems}
             $entry.lines=$lines.ToArray();$entry.amountStatus='verified';$entry.taxPaise=[string]$tax;$entry.excludedChargesPaise=[string]$charges
         } catch { $entry.error=$_.Exception.Message }
         $vouchers.Add($entry)
