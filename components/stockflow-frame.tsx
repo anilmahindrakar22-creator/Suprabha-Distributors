@@ -3,7 +3,7 @@
 import { lazy, Suspense, useEffect, useMemo, useRef, useState } from 'react';
 import { PriceReviewContext, type PriceReview } from './customer-price-book';
 import { desktopPopupState, disableDesktopPopups, enableDesktopPopups, showWorkPopup, type DesktopPopupState } from '@/lib/desktop-popups';
-import { Boxes, Building2, CloudDownload, Ellipsis, Inbox, LayoutDashboard, LineChart, ShoppingCart, Tags, TrendingUp, TriangleAlert, Users, Wrench } from 'lucide-react';
+import { Boxes, Building2, CircleHelp, CloudDownload, Ellipsis, Inbox, LayoutDashboard, LineChart, ShoppingCart, Tags, TrendingUp, TriangleAlert, Users, Wrench } from 'lucide-react';
 import { TodayWorkspace, type TodayQueue } from './today-workspace';
 import type { TodayTarget } from '@/lib/today';
 import { NotificationBell } from './notification-bell';
@@ -14,6 +14,8 @@ import { currentPushState, disablePush, disablePushBeforeSignOut, enablePush, lo
 import Image from 'next/image';
 import { readOpenCustomerMessage, readOrderDashboardMessage, readRequestsDashboardMessage } from '@/lib/stockflow-navigation';
 import { canManagePurchaseOrders } from '@/lib/order-permissions';
+import { stockFlowSurfaces, type Surface } from '@/lib/stockflow-surfaces';
+import { RoleGuideCard } from './role-guide-card';
 import { prepareDeviceForAccount } from '@/lib/device-account-privacy';
 import { hasAnyStockFlowRole, type StockFlowRole } from '@/lib/user-types';
 import { revokeOfflineVault } from '@/lib/offline-vault-storage';
@@ -32,7 +34,6 @@ const PricingWorkspace = lazy(() => import('./pricing-workspace').then((module) 
 const RequestsWorkspace = lazy(() => import('./requests-workspace').then((module) => ({ default: module.RequestsWorkspace })).catch(reloadOnStaleChunk));
 const AccountsWorkspace = lazy(() => import('./accounts-workspace').then((module) => ({ default: module.AccountsWorkspace })).catch(reloadOnStaleChunk));
 
-type Surface = 'today' | 'stock' | 'orders' | 'requests' | 'accounts' | 'pricing' | 'economics' | 'growth' | 'service' | 'users';
 const surfaceLabels: Partial<Record<Surface, string>> = { requests: 'Purchase' };
 const surfaceIcons = { today: LayoutDashboard, stock: Boxes, orders: ShoppingCart, requests: Inbox, accounts: Building2, pricing: Tags, economics: TrendingUp, growth: LineChart, service: Wrench, users: Users };
 function SurfaceIcon({ surface, size }: { surface: Surface; size: number }) {
@@ -49,6 +50,8 @@ async function warmOrderData(actorEmail: string) {
 function SectionLoading() {
   return <div className="grid h-full place-items-center text-sm font-semibold text-sf-muted">Opening section…</div>;
 }
+
+function roleGuideDismissed(key: string): boolean { if (typeof window === 'undefined') return true; try { return window.localStorage.getItem(key) === '1'; } catch { return false; } }
 
 export function StockFlowFrame({ actorEmail, actorRole, actorRoles, staffAuth = false, staffEmailActionsEnabled = false }: { actorEmail: string; actorRole: string; actorRoles?: StockFlowRole[]; staffAuth?: boolean; staffEmailActionsEnabled?: boolean }) {
   const roles = useMemo(() => actorRoles ?? [actorRole as StockFlowRole], [actorRoles, actorRole]);
@@ -98,6 +101,13 @@ export function StockFlowFrame({ actorEmail, actorRole, actorRoles, staffAuth = 
   const [readyEmail, setReadyEmail] = useState('');
   const signOutInFlight = useRef(false);
   const [signingOut, setSigningOut] = useState(false);
+  const [roleGuideChoice, setRoleGuideChoice] = useState<'auto' | 'open' | 'closed'>('auto');
+  const roleGuideKey = `stockflow.roleGuide.dismissed.v1:${actorEmail.toLowerCase()}`;
+  const roleGuideOpen = roleGuideChoice === 'open' || (roleGuideChoice === 'auto' && Boolean(actorEmail) && readyEmail === actorEmail && !roleGuideDismissed(roleGuideKey));
+  function closeRoleGuide() {
+    try { window.localStorage.setItem(roleGuideKey, '1'); } catch { /* Dismissal will not persist. */ }
+    setRoleGuideChoice('closed');
+  }
   useEffect(() => {
     let stopped = false;
     let running = false;
@@ -356,9 +366,7 @@ export function StockFlowFrame({ actorEmail, actorRole, actorRoles, staffAuth = 
     }
     setSurface(item);
   }
-  const surfaces: Surface[] = ['stock', 'orders', 'requests', ...(hasAnyStockFlowRole(roles, ['administrator', 'management', 'sales', 'operations']) ? ['accounts' as const] : []), ...(hasAnyStockFlowRole(roles, ['administrator', 'management', 'accounts']) ? ['pricing' as const, 'economics' as const] : []), ...(hasAnyStockFlowRole(roles, ['administrator', 'operations', 'sales', 'management']) ? ['service' as const] : []), ...(hasAnyStockFlowRole(roles, ['administrator']) ? ['users' as const] : [])];
-  if (canSeeToday) surfaces.unshift('today');
-  if (hasAnyStockFlowRole(roles, ['administrator', 'management'])) surfaces.push('growth');
+  const surfaces = stockFlowSurfaces(roles);
   const phoneMain: Surface[] = canSeeToday ? ['today', 'stock', 'orders', 'requests'] : ['stock', 'orders', 'requests'];
   const phoneMore = surfaces.filter((item) => !phoneMain.includes(item));
   useEffect(() => {
@@ -463,12 +471,14 @@ export function StockFlowFrame({ actorEmail, actorRole, actorRoles, staffAuth = 
         </nav>
         <div className="flex shrink-0 items-center gap-2">
         {notifiable ? <NotificationBell state={work} desktop={{ state: desktopPopups, onEnable: () => void enableDesktopPopups().then(setDesktopPopups), onDisable: () => setDesktopPopups(disableDesktopPopups()) }} ordersFilterFor={(queue) => workService.current?.ordersFilterFor(queue) ?? queue.statuses[0]} phone={pushState === 'hidden' ? undefined : { state: pushState, onEnable: () => void changePush(true), onDisable: () => void changePush(false) }} onSeen={markWorkSeen} onOpenOrder={openOrder} onOpenQueue={openQueue} onRetry={() => workService.current?.retry()} /> : null}
+          <button type="button" aria-label="What I can do" onClick={() => setRoleGuideChoice('open')} className="inline-flex min-h-11 min-w-11 shrink-0 items-center justify-center gap-1 rounded-lg border border-sf-line-soft px-2 text-sm font-bold sm:px-3"><CircleHelp size={18} aria-hidden="true" /><span className="hidden sm:inline">What I can do</span></button>
         {/* Sites owns the session cookie: use a full navigation, not a client router link. */}
         {/* oxlint-disable-next-line next/no-html-link-for-pages */}
           {staffAuth ? <button type="button" disabled={signingOut} onClick={() => void staffSignOut()} aria-label={`Sign out ${actorEmail}`} className="min-h-11 rounded-lg border px-3 text-sm font-bold disabled:opacity-50">{signingOut ? 'Signing out…' : 'Sign out'}</button> : <a href="/signout-with-chatgpt?return_to=/" target="_top" onClick={(event) => { event.preventDefault(); void chatGPTSignOut(); }} aria-disabled={signingOut} aria-label={`Sign out ${actorEmail}`} title={`Signed in as ${actorEmail}`} className="inline-flex min-h-11 shrink-0 items-center rounded-lg border border-sf-line-soft px-2 text-xs font-bold text-sf-strong hover:bg-sf-soft sm:px-3 sm:text-sm">{signingOut ? 'Signing out…' : 'Sign out'}</a>}
         </div>
       </header>
       {deviceNotice ? <output className="flex shrink-0 items-center justify-between gap-3 border-b border-sf-warning-line bg-sf-warning-soft px-4 py-2 text-xs font-semibold text-sf-warning sm:px-6"><span className="inline-flex items-center gap-1"><TriangleAlert size={16} aria-hidden="true" className="shrink-0" />{deviceNotice}</span><button type="button" onClick={() => setDeviceNotice('')} className="min-h-8 shrink-0 rounded-lg px-3 font-bold hover:bg-sf-warning-line">Dismiss</button></output> : null}
+      {roleGuideOpen ? <RoleGuideCard roles={roles} onClose={closeRoleGuide} /> : null}
       {readyEmail === actorEmail && <DataFreshnessNotice key={actorEmail} canAct={hasAnyStockFlowRole(roles, ['administrator', 'management'])} showEconomics={surfaces.includes('economics')} />}
       {roleChangeMessage ? <output aria-live="polite" className="fixed inset-x-0 top-0 z-50 flex min-h-14 max-w-full items-center justify-between gap-2 border-b border-sf-warning-line bg-white px-3 py-1 text-sm shadow sm:px-6"><span className="min-w-0 flex-1">{roleChangeMessage}</span><button type="button" onClick={() => window.location.reload()} className="min-h-11 shrink-0 rounded-lg bg-sf-ink px-4 font-bold text-white">Reload</button><button type="button" onClick={() => setRoleChangeMessage('')} className="min-h-11 shrink-0 rounded-lg px-2 text-sf-muted">Later</button></output> : null}
       {surface === 'today' && todayOpenError ? <p role="alert" className="px-4 text-sm text-sf-danger">{todayOpenError}</p> : null}
