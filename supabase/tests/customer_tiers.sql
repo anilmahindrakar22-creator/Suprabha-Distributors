@@ -90,6 +90,7 @@ begin
   jsonb_build_object('orderIds',(select jsonb_agg(extensions.gen_random_uuid()::text) from generate_series(1,100))));
  raise notice 'PASS customer tiers payload validation and 100-ID boundary';
 
+ update private.stockflow_role_order_scopes set scope='created_by' where role='sales'; -- test-only: exercise the created_by read filter
  result:=public.stockflow_customer_tier_gateway('customer-tiers-key',' CUSTOMER-TIERS-SALES@TEST.LOCAL ','get_customer_tiers',payload);
  expected:=jsonb_build_object(ids[1]::text,'diamond',ids[3]::text,'gold',ids[4]::text,'silver',ids[6]::text,'diamond');
  perform pg_temp.ct_assert(result=jsonb_build_object('month',to_char(m,'YYYY-MM-DD'),'tiers',expected),
