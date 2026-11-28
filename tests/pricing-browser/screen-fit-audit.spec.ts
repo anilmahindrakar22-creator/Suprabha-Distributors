@@ -14,6 +14,7 @@ const jsonRoute = async (page: Page, pattern: string, json: unknown) => {
 
 // Frame: frame-scroll-boundaries.spec.ts, orders-fit-screen.spec.ts and today.spec.ts.
 async function setupFrame(page: Page) {
+  await page.addInitScript(actor => { try { window.localStorage.setItem(`stockflow.roleGuide.dismissed.v1:${actor}`, '1'); } catch { /* audit measures screens without the first-run guide */ } }, email);
   await jsonRoute(page, '**/api/staff-auth', { ok: true, renewAfterSeconds: 3000 });
   await jsonRoute(page, '**/api/me', { roles: ['administrator'] });
   await jsonRoute(page, '**/api/push-subscription**', { enabled: false, publicKey: '' });
