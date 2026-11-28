@@ -2,20 +2,22 @@ import { expect, test, type Page } from '@playwright/test';
 import { orderBootstrap, orderSummary } from '../fixtures/api-builders';
 
 const diamondId = '61000000-0000-4000-8000-000000000001';
-const untieredId = '61000000-0000-4000-8000-000000000002';
+const silverId = '61000000-0000-4000-8000-000000000002';
+const untieredId = '61000000-0000-4000-8000-000000000003';
 
 async function mockOrders(page: Page, failTiers = false) {
   const requested: string[] = [];
   const orders = [
     orderSummary({ id: diamondId, orderNumber: 'SF-TIER-001', customerName: 'Diamond customer laboratory with a long name', status: 'packed', createdAt: new Date().toISOString() }),
-    orderSummary({ id: untieredId, orderNumber: 'SF-TIER-002', customerName: 'Untiered laboratory', status: 'packed', createdAt: new Date().toISOString() }),
+    orderSummary({ id: silverId, orderNumber: 'SF-TIER-002', customerName: 'Silver laboratory', status: 'packed', createdAt: new Date().toISOString() }),
+    orderSummary({ id: untieredId, orderNumber: 'SF-TIER-003', customerName: 'Untiered laboratory', status: 'packed', createdAt: new Date().toISOString() }),
   ];
   await page.route('**/api/customer-tiers', route => {
     const { orderIds } = route.request().postDataJSON() as { orderIds: string[] };
     requested.push(...orderIds);
     return route.fulfill(failTiers
       ? { status: 500, json: { error: 'Unavailable' } }
-      : { json: { month: '2026-11-01', tiers: orderIds.includes(diamondId) ? { [diamondId]: 'diamond' } : {} } });
+      : { json: { month: '2026-11-01', tiers: { ...(orderIds.includes(diamondId) ? { [diamondId]: 'diamond' } : {}), ...(orderIds.includes(silverId) ? { [silverId]: 'silver' } : {}) } } });
   });
   await page.route('**/api/orders**', route => {
     const url = new URL(route.request().url());
@@ -35,10 +37,13 @@ for (const viewport of [{ width: 390, height: 844 }, { width: 1280, height: 800 
     const requested = await mockOrders(page);
     await page.goto('/?view=orders-workspace');
     const diamond = page.getByRole('button', { name: /^SF-TIER-001,/ });
-    const untiered = page.getByRole('button', { name: /^SF-TIER-002,/ });
+    const silver = page.getByRole('button', { name: /^SF-TIER-002,/ });
+    const untiered = page.getByRole('button', { name: /^SF-TIER-003,/ });
     const badge = diamond.getByTitle('Diamond lab', { exact: true });
     await expect(badge).toBeVisible();
+    await expect(badge.locator('svg')).toHaveCount(4);
     await expect(untiered).toBeVisible();
+    await expect(silver.getByTitle('Silver lab', { exact: true }).locator('svg')).toHaveCount(1);
     await expect(untiered.locator('[title$=" lab"]')).toHaveCount(0);
     // A long name truncates without clipping the icon at either viewport.
     const rowBox = await diamond.boundingBox();
@@ -59,6 +64,7 @@ for (const viewport of [{ width: 390, height: 844 }, { width: 1280, height: 800 
       await expect(headerBadge.getByText('Diamond', { exact: true })).toBeVisible();
     }
   });
+
 
   test(`Orders survive optional tier failure at ${viewport.width}`, async ({ page }) => {
     await page.setViewportSize(viewport);

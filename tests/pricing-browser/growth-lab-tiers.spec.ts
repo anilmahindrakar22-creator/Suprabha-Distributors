@@ -105,6 +105,7 @@ test('summary table shows exact values and caption bands', async ({ page }) => {
   const card = await openLabs(page);
   await expect(card).toBeVisible();
   await expect(card).toContainText('By consumables bought from us in the last 12 months. Diamond ₹10 L+ · Platinum ₹3–10 L · Gold ₹1–3 L · Silver ₹25k–1 L.');
+  await expect(card).toContainText('Tiers are set each quarter from the 12 months before it.');
   await expect(card.locator('thead th')).toHaveText(['Tier', 'Labs', 'Consumables', 'Share', 'With our instrument']);
   const rows = card.locator('tbody tr');
   await expect(rows).toHaveCount(5);
@@ -116,7 +117,7 @@ test('summary table shows exact values and caption bands', async ({ page }) => {
     ['Untiered', '50', '₹5,50,000', '4%', '1'],
   ];
   for (let i = 0; i < values.length; i++) await expect(rows.nth(i).locator('th, td')).toHaveText(values[i]);
-  await expect(card.getByRole('button', { name: 'Moved up 4 · down 2 this month ›', exact: true })).toBeVisible();
+  await expect(card.getByRole('button', { name: 'Moved up 4 · down 2 this quarter ›', exact: true })).toBeVisible();
   await expect(card.getByRole('button', { name: 'Placement targets: 21 labs · ₹47,00,000 ›', exact: true })).toBeVisible();
 });
 
@@ -152,7 +153,7 @@ test('movers chip shows up and down markers and replaces the previous list', asy
   const request = page.waitForRequest(req => new URL(req.url()).search === '?list=movers');
   await card.getByRole('button', { name: /^Moved up / }).click();
   await request;
-  const list = card.getByRole('list', { name: 'Moved tier this month', exact: true });
+  const list = card.getByRole('list', { name: 'Moved tier this quarter', exact: true });
   await expect(list).toContainText('▲ from Silver');
   await expect(list).toContainText('▼ from Platinum');
   await expect(card.getByRole('heading', { name: 'Gold labs' })).toHaveCount(0);
