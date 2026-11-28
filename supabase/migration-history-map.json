@@ -1851,6 +1851,13 @@
       "remoteVersion": null,
       "remoteSha256": null,
       "status": "not_deployed"
+    },
+    {
+      "localFile": "20270117130000_health_per_instrument.sql",
+      "localSha256": "ccb3d6b49672936442505abe9929477a1823ce74019ffbc1882b5905d29b8da1",
+      "remoteVersion": null,
+      "remoteSha256": null,
+      "status": "not_deployed"
     }
   ],
   "liveCheck": {
