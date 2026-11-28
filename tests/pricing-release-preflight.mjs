@@ -100,6 +100,7 @@ const pricingReleaseFiles = new Set([
   '20270110110000_foc_cost_charged.sql',
   '20270117100000_go_live_adoption.sql',
   '20270117110000_customer_tiers.sql',
+  '20270117120000_lab_tiers_quarterly.sql',
   '20261102090000_po_tally_receipts.sql',
   '20261031140000_power_map_enhancement.sql',
   '20261030090000_instrument_register.sql',
@@ -312,6 +313,7 @@ export const pricingReleaseSqlTests = [
   'supabase/tests/foc_cost_charged.sql',
   'supabase/tests/go_live_adoption.sql',
   'supabase/tests/customer_tiers.sql',
+  'supabase/tests/lab_tiers_quarterly.sql',
 ];
 
 export function pricingReleasePreflight(evidence, files) {

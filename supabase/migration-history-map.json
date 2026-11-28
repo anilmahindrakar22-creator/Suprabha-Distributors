@@ -1844,6 +1844,13 @@
       "remoteVersion": null,
       "remoteSha256": null,
       "status": "not_deployed"
+    },
+    {
+      "localFile": "20270117120000_lab_tiers_quarterly.sql",
+      "localSha256": "cb04e325799d6fcf5c439d3a7c94e691cc7cd5e72a115168b255cfff77531dcf",
+      "remoteVersion": null,
+      "remoteSha256": null,
+      "status": "not_deployed"
     }
   ],
   "liveCheck": {
