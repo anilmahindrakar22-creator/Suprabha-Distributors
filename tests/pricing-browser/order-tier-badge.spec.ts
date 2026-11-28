@@ -72,7 +72,8 @@ for (const viewport of [{ width: 390, height: 844 }, { width: 1280, height: 800 
     await page.goto('/?view=orders-workspace');
     await expect(page.getByRole('button', { name: /^SF-TIER-001,/ })).toBeVisible();
     await expect(page.getByRole('button', { name: /^SF-TIER-002,/ })).toBeVisible();
-    await expect.poll(() => requested.length).toBe(2);
+    await expect.poll(() => requested.length).toBe(3);
+    expect([...new Set(requested)].sort()).toEqual([diamondId, silverId, untieredId].sort());
     await expect(page.getByTitle('Diamond lab')).toHaveCount(0);
     await expect(page.getByRole('alert')).toHaveCount(0);
   });
