@@ -39,7 +39,7 @@ describe('order-list density (list-first redesign)', () => {
   it('shows compact grouped rows on mobile and opens one order full screen', () => {
     expect(workspace).toContain('groupOrdersForList(visibleOrders, showsDeliveredToday ? deliveredToday : [])');
     expect(workspace).toContain("status: 'history'");
-    expect(workspace).toContain('<CompactOrderRow key={order.id} order={order} onOpen={openOrderDetail} isNew={newOrderIds?.has(order.id)} />');
+    expect(workspace).toContain('<CompactOrderRow key={order.id} order={order} tiers={tiers} onOpen={openOrderDetail} isNew={newOrderIds?.has(order.id)} />');
     expect(workspace).not.toContain('aria-label="Order notifications"');
     expect(frame).toContain('<NotificationBell state={work}');
     expect(workspace).toContain('aria-label="Back to orders"');
